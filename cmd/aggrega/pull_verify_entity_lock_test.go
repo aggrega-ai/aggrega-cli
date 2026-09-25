@@ -131,7 +131,9 @@ func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) 
 
 	// Plant two: the pin edited in the lock, the imported file untouched.
 	drifted := []types.ArtifactDigest{{Name: lock.ArtifactDigests[0].Name, Digest: "sha256:" + strings.Repeat("0", 64)}}
-	if _, err := recipepin.WriteLock(recipePath, lock.SourceDigests, drifted); err != nil {
+	plantedPins := lock.Pins()
+	plantedPins.ArtifactDigests = drifted
+	if _, err := recipepin.WriteLock(recipePath, plantedPins); err != nil {
 		t.Fatalf("plant a drifted pin: %v", err)
 	}
 	err = verifyPull(t, root, releasePath, catalogDir, nil)
@@ -240,7 +242,9 @@ spec:
 
 	drifted := append([]types.SourceDigest(nil), lock.SourceDigests...)
 	drifted[0].Digest = "sha256:" + strings.Repeat("0", 64)
-	if _, err := recipepin.WriteLock(recipePath, drifted, lock.ArtifactDigests); err != nil {
+	plantedPins := lock.Pins()
+	plantedPins.SourceDigests = drifted
+	if _, err := recipepin.WriteLock(recipePath, plantedPins); err != nil {
 		t.Fatalf("plant a drifted source pin: %v", err)
 	}
 	plantedBytes := mustReadFile(t, lockPath)

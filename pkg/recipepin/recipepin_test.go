@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -90,15 +91,18 @@ func TestLockPathIsTheEntitySibling(t *testing.T) {
 	}
 }
 
-// TestWriteLockRecordsBothPinClasses drives the writer over both classes at once
+// TestWriteLockRecordsEveryPinClass drives the writer over every class at once
 // and reads the result back through the reader, so the round trip is asserted
-// through the pair rather than against a hand-spelled document.
-func TestWriteLockRecordsBothPinClasses(t *testing.T) {
+// through the pair rather than against a hand-spelled document. The reader
+// validates the file against its published schema before it decodes it, so a
+// class the schema did not admit would fail here rather than decode as nothing.
+func TestWriteLockRecordsEveryPinClass(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
 	src := sampleSourcePin("sha256:aaa")
 	art := sampleArtifactPin("sha256:bbb")
+	local := []types.LocalSourceDigest{{Path: "chart/templates/cm.yaml", Digest: "sha256:ccc"}, {Path: "chart/Chart.yaml", Digest: "sha256:ddd"}}
 
-	changed, err := recipepin.WriteLock(p, src, art)
+	changed, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: src, ArtifactDigests: art, LocalSourceDigests: local})
 	if err != nil {
 		t.Fatalf("WriteLock: %v", err)
 	}
@@ -118,6 +122,11 @@ func TestWriteLockRecordsBothPinClasses(t *testing.T) {
 	}
 	if len(lock.ArtifactDigests) != 1 || lock.ArtifactDigests[0].Digest != "sha256:bbb" {
 		t.Errorf("artifact pins round-tripped as %+v", lock.ArtifactDigests)
+	}
+	// Handed over out of order, recorded in path order.
+	wantLocal := []types.LocalSourceDigest{{Path: "chart/Chart.yaml", Digest: "sha256:ddd"}, {Path: "chart/templates/cm.yaml", Digest: "sha256:ccc"}}
+	if !reflect.DeepEqual(lock.LocalSourceDigests, wantLocal) {
+		t.Errorf("local source pins round-tripped as %+v; want %+v", lock.LocalSourceDigests, wantLocal)
 	}
 	if lock.Version != 1 {
 		t.Errorf("lock version = %d; want 1", lock.Version)
@@ -144,7 +153,7 @@ func TestWriteLockNeverWritesTheAuthoredDocument(t *testing.T) {
 		{name: "a pin moves", src: sampleSourcePin("sha256:CHANGED"), art: sampleArtifactPin("sha256:bbb")},
 		{name: "pins go away"},
 	} {
-		if _, err := recipepin.WriteLock(p, step.src, step.art); err != nil {
+		if _, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: step.src, ArtifactDigests: step.art}); err != nil {
 			t.Fatalf("%s: WriteLock: %v", step.name, err)
 		}
 		if got := mustRead(t, p); !bytes.Equal(got, original) {
@@ -174,7 +183,7 @@ func TestWriteLockLeavesARealRecipeUntouched(t *testing.T) {
 		Digest:         "sha256:deadbeef",
 		ManifestDigest: "sha256:cafebabe",
 	}}
-	if _, werr := recipepin.WriteLock(p, src, nil); werr != nil {
+	if _, werr := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: src}); werr != nil {
 		t.Fatalf("WriteLock: %v", werr)
 	}
 	if got := mustRead(t, p); !bytes.Equal(got, original) {
@@ -199,7 +208,7 @@ func TestWriteLockIsIdempotent(t *testing.T) {
 	src := sampleSourcePin("sha256:aaa")
 	art := sampleArtifactPin("sha256:bbb")
 
-	if _, err := recipepin.WriteLock(p, src, art); err != nil {
+	if _, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: src, ArtifactDigests: art}); err != nil {
 		t.Fatalf("first WriteLock: %v", err)
 	}
 	first := mustRead(t, recipepin.LockPath(p))
@@ -209,14 +218,14 @@ func TestWriteLockIsIdempotent(t *testing.T) {
 	permutedSrc := append(sampleSourcePin("sha256:aaa"), types.SourceDigest{
 		Kind: "git-repository", URL: "https://a/b", Version: "sha", Digest: "sha256:zzz",
 	})
-	if _, err := recipepin.WriteLock(p, permutedSrc, art); err != nil {
+	if _, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: permutedSrc, ArtifactDigests: art}); err != nil {
 		t.Fatalf("widening WriteLock: %v", err)
 	}
 	reordered := []types.SourceDigest{
 		{Kind: "git-repository", URL: "https://a/b", Version: "sha", Digest: "sha256:zzz"},
 		sampleSourcePin("sha256:aaa")[0],
 	}
-	changed, err := recipepin.WriteLock(p, reordered, art)
+	changed, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: reordered, ArtifactDigests: art})
 	if err != nil {
 		t.Fatalf("re-ordered WriteLock: %v", err)
 	}
@@ -224,7 +233,7 @@ func TestWriteLockIsIdempotent(t *testing.T) {
 		t.Errorf("a re-ordered but equal pin set reported a change")
 	}
 
-	if _, err := recipepin.WriteLock(p, src, art); err != nil {
+	if _, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: src, ArtifactDigests: art}); err != nil {
 		t.Fatalf("narrowing WriteLock: %v", err)
 	}
 	if got := mustRead(t, recipepin.LockPath(p)); !bytes.Equal(got, first) {
@@ -237,10 +246,10 @@ func TestWriteLockIsIdempotent(t *testing.T) {
 // records nothing.
 func TestWriteLockRemovesTheFileWhenNothingIsPinned(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
-	if _, err := recipepin.WriteLock(p, sampleSourcePin("sha256:aaa"), nil); err != nil {
+	if _, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: sampleSourcePin("sha256:aaa")}); err != nil {
 		t.Fatalf("WriteLock: %v", err)
 	}
-	changed, err := recipepin.WriteLock(p, nil, nil)
+	changed, err := recipepin.WriteLock(p, recipepin.Pins{})
 	if err != nil {
 		t.Fatalf("clearing WriteLock: %v", err)
 	}
@@ -251,7 +260,7 @@ func TestWriteLockRemovesTheFileWhenNothingIsPinned(t *testing.T) {
 		t.Errorf("the lock file survived a clear: %v", serr)
 	}
 	// And clearing again is a no-op rather than an error.
-	changed, err = recipepin.WriteLock(p, nil, nil)
+	changed, err = recipepin.WriteLock(p, recipepin.Pins{})
 	if err != nil {
 		t.Fatalf("second clearing WriteLock: %v", err)
 	}

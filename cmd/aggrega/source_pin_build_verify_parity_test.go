@@ -61,7 +61,9 @@ func plantDriftedSourcePin(t *testing.T, recipePath string) []types.SourceDigest
 	}
 	drifted := append([]types.SourceDigest(nil), lock.SourceDigests...)
 	drifted[0].Digest = "sha256:" + strings.Repeat("0", 64)
-	if _, err := recipepin.WriteLock(recipePath, drifted, lock.ArtifactDigests); err != nil {
+	planted := lock.Pins()
+	planted.SourceDigests = drifted
+	if _, err := recipepin.WriteLock(recipePath, planted); err != nil {
 		t.Fatalf("plant a drifted source pin: %v", err)
 	}
 	return drifted

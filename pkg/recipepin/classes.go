@@ -22,11 +22,12 @@ import (
 // after it was pinned.
 type Unrecorded struct {
 	// Class names the kind of input, in the words a reader of the halt meets it
-	// under: a remote source, an imported file.
+	// under: a remote source, an imported file, a local source file.
 	Class string
 
 	// Input names the one input within its class — a source by the coordinates
-	// its author wrote, an imported file by the artifacts key that consumes it.
+	// its author wrote, an imported file by the artifacts key that consumes it, a
+	// local source's file by its path beside the entity.
 	Input string
 
 	// Stale reports that the lock records a pin for this input at a different
@@ -82,8 +83,9 @@ func CountPins(p Pins) []ClassCount {
 // rather than read back off the table, so a comparison naming its own class does
 // not make the table's initialiser refer to itself.
 const (
-	classRemoteSource = "remote source"
-	classImportedFile = "imported file"
+	classRemoteSource    = "remote source"
+	classImportedFile    = "imported file"
+	classLocalSourceFile = "local source file"
 )
 
 // lockClasses is every class of pin a lock holds, in the order the lock
@@ -101,6 +103,12 @@ var lockClasses = []lockClass{
 		unrecorded: unrecordedArtifacts,
 		count:      func(p Pins) int { return len(p.ArtifactDigests) },
 	},
+	{
+		field:      "LocalSourceDigests",
+		noun:       classLocalSourceFile,
+		unrecorded: unrecordedLocalSourceFiles,
+		count:      func(p Pins) int { return len(p.LocalSourceDigests) },
+	},
 }
 
 // UnrecordedPins reports every input whose pin want carries and recorded does
@@ -111,6 +119,13 @@ var lockClasses = []lockClass{
 // what the lock beside it holds. A pin recorded holds for an input the entity no
 // longer reads is not reported: the entity does not read that input, so nothing
 // a build compares is missing, and the next pin simply drops the row.
+//
+// A local source's files are the one exception, because together they are one
+// input rather than several: a file the lock records that the source no longer
+// holds is a change to the source a build refuses, so it is reported as stale,
+// after the files want carries. A local source the lock records no pin for at
+// all is not reported: that refusal is not in force while the standard-library
+// catalog and the worked examples do not yet record a local source's pins.
 func UnrecordedPins(want, recorded Pins) []Unrecorded {
 	var out []Unrecorded
 	for _, class := range lockClasses {
@@ -139,6 +154,41 @@ func unrecordedArtifacts(want, recorded Pins) []Unrecorded {
 			continue
 		}
 		out = append(out, Unrecorded{Class: classImportedFile, Input: w.Name, Stale: present})
+	}
+	return out
+}
+
+// refuseUnpinnedLocalSource is the switch for the one refusal the local-source
+// class carries that is not yet in force: the unpinned-entity halt over an entity
+// whose local source the lock beside it records no pin for at all. It is off.
+//
+// It is off because the standard-library catalog and the worked examples do not
+// yet record a local source's pins, so with it on, every pull and every
+// publication over one of their entities with a local source would halt until
+// that entity was pinned again. Setting it to true, once they record those pins,
+// is the whole of turning the refusal on: the comparison it enables is
+// [unrecordedLocalSourceFiles], which is tested with the switch set either way.
+//
+// It governs nothing else. With it off the pin step still records a local
+// source's pins, and once a lock records any, this halt, a build and a verifying
+// pull all compare the source with them as one set.
+var refuseUnpinnedLocalSource = false
+
+// unrecordedLocalSourceFiles is the local-source class's comparison, and it reads
+// the class as one set: [localSourceDifferences] is the one statement of how two
+// sets of a source's file pins differ, and a build's refusal reads the same
+// function, so the files a pull reports and the files a build refuses are one
+// answer.
+//
+// A lock recording no pin for the source at all is reported only while
+// [refuseUnpinnedLocalSource] is on.
+func unrecordedLocalSourceFiles(want, recorded Pins) []Unrecorded {
+	if len(recorded.LocalSourceDigests) == 0 && !refuseUnpinnedLocalSource {
+		return nil
+	}
+	var out []Unrecorded
+	for _, d := range localSourceDifferences(recorded.LocalSourceDigests, want.LocalSourceDigests) {
+		out = append(out, Unrecorded{Class: classLocalSourceFile, Input: d.path, Stale: d.recorded != ""})
 	}
 	return out
 }

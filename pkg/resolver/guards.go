@@ -141,6 +141,21 @@ type CatalogLookup struct {
 	NodeRecipeResolution func(
 		manifest *types.Manifest, instanceName, componentType string,
 	) NodeRecipeResolution
+	// LocalSourcePins returns the pins the pin step would record now for the local
+	// source of the Recipe or FeatureRecipe declared in the document at
+	// documentPath: one per file the source contributes to what the entity
+	// carries, digested as it stands. A build compares them with the pins the
+	// lock beside the document records before a provider reads the source.
+	//
+	// It is a catalog read because which files a source contributes is the
+	// catalog's answer — the same one a publication packs and the pin step pins —
+	// and the render reaches it through this field rather than enumerating the
+	// source a second way.
+	//
+	// May be nil, which declares that the caller can say nothing about a local
+	// source. A render that meets recorded local source pins with no way to
+	// compute the current ones refuses rather than admitting the source unchecked.
+	LocalSourcePins func(documentPath string) ([]types.LocalSourceDigest, error)
 }
 
 // NodeRecipeResolution is what one component instance's Recipe resolution came

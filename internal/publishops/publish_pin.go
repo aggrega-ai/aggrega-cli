@@ -88,9 +88,9 @@ func pinBeforePublishing(ctx context.Context, out io.Writer, cfg PushConfig, rw 
 // the step would acquire — a remote source whose identity the entity writes out
 // in full — because a stale pin is only visible against the bytes the source
 // serves now. An entity that reads nothing a lock records — a kind with no pin
-// class, a Recipe with no remote source, or one whose source identity is filled
-// in per Release and so pinned in each Release's lockfile — is accepted, and a
-// hold over it acquires nothing.
+// class, a Recipe with no remote source, no imported file and no local source, or
+// one whose only source's identity is filled in per Release and so pinned in each
+// Release's lockfile — is accepted, and a hold over it acquires nothing.
 func holdBeforeBundling(ctx context.Context, cfg PushConfig, rw *workspaceconfig.ResolvedWorkspace) error {
 	return entitypin.Hold(ctx, entitypin.Options{Workspace: rw, EntityPath: cfg.EntityPath}, recipepin.Remedy{
 		Operation:  "publication",

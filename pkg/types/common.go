@@ -58,6 +58,19 @@ type ArtifactDigest struct {
 	Digest string `json:"digest" yaml:"digest"`
 }
 
+// LocalSourceDigest is a content pin for one file of an entity's local source,
+// recorded in the entity.lock file beside the entity. Path is the file's
+// slash-separated path relative to the directory holding the entity document —
+// the path a publication of the entity carries it under — and Digest is the
+// SHA-256 of its bytes. A local source is pinned file by file rather than as one
+// digest, so a build that finds the source changed can name the file that moved.
+//
+// Defined in entity-lock-v1alpha1.schema.json#/properties/localSourceDigests/items.
+type LocalSourceDigest struct {
+	Path   string `json:"path" yaml:"path"`
+	Digest string `json:"digest" yaml:"digest"`
+}
+
 // WellKnownAnnotation is one platform-native annotation key a provider's
 // rendering engine reads, with the scope it is read at and the behavior applied
 // when it is absent. It is the provider's support claim for that key, and the

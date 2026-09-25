@@ -29,17 +29,21 @@ import (
 //
 // # What each pin is compared against, and under which condition
 //
-// Both classes are read through the record a build reads — the pins the catalog
+// Every class is read through the record a build reads — the pins the catalog
 // load filed under the entity's document — and each disagreement is reported
 // under the condition a build halts with, in the words a build uses, because one
 // finding reported two ways depending on which command found it is two answers to
-// one question. Neither diagnostic is composed here: each comes from the one home
+// one question. No diagnostic is composed here: each comes from the one home
 // the build's own comparison uses.
 //
 //   - An imported-file pin is compared with the digest of that file as it is on
 //     disk now, computed by the function the pull records it with. That is the
 //     same digest a build takes of the same bytes, so the two commands agree on
 //     every file. The finding is renderer.ArtifactContentPinMismatch's.
+//   - A local source's pins are compared with the pins its files digest to now,
+//     read through the catalog's declared set as the pin step and a build read
+//     them, by recipepin.CheckLocalSourcePins, the comparison a build makes before
+//     a provider reads the source.
 //   - A source pin is compared with the digest the lockfile records for that
 //     source by recipepin.CheckSourcePin, which is the comparison a build makes
 //     before it reads the cache.
@@ -118,6 +122,16 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 				entry, _ := locked.artifacts.Get(now.Name)
 				report(locked.path+"\x00artifact\x00"+now.Name,
 					renderer.ArtifactContentPinMismatch(locked.path, now.Name, entry.Import, now.Digest, pin.Digest))
+			}
+		}
+
+		if len(pins.LocalSourceDigests) > 0 {
+			current, err := catalog.LocalSourcePinsAt(locked.path)
+			if err != nil {
+				return err
+			}
+			if err := recipepin.CheckLocalSourcePins(locked.path, pins.LocalSourceDigests, current); err != nil {
+				report(locked.path+"\x00local-source", err)
 			}
 		}
 

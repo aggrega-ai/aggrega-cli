@@ -30,35 +30,38 @@ func TestPreviewLockIsTheWriteWithoutTheWrite(t *testing.T) {
 	first := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
 	firstArt := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
 	second := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "2.0.0", Digest: "sha256:ccc"}}
+	chart := []types.LocalSourceDigest{{Path: "chart/Chart.yaml", Digest: "sha256:ddd"}, {Path: "chart/templates/cm.yaml", Digest: "sha256:eee"}}
+	editedChart := []types.LocalSourceDigest{{Path: "chart/Chart.yaml", Digest: "sha256:ddd"}, {Path: "chart/templates/cm.yaml", Digest: "sha256:fff"}}
 
 	for _, tc := range []struct {
 		name string
-		// seed, when non-nil, is written before the case runs, so the case starts
-		// from an entity that already carries a lock.
-		seedSrc  []types.SourceDigest
-		seedArt  []types.ArtifactDigest
-		src      []types.SourceDigest
-		art      []types.ArtifactDigest
+		// seed, when it records anything, is written before the case runs, so the
+		// case starts from an entity that already carries a lock.
+		seed     recipepin.Pins
+		want     recipepin.Pins
 		rewrites bool
 	}{
-		{name: "adds a lock to an entity that carries none", src: first, art: firstArt, rewrites: true},
-		{name: "changes pins that moved", seedSrc: first, seedArt: firstArt, src: second, art: firstArt, rewrites: true},
-		{name: "leaves a lock whose pins already agree", seedSrc: first, seedArt: firstArt, src: first, art: firstArt, rewrites: false},
-		{name: "removes a lock the entity no longer needs", seedSrc: first, seedArt: firstArt, rewrites: true},
+		{name: "adds a lock to an entity that carries none", want: recipepin.Pins{SourceDigests: first, ArtifactDigests: firstArt}, rewrites: true},
+		{name: "changes pins that moved", seed: recipepin.Pins{SourceDigests: first, ArtifactDigests: firstArt}, want: recipepin.Pins{SourceDigests: second, ArtifactDigests: firstArt}, rewrites: true},
+		{name: "leaves a lock whose pins already agree", seed: recipepin.Pins{SourceDigests: first, ArtifactDigests: firstArt}, want: recipepin.Pins{SourceDigests: first, ArtifactDigests: firstArt}, rewrites: false},
+		{name: "removes a lock the entity no longer needs", seed: recipepin.Pins{SourceDigests: first, ArtifactDigests: firstArt}, rewrites: true},
 		{name: "reports nothing for an entity that never had a lock", rewrites: false},
+		{name: "adds a lock for a local source alone", want: recipepin.Pins{LocalSourceDigests: chart}, rewrites: true},
+		{name: "changes a local source file's pin that moved", seed: recipepin.Pins{LocalSourceDigests: chart}, want: recipepin.Pins{LocalSourceDigests: editedChart}, rewrites: true},
+		{name: "leaves a local source's pins that already agree", seed: recipepin.Pins{ArtifactDigests: firstArt, LocalSourceDigests: chart}, want: recipepin.Pins{ArtifactDigests: firstArt, LocalSourceDigests: chart}, rewrites: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := writeRecipe(t, bareRecipe)
 			lockPath := recipepin.LockPath(path)
-			if tc.seedSrc != nil || tc.seedArt != nil {
-				if _, err := recipepin.WriteLock(path, tc.seedSrc, tc.seedArt); err != nil {
+			if !tc.seed.Empty() {
+				if _, err := recipepin.WriteLock(path, tc.seed); err != nil {
 					t.Fatalf("seed the lock: %v", err)
 				}
 			}
 			before, beforeErr := os.ReadFile(lockPath)
 			recipeBefore := mustRead(t, path)
 
-			previewed, rewrites, err := recipepin.PreviewLock(path, tc.src, tc.art)
+			previewed, rewrites, err := recipepin.PreviewLock(path, tc.want)
 			if err != nil {
 				t.Fatalf("PreviewLock: %v", err)
 			}
@@ -70,7 +73,7 @@ func TestPreviewLockIsTheWriteWithoutTheWrite(t *testing.T) {
 				t.Fatalf("PreviewLock wrote to the lock;\nbefore:\n%s\nafter:\n%s", before, after)
 			}
 
-			wrote, err := recipepin.WriteLock(path, tc.src, tc.art)
+			wrote, err := recipepin.WriteLock(path, tc.want)
 			if err != nil {
 				t.Fatalf("WriteLock: %v", err)
 			}

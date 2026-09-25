@@ -10,24 +10,26 @@ import (
 // Pins are the content pins in force for one entity: the digests a build
 // compares the bytes it acquired against.
 //
-// The two lists are the two ways an entity depends on bytes it does not itself
-// carry — an acquired remote source, and a file an artifacts entry imports from
-// the workspace — and they are separate lists because they are keyed
-// differently: a source by its resolved identity, an imported file by the
-// artifacts key that consumes it. They are the same rows [Lock] carries, so a
-// pin does not read one way where it is recorded and another where it is used.
+// The lists are the ways an entity depends on bytes it does not itself carry — an
+// acquired remote source, a file an artifacts entry imports from the workspace,
+// and the files of a local source — and they are separate lists because they are
+// keyed differently: a source by its resolved identity, an imported file by the
+// artifacts key that consumes it, a local source's file by its path beside the
+// entity. They are the same rows [Lock] carries, so a pin does not read one way
+// where it is recorded and another where it is used.
 //
 // The zero value records nothing, which is what an entity that has never been
 // resolved reports. A reader holding it has nothing to compare and concludes
 // nothing, which is the ordinary answer rather than an approval.
 type Pins struct {
-	SourceDigests   []types.SourceDigest
-	ArtifactDigests []types.ArtifactDigest
+	SourceDigests      []types.SourceDigest
+	ArtifactDigests    []types.ArtifactDigest
+	LocalSourceDigests []types.LocalSourceDigest
 }
 
 // Empty reports whether these pins record nothing at all.
 func (p Pins) Empty() bool {
-	return len(p.SourceDigests) == 0 && len(p.ArtifactDigests) == 0
+	return len(p.SourceDigests) == 0 && len(p.ArtifactDigests) == 0 && len(p.LocalSourceDigests) == 0
 }
 
 // Lookup answers the pins in force for the entity declared in a named document,

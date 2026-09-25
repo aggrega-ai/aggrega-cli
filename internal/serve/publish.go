@@ -154,6 +154,11 @@ type publishEntityResult struct {
 	// built, in the shape aggrega/pin answers with, and is absent where this
 	// publication did not run the step.
 	Pin *pinResult `json:"pin,omitempty"`
+
+	// WholeDirectorySource is the templated local source that made the
+	// publication carry every file in the entity's directory, and is absent where
+	// it carries only the files the entity names.
+	WholeDirectorySource string `json:"wholeDirectorySource,omitempty"`
 }
 
 // publishArtifactParams is what aggrega/publishArtifact takes: the file to
@@ -364,18 +369,19 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		}
 	}
 	out := publishEntityResult{
-		Reference:        res.Reference,
-		Tag:              res.Tag,
-		Kind:             res.Kind,
-		MediaType:        res.MediaType,
-		Size:             res.Size,
-		SizeText:         cacheops.HumanSize(int64(res.Size)),
-		PluginSize:       res.PluginSize,
-		Digest:           res.Digest,
-		Signed:           res.Signed,
-		AlreadyPublished: res.AlreadyPublished,
-		DryRun:           res.DryRun,
-		Reach:            reachOf(res.Reference, !res.DryRun),
+		Reference:            res.Reference,
+		Tag:                  res.Tag,
+		Kind:                 res.Kind,
+		MediaType:            res.MediaType,
+		Size:                 res.Size,
+		SizeText:             cacheops.HumanSize(int64(res.Size)),
+		PluginSize:           res.PluginSize,
+		Digest:               res.Digest,
+		Signed:               res.Signed,
+		AlreadyPublished:     res.AlreadyPublished,
+		DryRun:               res.DryRun,
+		Reach:                reachOf(res.Reference, !res.DryRun),
+		WholeDirectorySource: res.WholeDirectory,
 	}
 	// The plugin size is carried only for a plugin entity, so its rendering is
 	// held to the same presence: a caller never reads a rendered size with no

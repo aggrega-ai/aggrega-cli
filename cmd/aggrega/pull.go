@@ -71,11 +71,14 @@ A URI given without --upgrade is a usage error.
 
 Each Recipe and FeatureRecipe this Release builds from one of your catalog directories carries
 the pins for its own inputs in the entity.lock beside it: a remote source: written out in full,
-and a file an artifacts entry imports. Recording them is the entity author's step, aggrega pin.
+a file an artifacts entry imports, and each file of a local source:. Recording them is the
+entity author's step, aggrega pin.
 By default pull records none of them, and halts on an entity whose lock is missing any, naming
-the entity, each input and its class, and the command that records them. Pass --pin-sources,
-or set pin_sources_at_pull in the workspace configuration, to have pull run that same step
-instead; --pin-sources=false restores the halt for one run.`,
+the entity, each input and its class, and the command that records them. A local source is
+held to its pins once its lock records them: a file added, changed or removed since then halts
+the pull the same way, while a lock that records no pin for a local source is not refused.
+Pass --pin-sources, or set pin_sources_at_pull in the workspace configuration, to have pull run
+that same step instead; --pin-sources=false restores the halt for one run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
@@ -126,7 +129,7 @@ instead; --pin-sources=false restores the halt for one run.`,
 	c.Flags().StringVar(&opts.releasePath, "release", "", helpReleasePath)
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity, and asks for confirmation first because it drops every recorded pin; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged, and asks nothing (mutually exclusive with --verify)")
-	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also holds the entity.lock beside each Recipe and FeatureRecipe in your catalog directories that the Release reaches to what a build compares it with, and exits non-zero on a pin a build would refuse: an imported file that no longer matches its recorded digest, or a source pin that disagrees with the lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift (mutually exclusive with --upgrade)")
+	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also holds the entity.lock beside each Recipe and FeatureRecipe in your catalog directories that the Release reaches to what a build compares it with, and exits non-zero on a pin a build would refuse: an imported file that no longer matches its recorded digest, a local source whose files no longer match their recorded digests, or a source pin that disagrees with the lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift (mutually exclusive with --upgrade)")
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Not yet implemented: accepted and ignored, so a script that passes it keeps working when it starts having an effect")
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")

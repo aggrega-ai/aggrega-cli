@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -29,7 +30,8 @@ import (
 //   - Local source (./..., /..., file://...), authored as a scalar reference or
 //     as a structured block: Source is set to the reference the source names, and
 //     OriginalSource to the value as authored. Local references are never
-//     lockfile-pinned.
+//     lockfile-pinned; where the lock beside the entity records pins for the
+//     source's files, the files are compared with them first.
 //   - Remote source + lockfile/workspace/cacheDir all set on input:
 //     evaluates source via closure.EvaluateSourceSpec, looks up the
 //     lockfile entry by its location terms plus what the author wrote to
@@ -106,6 +108,12 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 		return nil, nil
 	}
 	if sourceref.IsLocal(source) {
+		// The files a provider is about to read are compared with the pins the lock
+		// beside the entity records for them first, so a source edited after it was
+		// pinned halts here rather than rendering unverified.
+		if err := checkLocalSourcePins(input, documentPath); err != nil {
+			return nil, err
+		}
 		// What an engine consumes is the path, so what is forwarded is the
 		// reference rather than the value that carries it. The two coincide for a
 		// scalar source and do not for a structured one, where the value is a block
@@ -181,4 +189,41 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 		return nil, fmt.Errorf("source-artifact %s@%s: %w", spec.URL, at, err)
 	}
 	return extracted, nil
+}
+
+// checkLocalSourcePins compares the files of the local source declared in the
+// document at documentPath with the pins the lock beside it records for them, and
+// returns the halt a disagreement raises.
+//
+// Both halves are read rather than computed here. The recorded pins are the
+// render input's record of what the load settled for this document, like the
+// remote source's pins above. The current ones are the catalog's answer to which
+// files the source contributes — the answer a publication packs and the pin step
+// pins — so a build cannot come to compare a different set of files from the one
+// that was pinned. The comparison and its diagnostic are
+// recipepin.CheckLocalSourcePins's, the one home a verify of the same lock calls
+// too.
+//
+// A lock recording no local source pin leaves nothing to compare, which is the
+// ordinary answer for an entity nobody pinned and for one declared in no document
+// on disk — a registry-resolved entity, whose publication is what covers its
+// files. A lock that records some while the render has no way to read the source
+// as it stands is refused rather than admitted: passing it would read exactly
+// like a source that had not moved.
+func checkLocalSourcePins(input RendererInput, documentPath string) error {
+	recorded := input.RecordedPins.For(documentPath).LocalSourceDigests
+	if len(recorded) == 0 {
+		return nil
+	}
+	if input.CatalogLookup.LocalSourcePins == nil {
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: documentPath},
+			"the local source could not be checked against the pins recorded for it beside the entity — "+
+				"internal error: the render was given no way to read the source's files. This is a fault in the "+
+				"compiler rather than in the entity, so there is nothing to correct in the catalog", nil, nil)
+	}
+	current, err := input.CatalogLookup.LocalSourcePins(documentPath)
+	if err != nil {
+		return err
+	}
+	return recipepin.CheckLocalSourcePins(documentPath, recorded, current)
 }

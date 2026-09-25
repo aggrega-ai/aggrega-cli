@@ -101,6 +101,74 @@ func (d DeclaredFiles) WholeDirectory() string {
 	return ""
 }
 
+// LocalSourceFiles returns the files the entity's local source contributes to
+// what it carries, and whether the entity declares a local source at all.
+//
+// They are the files of its spec.source declaration, bar two that the declaration
+// can reach without being about them: the entity document, which is the entity
+// rather than an input it reads, and the lock beside it, which cannot record its
+// own digest. Both lie inside the source only where the source's directory is the
+// entity's own — a source naming that directory, or one written as a template,
+// which contributes every file there.
+//
+// This is the subject of the lock's local source pins: the pin step records one
+// pin per file named here and a build compares the same files, so what the lock
+// holds for a source is exactly what a publication carries for it.
+func (d DeclaredFiles) LocalSourceFiles() ([]string, bool) {
+	for _, decl := range d.Declarations {
+		if decl.Surface != sourceSurface {
+			continue
+		}
+		document := filepath.Base(d.Document)
+		files := make([]string, 0, len(decl.Files))
+		for _, f := range decl.Files {
+			if f == document || f == recipepin.LockFileName {
+				continue
+			}
+			files = append(files, f)
+		}
+		return files, true
+	}
+	return nil, false
+}
+
+// LocalSourcePinsOf returns the pins the pin step records for the local source of
+// the entity document data found at path, one per file [DeclaredFiles.LocalSourceFiles]
+// names, or none where the entity declares no local source.
+//
+// It reads the entity through [DeclaredFilesOf], the one function that says which
+// files an entity carries, so the pin step, a build's comparison and a
+// publication's bundle cannot come to disagree about what a source contributes.
+func LocalSourcePinsOf(data []byte, path string) ([]types.LocalSourceDigest, error) {
+	declared, err := DeclaredFilesOf(data, path)
+	if err != nil {
+		return nil, err
+	}
+	files, declaresLocalSource := declared.LocalSourceFiles()
+	if !declaresLocalSource {
+		return nil, nil
+	}
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	return recipepin.LocalSourcePins(dir, files)
+}
+
+// LocalSourcePinsAt is [LocalSourcePinsOf] over the entity document on disk at
+// path.
+func LocalSourcePinsAt(path string) ([]types.LocalSourceDigest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return LocalSourcePinsOf(data, path)
+}
+
+// sourceSurface names the declaration a Recipe's or FeatureRecipe's local source
+// is carried under, in the document's own field path.
+const sourceSurface = "spec.source"
+
 // entityLockSurface names the declaration a lock beside the entity is carried
 // under. It is not a field of the document: the lock is written by the author's
 // pin step, and it travels because it is what records the digests of the
@@ -204,7 +272,7 @@ func artifactImports(artifacts *types.OrderedMap[types.ArtifactEntry]) []importe
 func sourcedDeclarations(dir, path string, source any, valuesMapping, workload importedFile, artifacts []importedFile) ([]Declaration, error) {
 	var decls []Declaration
 	if ref, readable := sourceref.Reference(source); readable && sourceref.IsLocalURL(ref) {
-		decl := Declaration{Surface: "spec.source"}
+		decl := Declaration{Surface: sourceSurface}
 		target := ref
 		if sourceref.IsTemplated(ref) {
 			decl.WholeDirectory = ref

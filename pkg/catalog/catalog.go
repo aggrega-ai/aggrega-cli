@@ -1424,9 +1424,9 @@ func resolveRecipeDocument(data []byte, path string) (types.Recipe, error) {
 // and what it read, and that is what the build compares against.
 //
 // Absence of a lock is an entity with nothing recorded for it, which is the zero
-// value rather than an error: a recipe with no remote source and no imported
-// artifact has nothing to pin, and one whose source is templated has an identity
-// knowable only per-Release.
+// value rather than an error: a recipe with no remote source, no imported
+// artifact and no local source has nothing to pin, and one whose remote source is
+// templated has an identity knowable only per-Release.
 //
 // A lock that will not read is a failure rather than an absence, and the reason
 // is the one that makes the file worth having: a pin nobody could read is a
@@ -1440,7 +1440,7 @@ func recordedPins(path string) (recipepin.Pins, error) {
 	if !present {
 		return recipepin.Pins{}, nil
 	}
-	return recipepin.Pins{SourceDigests: lock.SourceDigests, ArtifactDigests: lock.ArtifactDigests}, nil
+	return lock.Pins(), nil
 }
 
 // anchorEntitySource resolves an entity's authored source against the directory
@@ -2185,6 +2185,9 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		Recipe:               c.RecipeByURI,
 		FeatureRecipe:        c.FeatureRecipeByURI,
 		NodeRecipeResolution: c.nodeRecipeResolution,
+		// The local source a build compares with its recorded pins, read through the
+		// declared set a publication packs and the pin step pins.
+		LocalSourcePins: LocalSourcePinsAt,
 	}
 }
 

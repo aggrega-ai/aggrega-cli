@@ -18,7 +18,7 @@ import (
 // The pin step is one implementation with several callers, and this file is what
 // holds it to that structurally rather than by reading the call graph once.
 //
-// Three facts together are the single path:
+// These facts together are the single path:
 //
 //   - The lock is written, and previewed, from the pin step's own plan and from
 //     nowhere else in the module. A second function calling the lock's writer
@@ -34,6 +34,9 @@ import (
 //   - Whether an entity has its directory to itself is decided by one predicate,
 //     reached by the pin step and by a publication, and composed into one
 //     refusal — so the two moments cannot come to disagree about a directory.
+//   - A local source's pins are digested over the one reading of which files the
+//     source contributes, and compared in one place — so the files pinned, the
+//     files a build compares and the files a publication packs are one set.
 //
 // A legitimate new caller changes one of the sets below, and the failure is the
 // point: whoever adds one has to say so here, next to the others, rather than
@@ -234,6 +237,34 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 			why:    "the directory rule's refusal is composed in one place, so both moments give one diagnostic",
 			want:   []string{"entitypin.RefuseSharedDirectory"},
 		},
+		{
+			// A local source's pins are the digests of the files the entity's declared
+			// set says the source contributes — the files a publication packs — so the
+			// digesting is reached from that one reading and from nowhere else. A
+			// second caller would be a second enumeration of a source's files, free to
+			// pin a file a publication does not carry or to miss one it does.
+			callee: "recipepin.LocalSourcePins",
+			why:    "a local source's files are pinned over the declared set's answer and over no other listing",
+			want:   []string{"catalog.LocalSourcePinsOf"},
+		},
+		{
+			callee: "catalog.LocalSourcePinsOf",
+			why:    "the pins of a local source are read from an entity document in one place",
+			want:   []string{"catalog.LocalSourcePinsAt"},
+		},
+		{
+			// The build reaches the same function as a value the catalog hands the
+			// render through its lookup, which a call walk does not see; the value is
+			// set where the catalog builds that lookup and nowhere else.
+			callee: "catalog.LocalSourcePinsAt",
+			why:    "the pin step and a verifying pull read a local source's pins through the one reading",
+			want:   []string{"entitypin.Compute", "pullops.verifyEntityLocks"},
+		},
+		{
+			callee: "recipepin.CheckLocalSourcePins",
+			why:    "a build and a verifying pull refuse a drifted local source through one comparison and one diagnostic",
+			want:   []string{"pullops.verifyEntityLocks", "renderer.checkLocalSourcePins"},
+		},
 	}
 	for _, tc := range cases {
 		got := make([]string, 0, len(callers[tc.callee]))
@@ -258,7 +289,7 @@ func TestTheGuardSeesAPlantedSecondWriter(t *testing.T) {
 	dir := t.TempDir()
 	planted := filepath.Join(dir, "planted.go")
 	src := "package planted\n\nimport \"github.com/aggrega-ai/aggrega-cli/pkg/recipepin\"\n\n" +
-		"func secondWriter() { _, _ = recipepin.WriteLock(\"x\", nil, nil) }\n"
+		"func secondWriter() { _, _ = recipepin.WriteLock(\"x\", recipepin.Pins{}) }\n"
 	if err := os.WriteFile(planted, []byte(src), 0o644); err != nil {
 		t.Fatalf("plant: %v", err)
 	}

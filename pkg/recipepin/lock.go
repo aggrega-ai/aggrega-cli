@@ -51,26 +51,29 @@ const lockHeader = "# Content pins for this entity's external inputs, written by
 // inputs the entity reaches for outside its own document.
 //
 // Each list is one class of pin: one way an entity depends on bytes it does not
-// itself carry — an acquired remote source, and a file an artifacts entry
-// imports from the workspace — and the classes are kept as separate lists
-// because they are keyed differently: a source by its resolved identity, an
-// imported file by the artifacts key that consumes it. The classes are
-// enumerated once, by the table the unpinned-entity halt reads, so a class added
-// here is added there in the same change or a guard refuses it.
+// itself carry — an acquired remote source, a file an artifacts entry imports
+// from the workspace, and a file of a local source — and the classes are kept as
+// separate lists because they are keyed differently: a source by its resolved
+// identity, an imported file by the artifacts key that consumes it, a local
+// source's file by its path beside the entity. The classes are enumerated once,
+// by the table the unpinned-entity halt reads, so a class added here is added
+// there in the same change or a guard refuses it.
 //
 // The rows are the same types the entity's own pin blocks are built from, which
 // is what keeps one pin from reading two ways depending on where it was written.
 type Lock struct {
-	Version         int                    `json:"version" yaml:"version"`
-	SourceDigests   []types.SourceDigest   `json:"sourceDigests,omitempty" yaml:"sourceDigests,omitempty"`
-	ArtifactDigests []types.ArtifactDigest `json:"artifactDigests,omitempty" yaml:"artifactDigests,omitempty"`
+	Version            int                       `json:"version" yaml:"version"`
+	SourceDigests      []types.SourceDigest      `json:"sourceDigests,omitempty" yaml:"sourceDigests,omitempty"`
+	ArtifactDigests    []types.ArtifactDigest    `json:"artifactDigests,omitempty" yaml:"artifactDigests,omitempty"`
+	LocalSourceDigests []types.LocalSourceDigest `json:"localSourceDigests,omitempty" yaml:"localSourceDigests,omitempty"`
 }
 
-// empty reports whether the lock carries no pin at all, which is the state that
-// has no file rather than an empty one: a document holding two empty lists says
-// the same thing as no document, and leaving one behind would put a file in the
-// author's directory that records nothing.
-func (l Lock) empty() bool { return len(l.SourceDigests) == 0 && len(l.ArtifactDigests) == 0 }
+// Pins returns the pin lists the lock records, without its version: the shape a
+// build and the pin step compare. It is the one place a lock's lists become pins,
+// so a class the lock gains reaches every reader of its pins by this edit alone.
+func (l Lock) Pins() Pins {
+	return Pins{SourceDigests: l.SourceDigests, ArtifactDigests: l.ArtifactDigests, LocalSourceDigests: l.LocalSourceDigests}
+}
 
 // LockPath returns the lock file path for the entity document at entityPath —
 // the sibling [LockFileName] in the entity's own directory.
@@ -132,12 +135,14 @@ func lockReadError(path string, cause error) error {
 // exactly when a lock is currently present: what the write performs in that case
 // is a removal, and a caller reporting the run needs to be told the file moves
 // even though there is nothing to show as its new content.
-func PreviewLock(entityPath string, srcPins []types.SourceDigest, artPins []types.ArtifactDigest) ([]byte, bool, error) {
+func PreviewLock(entityPath string, pins Pins) ([]byte, bool, error) {
 	lock := Lock{Version: CurrentLockVersion}
-	lock.SourceDigests = append(lock.SourceDigests, srcPins...)
-	lock.ArtifactDigests = append(lock.ArtifactDigests, artPins...)
+	lock.SourceDigests = append(lock.SourceDigests, pins.SourceDigests...)
+	lock.ArtifactDigests = append(lock.ArtifactDigests, pins.ArtifactDigests...)
+	lock.LocalSourceDigests = append(lock.LocalSourceDigests, pins.LocalSourceDigests...)
 	sortSourcePins(lock.SourceDigests)
 	sortArtifactPins(lock.ArtifactDigests)
+	sortLocalSourcePins(lock.LocalSourceDigests)
 
 	path := LockPath(entityPath)
 	current, currentErr := os.ReadFile(path)
@@ -146,7 +151,9 @@ func PreviewLock(entityPath string, srcPins []types.SourceDigest, artPins []type
 		return nil, false, lockReadError(path, currentErr)
 	}
 
-	if lock.empty() {
+	// A lock holding no list at all says the same thing as no lock, and leaving
+	// one behind would put a file in the author's directory that records nothing.
+	if lock.Pins().Empty() {
 		return nil, present, nil
 	}
 
@@ -158,23 +165,23 @@ func PreviewLock(entityPath string, srcPins []types.SourceDigest, artPins []type
 }
 
 // WriteLock brings the lock beside the entity document at entityPath into
-// agreement with srcPins and artPins, and reports whether what is on disk
-// changed.
+// agreement with pins, and reports whether what is on disk changed.
 //
-// Both pin lists are sorted to a canonical order before emission (sources by
-// {kind, url, chart, moduleSubdir, version}, artifacts by name), and the
-// document carries no timestamp and no resolution metadata, so re-running a
-// resolution over unchanged declarations leaves the file byte-identical. That is
-// what lets an author keep the file under version control and read its diff as a
-// statement about their inputs rather than about when they last ran a command.
+// Every pin list is sorted to a canonical order before emission (sources by
+// {kind, url, chart, moduleSubdir, version}, artifacts by name, a local source's
+// files by path), and the document carries no timestamp and no resolution
+// metadata, so re-running a resolution over unchanged declarations leaves the
+// file byte-identical. That is what lets an author keep the file under version
+// control and read its diff as a statement about their inputs rather than about
+// when they last ran a command.
 //
 // An empty pin set removes the file rather than writing an empty document, so an
 // entity that stops reaching outside itself stops carrying a lock.
 //
 // The entity document is never opened for writing here, and that is the point of
 // the file: what an author typed is left exactly as typed.
-func WriteLock(entityPath string, srcPins []types.SourceDigest, artPins []types.ArtifactDigest) (bool, error) {
-	out, changes, err := PreviewLock(entityPath, srcPins, artPins)
+func WriteLock(entityPath string, pins Pins) (bool, error) {
+	out, changes, err := PreviewLock(entityPath, pins)
 	if err != nil {
 		return false, err
 	}

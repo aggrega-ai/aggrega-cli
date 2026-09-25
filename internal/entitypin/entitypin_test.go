@@ -70,8 +70,9 @@ func recipeYAML(name, source string, withImport bool) string {
 // The three disagree, which is what makes the test discriminate: an authored
 // identity is resolved and pinned, a templated identity is never even asked about
 // — it names an artifact only per Release — and a source the workspace holds is
-// neither fetched nor pinned. A step that pinned every source would fail the
-// second, and one that pinned none would fail the first.
+// not fetched, while each file it contributes is pinned by its path. A step that
+// resolved every source would fail the second and the third, and one that pinned
+// none would fail the first and the third.
 func TestComputeRoutesOnlyAnAuthoredIdentityBesideItsEntity(t *testing.T) {
 	ws := t.TempDir()
 	cat := filepath.Join(ws, "catalog")
@@ -105,6 +106,11 @@ func TestComputeRoutesOnlyAnAuthoredIdentityBesideItsEntity(t *testing.T) {
 		case "authored":
 			if len(e.want.SourceDigests) != 1 || len(e.want.ArtifactDigests) != 1 {
 				t.Errorf("the authored-identity Recipe must pin its source and its imported file; wants %+v", e.want)
+			}
+		case "local":
+			if len(e.want.SourceDigests) != 0 || len(e.want.ArtifactDigests) != 0 ||
+				len(e.want.LocalSourceDigests) != 1 || e.want.LocalSourceDigests[0].Path != "chart/Chart.yaml" {
+				t.Errorf("the local-source Recipe must pin its source's one file by its path and nothing else; wants %+v", e.want)
 			}
 		default:
 			if !e.want.Empty() {

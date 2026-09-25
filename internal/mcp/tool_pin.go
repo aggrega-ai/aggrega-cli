@@ -85,12 +85,14 @@ var pinToolSpec = toolSpec{
 		"entity reads from outside its own document — it writes inside your workspace and reaches the hosts the " +
 		"entity's sources name. That lock file is the entity.lock in the entity's own directory. Pass the entity " +
 		"document as `entity`, absolute or relative to the workspace root. " +
-		"It pins a remote source whose coordinates are written out in full, and a file an artifacts entry imports; " +
-		"a source whose coordinates come from a template is pinned per Release by the pull tool instead, so no " +
+		"It pins a remote source whose coordinates are written out in full, a file an artifacts entry imports, and " +
+		"each file of a local source, by its path beside the entity; " +
+		"a remote source whose coordinates come from a template is pinned per Release by the pull tool instead, so no " +
 		"Release is needed here. Pinning is the entity author's step: call it before an entity is consumed or " +
 		"published, and after changing one of its inputs, because a pull over an entity whose lock does not " +
-		"record its pins refuses and names this step. The entity file itself is never written, and re-running " +
-		"over unchanged inputs leaves the lock byte-identical. Set `dry_run` to get the lock it would write " +
+		"record its pins refuses and names this step — bar a lock recording no pin for a local source, which is " +
+		"not refused; once it records them, the source is held to them. The entity file itself is never written, " +
+		"and re-running over unchanged inputs leaves the lock byte-identical. Set `dry_run` to get the lock it would write " +
 		"without writing it. The pull tool's `pin_sources` and the publish-entity tool's `pin_sources` run this " +
 		"same step and write the same bytes.",
 	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",

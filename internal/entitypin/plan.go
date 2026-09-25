@@ -204,7 +204,14 @@ func Compute(in PlanInputs) (Plan, error) {
 		if err != nil {
 			return Plan{}, err
 		}
-		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins}
+		// A local source is pinned file by file over the files the entity's
+		// declared set says it contributes, which is what a publication of the
+		// entity carries for it and what a build compares.
+		localPins, err := catalog.LocalSourcePinsAt(h.plan.path)
+		if err != nil {
+			return Plan{}, err
+		}
+		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: localPins}
 		plan.entities = append(plan.entities, h.plan)
 	}
 	sort.Slice(plan.entities, func(i, j int) bool { return plan.entities[i].path < plan.entities[j].path })
@@ -321,7 +328,7 @@ func (p Plan) Write() ([]Outcome, error) {
 	}
 	out := make([]Outcome, 0, len(p.entities))
 	for _, e := range p.entities {
-		changed, err := recipepin.WriteLock(e.path, e.want.SourceDigests, e.want.ArtifactDigests)
+		changed, err := recipepin.WriteLock(e.path, e.want)
 		if err != nil {
 			return out, err
 		}
@@ -353,7 +360,7 @@ func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 	final := map[string]last{}
 	var locks []string
 	for _, e := range p.entities {
-		content, moves, err := recipepin.PreviewLock(e.path, e.want.SourceDigests, e.want.ArtifactDigests)
+		content, moves, err := recipepin.PreviewLock(e.path, e.want)
 		if err != nil {
 			return nil, nil, err
 		}

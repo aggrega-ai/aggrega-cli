@@ -25,18 +25,22 @@ func newPinCmd() *cobra.Command {
 		Short: "Record the content pins for an entity's external inputs in the entity.lock beside it",
 		Long: `Record, in the entity.lock beside a Recipe or FeatureRecipe, the content pin for every input
 the entity reads from outside its own document: a remote source: whose coordinates you wrote out
-in full, and a file an artifacts entry imports with $import.
+in full, a file an artifacts entry imports with $import, and each file of a local source:.
 
 Pinning is the entity author's step. Run it on an entity before it is consumed — before you
 publish it, and after every change to one of its inputs — and commit the entity.lock it writes
 beside the entity. A pull over an entity whose lock does not record these pins halts and names
-this command, and so does a push of it.
+this command, and so does a push of it. A lock that records no pin for a local source is the one
+exception and is not refused; once it records them, the source is held to them.
 
 No Release is needed. A source whose coordinates carry no template names one artifact for every
-Release that uses the entity, so it is resolved and pinned here, with nothing supplied. A source
-whose coordinates are filled in from a template is not pinned here: which artifact it names is
+Release that uses the entity, so it is resolved and pinned here, with nothing supplied. A remote
+source whose coordinates are filled in from a template is not pinned here: which artifact it names is
 decided by each Release, and each identity it resolves to is pinned in that Release's lockfile.
-A source that names a path in your workspace is not fetched and not pinned.
+A source that names a directory beside the entity is not fetched: each file it contributes to what
+a publication of the entity carries is digested as it stands and pinned by its path, so a build
+refuses a file added, changed or removed after the pin. A local source written as a template
+contributes every file in the entity's directory, so each of those is pinned.
 
 The step writes beside the entity, so the entity needs a writable home: the document you name is
 read from its own directory and the lock lands next to it. The entity file itself is never
@@ -77,7 +81,7 @@ write the same bytes.`,
 const (
 	helpPullPinSources = "Run the entity author's pin step over the Recipes and FeatureRecipes this Release builds, " +
 		"recording in the entity.lock beside each the pin for every input it reads — a remote source: written out in " +
-		"full, and a file an artifacts entry imports — instead of halting on an entity whose lock does not record " +
+		"full, a file an artifacts entry imports, and each file of a local source — instead of halting on an entity whose lock does not record " +
 		"them. The same step as aggrega pin, writing the same bytes. It writes beside the entity, so it runs only " +
 		"where the entity has a writable home: a document in one of your catalog directories. An entity resolved " +
 		"from the cache has none and is never pinned. Overrides the workspace's pin_sources_at_pull in both " +

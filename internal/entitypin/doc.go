@@ -26,7 +26,9 @@
 // from a template names an artifact only once a Release fills it in, so it is not
 // pinned here; each identity it resolves to is pinned in the lockfile of the
 // Release that resolved it. An imported file is read from the workspace and
-// digested as it stands.
+// digested as it stands, and so is each file a local source contributes to what
+// the entity carries — the files its declared set names, which are the files a
+// publication of it packs.
 //
 // # The writable home
 //

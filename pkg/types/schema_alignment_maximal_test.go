@@ -718,6 +718,10 @@ func maximalEntityLock() recipepin.Lock {
 			Name:   "networkpolicy.yaml",
 			Digest: pinDigest,
 		}},
+		LocalSourceDigests: []types.LocalSourceDigest{{
+			Path:   "chart/templates/deployment.yaml",
+			Digest: pinDigest,
+		}},
 	}
 }
 

@@ -204,6 +204,11 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		Recipe:               l.RecipeByURI,
 		FeatureRecipe:        l.FeatureRecipeByURI,
 		NodeRecipeResolution: l.NodeRecipeResolution,
+		// The local source a build compares with its recorded pins, read through the
+		// declared set a publication packs and the pin step pins. It reads the
+		// document at the path it is handed and holds no state of the lookup's, so
+		// it needs no lock.
+		LocalSourcePins: LocalSourcePinsAt,
 	}
 }
 
