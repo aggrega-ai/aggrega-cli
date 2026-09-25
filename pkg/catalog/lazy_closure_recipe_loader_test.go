@@ -70,17 +70,18 @@ func TestRequireRecipeLoaderOverTheLazyClosureLookup(t *testing.T) {
 	ws, cacheDir, catalogDir := emptyCatalogWorkspace(t)
 	view := catalog.NewLazyLookup(ws, cacheDir, []string{catalogDir}, nil)
 
-	recipeLoaderWithin(t, view.ClosureLookup(nil, ws, cacheDir, nil), 30*time.Second)
+	recipeLoaderWithin(t, view.ClosureLookup(nil, ws, cacheDir, nil, nil, nil), 30*time.Second)
 }
 
-// The pinned variant is a second constructor of the same wrapper and is what the
-// workspace-socket reconstruction passes, so it is covered on its own footing
-// rather than by inference from the unpinned one.
+// A lookup carrying prior pins is built with a reuse verification rather than
+// without one — the shape the pull's walk and the workspace-socket reconstruction
+// pass — and its base is a differently-configured lookup, so it is covered on its
+// own footing rather than by inference from the one carrying none.
 func TestRequireRecipeLoaderOverThePinnedLazyClosureLookup(t *testing.T) {
 	ws, cacheDir, catalogDir := emptyCatalogWorkspace(t)
 	view := catalog.NewLazyLookup(ws, cacheDir, []string{catalogDir}, nil)
 
-	pinned := view.ClosureLookupWithPins(nil, ws, cacheDir, nil, map[string]catalog.Pin{})
+	pinned := view.ClosureLookup(nil, ws, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{}})
 	recipeLoaderWithin(t, pinned, 30*time.Second)
 }
 
@@ -102,7 +103,7 @@ func TestRequireRecipeLoaderOverTheEagerClosureLookup(t *testing.T) {
 func TestRequireRecipeLoaderSurvivesAPinChange(t *testing.T) {
 	ws, cacheDir, catalogDir := emptyCatalogWorkspace(t)
 	view := catalog.NewLazyLookup(ws, cacheDir, []string{catalogDir}, nil)
-	lookup := view.ClosureLookup(nil, ws, cacheDir, nil)
+	lookup := view.ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 
 	recipeLoaderWithin(t, lookup, 30*time.Second)
 	view.SetPins(map[string]catalog.Pin{})

@@ -322,7 +322,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	}
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 	cacheDir := in.WorkspaceConfig.ResolvedArtifactCacheDir()
-	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals)
+	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals, nil, nil)
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), in.WorkspaceConfig, lookup)
 	if err != nil {
 		return nil, &ClosureError{

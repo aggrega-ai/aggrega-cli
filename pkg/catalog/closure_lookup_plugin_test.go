@@ -72,7 +72,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 
 	// Lazy backing — parity (c).
 	lazy := catalog.NewLazyLookup("", ".aggrega/cache", []string{dir}, nil)
-	lazyLookup := lazy.ClosureLookup(nil, "", ".aggrega/cache", nil)
+	lazyLookup := lazy.ClosureLookup(nil, "", ".aggrega/cache", nil, nil, nil)
 	t.Run("lazy", func(t *testing.T) {
 		check(t, lazyLookup, "lazy")
 		lazyRes, _ := lazyLookup.ResolveCatalogEntity(context.Background(), entityURI, "plugin")

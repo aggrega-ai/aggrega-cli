@@ -278,7 +278,7 @@ spec:
 		t.Fatalf("eager LoadAll: %v", err)
 	}
 	eagerLk := eager.ClosureLookupWithExternals(nil, dir, "", nil)
-	lazyLk := NewLazyLookup(dir, "", []string{dir}, nil).ClosureLookup(nil, dir, "", nil)
+	lazyLk := NewLazyLookup(dir, "", []string{dir}, nil).ClosureLookup(nil, dir, "", nil, nil, nil)
 
 	for _, uri := range []string{"core/server", "server-recipe:1.0.0", "demo/agg"} {
 		er, eerr := eagerLk.ResolveCatalogEntity(context.Background(), uri, "")

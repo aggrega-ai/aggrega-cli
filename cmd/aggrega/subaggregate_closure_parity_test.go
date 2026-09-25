@@ -244,7 +244,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 		view.SetPins(catalog.PinsFromClosure(cl))
 		return view.ClosureRecipeLoader(), nil
 	}
-	pinned := view.ClosureLookupWithPins(nil, root, cacheDir, nil, catalog.PinsFromLockfile(lf))
+	pinned := view.ClosureLookup(nil, root, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(lf)})
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(root, wsCfg, view.PluginColocatedDirs())
 	if rerr := closure.DescendPinnedAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold, nil, catalogArtifacts); rerr != nil {
 		t.Fatalf("DescendPinnedAxes: %v", rerr)
@@ -289,11 +289,11 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 func TestLazyClosureLookupServesAggregateBodies(t *testing.T) {
 	root := t.TempDir()
 	view := catalog.NewLazyLookup(root, filepath.Join(root, ".aggrega", "cache"), nil, nil)
-	lookup := view.ClosureLookup(nil, root, filepath.Join(root, ".aggrega", "cache"), nil)
+	lookup := view.ClosureLookup(nil, root, filepath.Join(root, ".aggrega", "cache"), nil, nil, nil)
 	if _, err := closure.RequireAggregateLoader(lookup); err != nil {
 		t.Fatalf("the lazy closure lookup must satisfy closure.AggregateLoader: %v", err)
 	}
-	pinned := view.ClosureLookupWithPins(nil, root, filepath.Join(root, ".aggrega", "cache"), nil, nil)
+	pinned := view.ClosureLookup(nil, root, filepath.Join(root, ".aggrega", "cache"), nil, nil, &catalog.ReuseVerification{})
 	if _, err := closure.RequireAggregateLoader(pinned); err != nil {
 		t.Fatalf("the pinned lazy closure lookup must satisfy closure.AggregateLoader: %v", err)
 	}

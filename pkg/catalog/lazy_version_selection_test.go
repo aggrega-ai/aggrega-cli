@@ -159,9 +159,9 @@ func TestEveryPathSelectsOneVersionAndHashesItsOwnBytes(t *testing.T) {
 		name   string
 		lookup closure.Lookup
 	}{
-		{"the pull's eager catalog", eager.ClosureLookup(nil, ws, "")},
-		{"the build's lazy view", lazy.ClosureLookup(nil, ws, "", nil)},
-		{"the daemon's per-request view", lazy.ForRequest(nil).ClosureLookup(nil, ws, "", nil)},
+		{"the eager whole-catalog load", eager.ClosureLookup(nil, ws, "")},
+		{"the lazy view a build and a pull resolve through", lazy.ClosureLookup(nil, ws, "", nil, nil, nil)},
+		{"the daemon's per-request view", lazy.ForRequest(nil).ClosureLookup(nil, ws, "", nil, nil, nil)},
 	}
 
 	for _, k := range fixtureKinds {
@@ -274,7 +274,7 @@ func TestEveryReaderOfTheIndexSelectsTheSameVersion(t *testing.T) {
 				lookup closure.Lookup
 			}{
 				{"eager", eager.ClosureLookup(nil, ws, "")},
-				{"lazy", lazy.ClosureLookup(nil, ws, "", nil)},
+				{"lazy", lazy.ClosureLookup(nil, ws, "", nil, nil, nil)},
 			} {
 				res, err := b.lookup.ResolveAggregate(context.Background(), sub)
 				if err != nil || res.NotFound {
@@ -337,7 +337,7 @@ func TestLazyViewAnswersAnUnsatisfiablePinAsTheEagerOneDoes(t *testing.T) {
 		lookup closure.Lookup
 	}{
 		{"eager", eager.ClosureLookup(nil, ws, "")},
-		{"lazy", lazy.ClosureLookup(nil, ws, "", nil)},
+		{"lazy", lazy.ClosureLookup(nil, ws, "", nil, nil, nil)},
 	} {
 		control, err := p.lookup.ResolveCatalogEntity(ctx, "test/svc:1.0.0", "component")
 		if err != nil || control.NotFound {

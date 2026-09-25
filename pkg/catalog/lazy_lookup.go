@@ -501,13 +501,23 @@ type LazyLookup struct {
 	workloadLibraries map[string]types.WorkloadLibrary
 	artifactLibraries map[string]types.ArtifactLibrary
 	plugins           map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
-	// recipeSkips records every catalog file this backing could not index, keyed
-	// by file path, with the reason. It spans more kinds than its name suggests:
-	// recipe, FeatureRecipe, Aggregate, mapping / workload / artifacts / schema
-	// library, plugin, and — recorded on a per-URI cascade read rather than an
-	// enumeration walk — Component and Feature.
+	// recipeSkips records every catalog file this backing refused, keyed by file
+	// path, with the reason. It spans more kinds than its name suggests: recipe,
+	// FeatureRecipe, Aggregate, mapping / workload / artifacts / schema library,
+	// plugin, a document no walk could index, and — recorded on a per-URI cascade
+	// read rather than an enumeration walk — Component and Feature. A file
+	// shadowed by an earlier catalog directory is never recorded here.
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
+
+	// shellClaims records, for each identity the recipe-shell enumeration placed,
+	// the position in catalogDirs of the directory whose file claimed it, or
+	// noCatalogDirectory for a pinned cache slot. It is what tells a later file
+	// declaring the same identity apart as a shadow — claimed by an earlier catalog
+	// directory, an intended first-win override — or as a refusal: two files of one
+	// directory, or a pinned slot, claiming one identity. It is keyed like origins
+	// and rebuilt by the walk that writes it.
+	shellClaims map[string]int
 
 	// origins is the one record of where each enumerated entity was read from,
 	// keyed by entityBytesKey(kind, identityKey): the catalog-directory document
@@ -935,13 +945,22 @@ func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 // fetch; the closure walk reaches the same primitive through the resolution
 // surface, which does carry one.
 func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
-	return l.resolveComponentContext(context.Background(), uri)
+	return l.resolveComponentContext(context.Background(), uri, l.puller)
+}
+
+// localComponent is resolveComponent with the registry tier closed: the
+// catalog-directory index and a cache slot a pin vouches for, and nothing a
+// registry would have to be asked for. It is the same cascade handed no puller,
+// so the two can never disagree about what the local tiers hold.
+func (l *LazyLookup) localComponent(uri string) (types.Component, bool) {
+	return l.resolveComponentContext(context.Background(), uri, nil)
 }
 
 // resolveComponentContext is resolveComponent's cascade, under a caller's
-// context. Tier 3 is a registry pull, so ending the caller's run ends the fetch
-// rather than leaving it to finish for an answer nobody is waiting for.
-func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (types.Component, bool) {
+// context, with its registry tier read through puller — nil closes that tier.
+// Tier 3 is a registry pull, so ending the caller's run ends the fetch rather
+// than leaving it to finish for an answer nobody is waiting for.
+func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, puller OCIPuller) (types.Component, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
@@ -960,7 +979,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 		// request (an honest degraded preview, not a false-green render).
 		return types.Component{}, false
 	}
-	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component")
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
@@ -1094,8 +1113,9 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 		// cascade report a miss, and a miss surfaces downstream as an
 		// unresolvable entity — a symptom that names nothing an author can fix.
 		// Keeping the reason means the surfaces that report the miss can say
-		// which file was refused and why.
-		l.recipeSkips[doc.path] = perr
+		// which file was refused and why — in the refusal the whole-catalog load
+		// records for it, so the reason reads as a build's annotation reads it.
+		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
 		return types.Component{}, false
 	}
 	l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = data
@@ -1116,7 +1136,7 @@ func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	}
 	feat, perr := parseFeatureEntity(data, doc.path)
 	if perr != nil {
-		l.recipeSkips[doc.path] = perr
+		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
 		return types.Feature{}, false
 	}
 	l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = data
@@ -1163,10 +1183,12 @@ func (l *LazyLookup) buildFeatureIndex() {
 // over the same keys, folded through the shared foldFirstWin primitive so
 // the strategies cannot drift on which duplicate resolves.
 //
-// Walk errors and per-file parse failures are silently ignored —
-// the lazy lookup's contract is "find what you can"; broken files
-// surface at full-unmarshal time when a specific URI is requested,
-// not during the index walk.
+// Walk errors and per-file parse failures are not reported here —
+// the lazy lookup's contract is "find what you can"; an indexed but
+// broken file surfaces at full-unmarshal time when a specific URI is
+// requested, and a file too malformed for its header to be read is
+// recorded by the recipe-shell walk (buildRecipeIndex), which every
+// catalog file passes through.
 func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]indexedDocument) {
 	for _, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -1256,8 +1278,10 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				// fatal — a broken UNUSED library never fails an unrelated build.
 				// The skip is recorded in the shared skip map (keyed by path, like
 				// the recipe enumeration) so the daemon surfaces it as a
-				// closure-level diagnostic when the closure references it.
-				l.recipeSkips[path] = perr
+				// closure-level diagnostic when the closure references it — as the
+				// refusal the whole-catalog load records for it, while the error
+				// returned below stays the parse's own.
+				l.recipeSkips[path] = refusalOr(loadRefusal(l.workspaceRoot, data, path), perr)
 				return nil
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
@@ -1394,12 +1418,24 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // but keeps a single recipe-resolution path feeding both the point-lookup
 // (RecipeByURI) and the implements search — no second parse that could drift.
 // Idempotent via recipeIndexBuilt; Reset clears it.
+//
+// It is also where a document no walk of this backing can index is recorded. A
+// document whose header does not read into the shape the walks index by — a
+// `spec` that is not a mapping, say — is invisible to every walk here, so a
+// Release reaching the entity it declares would fail on a reference nothing
+// explains. Every catalog-directory file passes through this walk, so it is
+// recorded here, with the refusal the whole-catalog load records for it
+// (loadRefusal): a file that load would not refuse — one that is no catalog
+// entity at all — records nothing. The record is written without a warning line,
+// because the whole-catalog load warns about none of these either: a refused file
+// is reported by the failure it explains, never on its own.
 func (l *LazyLookup) buildRecipeIndex() {
 	if l.recipeIndexBuilt {
 		return
 	}
 	l.recipeIndexBuilt = true
-	for _, dir := range l.catalogDirs {
+	l.shellClaims = map[string]int{}
+	for position, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
@@ -1417,9 +1453,12 @@ func (l *LazyLookup) buildRecipeIndex() {
 			}
 			var hdr fileHeader
 			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
+				if refusal := loadRefusal(l.workspaceRoot, data, path); refusal != nil {
+					l.recipeSkips[path] = refusal
+				}
 				return nil
 			}
-			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "")
+			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "", position)
 			return nil
 		})
 	}
@@ -1437,7 +1476,8 @@ func (l *LazyLookup) buildRecipeIndex() {
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
 // FeatureRecipe, Aggregate, MappingLibrary, WorkloadLibrary, ArtifactLibrary, or Plugin) and folds it into the hot
 // maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
-// collision (a later duplicate is skipped and recorded). parseData is the YAML to
+// collision (a later duplicate is skipped, and announced as a shadow or recorded
+// as a refusal — see recordShellDuplicate). parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
 // parseData for a Tier-1 catalog file, the whole tar.gz bundle for a Tier-2 recipe
 // cache slot; src labels the source for skip diagnostics. The single fold path
@@ -1469,7 +1509,16 @@ func (l *LazyLookup) buildRecipeIndex() {
 // are held to the Release's lockfile. Every other kind is parsed at src: none of
 // them names content by a path, and an Aggregate's src is its source provenance,
 // which a layout path would move.
-func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot string) {
+//
+// dir is the position in catalogDirs of the directory a Tier-1 file was read
+// from, and noCatalogDirectory for a pinned slot. It decides what a later file
+// declaring an identity already placed is (claimShellIdentity): a shadow when an
+// earlier catalog directory placed it, a refusal otherwise.
+//
+// A Tier-1 file that fails to parse records the refusal the whole-catalog load
+// records for the same file (recordParseRefusal), so every surface reading this
+// backing reports the file in the words a build's own annotation reports it in.
+func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot string, dir int) {
 	local := slot == ""
 	switch kind {
 	case "Recipe":
@@ -1487,11 +1536,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			e, perr = resolveRecipeDocument(parseData, docPath)
 		}
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
 		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
-		foldFirstWin(l.recipes, key, e,
+		claimShellIdentity(l, l.recipes, "Recipe", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
 				l.origins[entityBytesKey("Recipe", key)] = foldedOrigin(src, slot, docPath)
@@ -1499,9 +1548,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 					l.recordedPins.Record(src, pins)
 				}
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
-			})
+			func() error { return fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key) })
 	case "FeatureRecipe":
 		docPath, lerr := contentAnchor(src, slot, rawBytes)
 		if lerr != nil {
@@ -1517,11 +1564,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			e, perr = resolveFeatureRecipeDocument(parseData, docPath)
 		}
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
 		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
-		foldFirstWin(l.featureRecipes, key, e,
+		claimShellIdentity(l, l.featureRecipes, "FeatureRecipe", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
 				l.origins[entityBytesKey("FeatureRecipe", key)] = foldedOrigin(src, slot, docPath)
@@ -1529,82 +1576,187 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 					l.recordedPins.Record(src, pins)
 				}
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
-			})
+			func() error { return fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key) })
 	case "Aggregate":
 		e, perr := parseAggregateEntity(parseData, src)
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
 		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
-		foldFirstWin(l.aggregates, key, e,
+		claimShellIdentity(l, l.aggregates, "Aggregate", key, e, src, parseData, dir,
 			func() {
 				l.origins[entityBytesKey("Aggregate", key)] = foldedOrigin(src, slot, "")
 				l.entityBytes[entityBytesKey("Aggregate", key)] = rawBytes
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
-			})
+			func() error { return fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name) })
 	case "MappingLibrary":
 		e, perr := parseMappingLibraryEntity(parseData, src)
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		foldFirstWin(l.mappingLibraries, e.Metadata.Name, e,
+		claimShellIdentity(l, l.mappingLibraries, "MappingLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
 				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
+			func() error {
+				return fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name)
 			})
 	case "WorkloadLibrary":
 		e, perr := parseWorkloadLibraryEntity(parseData, src)
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		foldFirstWin(l.workloadLibraries, e.Metadata.Name, e,
+		claimShellIdentity(l, l.workloadLibraries, "WorkloadLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes
 				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name))
+			func() error {
+				return fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name)
 			})
 	case "ArtifactLibrary":
 		e, perr := parseArtifactLibraryEntity(parseData, src)
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		foldFirstWin(l.artifactLibraries, e.Metadata.Name, e,
+		claimShellIdentity(l, l.artifactLibraries, "ArtifactLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = rawBytes
 				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate artifact library name %q; this file is shadowed", e.Metadata.Name))
+			func() error {
+				return fmt.Errorf("duplicate artifact library name %q; this file is shadowed", e.Metadata.Name)
 			})
 	case "Plugin":
 		e, perr := parsePluginEntity(parseData, src)
 		if perr != nil {
-			l.recordRecipeSkip(src, perr)
+			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
 		key := entityIndexKey(e.Coordinate(), e.Metadata.Version)
-		foldFirstWin(l.plugins, key, e,
+		claimShellIdentity(l, l.plugins, "Plugin", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("Plugin", key)] = rawBytes
 				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "")
 			},
-			func() {
-				l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
-			})
+			func() error { return fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key) })
 	}
+}
+
+// noCatalogDirectory is the directory position of an entry read from a pinned
+// cache slot rather than from a catalog directory.
+const noCatalogDirectory = -1
+
+// claimShellIdentity folds value into claimed under key, first-win, and records
+// which catalog directory's file claimed the identity (shellClaims). onWin runs
+// for the entry that claims it; a later entry declaring the same identity is
+// handed to recordShellDuplicate with the refusal duplicate describes, built only
+// when there is one.
+func claimShellIdentity[V any](l *LazyLookup, claimed map[string]V, kind, key string, value V, src string, data []byte, dir int, onWin func(), duplicate func() error) {
+	claim := entityBytesKey(kind, key)
+	foldFirstWin(claimed, key, value,
+		func() {
+			l.shellClaims[claim] = dir
+			onWin()
+		},
+		func() { l.recordShellDuplicate(src, data, dir, claim, duplicate()) })
+}
+
+// recordShellDuplicate reports the file src, whose document data declares an
+// identity the enumeration had already placed under claim. dir is the position of
+// that file's catalog directory, noCatalogDirectory for a pinned cache slot, and
+// shellClaims says which directory placed the identity.
+//
+// Where an EARLIER catalog directory placed the identity, the file is shadowed:
+// catalog directories are a first-win precedence stack, so the override is one
+// the workspace asked for, and the identity is held — by the earlier directory's
+// file. It is announced, so the override is never silent, and it is never
+// recorded as a refusal, because a refusal is read as "the catalog holds nothing
+// under this identity", which would be false. The whole-catalog load draws the
+// same line, recording a cross-directory duplicate as a shadow.
+//
+// Anywhere else — two files of one directory, or a pinned slot meeting an
+// identity already placed — the duplicate is a refusal, as the whole-catalog load
+// refuses two files of one directory claiming one identity. Two files of one
+// directory are recorded with that load's own refusal for the second of them
+// (duplicateLoadRefusal); a pinned slot has no counterpart there and is recorded
+// with duplicate. Either way the warning line reads duplicate, unchanged.
+func (l *LazyLookup) recordShellDuplicate(src string, data []byte, dir int, claim string, duplicate error) {
+	claimedBy := l.shellClaims[claim]
+	if dir != noCatalogDirectory && claimedBy != noCatalogDirectory && dir != claimedBy {
+		announceSkip(src, duplicate)
+		return
+	}
+	reason := duplicate
+	if dir != noCatalogDirectory && claimedBy == dir {
+		if winner, ok := l.origins[claim].authoredDocument(); ok {
+			reason = refusalOr(duplicateLoadRefusal(l.workspaceRoot, l.entityBytes[claim], winner, data, src), duplicate)
+		}
+	}
+	if _, already := l.recipeSkips[src]; !already {
+		announceSkip(src, duplicate)
+	}
+	l.recipeSkips[src] = reason
+}
+
+// recordParseRefusal records a document that failed to parse. A catalog-directory
+// document (local) is recorded with the refusal the whole-catalog load records for
+// it, which is the error a build's annotation reports it with; a pinned slot's
+// document has no counterpart in that load and is recorded with the error its own
+// parse raised. The warning line is the parse error either way, unchanged by
+// which refusal is recorded.
+func (l *LazyLookup) recordParseRefusal(src string, data []byte, local bool, perr error) {
+	reason := perr
+	if local {
+		reason = refusalOr(loadRefusal(l.workspaceRoot, data, src), perr)
+	}
+	if _, already := l.recipeSkips[src]; !already {
+		announceSkip(src, perr)
+	}
+	l.recipeSkips[src] = reason
+}
+
+// loadRefusal is the refusal the whole-catalog load records for the
+// catalog-directory document read from path: the error indexFile returns for that
+// document on its own, or nil where the load would index it — a document that is
+// no catalog entity at all among them. It is the one home of what a refused
+// catalog-directory document is recorded as, so a lazy walk refusing or unable to
+// index a document records it exactly as the load a build annotates from does,
+// rather than in its own words for the same failure.
+//
+// The document is read alone, so a duplicate identity is not judged here;
+// duplicateLoadRefusal is the counterpart for two documents of one directory.
+func loadRefusal(workspaceRoot string, data []byte, path string) error {
+	return newPassOneCatalog(workspaceRoot).indexFile(data, path)
+}
+
+// duplicateLoadRefusal is the refusal the whole-catalog load records for the
+// document read from path when winner, read from winnerPath in the same catalog
+// directory, already declares its identity: the error indexFile returns for the
+// second of the two, indexed after the first. It is nil where that load would
+// not refuse the pair, including where it would refuse winner itself.
+func duplicateLoadRefusal(workspaceRoot string, winner []byte, winnerPath string, data []byte, path string) error {
+	c := newPassOneCatalog(workspaceRoot)
+	if c.indexFile(winner, winnerPath) != nil {
+		return nil
+	}
+	return c.indexFile(data, path)
+}
+
+// refusalOr is refusal, or fallback where refusal is nil. It serves a site that
+// has already met a failure of its own: the load's refusal is what it records,
+// and its own error remains the record should the load index the document after
+// all, so a refused document is never recorded with no reason.
+func refusalOr(refusal, fallback error) error {
+	if refusal != nil {
+		return refusal
+	}
+	return fallback
 }
 
 // foldPinnedCacheEntities folds every lockfile-pinned Tier-2 cache slot whose kind
@@ -1672,7 +1824,7 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot)
 			continue
 		}
-		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot)
+		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, noCatalogDirectory)
 	}
 }
 
@@ -1724,9 +1876,15 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, sl
 // matters and is written unconditionally; the warning follows it.
 func (l *LazyLookup) recordRecipeSkip(source string, err error) {
 	if _, already := l.recipeSkips[source]; !already {
-		fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", source, err.Error())
+		announceSkip(source, err)
 	}
 	l.recipeSkips[source] = err
+}
+
+// announceSkip is the one-line tolerance warning for a file the recipe-shell
+// enumeration did not place, whether it was refused or shadowed.
+func announceSkip(source string, err error) {
+	fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", source, err.Error())
 }
 
 // recordShadowedComponent emits the one-line first-win notice when a later
@@ -1910,8 +2068,14 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 }
 
 // componentAncestry is this view's ComponentAncestryResolver: it walks the
-// extends chain over the Tier-1/2/3 entity cascade, which is where this
-// backing's Components live.
+// extends chain over this view's local copies of its Components — the
+// catalog-directory index and a cache slot a pin vouches for — and never asks a
+// registry, whatever puller the view was built with. The mapping-consistency gate
+// it serves runs before any dependency is resolved, and reads only what is
+// already on this machine, as the gate over a whole-catalog load reads only that
+// load: so a pull, whose view carries the network puller, judges its mapping
+// table without reaching out, and a mapped type whose base is known only to a
+// registry is judged as the whole-catalog gate judges it.
 //
 // The walk reads the RAW cascade rather than the extends-merged accessor, for two
 // reasons. Ancestry is a property of the authored extends links, and the merge
@@ -1927,7 +2091,7 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 // assert form reaches the cascade only through it, so both entries arrive here
 // under the lock.
 func (l *LazyLookup) componentAncestry(componentType string) ([]string, error) {
-	return componentAncestryOver(componentType, l.resolveComponent)
+	return componentAncestryOver(componentType, l.localComponent)
 }
 
 // VerifyRecipeResolution exposes the build-side resolution-completeness halt (the
@@ -2138,10 +2302,14 @@ func (l *LazyLookup) LibraryName(axis closure.LibraryAxis, uri string) (string, 
 }
 
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
-// catalog file the lazy enumeration could not index (a recipe/FR/aggregate/
-// provider/mapping-library that failed to parse, a duplicate identity, or a
-// schema library that failed its forbidden-keyword / template-body checks), plus
-// every Component or Feature file a cascade read has refused so far. A refused
+// catalog file the lazy enumeration refused (a recipe/FR/aggregate/
+// provider/mapping-library that failed to parse, a duplicate identity within one
+// catalog directory, a schema library that failed its forbidden-keyword /
+// template-body checks, or a document too malformed for any walk to index), plus
+// every Component or Feature file a cascade read has refused so far. Each is
+// recorded with the refusal the whole-catalog load records for the same file. A
+// file shadowed by an earlier catalog directory is not here: its identity is
+// held, by that directory's file, so it is no refusal. A refused
 // Component or Feature is recorded when its URI is read rather than during an
 // enumeration walk, so it appears once the resolution that needed it has been
 // attempted — which is exactly when a caller reports the resulting miss. The
@@ -2489,59 +2657,69 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 }
 
 // ClosureLookup returns a closure.Lookup that walks a Release's closure over the
-// LAZY backing — the daemon's replacement for the eager whole-catalog
-// `*Catalog.ClosureLookupWithExternals`. No catalog is loaded up front:
-// Component/Feature resolve per-URI through the Tier-1 (filesystem index) →
-// Tier-2 (verified cache) → Tier-3 (the SUPPLIED puller) cascade, and
-// Recipe/FeatureRecipe/Aggregate/Plugin/SchemaLibrary/MappingLibrary resolve
-// through the tolerantly-enumerated recipe shell (also with Tier-2/3). A broken
+// LAZY backing. No catalog is loaded up front. A Component or Feature is answered
+// from this view's local copies only — the catalog-directory index (Tier-1) and a
+// cache slot a pin vouches for (Tier-2) — and every other kind, and every
+// registry read of any kind, is answered by the base: the lookup over the
+// tolerantly-enumerated recipe shell, which consults the externals, the registry
+// seeds, every other kind's catalog-directory tier and the embedded providers
+// before it reads the cache — under the reuse verification where one is supplied
+// — or asks a registry through the SUPPLIED puller. So a reference a catalog
+// directory holds under any kind is answered from that directory before any
+// registry is asked, and a registry entity is resolved by one cascade — the prior
+// pins honoured, its manifest digest recorded — whatever its kind. A broken
 // out-of-closure entity is never enumerated-fatal; the digests returned hash the
 // SAME authored bytes a build/pull hashed (retained in entityBytes), so a serve
-// drift verify compares like-for-like. Hermeticity follows the supplied puller:
-// the daemon passes nil (Tier-3 disabled), matching the eager path it replaces.
+// drift verify compares like-for-like. Hermeticity follows the supplied puller: a
+// build, a serve and a preview pass nil, so no registry tier exists for them, and
+// a pull passes the network puller it fetches through.
 //
 // The closure walker resolves entity URIs structurally (Aggregate / Manifest /
 // Release references); it does not introspect schema bodies or Component extends,
 // so the per-URI resolution here deliberately skips extends-merge (the digest is
 // of the raw authored entity, exactly as the eager closure lookup hashed).
-func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte) closure.Lookup {
+//
+// It is the one way this view builds a closure lookup, and every caller states
+// the same four things through it, each nil where the caller has none:
+//
+//   - registrySeeds pre-resolves a registry entity the caller already fetched — a
+//     pull's top-level Aggregate resolved from a registry — so the walk records it
+//     as the registry entity it is rather than as a version-less external;
+//   - reuse makes the lookup hold a prior lockfile's pins. Its PriorPins are
+//     honoured exactly as ClosureLookupWithReuse honours them: a pinned reference
+//     resolves to the pinned version, a cache slot is reused only while it still
+//     holds the pin, and a registry serving other bytes under a pinned version
+//     halts. They also address the content-addressed slot of a pinned plugin .wasm,
+//     which a hermetic (nil-puller) consumer can reach no other way, because that
+//     slot is keyed by the content digest a pin supplies. The build and serve
+//     paths supply none and reuse cache slots unconditionally, against the
+//     closure-level drift gate.
+func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, registrySeeds map[string]closure.Resolution, reuse *ReuseVerification) closure.Lookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return &lazyClosureLookup{
-		l:      l,
-		puller: puller,
-		base:   l.recipeCatalog().ClosureLookupWithExternals(puller, workspaceRoot, cacheDir, externals),
+		l:    l,
+		base: l.recipeCatalog().ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, reuse),
 	}
 }
 
-// ClosureLookupWithPins returns a closure.Lookup like ClosureLookup whose
-// plugin-artifact resolution HONORS the supplied pins: a .wasm artifact is read
-// from the content-addressed cache slot its pin names and self-verified before it
-// is returned, so a hermetic (nil-puller) consumer resolves a pinned artifact
-// offline. The default ClosureLookup leaves the artifact-resolution pins nil (the
-// build and serve paths reuse cache slots unconditionally against the closure-level
-// drift gate), which cannot address a plugin .wasm slot — that slot is keyed by the
-// content digest a pin supplies. The workspace-socket reconstruction uses this so
-// the socket .wasm the lockfile pins resolves from the cache without a fetch.
-func (l *LazyLookup) ClosureLookupWithPins(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, pins map[string]Pin) closure.Lookup {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return &lazyClosureLookup{
-		l:      l,
-		puller: puller,
-		base:   l.recipeCatalog().ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, nil, &ReuseVerification{PriorPins: pins}),
-	}
-}
-
-// lazyClosureLookup composes Component/Feature resolution over the lazy cascade
-// with the recipe-shell-backed catalogLookup (base) for every other kind. The
-// shell's Components/Features maps are empty (those kinds stay on-demand), so
-// Component/Feature are tried here FIRST; everything else falls through to base,
-// which serves Recipe/FR/Aggregate/Plugin at Tier-1 and all kinds at Tier-2/3.
+// lazyClosureLookup composes Component/Feature resolution over the view's local
+// copies with the recipe-shell-backed catalogLookup (base) for everything else.
+// The shell's Components/Features maps are empty (those kinds stay on-demand), so
+// the local Component/Feature copies are tried here FIRST; everything else falls
+// through to base, which serves Recipe/FR/Aggregate/Plugin at Tier-1 and every
+// kind at Tier-2/3.
+//
+// It holds no puller of its own, and that is what keeps a registry read to one
+// cascade. The base holds the puller the lookup was built with; were the probe
+// here to ask a registry too, a reference a catalog directory holds as a Recipe,
+// a FeatureRecipe or a Plugin entity would be asked of a registry as a Component
+// and as a Feature before the base found it locally, and a registry-published
+// Component resolved here would skip the base's pin honouring and carry no
+// manifest digest for the signature check to verify.
 type lazyClosureLookup struct {
-	l      *LazyLookup
-	puller OCIPuller
-	base   closure.Lookup
+	l    *LazyLookup
+	base closure.Lookup
 }
 
 // The recipe axis is reached by assertion rather than through the Lookup method
@@ -2557,17 +2735,18 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindH
 	// alias the lookup's maps), so it takes the lookup lock here.
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
-	// Route by the collection-site kind when known, so a Feature is not first
-	// attempted at a Component location (a wasted registry miss); fall back to the
-	// cascade when the hint is absent or names a kind this lazy path does not
-	// resolve directly (recipe/provider → base).
+	// Route by the collection-site kind when known, so a Feature is not read at a
+	// Component location nor a Component at a Feature one; fall back to both local
+	// probes when the hint is absent or names a kind this lazy path does not resolve
+	// directly (recipe/provider → base). Neither probe reads a registry, so an
+	// answer this path cannot give locally is the base's to give.
 	if kindHint != "feature" {
-		if res, ok := x.l.resolveComponentForClosure(ctx, uri, x.puller); ok {
+		if res, ok := x.l.resolveComponentForClosure(uri); ok {
 			return res, nil
 		}
 	}
 	if kindHint != "component" {
-		if res, ok := x.l.resolveFeatureForClosure(ctx, uri, x.puller); ok {
+		if res, ok := x.l.resolveFeatureForClosure(uri); ok {
 			return res, nil
 		}
 	}
@@ -2632,14 +2811,18 @@ func (x *lazyClosureLookup) ResolvePlugin(ctx context.Context, uri, version stri
 	return x.base.ResolvePlugin(ctx, uri, version)
 }
 
-// resolveComponentForClosure resolves a Component URI for the closure walk —
-// Tier-1 (filesystem index) → Tier-2 (verified cache) → Tier-3 (supplied puller),
-// retaining the raw bytes for the digest. No extends-merge (the walk is
-// structural). A non-Component cache slot (kind mismatch) falls through so the
-// caller routes the URI to the recipe shell. Returns ok=false on cascade
-// exhaustion. A tier2Skip (drifted cache) returns false — the entity is
-// unavailable for this request, surfaced upstream rather than self-healed.
-func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string, puller OCIPuller) (closure.Resolution, bool) {
+// resolveComponentForClosure resolves a Component URI for the closure walk from
+// this view's local copies — Tier-1 (filesystem index) → Tier-2 (a cache slot a
+// pin vouches for) — retaining the raw bytes for the digest. No extends-merge
+// (the walk is structural). A non-Component cache slot (kind mismatch) falls
+// through so the caller routes the URI to the recipe shell. Returns ok=false when
+// neither copy holds the Component, which leaves the registry to the base. A
+// tier2Skip (drifted cache) returns false — the entity is unavailable for this
+// request, surfaced upstream rather than self-healed.
+//
+// It has no registry tier, and that is deliberate rather than an omission: see
+// lazyClosureLookup for why every registry read of the walk belongs to the base.
+func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), comp.Metadata.Version, closure.ResolutionPathCatalog), true
 	}
@@ -2650,24 +2833,13 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 				return cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest), true
 			}
 		}
-	} else if outcome == tier2Skip {
-		return closure.Resolution{}, false
-	}
-	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
-		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
-			if comp, perr := parseComponentEntity(doc, path); perr == nil {
-				key := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
-				l.entityBytes[entityBytesKey("Component", key)] = bytes
-				return l.closureResolution("Component", key, closureVersion(uri, comp.Metadata.Version), closure.ResolutionPathRegistry), true
-			}
-		}
 	}
 	return closure.Resolution{}, false
 }
 
 // resolveFeatureForClosure mirrors resolveComponentForClosure for the Feature
-// surface.
-func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, puller OCIPuller) (closure.Resolution, bool) {
+// surface, and reads no registry for the same reason.
+func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), feat.Metadata.Version, closure.ResolutionPathCatalog), true
 	}
@@ -2676,17 +2848,6 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest), true
-			}
-		}
-	} else if outcome == tier2Skip {
-		return closure.Resolution{}, false
-	}
-	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
-		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
-			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
-				key := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
-				l.entityBytes[entityBytesKey("Feature", key)] = bytes
-				return l.closureResolution("Feature", key, closureVersion(uri, feat.Metadata.Version), closure.ResolutionPathRegistry), true
 			}
 		}
 	}

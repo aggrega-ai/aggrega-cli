@@ -43,7 +43,8 @@ import (
 type Phase int
 
 const (
-	// PhaseLoadCatalog is the tolerant catalog load.
+	// PhaseLoadCatalog is the opening of the catalog view the run resolves through,
+	// and the check of the Manifest's mapping table against it.
 	PhaseLoadCatalog Phase = iota
 	// PhaseDependencies is the discovery step that selects each reference's
 	// version.
@@ -541,7 +542,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
 	}
-	// The aggregate resolve is deferred until after the catalog loads (below) so
+	// The aggregate resolve is deferred until the catalog view is opened (below) so
 	// its identity cascade can reach the catalog tier — this operation must
 	// resolve the top-level aggregate the same way a build does, or a
 	// catalog-resident aggregate would build but not pin (lock/build divergence).
@@ -559,25 +560,6 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// invocation and a build's automatic fill derive the identical stack under the
 	// same config.
 	dirs := rw.ResolveCatalogDirs(cfg.CatalogDirs)
-	// Tolerant Pass-1: a file that fails to parse/index is skipped (recorded), not
-	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
-	// run. A cross-document $ref to a remote library cannot expand at load (Pass-2)
-	// because the library is not yet fetched — the closure walk + library discovery
-	// below acquire it; closure-scoped Pass-2 (through the pinned lazy lookup) is
-	// the validation gate, scoped to what the Release reaches.
-	report.phase(PhaseLoadCatalog)
-	cat, skipped, err := catalog.LoadPassOneTolerant(workspaceRoot, cacheDir, dirs...)
-	if err != nil {
-		return Result{}, fmt.Errorf("catalog load: %w", err)
-	}
-	// Verify the Manifest's mapping table is consistent before the closure walk,
-	// so the run halts on a mismatched mapping with the same Loud Guardrail the
-	// build does (lock/build parity).
-	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path, cat.ComponentAncestry); err != nil {
-		return Result{}, err
-	}
-
-	report.phase(PhaseDependencies)
 	puller := cfg.Puller
 	if puller == nil {
 		// The discovery step consults the local registry index so a version recorded
@@ -587,6 +569,27 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// discovery step.
 		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, registryindex.NewScreen(rw, wsCfg.DefaultRegistry, cfg.DiagOut))
 	}
+	// The catalog is read through the one lazy view a build resolves through, and
+	// through nothing else: every pass below — the aggregate resolve, the closure
+	// walk, library discovery, the descents, closure-scoped validation and the
+	// source descent — asks this view, so what this run pins is what the build that
+	// reads its lockfile resolves. The view resolves a Component or Feature only
+	// when a resolution reaches it and enumerates the other kinds tolerantly, so a
+	// broken catalog entity OUTSIDE this Release's closure never fails the run,
+	// while one inside it fails the resolution that needed it, with the refusals the
+	// view recorded handed to the failure annotation. It carries the network
+	// puller, because this operation's job is to fetch and cache what no local tier
+	// holds.
+	report.phase(PhaseLoadCatalog)
+	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller)
+	// Verify the Manifest's mapping table is consistent before the closure walk,
+	// so the run halts on a mismatched mapping with the same Loud Guardrail the
+	// build does (lock/build parity).
+	if err := lazyView.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+		return Result{}, err
+	}
+
+	report.phase(PhaseDependencies)
 	// The registry (Tier-3) seam for a bare-name top-level spec.aggregate that the
 	// same-directory scan and the catalog both miss: fetch + cache it by identity,
 	// pinning its metadata.version (identity), not the OCI tag. Resolution-only —
@@ -608,7 +611,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: document, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
 	}
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), registryFetch)
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), registryFetch)
 	if err != nil {
 		return Result{}, fmt.Errorf("load aggregate: %w", err)
 	}
@@ -730,7 +733,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err := stopped(ctx); err != nil {
 		return Result{}, err
 	}
-	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, pinReuse.Verification)
+	lookup := lazyView.ClosureLookup(puller, workspaceRoot, cacheDir, externals, registrySeeds, pinReuse.Verification)
 	report.phase(PhaseClosure)
 	// Reference shape is judged before the walk, for the same reason the shared
 	// closure resolver judges it: a mapping value the reference grammar cannot
@@ -738,11 +741,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// catalog as absent. This path computes its own closure rather than going
 	// through the shared resolver, so it carries the check itself.
 	if faults := resolver.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
-		return Result{}, cfg.annotate(faults[0], skipped)
+		return Result{}, cfg.annotate(faults[0], lazyView.SkippedEntities())
 	}
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
 	if err != nil {
-		return Result{}, cfg.annotate(fmt.Errorf("resolve: %w", err), skipped)
+		return Result{}, cfg.annotate(fmt.Errorf("resolve: %w", err), lazyView.SkippedEntities())
 	}
 	cl.ReleaseDocuments = releaseDocs
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
@@ -753,14 +756,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err := closure.ResolveProviderSocketEntities(ctx, &cl, wsCfg.Plugins.Providers, lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: %w", err)
 	}
-	// The determinism-wired lazy lookup: the post-fetch consumers — closure-
-	// library discovery, closure-scoped validation, and the source-descent
-	// SubAggregateLoader below — resolve the resolved closure directly, with no
-	// cache→catalog bridge. REAL puller (this operation's job is to fetch + cache);
-	// pins come from the freshly-computed closure, because no lockfile exists yet —
-	// this operation WRITES it — so a Tier-2 hit is verified against the version the
-	// walk just resolved.
-	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller)
+	// The post-fetch consumers — closure-library discovery, closure-scoped
+	// validation, and the source-descent SubAggregateLoader below — read the view
+	// pinned to the closure just resolved, with no cache→catalog bridge. The pins
+	// come from that closure rather than from a lockfile, because this operation
+	// WRITES the lockfile, so a Tier-2 hit is verified against the version the walk
+	// just resolved.
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
 
 	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
@@ -833,8 +834,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	// The recipe loader handed in is taken before the sub-aggregate pass. It reads the
 	// view's recipe set as it stands, and nothing changes that set until the re-fold:
-	// the sub-aggregate pass walks the reconciling lookup, which does not hold the
-	// view, and no pin set is installed on the view before the entity pass reads it.
+	// the sub-aggregate pass walks the reconciling lookup, which reads the view but
+	// installs no pins on it, and no pin set is installed on the view before the
+	// entity pass reads it.
 	if err := closure.DescendPinnedAxes(ctx, &cl, aggLoader, lazyView.ClosureRecipeLoader(), lookup, lookup,
 		providerBindResolver, refold, catalogArtifacts, catalogArtifacts); err != nil {
 		return Result{}, fmt.Errorf("resolve: %w", err)
@@ -954,7 +956,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// library, fails loudly here; an out-of-closure break is never validated.
 	report.phase(PhaseValidate)
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
-		return Result{}, cfg.annotate(err, skipped)
+		return Result{}, cfg.annotate(err, lazyView.SkippedEntities())
 	}
 
 	// Per-component source resolution. Build the graph through the compiler's

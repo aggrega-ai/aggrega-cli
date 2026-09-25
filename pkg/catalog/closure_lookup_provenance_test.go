@@ -357,21 +357,21 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 			return eager(t).ClosureLookupWithReuse(nil, ws, cacheDir, nil, nil, &ReuseVerification{PriorPins: pins})
 		}},
 		{name: "lazy ClosureLookup with no pins", build: func(t *testing.T) closure.Lookup {
-			return NewLazyLookup(ws, cacheDir, []string{dir}, nil).ClosureLookup(nil, ws, cacheDir, nil)
+			return NewLazyLookup(ws, cacheDir, []string{dir}, nil).ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 		}},
 		{name: "lazy ClosureLookup", build: func(t *testing.T) closure.Lookup {
-			return pinnedView().ClosureLookup(nil, ws, cacheDir, nil)
+			return pinnedView().ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 		}},
 		{name: "lazy view pinned to its lockfile", build: func(t *testing.T) closure.Lookup {
 			view := NewLazyLookup(ws, cacheDir, []string{dir}, nil)
 			view.SetPins(PinsFromLockfile(lf))
-			return view.ClosureLookup(nil, ws, cacheDir, nil)
+			return view.ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 		}},
-		{name: "lazy ClosureLookupWithPins", addressesArtifactPins: true, build: func(t *testing.T) closure.Lookup {
-			return pinnedView().ClosureLookupWithPins(nil, ws, cacheDir, nil, pins)
+		{name: "lazy ClosureLookup with a reuse verification", addressesArtifactPins: true, build: func(t *testing.T) closure.Lookup {
+			return pinnedView().ClosureLookup(nil, ws, cacheDir, nil, nil, &ReuseVerification{PriorPins: pins})
 		}},
 		{name: "lazy request view", build: func(t *testing.T) closure.Lookup {
-			return NewLazyLookup(ws, cacheDir, []string{dir}, nil).ForRequest(pins).ClosureLookup(nil, ws, cacheDir, nil)
+			return NewLazyLookup(ws, cacheDir, []string{dir}, nil).ForRequest(pins).ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 		}},
 	}
 

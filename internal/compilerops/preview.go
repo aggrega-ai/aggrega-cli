@@ -889,7 +889,8 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	// sub-aggregate pass keeps the resolved lookup, which carries the Release's
 	// external documents that pass reads. One pinned lookup serves every plugin
 	// pass, the workspace-socket one below included.
-	pinned := view.ClosureLookupWithPins(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.lockfile))
+	pinned := view.ClosureLookup(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, nil,
+		&catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(in.lockfile)})
 	// The artifact of a Plugin entity authored in a catalog directory is resolved from
 	// this machine by the same question the pull asked when it wrote the lockfile, so
 	// a transform-role attachment authored there reconstructs to the pin the pull
