@@ -203,8 +203,8 @@ func TestValidateReadsTheContentCacheAtTheWorkspaceRoot(t *testing.T) {
 		if vr.RunErr == nil {
 			t.Fatalf("the attachment resolved with no workspace root supplied; its bytes live only under %s, so nothing at the working directory could have produced them", f.root)
 		}
-		if !errors.Is(vr.RunErr, oci.ErrFetchNotFound()) {
-			t.Fatalf("want the cascade to report the plugin as not found, since the cache address it composed points at the working directory; got: %v", vr.RunErr)
+		if !errors.Is(vr.RunErr, pluginpath.ErrPluginArtifactNotFound()) {
+			t.Fatalf("want the cascade to report the plugin's artifact as not found, since the cache address it composed points at the working directory; got: %v", vr.RunErr)
 		}
 		if !strings.Contains(vr.RunErr.Error(), cacheAnchorCoordinate) {
 			t.Errorf("the failure does not name the attachment it was resolving: %v", vr.RunErr)

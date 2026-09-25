@@ -224,10 +224,10 @@ type Inputs struct {
 
 	// PluginPathLookup resolves a pipeline step's plugin URI to its verified
 	// .wasm bytes. When nil, RunPipeline binds the shared plugin-resolution
-	// cascade (embed → colocated → local → cache → registry) configured from the
+	// cascade (embed → colocated → local → cache) configured from the
 	// build context — the lockfile digest pins, the workspace root + cache dir,
-	// and the catalog's co-located artifact directories, with a nil puller (the
-	// build is hermetic). A caller may override it to point a fixture's plugin URI at a
+	// and the catalog's co-located artifact directories; every tier reads bytes
+	// already on the machine. A caller may override it to point a fixture's plugin URI at a
 	// built artifact. The renderer's per-node pipeline executor uses it to load
 	// each step's guest; a nil lookup reaching the renderer leaves pipelines
 	// validated-but-not-executed.
@@ -1506,9 +1506,9 @@ func RunTier4Pipeline(
 // buildPluginResolver constructs the hermetic build-time plugin-resolution
 // cascade from the pipeline inputs: the catalog's co-located artifact
 // directories, the workspace root + resolved cache directory, and the pin source
-// the caller wrote onto the inputs. The
-// puller is left nil — the build never fetches from a registry (AOT purity), so
-// a cache miss is a loud halt rather than a network round-trip.
+// the caller wrote onto the inputs. The cascade reads only bytes already on the
+// machine — the build never fetches from a registry (AOT purity) — so an artifact
+// no tier holds is a loud halt rather than a network round-trip.
 //
 // The pins and the posture both come from that source and are never derived here,
 // so this function cannot turn a caller that supplied no source into one that
@@ -1530,10 +1530,23 @@ func RunTier4Pipeline(
 // guests resolves them from beside their catalog entities; nil at a socket with
 // no catalog access, which disables that tier.
 func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginpath.Resolver {
-	return inputs.PluginPins.Resolver(pluginpath.ResolutionContext{
+	return PluginResolver(inputs.PluginPins, inputs.WorkspaceRoot, *inputs.WorkspaceConfig, colocatedDirs)
+}
+
+// PluginResolver constructs the plugin-resolution cascade a build loads plugin
+// bytes through, over the tier sources a workspace supplies: the catalog's
+// co-located artifact directories, and the content cache addressed at the
+// workspace root. It is the one assembly of those sources, so a caller asking the
+// build's question outside a build — a pull asking whether the artifact of a
+// Plugin entity authored in a catalog directory can be read — asks the same
+// cascade over the same sources rather than a second reading of either. pins
+// states where the construction's recorded digests come from and fixes its
+// posture.
+func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]string) pluginpath.Resolver {
+	return pins.Resolver(pluginpath.ResolutionContext{
 		ColocatedDirs: colocatedDirs,
-		WorkspaceRoot: inputs.WorkspaceRoot,
-		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
+		WorkspaceRoot: workspaceRoot,
+		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
 	})
 }
 
@@ -1813,10 +1826,10 @@ func RunPipeline(
 			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —
 			// resolves to its verified .wasm bytes: the entity-front translates the
 			// entity URI to its spec.plugin artifact reference, then the shared
-			// cascade (embed → colocated → local → cache → registry) resolves the
-			// artifact. The build configures the cascade hermetic (nil puller) with
-			// the lockfile digest pins keyed by the artifact reference, so a cache
-			// miss is a loud halt and a drifted artifact halts on the pin. The
+			// cascade (embed → colocated → local → cache) resolves the
+			// artifact. The build configures the cascade with the lockfile digest
+			// pins keyed by the artifact reference, so an artifact no tier holds is a
+			// loud halt and a drifted artifact halts on the pin. The
 			// per-step plugin loads through the describe() gate at execution. A
 			// caller-supplied override (e.g. a fixture pointing a plugin URI at a
 			// built artifact) wins when present.

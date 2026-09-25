@@ -16,7 +16,10 @@
 //	                directory (the offline path when nothing is embedded)
 //	1  local      — an explicit ./ or ../ filesystem path (or an absolute path)
 //	2  cache      — the workspace content cache (a previously-pulled artifact)
-//	3  registry   — an OCI pull (lock/pull time only; never at hermetic build)
+//
+// Every tier reads bytes already on the machine; the cascade fetches nothing. An
+// artifact a registry serves reaches it only through the cache a pull filled, and a
+// reference no tier answers halts with ErrPluginArtifactNotFound.
 //
 // Every tier yields the resolved bytes plus a source-tier tag. When the caller
 // supplies a digest pin for the URI (the build path, reading the lockfile), the
@@ -66,13 +69,12 @@ const (
 	TierColocated Tier = "colocated" // 0b
 	TierLocal     Tier = "local"     // 1
 	TierCache     Tier = "cache"     // 2
-	TierRegistry  Tier = "registry"  // 3
 )
 
 // resolutionCascade lists the sources the cascade consults, in precedence order.
 // The diagnostic that reports exhaustion renders this slice rather than repeating
 // the names, so the message cannot claim a cascade the resolver does not walk.
-var resolutionCascade = []Tier{TierEmbed, TierColocated, TierLocal, TierCache, TierRegistry}
+var resolutionCascade = []Tier{TierEmbed, TierColocated, TierLocal, TierCache}
 
 // cascadeNames renders the consulted sources for the exhaustion diagnostic.
 func cascadeNames() string {
@@ -101,8 +103,6 @@ func (t Tier) Source() closure.ResolutionSource {
 		return closure.SourceLocal
 	case TierCache:
 		return closure.SourceCacheReuse
-	case TierRegistry:
-		return closure.SourceFetchedFresh
 	}
 	return ""
 }
@@ -315,20 +315,40 @@ var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-misma
 		"comparison runs, so what it reports is an integrity comparison that did not hold."),
 })
 
+// ErrPluginArtifactNotFound reports that a plugin's .wasm artifact resolved through
+// none of the sources the cascade consults: it is not compiled into the binary, not
+// beside its Plugin entity in a catalog directory, not at an explicit path, and not
+// in the workspace content cache. Every one of those is a read of bytes already on
+// the machine, so the condition says only that the bytes are absent; it states no
+// fetch, because the cascade performs none.
+//
+// It is raised in two places, and both report the same absence. A resolution that
+// exhausts the cascade raises it wherever a plugin is loaded. A pull raises it
+// earlier, before it writes anything, for a Plugin entity authored in a catalog
+// directory whose artifact no tier holds (see CheckCatalogArtifact): such an entity
+// is never pinned, so no later pull can supply its artifact, and the pull is the
+// step that can name the file to place.
+func ErrPluginArtifactNotFound() error { return errPluginArtifactNotFound }
+
+var errPluginArtifactNotFound = cerrors.Register("plugin-artifact-not-found", cerrors.Meta{
+	ShortCode: "E0306",
+	Message:   "plugin artifact not found on this machine",
+	RulePlace: cerrors.RuleNoStageReaches("Plugin resolution evaluates the rule, when a socket loads a plugin and when a pull " +
+		"resolves a Plugin entity authored in a catalog directory: the artifact the entity names has to be " +
+		"readable from the binary, beside the entity, at an explicit path, or from the content cache. Both " +
+		"moments come ahead of every declared stage, so no stage holds the reference or the sources it is " +
+		"read from."),
+})
+
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each
 // socket binds: the render pipeline binds a build-configured Resolver's Resolve
 // method; the linter binds a no-pins Resolver carrying its --plugin override.
 //
 // The seam carries no cancellation parameter, so a resolution reached through it
-// cannot be ended by the caller that started it. That bound is real but narrow,
-// and the two halves of why are worth stating together. Of the five tiers, four
-// read bytes already on the machine — from the binary, from a catalog directory,
-// from an explicit path, from the content cache — and none of them is an
-// operation there is anything to stop. Only the registry tier performs work worth
-// ending, and it is reached only from a Resolver a caller built with a Puller.
-// So a caller that can end a registry pull calls ResolveContext, which takes the
-// cancellation parameter this type does not; a caller that binds this seam is by
-// construction resolving from the local tiers.
+// cannot be ended by the caller that started it. That bound costs nothing: every
+// tier reads bytes already on the machine — from the binary, from a catalog
+// directory, from an explicit path, from the content cache — and none of them is
+// an operation there is anything to stop.
 type Lookup func(uri string) (ResolvedPlugin, error)
 
 // Resolver carries the per-invocation resolution context the cascade consults.
@@ -336,12 +356,12 @@ type Lookup func(uri string) (ResolvedPlugin, error)
 // in another package cannot hand-populate an under-wired copy; the sole
 // construction path threads the tier sources and pin posture in one place. A
 // Resolver built from a zero ResolutionContext under PinPostureNone resolves
-// only the embed and local tiers (no colocated dirs, no cache, no registry, no
-// pins) — the minimum a caller with no workspace context can do.
+// only the embed and local tiers (no colocated dirs, no cache, no pins) — the
+// minimum a caller with no workspace context can do.
 type Resolver struct {
 	// colocatedDirs maps a plugin's artifact reference to the on-disk directory
 	// holding its co-located .wasm — the module laid down beside its Plugin
-	// entity in a catalog directory. It is the offline resolution path (Tier 0c)
+	// entity in a catalog directory. It is the offline resolution path (Tier 0b)
 	// for a build that embeds no core guests: the .wasm is read from the catalog
 	// directory the entity was indexed from, under the filename PluginLeaf
 	// derives from the reference. Key is the artifact reference the
@@ -383,11 +403,6 @@ type Resolver struct {
 	// publish-time linter path where nothing is pinned yet.
 	bundleDigests map[string]string
 
-	// puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
-	// build path, where a cache miss is a loud halt rather than a network
-	// fetch. The pull/lock path supplies a real puller.
-	puller Puller
-
 	// override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Returned as local-tier bytes.
 	override string
@@ -402,19 +417,11 @@ type Resolver struct {
 	expectsRecordedIdentity bool
 }
 
-// Puller fetches a plugin artifact's bytes from a registry by URI. It is the
-// Tier-3 capability, injected so this package makes no network call itself and
-// the hermetic build path can leave it nil.
-type Puller interface {
-	PullPlugin(ctx context.Context, uri string) ([]byte, error)
-}
-
-// ociNotWiredHint is woven into a Tier-exhaustion error for an OCI URI when no
-// puller is wired (the hermetic build path) so the message points at the fix —
-// pull first, or point a local path at the artifact — rather than
-// reading as an unexplained miss.
-const ociNotWiredHint = "an OCI plugin URI requires a prior `aggrega pull --release <release>` (so its bytes are cached) " +
-	"or an explicit local path; the hermetic build does not fetch from a registry"
+// ociReferenceHint is woven into the exhaustion error for a reference shaped like
+// a registry location, so the message points at the fix — pull first, or point a
+// local path at the artifact — rather than reading as an unexplained miss.
+const ociReferenceHint = "an OCI plugin URI requires a prior `aggrega pull --release <release>` (so its bytes are cached) " +
+	"or an explicit local path; plugin resolution does not fetch from a registry"
 
 // unsetMsg is the single-sourced diagnostic for the no-URI / no-override case.
 // The substring "no plugin path configured" is load-bearing: callers and tests
@@ -426,18 +433,16 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 // Resolve runs the tier cascade for uri and returns the resolved bytes. It
 // satisfies the Lookup type when bound as a method value (r.Resolve).
 //
-// Precedence is embed (0a) → colocated (0b) → local (1) → cache (2) → registry
-// (3); the first tier that produces bytes wins. An explicit Override short-
-// circuits the cascade. When the URI carries a digest pin, the winning tier's
-// bytes are verified against it; a mismatch halts with a wrapped
+// Precedence is embed (0a) → colocated (0b) → local (1) → cache (2); the first
+// tier that produces bytes wins, and a reference no tier answers halts with a
+// wrapped ErrPluginArtifactNotFound naming the tiers consulted. An explicit
+// Override short-circuits the cascade. When the URI carries a digest pin, the
+// winning tier's bytes are verified against it; a mismatch halts with a wrapped
 // oci.ErrFetchIntegrity.
 //
 // This form takes no cancellation parameter, so a resolution it starts runs to
 // its own completion. It is the form the Lookup seam binds, and it is exactly
-// right for that seam: a Resolver reached through Lookup carries no Puller, so
-// every tier it can reach reads bytes already on the machine. A caller holding a
-// Resolver that CAN pull calls ResolveContext instead, which carries the
-// caller's cancellation to the pull.
+// right for that seam: every tier reads bytes already on the machine.
 func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	return r.ResolveContext(context.Background(), uri)
 }
@@ -447,15 +452,13 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 // is the seam-facing form that delegates here.
 //
 // Precedence, the Override short-circuit and the digest-pin verification are
-// exactly as Resolve describes them — ctx changes which work can be ended, never
+// exactly as Resolve describes them — ctx changes which work is started, never
 // which bytes win.
 //
-// ctx belongs to the caller and reaches the registry pull, so ending it ends the
-// transfer rather than only the reply. The four tiers above the registry read
-// bytes already on the machine and complete without consulting it. A caller that
-// has already withdrawn is answered here, before any tier is consulted, so a
-// resolution that was never going to be used does not read a file or open a
-// connection first.
+// Every tier reads bytes already on the machine and completes without consulting
+// ctx. A caller that has already withdrawn is answered here, before any tier is
+// consulted, so a resolution that was never going to be used does not read a file
+// first.
 func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugin, error) {
 	if err := ctx.Err(); err != nil {
 		return ResolvedPlugin{}, fmt.Errorf("resolve plugin %q: %w", uri, err)
@@ -524,26 +527,54 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 		case err == nil:
 			return r.verified(uri, b, TierCache)
 		case errors.Is(err, oci.ErrFetchNotFound()):
-			// fall through to Tier 3
+			// A clean cache miss: no tier holds the bytes.
 		default:
 			return ResolvedPlugin{}, err
 		}
 	}
 
-	// 3 registry: an OCI pull. nil puller = hermetic build; a cache miss here
-	// is a loud halt, not a network fetch.
-	if r.puller != nil {
-		b, err := r.puller.PullPlugin(ctx, uri)
-		if err != nil {
-			return ResolvedPlugin{}, fmt.Errorf("pull plugin %q: %w", uri, err)
-		}
-		return r.verified(uri, b, TierRegistry)
-	}
-
 	if workspaceconfig.LooksLikeOCIURI(uri) {
-		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound())
+		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociReferenceHint, ErrPluginArtifactNotFound())
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (%s): %w", uri, cascadeNames(), oci.ErrFetchNotFound())
+	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (%s): %w", uri, cascadeNames(), ErrPluginArtifactNotFound())
+}
+
+// CheckCatalogArtifact asks the cascade whether the artifact a Plugin entity
+// authored in a catalog directory names resolves, and refuses when it does not.
+//
+// It is the pull's question about such an entity, answered by the same cascade a
+// build loads the plugin through rather than by a second reading of the catalog
+// directory: an artifact the binary carries, one beside the entity, one at an
+// explicit path and one already in the content cache all satisfy it, exactly as
+// they satisfy the build. A pull never pins an entity authored in a catalog
+// directory and a build fetches nothing, so the tiers asked here are the ones a
+// build will read; refusing at the pull names the fix at the step that can still
+// take it.
+//
+// It returns nil when the artifact resolves. When no tier holds it, it returns an
+// occurrence of ErrPluginArtifactNotFound naming the entity, the file the
+// co-located tier reads and the directory it reads it in, with the cascade's own
+// exhaustion as the cause. Any other resolution failure — an unreadable file
+// beside the entity, bytes that do not match a recorded pin — is returned as the
+// cascade raised it.
+func (r Resolver) CheckCatalogArtifact(entityURI, artifactRef string) error {
+	_, err := r.Resolve(artifactRef)
+	if err == nil || !errors.Is(err, ErrPluginArtifactNotFound()) {
+		return err
+	}
+	leaf := pluginLeaf(artifactRef)
+	dir := r.colocatedDirs[artifactRef]
+	values := []string{fmt.Sprintf("Plugin entity %q is authored in a catalog directory", entityURI)}
+	where := cerrors.SourceLocation{File: entityURI}
+	advice := "Place the built .wasm beside the entity under that name, or publish the plugin and reference the " +
+		"published Plugin entity instead of the one in the catalog directory"
+	if dir != "" {
+		values = append(values, fmt.Sprintf("expected %s in %s", leaf, dir))
+		where = cerrors.SourceLocation{File: dir}
+	} else {
+		values = append(values, fmt.Sprintf("expected %s beside the entity", leaf))
+	}
+	return cerrors.Wrap(err, cerrors.CatalogError, where, cerrors.ComposeMessage(ErrPluginArtifactNotFound(), values, advice))
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -599,10 +630,21 @@ var advisedUnrecorded sync.Map
 
 // noteUnrecordedIdentity raises the advisory for a plugin whose resolved bytes no
 // recorded digest governs, naming the reference, where the bytes came from, and
-// what to run to record them. It never fails a resolution: a workspace that has
+// what holds for that source. It never fails a resolution: a workspace that has
 // not been prepared yet is an ordinary state, and refusing to read a plugin for
 // want of a record would make every surface that only reports on a document
 // unusable until an operator prepared one.
+//
+// What the advisory says after its first clause depends on the source, because
+// the remedy is true of one source and false of another. Bytes read from the
+// content cache are an acquisition a pull records, so the advisory names the pull
+// that records them. Bytes read from beside a Plugin entity in a catalog directory
+// are not: a pull never pins an entity authored there, so no pull could record
+// them, and telling the reader to run one would send them to a command that
+// changes nothing. For those the advisory says what does hold — the bytes are
+// read from the catalog directory on every build — and names the one thing that
+// brings them under a recorded digest, publishing the plugin and referencing the
+// published entity.
 //
 // Two resolutions raise nothing, and each is a case where no record could exist
 // rather than one where a record is missing:
@@ -649,10 +691,15 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 	if _, seen := advisedUnrecorded.LoadOrStore(uri, struct{}{}); seen {
 		return
 	}
+	remedy := "run `aggrega pull --release <release>` to record it"
+	if tier == TierColocated {
+		remedy = "it is read from beside its Plugin entity in a catalog directory on every build, which a pull " +
+			"does not record; publish the plugin and reference the published entity to have its digest recorded"
+	}
 	fmt.Fprintf(unrecordedIdentityWriter,
 		"warning: plugin %q resolved from %s with no recorded digest to check it against, "+
-			"so it runs unverified; run `aggrega pull --release <release>` to record it\n",
-		uri, tier.Source())
+			"so it runs unverified; %s\n",
+		uri, tier.Source(), remedy)
 }
 
 // verifyCachedBundle re-hashes the cached signature-bundle blob recorded for a

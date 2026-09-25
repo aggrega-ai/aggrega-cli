@@ -49,6 +49,21 @@ func providerPluginEntityURI(p types.Plugin) string {
 // field; the lockfile writer copies only the wire-shape fields.
 const pluginKindHint = "plugin"
 
+// LocalPluginArtifactCheck is asked, for every Plugin entity a pull-side descent
+// finds authored in a local catalog directory, whether the .wasm artifact the entity
+// names can be read at all, and returns the refusal when it cannot. entityURI is the
+// reference the descent resolved; artifactRef is the entity's artifact reference,
+// derived through Plugin.ArtifactReference.
+//
+// Such an entity is never pinned and a build's plugin resolution fetches nothing, so
+// an artifact that no local source holds when the pull runs is absent at the build.
+// The check lets the pull refuse at the step that can name the fix instead of
+// leaving the build to fail at load. It is supplied by the caller, which holds the
+// sources the build's own plugin resolution reads, so this package asks the
+// question without answering it a second way. A nil check asks nothing — the
+// build's reconstruction of the same axes, which runs no pull.
+type LocalPluginArtifactCheck func(entityURI, artifactRef string) error
+
 // resolvedInLocalCatalog reports whether a resolution came from a local catalog
 // directory (or a workspace-relative path) rather than from a registry pull. It is
 // the universal leg of the registry-only rule: no plugin type is pinned when it
@@ -169,10 +184,16 @@ func shapesRenderedOutput(declaredType plugintype.Type) bool {
 // lock-time lookup does not see resolves at build, and the build-time loader gate
 // halts on a genuinely-absent reference.
 //
+// An entity authored in a local catalog directory is left out of the closure, and
+// localArtifact is asked about it first: the entity is never pinned and a build
+// fetches nothing, so an artifact no local source holds is refused here, and the
+// refusal halts the descent before the lockfile is written. A nil localArtifact
+// asks nothing.
+//
 // Newly-discovered entities are appended to c.Entities (deduped by URI against
 // what is already present, accumulating referenced-from sites). A nil loader is
 // a no-op (the caller wired no recipe-body access).
-func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver) error {
+func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver, localArtifact LocalPluginArtifactCheck) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -204,6 +225,17 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 		// (A workspace-socket entity already passed ComputeClosure's fatal resolve.)
 		if entRes.NotFound {
 			continue
+		}
+		// An entity authored in a local catalog directory is read from there at every
+		// build, artifact included, so its artifact has to be readable now.
+		if localArtifact != nil && resolvedInLocalCatalog(entRes.ResolutionPath) {
+			wp, err := loader.LoadPlugin(entityURI)
+			if err != nil {
+				return fmt.Errorf("resolve: load wasm plugin entity %q: %w", entityURI, err)
+			}
+			if err := localArtifact(entityURI, wp.ArtifactReference()); err != nil {
+				return err
+			}
 		}
 		// Registry-only pinning: an entity already present on the machine is not
 		// pinned — it resolves at build from the local catalog, or (a core provider

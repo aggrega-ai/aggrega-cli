@@ -143,17 +143,22 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted plu
 // socket's plugin is cached at pull but not pinned, so a gate plugin the pinned
 // path does not surface still resolves from the cache.
 //
-// Only a clean not-found miss (a wrapped pluginpath.ErrPluginEntityNotFound or
-// oci.ErrFetchNotFound) falls through; any other error from base — a drifted
-// pin, a load fault — is real and halts without consulting the cache. When both
-// base and cacheResolve miss, cacheResolve's error is returned.
+// Only a clean not-found miss falls through: a wrapped
+// pluginpath.ErrPluginEntityNotFound (no Plugin entity matches the reference), a
+// wrapped pluginpath.ErrPluginArtifactNotFound (the entity's artifact resolved
+// through none of the cascade's tiers), or a wrapped oci.ErrFetchNotFound (a
+// base whose own miss is a fetch that found nothing). Any other error from base — a
+// drifted pin, a load fault — is real and halts without consulting the cache.
+// When both base and cacheResolve miss, cacheResolve's error is returned.
 func VerdictLookup(base pluginpath.Lookup, cacheResolve func(uri string) (pluginpath.ResolvedPlugin, error)) pluginpath.Lookup {
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
 		resolved, err := base(uri)
 		if err == nil {
 			return resolved, nil
 		}
-		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) && !errors.Is(err, oci.ErrFetchNotFound()) {
+		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) &&
+			!errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) &&
+			!errors.Is(err, oci.ErrFetchNotFound()) {
 			return pluginpath.ResolvedPlugin{}, err
 		}
 		return cacheResolve(uri)

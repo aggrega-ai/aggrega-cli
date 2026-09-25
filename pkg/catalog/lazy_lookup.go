@@ -226,12 +226,23 @@ func (l *LazyLookup) NodeRecipeResolution(
 	return l.recipeCatalog().nodeRecipeResolution(manifest, instanceName, componentType)
 }
 
+// PluginColocatedDirs is the co-located directory map AsCatalogLookup hands the
+// build's plugin cascade, read on its own: a caller that needs only the directory
+// each locally authored Plugin entity's .wasm sits in beside it — a pull asking
+// the build's cascade whether such an entity's artifact can be read — reads the
+// same map without assembling the rest of the lookup.
+func (l *LazyLookup) PluginColocatedDirs() map[string]string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.pluginColocatedDirs()
+}
+
 // pluginColocatedDirs maps each Tier-1-enumerated Plugin entity's bare-identity
 // artifact reference to the catalog directory its plugin.yaml was authored in —
 // the directory a co-located .wasm sits in beside the entity. It mirrors the
 // eager catalog's PluginColocatedDirs over the lazily-walked local set; a
 // registry-resolved (Tier-2) entity has no authored directory and is skipped.
-// The caller (AsCatalogLookup) holds l.mu. Returns nil when no local Plugin
+// The caller (AsCatalogLookup, PluginColocatedDirs) holds l.mu. Returns nil when no local Plugin
 // entity was enumerated. On two versions of one identity, the lexicographically
 // last source path wins, so the map is deterministic regardless of map order.
 func (l *LazyLookup) pluginColocatedDirs() map[string]string {

@@ -346,7 +346,7 @@ type pluginResolutionInputs struct {
 // whose embed tier serves the built-ins. When the inputs carry a content-cache
 // location and a pin for the URI, the cache tier reads the pinned bytes and
 // verifies them against the pin, so an installed CLI plugin resolves offline from
-// the bytes cached at install; the runtime supplies no puller, so a cache miss is
+// the bytes cached at install; the cascade fetches nothing, so a cache miss is
 // a loud offline halt rather than a network fetch.
 func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{

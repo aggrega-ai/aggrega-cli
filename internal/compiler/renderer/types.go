@@ -102,7 +102,7 @@ type RendererInput struct {
 
 	// PluginPathLookup resolves a pipeline step's plugin URI to its verified
 	// .wasm bytes, binding the per-node pipeline executor to the shared
-	// plugin-resolution cascade (embed → colocated → local → cache → registry,
+	// plugin-resolution cascade (embed → colocated → local → cache,
 	// digest-pin-verified). nil disables pipeline execution: each node's
 	// pipeline is validated but not run, and the renderer surfaces a
 	// validate-only warning — the non-regression path for callers that do not

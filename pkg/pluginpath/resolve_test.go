@@ -4,7 +4,6 @@
 package pluginpath
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -30,12 +30,6 @@ func writeColocated(t *testing.T, dir, uri string, content []byte) string {
 	}
 	return dir
 }
-
-// stubPuller returns canned bytes for any URI — stands in for the Tier-3
-// registry pull without a network call.
-type stubPuller struct{ bytes []byte }
-
-func (p stubPuller) PullPlugin(_ context.Context, _ string) ([]byte, error) { return p.bytes, nil }
 
 // TestResolveOverride: an explicit override reads the artifact's bytes,
 // short-circuiting the cascade.
@@ -111,11 +105,11 @@ func TestNonEmbeddedURIFallsThroughToLocal(t *testing.T) {
 }
 
 // TestPrecedenceOrder asserts the cascade order by peeling sources away tier by
-// tier. Embed (0a) wins over every lower tier; the co-located tier (0c) wins once
-// no embed shadows it; cache (2) once neither embed nor co-located resolves;
-// registry (3) once the cache slot is gone. A bare catalog URI carries no local
-// path, so Tier 1 (local) is inapplicable here and exercised separately by the
-// local-tier tests.
+// tier. Embed (0a) wins over every lower tier; the co-located tier (0b) wins once
+// no embed shadows it; cache (2) once neither embed nor co-located resolves; and
+// once the cache slot is gone nothing is left, so the resolution halts as an absent
+// artifact. A bare catalog URI carries no local path, so Tier 1 (local) is
+// inapplicable here and exercised separately by the local-tier tests.
 func TestPrecedenceOrder(t *testing.T) {
 	const uri = "core/all-tiers:1.0.0"
 	ws := t.TempDir()
@@ -125,7 +119,6 @@ func TestPrecedenceOrder(t *testing.T) {
 	embedBytes := []byte("tier-embed")
 	colocatedBytes := []byte("tier-colocated")
 	cacheBytes := []byte("tier-cache")
-	registryBytes := []byte("tier-registry")
 
 	if err := oci.WriteCached(ws, cacheDir, uri, "1.0.0", cacheBytes); err != nil {
 		t.Fatalf("seed cache: %v", err)
@@ -137,7 +130,6 @@ func TestPrecedenceOrder(t *testing.T) {
 		workspaceRoot: ws,
 		cacheDir:      cacheDir,
 		pinVersions:   map[string]string{uri: "1.0.0"},
-		puller:        stubPuller{bytes: registryBytes},
 	}
 
 	// 0a embed wins over every lower tier, including a co-located artifact of the
@@ -152,7 +144,7 @@ func TestPrecedenceOrder(t *testing.T) {
 	}
 	restore()
 
-	// 0c co-located wins once no embed shadows it — and over cache + registry.
+	// 0b co-located wins once no embed shadows it — and over the cache.
 	got, err = base.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve colocated: %v", err)
@@ -172,33 +164,37 @@ func TestPrecedenceOrder(t *testing.T) {
 		t.Errorf("with cache present: got %s; want cache", got.Tier)
 	}
 
-	// 3 registry wins once the cache slot is gone.
+	// Nothing is left once the cache slot is gone: the cascade has no further
+	// source, so it halts as an absent artifact rather than reaching anywhere else.
 	noCache := noColocated
 	noCache.workspaceRoot = t.TempDir() // empty workspace = cache miss
-	got, err = noCache.Resolve(uri)
-	if err != nil {
-		t.Fatalf("Resolve registry: %v", err)
-	}
-	if got.Tier != TierRegistry {
-		t.Errorf("with only registry: got %s; want registry", got.Tier)
+	if _, err = noCache.Resolve(uri); !errors.Is(err, ErrPluginArtifactNotFound()) {
+		t.Errorf("with every tier emptied: want ErrPluginArtifactNotFound; got %v", err)
 	}
 }
 
 // TestPinVerifyMatchAcrossTiers (determinism): a co-located artifact whose bytes
-// match the pin resolves to the SAME bytes a registry source would — the pinned
-// digest, not the source tier, governs output. A co-located plugin is therefore
-// output-identical to the pinned artifact a registry pull produces.
+// match the pin resolves to the SAME bytes the cache holds for a pulled artifact —
+// the pinned digest, not the source tier, governs output. A co-located plugin is
+// therefore output-identical to the pinned artifact a pull caches.
 func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 	const uri = "core/pinned:1.0.0"
 	content := []byte("the-pinned-bytes")
 	pin := digest.ContentDigest(content)
 
-	regGot, err := Resolver{
-		puller: stubPuller{bytes: content},
-		pins:   map[string]string{uri: pin},
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	if err := oci.WriteCached(ws, cacheDir, uri, pin, content); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+	cacheGot, err := Resolver{
+		workspaceRoot: ws,
+		cacheDir:      cacheDir,
+		pins:          map[string]string{uri: pin},
+		pinVersions:   map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err != nil {
-		t.Fatalf("registry resolve: %v", err)
+		t.Fatalf("cache resolve: %v", err)
 	}
 
 	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, content)
@@ -210,11 +206,11 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 		t.Fatalf("colocated resolve: %v", err)
 	}
 
-	if string(regGot.Bytes) != string(coGot.Bytes) {
-		t.Errorf("colocated bytes differ from registry bytes despite matching pin")
+	if string(cacheGot.Bytes) != string(coGot.Bytes) {
+		t.Errorf("colocated bytes differ from cached bytes despite matching pin")
 	}
-	if regGot.Tier != TierRegistry || coGot.Tier != TierColocated {
-		t.Errorf("tiers: registry=%s colocated=%s; want registry/colocated", regGot.Tier, coGot.Tier)
+	if cacheGot.Tier != TierCache || coGot.Tier != TierColocated {
+		t.Errorf("tiers: cache=%s colocated=%s; want cache/colocated", cacheGot.Tier, coGot.Tier)
 	}
 }
 
@@ -253,17 +249,116 @@ func TestNoPinSkipsVerification(t *testing.T) {
 	}
 }
 
-// TestOCIUnresolvableNoPuller: an OCI URI with no puller and nothing cached
-// halts loudly with a not-resolvable message wrapping oci.ErrFetchNotFound.
-func TestOCIUnresolvableNoPuller(t *testing.T) {
-	_, err := Resolver{}.Resolve("oci://hub.aggrega.ai/plugin/linter/aggrega-publishing:1.0.0")
-	if err == nil {
-		t.Fatal("expected not-resolvable error; got nil")
+// TestAnExhaustedCascadeReportsAnAbsentArtifact: a reference no tier answers halts
+// with ErrPluginArtifactNotFound, whose identifiers are the ones the reference
+// publishes, for the registry-shaped form and the bare form alike. The condition
+// reports an absence, so it is not the remote-fetch condition: nothing was fetched.
+func TestAnExhaustedCascadeReportsAnAbsentArtifact(t *testing.T) {
+	cases := []struct {
+		name string
+		uri  string
+	}{
+		{"a reference shaped like a registry location", "oci://hub.aggrega.ai/plugin/linter/aggrega-publishing:1.0.0"},
+		{"a bare plugin coordinate", "pipeline-step/absent-everywhere"},
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound()) {
-		t.Errorf("want ErrFetchNotFound; got %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Resolver{workspaceRoot: t.TempDir(), cacheDir: ".aggrega/cache"}.Resolve(tc.uri)
+			if err == nil {
+				t.Fatal("expected the resolution to halt; got nil")
+			}
+			if !errors.Is(err, ErrPluginArtifactNotFound()) {
+				t.Errorf("want ErrPluginArtifactNotFound; got %v", err)
+			}
+			if errors.Is(err, oci.ErrFetchNotFound()) {
+				t.Errorf("the exhaustion must not report a remote fetch, which never happened; got %v", err)
+			}
+			if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0306" {
+				t.Errorf("short code = %q (reported %v); want E0306", code, ok)
+			}
+			if !strings.Contains(err.Error(), "not resolvable") {
+				t.Errorf("error should say not resolvable; got %v", err)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "not resolvable") {
-		t.Errorf("error should say not resolvable; got %v", err)
+}
+
+// TestCheckCatalogArtifactAsksTheCascade drives the pull's question about a Plugin
+// entity authored in a catalog directory through each tier that can answer it, and
+// through the case none can. An artifact any tier holds satisfies it — the question
+// is the cascade's, not "is there a file beside the entity" — and only a reference no
+// tier answers is refused, naming the entity, the file and the directory.
+func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
+	const entityURI = "pipeline-step/patch:1.0.0"
+	const artifactRef = "pipeline-step/patch"
+	leaf := pluginLeaf(artifactRef)
+
+	cases := []struct {
+		name    string
+		setup   func(t *testing.T) Resolver
+		refused bool
+	}{
+		{
+			name: "the artifact sits beside the entity",
+			setup: func(t *testing.T) Resolver {
+				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), artifactRef, []byte("guest"))
+				return Resolver{colocatedDirs: map[string]string{artifactRef: dir}}
+			},
+		},
+		{
+			name: "the binary carries the artifact and nothing sits beside the entity",
+			setup: func(t *testing.T) Resolver {
+				t.Cleanup(embedded.SeedForTest(artifactRef, []byte("embedded-guest")))
+				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}}
+			},
+		},
+		{
+			name: "the content cache holds the artifact and nothing sits beside the entity",
+			setup: func(t *testing.T) Resolver {
+				ws := t.TempDir()
+				if err := oci.WriteCached(ws, ".aggrega/cache", artifactRef, "", []byte("cached-guest")); err != nil {
+					t.Fatalf("seed cache: %v", err)
+				}
+				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}, workspaceRoot: ws, cacheDir: ".aggrega/cache"}
+			},
+		},
+		{
+			name: "no tier holds the artifact",
+			setup: func(t *testing.T) Resolver {
+				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}, workspaceRoot: t.TempDir(), cacheDir: ".aggrega/cache"}
+			},
+			refused: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.setup(t)
+			err := r.CheckCatalogArtifact(entityURI, artifactRef)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("an artifact a tier holds must satisfy the check; got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrPluginArtifactNotFound()) {
+				t.Fatalf("want ErrPluginArtifactNotFound; got %v", err)
+			}
+			var ce *cerrors.CompilerError
+			if !errors.As(err, &ce) {
+				t.Fatalf("the refusal must be a categorised diagnostic; got %T %v", err, err)
+			}
+			if ce.Category() != cerrors.CatalogError {
+				t.Errorf("category = %q; want %q", ce.Category(), cerrors.CatalogError)
+			}
+			dir := r.colocatedDirs[artifactRef]
+			for _, want := range []string{entityURI, leaf, dir, "Place the built .wasm beside the entity", "publish the plugin"} {
+				if !strings.Contains(ce.Message(), want) {
+					t.Errorf("refusal message does not name %q: %s", want, ce.Message())
+				}
+			}
+			if ce.Source().File != dir {
+				t.Errorf("refusal points at %q; want the directory the file is expected in, %q", ce.Source().File, dir)
+			}
+		})
 	}
 }

@@ -492,7 +492,7 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 //
 // The linter reads no lockfile: it lints a not-yet-pinned proposed entity at
 // publish time, so there is nothing in a lockfile to verify the plugin against.
-// It wires no puller either, so it never reaches a registry: an attachment
+// Plugin resolution fetches nothing, so it never reaches a registry: an attachment
 // resolves from the bytes in the binary or from the already-populated content
 // cache, and the --plugin escape hatch from the explicit path it names.
 //
@@ -526,8 +526,8 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 //     today. That tier fronts the cache and consults no manifest, so a resolution
 //     it satisfies has no digest to verify against — and this socket resolves an
 //     attachment through exactly two tiers, embed and the content cache, because it
-//     wires neither co-located directories nor a puller and an artifact reference
-//     is never a local path. So the embed tier is where a recorded digest adds a
+//     wires no co-located directories and an artifact reference is never a local
+//     path. So the embed tier is where a recorded digest adds a
 //     check that did not exist, and only for a plugin a record actually names.
 //   - The --plugin override is out of reach, and by construction rather than by
 //     policy: it is artifact-direct, resolving through the cascade's override by an

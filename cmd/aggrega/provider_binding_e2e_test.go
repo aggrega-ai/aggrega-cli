@@ -12,20 +12,22 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // providerBindingFixture lays a workload-synthesis Release down at root with a
 // catalog that serves the "helm" capability through the two named provider
-// plugins. Each plugin routes to a distinct embedded provider .wasm identity, so
-// which one renders a node is observable in the emitted bytes. Returns the
-// release path and the catalog root.
+// plugins. Each plugin routes to a distinct provider .wasm, so which one renders a
+// node is observable in the emitted bytes. Returns the release path and the
+// catalog root.
 //
 // altPlugin controls whether a SECOND provider plugin is written (serving the
-// same target through the compose-provider .wasm), which is what makes the
-// target ambiguous and the binding load-bearing.
+// same target through the compose-provider guest, laid beside its entity), which
+// is what makes the target ambiguous and the binding load-bearing.
 func providerBindingFixture(t *testing.T, root string, altPlugin bool) (releasePath, catalogRoot string) {
 	t.Helper()
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -104,6 +106,15 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
+		// The entity is authored in a catalog directory, so a build reads its .wasm
+		// from beside it, and a pull that selects it refuses when no source holds that
+		// artifact. The compose provider's guest bytes are what route this publisher
+		// through a different .wasm.
+		composeGuest, carried := embedded.Lookup("provider/compose")
+		if !carried {
+			t.Fatalf("the binary carries no provider/compose guest; available: %v", embedded.URIs())
+		}
+		writeFixtureBytes(t, filepath.Join(catalogRoot, "base", "providers", pluginpath.PluginLeaf("provider/helm-renderer-alt")), composeGuest)
 	}
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

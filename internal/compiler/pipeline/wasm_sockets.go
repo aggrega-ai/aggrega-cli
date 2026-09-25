@@ -31,7 +31,7 @@ import (
 
 // resolveSocketLookup returns the plugin-resolution lookup a Wasm socket uses:
 // the caller-supplied override when present, else the build-time entity-fronted
-// cascade (embed → colocated → local → cache → registry) — the same fallback the
+// cascade (embed → colocated → local → cache) — the same fallback the
 // renderer's per-node pipeline uses. It is resolved only after a socket confirms
 // it has at least one plugin to run, so an unconfigured socket builds no lookup
 // and stays a clean no-op.
@@ -604,7 +604,7 @@ func (f parserResolverFunc) ParserPluginForFormat(format string) (types.Plugin, 
 // parserSeam builds the resolver and loader the render-policy stage hands to the
 // parser socket. The resolver fronts the catalog's format→parser lookup; the
 // loader resolves the parser entity's bytes through the same entity-fronted
-// cascade the render pipeline uses (embed → colocated → local → cache → registry),
+// cascade the render pipeline uses (embed → colocated → local → cache),
 // so a core parser embedded in the binary resolves offline with no lockfile pin.
 func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersocket.ParserResolver, parsersocket.ParserLoader) {
 	res := parserResolverFunc(catalogLookup.ParserPlugin)

@@ -820,7 +820,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return p, ok, err
 	}
-	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver); err != nil {
+	// A Plugin entity authored in a catalog directory is never pinned and a build
+	// fetches no plugin, so an artifact the build could not read now it could not read
+	// then either. Whether it can is asked of the cascade the build itself loads
+	// plugins through, over the same sources, before the lockfile is written — so a
+	// pull and the build it feeds cannot disagree about it. The question records
+	// nothing, so it carries no pins.
+	localArtifactCascade := pipeline.PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, lazyView.PluginColocatedDirs())
+	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver, localArtifactCascade.CheckCatalogArtifact); err != nil {
 		return Result{}, fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))

@@ -66,7 +66,9 @@ func ReconstructClosureAxes(
 	if err := DescendSubAggregates(ctx, cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("sub-aggregate descent: %w", err)
 	}
-	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver); err != nil {
+	// No local-artifact check: a reconstruction runs no pull, and a build loads each
+	// plugin through the cascade that raises the same condition where it loads it.
+	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver, nil); err != nil {
 		return fmt.Errorf("pipeline-plugin entity descent: %w", err)
 	}
 	artifactLoader := recipeLoader

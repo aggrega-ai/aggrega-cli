@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // captureUnrecordedAdvisory redirects the advisory stream into a buffer and
@@ -118,6 +119,69 @@ func TestUnrecordedIdentityAdvisory(t *testing.T) {
 			}
 			if tc.advises && !strings.Contains(buf.String(), "aggrega pull") {
 				t.Errorf("the advisory does not say what to run to fix it: %q", buf.String())
+			}
+		})
+	}
+}
+
+// TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource proves the advisory's
+// remedy is the one that is true of the source the bytes came from. Bytes read
+// from the content cache are an acquisition a pull records, so the advisory names
+// that pull. Bytes read from beside a Plugin entity in a catalog directory are not:
+// a pull never records an entity authored there, so naming a pull would send the
+// reader to a command that changes nothing — the advisory says instead that the
+// bytes are read from the catalog on every build, and names publishing as the way
+// to have them recorded. Both rows resolve real bytes through the real tier.
+func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
+	const uri = "pipeline-step/patch"
+
+	cases := []struct {
+		name    string
+		sources func(t *testing.T) ResolutionContext
+		want    []string
+		mustNot []string
+	}{
+		{
+			name: "bytes beside the entity in a catalog directory",
+			sources: func(t *testing.T) ResolutionContext {
+				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), uri, []byte("colocated-guest"))
+				return ResolutionContext{ColocatedDirs: map[string]string{uri: dir}}
+			},
+			want:    []string{"resolved from local", "beside its Plugin entity in a catalog directory", "publish the plugin"},
+			mustNot: []string{"aggrega pull"},
+		},
+		{
+			name: "bytes from the content cache",
+			sources: func(t *testing.T) ResolutionContext {
+				ws := t.TempDir()
+				if err := oci.WriteCached(ws, ".aggrega/cache", uri, "", []byte("cached-guest")); err != nil {
+					t.Fatalf("seed cache: %v", err)
+				}
+				return ResolutionContext{WorkspaceRoot: ws, CacheDir: ".aggrega/cache"}
+			},
+			want: []string{"resolved from cache", "run `aggrega pull --release <release>` to record it"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureUnrecordedAdvisory(t)
+			r := NewResolver(tc.sources(t), PinPostureLockfile, PinMaps{})
+			if _, err := r.Resolve(uri); err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			got := buf.String()
+			if !strings.Contains(got, "no recorded digest") {
+				t.Fatalf("no advisory was raised for bytes no recorded digest governs: %q", got)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("advisory does not say %q: %q", want, got)
+				}
+			}
+			for _, not := range tc.mustNot {
+				if strings.Contains(got, not) {
+					t.Errorf("advisory names %q, which does not record bytes from this source: %q", not, got)
+				}
 			}
 		})
 	}

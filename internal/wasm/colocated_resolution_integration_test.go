@@ -96,8 +96,8 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an exhaustion halt on a co-located miss; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound()) {
-		t.Fatalf("want ErrFetchNotFound exhaustion halt; got %v", err)
+	if !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
+		t.Fatalf("want the artifact-not-found exhaustion halt; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "colocated") {
 		t.Fatalf("halt message should name the colocated tier; got %q", err.Error())

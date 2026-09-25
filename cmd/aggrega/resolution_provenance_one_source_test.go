@@ -83,7 +83,6 @@ func TestEveryResolverSourceHasAWord(t *testing.T) {
 		pluginpath.TierColocated,
 		pluginpath.TierLocal,
 		pluginpath.TierCache,
-		pluginpath.TierRegistry,
 	} {
 		if tier.Source() == "" {
 			t.Errorf("resolver source %q renders no word; a diagnostic would name nothing", tier)
@@ -106,7 +105,6 @@ func TestBothProvenanceSurfacesNameASourceIdentically(t *testing.T) {
 		{"found locally", closure.ResolutionPathCatalog, pluginpath.TierLocal},
 		{"found locally, beside its entity", closure.ResolutionPathCatalog, pluginpath.TierColocated},
 		{"cache reuse", closure.ResolutionPathCache, pluginpath.TierCache},
-		{"registry fetch", closure.ResolutionPathRegistry, pluginpath.TierRegistry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pullSide := pullEventTier(tc.tag)

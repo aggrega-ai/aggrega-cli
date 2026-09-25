@@ -63,10 +63,6 @@ type ResolutionContext struct {
 	// Override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Empty leaves the cascade intact.
 	Override string
-
-	// Puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
-	// build and linter paths, where a cache miss is a loud halt.
-	Puller Puller
 }
 
 // PinMaps groups the already-derived per-URI pin maps a pinned construction site
@@ -175,7 +171,6 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		workspaceRoot: rc.WorkspaceRoot,
 		cacheDir:      rc.CacheDir,
 		override:      rc.Override,
-		puller:        rc.Puller,
 	}
 	switch posture {
 	case PinPostureLockfile:

@@ -149,7 +149,7 @@ func pluginDescentLookup() *fakeLookup {
 // re-fold sits between the phases here — that re-fold is pull.go's job over the
 // lazy index, exercised by the registry round-trip integration test.
 func descendPlugins(c *closure.Closure, loader closure.RecipeLoader, lookup closure.Lookup, provResolver closure.ProviderPluginResolver) error {
-	if err := closure.DescendRecipePluginEntities(context.Background(), c, loader, lookup, provResolver); err != nil {
+	if err := closure.DescendRecipePluginEntities(context.Background(), c, loader, lookup, provResolver, nil); err != nil {
 		return err
 	}
 	return closure.DescendRecipePluginArtifacts(context.Background(), c, loader, lookup)
