@@ -523,8 +523,19 @@ func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
 	return nil
 }
 
+// resolveEntities resolves the recorded references in URI order, never in map
+// order. What it resolves first is visible: the first reference that does not
+// resolve is the one the refusal names, and a catalog lookup reports what it
+// finds while it reads, so an order the runtime randomises would change both from
+// one run to the next over identical input.
 func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
-	for uri, pending := range s.entities {
+	uris := make([]string, 0, len(s.entities))
+	for uri := range s.entities {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+	for _, uri := range uris {
+		pending := s.entities[uri]
 		// A sub-aggregate reference resolves through the dedicated aggregate
 		// registry tier (bare-name capable), not the generic catalog-entity
 		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
