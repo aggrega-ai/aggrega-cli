@@ -33,7 +33,7 @@ spec: {}
 }
 
 // TestLazyTier1Precedence_FirstWin proves the lazy Component/Feature filesystem
-// index resolves the FIRST catalog directory declaring a bare metadata.name,
+// index resolves the FIRST catalog directory declaring a name at a version,
 // matching the eager whole-catalog merge and the lazy recipe-shell enumeration.
 // Before the shared foldFirstWin fix the index was unconditional last-write, so
 // dir B silently overrode dir A; this test fails against that behavior.

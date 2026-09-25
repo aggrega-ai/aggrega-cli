@@ -37,21 +37,21 @@ import (
 // pkg/catalog import dependencies and lets each consumer evolve its data
 // needs without forcing the map layout to change.
 //
-// Recipes and FeatureRecipes index by spec.implements so the renderer's
-// per-component lookup ("which Recipe implements core/api-server?") is a
-// single map fetch. Components, Features, and Aggregates index by
-// metadata.name because that is the URI the resolver receives.
+// Components, Features, Aggregates and Plugins index by name:version, so every
+// version a catalog holds coexists and a reference selects among them through
+// selectEntityVersion; Recipes and FeatureRecipes index by capability-scoped
+// identity, and libraries by name.
 type Catalog struct {
-	Components        map[string]types.Component
-	Features          map[string]types.Feature
+	Components        map[string]types.Component       // keyed by identity (metadata.name:version)
+	Features          map[string]types.Feature         // keyed by identity (metadata.name:version)
 	Recipes           map[string]types.Recipe          // keyed by identity (provider/name:version)
 	FeatureRecipes    map[string]types.FeatureRecipe   // keyed by identity (provider/name:version)
-	Aggregates        map[string]types.Aggregate       // keyed by metadata.name
+	Aggregates        map[string]types.Aggregate       // keyed by identity (metadata.name:version)
 	SchemaLibraries   map[string]types.SchemaLibrary   // keyed by metadata.name (PascalCase library identifier)
 	MappingLibraries  map[string]types.MappingLibrary  // keyed by metadata.name (PascalCase library identifier)
 	WorkloadLibraries map[string]types.WorkloadLibrary // keyed by metadata.name (PascalCase library identifier)
 	ArtifactLibraries map[string]types.ArtifactLibrary // keyed by metadata.name (PascalCase library identifier)
-	Plugins           map[string]types.Plugin          // keyed by identity (metadata.name:version)
+	Plugins           map[string]types.Plugin          // keyed by identity (pluginType/name:version)
 
 	// componentSources / featureSources / pluginSources
 	// track the file path each entity was loaded from. Populated by the
@@ -118,14 +118,16 @@ type Catalog struct {
 	effectiveSchemas map[string]compactform.Schema
 
 	// entityBytes records the raw YAML bytes each entity was loaded
-	// from, keyed by "<kind>:<identifier>" where identifier matches
-	// the typed-map key (metadata.name for Component/Feature/
-	// Aggregate/SchemaLibrary/MappingLibrary, spec.implements
-	// for Recipe/FeatureRecipe). ClosureLookup hashes these bytes to
-	// produce the content-digest the lockfile pins for Tier-1 hits.
-	// Populated lazily during indexFile; unset for entity kinds the
-	// closure walker does not resolve (currently none — every kind
-	// the walker traverses is recorded here).
+	// from, keyed by "<kind>:<index key>" (entityBytesKey), where the index
+	// key is the entity's key in its kind's typed map: name:version for a
+	// Component, Feature or Aggregate, coordinate:version for a Plugin, the
+	// capability-scoped identity for a Recipe or FeatureRecipe, and the bare
+	// name for a library. Keying the bytes exactly as the entity is indexed is
+	// what keeps two versions of one name apart, so the content digest
+	// ClosureLookup takes for a selected version is of that version's own
+	// bytes. Populated during indexFile; unset for entity kinds the closure
+	// walker does not resolve (currently none — every kind the walker
+	// traverses is recorded here).
 	entityBytes map[string][]byte
 
 	// pathByIdentity maps "<Kind>:<identity-key>" to the file each entity was
@@ -564,14 +566,17 @@ func SkipDirIfArtifactCache(workspaceRoot, path, cacheDir string) error {
 // identity order per kind so the resolved set and the Shadows list are a pure,
 // deterministic function of directory order — preserving byte-identical output.
 func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[string]string) {
+	// Every kind's retained bytes are keyed by the same index key as its typed
+	// map, so the winning identity carries its own bytes and never another
+	// version's.
 	mergeKind(acc, "Component", acc.Components, perDir.Components, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.componentSources[k] = perDir.componentSources[k]
-		bk := entityBytesKey("Component", perDir.Components[k].Metadata.Name)
+		bk := entityBytesKey("Component", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 	mergeKind(acc, "Feature", acc.Features, perDir.Features, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.featureSources[k] = perDir.featureSources[k]
-		bk := entityBytesKey("Feature", perDir.Features[k].Metadata.Name)
+		bk := entityBytesKey("Feature", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 	mergeKind(acc, "Recipe", acc.Recipes, perDir.Recipes, perDir, perDirRoot, winnerDir, func(k string) {
@@ -586,7 +591,7 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	})
 	mergeKind(acc, "Aggregate", acc.Aggregates, perDir.Aggregates, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.aggregateSources[k] = perDir.aggregateSources[k]
-		bk := entityBytesKey("Aggregate", perDir.Aggregates[k].Metadata.Name)
+		bk := entityBytesKey("Aggregate", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 	mergeKind(acc, "SchemaLibrary", acc.SchemaLibraries, perDir.SchemaLibraries, perDir, perDirRoot, winnerDir, func(k string) {
@@ -605,15 +610,12 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 		bk := entityBytesKey("ArtifactLibrary", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
-	// Plugin's bytes side-table keys on the plugin coordinate (the closure walker
-	// hashes them for the lockfile pin) while the typed map and the source
-	// side-table key on the coordinate identity (coordinate:version) — the same
-	// split the Recipe / Library kinds use for their typed maps. The source
-	// side-table feeds the pillar-validation spec.provider.workloadSchema compile gate so its
-	// error messages name the offending file.
+	// The Plugin source side-table feeds the pillar-validation
+	// spec.provider.workloadSchema compile gate so its error messages name the
+	// offending file.
 	mergeKind(acc, "Plugin", acc.Plugins, perDir.Plugins, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.pluginSources[k] = perDir.pluginSources[k]
-		bk := entityBytesKey("Plugin", perDir.Plugins[k].Coordinate())
+		bk := entityBytesKey("Plugin", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 }
@@ -1063,7 +1065,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Components[ckey] = e
 		c.componentSources[ckey] = path
-		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("Component", ckey)] = data
 	case "Feature":
 		e, err := parseFeatureEntity(data, path)
 		if err != nil {
@@ -1075,7 +1077,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Features[fkey] = e
 		c.featureSources[fkey] = path
-		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("Feature", fkey)] = data
 	case "Recipe":
 		// parseRecipeEntity is the shared per-entity resolve (unmarshal, shape
 		// validation, relative source / artifact-$import rewrites) so the eager
@@ -1115,7 +1117,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Aggregates[akey] = e
 		c.aggregateSources[akey] = path
-		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("Aggregate", akey)] = data
 	case "SchemaLibrary":
 		// Parse + the forbidden-keyword ($dynamicAnchor / $dynamicRef) and
 		// template-body scans run through the shared per-entity resolve
@@ -1205,7 +1207,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Plugins[wkey] = e
 		c.pluginSources[wkey] = path
-		c.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = data
+		c.entityBytes[entityBytesKey("Plugin", wkey)] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil
@@ -2254,15 +2256,45 @@ func (c *Catalog) aggregateSource(key string) (string, bool) {
 }
 
 // EntityBytes returns the raw authored bytes the catalog retained for the entity
-// of the given kind (e.g. "Aggregate") and metadata.name — the exact bytes a
-// lockfile digest pins, not a re-read. Returns ("", false) when no such entity
-// was indexed. Used by the Release-triad resolver's catalog tier to surface the
-// resolved Aggregate's bytes alongside the entity, so a catalog-resolved
-// aggregate carries the same (entity, path, bytes) contract as a
-// same-directory-resolved one.
-func (c *Catalog) EntityBytes(kind, name string) ([]byte, bool) {
-	b, ok := c.entityBytes[entityBytesKey(kind, name)]
+// of the given kind (e.g. "Aggregate") that reference resolves to — the exact
+// bytes a lockfile digest pins, not a re-read. Returns (nil, false) when nothing
+// indexed matches.
+//
+// For a Component, Feature, Aggregate or Plugin the reference is resolved the way
+// every other reference to those kinds is — exact, caret, or unversioned, to the
+// highest satisfying version — so a bare name answers with the highest version's
+// bytes and a version-pinned one with that version's. For every other kind the
+// reference is the identity the entity is indexed under: a Recipe's or
+// FeatureRecipe's capability-scoped identity, or a library's name.
+func (c *Catalog) EntityBytes(kind, reference string) ([]byte, bool) {
+	key, ok := c.indexKeyFor(kind, reference)
+	if !ok {
+		return nil, false
+	}
+	b, ok := c.entityBytes[entityBytesKey(kind, key)]
 	return b, ok
+}
+
+// indexKeyFor returns the key the entity reference resolves to in its kind's
+// index: the version select's answer for the kinds indexed per version, and the
+// reference itself for the kinds indexed by an identity the reference already
+// spells out.
+func (c *Catalog) indexKeyFor(kind, reference string) (string, bool) {
+	var key string
+	var ok bool
+	switch kind {
+	case "Component":
+		key, ok, _ = c.resolveComponentKey(reference)
+	case "Feature":
+		key, ok, _ = c.resolveFeatureKey(reference)
+	case "Aggregate":
+		key, ok, _ = c.resolveAggregateKey(reference)
+	case "Plugin":
+		key, ok, _ = c.resolvePluginKey(reference)
+	default:
+		return reference, true
+	}
+	return key, ok
 }
 
 // AggregateLookup returns a resolver.AggregateLookup backed by this catalog's
@@ -2280,7 +2312,7 @@ func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
 		}
 		agg := c.Aggregates[key]
 		path, _ := c.AggregateSourceFile(key)
-		data, _ := c.EntityBytes("Aggregate", agg.Metadata.Name)
+		data := c.entityBytes[entityBytesKey("Aggregate", key)]
 		return resolver.ResolvedAggregate{Aggregate: &agg, Path: path, Bytes: data}, true
 	}
 }
@@ -2312,18 +2344,18 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 		// not lose source provenance.
 		absPath, _ := c.aggregateSource(key)
 		returnPath := RelativeToWorkspace(c.workspaceRoot, absPath)
-		raw := c.subAggregateRawBytes(agg.Metadata.Name, absPath)
+		raw := c.subAggregateRawBytes(key, absPath)
 		return resolveSubAggregateParameters(typeName, raw, absPath, returnPath, agg, parentParams)
 	}
 }
 
-// subAggregateRawBytes returns the raw YAML bytes of a loaded sub-aggregate
-// (needed for byte-level parameter interpolation). A cache-bridged / registry
-// sub-aggregate retains its verified bytes; a local-filesystem one is re-read
-// from absPath. Returns nil when neither is available (the loader then falls
-// back to the already-parsed, un-interpolated Aggregate).
-func (c *Catalog) subAggregateRawBytes(typeName, absPath string) []byte {
-	if b, ok := c.entityBytes[entityBytesKey("Aggregate", typeName)]; ok && len(b) > 0 {
+// subAggregateRawBytes returns the raw YAML bytes of the sub-aggregate indexed
+// under key (needed for byte-level parameter interpolation). A cache-bridged /
+// registry sub-aggregate retains its verified bytes; a local-filesystem one is
+// re-read from absPath. Returns nil when neither is available (the loader then
+// falls back to the already-parsed, un-interpolated Aggregate).
+func (c *Catalog) subAggregateRawBytes(key, absPath string) []byte {
+	if b, ok := c.entityBytes[entityBytesKey("Aggregate", key)]; ok && len(b) > 0 {
 		return b
 	}
 	if absPath != "" {

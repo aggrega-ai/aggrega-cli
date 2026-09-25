@@ -106,7 +106,7 @@ func TestLazyWalks_SkipArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	if _, ok := subject.mappingLibraries["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary from a cache below the workspace root")
 	}
-	if _, ok := subject.componentIndex["core/authored-app"]; !ok {
+	if _, ok := subject.componentIndex[entityIndexKey("core/authored-app", "1.0.0")]; !ok {
 		t.Error("the authored Component was dropped; the cache skip over-reached")
 	}
 

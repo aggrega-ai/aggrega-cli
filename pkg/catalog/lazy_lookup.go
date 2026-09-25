@@ -39,8 +39,9 @@ import (
 // Tier-1 → Tier-2 → Tier-3
 // cascade. Tier-1 walks the configured catalog directories once per
 // session (header-only YAML parse) and builds an in-memory index
-// keyed by metadata.name; subsequent Tier-1 calls hit the index in
-// O(1). Tier-2 reads cached entity bytes from the workspace cache
+// keyed by metadata.name and metadata.version; a reference selects among
+// the versions it holds by the one version rule, without another walk.
+// Tier-2 reads cached entity bytes from the workspace cache
 // directory. Tier-3 pulls from the registry via the supplied
 // OCIPuller and populates the cache for subsequent lookups.
 //
@@ -51,9 +52,9 @@ import (
 // Cycle detection comes free via validator.ResolveExtendsChain's
 // visited-set guard, which is the walk both of those collect through.
 //
-// The lookup is layout-agnostic: entities are indexed by authored
-// metadata.name regardless of where the YAML lives under
-// catalogDirs. Workspaces using flat layouts, generated catalog
+// The lookup is layout-agnostic: entities are indexed by their authored
+// metadata.name and metadata.version regardless of where the YAML lives
+// under catalogDirs. Workspaces using flat layouts, generated catalog
 // trees, or any other organisation work identically to the
 // canonical kind-directory layout.
 //
@@ -77,8 +78,8 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		schemaLibraries:   map[string]types.SchemaLibrary{},
 		componentMisses:   map[string]struct{}{},
 		featureMisses:     map[string]struct{}{},
-		componentIndex:    map[string]string{},
-		featureIndex:      map[string]string{},
+		componentIndex:    map[string]indexedDocument{},
+		featureIndex:      map[string]indexedDocument{},
 		recipes:           map[string]types.Recipe{},
 		featureRecipes:    map[string]types.FeatureRecipe{},
 		aggregates:        map[string]types.Aggregate{},
@@ -124,11 +125,11 @@ func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
 	// view's snapshot.
 	l.buildComponentIndex()
 	l.buildFeatureIndex()
-	componentIndex := make(map[string]string, len(l.componentIndex))
+	componentIndex := make(map[string]indexedDocument, len(l.componentIndex))
 	for k, v := range l.componentIndex {
 		componentIndex[k] = v
 	}
-	featureIndex := make(map[string]string, len(l.featureIndex))
+	featureIndex := make(map[string]indexedDocument, len(l.featureIndex))
 	for k, v := range l.featureIndex {
 		featureIndex[k] = v
 	}
@@ -316,9 +317,9 @@ func (l *LazyLookup) Reset() {
 	l.features = map[string]types.Feature{}
 	l.componentMisses = map[string]struct{}{}
 	l.featureMisses = map[string]struct{}{}
-	l.componentIndex = map[string]string{}
+	l.componentIndex = map[string]indexedDocument{}
 	l.componentIndexBuilt = false
-	l.featureIndex = map[string]string{}
+	l.featureIndex = map[string]indexedDocument{}
 	l.featureIndexBuilt = false
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
 	l.schemaLibrariesBuilt = false
@@ -463,13 +464,15 @@ type LazyLookup struct {
 	componentMisses map[string]struct{}
 	featureMisses   map[string]struct{}
 
-	// Per-kind Tier-1 indexes built on first access. Maps
-	// metadata.name → filesystem path. Built once per session via
-	// the catalog-tree walker; reused thereafter. No in-session
-	// invalidation.
-	componentIndex      map[string]string
+	// Per-kind Tier-1 indexes built on first access. Each maps an entity's
+	// identity — entityIndexKey(metadata.name, metadata.version), the key the
+	// eager catalog indexes the same kind under — to the document declaring it,
+	// so every version a catalog directory holds is indexed and a reference is
+	// resolved among them by selectEntityVersion. Built once per session via the
+	// catalog-tree walker; reused thereafter. No in-session invalidation.
+	componentIndex      map[string]indexedDocument
 	componentIndexBuilt bool
-	featureIndex        map[string]string
+	featureIndex        map[string]indexedDocument
 	featureIndexBuilt   bool
 
 	// pins maps an entity URI (as the lockfile records it — bare or versioned) to
@@ -515,7 +518,8 @@ type LazyLookup struct {
 	// library the Tier-1 walk in buildSchemaLibraries and foldPinnedSchemaLibrary —
 	// and it covers every kind those folds admit: Recipe and FeatureRecipe keyed by
 	// capability-scoped identity, Plugin by its versioned coordinate, Aggregate by
-	// name, and the schema, mapping, workload and artifacts libraries by bare name.
+	// name:version, and the schema, mapping, workload and artifacts libraries by
+	// bare name — each under the key its kind's index uses.
 	//
 	// Every provenance answer this backing gives is derived from it, and none has an
 	// index of its own: whether an author owns a document for the entity (the pin
@@ -541,15 +545,18 @@ type LazyLookup struct {
 	recordedPins recipepin.Lookup
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
-	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
-	// key the eager catalog uses. The closure lookup (ClosureLookup) hashes
-	// these to produce the content digest the lockfile pins, so a serve drift
-	// verify compares the SAME digest a build/pull computed (digest fidelity:
-	// the bytes hashed are the bytes resolved, no second source of truth, no
-	// re-read TOCTOU). Populated by buildRecipeIndex / buildSchemaLibraries
-	// (enumerated kinds) and by resolveComponent / resolveFeature (on-demand
-	// kinds). Cleared by Reset so an invalidated workspace retains no stale
-	// bytes — they must not survive an mtime-eviction / invalidation.
+	// resolved entity, keyed by entityBytesKey(kind, index key) — the same key
+	// the eager catalog uses: name:version for a Component, Feature or
+	// Aggregate, coordinate:version for a Plugin, the capability-scoped identity
+	// for a Recipe or FeatureRecipe, and the bare name for a library. The closure
+	// lookup (ClosureLookup) hashes these to produce the content digest the
+	// lockfile pins, so a serve drift verify compares the SAME digest a
+	// build/pull computed (digest fidelity: the bytes hashed are the bytes of the
+	// version resolved, no second source of truth, no re-read TOCTOU). Populated
+	// by buildRecipeIndex / buildSchemaLibraries (enumerated kinds) and by
+	// resolveComponent / resolveFeature (on-demand kinds). Cleared by Reset so an
+	// invalidated workspace retains no stale bytes — they must not survive an
+	// mtime-eviction / invalidation.
 	entityBytes map[string][]byte
 
 	// recipeCat is the cached *Catalog shell over the enumerated recipe/FR/
@@ -861,9 +868,11 @@ func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 //
 // It reports names rather than entities on purpose. The name is the lookup
 // coordinate, so a caller resolves each through Feature and the tier
-// cascade, the extends merge and the miss bookkeeping all stay in the one
-// place that implements them. Returning resolved entities here would be a
-// second resolution path free to disagree with the first.
+// cascade, the version selection, the extends merge and the miss bookkeeping
+// all stay in the one place that implements them. Returning resolved entities
+// here would be a second resolution path free to disagree with the first. A
+// name the directories hold at several versions is reported once, and resolving
+// it selects the highest of them, as an unversioned reference does anywhere.
 //
 // Sorted, so the order is a function of the catalog's content rather than of
 // directory-walk order, which varies between filesystems.
@@ -871,9 +880,14 @@ func (l *LazyLookup) FeatureNames() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.buildFeatureIndex()
+	seen := make(map[string]bool, len(l.featureIndex))
 	names := make([]string, 0, len(l.featureIndex))
-	for name := range l.featureIndex {
-		names = append(names, name)
+	for _, doc := range l.featureIndex {
+		if seen[doc.name] {
+			continue
+		}
+		seen[doc.name] = true
+		names = append(names, doc.name)
 	}
 	sort.Strings(names)
 	return names
@@ -936,7 +950,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 		// kind returns an error and the cascade falls through to Tier-3.
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return comp, true
 			}
 		}
@@ -950,7 +964,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return comp, true
 			}
 		}
@@ -1006,7 +1020,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return feat, true
 			}
 		}
@@ -1019,7 +1033,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return feat, true
 			}
 		}
@@ -1027,31 +1041,64 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	return types.Feature{}, false
 }
 
-// tier1ReadComponent looks up the URI in the (lazily-built) component
-// index and reads + full-unmarshals the indexed file. Returns the
+// indexedDocument is one catalog-directory document the lazy view indexed for a
+// kind it resolves per URI (Component, Feature): where the document is, and the
+// identity its header declares. The identity rides with the path so the index can
+// be handed to selectEntityVersion as it stands — the select reads each entry's
+// name and version rather than its key.
+type indexedDocument struct {
+	path    string
+	name    string
+	version string
+}
+
+// indexedDocumentMeta is the metadata projection selectEntityVersion reads an
+// indexedDocument through.
+func indexedDocumentMeta(d indexedDocument) (name, version string) {
+	return d.name, d.version
+}
+
+// selectIndexedDocument returns the document in index that the reference uri
+// resolves to under the one three-form version rule, and whether one does.
+//
+// A reference whose name the index holds but whose exact or caret pin no indexed
+// version satisfies is a miss here, never the name's other file: the Tier-1 tier
+// has no error channel of its own, so the cascade falls through to the registry
+// tiers exactly as the eager catalog's lookup does with the same answer, and a
+// reference nothing resolves is reported by whichever surface walks the
+// dependencies.
+func selectIndexedDocument(index map[string]indexedDocument, uri string) (indexedDocument, bool) {
+	key, ok, _ := selectEntityVersion(index, uri, indexedDocumentMeta)
+	if !ok {
+		return indexedDocument{}, false
+	}
+	return index[key], true
+}
+
+// tier1ReadComponent selects the document the URI resolves to in the
+// (lazily-built) component index and reads + full-unmarshals it. Returns the
 // unmerged Component on hit.
 func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	l.buildComponentIndex()
-	lookupName := lookupNameFromURI(uri)
-	path, ok := l.componentIndex[lookupName]
+	doc, ok := selectIndexedDocument(l.componentIndex, uri)
 	if !ok {
 		return types.Component{}, false
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(doc.path)
 	if err != nil {
 		return types.Component{}, false
 	}
-	comp, perr := parseComponentEntity(data, path)
+	comp, perr := parseComponentEntity(data, doc.path)
 	if perr != nil {
 		// The rejection is RECORDED, not discarded. A rejected file makes the
 		// cascade report a miss, and a miss surfaces downstream as an
 		// unresolvable entity — a symptom that names nothing an author can fix.
 		// Keeping the reason means the surfaces that report the miss can say
 		// which file was refused and why.
-		l.recipeSkips[path] = perr
+		l.recipeSkips[doc.path] = perr
 		return types.Component{}, false
 	}
-	l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = data
+	l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = data
 	return comp, true
 }
 
@@ -1059,29 +1106,27 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 // recording a rejection for the same reason.
 func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	l.buildFeatureIndex()
-	lookupName := lookupNameFromURI(uri)
-	path, ok := l.featureIndex[lookupName]
+	doc, ok := selectIndexedDocument(l.featureIndex, uri)
 	if !ok {
 		return types.Feature{}, false
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(doc.path)
 	if err != nil {
 		return types.Feature{}, false
 	}
-	feat, perr := parseFeatureEntity(data, path)
+	feat, perr := parseFeatureEntity(data, doc.path)
 	if perr != nil {
-		l.recipeSkips[path] = perr
+		l.recipeSkips[doc.path] = perr
 		return types.Feature{}, false
 	}
-	l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = data
+	l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = data
 	return feat, true
 }
 
 // buildComponentIndex walks the catalog directories once (header-only
-// YAML parse) and populates l.componentIndex with metadata.name →
-// filesystem path mappings for every Component-kind YAML found.
-// Idempotent: a second call is a no-op once componentIndexBuilt is
-// true.
+// YAML parse) and populates l.componentIndex with one entry per
+// Component identity found. Idempotent: a second call is a no-op once
+// componentIndexBuilt is true.
 func (l *LazyLookup) buildComponentIndex() {
 	if l.componentIndexBuilt {
 		return
@@ -1101,24 +1146,28 @@ func (l *LazyLookup) buildFeatureIndex() {
 
 // walkAndIndex walks every catalog directory recursively, header-
 // unmarshals each *.yaml / *.yml file, and records files whose kind
-// matches the target kind into the supplied index. Files whose kind
-// does not match are skipped without indexing. The artifact cache is
-// stepped over (SkipDirIfArtifactCache): a cache slot holds resolution
-// artifacts, which are never authored catalog entities.
+// matches the target kind into the supplied index, keyed by the identity
+// the header declares (entityIndexKey of metadata.name and
+// metadata.version). Files whose kind does not match are skipped without
+// indexing. The artifact cache is stepped over (SkipDirIfArtifactCache): a
+// cache slot holds resolution artifacts, which are never authored catalog
+// entities.
 //
-// Precedence across catalog directories is FIRST-WIN: catalogDirs is
-// caller-ordered, so the earliest directory declaring a bare
-// metadata.name claims it and a later directory re-declaring the same
-// name is a shadow, reported and skipped. This is the same
-// cross-occurrence decision the eager whole-catalog merge and the lazy
-// recipe-shell enumeration make, folded through the shared foldFirstWin
-// primitive so the strategies cannot drift on which duplicate resolves.
+// Precedence across catalog directories is FIRST-WIN per identity:
+// catalogDirs is caller-ordered, so the earliest directory declaring a
+// name at a version claims that identity and a later directory
+// re-declaring the same name at the same version is a shadow, reported and
+// skipped. Two versions of one name are two identities and are both
+// indexed, wherever they sit. This is the same cross-occurrence decision
+// the eager whole-catalog merge and the lazy recipe-shell enumeration make,
+// over the same keys, folded through the shared foldFirstWin primitive so
+// the strategies cannot drift on which duplicate resolves.
 //
 // Walk errors and per-file parse failures are silently ignored —
 // the lazy lookup's contract is "find what you can"; broken files
 // surface at full-unmarshal time when a specific URI is requested,
 // not during the index walk.
-func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
+func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]indexedDocument) {
 	for _, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -1145,7 +1194,8 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 			if hdr.Metadata.Name == "" {
 				return nil
 			}
-			foldFirstWin(index, hdr.Metadata.Name, path, nil, func() {
+			doc := indexedDocument{path: path, name: hdr.Metadata.Name, version: hdr.Metadata.Version}
+			foldFirstWin(index, entityIndexKey(doc.name, doc.version), doc, nil, func() {
 				l.recordShadowedComponent(targetKind, hdr.Metadata.Name, path)
 			})
 			return nil
@@ -1287,6 +1337,8 @@ func (l *LazyLookup) LocalEntityPath(kind, scope, name, version string) (string,
 // For a folded kind the answer is the authored document the record of where the
 // entity came from holds, so an entity read from a pinned cache slot answers no
 // path from the same value that makes a closure walk report it as cache-served.
+// For a Component or Feature it is the document the catalog-directory index holds
+// under the entity's identity, so each version answers with its own document.
 //
 // The caller holds l.mu. Each arm triggers the walk that populates its own index
 // rather than the caller choosing one, so a kind added to an index cannot be
@@ -1295,12 +1347,12 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 	switch kind {
 	case "Component":
 		l.buildComponentIndex()
-		p, ok := l.componentIndex[name]
-		return p, ok
+		doc, ok := l.componentIndex[entityIndexKey(name, version)]
+		return doc.path, ok
 	case "Feature":
 		l.buildFeatureIndex()
-		p, ok := l.featureIndex[name]
-		return p, ok
+		doc, ok := l.featureIndex[entityIndexKey(name, version)]
+		return doc.path, ok
 	case "Recipe", "FeatureRecipe":
 		l.buildRecipeIndex()
 		return l.origins[entityBytesKey(kind, recipeIdentityKey(scope, name, version))].authoredDocument()
@@ -1320,7 +1372,7 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
 // every recipe-shell kind — the set foldRecipeShellEntity dispatches on — into
 // the hot maps, keyed exactly as the eager catalog keys them (recipes/FRs by
-// provider/name:version, Plugins by name:version, aggregates/libraries by
+// provider/name:version, Plugins and aggregates by name:version, libraries by
 // metadata.name). A file that
 // won't parse — or whose recipe/FR identity
 // collides with one already indexed — is skipped with a one-line stderr warning
@@ -1486,10 +1538,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		foldFirstWin(l.aggregates, e.Metadata.Name, e,
+		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		foldFirstWin(l.aggregates, key, e,
 			func() {
-				l.origins[entityBytesKey("Aggregate", e.Metadata.Name)] = foldedOrigin(src, slot, "")
-				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
+				l.origins[entityBytesKey("Aggregate", key)] = foldedOrigin(src, slot, "")
+				l.entityBytes[entityBytesKey("Aggregate", key)] = rawBytes
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
@@ -1545,7 +1598,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		key := entityIndexKey(e.Coordinate(), e.Metadata.Version)
 		foldFirstWin(l.plugins, key, e,
 			func() {
-				l.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = rawBytes
+				l.entityBytes[entityBytesKey("Plugin", key)] = rawBytes
 				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "")
 			},
 			func() {
@@ -2152,9 +2205,13 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 // validation. A broken out-of-closure entity is never resolved here, so it is
 // never validated; an in-closure pillar error (a schema-invalid
 // Component/Feature, or a $ref to a skipped/missing library) is surfaced.
-// Sources come from the per-kind index (file paths) for error provenance. The
-// resolved entities are extends-merged (what the daemon renders); build remains
-// the authoritative pre-extends validator.
+// Each resolved entity is validated once per identity, and named and sourced by
+// it — the key the per-kind index holds its document under, which is also the
+// key the eager catalog validates it under — so two versions of one name are two
+// validations, each naming its own file. An entity served from a registry tier
+// has no document in the index and is reported without one. The resolved
+// entities are extends-merged (what the daemon renders); build remains the
+// authoritative pre-extends validator.
 func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2166,15 +2223,16 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	feats := map[string]types.Feature{}
 	featSrc := map[string]string{}
 	for _, e := range cl.Entities {
-		name := lookupNameFromURI(e.URI)
 		if comp, ok := l.component(e.URI); ok {
-			comps[comp.Metadata.Name] = comp
-			compSrc[comp.Metadata.Name] = l.componentIndex[name]
+			key := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
+			comps[key] = comp
+			compSrc[key] = l.componentIndex[key].path
 			continue
 		}
 		if feat, ok := l.feature(e.URI); ok {
-			feats[feat.Metadata.Name] = feat
-			featSrc[feat.Metadata.Name] = l.featureIndex[name]
+			key := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
+			feats[key] = feat
+			featSrc[key] = l.featureIndex[key].path
 		}
 	}
 	// A schema reference that resolves to nothing has one cause the author cannot
@@ -2583,12 +2641,12 @@ func (x *lazyClosureLookup) ResolvePlugin(ctx context.Context, uri, version stri
 // unavailable for this request, surfaced upstream rather than self-healed.
 func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string, puller OCIPuller) (closure.Resolution, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
-		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCatalog), true
+		return l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), comp.Metadata.Version, closure.ResolutionPathCatalog), true
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest), true
 			}
 		}
@@ -2598,8 +2656,9 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
 		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+				key := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
+				l.entityBytes[entityBytesKey("Component", key)] = bytes
+				return l.closureResolution("Component", key, closureVersion(uri, comp.Metadata.Version), closure.ResolutionPathRegistry), true
 			}
 		}
 	}
@@ -2610,12 +2669,12 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 // surface.
 func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, puller OCIPuller) (closure.Resolution, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
-		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCatalog), true
+		return l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), feat.Metadata.Version, closure.ResolutionPathCatalog), true
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest), true
 			}
 		}
@@ -2625,8 +2684,9 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
 		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+				key := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
+				l.entityBytes[entityBytesKey("Feature", key)] = bytes
+				return l.closureResolution("Feature", key, closureVersion(uri, feat.Metadata.Version), closure.ResolutionPathRegistry), true
 			}
 		}
 	}
@@ -2634,21 +2694,25 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 }
 
 // closureResolution builds the closure.Resolution for a lazily-resolved entity,
-// mirroring catalogLookup.tier1Resolution: digest of the retained raw bytes;
-// resolved version = the URI's pin when present, else metadata.version; the tier
-// tag matches the eager path's vocabulary so a drift compare never differs on it.
-// A cache hit is not described here but through cacheHitResolution, over the same
-// version, so it reports the manifest it holds as every cache-tier read does.
-func (l *LazyLookup) closureResolution(kind, name, metaVersion, uri, path string) closure.Resolution {
+// mirroring catalogLookup.tier1Resolution: the digest of the raw bytes retained
+// under the entity's own identity, reported at resolvedVersion on the tier path,
+// whose tag matches the eager path's vocabulary so a drift compare never differs
+// on it. A catalog-directory hit is reported at the version the select chose — its
+// metadata.version, as the eager catalog reports it — so a caret reference is
+// recorded at the version it resolved to. A cache hit is not described here but
+// through cacheHitResolution, so it reports the manifest it holds as every
+// cache-tier read does.
+func (l *LazyLookup) closureResolution(kind, identityKey, resolvedVersion, path string) closure.Resolution {
 	return closure.Resolution{
-		ResolvedVersion: closureVersion(uri, metaVersion),
-		Digest:          contentDigest(l.entityBytes[entityBytesKey(kind, name)]),
+		ResolvedVersion: resolvedVersion,
+		Digest:          contentDigest(l.entityBytes[entityBytesKey(kind, identityKey)]),
 		ResolutionPath:  path,
 	}
 }
 
-// closureVersion is the version a lazily-resolved entity is reported at: the
-// version the URI pins when it pins one, else the entity's own metadata.version.
+// closureVersion is the version an entity the lazy view read from the content
+// cache or a registry is reported at: the version the URI pins when it pins one,
+// else the entity's own metadata.version.
 func closureVersion(uri, metaVersion string) string {
 	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		return v

@@ -207,17 +207,17 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	}
 
 	// --- Byte-identity against the DIRECT fixture bytes (the omission guard,
-	// bridge-free). entityBytes is keyed entityBytesKey(kind, name): a subject that
-	// drops a pinned recipe / aggregate / library — or retains drifted bytes —
+	// bridge-free). entityBytes is keyed entityBytesKey(kind, index key): a subject
+	// that drops a pinned recipe / aggregate / library — or retains drifted bytes —
 	// fails here. The Aggregate + SchemaLibrary are pinned BARE (versioned slot,
 	// separate ResolvedVersion), so their presence is the bare-URI determinism arm
 	// (the case the versionedSlotURI fix exists for). ---
 	wantBytes := map[string][]byte{
-		entityBytesKey("Component", "core/datastore/mariadb"):                                   []byte(bridgeComponentYAML),
-		entityBytesKey("Feature", "core/secret-value"):                                          []byte(bridgeFeatureYAML),
+		entityBytesKey("Component", entityIndexKey("core/datastore/mariadb", "1.0.0")):          []byte(bridgeComponentYAML),
+		entityBytesKey("Feature", entityIndexKey("core/secret-value", "1.0.0")):                 []byte(bridgeFeatureYAML),
 		entityBytesKey("Recipe", recipeIdentityKey("compose", "mariadb", "1.0.0")):              recipeBlob,
 		entityBytesKey("FeatureRecipe", recipeIdentityKey("compose", "dotenv-secret", "1.0.0")): frBlob,
-		entityBytesKey("Aggregate", "example/app"):                                              []byte(pinnedAggregateYAML),
+		entityBytesKey("Aggregate", entityIndexKey("example/app", "1.0.0")):                     []byte(pinnedAggregateYAML),
 		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
 		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
 		entityBytesKey("WorkloadLibrary", "BaseWorkloads"):                                      []byte(pinnedWorkloadLibYAML),
@@ -235,7 +235,7 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 
 	// The bare-pinned Aggregate + SchemaLibrary resolved into the enumerated maps —
 	// a version-less pin correctly addressing the versioned slot.
-	if _, ok := subject.aggregates["example/app"]; !ok {
+	if _, ok := subject.aggregates[entityIndexKey("example/app", "1.0.0")]; !ok {
 		t.Errorf("bare-URI-pinned Aggregate example/app not folded into the enumerated set")
 	}
 	if _, ok := subject.schemaLibraries["DbSizing"]; !ok {

@@ -326,14 +326,15 @@ func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cac
 
 // LoadAggregate loads a resolved sub-aggregate's parsed body for transitive
 // closure descent, satisfying closure.AggregateLoader. A catalog-resident
-// Aggregate is read from the catalog's retained authored bytes — the same
-// bytes its tier-1 digest pins. A pulled Aggregate is read from the content
-// cache through the verifying read, which checks the cached bytes against the
-// supplied pin digest before returning. Either way the descent walks the exact
-// bytes the pin covers, never a re-serialization or an unverified read.
+// Aggregate is read from the catalog's retained authored bytes of the version
+// the resolution selected — the same bytes its tier-1 digest pins. A pulled
+// Aggregate is read from the content cache through the verifying read, which
+// checks the cached bytes against the supplied pin digest before returning.
+// Either way the descent walks the exact bytes the pin covers, never a
+// re-serialization or an unverified read.
 func (l *catalogLookup) LoadAggregate(uri, version, digest string) (*types.Aggregate, error) {
 	name := lookupNameFromURI(uri)
-	if data, ok := l.catalog.EntityBytes("Aggregate", name); ok {
+	if data, ok := l.catalog.EntityBytes("Aggregate", entityIndexKey(name, version)); ok {
 		return resolver.LoadAggregateFromBytes(data, name)
 	}
 	// The sub-aggregate loader interface carries the content pin but not the
@@ -832,16 +833,18 @@ func embeddedPluginResolution(refDigest string) closure.Resolution {
 	}
 }
 
+// tier1CatalogEntity resolves uri against the entities this lookup's catalog
+// indexes. Each kind is selected by its own resolution rule, and the resolution
+// reports the version that rule selected — the entity's own metadata.version —
+// rather than the constraint the reference wrote, so a caret reference is
+// recorded at the version it resolved to. The digest is taken over the retained
+// bytes of that same indexed entity.
 func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
-	_, version, _ := resolver.SplitVersionedURI(uri)
-
 	if key, ok, _ := l.catalog.resolveComponentKey(uri); ok {
-		c := l.catalog.Components[key]
-		return l.tier1Resolution("Component", c.Metadata.Name, key, c.Metadata.Version, version), true
+		return l.tier1Resolution("Component", key, l.catalog.Components[key].Metadata.Version), true
 	}
 	if key, ok, _ := l.catalog.resolveFeatureKey(uri); ok {
-		f := l.catalog.Features[key]
-		return l.tier1Resolution("Feature", f.Metadata.Name, key, f.Metadata.Version, version), true
+		return l.tier1Resolution("Feature", key, l.catalog.Features[key].Metadata.Version), true
 	}
 	// Recipe / FeatureRecipe lookups go through RecipeByURI /
 	// FeatureRecipeByURI, which implement the provider-qualified /
@@ -853,26 +856,22 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	// provider ships a recipe of the same name.
 	if r, ok := l.catalog.RecipeByURI(uri); ok {
 		key := recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-		return l.tier1Resolution("Recipe", key, key, r.Metadata.Version, version), true
+		return l.tier1Resolution("Recipe", key, r.Metadata.Version), true
 	}
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
 		key := recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
-		return l.tier1Resolution("FeatureRecipe", key, key, fr.Metadata.Version, version), true
+		return l.tier1Resolution("FeatureRecipe", key, fr.Metadata.Version), true
 	}
 	// A Plugin is keyed by its coordinate identity (<pluginType>/<name>:version).
 	// A workspace plugin socket or a recipe pipeline step references a
 	// Plugin ENTITY URI, which the closure walk resolves here; a local
 	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
-	// than falling through to a fatal Tier-3 NotFound. Its retained bytes are
-	// keyed by the bare coordinate and its index entry by the versioned one, so
-	// both are passed.
+	// than falling through to a fatal Tier-3 NotFound.
 	if key, ok, _ := l.catalog.resolvePluginKey(uri); ok {
-		wp := l.catalog.Plugins[key]
-		return l.tier1Resolution("Plugin", wp.Coordinate(), key, wp.Metadata.Version, version), true
+		return l.tier1Resolution("Plugin", key, l.catalog.Plugins[key].Metadata.Version), true
 	}
 	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
-		a := l.catalog.Aggregates[key]
-		return l.tier1Resolution("Aggregate", a.Metadata.Name, key, a.Metadata.Version, version), true
+		return l.tier1Resolution("Aggregate", key, l.catalog.Aggregates[key].Metadata.Version), true
 	}
 	return closure.Resolution{}, false
 }
@@ -894,7 +893,7 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
-	return l.tier1Resolution(axis.Kind, metaName, metaName, metaVersion, resolved), entries, true
+	return l.tier1Resolution(axis.Kind, metaName, resolved), entries, true
 }
 
 // localLibrary reads one library out of the locally-authored catalog, returning its
@@ -951,25 +950,19 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (met
 	return "", "", nil, false
 }
 
-// tier1Resolution is the resolution descriptor for an entity this lookup's
-// catalog indexes. identifier keys the retained bytes the digest is taken over,
-// and indexKey is the entity's key in its kind's index, which is what the
-// catalog records the entity's provenance under; the two differ only for a
-// Plugin, whose bytes are keyed by its bare coordinate.
+// tier1Resolution is the resolution descriptor for the entity this lookup's
+// catalog indexes under kind and indexKey, reported at resolvedVersion. indexKey
+// keys both the retained bytes the digest is taken over and the record of where
+// the entry came from, so the digest is always of the indexed entity's own bytes.
 //
 // The resolution path is the catalog's own answer to where that index entry came
 // from, never an assumption that an indexed entity was authored in a catalog
 // directory: an index can also hold an entity it received from a lockfile-pinned
 // cache slot, and a pull-time pin decision keys on the difference.
-func (l *catalogLookup) tier1Resolution(kind, identifier, indexKey, metaVersion, requestedVersion string) closure.Resolution {
-	bytes := l.catalog.entityBytes[entityBytesKey(kind, identifier)]
-	resolved := metaVersion
-	if requestedVersion != "" {
-		resolved = requestedVersion
-	}
+func (l *catalogLookup) tier1Resolution(kind, indexKey, resolvedVersion string) closure.Resolution {
 	return closure.Resolution{
-		ResolvedVersion: resolved,
-		Digest:          contentDigest(bytes),
+		ResolvedVersion: resolvedVersion,
+		Digest:          contentDigest(l.catalog.entityBytes[entityBytesKey(kind, indexKey)]),
 		ResolutionPath:  l.catalog.indexedResolutionPath(kind, indexKey),
 	}
 }
@@ -1653,12 +1646,12 @@ func EntityNameFromURI(uri string) string {
 }
 
 // lookupNameFromURI returns the URI with any trailing ":<version>"
-// segment stripped. The catalog indexes Component / Feature /
-// Aggregate / SchemaLibrary / MappingLibrary entries by
-// the verbatim metadata.name string (which may itself contain "/"
-// separators — e.g., "core/server", "hub.aggrega.ai/component/core/api-server").
-// Stripping path segments here would lose load-bearing prefix
-// content; we strip only the version-pin suffix.
+// segment stripped: the verbatim metadata.name the reference names
+// (which may itself contain "/" separators — e.g., "core/server",
+// "hub.aggrega.ai/component/core/api-server"). Stripping path segments
+// here would lose load-bearing prefix content; only the version-pin
+// suffix is stripped. Which version of that name a reference selects is
+// not decided here but by selectEntityVersion.
 func lookupNameFromURI(uri string) string {
 	base, _, _ := resolver.SplitVersionedURI(uri)
 	return base

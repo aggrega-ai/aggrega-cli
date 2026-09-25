@@ -136,14 +136,14 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 	if _, ok := subject.mappingLibraries["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary as authored catalog; the cache walk-skip failed")
 	}
-	for name, path := range subject.componentIndex {
-		if inCache(path) {
-			t.Errorf("buildComponentIndex indexed Component %q at cache path %s; the cache walk-skip failed", name, path)
+	for identity, doc := range subject.componentIndex {
+		if inCache(doc.path) {
+			t.Errorf("buildComponentIndex indexed Component %q at cache path %s; the cache walk-skip failed", identity, doc.path)
 		}
 	}
 
 	// The skip must not over-reach: the authored entity beside the cache loads.
-	if _, ok := subject.componentIndex["example/authored-app"]; !ok {
+	if _, ok := subject.componentIndex[entityIndexKey("example/authored-app", "1.0.0")]; !ok {
 		t.Error("the authored Component was dropped; the cache skip over-reached")
 	}
 
@@ -161,8 +161,8 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached MappingLibrary, so the skip assertion is vacuous")
 	}
 	var canarySawCachePath bool
-	for _, path := range canary.componentIndex {
-		if inCache(path) {
+	for _, doc := range canary.componentIndex {
+		if inCache(doc.path) {
 			canarySawCachePath = true
 		}
 	}
