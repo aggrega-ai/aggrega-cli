@@ -46,18 +46,19 @@ var publishedByteSources = map[string]bool{
 	"PullLibrary":             true, // the kind-bound library fetch
 	"PullAggregate":           true, // the bare-name Aggregate fetch
 	"ReadCached":              true, // the content blob of a cache slot
-	"tier2ReadVerified":       true, // the pin-verified cache read
-	"tier2ReadSlotUnverified": true, // the unverified cache read beneath it
+	"tier2ReadSlotUnverified": true, // the unverified read of a Tier-2 cache slot, beneath every verified one
 
-	// Pass-throughs. These do not fetch, they HAND ON what a fetch returned, so a
-	// caller of one holds an artifact exactly as a caller of a fetch does. Listing
-	// them is what stops the enumeration stopping at the first hop and declaring
-	// the tier that forwards the bytes to be the only reader of them.
+	// Pass-throughs. These do not fetch, they HAND ON what a fetch or a cache read
+	// returned, so a caller of one holds an artifact exactly as a caller of the read
+	// does. Listing them is what stops the enumeration stopping at the first hop and
+	// declaring the tier that forwards the bytes to be the only reader of them.
 	// PullAndCacheAggregate is deliberately NOT here: it hands back the entity
 	// document rather than the artifact, so its callers hold a document and are
 	// not readers of published bytes at all.
-	"tier2Verified":          true, // the lazy lookup's verified Tier-2 read
-	"tier3PullCatalogEntity": true, // the entity Tier-3 pull primitive
+	"tier2ReadVerifiedWithManifest": true, // the pin-verified cache read, returning the manifest it verified against
+	"tier2ReadVerified":             true, // the same verified read, with the manifest dropped
+	"tier2Verified":                 true, // the lazy lookup's verified Tier-2 read
+	"tier3PullCatalogEntity":        true, // the entity Tier-3 pull primitive
 }
 
 // publishedByteReaders is the recorded set. The key is
@@ -74,9 +75,10 @@ var publishedByteReaders = map[string]string{
 	"pkg/catalog.DefaultOCIPuller.PullEntity":      "the kind-bound fetch; returns what the registry served, parses nothing",
 	"pkg/catalog.DefaultOCIPuller.PullLibrary":     "the kind-bound fetch; returns what the registry served, parses nothing",
 	"pkg/catalog.DefaultOCIPuller.PullAggregate":   "the bare-name fetch; returns what the registry served, parses nothing",
-	"pkg/catalog.tier2ReadVerified":                "the pin-verified cache read; verifies bytes against the pin and returns them unread",
+	"pkg/catalog.tier2ReadVerifiedWithManifest":    "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor and to the content pin, all by digest, and returns the bytes unread beside the manifest. It parses the manifest, never the bytes",
+	"pkg/catalog.tier2ReadVerified":                "hands on the verified read's bytes unread and drops the manifest; verifies nothing itself",
 	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check; parses nothing",
-	"pkg/catalog.LazyLookup.tier2Verified":         "hands the slot's bytes to the cascade under the verify posture; parses nothing",
+	"pkg/catalog.LazyLookup.tier2Verified":         "hands the verified read's bytes, the manifest they were verified against, and the slot they were read from to the cascade under the verify posture; parses nothing",
 	"pkg/catalog.LazyLookup.VerifyPinnedIntegrity": "verifies every pinned slot and discards the bytes; nothing is parsed",
 
 	// --- entity readers: each takes the document through oci.EntityYAML ---

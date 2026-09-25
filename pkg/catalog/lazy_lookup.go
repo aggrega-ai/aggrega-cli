@@ -756,8 +756,8 @@ const (
 )
 
 // tier2Verified applies the serve verify-on-read posture to the Tier-2 cache
-// slot for uri. It routes through tier2ReadVerified so a daemon never previews
-// unverified cache content:
+// slot for uri. It routes through tier2ReadVerifiedWithManifest, the one verifying
+// read, so a daemon never previews unverified cache content:
 //   - pin match -> (bytes, tier2Use).
 //   - pin mismatch (drift) -> (nil, tier2Skip): the slot is NOT used and NOT
 //     re-fetched. Self-healing a drift would show content a real build would
@@ -1761,7 +1761,7 @@ func refusalOr(refusal, fallback error) error {
 
 // foldPinnedCacheEntities folds every lockfile-pinned Tier-2 cache slot whose kind
 // is in allowed into the enumerated maps, under the SAME verify-on-read / pin
-// discipline resolveComponent uses (tier2ReadVerified). The pin set (SetPins) is
+// discipline resolveComponent uses (tier2ReadVerifiedWithManifest). The pin set (SetPins) is
 // the lockfile's URI→digest map; the cache is keyed by URI, not walkable like the
 // Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
 // the bundle is unwrapped to parse the entity YAML, but the WHOLE bundle blob is
