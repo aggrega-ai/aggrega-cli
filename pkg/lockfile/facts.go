@@ -19,6 +19,11 @@ type VerifiedFactRow struct {
 	// across pulls compares it, because a changed pin is a different artifact whose
 	// status must be re-discovered rather than inherited.
 	Digest string
+	// ManifestDigest is the row's recorded OCI manifest digest, empty where the row
+	// records none. Both facts a pull discovers are read off that manifest — a
+	// signature and a deprecation marker are referrers of it — so a caller carrying
+	// a fact forward compares it as well.
+	ManifestDigest string
 
 	deprecation **DeprecationRecord
 	signature   **VerifiedSignature
@@ -35,6 +40,12 @@ func (r VerifiedFactRow) RecordDeprecation(rec *DeprecationRecord) {
 	*r.deprecation = rec
 }
 
+// Signature returns the row's recorded signature fact, or nil when the row
+// carries none.
+func (r VerifiedFactRow) Signature() *VerifiedSignature {
+	return *r.signature
+}
+
 // RecordSignature records a verified signature fact on the row.
 func (r VerifiedFactRow) RecordSignature(sig *VerifiedSignature) {
 	*r.signature = sig
@@ -45,7 +56,7 @@ func (r VerifiedFactRow) RecordSignature(sig *VerifiedSignature) {
 // sections, and the Wasm plugins.
 //
 // It is the single enumeration of those sections. Four passes need it — the
-// signature fold, the marker fold, the carry-forward of a marker across a
+// signature fold, the marker fold, the carry-forward of both facts across a
 // warm-cache re-pull, and the build-time report — and each one naming the sections
 // itself is how a section came to be covered by three of the four: the pass that
 // missed it looked no different from the passes that did not. Consuming this
@@ -62,50 +73,56 @@ func (lf *Lockfile) VerifiedFactRows() []VerifiedFactRow {
 
 	for i := range lf.Entities {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.Entities[i].URI,
-			Digest:      lf.Entities[i].Digest,
-			deprecation: &lf.Entities[i].Deprecation,
-			signature:   &lf.Entities[i].Signature,
+			URI:            lf.Entities[i].URI,
+			Digest:         lf.Entities[i].Digest,
+			ManifestDigest: lf.Entities[i].ManifestDigest,
+			deprecation:    &lf.Entities[i].Deprecation,
+			signature:      &lf.Entities[i].Signature,
 		})
 	}
 	for i := range lf.SchemaLibraries {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.SchemaLibraries[i].URI,
-			Digest:      lf.SchemaLibraries[i].Digest,
-			deprecation: &lf.SchemaLibraries[i].Deprecation,
-			signature:   &lf.SchemaLibraries[i].Signature,
+			URI:            lf.SchemaLibraries[i].URI,
+			Digest:         lf.SchemaLibraries[i].Digest,
+			ManifestDigest: lf.SchemaLibraries[i].ManifestDigest,
+			deprecation:    &lf.SchemaLibraries[i].Deprecation,
+			signature:      &lf.SchemaLibraries[i].Signature,
 		})
 	}
 	for i := range lf.MappingLibraries {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.MappingLibraries[i].URI,
-			Digest:      lf.MappingLibraries[i].Digest,
-			deprecation: &lf.MappingLibraries[i].Deprecation,
-			signature:   &lf.MappingLibraries[i].Signature,
+			URI:            lf.MappingLibraries[i].URI,
+			Digest:         lf.MappingLibraries[i].Digest,
+			ManifestDigest: lf.MappingLibraries[i].ManifestDigest,
+			deprecation:    &lf.MappingLibraries[i].Deprecation,
+			signature:      &lf.MappingLibraries[i].Signature,
 		})
 	}
 	for i := range lf.WorkloadLibraries {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.WorkloadLibraries[i].URI,
-			Digest:      lf.WorkloadLibraries[i].Digest,
-			deprecation: &lf.WorkloadLibraries[i].Deprecation,
-			signature:   &lf.WorkloadLibraries[i].Signature,
+			URI:            lf.WorkloadLibraries[i].URI,
+			Digest:         lf.WorkloadLibraries[i].Digest,
+			ManifestDigest: lf.WorkloadLibraries[i].ManifestDigest,
+			deprecation:    &lf.WorkloadLibraries[i].Deprecation,
+			signature:      &lf.WorkloadLibraries[i].Signature,
 		})
 	}
 	for i := range lf.ArtifactLibraries {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.ArtifactLibraries[i].URI,
-			Digest:      lf.ArtifactLibraries[i].Digest,
-			deprecation: &lf.ArtifactLibraries[i].Deprecation,
-			signature:   &lf.ArtifactLibraries[i].Signature,
+			URI:            lf.ArtifactLibraries[i].URI,
+			Digest:         lf.ArtifactLibraries[i].Digest,
+			ManifestDigest: lf.ArtifactLibraries[i].ManifestDigest,
+			deprecation:    &lf.ArtifactLibraries[i].Deprecation,
+			signature:      &lf.ArtifactLibraries[i].Signature,
 		})
 	}
 	for i := range lf.Plugins {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.Plugins[i].URI,
-			Digest:      lf.Plugins[i].Digest,
-			deprecation: &lf.Plugins[i].Deprecation,
-			signature:   &lf.Plugins[i].Signature,
+			URI:            lf.Plugins[i].URI,
+			Digest:         lf.Plugins[i].Digest,
+			ManifestDigest: lf.Plugins[i].ManifestDigest,
+			deprecation:    &lf.Plugins[i].Deprecation,
+			signature:      &lf.Plugins[i].Signature,
 		})
 	}
 	return rows

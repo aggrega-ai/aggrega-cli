@@ -641,7 +641,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// The prior lockfile is read exactly once AS THE PRIOR PIN SOURCE — by this one
 	// decision, which performs that read and hands the value back — and every later
 	// consumer of those pins reads what it returned rather than the file: the reuse
-	// verification handed to the closure lookup below, and the deprecation and
+	// verification handed to the closure lookup below, and the verified-fact and
 	// external-input carry-forwards at the end of the run.
 	//
 	// The claim is scoped to that role and is not a claim about the operation. The
@@ -652,7 +652,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	//
 	// Which pins are honored, and whether the prior lockfile is read at
 	// all, is that decision's to make: a full refresh floats every pin and carries
-	// forward neither the recorded deprecations nor the external inputs, and holding
+	// forward neither the recorded facts nor the external inputs, and holding
 	// the read together with the policy that governs it is what keeps the three
 	// consumers from disagreeing about it.
 	//
@@ -1195,14 +1195,17 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			reported = append(reported, pinnedFiles...)
 
 			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, pinnedEntityDigests)
-			// Carry forward each unchanged pin's recorded deprecation fact from the
-			// prior lockfile before verification runs. A warm-cache (Tier-2) re-run
-			// does not re-touch the registry, so it does not re-discover markers; the
-			// prior fact holds for a pin whose digest is unchanged. A Tier-3
-			// re-discovery below overwrites it with a fresh finding. Without this, a
-			// build's honoring automatic fill would silently drop a recorded deprecation
-			// and mask a deprecated dependency.
-			carryForwardDeprecation(lf, pinReuse.Prior)
+			// Carry forward each unchanged pin's recorded facts — its verified
+			// signature and its deprecation marker — from the prior lockfile before
+			// verification runs. An entry the content cache served is not verified or
+			// re-discovered below, because both passes read the registry and a cache
+			// hit does not touch it; the prior facts hold for a pin that is unchanged.
+			// An entry fetched from the registry is verified and re-discovered below,
+			// and what that finds overwrites whatever was carried. Without this, a
+			// warm re-pull — or a build's honoring automatic fill — would silently drop
+			// a recorded signature and a recorded deprecation, the second of which
+			// masks a deprecated dependency.
+			carryForwardVerifiedFacts(lf, pinReuse.Prior)
 			// Carry forward the prior lockfile's external-input pins. These are
 			// render-time external-input pins, not part of the catalog closure
 			// buildLockfile materialises, so this operation would otherwise assemble a

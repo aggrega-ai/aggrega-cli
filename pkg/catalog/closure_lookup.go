@@ -667,10 +667,12 @@ func (l *catalogLookup) pluginArtifactReference(identity string) (string, error)
 //     DERIVE the content pin from those bytes, and cache both blobs under the
 //     derived pin — the same slot shape the build re-reads.
 //
-// The resolution pins ResolvedVersion = Digest = the derived content digest and
-// ManifestDigest = the manifest digest. A prior pin is HONORED, not laundered: a
-// re-pull whose derived content or served manifest no longer matches the recorded
-// pin halts with oci.ErrFetchIntegrity rather than re-pinning the changed bytes.
+// Either way the resolution pins ResolvedVersion = Digest = the derived content
+// digest and ManifestDigest = the manifest digest; a cache hit is reported as
+// served from the cache and a pull as fetched from the registry. A prior pin is
+// HONORED, not laundered: a re-pull whose derived content or served manifest no
+// longer matches the recorded pin halts with oci.ErrFetchIntegrity rather than
+// re-pinning the changed bytes.
 func (l *catalogLookup) resolveVersionedPluginArtifact(ctx context.Context, uri, version string) (closure.Resolution, error) {
 	// Cache-first: a prior lockfile pin names the content slot to read. Without a
 	// prior pin the slot cannot be addressed (its key is the yet-unknown content
@@ -762,7 +764,12 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 			return closure.Resolution{}, false, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
 				uri, got, contentPin, oci.ErrFetchIntegrity())
 		}
-		return pinnedPluginResolution(contentPin, contentDigest(manifestBytes)), true, nil
+		// Served from the cache, and reported as such: the slot is keyed by the
+		// content pin, so that pin is the version, and the verified manifest beside
+		// the bytes gives the manifest digest. Nothing about this hit touched the
+		// registry, so nothing downstream asks the registry about it either — its
+		// signature fact is the one the pull that fetched it recorded.
+		return cacheHitResolution(contentPin, bytes, manifestBytes), true, nil
 	case errors.Is(mrerr, oci.ErrFetchNotFound()):
 		return closure.Resolution{}, false, nil
 	default:
@@ -791,12 +798,13 @@ func (l *catalogLookup) cachePluginArtifact(uri, contentPin string, result *oci.
 }
 
 // pinnedPluginResolution is the resolution descriptor for a content-pinned .wasm
-// artifact: ResolvedVersion and Digest are both the pinned content digest, so
-// the lockfile pin (Digest) and the cache-read key (ResolvedVersion) name the
-// same content. ManifestDigest is the .wasm's OCI manifest digest — the verify
-// subject, distinct from the content pin. ResolutionPath marks it a
-// registry-tier pin, like every other above-Tier-1 resolution the closure
-// records.
+// artifact this run fetched from the registry: ResolvedVersion and Digest are
+// both the pinned content digest, so the lockfile pin (Digest) and the cache-read
+// key (ResolvedVersion) name the same content. ManifestDigest is the .wasm's OCI
+// manifest digest — the verify subject, distinct from the content pin.
+// ResolutionPath marks it fetched from the registry, which is what sends it to the
+// signature pass. A .wasm the cache served is described by cacheHitResolution
+// instead, with the same three digests and the cache as its source.
 func pinnedPluginResolution(pinDigest, manifestDigest string) closure.Resolution {
 	return closure.Resolution{
 		ResolvedVersion: pinDigest,
@@ -988,17 +996,35 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 		return bytes, res, true
 	}
 	pin, havePin := l.priorPins[uri]
-	if !havePin || contentDigest(bytes) == pin.Digest {
+	if !havePin || slotHoldsPin(res, pin) {
 		return bytes, res, true
 	}
-	// Re-pull reuse-check: the cached slot no longer hashes to the pin
-	// the prior lockfile recorded. Skip the hit and flag the URI so the
-	// Tier-3 re-fetch (which rewrites the slot) records a drift notice.
-	// Re-establishing the pin from authoritative registry bytes is the
-	// correct action where the registry is reachable, rather than
-	// laundering the drifted slot into the new lockfile.
+	// Re-pull reuse-check: the cached slot no longer holds what the prior
+	// lockfile pinned. Skip the hit and flag the URI so the Tier-3 re-fetch
+	// (which rewrites the slot) records a drift notice. Re-establishing the
+	// pin from authoritative registry bytes is the correct action where the
+	// registry is reachable, rather than laundering the drifted slot into the
+	// new lockfile.
 	l.refetchPending[uri] = pin.Digest
 	return nil, closure.Resolution{}, false
+}
+
+// slotHoldsPin reports whether a cache hit still holds what a prior lockfile pin
+// recorded for it: the content digest, and the manifest digest wherever the pin
+// records one.
+//
+// The manifest is held to the pin as well as the content because a cache hit now
+// reports the manifest it holds, and what it reports is written into the lockfile.
+// A check on the content alone would therefore carry a replaced manifest into the
+// new lockfile under the old content pin — the same laundering the content check
+// exists to prevent, one field over. A pin that records no manifest digest — an
+// entry resolved without one, or a row written before cache hits reported it —
+// is held to its content alone, as it always was.
+func slotHoldsPin(hit closure.Resolution, pin Pin) bool {
+	if hit.Digest != pin.Digest {
+		return false
+	}
+	return pin.ManifestDigest == "" || hit.ManifestDigest == pin.ManifestDigest
 }
 
 func (l *catalogLookup) tier3CatalogEntity(ctx context.Context, uri, kind string) ([]byte, closure.Resolution, error) {
@@ -1053,6 +1079,10 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // never a reason to reach for this. (See the verify-on-read posture in
 // pkg/sourcecache.LookupAndExtract, which this mirrors.)
 //
+// The resolution it returns is the cache hit's description (cacheHitResolution),
+// taken over the bytes read and the manifest persisted beside them; a slot whose
+// manifest cannot be read is described as holding none.
+//
 // Returns (nil, Resolution{}, false) when the cache directory is
 // unset, when the URI carries no version pin, or when the cache slot
 // is empty or unreadable.
@@ -1065,11 +1095,35 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 	if err != nil {
 		return nil, closure.Resolution{}, false
 	}
-	return bytes, closure.Resolution{
+	manifest, _ := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, version)
+	return bytes, cacheHitResolution(version, bytes, manifest), true
+}
+
+// cacheHitResolution is the one description of an entry the content cache served:
+// the version its slot is keyed by, the content digest of the bytes the slot
+// holds, and the digest of the OCI manifest persisted beside them — every fact the
+// registry read that filled the slot reported — marked as served from the cache.
+// Every cache-tier read describes what it served through this, so a warm pull
+// reports what a cold pull did and the lockfile it writes is the same.
+//
+// The manifest digest is derived from the persisted manifest rather than carried
+// in from a record, so a cache hit reports the manifest it actually holds and a
+// reader that holds it to a pin compares like with like. A slot holding no
+// manifest — nil or empty manifest bytes — is described with none.
+//
+// It verifies nothing. What a reader has established about the bytes before
+// describing them is that reader's own discipline, and each states it where it
+// reads.
+func cacheHitResolution(version string, content, manifest []byte) closure.Resolution {
+	res := closure.Resolution{
 		ResolvedVersion: version,
-		Digest:          contentDigest(bytes),
+		Digest:          contentDigest(content),
 		ResolutionPath:  closure.ResolutionPathCache,
-	}, true
+	}
+	if len(manifest) > 0 {
+		res.ManifestDigest = contentDigest(manifest)
+	}
+	return res
 }
 
 // tier2ReadVerified is the verifying Tier-2 cache read. It reads the cached
@@ -1090,12 +1144,22 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 // expectedDigest is a programming error at the call site (a read that cannot
 // supply a pin is a gap to wire, never a silent skip) and is reported as such.
 func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedManifestDigest string) ([]byte, error) {
+	bytes, _, err := tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest, expectedManifestDigest)
+	return bytes, err
+}
+
+// tier2ReadVerifiedWithManifest is tier2ReadVerified returning, beside the
+// verified bytes, the persisted manifest they were verified against, for a reader
+// that describes what it served (cacheHitResolution) and so needs the manifest
+// digest. It is the one verifying read; tier2ReadVerified is this read with the
+// manifest dropped, so the two cannot come to verify differently.
+func tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest, expectedManifestDigest string) ([]byte, []byte, error) {
 	if expectedDigest == "" {
-		return nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
+		return nil, nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
 	}
 	bytes, res, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
+		return nil, nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
 	}
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
 	// content; it is the root the content is verified against. Verify the manifest
@@ -1111,7 +1175,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 	case mrerr == nil:
 		if expectedManifestDigest != "" {
 			if err := oci.VerifyManifestDigest(manifestBytes, expectedManifestDigest); err != nil {
-				return nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
+				return nil, nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
 			}
 		}
 		// A plugin entity's content is the manifest's CONFIG blob (the entity YAML),
@@ -1122,22 +1186,22 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 		// kind thread and non-plugin entities keep the layer-based verify unchanged.
 		if oci.IsPluginManifest(manifestBytes) {
 			if err := oci.VerifyConfigAgainstManifest(manifestBytes, bytes); err != nil {
-				return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
+				return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 			}
 		} else if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
-			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
+			return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
 	case errors.Is(mrerr, oci.ErrFetchNotFound()):
-		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
+		return nil, nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
 	default:
-		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
+		return nil, nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
 	}
 	// Content still matches the recorded content pin.
 	if got := contentDigest(bytes); got != expectedDigest {
-		return nil, fmt.Errorf("catalog: cached %s content digest %s does not match lockfile pin %s: %w",
+		return nil, nil, fmt.Errorf("catalog: cached %s content digest %s does not match lockfile pin %s: %w",
 			uri, got, expectedDigest, oci.ErrFetchIntegrity())
 	}
-	return bytes, nil
+	return bytes, manifestBytes, nil
 }
 
 // tier3PullCatalogEntity is the package-level Tier-3 OCI pull

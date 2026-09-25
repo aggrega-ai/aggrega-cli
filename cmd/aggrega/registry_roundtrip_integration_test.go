@@ -972,17 +972,17 @@ spec:
 	// pass an "any error" check while reporting the wrong thing.
 	//
 	// WHICH integrity condition is fixed by the entity row this build reads, and that
-	// row carries no manifest digest. The lockfile on disk was last written by the
+	// row carries its manifest digest. The lockfile on disk was last written by the
 	// second build's fill (auto_pull is on for every build above), and a pull that
-	// finds the plugin entity already in the cache records its version and content
-	// digest but not its manifest digest — only the cold first pull records one,
-	// which is what the entity-axis assertion above reads. With no manifest pin the
-	// gate has nothing to hold the cached manifest to, so it skips that check (the
-	// cached-manifest condition) and the refusal comes from the next one, content
-	// against manifest: the tampered blob no longer parses as a manifest, which is
-	// the fetch-integrity condition. A row that carries its manifest digest is
-	// refused one check earlier, with the cached-manifest condition instead, so this
-	// assertion is tied to what a warm pull records for a cached entity.
+	// finds the plugin entity already in the cache records the manifest digest of the
+	// manifest persisted beside it — the digest the cold first pull recorded, which is
+	// what the entity-axis assertion above reads. So the gate holds the cached
+	// manifest to that pin first, and the tampered manifest is refused against its pin
+	// with the cached-manifest condition, before content is checked against it. The
+	// assertion is therefore tied to what a warm pull records for a cached entity: a
+	// row that had lost its manifest digest would skip that check and be refused one
+	// check later, as the fetch-integrity condition of content checked against a
+	// manifest that no longer parses.
 	entitySlot := oci.CachePath(ws, ".aggrega/cache", recipePluginURI, "1.0.0")
 	tamperedManifest := filepath.Join(entitySlot, "manifest")
 	if _, err := os.Stat(tamperedManifest); err != nil {
@@ -999,10 +999,9 @@ spec:
 	if errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Fatalf("frozen build over a tampered plugin manifest refused as lockfile drift, not as an integrity failure: %v", err)
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity()) {
-		t.Fatalf("frozen build over a tampered plugin manifest refused with the wrong condition; want the fetch-integrity "+
-			"refusal of content checked against a manifest that no longer parses (the entity row carries no manifest "+
-			"pin): %v", err)
+	if !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
+		t.Fatalf("frozen build over a tampered plugin manifest refused with the wrong condition; want the cached-manifest "+
+			"refusal of a manifest that no longer hashes to the digest the entity row pins: %v", err)
 	}
 }
 

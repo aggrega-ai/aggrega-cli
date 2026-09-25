@@ -764,25 +764,27 @@ const (
 //     re-establishes at Tier-3 (an on-demand fetch verifies against the registry
 //     descriptor), rather than returning unverified cache bytes.
 //
-// On tier2Use it also returns the slot the bytes were read from, which is where
-// a caller that parses them lays them out (unpackEntitySlot).
-func (l *LazyLookup) tier2Verified(uri string) ([]byte, string, tier2Outcome) {
+// On tier2Use it also returns the persisted manifest the bytes were verified
+// against, which a caller describing the hit reports the digest of
+// (cacheHitResolution), and the slot the bytes were read from, which is where a
+// caller that parses them lays them out (unpackEntitySlot).
+func (l *LazyLookup) tier2Verified(uri string) ([]byte, []byte, string, tier2Outcome) {
 	pin, havePin := l.pins[uri]
 	if !havePin {
-		return nil, "", tier2Fetch
+		return nil, nil, "", tier2Fetch
 	}
 	// The cache slot is keyed by the versioned URI; combine the lookup URI with
 	// the pin's resolved version so a bare-URI pin addresses the right slot.
 	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+	bytes, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 	switch {
 	case err == nil:
 		slot, _, _ := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
-		return bytes, slot, tier2Use
+		return bytes, manifest, slot, tier2Use
 	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()):
-		return nil, "", tier2Skip
+		return nil, nil, "", tier2Skip
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
-		return nil, "", tier2Fetch
+		return nil, nil, "", tier2Fetch
 	}
 }
 
@@ -942,7 +944,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
-	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
@@ -1014,7 +1016,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true
 	}
-	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
@@ -2611,11 +2613,11 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
-	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCache), true
+				return cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest), true
 			}
 		}
 	} else if outcome == tier2Skip {
@@ -2638,11 +2640,11 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
-	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCache), true
+				return cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest), true
 			}
 		}
 	} else if outcome == tier2Skip {
@@ -2663,14 +2665,21 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 // mirroring catalogLookup.tier1Resolution: digest of the retained raw bytes;
 // resolved version = the URI's pin when present, else metadata.version; the tier
 // tag matches the eager path's vocabulary so a drift compare never differs on it.
+// A cache hit is not described here but through cacheHitResolution, over the same
+// version, so it reports the manifest it holds as every cache-tier read does.
 func (l *LazyLookup) closureResolution(kind, name, metaVersion, uri, path string) closure.Resolution {
-	resolved := metaVersion
-	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
-		resolved = v
-	}
 	return closure.Resolution{
-		ResolvedVersion: resolved,
+		ResolvedVersion: closureVersion(uri, metaVersion),
 		Digest:          contentDigest(l.entityBytes[entityBytesKey(kind, name)]),
 		ResolutionPath:  path,
 	}
+}
+
+// closureVersion is the version a lazily-resolved entity is reported at: the
+// version the URI pins when it pins one, else the entity's own metadata.version.
+func closureVersion(uri, metaVersion string) string {
+	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
+		return v
+	}
+	return metaVersion
 }

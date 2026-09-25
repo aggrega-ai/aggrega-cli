@@ -137,12 +137,26 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, r := range results {
 		factByURI[r.URI] = r
 	}
+	asked := make(map[string]struct{}, len(verifiable))
+	for _, e := range verifiable {
+		asked[e.URI] = struct{}{}
+	}
 	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
 	// verified fact reaches every section that can record one without this pass
 	// naming the sections.
+	//
+	// For a row this pass asked the registry about, the answer it got is the row's
+	// fact, and that includes getting none: a signature carried forward from the
+	// prior lockfile is replaced, and cleared where this run found no signature to
+	// record. A row this pass did not ask about — one the content cache or a local
+	// catalog served — keeps whatever was carried onto it.
 	for _, row := range lf.VerifiedFactRows() {
+		if _, ok := asked[row.URI]; !ok {
+			continue
+		}
 		r, ok := factByURI[row.URI]
 		if !ok {
+			row.RecordSignature(nil)
 			continue
 		}
 		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {

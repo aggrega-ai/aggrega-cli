@@ -41,9 +41,9 @@ func (m PinReuseMode) FullRefresh() bool { return m.Upgrade && !m.Targeted() }
 //
 // Prior is the value every prior-lockfile consumer reads — the reuse check
 // carried in Verification, and the caller's own carry-forwards of the recorded
-// deprecations and external inputs. Reading it in one place and handing it back
-// is what keeps those consumers from disagreeing about whether a prior lockfile
-// is in play.
+// signatures, deprecations and external inputs. Reading it in one place and
+// handing it back is what keeps those consumers from disagreeing about whether a
+// prior lockfile is in play.
 type PinReuse struct {
 	Prior        *lockfile.Lockfile
 	Verification *ReuseVerification
@@ -67,8 +67,8 @@ type PinReuse struct {
 //     caller halts rather than silently upgrading nothing.
 //   - Otherwise, when a prior lockfile was read, every pin it records is honored.
 //     A bare upgrade reads no prior lockfile and so honors nothing: floating
-//     every pin and carrying forward neither the recorded deprecations nor the
-//     external inputs is what a bare upgrade means.
+//     every pin and carrying forward neither the recorded signatures and
+//     deprecations nor the external inputs is what a bare upgrade means.
 //
 // releasePath names the Release in the remediation hint of the no-lockfile halt.
 // warn receives the reuse notices the closure lookup emits when a cache slot has

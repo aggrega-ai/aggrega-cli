@@ -92,44 +92,66 @@ func discoverClosureDeprecations(
 	return nil
 }
 
-// carryForwardDeprecation copies each unchanged pin's deprecation record from
-// the prior lockfile into lf, so a warm-cache (Tier-2) re-pull that does not
-// re-touch the registry preserves a deprecation discovered on an earlier
-// registry-touching pull. A record is carried forward only when the new row
-// already carries none (a fresh Tier-3 re-discovery wins) and the prior and new
-// rows share the same content digest (an unchanged pin — a changed pin is a
-// different artifact whose deprecation status must be re-discovered, not
-// inherited).
+// carryForwardVerifiedFacts copies each unchanged pin's recorded facts — its
+// verified signature and its verified deprecation marker — from the prior
+// lockfile into lf, so a re-pull that reads a dependency from the content cache
+// rather than the registry records the same facts the pull that fetched it did.
+// Neither fact is discovered again for an entry the cache served: the signature
+// pass and the marker discovery read the registry, and a cache hit does not touch
+// it. Without the carry-forward a warm re-pull would therefore drop both facts, and
+// the lockfile it writes would differ from the one the cold pull wrote over the
+// same dependencies.
 //
-// Both sides are read from the lockfile's own enumeration of marker-bearing rows,
-// so every section that can record a marker is carried forward. A section covered
+// A fact is carried only onto a row that records none of its own, so what this
+// run discovered at the registry always wins, and only across an unchanged pin:
+// the prior and new rows share the content digest, and their manifest digests
+// agree wherever both record one. The manifest takes part because both facts are
+// read off it — a signature and a deprecation marker are referrers of the
+// manifest — so a pin whose manifest moved is a different artifact whose facts
+// must be discovered again rather than inherited. A row that records no manifest
+// digest on one side carries on the content digest alone, which is what keeps a
+// lockfile written before cache hits recorded their manifest from losing a
+// recorded deprecation on its next pull.
+//
+// Both sides are read from the lockfile's own enumeration of fact-bearing rows,
+// so every section that can record a fact is carried forward. A section covered
 // by discovery but not by this carry-forward would look correct on the pull that
-// found the marker and lose it on the next warm-cache re-pull — a section-shaped
+// found the fact and lose it on the next warm-cache re-pull — a section-shaped
 // gap that no single pull can show.
 //
 // A nil prior is a no-op: the first pull has nothing to carry forward, and
 // neither does a full refresh, which deliberately reads no prior pin set.
-func carryForwardDeprecation(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
+func carryForwardVerifiedFacts(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
 	if prior == nil {
 		return
 	}
-	type priorPin struct {
-		digest string
-		rec    *lockfile.DeprecationRecord
-	}
 	priorRows := prior.VerifiedFactRows()
-	priorByURI := make(map[string]priorPin, len(priorRows))
+	priorByURI := make(map[string]lockfile.VerifiedFactRow, len(priorRows))
 	for _, row := range priorRows {
-		priorByURI[row.URI] = priorPin{row.Digest, row.Deprecation()}
+		priorByURI[row.URI] = row
 	}
 	for _, row := range lf.VerifiedFactRows() {
-		if row.Deprecation() != nil {
+		p, ok := priorByURI[row.URI]
+		if !ok || !samePin(p, row) {
 			continue
 		}
-		if p, ok := priorByURI[row.URI]; ok && p.rec != nil && p.digest == row.Digest {
-			row.RecordDeprecation(p.rec)
+		if row.Signature() == nil && p.Signature() != nil {
+			row.RecordSignature(p.Signature())
+		}
+		if row.Deprecation() == nil && p.Deprecation() != nil {
+			row.RecordDeprecation(p.Deprecation())
 		}
 	}
+}
+
+// samePin reports whether two rows for one URI pin the same artifact, which is
+// the condition a recorded fact is carried across: the same content digest, and
+// manifest digests that agree wherever both rows record one.
+func samePin(prior, now lockfile.VerifiedFactRow) bool {
+	if prior.Digest != now.Digest {
+		return false
+	}
+	return prior.ManifestDigest == "" || now.ManifestDigest == "" || prior.ManifestDigest == now.ManifestDigest
 }
 
 // carryForwardExternalInputs copies the prior lockfile's recorded external-input
