@@ -127,11 +127,14 @@ func TestUnrecordedIdentityAdvisory(t *testing.T) {
 // TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource proves the advisory's
 // remedy is the one that is true of the source the bytes came from. Bytes read
 // from the content cache are an acquisition a pull records, so the advisory names
-// that pull. Bytes read from beside a Plugin entity in a catalog directory are not:
-// a pull never records an entity authored there, so naming a pull would send the
-// reader to a command that changes nothing — the advisory says instead that the
-// bytes are read from the catalog on every build, and names publishing as the way
-// to have them recorded. Both rows resolve real bytes through the real tier.
+// that pull. Bytes read from beside a Plugin entity in a catalog directory are
+// recorded by a pull only for a plugin attached at a transform role, and the
+// resolver cannot tell which role a reference is attached at, so naming the pull
+// command would send the reader of any other plugin to a command that changes
+// nothing — the advisory says instead that the bytes are read from the catalog on
+// every build, that a pull records them only for a transform role, and names
+// publishing as the way to have any other plugin recorded. Both rows resolve real
+// bytes through the real tier.
 func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
 	const uri = "pipeline-step/patch"
 
@@ -147,7 +150,7 @@ func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
 				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), uri, []byte("colocated-guest"))
 				return ResolutionContext{ColocatedDirs: map[string]string{uri: dir}}
 			},
-			want:    []string{"resolved from local", "beside its Plugin entity in a catalog directory", "publish the plugin"},
+			want:    []string{"resolved from local", "beside its Plugin entity in a catalog directory", "only for a plugin attached at a transform role", "publish the plugin"},
 			mustNot: []string{"aggrega pull"},
 		},
 		{

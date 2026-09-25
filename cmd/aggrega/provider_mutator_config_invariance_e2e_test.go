@@ -23,8 +23,8 @@
 // yet re-add the workspace socket entities pinned at pull. A frozen (no-network)
 // build of a REGISTRY socket therefore reports drift and halts rather than
 // rendering offline. Build-side config-invariance is proven for the achievable
-// non-registry sockets by the sibling suites (an embedded provider and a
-// local mutator, whose entities are never pinned and so never drift);
+// non-registry sockets by the sibling suites (an embedded provider, which is never
+// pinned, and a local mutator, pinned from the bytes beside its entity, so neither drifts);
 // the registry-socket frozen-build gap is characterized here as a guarded
 // current-state test.
 //

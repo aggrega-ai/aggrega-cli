@@ -230,7 +230,7 @@ func TestPluginDescent_UnpinnedSocketArtifactDisagreesWithReconstruction(t *test
 
 			var rebuilt closure.Closure
 			if err := closure.ReconstructWorkspaceSocketEntities(
-				context.Background(), &rebuilt, []string{entityURI}, loader, lookup); err != nil {
+				context.Background(), &rebuilt, []string{entityURI}, loader, lookup, nil); err != nil {
 				t.Fatalf("workspace-socket reconstruction: %v", err)
 			}
 			_, rebuiltPin := pluginByURI(rebuilt, artifactURI)

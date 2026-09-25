@@ -91,7 +91,9 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 		func() (closure.RecipeLoader, error) {
 			controlView.SetPins(catalog.PinsFromClosure(control))
 			return controlView.ClosureRecipeLoader(), nil
-		}); rerr != nil {
+		},
+		nil, // the plugin under test is registry-published, so no catalog-local artifact is asked about
+	); rerr != nil {
 		t.Fatalf("control reconstruction: %v", rerr)
 	}
 	if missing, _ := setDiff(lockPlugins, refURIs(control.Plugins)); !containsString(missing, f.artifactURI) {

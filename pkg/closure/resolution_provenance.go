@@ -21,6 +21,10 @@ package closure
 // only when it resolves from the registry-backed cache or pull sources; an entity
 // resolved this way stays catalog-resident and resolves at build through the same
 // local catalog walk, never through a lockfile pin.
+//
+// It is also the path a plugin artifact carries when its bytes were read from the
+// local filesystem — beside its entity in such a directory, or at a path the author
+// named — which is how the artifact of an entity authored there is resolved.
 const ResolutionPathCatalog = "tier-1-catalog"
 
 // ResolutionPathCache is the ResolutionPath a Lookup reports for an entity read

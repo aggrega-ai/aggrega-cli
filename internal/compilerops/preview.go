@@ -885,7 +885,12 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	// external documents that pass reads. One pinned lookup serves every plugin
 	// pass, the workspace-socket one below included.
 	pinned := view.ClosureLookupWithPins(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.lockfile))
-	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold); err != nil {
+	// The artifact of a Plugin entity authored in a catalog directory is resolved from
+	// this machine by the same question the pull asked when it wrote the lockfile, so
+	// a transform-role attachment authored there reconstructs to the pin the pull
+	// recorded from the same bytes. Both plugin passes below ask it.
+	catalogArtifacts := pipeline.CatalogPluginArtifacts(in.workspaceRoot, in.workspaceConfig, view.PluginColocatedDirs())
+	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold, catalogArtifacts); err != nil {
 		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 		return err
 	}
@@ -904,5 +909,5 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	if err != nil {
 		return err
 	}
-	return closure.ReconstructWorkspaceSocketEntities(ctx, &resolved.Closure, socketEntityURIs, socketRecipeLoader, pinned)
+	return closure.ReconstructWorkspaceSocketEntities(ctx, &resolved.Closure, socketEntityURIs, socketRecipeLoader, pinned, catalogArtifacts)
 }

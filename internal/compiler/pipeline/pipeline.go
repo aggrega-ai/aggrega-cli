@@ -34,6 +34,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -1537,17 +1538,33 @@ func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginp
 // bytes through, over the tier sources a workspace supplies: the catalog's
 // co-located artifact directories, and the content cache addressed at the
 // workspace root. It is the one assembly of those sources, so a caller asking the
-// build's question outside a build — a pull asking whether the artifact of a
-// Plugin entity authored in a catalog directory can be read — asks the same
-// cascade over the same sources rather than a second reading of either. pins
-// states where the construction's recorded digests come from and fixes its
-// posture.
+// build's question outside a build — what the artifact of a Plugin entity
+// authored in a catalog directory resolves to — asks the same cascade over the
+// same sources rather than a second reading of either. pins states where the
+// construction's recorded digests come from and fixes its posture.
 func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]string) pluginpath.Resolver {
 	return pins.Resolver(pluginpath.ResolutionContext{
 		ColocatedDirs: colocatedDirs,
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
 	})
+}
+
+// CatalogPluginArtifacts is the question a dependency resolution asks about the
+// .wasm of a Plugin entity authored in a catalog directory: what the build's own
+// cascade resolves it to, over the same sources, or the refusal when no tier holds
+// it. The pull that writes a lockfile and the build that holds one to its drift
+// check both ask it, so the pin one records and the pin the other expects come
+// from one computation.
+//
+// It carries no recorded digests, deliberately and on both sides. The pull is
+// producing the record, so there is none to consult; and a build reconstructing
+// the record compares the digest this answers against the one the record holds, so
+// a pin supplied here would turn that comparison into a second check of the same
+// bytes and report a changed module as an integrity failure rather than as a
+// lockfile that no longer matches.
+func CatalogPluginArtifacts(workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]string) closure.LocalPluginArtifact {
+	return PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, colocatedDirs).ResolveCatalogArtifact
 }
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the

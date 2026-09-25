@@ -89,9 +89,16 @@ func TestPluginDescent_BinaryResolvedNotPinned(t *testing.T) {
 func TestPluginDescent_BinaryResolvedOutputShapingPluginStillPinned(t *testing.T) {
 	lookup := withBinaryResolvedPlugin(pluginDescentLookup())
 	// The mutator entity is authored in a local catalog — the real shape, where the
-	// workspace supplies the entity and the binary supplies only the .wasm.
+	// workspace supplies the entity and the binary supplies only the .wasm. An entity
+	// authored there has its .wasm resolved from the machine's own sources rather
+	// than through the lookup, so the binary's copy is what that question answers.
 	lookup.entities[binaryMutatorEntityURI] = resolutionOK("1.0.0", "sha256:mutator-entity", "tier-1-catalog")
-	lookup.plugins[binaryMutatorArtifact] = resolutionOK("1.0.0", "sha256:mutator-artifact", closure.ResolutionPathEmbedded)
+	local := func(_, artifactRef string) (closure.Resolution, error) {
+		if artifactRef != binaryMutatorArtifact {
+			t.Errorf("the machine's own sources were asked about %q; only the catalog-authored mutator's artifact belongs there", artifactRef)
+		}
+		return resolutionOK("1.0.0", "sha256:mutator-artifact", closure.ResolutionPathEmbedded), nil
+	}
 
 	loader := &fakeRecipeLoader{
 		recipes: map[string]*types.Recipe{
@@ -122,7 +129,7 @@ func TestPluginDescent_BinaryResolvedOutputShapingPluginStillPinned(t *testing.T
 	if err := closure.ResolveProviderSocketEntities(context.Background(), &cl, cfg.Plugins.Providers, lookup); err != nil {
 		t.Fatalf("provider socket pass: %v", err)
 	}
-	if err := descendPlugins(&cl, loader, lookup, nil); err != nil {
+	if err := descendPluginsWith(&cl, loader, lookup, nil, local); err != nil {
 		t.Fatalf("plugin descent: %v", err)
 	}
 

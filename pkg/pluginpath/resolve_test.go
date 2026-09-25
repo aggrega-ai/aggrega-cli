@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -283,20 +284,25 @@ func TestAnExhaustedCascadeReportsAnAbsentArtifact(t *testing.T) {
 	}
 }
 
-// TestCheckCatalogArtifactAsksTheCascade drives the pull's question about a Plugin
-// entity authored in a catalog directory through each tier that can answer it, and
-// through the case none can. An artifact any tier holds satisfies it — the question
-// is the cascade's, not "is there a file beside the entity" — and only a reference no
-// tier answers is refused, naming the entity, the file and the directory.
-func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
+// TestResolveCatalogArtifactAsksTheCascade drives the lock-time question about a
+// Plugin entity authored in a catalog directory through each tier that can answer
+// it, and through the case none can. An artifact any tier holds satisfies it — the
+// question is the cascade's, not "is there a file beside the entity" — and the
+// answer describes the bytes that tier read: their content digest as digest and
+// version, the provenance tag of that tier, and no manifest digest, since nothing
+// came through a registry. Only a reference no tier answers is refused, naming the
+// entity, the file and the directory.
+func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 	const entityURI = "pipeline-step/patch:1.0.0"
 	const artifactRef = "pipeline-step/patch"
 	leaf := pluginLeaf(artifactRef)
 
 	cases := []struct {
-		name    string
-		setup   func(t *testing.T) Resolver
-		refused bool
+		name     string
+		setup    func(t *testing.T) Resolver
+		refused  bool
+		wantPath string
+		bytes    string
 	}{
 		{
 			name: "the artifact sits beside the entity",
@@ -304,6 +310,8 @@ func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
 				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), artifactRef, []byte("guest"))
 				return Resolver{colocatedDirs: map[string]string{artifactRef: dir}}
 			},
+			wantPath: closure.ResolutionPathCatalog,
+			bytes:    "guest",
 		},
 		{
 			name: "the binary carries the artifact and nothing sits beside the entity",
@@ -311,6 +319,8 @@ func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
 				t.Cleanup(embedded.SeedForTest(artifactRef, []byte("embedded-guest")))
 				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}}
 			},
+			wantPath: closure.ResolutionPathEmbedded,
+			bytes:    "embedded-guest",
 		},
 		{
 			name: "the content cache holds the artifact and nothing sits beside the entity",
@@ -321,6 +331,8 @@ func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
 				}
 				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}, workspaceRoot: ws, cacheDir: ".aggrega/cache"}
 			},
+			wantPath: closure.ResolutionPathCache,
+			bytes:    "cached-guest",
 		},
 		{
 			name: "no tier holds the artifact",
@@ -333,12 +345,24 @@ func TestCheckCatalogArtifactAsksTheCascade(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := tc.setup(t)
-			err := r.CheckCatalogArtifact(entityURI, artifactRef)
+			res, err := r.ResolveCatalogArtifact(entityURI, artifactRef)
 			if !tc.refused {
 				if err != nil {
-					t.Fatalf("an artifact a tier holds must satisfy the check; got %v", err)
+					t.Fatalf("an artifact a tier holds must satisfy the question; got %v", err)
+				}
+				want := closure.Resolution{
+					ResolvedVersion: digest.ContentDigest([]byte(tc.bytes)),
+					Digest:          digest.ContentDigest([]byte(tc.bytes)),
+					ResolutionPath:  tc.wantPath,
+				}
+				if res != want {
+					t.Errorf("resolution = %+v; want %+v — the content digest of the bytes that tier read, "+
+						"that tier's provenance tag, and no manifest digest", res, want)
 				}
 				return
+			}
+			if res != (closure.Resolution{}) {
+				t.Errorf("a refusal carried a resolution %+v; nothing was read, so there is nothing to describe", res)
 			}
 			if !errors.Is(err, ErrPluginArtifactNotFound()) {
 				t.Fatalf("want ErrPluginArtifactNotFound; got %v", err)

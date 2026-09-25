@@ -20,9 +20,9 @@
 //
 // The mutator here is a local workspace-catalog plugin, so its .wasm is resolved
 // through the co-located tier (the .wasm laid down beside its Plugin entity in the
-// catalog) and carries no registry artifact pin — which keeps the test focused on
-// the runtime attachment reconstruction under test rather than on the separate
-// registry-artifact reconstruction path.
+// catalog) and its artifact pin is taken from those local bytes rather than from a
+// registry — which keeps the test focused on the runtime attachment reconstruction
+// under test rather than on the separate registry-artifact reconstruction path.
 package main
 
 import (

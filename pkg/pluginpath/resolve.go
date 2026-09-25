@@ -57,11 +57,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// Tier names the source a plugin's bytes came from. It is a diagnostic tag: the
+// Tier names the source a plugin's bytes came from. It is a provenance tag: the
 // loaded bytes are identical regardless of source when the digest pin matches, so
-// nothing branches on it. Where a tag reaches a user it is rendered through
-// Source, never printed raw, because these spellings are this resolver's internal
-// vocabulary rather than words the reference teaches.
+// the cascade never branches on it. Where a tag reaches a user it is rendered
+// through Source, never printed raw, because these spellings are this resolver's
+// internal vocabulary rather than words the reference teaches; where a lock-time
+// resolution records it, it is mapped onto the closure's own provenance tag.
 type Tier string
 
 const (
@@ -89,20 +90,30 @@ func cascadeNames() string {
 // for it, drawn from the shared provenance vocabulary so that a plugin's
 // resolution and a pulled entity's resolution name the same source identically.
 //
-// The mapping is deliberately many-to-one: a .wasm laid down beside its entity
-// and one named by an explicit path are distinct lookups here, but to a reader
-// both mean the bytes were found locally, so both report the same word. That is
-// the whole extent of the sharing — this cascade and the pull-side resolution
-// tags are separate axes, over different subjects and at different granularity,
-// and only their rendering is common.
+// The word is read through the provenance tag the tier corresponds to rather than
+// chosen here, so the two cannot name one source differently.
 func (t Tier) Source() closure.ResolutionSource {
+	source, _ := closure.ResolutionSourceFor(t.resolutionPath())
+	return source
+}
+
+// resolutionPath maps this resolver's source tag onto the provenance tag a closure
+// resolution records for bytes found the same way: the binary's copy, a local file,
+// or the content cache. It is the one correspondence between the two, read both by
+// Source and by ResolveCatalogArtifact, whose resolution a pull records.
+//
+// The mapping is deliberately many-to-one: a .wasm laid down beside its entity and
+// one named by an explicit path are distinct lookups here, but both are bytes found
+// on the local filesystem, which is what the catalog tag records. A tier with no
+// correspondence maps to the empty tag, which names no source.
+func (t Tier) resolutionPath() string {
 	switch t {
 	case TierEmbed:
-		return closure.SourceInBinary
+		return closure.ResolutionPathEmbedded
 	case TierColocated, TierLocal:
-		return closure.SourceLocal
+		return closure.ResolutionPathCatalog
 	case TierCache:
-		return closure.SourceCacheReuse
+		return closure.ResolutionPathCache
 	}
 	return ""
 }
@@ -325,9 +336,9 @@ var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-misma
 // It is raised in two places, and both report the same absence. A resolution that
 // exhausts the cascade raises it wherever a plugin is loaded. A pull raises it
 // earlier, before it writes anything, for a Plugin entity authored in a catalog
-// directory whose artifact no tier holds (see CheckCatalogArtifact): such an entity
-// is never pinned, so no later pull can supply its artifact, and the pull is the
-// step that can name the file to place.
+// directory whose artifact no tier holds (see ResolveCatalogArtifact): such an
+// entity's artifact is read only from the machine, so no later pull can supply it,
+// and the pull is the step that can name the file to place.
 func ErrPluginArtifactNotFound() error { return errPluginArtifactNotFound }
 
 var errPluginArtifactNotFound = cerrors.Register("plugin-artifact-not-found", cerrors.Meta{
@@ -539,28 +550,42 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (%s): %w", uri, cascadeNames(), ErrPluginArtifactNotFound())
 }
 
-// CheckCatalogArtifact asks the cascade whether the artifact a Plugin entity
-// authored in a catalog directory names resolves, and refuses when it does not.
+// ResolveCatalogArtifact resolves, through the cascade, the artifact a Plugin entity
+// authored in a catalog directory names, and refuses when no tier holds it.
 //
-// It is the pull's question about such an entity, answered by the same cascade a
+// It is the lock-time question about such an entity, answered by the same cascade a
 // build loads the plugin through rather than by a second reading of the catalog
 // directory: an artifact the binary carries, one beside the entity, one at an
 // explicit path and one already in the content cache all satisfy it, exactly as
-// they satisfy the build. A pull never pins an entity authored in a catalog
-// directory and a build fetches nothing, so the tiers asked here are the ones a
-// build will read; refusing at the pull names the fix at the step that can still
-// take it.
+// they satisfy the build. Every one of those tiers reads bytes already on the
+// machine, so the artifact of an entity authored in a catalog directory is never
+// fetched from a registry; refusing at the pull names the fix at the step that can
+// still take it.
 //
-// It returns nil when the artifact resolves. When no tier holds it, it returns an
-// occurrence of ErrPluginArtifactNotFound naming the entity, the file the
-// co-located tier reads and the directory it reads it in, with the cascade's own
-// exhaustion as the cause. Any other resolution failure — an unreadable file
-// beside the entity, bytes that do not match a recorded pin — is returned as the
-// cascade raised it.
-func (r Resolver) CheckCatalogArtifact(entityURI, artifactRef string) error {
-	_, err := r.Resolve(artifactRef)
-	if err == nil || !errors.Is(err, ErrPluginArtifactNotFound()) {
-		return err
+// When the artifact resolves, the result describes the bytes read: their content
+// digest, as both the digest and the version, the way a pinned plugin artifact
+// records its content; the source they were read from; and no manifest digest,
+// because they came through no registry manifest. A pull pins that description for
+// an attachment whose bytes shape the rendered output, and a build reconstructing
+// the lockfile asks the same question and compares what it gets.
+//
+// When no tier holds the artifact, it returns an occurrence of
+// ErrPluginArtifactNotFound naming the entity, the file the co-located tier reads
+// and the directory it reads it in, with the cascade's own exhaustion as the cause.
+// Any other resolution failure — an unreadable file beside the entity, bytes that do
+// not match a recorded pin — is returned as the cascade raised it.
+func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure.Resolution, error) {
+	resolved, err := r.Resolve(artifactRef)
+	if err == nil {
+		content := digest.ContentDigest(resolved.Bytes)
+		return closure.Resolution{
+			ResolvedVersion: content,
+			Digest:          content,
+			ResolutionPath:  resolved.Tier.resolutionPath(),
+		}, nil
+	}
+	if !errors.Is(err, ErrPluginArtifactNotFound()) {
+		return closure.Resolution{}, err
 	}
 	leaf := pluginLeaf(artifactRef)
 	dir := r.colocatedDirs[artifactRef]
@@ -574,7 +599,7 @@ func (r Resolver) CheckCatalogArtifact(entityURI, artifactRef string) error {
 	} else {
 		values = append(values, fmt.Sprintf("expected %s beside the entity", leaf))
 	}
-	return cerrors.Wrap(err, cerrors.CatalogError, where, cerrors.ComposeMessage(ErrPluginArtifactNotFound(), values, advice))
+	return closure.Resolution{}, cerrors.Wrap(err, cerrors.CatalogError, where, cerrors.ComposeMessage(ErrPluginArtifactNotFound(), values, advice))
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -639,12 +664,15 @@ var advisedUnrecorded sync.Map
 // the remedy is true of one source and false of another. Bytes read from the
 // content cache are an acquisition a pull records, so the advisory names the pull
 // that records them. Bytes read from beside a Plugin entity in a catalog directory
-// are not: a pull never pins an entity authored there, so no pull could record
-// them, and telling the reader to run one would send them to a command that
-// changes nothing. For those the advisory says what does hold — the bytes are
-// read from the catalog directory on every build — and names the one thing that
-// brings them under a recorded digest, publishing the plugin and referencing the
-// published entity.
+// are recorded by a pull only for a plugin attached at a transform role, whose
+// bytes a pull pins because they shape the rendered output; for every other plugin
+// authored there no pull records them, and telling the reader to run one would send
+// them to a command that changes nothing. This resolver cannot tell which role a
+// reference is attached at, so for those bytes the advisory says what holds either
+// way — they are read from the catalog directory on every build, and a pull records
+// them only for a transform role — and names the one thing that brings any other
+// plugin under a recorded digest, publishing it and referencing the published
+// entity.
 //
 // Two resolutions raise nothing, and each is a case where no record could exist
 // rather than one where a record is missing:
@@ -693,8 +721,9 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 	}
 	remedy := "run `aggrega pull --release <release>` to record it"
 	if tier == TierColocated {
-		remedy = "it is read from beside its Plugin entity in a catalog directory on every build, which a pull " +
-			"does not record; publish the plugin and reference the published entity to have its digest recorded"
+		remedy = "it is read from beside its Plugin entity in a catalog directory on every build, and a pull " +
+			"records its digest only for a plugin attached at a transform role; otherwise publish the plugin and " +
+			"reference the published entity to have its digest recorded"
 	}
 	fmt.Fprintf(unrecordedIdentityWriter,
 		"warning: plugin %q resolved from %s with no recorded digest to check it against, "+

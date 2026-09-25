@@ -44,6 +44,13 @@ import (
 // and the pinned one does not: the Release's external documents. A nil
 // pluginLookup uses lookup for all three passes.
 //
+// localArtifact is the question the lock-time artifact descent asks about the
+// artifact of a Plugin entity authored in a local catalog directory, and a verifier
+// supplies the same one, so a transform-role attachment authored there is pinned
+// from the same local bytes on both sides. It is handed to the artifact descent only:
+// the entity descent's refusal belongs to a pull, and a build loads each plugin
+// through the cascade that raises the same condition where it loads it.
+//
 // The lock-time descent does not route through this wrapper: its descent is
 // interleaved with lock-time-only passes (provider-binding writes, host-function
 // verification, and source descent) that must run between the same primitives, so
@@ -59,6 +66,7 @@ func ReconstructClosureAxes(
 	pluginLookup Lookup,
 	providerResolver ProviderPluginResolver,
 	refold func() (RecipeLoader, error),
+	localArtifact LocalPluginArtifact,
 ) error {
 	if pluginLookup == nil {
 		pluginLookup = lookup
@@ -79,7 +87,7 @@ func ReconstructClosureAxes(
 		}
 		artifactLoader = loader2
 	}
-	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup); err != nil {
+	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup, localArtifact); err != nil {
 		return fmt.Errorf("pipeline-plugin artifact descent: %w", err)
 	}
 	return nil
@@ -117,7 +125,11 @@ func ReconstructClosureAxes(
 // A NotFound entity or artifact is skipped rather than halting: the honest frozen
 // build resolves both from the cache, and a genuinely-absent one surfaces as drift
 // against the lockfile. A nil loader is a no-op.
-func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityURIs []string, loader RecipeLoader, lookup Lookup) error {
+//
+// A socket entity authored in a local catalog directory has its artifact resolved
+// through localArtifact, the same question the lock-time artifact descent asks, and
+// never through lookup; see DescendRecipePluginArtifacts.
+func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityURIs []string, loader RecipeLoader, lookup Lookup, localArtifact LocalPluginArtifact) error {
 	if c == nil || loader == nil || len(entityURIs) == 0 {
 		return nil
 	}
@@ -131,6 +143,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 	sort.Strings(sorted)
 
 	const refPath = "release plugin socket"
+	entityPaths := make(map[string]string, len(sorted))
 	for _, entityURI := range sorted {
 		res, err := lookup.ResolveCatalogEntity(ctx, entityURI, pluginKindHint)
 		if err != nil {
@@ -142,6 +155,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 		if res.NotFound {
 			continue
 		}
+		entityPaths[entityURI] = res.ResolutionPath
 		if idx, dup := entityIndex[entityURI]; dup {
 			c.Entities[idx].ReferencedFrom = unionReferencedFrom(c.Entities[idx].ReferencedFrom, refPath)
 			if c.Entities[idx].KindHint == "" {
@@ -170,7 +184,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 		// The registry-only rule is disabled for the same reason the entity loop
 		// above filters nothing: the artifact belongs to a socket entity the
 		// lockfile pins, so it is pinned regardless of where it resolved from.
-		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, pluginIndex, false /* registryOnly */); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, false /* registryOnly */, localArtifact); err != nil {
 			return err
 		}
 	}

@@ -149,10 +149,17 @@ func pluginDescentLookup() *fakeLookup {
 // re-fold sits between the phases here — that re-fold is pull.go's job over the
 // lazy index, exercised by the registry round-trip integration test.
 func descendPlugins(c *closure.Closure, loader closure.RecipeLoader, lookup closure.Lookup, provResolver closure.ProviderPluginResolver) error {
-	if err := closure.DescendRecipePluginEntities(context.Background(), c, loader, lookup, provResolver, nil); err != nil {
+	return descendPluginsWith(c, loader, lookup, provResolver, nil)
+}
+
+// descendPluginsWith is descendPlugins with the question a pull asks about the
+// artifact of a Plugin entity authored in a local catalog directory, handed to both
+// passes exactly as the pull hands it.
+func descendPluginsWith(c *closure.Closure, loader closure.RecipeLoader, lookup closure.Lookup, provResolver closure.ProviderPluginResolver, local closure.LocalPluginArtifact) error {
+	if err := closure.DescendRecipePluginEntities(context.Background(), c, loader, lookup, provResolver, local); err != nil {
 		return err
 	}
-	return closure.DescendRecipePluginArtifacts(context.Background(), c, loader, lookup)
+	return closure.DescendRecipePluginArtifacts(context.Background(), c, loader, lookup, local)
 }
 
 // runPluginDescent computes the base closure for the manifest-bearing Release, then

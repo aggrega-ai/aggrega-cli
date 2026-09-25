@@ -49,27 +49,45 @@ func providerPluginEntityURI(p types.Plugin) string {
 // field; the lockfile writer copies only the wire-shape fields.
 const pluginKindHint = "plugin"
 
-// LocalPluginArtifactCheck is asked, for every Plugin entity a pull-side descent
-// finds authored in a local catalog directory, whether the .wasm artifact the entity
-// names can be read at all, and returns the refusal when it cannot. entityURI is the
-// reference the descent resolved; artifactRef is the entity's artifact reference,
-// derived through Plugin.ArtifactReference.
+// LocalPluginArtifact resolves the .wasm artifact of a Plugin entity authored in a
+// local catalog directory from the sources already on the machine, and returns the
+// refusal when none of them holds it. entityURI is the reference the descent
+// resolved; artifactRef is the entity's artifact reference, derived through
+// Plugin.ArtifactReference. A registry is never asked for such an artifact: this is
+// the only question a descent asks about one.
 //
-// Such an entity is never pinned and a build's plugin resolution fetches nothing, so
-// an artifact that no local source holds when the pull runs is absent at the build.
-// The check lets the pull refuse at the step that can name the fix instead of
-// leaving the build to fail at load. It is supplied by the caller, which holds the
-// sources the build's own plugin resolution reads, so this package asks the
-// question without answering it a second way. A nil check asks nothing — the
-// build's reconstruction of the same axes, which runs no pull.
-type LocalPluginArtifactCheck func(entityURI, artifactRef string) error
+// A pull asks it at both descents, for two different reasons. The entity descent asks
+// it about every such entity, so an artifact no local source holds is refused at the
+// step that can name the fix instead of leaving a build to fail at load. The artifact
+// descent asks it about the one such entity that reaches it — a transform-role
+// governance attachment, whose entity stays on the entity axis wherever it resolved
+// from — and pins the artifact from the resolution returned, because that
+// attachment's bytes shape the rendered output and are held still by a pin like every
+// output-shaping plugin's. A plugin attached at a verdict role is never pinned, and a
+// pull resolving one authored in such a directory asks the same question through
+// ResolvePluginArtifact, so its artifact is not fetched either.
+//
+// The resolution carries the content digest of the bytes read, as both its digest
+// and its version, which is how every pinned plugin artifact records its content; the
+// source the bytes came from; and no manifest digest, because bytes read from the
+// machine came through no registry manifest. It is supplied by the caller, which holds
+// the sources the build's own plugin resolution reads, so this package asks the
+// question without answering it a second way. A build reconstructing the same axes
+// supplies the same question to the artifact descent, so the pin a pull records and
+// the pin the build's drift check expects are computed alike.
+//
+// A nil value asks nothing: the entity descent refuses nothing, and the artifact
+// descent leaves such an entity's artifact out rather than asking a registry for it.
+type LocalPluginArtifact func(entityURI, artifactRef string) (Resolution, error)
 
 // resolvedInLocalCatalog reports whether a resolution came from a local catalog
 // directory (or a workspace-relative path) rather than from a registry pull. It is
-// the universal leg of the registry-only rule: no plugin type is pinned when it
-// resolves this way, because the build resolves it again through the same local
-// catalog walk, and a pin would strand a lockfile entry the hermetic build cannot
-// reconstruct. Both pin-decision helpers below compose it, so the rule has one home.
+// the universal leg of the registry-only rule on the entity axis: no plugin entity is
+// pinned when it resolves this way, because the build resolves it again through the
+// same local catalog walk, and a pin would strand a lockfile entry the hermetic build
+// cannot reconstruct. entityNeedsNoPin composes it, and ResolvePluginArtifact reads it
+// to send such an entity's artifact to the machine's own sources, so the rule has one
+// home.
 func resolvedInLocalCatalog(resolutionPath string) bool {
 	return resolutionPath == ResolutionPathCatalog
 }
@@ -111,10 +129,13 @@ func entityNeedsNoPin(resolutionPath string) bool {
 // than at a pull, and the workspace-socket reconstruction the build performs from
 // the lockfile pins the artifact regardless, so a pull that declined it writes a
 // lockfile the very next build reports as drifted.
+//
+// An artifact read from beside its entity in a catalog directory is pinned by the
+// same rule. It reaches this predicate only for the entity that stays on the entity
+// axis wherever it resolved from — a transform-role attachment — and the build's
+// reconstruction reads it from the same local sources, so the registry-only rule's
+// reason, a pin the hermetic build cannot reconstruct, does not hold for it.
 func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) bool {
-	if resolvedInLocalCatalog(resolutionPath) {
-		return true
-	}
 	if resolutionPath == ResolutionPathEmbedded && declaredType == plugintype.Provider {
 		return true
 	}
@@ -185,15 +206,16 @@ func shapesRenderedOutput(declaredType plugintype.Type) bool {
 // halts on a genuinely-absent reference.
 //
 // An entity authored in a local catalog directory is left out of the closure, and
-// localArtifact is asked about it first: the entity is never pinned and a build
-// fetches nothing, so an artifact no local source holds is refused here, and the
-// refusal halts the descent before the lockfile is written. A nil localArtifact
-// asks nothing.
+// localArtifact is asked about it first: nothing fetches such an entity's artifact
+// and a build fetches nothing, so an artifact no local source holds is refused here,
+// and the refusal halts the descent before the lockfile is written. Only the refusal
+// is read; what the artifact resolves to is the artifact descent's to pin. A nil
+// localArtifact asks nothing.
 //
 // Newly-discovered entities are appended to c.Entities (deduped by URI against
 // what is already present, accumulating referenced-from sites). A nil loader is
 // a no-op (the caller wired no recipe-body access).
-func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver, localArtifact LocalPluginArtifactCheck) error {
+func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver, localArtifact LocalPluginArtifact) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -233,7 +255,7 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 			if err != nil {
 				return fmt.Errorf("resolve: load wasm plugin entity %q: %w", entityURI, err)
 			}
-			if err := localArtifact(entityURI, wp.ArtifactReference()); err != nil {
+			if _, err := localArtifact(entityURI, wp.ArtifactReference()); err != nil {
 				return err
 			}
 		}
@@ -299,7 +321,14 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 // is re-canonicalised before return, so the pinned set — and the lockfile written
 // from it — is byte-identical across runs regardless of descent order. A nil loader
 // is a no-op.
-func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup) error {
+//
+// One entity on the entity axis may have been authored in a local catalog directory:
+// a transform-role governance attachment, which ComputeClosure keeps there wherever it
+// resolved from. Its artifact is resolved through localArtifact from the machine's own
+// sources — beside the entity, from the binary, from the content cache — and pinned
+// from those bytes, and lookup is never asked for it, so no registry serving the same
+// identity is reached. A nil localArtifact leaves such an artifact out.
+func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, localArtifact LocalPluginArtifact) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -312,16 +341,18 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 	// Rediscover the plugin entities the entity descent pinned. Collect first (sorted) so the
 	// artifact-descent order is deterministic and independent of c.Entities order.
 	var entityURIs []string
+	entityPaths := map[string]string{}
 	for _, ent := range c.Entities {
 		if ent.KindHint == pluginKindHint {
 			entityURIs = append(entityURIs, ent.URI)
+			entityPaths[ent.URI] = ent.ResolutionPath
 		}
 	}
 	sort.Strings(entityURIs)
 
 	for _, entityURI := range entityURIs {
 		registryOnly := true
-		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, pluginIndex, registryOnly); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, registryOnly, localArtifact); err != nil {
 			return err
 		}
 	}
@@ -344,7 +375,12 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 // artifactNeedsNoPin reports is left out; the workspace-socket reconstruction passes
 // false, because it reconstructs the socket pins the lockfile records and dropping
 // one of them is exactly the reconstruction gap that surfaces as spurious drift.
-func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, registryOnly bool) error {
+//
+// entityPath is where the entity itself resolved from, and it decides where the
+// artifact is resolved from (see ResolvePluginArtifact). A refusal from localArtifact
+// halts, because an artifact no local source holds is one no later step can supply. A
+// nil localArtifact leaves such an artifact out.
+func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI, entityPath string, pluginIndex map[string]int, registryOnly bool, localArtifact LocalPluginArtifact) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {
 		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
@@ -353,10 +389,7 @@ func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, loo
 	if artifactURI == "" {
 		return nil
 	}
-	// The .wasm rides inline in the entity's single manifest, tagged by the
-	// entity's version; pass that version so a digest-free reference resolves
-	// the layer from the right manifest.
-	artRes, err := lookup.ResolvePlugin(ctx, artifactURI, wp.Metadata.Version)
+	artRes, err := ResolvePluginArtifact(ctx, lookup, localArtifact, entityURI, entityPath, artifactURI, wp.Metadata.Version)
 	if err != nil {
 		return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
 	}
@@ -382,6 +415,30 @@ func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, loo
 		pluginIndex[artifactURI] = len(c.Plugins) - 1
 	}
 	return nil
+}
+
+// ResolvePluginArtifact resolves the .wasm artifact a Plugin entity names from where
+// the entity itself resolved, entityPath. It is the one place a lock-time pass decides
+// whether a plugin artifact may be asked of the lock-time lookup, so every pass that
+// resolves one — the artifact descent, the workspace-socket reconstruction, and the
+// pull's caching of the plugins attached at a verdict role — decides it the same way.
+//
+// An entity authored in a local catalog directory has its artifact answered by
+// localArtifact, from the sources already on the machine, and lookup is never asked:
+// lookup resolves a plugin artifact by version and fetches it from a registry when no
+// recorded pin names a cached copy, so asking it would reach a registry serving the
+// same identity. A nil localArtifact reports such an artifact NotFound, still without
+// asking lookup. Every other entity's artifact is resolved through lookup.ResolvePlugin
+// by the entity's version, because the .wasm rides inline in the entity's single
+// manifest under that version's tag.
+func ResolvePluginArtifact(ctx context.Context, lookup Lookup, localArtifact LocalPluginArtifact, entityURI, entityPath, artifactRef, version string) (Resolution, error) {
+	if resolvedInLocalCatalog(entityPath) {
+		if localArtifact == nil {
+			return Resolution{NotFound: true}, nil
+		}
+		return localArtifact(entityURI, artifactRef)
+	}
+	return lookup.ResolvePlugin(ctx, artifactRef, version)
 }
 
 // discoverPluginEntities walks the closure's Recipe / FeatureRecipe entities,

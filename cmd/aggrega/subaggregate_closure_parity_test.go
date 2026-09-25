@@ -9,6 +9,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -244,7 +245,8 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 		return view.ClosureRecipeLoader(), nil
 	}
 	pinned := view.ClosureLookupWithPins(nil, root, cacheDir, nil, catalog.PinsFromLockfile(lf))
-	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold); rerr != nil {
+	catalogArtifacts := pipeline.CatalogPluginArtifacts(root, wsCfg, view.PluginColocatedDirs())
+	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold, catalogArtifacts); rerr != nil {
 		t.Fatalf("ReconstructClosureAxes: %v", rerr)
 	}
 	view.SetPins(catalog.PinsFromLockfile(lf))

@@ -794,7 +794,8 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// B's entity-body load resolves them; the Phase-B loader is RE-DERIVED after the
 	// re-fold (SetPins drops the cached recipe view). Phase B derives each entity's
 	// .wasm reference from its identity and pins the ARTIFACT (plugin axis). A
-	// Tier-1-local plugin is left out (resolved at build through its local path).
+	// Tier-1-local plugin entity is left out (resolved at build through its local path),
+	// save a transform-role attachment's, whose artifact is pinned from the local bytes.
 	// Resolution-time only — the build path reads plugin pins from the lockfile and
 	// never descends.
 	// Provider resolution honors the workspace-config plugins.providers selection
@@ -820,18 +821,20 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return p, ok, err
 	}
-	// A Plugin entity authored in a catalog directory is never pinned and a build
-	// fetches no plugin, so an artifact the build could not read now it could not read
-	// then either. Whether it can is asked of the cascade the build itself loads
-	// plugins through, over the same sources, before the lockfile is written — so a
-	// pull and the build it feeds cannot disagree about it. The question records
-	// nothing, so it carries no pins.
-	localArtifactCascade := pipeline.PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, lazyView.PluginColocatedDirs())
-	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver, localArtifactCascade.CheckCatalogArtifact); err != nil {
+	// The artifact of a Plugin entity authored in a catalog directory is read from this
+	// machine and never fetched, and a build fetches no plugin, so an artifact the
+	// build could not read now it could not read then either. What it resolves to is
+	// asked of the cascade the build itself loads plugins through, over the same
+	// sources, before the lockfile is written: the entity descent refuses the one no
+	// tier holds, and the artifact descent pins the bytes of a transform-role
+	// attachment authored there. The build's reconstruction asks the same question, so
+	// a pull and the build it feeds cannot disagree about either.
+	catalogArtifacts := pipeline.CatalogPluginArtifacts(workspaceRoot, wsCfg, lazyView.PluginColocatedDirs())
+	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver, catalogArtifacts); err != nil {
 		return Result{}, fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
-	if err := closure.DescendRecipePluginArtifacts(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+	if err := closure.DescendRecipePluginArtifacts(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, catalogArtifacts); err != nil {
 		return Result{}, fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
 	}
 	// Resolve the transform-role governance attachments (label-transform /
@@ -857,15 +860,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// can run them, WITHOUT pinning them in the lockfile. A verdict socket renders
 	// an accept/reject verdict without shaping the output bytes, so its plugin is
 	// not part of the reproducibility closure (cache-not-pin): this operation
-	// fetches and caches its entity + .wasm, and the build resolves it from the
-	// cache by URI.
+	// fetches and caches a registry-served plugin's entity + .wasm, and the build
+	// resolves it from the cache by URI. One authored in a catalog directory is read
+	// from this machine through the same question the descents above asked.
 	verdictHTTPClient, _ := egress.HTTPClient(wsCfg)
 	// The identities the caching walk resolved are collected here and recorded
 	// further down, after the verify-only branch has had its chance to return.
 	// Collecting and recording are deliberately separate steps: the caching walk
 	// runs on every invocation, including a verify-only one, and a verify-only run
 	// writes nothing at all.
-	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
+	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, catalogArtifacts, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
 	if err != nil {
 		return Result{}, err
 	}
@@ -1632,18 +1636,22 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 	return out, nil
 }
 
-// cacheVerdictSocketPlugins fetches and caches every verdict-socket (policy /
-// linter) gate plugin the effective config attaches, WITHOUT recording any of
-// them in the lockfile. A verdict socket renders an accept/reject verdict without
+// cacheVerdictSocketPlugins resolves every verdict-socket (policy / linter) gate
+// plugin the effective config attaches, fetching and caching a registry-served one,
+// WITHOUT recording any of them in the lockfile. A verdict socket renders an accept/reject verdict without
 // shaping the output bytes, so its plugin is cached-not-pinned: this operation
 // populates the cache slot (entity config blob + OCI manifest, and the .wasm
 // artifact) so a hermetic build can resolve and run the gate by URI, but the
 // plugin never enters the reproducibility closure and is never drift-gated.
 //
-// It resolves each gate plugin through the same catalog cascade the pinned
-// mutator entity + artifact descent uses (ResolveCatalogEntity for the entity,
-// ResolvePlugin for the .wasm), inheriting that path's digest verification. It
-// does not append to the closure, so nothing it caches reaches the lockfile.
+// It resolves each gate plugin the way the pinned mutator entity + artifact descent
+// does — ResolveCatalogEntity for the entity, closure.ResolvePluginArtifact for the
+// .wasm — inheriting that path's digest verification. So a gate plugin whose entity
+// is authored in a catalog directory has its .wasm read from this machine through
+// catalogArtifacts, the question the pull's descents ask about such an entity: no
+// registry serving the same identity is asked for it, and one that no local source
+// holds is refused as the descents refuse it. It does not append to the closure, so
+// nothing it caches reaches the lockfile.
 //
 // Trust posture: a freshly cached gate plugin is verified exactly as a pinned
 // plugin is — registry signature verification against the resolving registry's
@@ -1673,7 +1681,7 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 // walk runs on every invocation, and only the writing one reaches the recording
 // step. An attachment whose plugin is not in the content cache yields no identity
 // — the same clean-miss skip the verification below takes.
-func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) ([]verdictPluginResolution, error) {
+func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, catalogArtifacts closure.LocalPluginArtifact, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) ([]verdictPluginResolution, error) {
 	var resolutions []verdictPluginResolution
 	for _, att := range cfg.VerdictAttachments() {
 		ref := att.Ref
@@ -1688,7 +1696,9 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 		if version == "" {
 			version = entRes.ResolvedVersion
 		}
-		artRes, err := lookup.ResolvePlugin(ctx, bare, version)
+		// An entity the local catalog resolved is matched by its identity coordinate,
+		// so the attachment's bare reference is that entity's artifact reference too.
+		artRes, err := closure.ResolvePluginArtifact(ctx, lookup, catalogArtifacts, ref.URI, entRes.ResolutionPath, bare, version)
 		if err != nil {
 			return nil, fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
 		}

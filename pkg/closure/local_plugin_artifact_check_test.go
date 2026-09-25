@@ -23,14 +23,15 @@ type checkCall struct {
 	artifactRef string
 }
 
-// TestLocalPluginArtifactCheckIsAskedAboutCatalogEntitiesOnly drives the entity
-// descent with a recording check and holds it to three facts: the check is asked
+// TestLocalPluginArtifactIsAskedAboutCatalogEntitiesOnly drives the entity descent
+// with a recording question and holds it to three facts: the question is asked
 // about a Plugin entity authored in a local catalog directory, with the artifact
 // reference the entity derives; a refusal from it halts the descent with that very
 // refusal; and it is never asked about an entity a registry served, whose artifact
-// the pull pins and caches instead. A nil check is the reconstruction's posture and
-// is covered by every other descent test in this package, which pass nil.
-func TestLocalPluginArtifactCheckIsAskedAboutCatalogEntitiesOnly(t *testing.T) {
+// the pull pins and caches instead. A nil question is the reconstruction's posture
+// at the entity descent and is covered by every other descent test in this package,
+// which pass nil.
+func TestLocalPluginArtifactIsAskedAboutCatalogEntitiesOnly(t *testing.T) {
 	cases := []struct {
 		name       string
 		entityURI  string
@@ -77,12 +78,12 @@ func TestLocalPluginArtifactCheckIsAskedAboutCatalogEntitiesOnly(t *testing.T) {
 			}
 
 			var calls []checkCall
-			check := func(entityURI, artifactRef string) error {
+			check := func(entityURI, artifactRef string) (closure.Resolution, error) {
 				calls = append(calls, checkCall{entityURI, artifactRef})
 				if tc.refuse {
-					return errNoArtifactHere
+					return closure.Resolution{}, errNoArtifactHere
 				}
-				return nil
+				return closure.Resolution{ResolvedVersion: "sha256:local", Digest: "sha256:local", ResolutionPath: closure.ResolutionPathCatalog}, nil
 			}
 			err = closure.DescendRecipePluginEntities(context.Background(), &cl, loader, lookup, nil, check)
 
