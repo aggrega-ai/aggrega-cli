@@ -747,10 +747,11 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 		}
 		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
 	}
-	// A slot with a content blob but no manifest blob is incomplete; treat it as a
-	// cache miss so the re-pull rewrites both blobs (offline, the miss surfaces the
-	// pull-first remediation rather than trusting a half-populated slot).
-	manifestBytes, mrerr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, contentPin)
+	// A slot with a content blob but no manifest blob is incomplete (the rule
+	// persistedManifest decides for every cache reader); it is a cache miss, so the
+	// re-pull rewrites both blobs (offline, the miss surfaces the pull-first
+	// remediation rather than trusting a half-populated slot).
+	manifestBytes, mrerr := persistedManifest(l.workspaceRoot, l.cacheDir, uri, contentPin)
 	switch {
 	case mrerr == nil:
 		if prior, ok := l.priorPins[uri]; ok && prior.ManifestDigest != "" {
@@ -774,7 +775,7 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 	case errors.Is(mrerr, oci.ErrFetchNotFound()):
 		return closure.Resolution{}, false, nil
 	default:
-		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
+		return closure.Resolution{}, false, fmt.Errorf("catalog: plugin artifact %s: %w", uri, mrerr)
 	}
 }
 
@@ -981,9 +982,15 @@ func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
 	return closure.ResolutionPathCatalog
 }
 
+// tier2 is the cache tier of the closure cascade: the slot the versioned uri
+// addresses, when it holds a complete entry, and — where a prior lockfile is in
+// play — only while that entry still holds the prior pin. A slot the shared read
+// reports as absent or incomplete (tier2ReadSlotUnverified) is a miss here as it
+// is at every other reader, so the cascade goes on to the registry, which rewrites
+// the slot, or finds nothing where no registry is reachable.
 func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
-	bytes, res, ok := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, uri)
-	if !ok {
+	bytes, _, res, err := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, uri)
+	if err != nil {
 		return nil, closure.Resolution{}, false
 	}
 	if l.priorPins == nil {
@@ -1055,16 +1062,18 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 	l.warn(fmt.Sprintf("pin for %s moved %s -> %s; the reproducibility baseline changed", uri, priorPin, newDigest))
 }
 
-// tier2ReadSlotUnverified reads the cached entity bytes for a versioned URI
-// from the workspace cache directory WITHOUT verifying them against any pin.
+// tier2ReadSlotUnverified reads the cached entity for a versioned URI from the
+// workspace cache directory — the content and the OCI manifest persisted beside
+// it — WITHOUT verifying either against any pin.
 //
 // DO NOT call this from a new read path. Integrity lives at the cache boundary:
 // every cache read that returns bytes to a consumer must verify them against a
 // lockfile pin via tier2ReadVerified. This unverified primitive survives for
 // exactly two internal callers that verify the bytes themselves and must see the
 // raw slot to do so:
-//   - tier2ReadVerified — recomputes the content digest and compares to the
-//     required lockfile pin (the one verifying read all consumers route through).
+//   - tier2ReadVerifiedWithManifest — verifies the manifest against the pin where
+//     one is recorded, the content against the manifest, and the content against
+//     the required lockfile pin (the one verifying read all consumers route through).
 //   - catalogLookup.tier2 — the pull reuse-check, which compares the slot digest
 //     to the PRIOR lockfile pin to decide re-fetch vs reuse (build reaches it
 //     with no prior pin and relies on the closure-level lockfile.Verify gate).
@@ -1073,24 +1082,77 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // never a reason to reach for this. (See the verify-on-read posture in
 // pkg/sourcecache.LookupAndExtract, which this mirrors.)
 //
-// The resolution it returns is the cache hit's description (cacheHitResolution),
-// taken over the bytes read and the manifest persisted beside them; a slot whose
-// manifest cannot be read is described as holding none.
+// Both callers meet a slot through this read, so both meet the rule
+// persistedManifest decides in the same way: a slot holding content but no
+// manifest is an incomplete entry and is reported exactly as an absent one. The
+// pull's reuse check and the build's verifying read therefore cannot come to
+// disagree about such a slot — neither is handed its content.
 //
-// Returns (nil, Resolution{}, false) when the cache directory is
-// unset, when the URI carries no version pin, or when the cache slot
-// is empty or unreadable.
-func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolution, bool) {
+// The resolution it returns is the cache hit's description (cacheHitResolution),
+// taken over the bytes read and the manifest persisted beside them.
+//
+// Returns an error wrapping oci.ErrFetchNotFound when the cache directory is
+// unset, when the URI carries no version pin, when the cache slot holds no
+// readable content, or when it holds content but no manifest; a manifest that
+// exists but cannot be read is reported as that failure.
+func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, []byte, closure.Resolution, error) {
 	slot, version, ok := tier2Slot(workspaceRoot, cacheDir, uri)
 	if !ok {
-		return nil, closure.Resolution{}, false
+		return nil, nil, closure.Resolution{}, errNotInContentCache(uri)
 	}
 	bytes, err := readCacheSlotBytes(slot)
 	if err != nil {
-		return nil, closure.Resolution{}, false
+		return nil, nil, closure.Resolution{}, errNotInContentCache(uri)
 	}
-	manifest, _ := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, version)
-	return bytes, cacheHitResolution(version, bytes, manifest), true
+	manifest, err := persistedManifest(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return nil, nil, closure.Resolution{}, err
+	}
+	return bytes, manifest, cacheHitResolution(version, bytes, manifest), nil
+}
+
+// errNotInContentCache is the miss a cache read reports for a slot that holds no
+// content at all, with the pull that fills it as the remedy.
+func errNotInContentCache(uri string) error {
+	return fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
+}
+
+// persistedManifest returns the OCI manifest persisted in the cache slot for uri
+// at version, beside the content a reader has found there.
+//
+// It is the one home of the rule that a cache slot holding content but no
+// manifest is an incomplete entry, and every reader in this package that serves a
+// slot's content reads the manifest through it: the Tier-2 read beneath the pull's
+// reuse check and the build's verifying read (tier2ReadSlotUnverified), the cached
+// plugin entity a verdict socket reads (LazyLookup.PluginFromCacheByURI), and a
+// plugin's content-addressed .wasm (catalogLookup.readCachedPluginArtifact).
+//
+// The rule holds because a registry fetch writes both files — the content, then
+// the manifest the registry served for it (writeEntityToCacheSlot,
+// cachePluginArtifact) — and the manifest is the record the content is verified
+// against. A slot with content and no manifest is therefore a write that stopped
+// between the two, or a file placed there by hand; it is never what a fetch left.
+// Such a slot is reported as absent, wrapping oci.ErrFetchNotFound, so each reader
+// treats it as the miss it is: a pull or a verifying pull fetches the entity again
+// where a registry is reachable, and otherwise — and always at a build, which
+// fetches nothing — the reference is refused as one nothing resolves. "No
+// manifest" means no manifest bytes — a missing file or an empty one — the same
+// reading cacheHitResolution gives a slot holding none.
+//
+// The rule covers the entity cache alone. A source artifact's slot, which a
+// non-OCI source legitimately fills without a manifest, is read by
+// pkg/sourcecache and is not reached from here.
+//
+// A manifest that exists but cannot be read is an error of its own, not a miss.
+func persistedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
+	manifest, err := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, version)
+	if err != nil && !errors.Is(err, oci.ErrFetchNotFound()) {
+		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, err)
+	}
+	if len(manifest) == 0 {
+		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
+	}
+	return manifest, nil
 }
 
 // cacheHitResolution is the one description of an entry the content cache served:
@@ -1102,8 +1164,9 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 //
 // The manifest digest is derived from the persisted manifest rather than carried
 // in from a record, so a cache hit reports the manifest it actually holds and a
-// reader that holds it to a pin compares like with like. A slot holding no
-// manifest — nil or empty manifest bytes — is described with none.
+// reader that holds it to a pin compares like with like. Nil or empty manifest
+// bytes are described with none; no cache reader hands it such a slot, because a
+// slot holding no manifest is not an entry at all (persistedManifest).
 //
 // It verifies nothing. What a reader has established about the bytes before
 // describing them is that reader's own discipline, and each states it where it
@@ -1132,8 +1195,9 @@ func cacheHitResolution(version string, content, manifest []byte) closure.Resolu
 // Returns the verified bytes on a digest match. Returns ErrFetchNotFound when
 // the cache slot is absent OR when the slot carries content but no persisted
 // OCI manifest (a catalog entity is always OCI-distributed, so a manifest-less
-// slot is an incomplete cache entry, not a content-pin-only fallback) — in
-// either case the caller issues a pull-first remediation. Returns
+// slot is an incomplete cache entry, not a content-pin-only fallback: the rule
+// persistedManifest decides for every reader) — in either case the caller issues
+// a pull-first remediation. Returns
 // ErrFetchIntegrity when the cached content does not match the pin. An empty
 // expectedDigest is a programming error at the call site (a read that cannot
 // supply a pin is a gap to wire, never a silent skip) and is reported as such.
@@ -1151,44 +1215,35 @@ func tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest,
 	if expectedDigest == "" {
 		return nil, nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
 	}
-	bytes, res, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
-	if !ok {
-		return nil, nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
+	// The slot read reports an absent slot and an incomplete one — content with no
+	// manifest beside it — alike, as the miss persistedManifest decides, so the
+	// caller re-pulls either way.
+	bytes, manifestBytes, _, err := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
+	if err != nil {
+		return nil, nil, err
 	}
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
 	// content; it is the root the content is verified against. Verify the manifest
 	// against the independent pin (when one is recorded — a registry-resolved
 	// entity), then verify the content against the manifest's layer digest, so a
-	// forged content+content-pin pair cannot survive an untampered manifest. A
-	// catalog entity is always OCI-distributed, so a slot that carries content but
-	// no persisted manifest is an incomplete cache entry, not a content-pin-only
-	// fallback: treat it as a miss so the caller re-pulls, mirroring the
-	// plugin-artifact read.
-	manifestBytes, mrerr := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
-	switch {
-	case mrerr == nil:
-		if expectedManifestDigest != "" {
-			if err := oci.VerifyManifestDigest(manifestBytes, expectedManifestDigest); err != nil {
-				return nil, nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
-			}
+	// forged content+content-pin pair cannot survive an untampered manifest.
+	if expectedManifestDigest != "" {
+		if err := oci.VerifyManifestDigest(manifestBytes, expectedManifestDigest); err != nil {
+			return nil, nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
 		}
-		// A plugin entity's content is the manifest's CONFIG blob (the entity YAML),
-		// not a layer — the single plugin manifest carries the .wasm as its layer.
-		// Verify the cached entity against the descriptor that actually commits to
-		// it: the config for a plugin manifest, the content layer for every other
-		// entity kind. The manifest itself declares which, so the routing needs no
-		// kind thread and non-plugin entities keep the layer-based verify unchanged.
-		if oci.IsPluginManifest(manifestBytes) {
-			if err := oci.VerifyConfigAgainstManifest(manifestBytes, bytes); err != nil {
-				return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
-			}
-		} else if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
+	}
+	// A plugin entity's content is the manifest's CONFIG blob (the entity YAML),
+	// not a layer — the single plugin manifest carries the .wasm as its layer.
+	// Verify the cached entity against the descriptor that actually commits to
+	// it: the config for a plugin manifest, the content layer for every other
+	// entity kind. The manifest itself declares which, so the routing needs no
+	// kind thread and non-plugin entities keep the layer-based verify unchanged.
+	if oci.IsPluginManifest(manifestBytes) {
+		if err := oci.VerifyConfigAgainstManifest(manifestBytes, bytes); err != nil {
 			return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
-	case errors.Is(mrerr, oci.ErrFetchNotFound()):
-		return nil, nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
-	default:
-		return nil, nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
+	} else if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
+		return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 	}
 	// Content still matches the recorded content pin.
 	if got := contentDigest(bytes); got != expectedDigest {
@@ -1486,8 +1541,8 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 	// Persist the OCI manifest as a second self-verifying blob in the same slot.
 	// The offline read verifies the cached content against the manifest's layer
 	// digest — the manifest is the authority — rather than trusting the recorded
-	// content pin alone. A slot written without a manifest is incomplete and the
-	// offline read treats it as a cache miss.
+	// content pin alone. A slot written without a manifest is incomplete, and every
+	// reader of the slot treats it as a cache miss (persistedManifest).
 	if len(result.ManifestBytes) > 0 {
 		if err := oci.WriteCachedManifest(workspaceRoot, cacheDir, uri, version, result.ManifestBytes); err != nil {
 			return err

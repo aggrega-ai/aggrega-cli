@@ -2184,15 +2184,16 @@ func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, boo
 		}
 		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
 	}
-	manifestBytes, merr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, version)
+	manifestBytes, merr := persistedManifest(l.workspaceRoot, l.cacheDir, uri, version)
 	if merr != nil {
-		// A content blob with no persisted manifest is an incomplete slot; treat it
-		// as a miss so the caller surfaces the pull-first remediation rather than
-		// trusting a half-populated slot.
+		// A content blob with no persisted manifest is an incomplete slot (the rule
+		// persistedManifest decides for every cache reader); it is a miss, so the
+		// caller surfaces the pull-first remediation rather than trusting a
+		// half-populated slot.
 		if errors.Is(merr, oci.ErrFetchNotFound()) {
 			return types.Plugin{}, "", false, nil
 		}
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin manifest %s: %w", uri, merr)
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, merr)
 	}
 	// Manifest root of trust: the cached entity (the manifest's CONFIG blob) is
 	// trusted only against the descriptor the manifest commits to.
@@ -2718,8 +2719,10 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 //     halts. They also address the content-addressed slot of a pinned plugin .wasm,
 //     which a hermetic (nil-puller) consumer can reach no other way, because that
 //     slot is keyed by the content digest a pin supplies. The build and serve
-//     paths supply none and reuse cache slots unconditionally, against the
-//     closure-level drift gate.
+//     paths supply none and reuse a complete cache slot without holding it to a
+//     pin, against the closure-level drift gate. Held to a pin or not, a slot
+//     holding content but no manifest is not an entry and is never reused
+//     (persistedManifest).
 func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, registrySeeds map[string]closure.Resolution, reuse *ReuseVerification) closure.Lookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()

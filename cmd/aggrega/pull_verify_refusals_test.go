@@ -16,7 +16,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // refusalComponentURI is the reference the refusal fixture's Aggregate names. The
@@ -190,9 +189,11 @@ func replaceOnce(t *testing.T, path, old, replacement string) {
 // The verifying pull honours the pins the lockfile records, and the last row is
 // where that could hide a fault: a catalog-directory entity resolves from the
 // directory before any pin is consulted, so an edit to it is drift. The row lays the
-// Component's pulled bytes into the cache slot its pin addresses before editing it,
-// so a verify that consulted the pin first would find those bytes, match them to the
-// pin and report no drift — the row fails there rather than passing by accident.
+// Component's pulled bytes, with the manifest a registry fetch writes beside them,
+// into the cache slot its pin addresses before editing it — a complete entry, since
+// a slot holding the content alone is read by no reader — so a verify that consulted
+// the pin first would find those bytes, match them to the pin and report no drift:
+// the row fails there rather than passing by accident.
 //
 // The first row is the positive control: without it a fixture that could not be
 // verified at all would pass every refusal below.
@@ -269,9 +270,7 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 				if err != nil {
 					t.Fatalf("read the Component: %v", err)
 				}
-				rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root})
-				slot := oci.CachePath(f.root, rw.Config().ResolvedArtifactCacheDir(), refusalComponentURI+":1.0.0", "1.0.0")
-				writeFixture(t, filepath.Join(slot, "blob"), string(pulled))
+				layFetchedSlot(t, f.root, refusalComponentURI, "1.0.0", pulled, true)
 				replaceOnce(t, f.componentPath, "default: 8080 }", "default: 8081 }")
 				edited, err := os.ReadFile(f.componentPath)
 				if err != nil {

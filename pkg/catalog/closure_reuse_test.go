@@ -35,7 +35,10 @@ spec:
 
 // seedCacheSlot writes body as the library.yaml of the cache slot for
 // reuseURI@1.0.0 — the layout writeEntityToCacheSlot uses for libraries
-// and readCacheSlotBytes reads first.
+// and readCacheSlotBytes reads first — with the manifest a fetch of body
+// persists beside it. A slot holding the content alone is not a cache entry
+// and no reader serves it, so a slot seeded without its manifest would test
+// the miss rather than the reuse decision these rows are about.
 func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 	t.Helper()
 	slot := oci.CachePath(ws, cacheDir, reuseURI, "1.0.0")
@@ -44,6 +47,10 @@ func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 	}
 	if err := os.WriteFile(filepath.Join(slot, "library.yaml"), body, 0o644); err != nil {
 		t.Fatalf("seed library.yaml: %v", err)
+	}
+	manifest, _ := faithfulManifest(context.Background(), oci.MediaTypeSchemaLibrary, body)
+	if err := oci.WriteCachedManifest(ws, cacheDir, reuseURI, "1.0.0", manifest); err != nil {
+		t.Fatalf("seed manifest: %v", err)
 	}
 }
 
@@ -62,8 +69,8 @@ func readCacheSlot(t *testing.T, ws, cacheDir string) []byte {
 // is verified against that pin. A verified slot is reused; a drifted
 // slot is re-fetched from the registry (re-establishing the pin from
 // authoritative bytes) and a notice distinguishes a benign refresh from
-// a moved pin. The nil-reuse path (build / serve) reuses unconditionally
-// — the no-regression anchor.
+// a moved pin. The nil-reuse path (build / serve) reuses a complete slot
+// without holding it to any pin — the no-regression anchor.
 func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 	t.Parallel()
 	const cacheDir = ".aggrega/cache"
@@ -175,7 +182,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 	})
 
-	t.Run("nil reuse reuses a drifted slot unconditionally (build/serve parity)", func(t *testing.T) {
+	t.Run("nil reuse reuses a drifted slot without holding it to a pin (build/serve parity)", func(t *testing.T) {
 		t.Parallel()
 		ws := t.TempDir()
 		seedCacheSlot(t, ws, cacheDir, drifted)

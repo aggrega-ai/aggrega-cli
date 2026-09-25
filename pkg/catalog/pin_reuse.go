@@ -26,6 +26,14 @@ type PinReuseMode struct {
 	// pins it honours — and what it reads from and fetches into the content cache —
 	// are that run's, which is what lets it answer whether that run would change
 	// the lockfile.
+	//
+	// That includes what counts as a cache entry. A slot holding content but no
+	// manifest is an incomplete entry, which neither the pull's reuse check nor the
+	// build's verifying read serves — the two decide it through one rule
+	// (persistedManifest) — so a verifying run meets such a slot at a pinned
+	// version exactly as the writing run does: as a miss, which it fetches again
+	// where a registry is reachable and refuses where none is, as a build refuses
+	// it.
 	VerifyOnly bool
 }
 
@@ -61,8 +69,9 @@ type PinReuse struct {
 //
 // The outcomes below hold for a verify-only run exactly as for the writing run it
 // stands in for, so a verification compares the lockfile against the resolution
-// that run would perform — the recorded pins honoured, the cache slots they name
-// read — rather than against one no pull performs.
+// that run would perform — the recorded pins honoured, the complete cache slots
+// they name read, and a slot holding content without its manifest treated as the
+// miss it is — rather than against one no pull performs.
 //
 //   - A targeted upgrade holds every pin it did not name, so it requires a prior
 //     lockfile: with none there is no pin set to reduce, and it halts. Reducing

@@ -62,12 +62,20 @@ spec:
 `)
 
 	// Both versions live ONLY in the Tier-2 cache (each keyed by its versioned
-	// slot), so resolution is decided entirely by the request's pins.
+	// slot), so resolution is decided entirely by the request's pins. Each slot
+	// is laid complete, content and manifest, as a registry pull lays it: a slot
+	// holding content but no manifest is an incomplete entry every reader misses.
 	if err := oci.WriteCached(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", componentV1); err != nil {
 		t.Fatalf("WriteCached v1: %v", err)
 	}
+	if err := oci.WriteCachedManifest(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", componentManifestFor(t, componentV1)); err != nil {
+		t.Fatalf("WriteCachedManifest v1: %v", err)
+	}
 	if err := oci.WriteCached(ws, cacheDir, "demo/svc:2.0.0", "2.0.0", componentV2); err != nil {
 		t.Fatalf("WriteCached v2: %v", err)
+	}
+	if err := oci.WriteCachedManifest(ws, cacheDir, "demo/svc:2.0.0", "2.0.0", componentManifestFor(t, componentV2)); err != nil {
+		t.Fatalf("WriteCachedManifest v2: %v", err)
 	}
 
 	// A single recipe + provider in the catalog dir so the closure resolves and
