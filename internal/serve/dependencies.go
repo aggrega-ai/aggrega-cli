@@ -20,8 +20,9 @@ import (
 //
 // Upgrade discards the recorded pins and re-resolves, floating each dependency to
 // the highest available version; targets narrows that to the named references,
-// holding every other pin. Verify checks the recorded resolution against what
-// resolves today and writes nothing at all.
+// holding every other pin. Verify checks the recorded resolution against the one
+// the request would perform without it, honouring the same pins, and writes no
+// lockfile, trust record or entity.lock.
 //
 // There is no catalog-directory parameter, and its absence is the contract rather
 // than an omission. The daemon resolves against the workspace the request named
@@ -52,7 +53,7 @@ type resolveDependenciesParams struct {
 // is asking exactly that question, and answering with a bare acknowledgement
 // would leave it to re-read the file to find out.
 //
-// Verified reports that the run only compared and wrote nothing, and Toolchain
+// Verified reports that the run only compared, writing no lockfile, and Toolchain
 // then carries what the recorded file says produced it — reported for audit and
 // never compared against this binary.
 //

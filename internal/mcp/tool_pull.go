@@ -93,7 +93,8 @@ type pullResultPayload struct {
 	// verify that refuses on drift is a caller asking which file drifted.
 	Lockfile string `json:"lockfile"`
 
-	// Verified reports that the run only compared and wrote nothing at all.
+	// Verified reports that the run only compared, writing no lockfile, trust
+	// record or entity.lock.
 	Verified bool `json:"verified,omitempty"`
 
 	// Resolved names every reference the resolution reached, across the catalog
@@ -138,7 +139,8 @@ var pullToolSpec = toolSpec{
 		"reference no longer reached is pruned, and an unchanged dependency set rewrites nothing. Call it when a build " +
 		"reports a drifted lockfile, or declines an external reference the lockfile does not pin — a build renders only " +
 		"from pins the workspace already carries, and this is what makes them exist. Pass `verify` to compare the recorded " +
-		"lockfile against what resolves today and write nothing, which is how you detect drift. Pass `upgrade_targets` " +
+		"lockfile against the resolution that reconcile would perform now, honouring the same pins, without writing " +
+		"the lockfile, the plugin trust record or any entity.lock — which is how you detect drift. Pass `upgrade_targets` " +
 		"with entity URIs to re-resolve only those, holding every other pin; no argument re-resolves everything at once, " +
 		"because that discards the whole lockfile and a tool call has nobody to confirm it. A Recipe or FeatureRecipe " +
 		"the Release builds from a catalog directory must have its inputs' pins recorded in the entity.lock beside it, " +
@@ -164,7 +166,7 @@ var pullToolSpec = toolSpec{
     },
     "verify": {
       "type": "boolean",
-      "description": "Compare the recorded lockfile against the current resolution and write nothing. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets."
+      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, the plugin trust record or any entity.lock. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets."
     },
     "upgrade_targets": {
       "type": "array",
@@ -252,7 +254,7 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	}
 	if a.Verify && len(targets) > 0 {
 		return errorResult("pull cannot combine 'verify' with 'upgrade_targets': verifying compares the recorded " +
-			"lockfile and writes nothing, while upgrading re-resolves pins and rewrites it. Send 'verify' on its " +
+			"lockfile and leaves it as it is, while upgrading re-resolves pins and rewrites it. Send 'verify' on its " +
 			"own to find out whether the lockfile has drifted, or 'upgrade_targets' on its own to re-resolve the " +
 			"references you name.")
 	}
@@ -435,7 +437,7 @@ func pullFailureSummary(verify bool, targets int) string {
 	switch {
 	case verify:
 		return "The lockfile does not match the Release's current dependency resolution, or there is no " +
-			"lockfile to compare against. Nothing was written."
+			"lockfile to compare against. No lockfile was written."
 	case targets > 0:
 		return "The dependency resolution refused while re-resolving the references you named."
 	default:
@@ -475,7 +477,7 @@ func renderPullText(p pullResultPayload) string {
 	var b strings.Builder
 	if p.Verified {
 		fmt.Fprintf(&b, "The lockfile %s matches the Release's current dependency resolution (%d reference(s) "+
-			"resolved). Nothing was written.\n", p.Lockfile, len(p.Resolved))
+			"resolved); it was not rewritten.\n", p.Lockfile, len(p.Resolved))
 		if p.Toolchain != nil {
 			fmt.Fprintf(&b, "It records compiler version %s", p.Toolchain.CompilerVersion)
 			if n := len(p.Toolchain.CorePlugins); n > 0 {
