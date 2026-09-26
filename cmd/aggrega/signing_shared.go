@@ -75,7 +75,7 @@ var commandLineIdentitySupply = signing.IdentityTokenSupply{
 // commandLineDestinationSupply is how a refusal names a publication's missing
 // destination to somebody typing at a terminal: the flag, or the workspace
 // setting spelled as it is written in the workspace file.
-const commandLineDestinationSupply = "set --registry or workspace.default_registry"
+const commandLineDestinationSupply = "set --registry or default_registry"
 
 // commandLinePinSourcesSupply is how the refusal over an entity whose lock is
 // missing a pin names, to somebody typing at a terminal, the way to have this one

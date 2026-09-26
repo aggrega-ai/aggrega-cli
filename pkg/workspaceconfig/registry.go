@@ -50,13 +50,19 @@ func (c Config) ResolveRegistry(token string) (string, error) {
 // admits a registry by the configuration asks it here rather than composing the
 // set for itself.
 //
-// Both sides are compared by their host authority through registryhost.Of — the
-// scheme, any path and any userinfo dropped, the port kept — because a login is
-// stored per host and a registry is contacted per host. So a default carrying a
-// repository path ("ghcr.io/acme") admits its host, and a reference or a URL
-// passed as host is reduced to its host before it is compared. The comparison is
-// exact and keeps case, as every per-host lookup in this package does: a host
-// spelled differently is refused rather than guessed at.
+// Both sides are compared by their host authority — the scheme, any path and any
+// userinfo dropped, the port kept — because a login is stored per host and a
+// registry is contacted per host. So a default carrying a repository path
+// ("ghcr.io/acme") admits its host, and a reference or a URL passed as host is
+// reduced to its host before it is compared. The host passed in must already be
+// in the spelling a registry host is kept under — registryhost.Normalize leaves
+// it unchanged — and a host spelled any other way is refused rather than guessed
+// at; the configured side is read through registryhost.Normalize, the one
+// reading every per-host lookup shares. A configuration the resolution accepted
+// holds only hosts in that spelling, so the default and each entry name their
+// host exactly as written; the shapes a resolved configuration cannot carry — a
+// path, or an alias as the default — are still read here the way this states,
+// for a configuration built in code.
 //
 // A default written as an alias is resolved to its entry's host first, through
 // ResolveRegistry. A default whose alias names two entries resolves to no host
@@ -65,16 +71,16 @@ func (c Config) ResolveRegistry(token string) (string, error) {
 // admitted, and neither is an entry or a default that does.
 func (c Config) IsConfiguredRegistry(host string) bool {
 	want := registryhost.Of(host)
-	if want == "" {
+	if want == "" || registryhost.Normalize(want) != want {
 		return false
 	}
 	if c.DefaultRegistry != "" {
-		if resolved, err := c.ResolveRegistry(c.DefaultRegistry); err == nil && registryhost.Of(resolved) == want {
+		if resolved, err := c.ResolveRegistry(c.DefaultRegistry); err == nil && registryhost.Normalize(resolved) == want {
 			return true
 		}
 	}
 	for _, r := range c.Registries {
-		if registryhost.Of(r.Host) == want {
+		if registryhost.Normalize(r.Host) == want {
 			return true
 		}
 	}

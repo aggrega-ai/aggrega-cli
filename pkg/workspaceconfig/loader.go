@@ -11,6 +11,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
 )
@@ -299,6 +300,9 @@ func validateBytes(data []byte, path string) error {
 	if err := checkConfigShape(probe, path); err != nil {
 		return err
 	}
+	if err := checkRegistryHosts(probe, path); err != nil {
+		return err
+	}
 	_, err := envelope.ValidateBytes(envelope.KindAggregaConfig, data, path)
 	var envErr *envelope.Error
 	if errors.As(err, &envErr) {
@@ -348,6 +352,45 @@ func checkConfigShape(probe any, path string) error {
 	}
 	if _, found := root["cache"]; found {
 		return fmt.Errorf("workspaceconfig: %s: the `cache` block was renamed to `parse_cache`: %w", path, ErrConfigInvalid())
+	}
+	return nil
+}
+
+// checkRegistryHosts refuses a default_registry or a registries[].host that is
+// not a registry host in the spelling its trust policy is kept under — the one
+// reading registryhost.Check words — naming the key, the file that carried it,
+// and the spelling to write where the value names a host at all. An empty
+// default_registry names no default and is left alone.
+//
+// It runs ahead of the schema, whose pattern on both keys states the same shape,
+// so the refusal a reader meets names the fix rather than quoting a pattern; an
+// independent validator reading the schema alone still refuses the same values.
+// A value of another type is left to the schema, which reports the type.
+//
+// The file is one layer of three. The environment overlay and the command line
+// set the same values after every file has been validated, so each of them runs
+// the same check where it sets one; the schema never sees those layers.
+func checkRegistryHosts(probe any, path string) error {
+	root, ok := probe.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if v, ok := root["default_registry"].(string); ok && v != "" {
+		if err := registryhost.Check("default_registry", v); err != nil {
+			return fmt.Errorf("workspaceconfig: %s: %v: %w", path, err, ErrConfigInvalid())
+		}
+	}
+	entries, _ := root["registries"].([]any)
+	for i, item := range entries {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if v, ok := entry["host"].(string); ok {
+			if err := registryhost.Check(fmt.Sprintf("registries[%d].host", i), v); err != nil {
+				return fmt.Errorf("workspaceconfig: %s: %v: %w", path, err, ErrConfigInvalid())
+			}
+		}
 	}
 	return nil
 }

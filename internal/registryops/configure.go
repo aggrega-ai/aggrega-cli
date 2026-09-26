@@ -183,6 +183,15 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	if host == "" {
 		return res, errors.New("aggrega registry add: a registry host is required")
 	}
+	// The host the token names is keyed exactly as written, so it is held to the
+	// one reading of a registry host before anything is fetched or written: a
+	// host in capitals, with its default port, or with no dot and no port would
+	// be stored under a key no lookup ever uses. The token may still be a
+	// reference — its scheme, path and credentials are what Of drops — but the
+	// host it names is not rewritten on the caller's behalf.
+	if err := registryhost.Check("the host", host); err != nil {
+		return res, fmt.Errorf("aggrega registry add: %w", err)
+	}
 	res.Host = host
 
 	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace)

@@ -64,6 +64,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
 // Config carries the workspace's full configuration. Fields map to
@@ -87,6 +88,13 @@ type Config struct {
 	// DefaultRegistry, Offline, AutoPull, and ArtifactCacheDir are
 	// top-level (not root-defining) settings — global-capable, so they
 	// cascade-merge independently of the root marker.
+	//
+	// DefaultRegistry is a registry host in the spelling its trust policy is
+	// looked up under — registryhost.IsHost holds for it and
+	// registryhost.Normalize leaves it unchanged — or empty, which names no
+	// default. Resolution refuses any other value on every layer that can set
+	// it, so every consumer that binds a location from it binds from that one
+	// spelling.
 	DefaultRegistry string `yaml:"default_registry"`
 	// Offline is the posture that refuses every network reach. Its
 	// authored key is OfflineSettingKey, and the yaml tag here is that
@@ -158,7 +166,10 @@ type Config struct {
 // including its signature trust policy.
 type RegistryConfig struct {
 	// Host is the registry these settings apply to (e.g.
-	// "hub.aggrega.ai"), matched against the host of a push/pull target.
+	// "hub.aggrega.ai"), matched against the host of a push/pull target
+	// through registryhost.Same. A configuration file is accepted only when
+	// each Host is a registry host that registryhost.Normalize leaves
+	// unchanged, so the entry's key is the spelling every lookup uses.
 	Host string `yaml:"host"`
 	// Name is an optional friendly alias for this registry. The host is the
 	// identity; Name is a convenience selector that resolves to this entry's
@@ -315,11 +326,13 @@ func (r RegistryConfig) SigningRequiredForKind(kind string) bool {
 // defaults are NOT applied here — the caller overlays CLI flags first and
 // applies endpoint defaults last, so this method returns only the
 // config-derived layer (per-registry > global) with empty meaning "unset".
-// Host matching is exact; callers normalise the host before the lookup.
+// host may be a registry host or a reference naming one; both it and each
+// configured host are read through registryhost.Normalize, so a spelling that
+// differs only in case or in an explicit default port finds the same entry.
 func (c Config) ResolveSigning(host string) SigningConfig {
 	resolved := c.Signing
 	for _, r := range c.Registries {
-		if r.Host == host {
+		if registryhost.Same(r.Host, host) {
 			resolved = overlaySigning(resolved, r.Signing)
 			break
 		}
@@ -366,11 +379,11 @@ type TrustedIdentity struct {
 // signature for the given kind through its own signing block — the per-host half
 // of the one trust stance, the same required/kinds concept the top-level policy
 // carries for all registries. An unconfigured registry (absent from Registries)
-// demands none. Host matching is exact; callers normalise the host (strip any
-// port or path) before the lookup if needed.
+// demands none. host and each configured host are compared through
+// registryhost.Same, the one reading every per-registry lookup shares.
 func (c Config) RegistrySigningRequiredForKind(host, kind string) bool {
 	for _, r := range c.Registries {
-		if r.Host == host {
+		if registryhost.Same(r.Host, host) {
 			return r.SigningRequiredForKind(kind)
 		}
 	}
@@ -384,15 +397,21 @@ func (c Config) RegistrySigningRequiredForKind(host, kind string) bool {
 // default-for-unknown policy (verify-if-a-signature-is-present) to such a
 // host. The hub baseline host always returns found=true with the embedded
 // baseline (overridden by an operator entry when present), so its
-// mandatory signature requirement holds even with no operator config. Host
-// matching is exact; callers normalise the host before the lookup.
+// mandatory signature requirement holds even with no operator config.
+//
+// host and each configured host are compared through registryhost.Same, and
+// the hub baseline is recognised the same way, so "HUB.AGGREGA.AI" and
+// "hub.aggrega.ai:443" reach the hub's baseline and an entry written for a host
+// applies to every spelling of that host. A configuration the resolution
+// accepted holds only hosts already in that spelling; the comparison is what
+// keeps the lookup right for a host an operation derived from a reference.
 func (c Config) RegistryTrustPolicy(host string) (RegistryConfig, bool) {
 	for _, r := range c.Registries {
-		if r.Host == host {
+		if registryhost.Same(r.Host, host) {
 			return r, true
 		}
 	}
-	if host == HubBaselineHost {
+	if registryhost.Same(host, HubBaselineHost) {
 		return DefaultBaseline(), true
 	}
 	return RegistryConfig{Host: host}, false

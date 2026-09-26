@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -146,25 +146,24 @@ func SignatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 	}
 }
 
-// IsRegistryHost reports whether host looks like a real registry authority
-// — a dotted host (with an optional port) or a host:port — rather than a
-// bare host-less catalog name or a relative-path artifact (a leading "."
-// from a `./file` reference). A host-less or path-like entity carries no
-// registry signature and is skipped by the verify pass.
+// IsRegistryHost reports whether host names a registry, so that a registry
+// signature exists to check, rather than being the first segment of a
+// host-less catalog identity or of a relative-path artifact. A host-less or
+// path-like entity carries no registry signature and is skipped by the verify
+// pass.
+//
+// It is the verification question asked of the one reading of a registry host,
+// and it forms no reading of its own: host is read through registryhost.Normalize
+// and judged by registryhost.IsHost — the predicate the configuration load holds
+// every configured host to. So a host a configuration may name is never one this
+// filter skips: "localhost" is verified, and a host written in capitals or with
+// its default port is verified under the policy configured for it.
 //
 // It lives here because every one of its uses asks the same verification
-// question — does this reference name a registry, so that a registry signature
-// exists to check — on the shared fetch home, on the closure signature pass, and
-// on the install path that skips both for a local reference.
+// question — on the shared fetch home, on the closure signature pass, and on the
+// install path that skips both for a local reference.
 func IsRegistryHost(host string) bool {
-	if host == "" || strings.HasPrefix(host, ".") || strings.HasPrefix(host, "/") {
-		return false
-	}
-	if i := strings.IndexByte(host, ':'); i > 0 {
-		return true // host:port
-	}
-	dot := strings.IndexByte(host, '.')
-	return dot > 0 && dot < len(host)-1
+	return registryhost.IsHost(registryhost.Normalize(host))
 }
 
 // stampedHostFunctions returns the entity's machine-owned host-function stamp, or

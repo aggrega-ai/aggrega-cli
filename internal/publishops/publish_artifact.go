@@ -140,11 +140,7 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	}
 
 	wsCfg := rw.Config()
-	token, err := resolveDestination(cfg.Registry, wsCfg.DefaultRegistry, cfg.DestinationSupply)
-	if err != nil {
-		return PushArtifactResult{}, err
-	}
-	registry, err := wsCfg.ResolveRegistry(token)
+	registry, err := destinationHost(wsCfg, cfg.Registry, cfg.DestinationSupply)
 	if err != nil {
 		return PushArtifactResult{}, err
 	}

@@ -27,6 +27,17 @@ func TestIsRegistryHost(t *testing.T) {
 		{name: "absolute path is not a registry", host: "/opt/plugins", want: false},
 		{name: "trailing dot is not a registry", host: "example.", want: false},
 		{name: "leading dot is not a registry", host: ".example", want: false},
+		// The one reading of a registry host: every spelling a configuration may
+		// name is one this filter admits, so none is loaded and then skipped.
+		{name: "bare localhost is a registry", host: "localhost", want: true},
+		{name: "single name with a port is a registry", host: "registry:5000", want: true},
+		{name: "ipv4 literal with port is a registry", host: "127.0.0.1:5000", want: true},
+		{name: "ipv6 literal with port is a registry", host: "[::1]:5000", want: true},
+		{name: "a host in capitals is read as the host it names", host: "HUB.AGGREGA.AI", want: true},
+		{name: "a default port is read as the host it names", host: "hub.aggrega.ai:443", want: true},
+		{name: "single name without a port is not a registry", host: "myregistry", want: false},
+		{name: "a version suffix is not a port", host: "web-api:1.0.0", want: false},
+		{name: "braces and newlines are not a registry", host: "{\n  not a host\n}", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,17 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package registryhost is the single source for extracting the host authority
-// from a registry reference or a source-artifact URL. Centralising it keeps the
-// cache-slot path, the loopback/plain-HTTP decision inputs, and the remediation
-// strings agreeing on one host per artifact — in particular, never letting URL
-// userinfo (credentials) leak into a host segment. It is a stdlib-only leaf so
-// every consumer can share it without importing a heavier package's dependency
-// tree.
+// Package registryhost is the single source for reading a registry host: for
+// extracting the host authority from a registry reference or a source-artifact
+// URL, for deciding whether a string is a registry host at all, and for the one
+// spelling every trust lookup is keyed on. Centralising it keeps the cache-slot
+// path, the loopback/plain-HTTP decision inputs, the remediation strings, the
+// signature-verification filter and the per-registry trust lookups agreeing on
+// one host per artifact — in particular, never letting URL userinfo
+// (credentials) leak into a host segment, and never letting a host written in
+// capitals or with its default port miss the trust policy kept under it. It is
+// a stdlib-only leaf so every
+// consumer can share it without importing a heavier package's dependency tree.
+//
+// Each reading answers its own question:
+//
+//   - Of extracts the authority a reference names, preserving its spelling.
+//   - IsHost decides whether a string is a registry host, spelled the way a
+//     trust lookup is keyed.
+//   - Normalize produces that keyed spelling from a reference or an authority,
+//     and Same compares two of them through it.
+//   - Check words the refusal for a configured value the two do not accept.
+//   - IsLoopback decides whether an authority addresses this machine, which is
+//     what selects plain HTTP over HTTPS.
+//
+// A value an author configures as a registry host is accepted only when IsHost
+// holds for it and Normalize returns it unchanged, so a configured host and the
+// key its trust policy is looked up under are the same string.
 package registryhost
 
 import (
+	"fmt"
 	"net"
+	"net/netip"
+	"strconv"
 	"strings"
 )
 
@@ -77,4 +99,216 @@ func IsLoopback(authority string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// IsHost reports whether s is a registry host, spelled the way a trust lookup
+// is keyed: a lowercase DNS name containing at least one dot, the name
+// "localhost", an IPv4 literal, or a bracketed IPv6 literal — each optionally
+// followed by ":" and a port from 1 to 65535 written without a leading zero —
+// or a single-label lowercase name followed by such a port. Nothing else is a
+// registry host: no scheme, path, userinfo, whitespace or uppercase letter, no
+// single-label name other than localhost unless a port follows it, and no IPv6
+// literal outside brackets.
+//
+// The single-label rule is what tells a registry host from the first segment of
+// a host-less catalog identity: "core/web-api" names a Component in no
+// particular registry, and its first segment, "core", is not a host. A dot, the
+// name localhost, or a port is what a first segment of that kind never carries.
+//
+// A DNS name's labels are 1 to 63 characters of lowercase letters, digits and
+// hyphens, neither starting nor ending with a hyphen, and its last label begins
+// with a letter, which keeps a malformed IPv4 literal such as "256.1.1.1" from
+// reading as a name. An IPv4 literal is four decimal octets from 0 to 255 with
+// no leading zeros. An IPv6 literal is the colon-separated hexadecimal form in
+// lowercase, with no embedded dotted IPv4 part and no zone.
+//
+// It judges the spelling of a host and nothing else: it never resolves the name
+// and cannot say whether a registry answers there. The configuration schema
+// states the same shape as a pattern on default_registry and on each
+// registries[].host, and a test in the configuration package drives one corpus
+// of spellings through both and fails where they disagree.
+func IsHost(s string) bool {
+	host, port, ok := splitAuthority(s)
+	if !ok {
+		return false
+	}
+	if port != "" && !isPort(port) {
+		return false
+	}
+	if isIPv4Literal(host) || isIPv6Literal(host) {
+		return true
+	}
+	return isHostName(host, port != "")
+}
+
+// Normalize returns the spelling a registry host is looked up under: the
+// authority ref names, as Of extracts it, lowercased, with an explicitly
+// written default port removed. The default port is the one the client connects
+// to when none is written, and that depends on how the host is reached: 443 for
+// a host reached over HTTPS, which is every host but a loopback one. A loopback
+// host is contacted over plain HTTP (see IsLoopback), so 443 is not its default
+// and is kept — "localhost:443" and "localhost" are different addresses.
+//
+// Every per-registry lookup keys on this spelling, and a value an author
+// configures as a registry host is accepted only when Normalize returns it
+// unchanged, so the configured host and the lookup key are one string.
+//
+// It reads spelling only and never resolves a name. What it returns is a lookup
+// key; whether that key is a registry host is IsHost's question, and a reference
+// that names no host — the first segment of a host-less catalog identity, say —
+// yields a key IsHost refuses.
+func Normalize(ref string) string {
+	authority := strings.ToLower(Of(ref))
+	host, port, ok := splitAuthority(authority)
+	if ok && port == "443" && !IsLoopback(host) {
+		return host
+	}
+	return authority
+}
+
+// Check reports why value cannot be configured as a registry host, or nil when
+// it can — when IsHost holds for it and Normalize leaves it unchanged. what names
+// the value the way its author supplied it: a configuration key, an environment
+// variable, a command's argument. The error names what, repeats the value unless
+// it carries credentials, and gives the spelling to write where the value names
+// a host at all.
+//
+// It is the one wording of the refusal, so a value is refused in the same words
+// whichever layer carried it. The error wraps nothing: a caller adds whatever
+// condition its own surface raises.
+func Check(what, value string) error {
+	normalised := Normalize(value)
+	if IsHost(value) && normalised == value {
+		return nil
+	}
+	shown := strconv.Quote(value)
+	if strings.Contains(value, "@") {
+		shown = "(a value carrying credentials, not repeated here)"
+	}
+	if IsHost(normalised) {
+		return fmt.Errorf("%s %s is not written as the registry host it names; write %q — "+
+			"lowercase, with no scheme, path, credentials or default port — which is the spelling "+
+			"that host's trust policy is kept under", what, shown, normalised)
+	}
+	return fmt.Errorf("%s %s is not a registry host; write a lowercase host name containing a dot "+
+		"(registry.example.com), localhost, a single name followed by a port (registry:5000), or an "+
+		"IP address, an IPv6 one in brackets — each with an optional :port and nothing else", what, shown)
+}
+
+// Same reports whether a and b name the same registry host under the one
+// reading: their Normalize spellings are equal. Every lookup that matches a
+// configured host against the host an operation is addressing compares through
+// it, so a host written in capitals, or with its default port spelled out, finds
+// the policy configured for it rather than missing it.
+func Same(a, b string) bool {
+	return Normalize(a) == Normalize(b)
+}
+
+// splitAuthority separates an authority into its host and its port, reporting
+// ok=false for a shape no registry host takes: an unclosed bracket, a trailing
+// colon with no port, anything after a closing bracket but a port, or more than
+// one colon outside brackets. A missing port is reported as the empty string.
+func splitAuthority(s string) (host, port string, ok bool) {
+	if strings.HasPrefix(s, "[") {
+		end := strings.IndexByte(s, ']')
+		if end < 0 {
+			return "", "", false
+		}
+		host, rest := s[:end+1], s[end+1:]
+		if rest == "" {
+			return host, "", true
+		}
+		if rest[0] != ':' || len(rest) == 1 {
+			return "", "", false
+		}
+		return host, rest[1:], true
+	}
+	switch strings.Count(s, ":") {
+	case 0:
+		return s, "", true
+	case 1:
+		i := strings.IndexByte(s, ':')
+		if i == len(s)-1 {
+			return "", "", false
+		}
+		return s[:i], s[i+1:], true
+	default:
+		return "", "", false
+	}
+}
+
+// isPort reports whether p is a port from 1 to 65535 written in decimal with no
+// leading zero, which is also what refuses "0".
+func isPort(p string) bool {
+	if p == "" || len(p) > 5 || p[0] == '0' {
+		return false
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < '0' || p[i] > '9' {
+			return false
+		}
+	}
+	n, err := strconv.Atoi(p)
+	return err == nil && n <= 65535
+}
+
+// isHostName reports whether h is "localhost" or a lowercase DNS name whose last
+// label begins with a letter, of at least two labels — or of one, where withPort
+// says a port follows it.
+func isHostName(h string, withPort bool) bool {
+	if h == "localhost" {
+		return true
+	}
+	labels := strings.Split(h, ".")
+	if len(labels) < 2 && !withPort {
+		return false
+	}
+	for _, l := range labels {
+		if !isLabel(l) {
+			return false
+		}
+	}
+	last := labels[len(labels)-1]
+	return last[0] >= 'a' && last[0] <= 'z'
+}
+
+// isLabel reports whether l is one DNS label: 1 to 63 lowercase letters, digits
+// and hyphens, neither starting nor ending with a hyphen.
+func isLabel(l string) bool {
+	if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+		return false
+	}
+	for i := 0; i < len(l); i++ {
+		c := l[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// isIPv4Literal reports whether h is a dotted-decimal IPv4 address. The
+// standard parser refuses a leading zero in an octet, so each address has one
+// accepted spelling.
+func isIPv4Literal(h string) bool {
+	a, err := netip.ParseAddr(h)
+	return err == nil && a.Is4()
+}
+
+// isIPv6Literal reports whether h is a bracketed IPv6 address written in
+// lowercase hexadecimal and colons only — which is what leaves out an embedded
+// dotted IPv4 part and a zone.
+func isIPv6Literal(h string) bool {
+	if len(h) < 3 || h[0] != '[' || h[len(h)-1] != ']' {
+		return false
+	}
+	inner := h[1 : len(h)-1]
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && c != ':' {
+			return false
+		}
+	}
+	a, err := netip.ParseAddr(inner)
+	return err == nil && a.Is6()
 }

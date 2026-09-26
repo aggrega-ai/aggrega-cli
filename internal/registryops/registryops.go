@@ -38,6 +38,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -109,7 +110,7 @@ func List(cfg workspaceconfig.Config, authOf func(host string) string) []Registr
 		e := Registry{
 			Host:    r.Host,
 			Name:    r.Name,
-			Default: r.Host == cfg.DefaultRegistry,
+			Default: cfg.DefaultRegistry != "" && registryhost.Same(r.Host, cfg.DefaultRegistry),
 			Trust:   TrustOf(r),
 		}
 		if authOf != nil {

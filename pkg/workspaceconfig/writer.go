@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -82,7 +83,7 @@ func registryMutation(reg RegistryConfig) func(mapping *yaml.Node) error {
 		// so it is not a conflict.
 		if reg.Name != "" {
 			for i := range registries {
-				if registries[i].Host != reg.Host && registries[i].Name == reg.Name {
+				if !registryhost.Same(registries[i].Host, reg.Host) && registries[i].Name == reg.Name {
 					return fmt.Errorf("workspaceconfig: registry alias %q is already used by host %q; choose a different alias or address that host directly: %w",
 						reg.Name, registries[i].Host, ErrDuplicateRegistryAlias())
 				}
@@ -90,7 +91,7 @@ func registryMutation(reg RegistryConfig) func(mapping *yaml.Node) error {
 		}
 		replaced := false
 		for i := range registries {
-			if registries[i].Host == reg.Host {
+			if registryhost.Same(registries[i].Host, reg.Host) {
 				registries[i] = reg
 				replaced = true
 				break
@@ -517,8 +518,9 @@ func RemoveProviderBinding(path, query string) (bool, error) {
 // token is resolved through Config.ResolveRegistry — the single alias-or-host
 // primitive every registry consumer routes through — against this file's own
 // registries: a token matching an entry's Name alias resolves to that entry's
-// host, and any other token is treated as a host. The entry whose Host equals the
-// resolved host is dropped, so a registry added by its friendly alias is removed
+// host, and any other token is treated as a host. The entry whose Host names the
+// resolved host — compared through registryhost.Same, the one reading every
+// per-host lookup shares — is dropped, so a registry added by its friendly alias is removed
 // by that same alias, symmetric with add. An ambiguous alias (two entries) surfaces
 // its resolver error rather than removing one arbitrarily.
 //
@@ -543,7 +545,7 @@ func RemoveRegistry(path, token string) (bool, error) {
 		}
 		kept := make([]RegistryConfig, 0, len(registries))
 		for _, r := range registries {
-			if r.Host == host {
+			if registryhost.Same(r.Host, host) {
 				removed = true
 				continue
 			}

@@ -3,7 +3,12 @@
 
 package publishops
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
 
 // DestinationSupply names the input one particular caller sets a publication's
 // destination registry through, in that caller's own vocabulary.
@@ -34,4 +39,35 @@ func resolveDestination(requested, defaultRegistry string, supply DestinationSup
 		return "", fmt.Errorf("no destination registry")
 	}
 	return "", fmt.Errorf("no destination registry; %s", supply)
+}
+
+// destinationHost returns the registry host a publication publishes to: the
+// destination resolveDestination settles on, resolved from an alias or a host
+// through the one alias-or-host resolver, and held to the one reading of a
+// registry host.
+//
+// The hold is what keeps a destination named for one invocation from escaping
+// the policy written for its host. A workspace's default registry is already in
+// the spelling its trust policy is kept under, because resolution refuses any
+// other; a requested destination arrives after resolution, so it is checked
+// here, where it becomes the host every signing decision for this publication
+// is taken against. A requested token may still be a reference — the resolver
+// reduces it to the host it names — but that host is refused rather than
+// rewritten when it is not spelled as a registry host.
+//
+// Every publishing entry point reaches it, so no surface decides the destination
+// a second way.
+func destinationHost(wsCfg workspaceconfig.Config, requested string, supply DestinationSupply) (string, error) {
+	token, err := resolveDestination(requested, wsCfg.DefaultRegistry, supply)
+	if err != nil {
+		return "", err
+	}
+	registry, err := wsCfg.ResolveRegistry(token)
+	if err != nil {
+		return "", err
+	}
+	if err := registryhost.Check("the destination registry", registry); err != nil {
+		return "", err
+	}
+	return registry, nil
 }

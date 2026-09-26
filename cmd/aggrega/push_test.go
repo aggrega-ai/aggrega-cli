@@ -423,7 +423,7 @@ spec:
 
 // TestPushUsesWorkspaceDefaultRegistry pins that the destination
 // registry resolves from (in priority order): --registry flag, then
-// workspace.default_registry. Uses --dry-run mode so pushRun prints
+// the workspace's default_registry. Uses --dry-run mode so pushRun prints
 // the resolved <reference>:<tag> without contacting any registry,
 // and captures stdout to assert the printed reference's registry
 // host matches the expected resolution.
@@ -453,7 +453,7 @@ spec:
       type: object
 `)
 
-	// Without --registry, workspace.default_registry wins.
+	// Without --registry, the workspace's default_registry wins.
 	var buf bytes.Buffer
 	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
@@ -468,7 +468,7 @@ spec:
 		t.Errorf("default_registry: stdout missing %q; got:\n%s", wantRef, buf.String())
 	}
 
-	// With --registry, the flag wins over workspace.default_registry.
+	// With --registry, the flag wins over the workspace's default_registry.
 	buf.Reset()
 	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
