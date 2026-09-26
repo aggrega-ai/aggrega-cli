@@ -23,9 +23,11 @@ import (
 
 // placeholder is one value a document's kind requires that the document leaves
 // as an empty string: the dotted key path, in the spelling the envelope gate
-// reports its findings under, the position of the key, and what the value takes.
+// reports its findings under, the key node the value sits under and the
+// position read off it, and what the value takes.
 type placeholder struct {
 	path   string
+	key    *yaml.Node
 	line   int
 	column int
 	takes  string
@@ -122,10 +124,20 @@ func placeholderRefusal(kind envelope.Kind, data []byte, path string, schemaErr 
 
 // Placeholder is one value a document of a single-entity kind leaves empty, as
 // the single-entity scope names it: the dotted key path, spelled as the envelope
-// gate spells the paths of its findings, and what the value takes.
+// gate spells the paths of its findings, what the value takes, and the key the
+// reading found it under.
 type Placeholder struct {
 	KeyPath string
 	Takes   string
+
+	// Key is the mapping key the empty value sits under, from the reading's own
+	// parse of the same bytes, so its coordinates are the document's. It is the
+	// key itself even where the key's own name contains a dot — a label key such
+	// as component.aggrega.ai/type — which KeyPath spells with the same separator
+	// as the steps between keys, so a field-path walk resolving KeyPath cannot
+	// address it. A surface positioning the placeholder converts this node into
+	// its own position units rather than resolving KeyPath.
+	Key *yaml.Node
 }
 
 // Placeholders is the single-entity scope's reading of a document's
@@ -176,7 +188,7 @@ func ReadPlaceholders(kind envelope.Kind, data []byte, path string, schemaErr er
 	}
 	entries := make([]Placeholder, 0, len(refusal.placeholders))
 	for _, p := range refusal.placeholders {
-		entries = append(entries, Placeholder{KeyPath: p.path, Takes: p.takes})
+		entries = append(entries, Placeholder{KeyPath: p.path, Takes: p.takes, Key: p.key})
 	}
 	return Placeholders{Entries: entries, Refusal: refusal, found: refusal.placeholders}, true
 }
@@ -287,6 +299,7 @@ func (r *placeholderReader) walk(schema map[string]any, node *yaml.Node, keyPath
 			pos := r.idx.NodeToPosition(key)
 			r.found = append(r.found, placeholder{
 				path:   strings.Join(path, "."),
+				key:    key,
 				line:   pos.Line + 1,
 				column: pos.Character + 1,
 				takes:  takes(prop),

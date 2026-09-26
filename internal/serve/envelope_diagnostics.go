@@ -189,7 +189,10 @@ func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 // the schema admits, which the envelope reports nothing about. An envelope
 // finding at a placeholder's key is dropped in the placeholder's favour, by the
 // rule the command's refusal drops it by; every other finding is reported as
-// it would be without the reading.
+// it would be without the reading. Each placeholder is drawn at the key the
+// reading found it under — a key whose own name contains a dot included, which
+// no field path addresses — converted through the same client-encoding index an
+// envelope finding is drawn through.
 func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
 	kind, ok := classifyByFilename(file, releasePath)
 	if !ok {
@@ -260,7 +263,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 			lead = header + ": "
 		}
 		for _, p := range owed.Entries {
-			line, col, endLine, endCol := fieldPathSpan(doc, idx, p.KeyPath)
+			line, col, endLine, endCol := keySpan(idx, p.Key)
 			diags = append(diags, Diagnostic{
 				Line:      line,
 				Column:    col,
@@ -295,6 +298,33 @@ func fieldPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, fieldPath string) (lin
 		line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 	}
 	return line, col, endLine, endCol
+}
+
+// keySpan draws a key node in the client's negotiated position encoding: from
+// where the key starts to where its text ends, point-style for a key whose text
+// runs over more than one line, and at the head of the file when there is no
+// node.
+//
+// It converts the node exactly as yamlpos.FieldRange converts the node a field
+// path resolves to, through the same index, so a key both can reach is drawn at
+// one span by either. That is a deliberate second statement of the conversion,
+// not a drift: FieldRange takes a path, and a placeholder is drawn at the key
+// the placeholder reading found, which for a key whose own name contains a dot
+// is one no field path addresses. TestAKeyNodeIsDrawnAsTheFieldPathWalkDrawsIt
+// holds the two to one span over every key a field path does reach.
+func keySpan(idx yamlpos.LineIndex, key *yaml.Node) (line, col, endLine, endCol int) {
+	if key == nil {
+		return 1, 1, 0, 0
+	}
+	start := idx.NodeToPosition(key)
+	line, col = start.Line+1, start.Character+1
+	// A multi-line key has no single-line span to underline, so the end is left
+	// unset rather than pointing at a coordinate on another line.
+	if strings.Contains(key.Value, "\n") {
+		return line, col, 0, 0
+	}
+	end := idx.ScalarEnd(key)
+	return line, col, end.Line + 1, end.Character + 1
 }
 
 // leafmostFindings keeps only findings whose FieldPath is not a strict

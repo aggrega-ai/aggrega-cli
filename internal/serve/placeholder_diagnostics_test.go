@@ -19,6 +19,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
@@ -194,10 +196,10 @@ func fillPlaceholderLine(t *testing.T, doc string, line int, value string) strin
 // the command's refusal of the same bytes carries. Filled, neither is told of a
 // placeholder.
 //
-// The type label is drawn at `labels`, the key that encloses it: its key
-// contains a literal dot, which the field-path walk every envelope finding is
-// positioned by does not address, so it is drawn where the envelope's own
-// finding for the same empty value is drawn.
+// The type label is drawn at the label key itself, on the line the command
+// names it at, although its key contains a literal dot that the field-path walk
+// an envelope finding is positioned by does not address: a placeholder is drawn
+// at the key the placeholder reading found.
 func TestTheDaemonNamesEveryPlaceholderADraftCarries(t *testing.T) {
 	t.Parallel()
 	root := tier4Workspace(t, "parameter-type-mismatch", []string{"release.yaml", "manifest.yaml", "aggregate.yaml"})
@@ -224,7 +226,7 @@ func TestTheDaemonNamesEveryPlaceholderADraftCarries(t *testing.T) {
 			name: "a drafted Component", file: "component.yaml", doc: component,
 			want: []owedAt{
 				{keyPath: "metadata.version", takesPrefix: "a semantic version, such as 1.0.0", line: 5, column: 3},
-				{keyPath: "metadata.labels.component.aggrega.ai/type", takesPrefix: "one of: server, worker, task, function, stateful-server, resource", line: 6, column: 3},
+				{keyPath: "metadata.labels.component.aggrega.ai/type", takesPrefix: "one of: server, worker, task, function, stateful-server, resource", line: 7, column: 5},
 			},
 		},
 		{name: "a FeatureRecipe with only its version filled", file: "featurerecipe.yaml", doc: versioned, want: refs},
@@ -337,6 +339,118 @@ func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 			t.Errorf("%s: no placeholder entry for metadata.version: %+v", tc.encoding, diags)
 		}
 	}
+}
+
+// TestADottedPlaceholderKeyIsDrawnOnTheKeyItself draws a drafted Component's
+// type label — a key whose own name contains a dot — in a session counting
+// UTF-16 units and in one counting UTF-8 bytes, and reads the text each span
+// covers in that session's units. In both, the placeholder covers the label key
+// itself, on the line the command names it at. An envelope finding on the same
+// dotted key that is not a placeholder is still drawn where the field-path walk
+// draws it, at the enclosing key: only a placeholder is drawn at the key the
+// placeholder reading found.
+//
+// The drafted label line carries no multi-byte character, so the two sessions
+// count the same columns on it.
+func TestADottedPlaceholderKeyIsDrawnOnTheKeyItself(t *testing.T) {
+	t.Parallel()
+	const typeLabel = "metadata.labels.component.aggrega.ai/type"
+	const notAPlaceholder = "apiVersion: aggrega.ai/v1alpha1\n" +
+		"kind: Component\n" +
+		"metadata:\n" +
+		"  name: my-service\n" +
+		"  version: \"1.0.0\"\n" +
+		"  labels:\n" +
+		"    component.aggrega.ai/type: bogus\n" +
+		"spec: {}\n"
+	for _, encoding := range []string{"utf-16", "utf-8"} {
+		root := t.TempDir()
+		srv := newTestServer(t, root, nil, nil)
+		initializeWithEncoding(t, srv, encoding)
+		drafted := draftedOverTheWire(t, srv, "component", "my-service")
+
+		var label Diagnostic
+		var found bool
+		for _, d := range validateContentOverTheWire(t, srv, filepath.Join(root, "component.yaml"), drafted, "").Diagnostics {
+			if d.KeyPath == typeLabel {
+				label, found = d, true
+			}
+		}
+		if !found {
+			t.Fatalf("%s: no placeholder entry for %s", encoding, typeLabel)
+		}
+		if label.Line != 7 || label.Column != 5 || label.EndLine != 7 || label.EndColumn != 30 {
+			t.Errorf("%s: the type label is drawn at %d:%d-%d:%d, want 7:5-7:30",
+				encoding, label.Line, label.Column, label.EndLine, label.EndColumn)
+		}
+		if got := spanText(t, drafted, label, encoding); got != "component.aggrega.ai/type" {
+			t.Errorf("%s: the type label's span covers %q, not the label key", encoding, got)
+		}
+
+		diags := validateContentOverTheWire(t, srv, filepath.Join(root, "bogus.yaml"), notAPlaceholder, "").Diagnostics
+		if len(diags) != 1 {
+			t.Fatalf("%s: want the one enumeration finding on the type label, got %+v", encoding, diags)
+		}
+		finding := diags[0]
+		if finding.KeyPath != "" || !strings.Contains(finding.Message, "does not equal any of") {
+			t.Errorf("%s: want the schema's enumeration finding, got %+v", encoding, finding)
+		}
+		if finding.Line != 6 || finding.Column != 3 || finding.EndLine != 6 || finding.EndColumn != 9 {
+			t.Errorf("%s: the enumeration finding is drawn at %d:%d-%d:%d, want 6:3-6:9",
+				encoding, finding.Line, finding.Column, finding.EndLine, finding.EndColumn)
+		}
+		if got := spanText(t, notAPlaceholder, finding, encoding); got != "labels" {
+			t.Errorf("%s: the enumeration finding's span covers %q, not the enclosing key", encoding, got)
+		}
+	}
+}
+
+// spanText returns the text of a document line a diagnostic's span covers,
+// counting its 1-based columns in the session's encoding, so an assertion reads
+// which key a span lands on rather than only a number. It counts with the
+// standard library alone and shares nothing with the index the daemon draws
+// through.
+func spanText(t *testing.T, doc string, d Diagnostic, encoding string) string {
+	t.Helper()
+	lines := strings.Split(doc, "\n")
+	if d.Line < 1 || d.Line > len(lines) || d.EndLine != d.Line {
+		t.Fatalf("the span %d:%d-%d:%d does not sit on one line of the document", d.Line, d.Column, d.EndLine, d.EndColumn)
+	}
+	line := lines[d.Line-1]
+	start := byteOffsetOfUnit(t, line, d.Column-1, encoding)
+	end := byteOffsetOfUnit(t, line, d.EndColumn-1, encoding)
+	if end < start {
+		t.Fatalf("the span %d:%d-%d:%d ends before it starts", d.Line, d.Column, d.EndLine, d.EndColumn)
+	}
+	return line[start:end]
+}
+
+// byteOffsetOfUnit converts a 0-based column, counted in encoding's units, to a
+// byte offset into line, failing when the column splits a character or lies
+// past the line's end.
+func byteOffsetOfUnit(t *testing.T, line string, units int, encoding string) int {
+	t.Helper()
+	counted := 0
+	for i, r := range line {
+		if counted == units {
+			return i
+		}
+		switch encoding {
+		case "utf-8":
+			counted += utf8.RuneLen(r)
+		case "utf-16":
+			counted += utf16.RuneLen(r)
+		default:
+			t.Fatalf("no unit count for the encoding %q", encoding)
+		}
+		if counted > units {
+			t.Fatalf("column %d splits a character of %q", units+1, line)
+		}
+	}
+	if counted != units {
+		t.Fatalf("column %d lies past the end of %q", units+1, line)
+	}
+	return len(line)
 }
 
 // TestTheDaemonAndTheCommandNameTheSamePlaceholders holds the two surfaces to
