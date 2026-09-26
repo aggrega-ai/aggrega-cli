@@ -831,7 +831,10 @@ func fetchPreviousRegistryVersion(
 			// check, so the refusal is loud.
 			return nil, "", fmt.Errorf("fetch previous registry version: %w", err)
 		}
-		reference := wsCfg.DefaultRegistry + "/" + catalog.OCILocation(header.Kind, header.Spec.Capability, header.Metadata.Name)
+		// The predecessor is read from where a publication through the default
+		// registry lands, under the default's location prefix and through the one
+		// join publication composes its reference with.
+		reference := catalog.RegistryReference(wsCfg.DefaultRegistryLocation().Prefix(), header.Kind, header.Spec.Capability, header.Metadata.Name)
 		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)

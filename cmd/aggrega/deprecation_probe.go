@@ -158,13 +158,16 @@ func latestDeprecationView(deps []registryindex.VersionDeprecation) (deprecation
 // identity through the configured default registry, so the default registry's index
 // is the index for the artifact this identity names. Reading a second registry's
 // index would report a marker recorded against a different artifact that merely
-// shares a repository path.
+// shares a repository path. The index is kept per host, so it is read by the
+// default's host, and the repository is the one the location rule places under
+// the default's repository path, where a pull fetches the entity.
 var lookupEntityDeprecation = func(rw *workspaceconfig.ResolvedWorkspace, kind, provider, name string) (deprecationView, bool) {
-	lookup := newRepoDeprecationLookup(rw, rw.Config().DefaultRegistry)
+	location := rw.Config().DefaultRegistryLocation()
+	lookup := newRepoDeprecationLookup(rw, location.Host)
 	if lookup == nil {
 		return deprecationView{}, false
 	}
-	return lookup(catalog.OCILocation(kind, provider, name))
+	return lookup(location.Repository(catalog.OCILocation(kind, provider, name)))
 }
 
 // renderDeprecationBlock writes a multi-line deprecation notice for an inspected

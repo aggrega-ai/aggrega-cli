@@ -240,7 +240,7 @@ func (s *server) signingCredentials() signingCredentials {
 // argument fault is corrective text naming the tool it applies to, rather than an
 // operation failure a caller reads after the fact.
 func missingDestination(tool, requested string, tw *toolWorkspace) string {
-	_, err := publishops.ResolveDestination(requested, tw.cfg.DefaultRegistry, toolDestinationSupply)
+	_, err := publishops.ResolveDestination(requested, tw.cfg.DefaultRegistryLocation().Prefix(), toolDestinationSupply)
 	if err == nil {
 		return ""
 	}

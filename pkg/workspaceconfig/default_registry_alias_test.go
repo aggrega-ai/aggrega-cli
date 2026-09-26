@@ -67,10 +67,13 @@ func TestADefaultRegistryNamingAnEntryIsResolvedOnceToThatEntrysHost(t *testing.
 				"  - name: shared\n    host: a.example.com\n  - name: shared\n    host: b.example.com\n",
 			refusal:  ErrAmbiguousRegistryAlias(),
 			mentions: []string{"default_registry", `registry alias "shared" matches 2 hosts`, "a.example.com", "b.example.com"}},
-		{name: "a repository path names the registry host it wants",
-			tree:     "workspace: {}\ndefault_registry: ghcr.io/acme/catalog\n",
+		{name: "a host with a repository path is that location",
+			tree: "workspace: {}\ndefault_registry: ghcr.io/acme/catalog\n",
+			host: "ghcr.io/acme/catalog"},
+		{name: "an entry's name followed by a path",
+			tree:     "workspace: {}\ndefault_registry: local/acme\nregistries:\n  - name: local\n    host: 127.0.0.1:5000\n",
 			refusal:  ErrConfigInvalid(),
-			mentions: []string{`default_registry "ghcr.io/acme/catalog"`, `write "ghcr.io"`, "path"}},
+			mentions: []string{`default_registry "local/acme" is the name of the registries entry "local" followed by a path`, `write "local"`, `"127.0.0.1:5000/acme"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

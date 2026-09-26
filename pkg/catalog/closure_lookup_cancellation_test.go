@@ -77,7 +77,7 @@ func (p *parkingPuller) Pull(ctx context.Context, _, _ string) (*oci.PullResult,
 	return nil, oci.ErrFetchNotFound()
 }
 
-func (p *parkingPuller) RegistryHost() string { return "hub.aggrega.ai" }
+func (p *parkingPuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 
 // goroutineFrames renders every goroutine's stack, growing the buffer until the
 // dump fits. A truncated dump would make an absent frame unreadable from a frame
@@ -215,7 +215,7 @@ func (p *stopObservingPuller) Pull(ctx context.Context, _, _ string) (*oci.PullR
 	return nil, p.observe(ctx, "Pull")
 }
 
-func (p *stopObservingPuller) RegistryHost() string { return "hub.aggrega.ai" }
+func (p *stopObservingPuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 
 // stopObservingCapablePuller adds the three optional capabilities, so the
 // bare-identity tiers — which a Pull-only puller cannot reach — are exercised

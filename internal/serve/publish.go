@@ -741,7 +741,7 @@ var (
 // response rather than surfacing later as an operation failure.
 func (s *Server) requireDestination(requested string) *jsonRPCError {
 	if _, err := publishops.ResolveDestination(
-		requested, s.resolvedWorkspace.Config().DefaultRegistry, daemonDestinationSupply,
+		requested, s.resolvedWorkspace.Config().DefaultRegistryLocation().Prefix(), daemonDestinationSupply,
 	); err != nil {
 		return invalidPublicationParam(err.Error())
 	}

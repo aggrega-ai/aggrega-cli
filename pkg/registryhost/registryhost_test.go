@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"oras.land/oras-go/v2/registry"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
@@ -235,10 +237,14 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// TestCheckOr pins the refusal for a value that may name something besides a
-// host: it is Check's refusal wherever the value names a host at all, and only a
-// value naming no host is refused as neither, offering the alternative first.
-func TestCheckOr(t *testing.T) {
+// TestCheckLocation pins the reading of a registry location — a registry host,
+// optionally followed by a repository path — and the refusal for a value that is
+// not one. A host alone is accepted and refused exactly as Check accepts and
+// refuses it; a host with a path is accepted where the host is canonical and the
+// path is a repository path, and otherwise refused naming the location to write
+// where there is one; and a value naming no host is refused as neither a location
+// nor the alternative, offering both. Credentials are never repeated.
+func TestCheckLocation(t *testing.T) {
 	t.Parallel()
 	const alternative = "the name of an entry under registries"
 	cases := []struct {
@@ -249,40 +255,196 @@ func TestCheckOr(t *testing.T) {
 		notSubstr  []string
 	}{
 		{name: "canonical host", in: "registry.example.com"},
+		{name: "a host with an owner path", in: "ghcr.io/acme"},
+		{name: "a host with a project path", in: "harbor.example.com/platform"},
+		{name: "a loopback host with a port and a path", in: "127.0.0.1:5000/team"},
+		{name: "a nested path", in: "ghcr.io/acme/catalog/stable"},
+		{name: "localhost with a path", in: "localhost/acme"},
+		{name: "an ipv6 host with a path", in: "[::1]:5000/acme"},
+		{name: "path separators the grammar admits", in: "registry.example.com/my-team_1/sub.name__x"},
 		{name: "a host in another spelling is Check's refusal", in: "HUB.AGGREGA.AI", wantErr: true,
 			wantSubstr: []string{`write "hub.aggrega.ai"`}, notSubstr: []string{alternative}},
-		{name: "a repository path is Check's refusal", in: "ghcr.io/acme/catalog", wantErr: true,
-			wantSubstr: []string{`default_registry "ghcr.io/acme/catalog"`, `write "ghcr.io"`}, notSubstr: []string{alternative}},
+		{name: "a scheme and no path is Check's refusal", in: "https://registry.example.com", wantErr: true,
+			wantSubstr: []string{`write "registry.example.com"`}, notSubstr: []string{alternative}},
+		{name: "a host in capitals before a path names the location to write", in: "GHCR.io/acme", wantErr: true,
+			wantSubstr: []string{`default_registry "GHCR.io/acme" is not written as the registry location it names`, `write "ghcr.io/acme"`}},
+		{name: "a scheme before a path names the location to write", in: "https://ghcr.io/acme", wantErr: true,
+			wantSubstr: []string{`write "ghcr.io/acme"`}},
+		{name: "a default port before a path names the location to write", in: "ghcr.io:443/acme", wantErr: true,
+			wantSubstr: []string{`write "ghcr.io/acme"`}},
+		{name: "credentials before a path are not repeated", in: "user:secret@ghcr.io/acme", wantErr: true,
+			wantSubstr: []string{`write "ghcr.io/acme"`}, notSubstr: []string{"secret"}},
+		{name: "a path in capitals is not a repository path", in: "ghcr.io/Acme", wantErr: true,
+			wantSubstr: []string{`names the registry host "ghcr.io" followed by something that is not a repository path`}},
+		{name: "a tag is not part of a repository path", in: "ghcr.io/acme:1.0.0", wantErr: true,
+			wantSubstr: []string{`not a repository path`, "no tag, digest"}},
+		{name: "a digest is not part of a repository path", in: "ghcr.io/acme@sha256:0123", wantErr: true,
+			wantSubstr: []string{`not a repository path`}},
+		{name: "a trailing slash is not part of a repository path", in: "ghcr.io/acme/", wantErr: true,
+			wantSubstr: []string{`not a repository path`}},
+		{name: "an empty segment is not part of a repository path", in: "ghcr.io//acme", wantErr: true,
+			wantSubstr: []string{`not a repository path`}},
+		{name: "a slash and nothing after it", in: "ghcr.io/", wantErr: true,
+			wantSubstr: []string{`not a repository path`, "write the host alone"}},
+		{name: "a single name with a path is refused as neither", in: "myregistry/acme", wantErr: true,
+			wantSubstr: []string{`default_registry "myregistry/acme" is not a registry host, alone or followed by a repository path, and it is not ` + alternative,
+				"write " + alternative + `, or a registry host optionally followed by "/" and a repository path, where a registry host is a lowercase host name containing a dot`,
+				"and a repository path is one or more segments"}},
+		{name: "a catalog identity is refused as neither", in: "core/web-api", wantErr: true,
+			wantSubstr: []string{"is not a registry host, alone or followed by a repository path"}},
 		{name: "a single name is refused as neither", in: "nowhere", wantErr: true,
-			wantSubstr: []string{`default_registry "nowhere" is not a registry host, and it is not ` + alternative,
-				"write " + alternative + ", or a lowercase host name containing a dot"}},
-		{name: "credentials are not repeated", in: "user:secret@nowhere", wantErr: true,
+			wantSubstr: []string{`default_registry "nowhere" is not a registry host, alone or followed by a repository path, and it is not ` + alternative}},
+		{name: "credentials with no host are not repeated", in: "user:secret@nowhere", wantErr: true,
 			wantSubstr: []string{alternative}, notSubstr: []string{"secret"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := registryhost.CheckOr("default_registry", tc.in, alternative)
+			err := registryhost.CheckLocation("default_registry", tc.in, alternative)
 			if (err != nil) != tc.wantErr {
-				t.Fatalf("CheckOr(%q) error = %v; want error %v", tc.in, err, tc.wantErr)
+				t.Fatalf("CheckLocation(%q) error = %v; want error %v", tc.in, err, tc.wantErr)
 			}
 			if err == nil {
 				return
 			}
 			for _, s := range tc.wantSubstr {
 				if !strings.Contains(err.Error(), s) {
-					t.Errorf("CheckOr(%q) = %q; want it to contain %q", tc.in, err, s)
+					t.Errorf("CheckLocation(%q) = %q; want it to contain %q", tc.in, err, s)
 				}
 			}
 			for _, s := range tc.notSubstr {
 				if strings.Contains(err.Error(), s) {
-					t.Errorf("CheckOr(%q) = %q; it carries %q", tc.in, err, s)
+					t.Errorf("CheckLocation(%q) = %q; it carries %q", tc.in, err, s)
 				}
 			}
-			if check := registryhost.Check("default_registry", tc.in); registryhost.IsHost(registryhost.Normalize(tc.in)) && check.Error() != err.Error() {
-				t.Errorf("CheckOr(%q) = %q; a value naming a host must be refused exactly as Check refuses it, %q", tc.in, err, check)
+			if !strings.Contains(tc.in, "/") || strings.HasPrefix(tc.in, "https://") && strings.Count(tc.in, "/") == 2 {
+				if check := registryhost.Check("default_registry", tc.in); registryhost.IsHost(registryhost.Normalize(tc.in)) && check.Error() != err.Error() {
+					t.Errorf("CheckLocation(%q) = %q; a host alone must be refused exactly as Check refuses it, %q", tc.in, err, check)
+				}
 			}
 		})
+	}
+
+	// With no alternative, a value naming no host offers the location shapes alone.
+	err := registryhost.CheckLocation("the destination", "myregistry/acme", "")
+	if err == nil || !strings.Contains(err.Error(), `the destination "myregistry/acme" is not a registry host, alone or followed by a repository path; write a registry host`) {
+		t.Errorf("CheckLocation with no alternative = %v; want the location shapes offered alone", err)
+	}
+}
+
+// TestIsRepositoryPath pins the OCI distribution grammar a registry location's
+// path is held to.
+func TestIsRepositoryPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"acme", true},
+		{"acme/catalog", true},
+		{"a/b/c/d", true},
+		{"my-team", true},
+		{"my--team", true},
+		{"my_team", true},
+		{"my__team", true},
+		{"my.team", true},
+		{"a0.b1-c2_d3__e4", true},
+		{"0", true},
+		{"", false},
+		{"Acme", false},
+		{"acme/", false},
+		{"/acme", false},
+		{"acme//catalog", false},
+		{"acme:1.0.0", false},
+		{"acme@sha256:0123", false},
+		{"-acme", false},
+		{"acme-", false},
+		{"acme.", false},
+		{".acme", false},
+		{"my___team", false},
+		{"my..team", false},
+		{"my._team", false},
+		{"acme team", false},
+		{"https://acme", false},
+	}
+	for _, tc := range cases {
+		if got := registryhost.IsRepositoryPath(tc.in); got != tc.want {
+			t.Errorf("IsRepositoryPath(%q) = %v; want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestIsRepositoryPathAgreesWithTheRegistryClient holds the reading of a
+// repository path to the registry client's own statement of the same grammar,
+// which the client applies to every reference it parses. The two are written
+// independently, so this drives one corpus through both: every string of up to
+// five characters over an alphabet carrying each character class the grammar
+// treats differently — a letter, a digit, each separator, the component
+// separator, and the capital, colon and at-sign it refuses — plus the longer
+// shapes the table above names. A path this package accepted and the client
+// refused would load and then fail at the first fetch; one the client accepts
+// and this package refused would be a location nothing lets an author write.
+func TestIsRepositoryPathAgreesWithTheRegistryClient(t *testing.T) {
+	t.Parallel()
+	alphabet := []string{"a", "0", ".", "_", "-", "/", "A", ":", "@"}
+	corpus := []string{"acme/catalog/stable", "a0.b1-c2_d3__e4/x", "my---team/sub", "harbor/platform/team-a_b.c"}
+	var grow func(prefix string, depth int)
+	grow = func(prefix string, depth int) {
+		corpus = append(corpus, prefix)
+		if depth == 0 {
+			return
+		}
+		for _, c := range alphabet {
+			grow(prefix+c, depth-1)
+		}
+	}
+	grow("", 5)
+	disagreements := 0
+	for _, p := range corpus {
+		client := registry.Reference{Registry: "registry.example.com", Repository: p}.ValidateRepository() == nil
+		if ours := registryhost.IsRepositoryPath(p); ours != client {
+			disagreements++
+			if disagreements <= 20 {
+				t.Errorf("repository path %q: IsRepositoryPath=%v but the registry client accepts=%v", p, ours, client)
+			}
+		}
+	}
+	if disagreements > 20 {
+		t.Errorf("%d disagreements in all over %d paths", disagreements, len(corpus))
+	}
+}
+
+// TestLocationOf pins how an accepted registry location is read afterwards: the
+// host is everything before the first "/", the path everything after, Prefix
+// puts them back together, and Repository names a repository beneath the path
+// relative to the host.
+func TestLocationOf(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in           string
+		host, path   string
+		prefix, repo string
+	}{
+		{"", "", "", "", "component/core/x"},
+		{"hub.aggrega.ai", "hub.aggrega.ai", "", "hub.aggrega.ai", "component/core/x"},
+		{"ghcr.io/acme", "ghcr.io", "acme", "ghcr.io/acme", "acme/component/core/x"},
+		{"127.0.0.1:5000/team/sub", "127.0.0.1:5000", "team/sub", "127.0.0.1:5000/team/sub", "team/sub/component/core/x"},
+		{"[::1]:5000/acme", "[::1]:5000", "acme", "[::1]:5000/acme", "acme/component/core/x"},
+	}
+	for _, tc := range cases {
+		got := registryhost.LocationOf(tc.in)
+		if got.Host != tc.host || got.Path != tc.path {
+			t.Errorf("LocationOf(%q) = %+v; want host %q path %q", tc.in, got, tc.host, tc.path)
+		}
+		if p := got.Prefix(); p != tc.prefix {
+			t.Errorf("LocationOf(%q).Prefix() = %q; want %q", tc.in, p, tc.prefix)
+		}
+		if r := got.Repository("component/core/x"); r != tc.repo {
+			t.Errorf("LocationOf(%q).Repository = %q; want %q", tc.in, r, tc.repo)
+		}
+		if tc.in != "" && got.Prefix()+"/component/core/x" != got.Host+"/"+got.Repository("component/core/x") {
+			t.Errorf("LocationOf(%q): Prefix and Repository name two different references", tc.in)
+		}
 	}
 }
 

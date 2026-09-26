@@ -202,11 +202,11 @@ func TestStoppingADiscoverabilityProbeEndsTheEnumeration(t *testing.T) {
 	}
 
 	controlDone := make(chan bool, 1)
-	go func() { controlDone <- discoverableViaSearch(context.Background(), controlLister, "anything") }()
+	go func() { controlDone <- discoverableViaSearch(context.Background(), controlLister, "", "anything") }()
 
 	stopCtx, stop := context.WithCancel(context.Background())
 	stoppedDone := make(chan bool, 1)
-	go func() { stoppedDone <- discoverableViaSearch(stopCtx, stoppedLister, "anything") }()
+	go func() { stoppedDone <- discoverableViaSearch(stopCtx, stoppedLister, "", "anything") }()
 
 	awaitEntered(t, controlLister.entered, "the control probe's registry enumeration")
 	awaitEntered(t, stoppedLister.entered, "the stopped probe's registry enumeration")

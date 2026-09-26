@@ -85,7 +85,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			// location the artifact was fetched from. A host-carrying artifact (a
 			// content-pinned .wasm plugin) does not bind — its URI already carries
 			// the reference — so fall back to the URI-derived host for it.
-			kind, location, bound := verifySubjectBinding(wsCfg.DefaultRegistry, axis, e)
+			kind, location, bound := verifySubjectBinding(wsCfg.DefaultRegistryLocation().Prefix(), axis, e)
 			if axis.Kind != "" && !bound {
 				// A single-kind axis carries host-less identities only, so there is no
 				// URI to fall back to: the fall-through below exists for a host-carrying
@@ -185,10 +185,12 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 //
 // The two shapes differ only in where the kind comes from, and the axis says which:
 // a mixed-kind axis carries a collection-site hint per reference, and a
-// single-kind axis states the kind once. Both bind through catalog.OCILocation,
-// which is the single home of the identity-to-location rule that push publishes at
-// and every pull tier fetches from, so verify-location, pull-location and
-// push-location cannot diverge.
+// single-kind axis states the kind once. Both bind through catalog.RegistryReference,
+// which is the single home of the prefix-and-identity-to-location join that push
+// publishes at and every pull tier fetches from, so verify-location, pull-location
+// and push-location cannot diverge. registry is the default registry's location
+// prefix; the host a trust policy is looked up under is read out of the bound
+// location afterwards, so the prefix's path never reaches the lookup.
 //
 // A library identity is not scope-qualified — unlike a Recipe's provider/name or a
 // Plugin's pluginType/name — so its location is the kind path segment plus the bare
@@ -205,7 +207,7 @@ func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref clos
 		return axis.Kind, "", false
 	}
 	identity, _, _ := resolver.SplitVersionedURI(ref.URI)
-	return axis.Kind, registry + "/" + catalog.OCILocation(axis.Kind, "", identity), true
+	return axis.Kind, catalog.RegistryReference(registry, axis.Kind, "", identity), true
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions

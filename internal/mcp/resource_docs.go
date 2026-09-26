@@ -259,7 +259,7 @@ func ensureMarkdownExt(body string) string {
 func (s *server) docsBundleCoords(tw *toolWorkspace) (ref, version string) {
 	ref = s.docsBundleRef
 	if ref == "" {
-		ref = docsbundle.Ref(tw.cfg.DefaultRegistry)
+		ref = docsbundle.Ref(tw.cfg.DefaultRegistryLocation().Prefix())
 	}
 	version = s.docsBundleVersion
 	if version == "" {

@@ -138,7 +138,7 @@ func (p erroringEntityPuller) PullEntity(_ context.Context, _, _, _ string) (*oc
 	return nil, "", p.err
 }
 
-func (p erroringEntityPuller) RegistryHost() string { return "127.0.0.1:5000" }
+func (p erroringEntityPuller) RegistryPrefix() string { return "127.0.0.1:5000" }
 
 // TestRemediationFor_DelegationPrecedence asserts the catalog-side mapping adds to
 // the fetch-sentinel mapping rather than displacing it: a fetch sentinel still

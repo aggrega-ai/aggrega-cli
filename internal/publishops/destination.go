@@ -41,37 +41,45 @@ func resolveDestination(requested, defaultRegistry string, supply DestinationSup
 	return "", fmt.Errorf("no destination registry; %s", supply)
 }
 
-// destinationHost returns the registry host a publication publishes to: the
-// destination resolveDestination settles on — a requested token resolved from an
-// alias or a host through the one alias-or-host resolver, or else the workspace's
-// default registry — held to the one reading of a registry host.
+// destination returns where a publication publishes: the destination
+// resolveDestination settles on — a requested token resolved from an alias or a
+// host through the one alias-or-host resolver, or else the workspace's default
+// registry — as a registry location whose host is held to the one reading of a
+// registry host. The location's Prefix is what the published reference is
+// composed under, and its Host is what every signing decision for the
+// publication is taken against, so a repository path never reaches one.
 //
 // The hold is what keeps a destination named for one invocation from escaping
 // the policy written for its host. A workspace's default registry is already the
-// host it names, in the spelling its trust policy is kept under: resolution has
-// resolved an alias written there to its entry's host and refused anything else.
-// So it is used as that host and not passed through the resolver again, which
-// could read it as a second entry's alias and publish somewhere a pull from the
-// same default never reads. A requested destination arrives after resolution, so
-// it is resolved and checked here, where it becomes the host every signing
-// decision for this publication is taken against. A requested token may still be
-// a reference — the resolver reduces it to the host it names — but that host is
+// location it names, its host in the spelling its trust policy is kept under:
+// resolution has resolved an alias written there to its entry's host and refused
+// anything else. So it is read through the configuration's one reading of it —
+// the same one a pull binds under, so an entity published through the default
+// is fetched back from the same place — and not passed through the resolver
+// again, which could read it as a second entry's alias and publish somewhere a
+// pull from the same default never reads. A requested destination arrives after
+// resolution, so it is resolved and checked here. It names a registry host, and
+// the publication lands at that host's root: a requested token may still be a
+// reference — the resolver reduces it to the host it names — but that host is
 // refused rather than rewritten when it is not spelled as a registry host.
 //
 // Every publishing entry point reaches it, so no surface decides the destination
 // a second way.
-func destinationHost(wsCfg workspaceconfig.Config, requested string, supply DestinationSupply) (string, error) {
-	registry, err := resolveDestination(requested, wsCfg.DefaultRegistry, supply)
+func destination(wsCfg workspaceconfig.Config, requested string, supply DestinationSupply) (registryhost.Location, error) {
+	defaultLocation := wsCfg.DefaultRegistryLocation()
+	registry, err := resolveDestination(requested, defaultLocation.Prefix(), supply)
 	if err != nil {
-		return "", err
+		return registryhost.Location{}, err
 	}
+	location := defaultLocation
 	if requested != "" {
 		if registry, err = wsCfg.ResolveRegistry(requested); err != nil {
-			return "", err
+			return registryhost.Location{}, err
 		}
+		location = registryhost.Location{Host: registry}
 	}
-	if err := registryhost.Check("the destination registry", registry); err != nil {
-		return "", err
+	if err := registryhost.Check("the destination registry", location.Host); err != nil {
+		return registryhost.Location{}, err
 	}
-	return registry, nil
+	return location, nil
 }

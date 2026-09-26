@@ -430,7 +430,7 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	// resolved to the host it stands for here, once, over every layer: the entry
 	// may be declared by any layer and the environment sets the default after all
 	// of them, so this is the first point at which both are known. Every reader of
-	// the resolved configuration then reads that one host.
+	// the resolved configuration then reads that one location.
 	if err := resolveDefaultRegistry(&merged, contributing, lookup); err != nil {
 		return nil, err
 	}

@@ -582,8 +582,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// withdrawn is not selected by a reference that did not name it, and every
 		// skip is announced on the same writer the deprecation notices use. A
 		// workspace with no index built gets a nil screen and an unscreened
-		// discovery step.
-		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, registryindex.NewScreen(rw, wsCfg.DefaultRegistry, cfg.DiagOut))
+		// discovery step. The index is kept per registry host and records every
+		// repository the host serves, a default's repository path included, so it
+		// is read by the default's host alone.
+		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, registryindex.NewScreen(rw, wsCfg.DefaultRegistryLocation().Host, cfg.DiagOut))
 	}
 	// The catalog is read through the one lazy view a build resolves through, and
 	// through nothing else: every pass below — the aggregate resolve, the closure
@@ -1774,7 +1776,7 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	// A gate plugin's URI is a host-less bare identity; bind its registry host and
 	// path from the workspace registry and the Plugin kind so referrer discovery
 	// targets the location it was fetched from.
-	location, bound := catalog.BindEntityLocation(cfg.DefaultRegistry, "plugin", uri)
+	location, bound := catalog.BindEntityLocation(cfg.DefaultRegistryLocation().Prefix(), "plugin", uri)
 	fp.Host = registryhost.Of(uri)
 	if bound {
 		fp.Location = location

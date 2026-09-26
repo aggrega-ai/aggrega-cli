@@ -9,6 +9,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -99,6 +100,9 @@ func DeprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
 // PushPlugin publishes a Plugin entity and its .wasm executable as one OCI
 // manifest. Push dispatches to it on the Plugin kind; it is reachable directly
 // for a caller that already knows the kind and has the entity bytes in hand.
+// registry is the location published under — a registry host, optionally
+// followed by a repository path — and its host is what the signing decisions
+// are taken against.
 func PushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
-	return pushPlugin(ctx, out, cfg, registry, wantSign, name, version, entityPath, entityYAML)
+	return pushPlugin(ctx, out, cfg, registryhost.LocationOf(registry), wantSign, name, version, entityPath, entityYAML)
 }

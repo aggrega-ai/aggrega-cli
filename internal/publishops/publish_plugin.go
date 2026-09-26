@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -57,7 +58,7 @@ import (
 // describe different content — an edit landing on disk after the read cannot
 // reach any of the three. The loader applies the same read-once discipline
 // between import inspection, derivation, and instantiation.
-func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
+func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registryhost.Location, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
 	if cfg.PluginPath == "" {
 		return PushResult{}, fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
@@ -130,12 +131,13 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, registry str
 	// producer.
 	contentDigest := digest.ContentDigest(wasmBytes)
 
-	// The manifest is published at <registry>/plugin/<pluginType>/<name>,
-	// addressed by the entity's version tag. The location derives from the
-	// plugin's pluginType scope plus its bare name through the single OCILocation
-	// rule, so publish-location == pull-location. The published entity bytes are the
-	// verified on-disk bytes — publication records nothing into them.
-	reference := BuildPushReference(registry, "Plugin", entity.Metadata.PluginType, name)
+	// The manifest is published at <prefix>/plugin/<pluginType>/<name>,
+	// addressed by the entity's version tag, prefix being the destination's
+	// location prefix. The location derives from the plugin's pluginType scope
+	// plus its bare name through the single OCILocation rule, so publish-location
+	// == pull-location. The published entity bytes are the verified on-disk bytes
+	// — publication records nothing into them.
+	reference := BuildPushReference(dest.Prefix(), "Plugin", entity.Metadata.PluginType, name)
 
 	// Searchable catalog annotations, sourced from the entity as published (never a
 	// re-invoked describe()) through the single plugin facet projection, built once
@@ -230,7 +232,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, registry str
 		signatureType   string
 	)
 	if wantSign {
-		signer, serr := resolvePublishSigner(cfg.signerRequest(registry))
+		signer, serr := resolvePublishSigner(cfg.signerRequest(dest.Host))
 		if serr != nil {
 			return PushResult{}, serr
 		}

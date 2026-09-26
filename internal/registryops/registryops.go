@@ -105,12 +105,16 @@ func List(cfg workspaceconfig.Config, authOf func(host string) string) []Registr
 	copy(regs, cfg.Registries)
 	sort.Slice(regs, func(i, j int) bool { return regs[i].Host < regs[j].Host })
 
+	// The default is marked on the entry for its host: a default carrying a
+	// repository path is governed by that host's entry like any other location
+	// on the host.
+	defaultHost := cfg.DefaultRegistryLocation().Host
 	out := make([]Registry, 0, len(regs))
 	for _, r := range regs {
 		e := Registry{
 			Host:    r.Host,
 			Name:    r.Name,
-			Default: cfg.DefaultRegistry != "" && registryhost.Same(r.Host, cfg.DefaultRegistry),
+			Default: defaultHost != "" && registryhost.Same(r.Host, defaultHost),
 			Trust:   TrustOf(r),
 		}
 		if authOf != nil {

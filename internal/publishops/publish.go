@@ -15,7 +15,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -416,7 +415,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 	}
 
-	registry, err := destinationHost(wsCfg, cfg.Registry, cfg.DestinationSupply)
+	dest, err := destination(wsCfg, cfg.Registry, cfg.DestinationSupply)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -490,7 +489,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// evaluated before any bytes reach the registry — the refusal, like the
 	// per-registry one, halts before the network call so an unsigned
 	// artifact never leaks.
-	requiresSignatures := wsCfg.RegistrySigningRequiredForKind(registryhost.Of(registry), header.Kind)
+	requiresSignatures := wsCfg.RegistrySigningRequiredForKind(dest.Host, header.Kind)
 	orgRequired := wsCfg.SigningRequiredForKind(header.Kind)
 	wantSign := requiresSignatures || orgRequired
 	if cfg.Sign != nil {
@@ -504,7 +503,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		// destination-scoped cause).
 		if requiresSignatures {
 			return PushResult{}, fmt.Errorf("registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-				registry, signing.ErrUnsignedPushRefused())
+				dest.Host, signing.ErrUnsignedPushRefused())
 		}
 		return PushResult{}, fmt.Errorf("the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
 			header.Kind, signing.ErrSigningPolicyRequiresSignature())
@@ -519,7 +518,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// the immutability guard, and the content-digest spelling are reused, not
 	// re-spelled.
 	if header.Kind == "Plugin" {
-		res, perr := pushPlugin(ctx, out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
+		res, perr := pushPlugin(ctx, out, cfg, dest, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
 		if perr == nil {
 			res.Pin = pinned
 		}
@@ -557,7 +556,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		return PushResult{}, fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
 	}
 
-	reference := BuildPushReference(registry, header.Kind, header.Spec.Capability, header.Metadata.Name)
+	reference := BuildPushReference(dest.Prefix(), header.Kind, header.Spec.Capability, header.Metadata.Name)
 	tag := header.Metadata.Version
 	result := PushResult{
 		Reference:      reference,
@@ -668,7 +667,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		signatureType   string
 	)
 	if wantSign {
-		signatureBundle, signatureType, err = signPublishDigest(ctx, cfg.signerRequest(registry), reference, tag, proposedDigest)
+		signatureBundle, signatureType, err = signPublishDigest(ctx, cfg.signerRequest(dest.Host), reference, tag, proposedDigest)
 		if err != nil {
 			return PushResult{}, err
 		}
@@ -723,7 +722,10 @@ func declaredBeforeBundling(kind, path string, data []byte) (catalog.DeclaredFil
 }
 
 // BuildPushReference composes the canonical OCI repository reference
-// for a catalog entity: <registry>/<kindPathSegment>/<metadata.name>.
+// for a catalog entity: <registry>/<kindPathSegment>/<metadata.name>,
+// registry being the destination's location prefix — its host, followed by
+// the repository path a default registry carries, if any — joined through
+// catalog.RegistryReference, the one join every pull tier binds through.
 // For most kinds the path segment is the lowercased kind name
 // (Component → component, Feature → feature, etc.) per the mediatype
 // convention (application/vnd.aggrega.<kindLower>.v1...);
@@ -744,5 +746,5 @@ func declaredBeforeBundling(kind, path string, data []byte) (catalog.DeclaredFil
 // (reference, tag) pair at the closure walker's registry dispatch. The
 // round-trip symmetry is pinned by a test across all publishable catalog kinds.
 func BuildPushReference(registry, kind, provider, metadataName string) string {
-	return registry + "/" + catalog.OCILocation(kind, provider, metadataName)
+	return catalog.RegistryReference(registry, kind, provider, metadataName)
 }

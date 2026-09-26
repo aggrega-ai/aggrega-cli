@@ -647,14 +647,15 @@ func (l *catalogLookup) ResolvePlugin(ctx context.Context, uri, version string) 
 // `<registry>/plugin/<socket>/<name>` — through the single location rule
 // (entityReference → OCILocation), so the plugin artifact fetch location is
 // derived exactly where the entity's own location is, never carried in the entity.
-// The configured registry comes from the puller (the same registry the entity
-// pull binds against); a puller that cannot report one, or an identity that is
+// The configured registry comes from the puller — the location prefix the entity
+// pull binds against, the default registry's host followed by any repository
+// path it carries; a puller that cannot report one, or an identity that is
 // already registry-qualified, is refused loudly rather than fetched from a
 // double-prefixed location.
 func (l *catalogLookup) pluginArtifactReference(identity string) (string, error) {
 	registry := ""
-	if rh, ok := l.ociPuller.(interface{ RegistryHost() string }); ok {
-		registry = rh.RegistryHost()
+	if rp, ok := l.ociPuller.(interface{ RegistryPrefix() string }); ok {
+		registry = rp.RegistryPrefix()
 	}
 	if registry == "" {
 		return "", fmt.Errorf("catalog: cannot resolve plugin artifact %q: no configured registry to bind its bare identity to a location", identity)
@@ -1304,12 +1305,13 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return nil, closure.Resolution{NotFound: true}, nil
 			}
-			// For the EntityPuller path the bound host is the configured registry,
-			// not the bare identity's leading segment — ask the puller for it so the
-			// docker-login remediation points correctly.
+			// For the EntityPuller path the bound host is the configured registry's,
+			// not the bare identity's leading segment — ask the puller for the
+			// prefix it binds under and read the host out of it, so the docker-login
+			// remediation names the host a login is stored for and never the path.
 			host := registryhost.Of(name)
-			if rh, ok := puller.(interface{ RegistryHost() string }); ok {
-				host = rh.RegistryHost()
+			if rp, ok := puller.(interface{ RegistryPrefix() string }); ok {
+				host = registryhost.Of(rp.RegistryPrefix())
 			}
 			// remediationFor, not oci.RemediationFor: this is the one pull path that
 			// can surface a reference-binding refusal (PullEntity binds the identity

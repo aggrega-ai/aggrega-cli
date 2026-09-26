@@ -28,7 +28,7 @@ func (p *countingMissPuller) Pull(_ context.Context, reference, tag string) (*oc
 	return nil, fmt.Errorf("fetch %s:%s: %w", reference, tag, oci.ErrFetchNotFound())
 }
 
-func (p *countingMissPuller) RegistryHost() string { return "hub.aggrega.ai" }
+func (p *countingMissPuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 
 // embeddedProviderIdentity returns the bare identity and metadata.version of one
 // core provider this binary carries, read out of the binary itself. The version is

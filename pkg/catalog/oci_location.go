@@ -23,9 +23,9 @@ import "strings"
 // provider is to a recipe — a required non-empty scope segment.
 //
 // This is the single source of the location rule for both directions: push
-// publishes an entity at `<registry>/<OCILocation>` and a registry-backed pull
-// binds a bare identity to the same path, so push-location == pull-location holds
-// by construction.
+// publishes an entity at `<prefix>/<OCILocation>` and a registry-backed pull
+// binds a bare identity to the same path, both through RegistryReference, so
+// push-location == pull-location holds by construction.
 func OCILocation(kind, provider, name string) string {
 	seg := KindPathSegment(kind)
 	switch kind {
@@ -37,6 +37,20 @@ func OCILocation(kind, provider, name string) string {
 	default:
 		return seg + "/" + strings.ToLower(name)
 	}
+}
+
+// RegistryReference returns the OCI repository reference an entity is published
+// at and resolved from under a registry location: prefix — a registry host,
+// optionally followed by a repository path, as registryhost.Location.Prefix
+// spells it — then "/" and the entity's OCILocation.
+//
+// It is the one join of a location prefix to the location rule. Publication,
+// every registry-backed pull tier, the signature-verification subject binding
+// and the pre-publication predecessor fetch all compose a reference through it,
+// so a prefix a registry location carries cannot reach one of them and miss
+// another.
+func RegistryReference(prefix, kind, provider, name string) string {
+	return prefix + "/" + OCILocation(kind, provider, name)
 }
 
 // KindPathSegment maps an entity kind to its OCI repository path segment.

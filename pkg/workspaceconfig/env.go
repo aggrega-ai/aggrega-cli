@@ -55,8 +55,8 @@ var envBindings = []envBinding{
 		// Taken as written here and judged where the default registry is resolved,
 		// after this overlay: the value may name a registries entry, which any
 		// layer may declare, so it is read the way a configuration file's value is
-		// read — resolved to the entry's host, or held to the one reading of a
-		// registry host — and a value that is neither fails loudly, naming the
+		// read — resolved to the entry's host, or held to the reading of a
+		// registry location — and a value that is neither fails loudly, naming the
 		// variable, rather than reaching the location binding and the trust
 		// lookups.
 		envVar:     "AGGREGA_DEFAULT_REGISTRY",

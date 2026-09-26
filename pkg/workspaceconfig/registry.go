@@ -4,7 +4,9 @@
 package workspaceconfig
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
@@ -22,13 +24,15 @@ import (
 //     returns a wrapped ErrAmbiguousRegistryAlias rather than silently choosing
 //     one host over the other.
 //
-// The empty-token fallback (to DefaultRegistry) and the final "no destination
-// registry" error stay at the call sites; ResolveRegistry always receives a
-// non-empty token. Callers that pass DefaultRegistry through here get alias
-// resolution for a default set as an alias — which is what a configuration built
-// in code carries. A resolved configuration's DefaultRegistry has already been
+// The empty-token fallback (to the default registry) and the final "no
+// destination registry" error stay at the call sites; ResolveRegistry always
+// receives a non-empty token. Callers that pass DefaultRegistry through here get
+// alias resolution for a default set as an alias — which is what a configuration
+// built in code carries — and the host of a default carrying a repository path,
+// the path dropped. A resolved configuration's DefaultRegistry has already been
 // through the same alias match, once, when the configuration resolved, so it
-// names a host and a caller holding one uses it as the host it is.
+// names a registry location, and a caller holding one reads it through
+// DefaultRegistryLocation rather than through here.
 func (c Config) ResolveRegistry(token string) (string, error) {
 	host, named, err := c.aliasHost(token)
 	if err != nil {
@@ -68,27 +72,51 @@ func (c Config) aliasHost(token string) (host string, named bool, err error) {
 // its refusal uses.
 const aliasAlternative = "the name of an entry under registries"
 
-// resolveDefaultRegistry replaces cfg.DefaultRegistry with the registry host it
-// names, once, over the composed configuration: the Host of the one entry under
-// Registries whose Name it is, or else the value itself, which must then be a
-// registry host in the spelling its trust policy is kept under. An empty default
-// names no default registry and is left empty.
+// DefaultRegistryLocation returns where the default registry places what it
+// holds: its host, which every trust decision about it is keyed on — the entry
+// under Registries whose policy applies, the login, the signing requirement, the
+// trusted identities — and the repository path every location through it
+// begins with, empty where the default carries none. The zero Location is no
+// default registry.
+//
+// It is the one reading of the default's location. Publication takes the prefix
+// it publishes under from it, resolution takes the prefix it binds a host-less
+// identity under from it, and every other reader of the default takes the host
+// or the prefix from it rather than reading DefaultRegistry and splitting the
+// value itself — so an entity published through the default is fetched back
+// from the same place, and no path spelling reaches a trust lookup. A resolved
+// configuration's default is a canonical registry location, so this reads it as
+// written; a configuration built in code is read the same way, and one carrying
+// an alias as its default reads the alias as the host it spells.
+func (c Config) DefaultRegistryLocation() registryhost.Location {
+	return registryhost.LocationOf(c.DefaultRegistry)
+}
+
+// resolveDefaultRegistry replaces cfg.DefaultRegistry with the registry location
+// it names, once, over the composed configuration: the Host of the one entry
+// under Registries whose Name it is, or else the value itself, which must then be
+// a registry host in the spelling its trust policy is kept under, optionally
+// followed by a repository path. An empty default names no default registry and
+// is left empty.
 //
 // A matching entry's name wins over a host spelling, as it does for a
 // command-line token, so a default spelled like a host that is also an entry's
 // name stands for that entry's host. A default that two entries are named after
 // is refused as ambiguous rather than resolved to either; one that is neither an
-// entry's name nor a registry host — a single word no entry carries, a host with
-// a repository path, a host in capitals — is refused, naming the host to write
-// where the value names one. layers are the resolution's contributing layers,
-// and lookup its environment; both are read only to say which layer set the
-// value a refusal is about.
+// entry's name nor a registry location — a single word no entry carries, a host
+// in capitals, a path that is not a repository path — is refused, naming the
+// spelling to write where the value names a host at all. An entry's name followed
+// by a path is refused too, because a name stands for an entry's host and not for
+// a location under it; checkDefaultRegistryLocation words that. layers are the
+// resolution's contributing layers, and lookup its environment; both are read
+// only to say which layer set the value a refusal is about.
 //
 // It runs once per resolution, after every file and the environment, because
 // the entry an alias names may be declared by any layer and the environment may
 // set the default after every file has been read — so no single layer can judge
-// the value. Every reader of the resolved configuration then reads the host this
-// returned, and none of them resolves the default a second time.
+// the value. Every reader of the resolved configuration then reads the location
+// this returned through DefaultRegistryLocation, and none of them resolves the
+// default a second time.
 func resolveDefaultRegistry(cfg *Config, layers []string, lookup func(string) string) error {
 	value := cfg.DefaultRegistry
 	if value == "" {
@@ -102,10 +130,46 @@ func resolveDefaultRegistry(cfg *Config, layers []string, lookup func(string) st
 		cfg.DefaultRegistry = host
 		return nil
 	}
-	if err := registryhost.CheckOr("default_registry", value, aliasAlternative); err != nil {
+	if err := cfg.checkDefaultRegistryLocation(value); err != nil {
+		if errors.Is(err, ErrAmbiguousRegistryAlias()) {
+			return fmt.Errorf("workspaceconfig: %sdefault_registry: %w", defaultRegistryLayer(*cfg, layers, lookup), err)
+		}
 		return fmt.Errorf("workspaceconfig: %s%v: %w", defaultRegistryLayer(*cfg, layers, lookup), err, ErrConfigInvalid())
 	}
 	return nil
+}
+
+// checkDefaultRegistryLocation reports why value, which names no entry under
+// Registries, cannot be the default registry, or nil when it is a registry
+// location registryhost.CheckLocation accepts.
+//
+// It first reads the part before the first "/" the way a default is read — as an
+// entry's name before a host spelling — because a value such as "local/acme",
+// where local is an entry's name, is an entry's name followed by a path: an
+// alias names an entry, whose host is all it stands for, and never a location
+// under that host. Such a value is refused naming the two spellings that are
+// written instead, the name alone and the entry's host followed by the path. It
+// is accepted only where the entry is named exactly like the host it holds, since
+// the name and the host spelling then name one host and the value is that host
+// followed by its path. A name two entries carry is refused as the ambiguity it
+// is, as the whole value would be.
+func (c Config) checkDefaultRegistryLocation(value string) error {
+	if first, path, hasPath := strings.Cut(value, "/"); hasPath {
+		entryHost, named, err := c.aliasHost(first)
+		if err != nil {
+			return err
+		}
+		if named && entryHost != first {
+			located := "its host followed by the path, " + registryhost.Quote(entryHost+"/"+path)
+			if !registryhost.IsRepositoryPath(path) {
+				located = "its host, " + registryhost.Quote(entryHost) + ", followed by a repository path"
+			}
+			return fmt.Errorf("default_registry %s is the name of the registries entry %s followed by a path, and an "+
+				"entry's name stands for that entry's host alone; write %s to use the entry, or %s",
+				registryhost.Quote(value), registryhost.Quote(first), registryhost.Quote(first), located)
+		}
+	}
+	return registryhost.CheckLocation("default_registry", value, aliasAlternative)
 }
 
 // defaultRegistryLayer names the layer that set the default registry, followed by
@@ -150,15 +214,16 @@ func defaultRegistryLayer(cfg Config, layers []string, lookup func(string) strin
 // it unchanged — and a host spelled any other way is refused rather than guessed
 // at; the configured side is read through registryhost.Normalize, the one
 // reading every per-host lookup shares. A configuration the resolution accepted
-// holds only hosts in that spelling, so the default and each entry name their
-// host exactly as written; the shapes a resolved configuration cannot carry — a
-// path, or an alias as the default — are still read here the way this states,
-// for a configuration built in code.
+// holds only hosts in that spelling, so each entry names its host exactly as
+// written and so does the default, ahead of any repository path it carries; the
+// shape a resolved configuration cannot carry — an alias as the default — is
+// still read here the way this states, for a configuration built in code.
 //
 // A default written as an alias is resolved to its entry's host first, through
 // ResolveRegistry. The resolution has already done that for a resolved
-// configuration, with the same alias match, so its default is a host here, and
-// reading it through the match again cannot change what is admitted: a host no
+// configuration, with the same alias match, so its default is a registry
+// location here, and reading it through the match again cannot change what is
+// admitted: a host no
 // entry is named after reads as itself, and a host that came from an entry is
 // admitted as that entry whatever the match makes of it. A default whose alias names
 // two entries resolves to no host and so admits nothing on its own; the hosts

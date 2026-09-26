@@ -20,20 +20,28 @@
 //     trust lookup is keyed.
 //   - Normalize produces that keyed spelling from a reference or an authority,
 //     and Same compares two of them through it.
+//   - IsRepositoryPath decides whether a string is a repository path, and
+//     LocationOf splits a registry location — a host, optionally followed by a
+//     repository path — into the two.
 //   - Check words the refusal for a configured value the two do not accept, and
-//     CheckOr words it for a value that may name something besides a host.
+//     CheckLocation words it for a value that may be a registry location or
+//     name something besides one.
 //   - IsLoopback decides whether an authority addresses this machine, which is
 //     what selects plain HTTP over HTTPS.
 //
 // A value an author configures as a registry host is accepted only when IsHost
 // holds for it and Normalize returns it unchanged, so a configured host and the
-// key its trust policy is looked up under are the same string.
+// key its trust policy is looked up under are the same string. A registry
+// location is held to the same reading on its host part, and its repository
+// path is never part of any key: the path is where things are published and
+// fetched, and the host is what they are trusted by.
 package registryhost
 
 import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -128,7 +136,8 @@ func IsLoopback(authority string) bool {
 // states the same shape as a pattern on each registries[].host, and a test in the
 // configuration package drives one corpus of spellings through both and fails
 // where they disagree. default_registry carries no such pattern, because it may
-// also name a registries entry, whose name may be any string.
+// also name a registries entry, whose name may be any string, or carry a
+// repository path after the host.
 func IsHost(s string) bool {
 	host, port, ok := splitAuthority(s)
 	if !ok {
@@ -168,6 +177,66 @@ func Normalize(ref string) string {
 	return authority
 }
 
+// IsRepositoryPath reports whether p is a repository path in the OCI
+// distribution grammar: one or more components joined by "/", each a run of
+// lowercase letters and digits, where a run may be separated inside a component
+// by ".", "_", "__" or one or more "-". Nothing else is a repository path: no
+// capital letter, no tag or digest (a ":" or "@"), no scheme, no empty component
+// and no leading or trailing "/".
+//
+// It is the reading a registry location's path is held to where it is
+// configured, before any reference exists. The registry client applies its own
+// statement of the same grammar to every reference it parses, and the two are
+// deliberately separate — this package reads spelling with the standard library
+// alone — so a test drives one corpus through both and fails where they
+// disagree: a path accepted here and refused by the client would load and then
+// fail at the first fetch.
+func IsRepositoryPath(p string) bool {
+	return repositoryPath.MatchString(p)
+}
+
+// repositoryPath is the OCI distribution grammar for a repository name.
+var repositoryPath = regexp.MustCompile(`^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$`)
+
+// Location is where a registry places what is published to it and resolved from
+// it: the registry host, and the repository path every repository under it
+// begins with, which is empty when there is none. Host is what every trust
+// decision is keyed on; Path is location and nothing else.
+type Location struct {
+	Host string
+	Path string
+}
+
+// LocationOf splits a registry location into its host and its repository path at
+// the first "/". A value with no "/" is a host alone. It judges nothing: a value
+// is held to the reading of a registry location where it is configured, by
+// CheckLocation, and this is how an accepted one is read afterwards.
+func LocationOf(location string) Location {
+	host, path, _ := strings.Cut(location, "/")
+	return Location{Host: host, Path: path}
+}
+
+// Prefix returns what every repository under the location is named from: the
+// host, followed by "/" and the path where there is one. It is empty for the
+// zero Location.
+func (l Location) Prefix() string {
+	if l.Path == "" {
+		return l.Host
+	}
+	return l.Host + "/" + l.Path
+}
+
+// Repository returns the name, relative to the host, of the repository name
+// places under the location: name itself where the location has no path, and
+// the path followed by "/" and name where it has one. Prefix()+"/"+name and
+// Host+"/"+Repository(name) are the same reference.
+func (l Location) Repository(name string) string {
+	if l.Path == "" {
+		return name
+	}
+	return l.Path + "/" + name
+}
+
 // Check reports why value cannot be configured as a registry host, or nil when
 // it can — when IsHost holds for it and Normalize leaves it unchanged. what names
 // the value the way its author supplied it: a configuration key, an environment
@@ -179,18 +248,76 @@ func Normalize(ref string) string {
 // whichever layer carried it. The error wraps nothing: a caller adds whatever
 // condition its own surface raises.
 func Check(what, value string) error {
-	return check(what, value, "")
+	normalised := Normalize(value)
+	if IsHost(value) && normalised == value {
+		return nil
+	}
+	shown := Quote(value)
+	if IsHost(normalised) {
+		return fmt.Errorf("%s %s is not written as the registry host it names; write %q — "+
+			"lowercase, with no scheme, path, credentials or default port — which is the spelling "+
+			"that host's trust policy is kept under", what, shown, normalised)
+	}
+	return fmt.Errorf("%s %s is not a registry host; write %s", what, shown, hostForms)
 }
 
-// CheckOr is Check for a value that may name something besides a registry host.
-// alternative says, in the words a refusal uses, what else the value may name —
-// "the name of an entry under registries", say — and the caller has already
-// established that the value names no such thing. A value that names a host in
-// another spelling is refused exactly as Check refuses it, naming the spelling
-// to write; a value that names no host at all is refused as neither, offering
-// the alternative ahead of the shapes a host takes.
-func CheckOr(what, value, alternative string) error {
-	return check(what, value, alternative)
+// CheckLocation reports why value cannot be configured as a registry location,
+// or nil when it can: a registry host Check accepts, or such a host followed by
+// "/" and a repository path IsRepositoryPath accepts. alternative says, in the
+// words a refusal uses, what else the value may name — "the name of an entry
+// under registries", say — and the caller has already established that the
+// value names no such thing; it may be empty.
+//
+// A value with no "/" after any scheme that names a host is a host alone, and is
+// accepted or refused exactly as Check accepts or refuses it. A value with a path
+// is refused naming the location to write where its host part names a host in
+// another spelling — a scheme, credentials, capitals or a default port dropped,
+// the path kept — and naming what is wrong with the path where the path is not
+// one. A value that names no host at all is refused as neither a location nor the
+// alternative, offering both.
+func CheckLocation(what, value, alternative string) error {
+	rest := value
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+3:]
+	}
+	authority, path, hasPath := strings.Cut(rest, "/")
+	if !hasPath && IsHost(Normalize(value)) {
+		return Check(what, value)
+	}
+	if hasPath && rest == value && IsHost(authority) && Normalize(authority) == authority && IsRepositoryPath(path) {
+		return nil
+	}
+	shown := Quote(value)
+	host := Normalize(authority)
+	switch {
+	case hasPath && IsHost(host) && IsRepositoryPath(path):
+		return fmt.Errorf("%s %s is not written as the registry location it names; write %q — the registry host "+
+			"lowercase, with no scheme, credentials or default port, followed by the repository path — which keeps "+
+			"that host's trust policy applying to it", what, shown, host+"/"+path)
+	case hasPath && IsHost(host):
+		return fmt.Errorf("%s %s names the registry host %q followed by something that is not a repository path; "+
+			"write the host alone, or the host followed by \"/\" and a repository path, which is %s",
+			what, shown, host, pathShape)
+	case alternative != "":
+		return fmt.Errorf("%s %s is not a registry host, alone or followed by a repository path, and it is not %s; "+
+			"write %s, or a registry host optionally followed by \"/\" and a repository path, where a registry host "+
+			"is %s, and a repository path is %s", what, shown, alternative, alternative, hostForms, pathShape)
+	default:
+		return fmt.Errorf("%s %s is not a registry host, alone or followed by a repository path; write a registry "+
+			"host optionally followed by \"/\" and a repository path, where a registry host is %s, and a repository "+
+			"path is %s", what, shown, hostForms, pathShape)
+	}
+}
+
+// Quote returns value the way a refusal repeats it: quoted, or, where it carries
+// credentials, a placeholder that does not repeat them. It is the one rule for
+// repeating a configured registry value back to its author, so no refusal
+// wording decides it again.
+func Quote(value string) string {
+	if strings.Contains(value, "@") {
+		return "(a value carrying credentials, not repeated here)"
+	}
+	return strconv.Quote(value)
 }
 
 // hostForms lists, in the words a refusal uses, the shapes IsHost accepts. It is
@@ -199,28 +326,11 @@ const hostForms = "a lowercase host name containing a dot (registry.example.com)
 	"name followed by a port (registry:5000), or an IP address, an IPv6 one in brackets — each with an " +
 	"optional :port and nothing else"
 
-// check is Check and CheckOr: alternative is empty for a value that can only be
-// a registry host.
-func check(what, value, alternative string) error {
-	normalised := Normalize(value)
-	if IsHost(value) && normalised == value {
-		return nil
-	}
-	shown := strconv.Quote(value)
-	if strings.Contains(value, "@") {
-		shown = "(a value carrying credentials, not repeated here)"
-	}
-	if IsHost(normalised) {
-		return fmt.Errorf("%s %s is not written as the registry host it names; write %q — "+
-			"lowercase, with no scheme, path, credentials or default port — which is the spelling "+
-			"that host's trust policy is kept under", what, shown, normalised)
-	}
-	if alternative != "" {
-		return fmt.Errorf("%s %s is not a registry host, and it is not %s; write %s, or %s",
-			what, shown, alternative, alternative, hostForms)
-	}
-	return fmt.Errorf("%s %s is not a registry host; write %s", what, shown, hostForms)
-}
+// pathShape states, in the words a refusal uses, the shape IsRepositoryPath
+// accepts. It is the one wording of it, so every refusal describes a repository
+// path the same way.
+const pathShape = `one or more segments joined by "/", each of lowercase letters and digits, which may be ` +
+	`separated inside a segment by ".", "_", "__" or dashes, with no tag, digest or trailing "/"`
 
 // Same reports whether a and b name the same registry host under the one
 // reading: their Normalize spellings are equal. Every lookup that matches a

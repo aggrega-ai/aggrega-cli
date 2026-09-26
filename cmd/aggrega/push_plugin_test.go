@@ -39,10 +39,10 @@ func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.
 	return oci.Pull(ctx, p.store, tag)
 }
 
-// RegistryHost lets the puller bind a bare plugin identity to a location during
+// RegistryPrefix lets the puller bind a bare plugin identity to a location during
 // resolution. The single in-memory store keys on the tag alone, so the fetch
-// ignores the reference — the host only needs to be a well-formed registry.
-func (p *memStorePuller) RegistryHost() string { return "hub.aggrega.ai" }
+// ignores the reference — the prefix only needs to be a well-formed registry.
+func (p *memStorePuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 
 // agreeingPluginEntity is a Plugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",

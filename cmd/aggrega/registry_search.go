@@ -6,9 +6,11 @@ package main
 import (
 	"context"
 	"path"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -74,17 +76,27 @@ func productionPluginDiscoverable(ctx context.Context, name string) bool {
 	if err != nil {
 		return false
 	}
-	return discoverableViaSearch(ctx, reg, name)
+	return discoverableViaSearch(ctx, reg, cfg.DefaultRegistryLocation().Path, name)
 }
 
 // discoverableViaSearch reports whether the registry serves an installable CLI
 // plugin whose command name matches name, so the unknown-command path can
 // suggest installing it. It matches a plugin repository whose final path segment
-// equals name — a best-effort hint over the plugin scope, not an install-time
-// guarantee. Any search error yields false: a registry failure degrades the
-// hint to "not discoverable" and never propagates to the unknown-command path.
-func discoverableViaSearch(ctx context.Context, reg registryRepoLister, name string) bool {
-	matches, err := searchRegistry(ctx, reg, name, pluginSearchScope)
+// equals name — a best-effort hint over the plugin scope beneath under, the
+// repository path the default registry carries (empty for none), not an
+// install-time guarantee. Any search error yields false: a registry failure
+// degrades the hint to "not discoverable" and never propagates to the
+// unknown-command path.
+func discoverableViaSearch(ctx context.Context, reg registryRepoLister, under, name string) bool {
+	scope := pluginSearchScope
+	if under != "" {
+		beneath := registryhost.Location{Path: under}.Repository("")
+		scope = func(repoPath string) bool {
+			rest, ok := strings.CutPrefix(repoPath, beneath)
+			return ok && pluginSearchScope(rest)
+		}
+	}
+	matches, err := searchRegistry(ctx, reg, name, scope)
 	if err != nil {
 		return false
 	}

@@ -92,13 +92,16 @@ type Config struct {
 	// DefaultRegistry is the default registry. A layer writes it as a registry
 	// host in the spelling its trust policy is looked up under —
 	// registryhost.IsHost holds for it and registryhost.Normalize leaves it
-	// unchanged — or as the Name of an entry under Registries, which then stands
-	// for that entry's Host, the name winning where it is also a host spelling;
-	// empty names no default. Resolution replaces a name with its entry's Host,
-	// once, over every layer, and refuses any other value, and a name two entries
-	// carry; so in a resolved configuration it is a host in that one spelling, or
-	// empty, and every consumer that binds a location from it binds from that
-	// host.
+	// unchanged — optionally followed by "/" and a repository path, or as the
+	// Name of an entry under Registries, which then stands for that entry's
+	// Host, the name winning where it is also a host spelling; empty names no
+	// default. Resolution replaces a name with its entry's Host, once, over every
+	// layer, and refuses any other value, a name two entries carry, and a name
+	// followed by a path; so in a resolved configuration it is a registry
+	// location — a host in that one spelling, optionally followed by a
+	// repository path — or empty. It is read through DefaultRegistryLocation,
+	// whose Host every trust decision is keyed on and whose Prefix every
+	// location through the default is composed under.
 	DefaultRegistry string `yaml:"default_registry"`
 	// Offline is the posture that refuses every network reach. Its
 	// authored key is OfflineSettingKey, and the yaml tag here is that

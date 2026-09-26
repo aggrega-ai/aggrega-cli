@@ -175,14 +175,16 @@ func NewOCIPullerWithRetractionScreen(wsCfg workspaceconfig.Config, screen Retra
 		// gate; this call site only reacts to it.
 		return nil
 	}
-	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry, httpClient: httpClient, retraction: screen}
+	return DefaultOCIPuller{registry: wsCfg.DefaultRegistryLocation().Prefix(), httpClient: httpClient, retraction: screen}
 }
 
 // DefaultOCIPuller is the production OCIPuller implementation. Pull constructs a
 // fresh oci.RemoteRepository per call so per-call authentication + retry behavior
 // matches pkg/oci's documented surface exactly. registry is the configured
-// default registry, used by PullLibrary to bind a host-less library identity to a
-// physical location.
+// default registry's location prefix — its host, followed by the repository
+// path it carries, if any — read from the configuration's one reading of it, and
+// every host-less identity this puller binds is bound under it, as publication
+// publishes under it.
 //
 // retraction is the optional withdrawal screen consulted by the discovery step of
 // every pull entrypoint on this puller. It is nil on an unscreened puller — see
@@ -248,7 +250,7 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // identity-stable even when a publisher tags `latest`/`stable` over the versioned
 // identity.
 func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
-	reference := p.registry + "/" + OCILocation("Aggregate", "", name)
+	reference := RegistryReference(p.registry, "Aggregate", "", name)
 	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
 	if err != nil {
 		return nil, "", err
@@ -327,16 +329,21 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 	return result, version, nil
 }
 
-// RegistryHost reports the configured default registry, so a Tier-3 consumer can
-// point an authorization-failure remediation at the real host rather than at a
-// bare identity's leading path segment.
-func (p DefaultOCIPuller) RegistryHost() string {
+// RegistryPrefix reports the location prefix this puller binds host-less
+// identities under: the configured default registry's host, followed by the
+// repository path it carries, if any. A Tier-3 consumer binds a plugin
+// artifact's location under it, as the entity's own is bound, and reads the host
+// out of it — registryhost.Of — to point an authorization-failure remediation at
+// the registry a login is stored for, rather than at a bare identity's leading
+// path segment or at the path.
+func (p DefaultOCIPuller) RegistryPrefix() string {
 	return p.registry
 }
 
 // BindEntityLocation reports the physical OCI repository reference a bare
 // catalog identity resolves from — `<registry>/<OCILocation(kind, provider,
-// name)>` — for a Tier-3 registry pull. It is the pull-side location binding
+// name)>`, registry being the default registry's location prefix — for a Tier-3
+// registry pull. It is the pull-side location binding
 // exposed for consumers that hold only the closure's bare identity plus its
 // collection-site kind hint and must recover the host+path the entity was
 // fetched from (the referrer-discovery subject at signature-verify time).
@@ -391,8 +398,8 @@ func EntityKindForHint(hint string) string {
 
 // entityReference binds a bare catalog identity to its physical OCI reference,
 // `<registry>/<OCILocation(kind, provider, name)>` — the pull-side mirror of
-// push's buildPushReference, reusing the same OCILocation rule so push-location
-// == pull-location holds by construction. Recipe / FeatureRecipe identity is
+// push's BuildPushReference, joined through the same RegistryReference so
+// push-location == pull-location holds by construction. Recipe / FeatureRecipe identity is
 // provider/name; it is split on the first "/" to feed the provider-scoped
 // location branch. Other kinds pass the whole identity as the name.
 //
@@ -432,7 +439,7 @@ func entityReference(registry, kind, identity string) (string, error) {
 		}
 		provider, name = identity[:i], identity[i+1:]
 	}
-	return registry + "/" + OCILocation(kind, provider, name), nil
+	return RegistryReference(registry, kind, provider, name), nil
 }
 
 // hasRegistryHostSegment reports whether identity leads with a
@@ -451,12 +458,13 @@ func hasRegistryHostSegment(identity string) bool {
 
 // libraryReference binds a host-less library identity to a physical OCI
 // reference, `<registry>/<OCILocation(kind, "", name)>` — the pull-side mirror of
-// push's buildPushReference, so a library is fetched from exactly where push
-// published it. Libraries are not provider-scoped: the location is the
-// lowercased kind segment plus the lowercased name. The identity stays cased in
-// the lockfile and cache key; only the fetch location lowercases.
+// push's BuildPushReference, through the same RegistryReference, so a library is
+// fetched from exactly where push published it. Libraries are not
+// provider-scoped: the location is the lowercased kind segment plus the
+// lowercased name. The identity stays cased in the lockfile and cache key; only
+// the fetch location lowercases.
 func libraryReference(registry, kind, name string) string {
-	return registry + "/" + OCILocation(kind, "", name)
+	return RegistryReference(registry, kind, "", name)
 }
 
 // selectPullVersion picks the highest conformant published version from a

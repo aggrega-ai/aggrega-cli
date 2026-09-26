@@ -86,7 +86,9 @@ type PushArtifactResult struct {
 }
 
 // PushArtifact publishes the file at cfg.FilePath as a standalone OCI data
-// artifact at <registry>/docs/<name>:<tag>. It reads the file bytes verbatim
+// artifact at <registry>/docs/<name>:<tag>, registry being the destination's
+// location prefix, where a documentation reader looks for it through the same
+// default. It reads the file bytes verbatim
 // and hands them to the kind-agnostic pkg/oci.PushNamed transport under
 // cfg.MediaType, named cfg.Name — it never parses an entity envelope, never
 // dispatches on a Kind, and never resolves a mediatype through
@@ -140,12 +142,12 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	}
 
 	wsCfg := rw.Config()
-	registry, err := destinationHost(wsCfg, cfg.Registry, cfg.DestinationSupply)
+	dest, err := destination(wsCfg, cfg.Registry, cfg.DestinationSupply)
 	if err != nil {
 		return PushArtifactResult{}, err
 	}
 
-	reference := registry + "/" + dataArtifactNamespace + "/" + cfg.Name
+	reference := dest.Prefix() + "/" + dataArtifactNamespace + "/" + cfg.Name
 
 	content, err := os.ReadFile(cfg.FilePath)
 	if err != nil {

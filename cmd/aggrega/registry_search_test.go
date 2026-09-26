@@ -241,14 +241,35 @@ func TestSearchRegistry_FirstRequestFailurePropagates(t *testing.T) {
 func TestDiscoverableViaSearch(t *testing.T) {
 	ctx := context.Background()
 	reg := fakeRepoLister{repos: searchFixtureRepos}
-	if !discoverableViaSearch(ctx, reg, "moo") {
+	if !discoverableViaSearch(ctx, reg, "", "moo") {
 		t.Fatal("moo should be discoverable (wasm/cli/moo)")
 	}
-	if discoverableViaSearch(ctx, reg, "not-a-plugin") {
+	if discoverableViaSearch(ctx, reg, "", "not-a-plugin") {
 		t.Fatal("an absent name should not be discoverable")
 	}
 	// A registry failure degrades to "not discoverable", never an error.
-	if discoverableViaSearch(ctx, fakeRepoLister{err: context.Canceled}, "moo") {
+	if discoverableViaSearch(ctx, fakeRepoLister{err: context.Canceled}, "", "moo") {
 		t.Fatal("a search error should yield false, not a match")
+	}
+}
+
+// TestDiscoverableViaSearchLooksBeneathTheDefaultRegistrysPath proves the hint
+// reads the plugins published through a default registry carrying a repository
+// path: the host's enumeration lists every repository it serves, and only those
+// beneath the path are the default's.
+func TestDiscoverableViaSearchLooksBeneathTheDefaultRegistrysPath(t *testing.T) {
+	ctx := context.Background()
+	reg := fakeRepoLister{repos: []string{"acme/plugin/cli/moo", "other/plugin/cli/baa", "plugin/cli/root-only"}}
+	if !discoverableViaSearch(ctx, reg, "acme", "moo") {
+		t.Error("moo is published beneath the default's path acme and should be discoverable")
+	}
+	if discoverableViaSearch(ctx, reg, "acme", "baa") {
+		t.Error("baa is published beneath another path and is not the default's to suggest")
+	}
+	if discoverableViaSearch(ctx, reg, "acme", "root-only") {
+		t.Error("root-only is published at the host's root, outside the default's path")
+	}
+	if discoverableViaSearch(ctx, reg, "", "moo") {
+		t.Error("with no path the hint reads the root plugin scope, where no moo is published")
 	}
 }

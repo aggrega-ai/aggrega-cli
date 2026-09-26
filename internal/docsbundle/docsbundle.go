@@ -50,9 +50,12 @@ const (
 // session.
 const AcquireTimeout = 30 * time.Second
 
-// Ref returns the documentation bundle's reference within the given registry.
-func Ref(defaultRegistry string) string {
-	return defaultRegistry + "/" + Namespace + "/" + Name
+// Ref returns the documentation bundle's reference within the given registry
+// location prefix: a registry host, followed by the repository path the default
+// registry carries, if any — where a data-artifact publication through the same
+// default places it.
+func Ref(prefix string) string {
+	return prefix + "/" + Namespace + "/" + Name
 }
 
 // TargetFor resolves the OCI target the documentation bundle is pulled from and

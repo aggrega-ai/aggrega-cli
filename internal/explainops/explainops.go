@@ -228,7 +228,7 @@ func LoadPages(
 	warn func(string),
 ) (Pages, error) {
 	cacheDir := cfg.ResolvedArtifactCacheDir()
-	ref := docsbundle.Ref(cfg.DefaultRegistry)
+	ref := docsbundle.Ref(cfg.DefaultRegistryLocation().Prefix())
 
 	if _, aerr := docsbundle.EnsureCached(ctx, cfg, root, cacheDir, ref, version, nil, warn); aerr != nil {
 		return Pages{}, uncachedBundle(ref, version, aerr)

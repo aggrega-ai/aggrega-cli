@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -299,7 +300,8 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
-	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(socket))
+	under := enumerationLocation(rw.Config(), host)
+	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(under, socket))
 	if err != nil {
 		return res, err
 	}
@@ -337,10 +339,11 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return out, nil
 	}
 
-	// Config socket: strip the plugin/ path prefix to the plugin coordinate
-	// identity (<pluginType>/<name>) and pin the latest published version so the
-	// attachment is version-pinned.
-	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
+	// Config socket: strip the default's repository path and the plugin/ path
+	// prefix to the plugin coordinate identity (<pluginType>/<name>) — the
+	// identity a pull binds back under that same path — and pin the latest
+	// published version so the attachment is version-pinned.
+	entity := strings.TrimPrefix(repoPath, under.Repository(catalog.KindPathSegment("Plugin")+"/"))
 	var recorder retractionRecorder
 	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
 	if err != nil {
@@ -395,7 +398,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
-	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(string(wasm.PluginTypeCLI)))
+	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(enumerationLocation(rw.Config(), host), string(wasm.PluginTypeCLI)))
 	if err != nil {
 		return res, err
 	}
@@ -434,13 +437,23 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 }
 
 // socketScope admits only the repository paths a plugin serving socket publishes
-// under — the plugin/<socket>/ path prefix — so an enumeration for one socket
-// never returns a plugin bound for another.
-func socketScope(socket string) registryops.RepoScope {
-	prefix := catalog.KindPathSegment("Plugin") + "/" + socket + "/"
+// under beneath the location enumerated — the location's repository path, then
+// the plugin/<socket>/ path prefix — so an enumeration for one socket never
+// returns a plugin bound for another, nor one published outside the location.
+func socketScope(under registryhost.Location, socket string) registryops.RepoScope {
+	prefix := under.Repository(catalog.KindPathSegment("Plugin") + "/" + socket + "/")
 	return func(repoPath string) bool {
 		return strings.HasPrefix(repoPath, prefix)
 	}
+}
+
+// enumerationLocation is the location an addition enumerates: the host the
+// registry target reached, under the repository path the default registry
+// carries. The enumeration lists every repository the host serves, so the path
+// is what scopes it to the ones published through the default, and what a
+// plugin's coordinate identity is read out from beneath.
+func enumerationLocation(cfg workspaceconfig.Config, host string) registryhost.Location {
+	return registryhost.Location{Host: host, Path: cfg.DefaultRegistryLocation().Path}
 }
 
 // ResolveSingleRepo reduces the scoped enumeration matches to exactly one plugin
@@ -469,8 +482,11 @@ func ResolveSingleRepo(matches []string, query, socket string) (string, error) {
 }
 
 // RegistryTarget resolves the registry to enumerate from the resolved workspace's
-// default registry. Production returns an authenticated remote registry; a test
-// substitutes an in-memory lister so an addition runs without a network.
+// default registry, and returns that registry's host: a registry is enumerated,
+// logged into and trusted per host, so a repository path the default carries
+// is not part of it, and scopes the enumeration instead. Production returns an
+// authenticated remote registry; a test substitutes an in-memory lister so an
+// addition runs without a network.
 //
 // It is a package-level seam because the live path needs registry credentials a
 // sandbox does not carry: the resolution logic is proven against a fake target,
@@ -482,7 +498,7 @@ func ResolveSingleRepo(matches []string, query, socket string) (string, error) {
 // it for the command line and a session alike, and the two cannot end up driving
 // different registries.
 var RegistryTarget = func(cfg workspaceconfig.Config) (registryops.RepoLister, string, error) {
-	host := cfg.DefaultRegistry
+	host := cfg.DefaultRegistryLocation().Host
 	if host == "" {
 		return nil, "", errors.New("no default registry is configured to search")
 	}

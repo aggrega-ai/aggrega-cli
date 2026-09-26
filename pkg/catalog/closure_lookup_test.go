@@ -28,11 +28,11 @@ func (a *orasPullerAdapter) Pull(ctx context.Context, reference, tag string) (*o
 	return oci.Pull(ctx, a.target, tag)
 }
 
-// RegistryHost lets the adapter satisfy the puller's registry-reporting seam so a
-// bare plugin identity binds to a physical location during resolution. The
+// RegistryPrefix lets the adapter satisfy the puller's registry-reporting seam so
+// a bare plugin identity binds to a physical location during resolution. The
 // in-memory store ignores the reference (it keys on the tag alone), so the exact
-// host is immaterial to the fetch — it only needs to be a well-formed registry.
-func (a *orasPullerAdapter) RegistryHost() string { return "hub.aggrega.ai" }
+// prefix is immaterial to the fetch — it only needs to be a well-formed registry.
+func (a *orasPullerAdapter) RegistryPrefix() string { return "hub.aggrega.ai" }
 
 func writeYAMLToCatalog(t *testing.T, dir, relpath, content string) {
 	t.Helper()
