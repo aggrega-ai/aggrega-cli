@@ -31,12 +31,13 @@ import (
 //     and pre-render authored-value conformance).
 //   - <entity>: single-entity correctness — one catalog entity file is checked
 //     against its kind's schema and then against the checks that kind carries.
-//     A Component or Feature has its pillar structure checked; a Workload,
-//     FeatureRecipe or Plugin has its shape checked; and a Recipe is driven
-//     through the real compilation pipeline around a synthesized minimal
-//     Release so an author sees the isolated rendered output before wiring
-//     the entity into any Aggregate. Kinds outside that set are refused here
-//     and are reached by the whole-catalog and --release scopes instead.
+//     A required value the file leaves empty is reported first, every one at
+//     once, as a placeholder still owed. A Component or Feature has its pillar
+//     structure checked; a Workload, FeatureRecipe or Plugin has its shape
+//     checked; and a Recipe is driven through the real compilation pipeline
+//     around a synthesized minimal Release so an author sees the isolated
+//     rendered output before wiring the entity into any Aggregate. Kinds outside
+//     that set are refused here, naming the scope that reaches them instead.
 //
 // Output is deterministic and the command writes nothing to disk.
 func newValidateCmd() *cobra.Command {
@@ -59,18 +60,23 @@ func newValidateCmd() *cobra.Command {
 			"conformance — the same correctness a build applies, scoped to that Release.\n\n" +
 			"With an entity path, validate checks one entity file. The kinds it accepts\n" +
 			"as a single-entity target are Component, Feature, Recipe, FeatureRecipe,\n" +
-			"Workload and Plugin. Each has its schema checked, then the checks its own\n" +
-			"kind carries: pillar structure for a Component or Feature; shape for a\n" +
-			"Workload, FeatureRecipe or Plugin; and for a Recipe, shape plus an end-to-end\n" +
-			"compile against a minimal generated harness, so its resolution, its guards\n" +
-			"and a render of its output are all exercised. Where that Recipe's source is\n" +
-			"one that has to be fetched, the render is reported as not attempted instead:\n" +
-			"validating one entity on its own reads no lockfile, reads and writes no cache\n" +
-			"and makes no network request, so the chart or module it names is never\n" +
-			"retrieved and there is nothing to render from. Any other kind is refused here\n" +
-			"today and is checked in a wider scope instead: a whole-catalog run reaches an\n" +
-			"Aggregate and the library kinds, and --release reaches a Manifest and a\n" +
-			"Release. The command writes nothing to disk.",
+			"Workload and Plugin. A value the kind requires that the file leaves empty is\n" +
+			"reported first, as a placeholder still owed: every one is named at once, with\n" +
+			"what it takes, read from the kind's own schema. That reading is this scope's\n" +
+			"alone; a whole-catalog run, --release and a build do not apply it. Each kind\n" +
+			"then has its schema checked, then the checks its own kind carries: pillar\n" +
+			"structure for a Component or Feature; shape for a Workload, FeatureRecipe or\n" +
+			"Plugin; and for a Recipe, shape plus an end-to-end compile against a minimal\n" +
+			"generated harness, so its resolution, its guards and a render of its output\n" +
+			"are all exercised. Where that Recipe's source is one that has to be fetched,\n" +
+			"the render is reported as not attempted instead: validating one entity on its\n" +
+			"own reads no lockfile, reads and writes no cache and makes no network request,\n" +
+			"so the chart or module it names is never retrieved and there is nothing to\n" +
+			"render from. Any other kind is refused here today, and the refusal names the\n" +
+			"scope that checks it instead: a whole-catalog run reaches an Aggregate and the\n" +
+			"library kinds when they sit in a catalog directory, and --release reaches a\n" +
+			"Release, the Manifest it names and the Aggregate it deploys. The command\n" +
+			"writes nothing to disk.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""

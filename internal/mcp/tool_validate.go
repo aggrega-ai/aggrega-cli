@@ -82,11 +82,12 @@ var validateToolSpec = toolSpec{
 		"Pass exactly one scope selector. `release` <path> runs the closure-scoped semantic-validation pipeline over " +
 		"a Release: it resolves the Release's Manifest and Aggregate, computes the catalog closure, and runs the " +
 		"closure-scoped extends and schema-pillar gates, the resolve/topology/IR pipeline, and the resolution-" +
-		"completeness checks. `entity` <path> checks one catalog entity file: all kinds are schema- and shape-checked, " +
-		"a Component or Feature additionally has its pillar structure checked, and a Recipe is driven through the real " +
-		"compilation pipeline around a synthesized Aggregate, Manifest and Release so you see the isolated render " +
-		"summary; a Plugin " +
-		"entity is schema-checked only. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
+		"completeness checks. `entity` <path> checks one catalog entity file: a value its kind requires that the file " +
+		"leaves empty is reported first, every one at once, as a placeholder still owed with what it takes; then every " +
+		"kind is schema-checked, a Component or Feature has its pillar structure checked, a Workload, FeatureRecipe or " +
+		"Plugin has its shape checked, and a Recipe is driven through the real compilation pipeline around a " +
+		"synthesized Aggregate, Manifest and Release so you see the isolated render summary. Any other kind is refused, " +
+		"naming the kinds `entity` accepts and the scope that checks it instead. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
 		"`type` for a binary-only check, or `entity` (a Plugin entity path) to cross-check the binary against the " +
 		"entity's declared surface. `catalog` true checks the whole catalog: schema-pillar structure, library " +
 		"resolution, extends chains, OCI-location collisions, and provider input-kind capabilities. Each scope " +

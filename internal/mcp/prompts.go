@@ -86,7 +86,7 @@ func authoringPointers(b *strings.Builder, kind string) {
 	b.WriteString("- schema://" + kind + " — the exact structure, required fields, and value constraints.\n")
 	b.WriteString("- langref://entities/" + kind + " — the field-by-field reference.\n")
 	b.WriteString("- authoring://getting-started — the end-to-end authoring walkthrough.\n\n")
-	b.WriteString("Then use the scaffold tool to start from a correct skeleton for " + kind + ", fill in the fields your role owns, and run the validate tool before finishing.")
+	b.WriteString("Then use the scaffold tool to start from a skeleton for " + kind + " carrying the fields it requires, fill in the fields your role owns, and run the validate tool before finishing: it names every placeholder still owed.")
 }
 
 // userPrompt wraps a rendered body as a single user-role message.

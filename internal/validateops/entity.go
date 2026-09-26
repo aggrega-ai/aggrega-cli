@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -65,6 +66,15 @@ type EntityResult struct {
 // partial result accumulated up to that point so a caller can still render the
 // progress that preceded the failure.
 //
+// A value the kind requires that the document leaves empty is reported ahead
+// of every other tier, and every such value is reported at once: each is named
+// as a placeholder still owed, with what it takes read from the kind's own
+// schema. See placeholderRefusal for why that reading sits beside the envelope
+// gate rather than inside it.
+//
+// A kind this scope does not accept is refused naming the kinds it does
+// accept, and the scope that checks the refused kind instead.
+//
 // The catalog directories are the already-resolved first-win search stack; the
 // workspace root and cache directory are resolved likewise by the caller.
 //
@@ -92,15 +102,20 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string,
 	}
 	kind, ok := knownEntityKind(preamble.Kind)
 	if !ok {
-		return res, fmt.Errorf("kind %q in %q is not a single-entity validation target", preamble.Kind, path)
+		return res, unacceptedKindError(preamble.Kind, path)
 	}
 
 	res.Kind = string(kind)
 	res.Diagnostics = append(res.Diagnostics, "Entity: "+path, "Kind:   "+string(kind))
 
 	// Tier 1a: envelope schema gate — the exact per-entity JSON-Schema check the
-	// catalog loader runs at each parse boundary. A violation halts loudly here.
-	if _, verr := envelope.ValidateBytes(kind, data, path); verr != nil {
+	// catalog loader runs at each parse boundary. A violation halts loudly here,
+	// after the placeholder reading below has had its say about the same bytes.
+	_, verr := envelope.ValidateBytes(kind, data, path)
+	if perr := placeholderRefusal(kind, data, path, verr); perr != nil {
+		return res, perr
+	}
+	if verr != nil {
 		return res, fmt.Errorf("schema: %w", verr)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Schema: valid")
@@ -125,16 +140,101 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string,
 	return res, nil
 }
 
+// singleEntityKinds is the set of kinds the single-entity scope validates, in
+// the order a refusal names them. It is the one statement of that set: the
+// membership check and the refusal naming the accepted kinds both read it, so
+// the two cannot disagree about which kinds this scope takes.
+var singleEntityKinds = []envelope.Kind{
+	envelope.KindComponent,
+	envelope.KindFeature,
+	envelope.KindRecipe,
+	envelope.KindFeatureRecipe,
+	envelope.KindWorkload,
+	envelope.KindPlugin,
+}
+
+// SingleEntityKinds returns the kinds the single-entity scope validates, in the
+// order a refusal names them. The returned slice is freshly allocated, so a
+// caller may not change the set through it.
+func SingleEntityKinds() []string {
+	out := make([]string, 0, len(singleEntityKinds))
+	for _, k := range singleEntityKinds {
+		out = append(out, string(k))
+	}
+	return out
+}
+
 // knownEntityKind maps a peeked kind string to its envelope Kind, reporting
-// whether the kind names a schema-backed entity family. An unrecognized kind
-// is handled by the caller with a clear diagnostic.
+// whether the kind is one this scope validates. An unrecognized kind is handled
+// by the caller with a clear diagnostic.
 func knownEntityKind(kind string) (envelope.Kind, bool) {
-	switch envelope.Kind(kind) {
-	case envelope.KindComponent, envelope.KindFeature, envelope.KindRecipe,
-		envelope.KindFeatureRecipe, envelope.KindWorkload, envelope.KindPlugin:
-		return envelope.Kind(kind), true
+	for _, k := range singleEntityKinds {
+		if string(k) == kind {
+			return k, true
+		}
+	}
+	return "", false
+}
+
+// unacceptedKindError refuses a document whose kind this scope does not
+// validate. It names the kinds the scope does accept, read from the one list
+// knownEntityKind reads, and — for an entity kind — the scope that checks a
+// document of that kind instead, so the reader is told where to go rather than
+// only where not to.
+func unacceptedKindError(kind, path string) error {
+	msg := fmt.Sprintf("kind %q in %q is not a single-entity validation target; the kinds this scope accepts are %s",
+		kind, path, joinKinds(SingleEntityKinds()))
+	if route := unacceptedKindRoute(entitykind.Kind(kind)); route != "" {
+		msg += ". " + route
+	}
+	return errors.New(msg)
+}
+
+// unacceptedKindRoute names the validation scope that checks a document of an
+// entity kind the single-entity scope does not accept, or returns the empty
+// string for a token that is not an entity kind at all.
+//
+// Each route is what that scope was measured to read. A whole-catalog run reads
+// the documents inside the configured catalog directories, and reads an
+// Aggregate and a library there but not a Manifest or a Release; the Release
+// scope reads the Release it is given, the Manifest that Release names and the
+// Aggregate it deploys.
+//
+// It is per-kind code rather than a field on the entity-kind vocabulary because
+// it states what this package's scopes do. A test binds it to the vocabulary, so
+// a kind added there is accepted or routed here before the suite passes.
+func unacceptedKindRoute(kind entitykind.Kind) string {
+	switch kind {
+	case entitykind.Aggregate:
+		return "An Aggregate is checked by the whole-catalog scope when it sits in a catalog directory, " +
+			"and by the Release scope over a Release that deploys it"
+	case entitykind.Manifest:
+		return "A Manifest is checked by the Release scope over a Release that names it"
+	case entitykind.Release:
+		return "A Release is checked by the Release scope: validate it as the Release rather than as an entity"
+	case entitykind.SchemaLibrary:
+		return "A SchemaLibrary is checked by the whole-catalog scope when it sits in a catalog directory"
+	case entitykind.MappingLibrary:
+		return "A MappingLibrary is checked by the whole-catalog scope when it sits in a catalog directory"
+	case entitykind.WorkloadLibrary:
+		return "A WorkloadLibrary is checked by the whole-catalog scope when it sits in a catalog directory"
+	case entitykind.ArtifactLibrary:
+		return "An ArtifactLibrary is checked by the whole-catalog scope when it sits in a catalog directory"
 	default:
-		return "", false
+		return ""
+	}
+}
+
+// joinKinds renders a list of kind names as prose: comma-separated, with the
+// last joined by "and".
+func joinKinds(kinds []string) string {
+	switch len(kinds) {
+	case 0:
+		return ""
+	case 1:
+		return kinds[0]
+	default:
+		return strings.Join(kinds[:len(kinds)-1], ", ") + " and " + kinds[len(kinds)-1]
 	}
 }
 
