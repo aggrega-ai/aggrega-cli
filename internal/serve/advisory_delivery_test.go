@@ -228,7 +228,7 @@ func advisoryGraphWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 
 	catalogDir := filepath.Join(ws, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
   name: demo/svc
@@ -239,7 +239,8 @@ spec:
   schema:
     provides:
       host: { type: string, required: true }
-`)
+`
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
 	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -299,11 +300,15 @@ spec:
       components:
         app: {}
 `)
+	// The row records the component's own content digest, as a pull would: the
+	// lockfile refuses a row without a well-formed one.
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     "./app-release.yaml",
 		GeneratedAt: "2026-06-03T10:00:00Z",
-		Entities:    []lockfile.Entity{{URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0"}},
+		Entities: []lockfile.Entity{{
+			URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: contentDigestHex([]byte(svcComponent)),
+		}},
 	}
 	if err := lockfile.WriteLockfile(lockfile.PathFor(relPath), lf); err != nil {
 		t.Fatalf("WriteLockfile: %v", err)

@@ -374,14 +374,14 @@ func TestDiagnosticCodeOnLockfileDrift(t *testing.T) {
 	// A lockfile that PARSES and pins one entity, verified against a closure that
 	// reaches none: the entity is pinned and no longer used, which is drift. A
 	// malformed lockfile would take the load-failure branch instead and never
-	// reach the drift report.
+	// reach the drift report, so its digest is a well-formed content digest.
 	pinned := "version: 1\n" +
 		"release: r\n" +
 		"generated_at: \"2026-01-01T00:00:00Z\"\n" +
 		"entities:\n" +
 		"  - uri: example/web\n" +
 		"    resolved_version: 1.0.0\n" +
-		"    digest: sha256:0\n"
+		"    digest: " + contentDigestHex([]byte("example/web")) + "\n"
 	if err := os.WriteFile(lockfilePath, []byte(pinned), 0o644); err != nil {
 		t.Fatalf("write lockfile: %v", err)
 	}

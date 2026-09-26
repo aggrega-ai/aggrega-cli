@@ -31,27 +31,28 @@ func writeFixture(t *testing.T, content string) string {
 // fullPopulationFixture returns the canonical-form YAML for a
 // lockfile populating every section with realistic content. Tests
 // that exercise round-trip / round-trip-after-canonicalisation
-// re-use this fixture.
-const fullPopulationFixture = `version: 1
+// re-use this fixture. A plugin row records its content digest as its
+// resolved version, because a plugin artifact is pinned by its bytes.
+var fullPopulationFixture = `version: 1
 release: ./release-prod.yaml
 generated_at: 2026-05-22T10:23:14Z
 
 entities:
   - uri: hub.aggrega.ai/component/core/compute/api-server
     resolved_version: 1.2.3
-    digest: sha256:a1b2c3
+    digest: ` + fixtureDigest("a1b2c3") + `
     referenced_from:
       - aggregate.spec.components.api.type
   - uri: hub.aggrega.ai/component/core/datastore/mariadb
     resolved_version: 1.0.0
-    digest: sha256:d4e5f6
+    digest: ` + fixtureDigest("d4e5f6") + `
     referenced_from:
       - aggregate.spec.components.db.type
 
 schema_libraries:
   - uri: hub.aggrega.ai/schema-library/core/base-types
     resolved_version: 1.0.0
-    digest: sha256:v2w3x4
+    digest: ` + fixtureDigest("v2w3x4") + `
     consumers:
       - consumer_uri: hub.aggrega.ai/component/core/compute/api-server
         fragments:
@@ -61,7 +62,7 @@ schema_libraries:
 mapping_libraries:
   - uri: hub.aggrega.ai/mapping-library/core/base-mappings
     resolved_version: 1.0.0
-    digest: sha256:y5z6a7
+    digest: ` + fixtureDigest("y5z6a7") + `
     consumers:
       - consumer_uri: hub.aggrega.ai/recipe/core/helm/mariadb-bitnami
         fragments:
@@ -71,7 +72,7 @@ source_artifacts:
   - kind: helm-oci-chart
     url: oci://hub.aggrega.ai/charts/mariadb
     pinned_version: "25.0.8"
-    digest: sha256:abc123def
+    digest: ` + fixtureDigest("abc123def") + `
     mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     referenced_by:
       - entity: recipe
@@ -80,8 +81,8 @@ source_artifacts:
 
 plugins:
   - uri: hub.aggrega.ai/plugin/policy/aggrega-security-baseline
-    resolved_version: 1.2.5
-    digest: sha256:s9t0u1
+    resolved_version: ` + fixtureDigest("s9t0u1") + `
+    digest: ` + fixtureDigest("s9t0u1") + `
     referenced_from:
       - .aggrega-config.yaml.plugins.policy
 `
@@ -176,7 +177,7 @@ generated_at: 2026-05-22T10:23:14Z
 schema_libraries:
   - uri: hub.aggrega.ai/schema-library/core/base-types
     resolved_version: 1.0.0
-    digest: sha256:v2w3x4
+    digest: ` + fixtureDigest("v2w3x4") + `
 mapping_libraries: []
 `
 	path := writeFixture(t, content)
@@ -308,15 +309,15 @@ func TestWriteSortsSlicesByCanonicalKey(t *testing.T) {
 		Release:     "./release-prod.yaml",
 		GeneratedAt: "2026-05-22T10:23:14Z",
 		Entities: []lockfile.Entity{
-			{URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: "sha256:z",
+			{URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: fixtureDigest("z"),
 				ReferencedFrom: []string{"z-second-site", "a-first-site"}},
-			{URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: "sha256:a"},
+			{URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: fixtureDigest("a")},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{
 				URI:             "hub.aggrega.ai/schema-library/core/z-lib",
 				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:zlib",
+				Digest:          fixtureDigest("zlib"),
 				Consumers: []lockfile.LibraryConsumer{
 					{ConsumerURI: "hub.aggrega.ai/component/core/z-late", Fragments: []string{"#/schemas/Z", "#/schemas/A"}},
 					{ConsumerURI: "hub.aggrega.ai/component/core/a-early", Fragments: []string{"#/schemas/B"}},
@@ -325,7 +326,7 @@ func TestWriteSortsSlicesByCanonicalKey(t *testing.T) {
 			{
 				URI:             "hub.aggrega.ai/schema-library/core/a-lib",
 				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:alib",
+				Digest:          fixtureDigest("alib"),
 			},
 		},
 	}
@@ -502,7 +503,7 @@ func TestLoadParsesSourceArtifactsSection(t *testing.T) {
 	if sa.PinnedVersion != "25.0.8" {
 		t.Errorf("PinnedVersion = %q", sa.PinnedVersion)
 	}
-	if sa.Digest != "sha256:abc123def" {
+	if sa.Digest != fixtureDigest("abc123def") {
 		t.Errorf("Digest = %q", sa.Digest)
 	}
 	if sa.Mediatype != "application/vnd.cncf.helm.chart.content.v1.tar+gzip" {
@@ -620,8 +621,8 @@ func TestWriteSourceArtifactManifestDigestPresenceAndDeterminism(t *testing.T) {
 				Kind:           "helm-oci-chart",
 				URL:            "oci://hub.aggrega.ai/charts/mariadb",
 				PinnedVersion:  "25.0.8",
-				Digest:         "sha256:aaaa",
-				ManifestDigest: "sha256:bbbb",
+				Digest:         fixtureDigest("aaaa"),
+				ManifestDigest: fixtureDigest("bbbb"),
 				Mediatype:      "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
 				ReferencedBy:   []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u-oci", Field: "spec.source"}},
 			},
@@ -629,7 +630,7 @@ func TestWriteSourceArtifactManifestDigestPresenceAndDeterminism(t *testing.T) {
 				Kind:          "helm-https-chart",
 				URL:           "https://charts.example.com/mariadb-25.0.8.tgz",
 				PinnedVersion: "25.0.8",
-				Digest:        "sha256:cccc",
+				Digest:        fixtureDigest("cccc"),
 				Mediatype:     "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
 				ReferencedBy:  []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u-https", Field: "spec.source"}},
 			},
@@ -655,7 +656,7 @@ func TestWriteSourceArtifactManifestDigestPresenceAndDeterminism(t *testing.T) {
 	if n := strings.Count(string(b1), "manifest_digest:"); n != 1 {
 		t.Errorf("manifest_digest occurrences = %d; want exactly 1 (OCI row only)\n%s", n, b1)
 	}
-	if !strings.Contains(string(b1), "manifest_digest: sha256:bbbb") {
+	if !strings.Contains(string(b1), "manifest_digest: "+fixtureDigest("bbbb")) {
 		t.Errorf("OCI row missing its manifest_digest pin:\n%s", b1)
 	}
 
@@ -677,8 +678,8 @@ func TestWriteSourceArtifactManifestDigestPresenceAndDeterminism(t *testing.T) {
 	if oci == nil || https == nil {
 		t.Fatalf("round-trip lost a source artifact: %+v", got.SourceArtifacts)
 	}
-	if oci.ManifestDigest != "sha256:bbbb" {
-		t.Errorf("OCI ManifestDigest round-trip = %q; want sha256:bbbb", oci.ManifestDigest)
+	if want := fixtureDigest("bbbb"); oci.ManifestDigest != want {
+		t.Errorf("OCI ManifestDigest round-trip = %q; want %s", oci.ManifestDigest, want)
 	}
 	if https.ManifestDigest != "" {
 		t.Errorf("non-OCI ManifestDigest = %q; want empty", https.ManifestDigest)
@@ -763,7 +764,7 @@ source_artifacts:
   - kind: helm-oci-chart
     url: oci://r/c
     pinned_version: 1.0.0
-    digest: sha256:x
+    digest: ` + fixtureDigest("x") + `
     mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     referenced_by:
       - entity: aggregate
@@ -793,7 +794,7 @@ source_artifacts:
   - kind: made-up-kind
     url: x://r/c
     pinned_version: 1.0.0
-    digest: sha256:x
+    digest: ` + fixtureDigest("x") + `
     mediatype: x
     referenced_by:
       - entity: recipe
@@ -834,7 +835,7 @@ entities: []
 ` + key + `:
   - uri: Bundles
     resolved_version: 1.0.0
-    digest: sha256:a
+    digest: ` + fixtureDigest("a") + `
     consumers:
       - consumer_uri: helm/web:1.0.0
         fragments:
@@ -884,7 +885,7 @@ source_artifacts:
   - kind: helm-oci-chart
     url: oci://r/c
     pinned_version: 1.0.0
-    digest: sha256:x
+    digest: ` + fixtureDigest("x") + `
     mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     referenced_by: []
 plugins: []

@@ -22,14 +22,16 @@ import (
 // settings and source content from the lockfile rather than live config or the
 // host filesystem.
 func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
+	const content = "package rules\n"
+	sourceDigest := fixtureDigest(content)
 	in := []lockfile.MutatorAttachment{{
 		Plugin:   "governance/tag-injector",
 		Role:     string(plugintype.RoleLabelTransform),
 		Settings: map[string]any{"team": "checkout"},
 		Sources: []lockfile.MutatorSourcePin{{
 			Path:    "rules.rego",
-			Content: "package rules\n",
-			Digest:  "sha256:deadbeef",
+			Content: content,
+			Digest:  sourceDigest,
 		}},
 	}}
 	path := filepath.Join(t.TempDir(), "release.lock")
@@ -48,7 +50,7 @@ func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
 		t.Errorf("settings roundtrip: got %+v, want team=checkout", got.Settings)
 	}
 	if len(got.Sources) != 1 || got.Sources[0].Path != "rules.rego" ||
-		got.Sources[0].Content != "package rules\n" || got.Sources[0].Digest != "sha256:deadbeef" {
+		got.Sources[0].Content != content || got.Sources[0].Digest != sourceDigest {
 		t.Errorf("source pin roundtrip: got %+v", got.Sources)
 	}
 

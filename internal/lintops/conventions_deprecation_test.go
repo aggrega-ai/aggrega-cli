@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -50,9 +51,14 @@ func deprecatedPinWorkspace(t *testing.T, withMarker bool) (rw *workspaceconfig.
 		GeneratedAt: lintDeprecationStamp,
 	}
 	if withMarker {
+		// A plugin row records its content digest as both its resolved version and
+		// its digest, because a plugin artifact is pinned by its bytes; the lockfile
+		// refuses a row carrying anything else in either.
+		pin := digest.ContentDigest([]byte(lintDeprecatedURI))
 		lf.Plugins = []lockfile.Plugin{{
 			URI:             lintDeprecatedURI,
-			ResolvedVersion: "1.4.0",
+			ResolvedVersion: pin,
+			Digest:          pin,
 			Deprecation: &lockfile.DeprecationRecord{
 				Severity: "retracted",
 				Message:  "withdrawn: unsound renderer",

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
@@ -21,20 +22,24 @@ import (
 func priorPinFixture(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "release.lock")
+	// Every digest is a real content digest, the one spelling the lockfile loader
+	// admits, and the plugin row records its content digest as its resolved
+	// version, because a plugin artifact is pinned by its bytes.
+	pluginDigest := digest.ContentDigest([]byte("eee"))
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     "release.yaml",
 		GeneratedAt: "2026-08-20T09:00:00Z",
 		Entities: []lockfile.Entity{
-			{URI: "core/database", ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
-			{URI: "core/database-recipe", ResolvedVersion: "1.2.0", Digest: "sha256:bbb"},
-			{URI: "core/cache", ResolvedVersion: "2.0.0", Digest: "sha256:ccc"},
+			{URI: "core/database", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte("aaa"))},
+			{URI: "core/database-recipe", ResolvedVersion: "1.2.0", Digest: digest.ContentDigest([]byte("bbb"))},
+			{URI: "core/cache", ResolvedVersion: "2.0.0", Digest: digest.ContentDigest([]byte("ccc"))},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
-			{URI: "core/DbSizing", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
+			{URI: "core/DbSizing", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte("ddd"))},
 		},
 		Plugins: []lockfile.Plugin{
-			{URI: "core/helm-renderer", ResolvedVersion: "1.0.0", Digest: "sha256:eee"},
+			{URI: "core/helm-renderer", ResolvedVersion: pluginDigest, Digest: pluginDigest},
 		},
 	}
 	if err := lockfile.WriteLockfile(path, lf); err != nil {

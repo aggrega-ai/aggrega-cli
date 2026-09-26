@@ -98,9 +98,15 @@ func TestLockPathIsTheEntitySibling(t *testing.T) {
 // class the schema did not admit would fail here rather than decode as nothing.
 func TestWriteLockRecordsEveryPinClass(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
-	src := sampleSourcePin("sha256:aaa")
-	art := sampleArtifactPin("sha256:bbb")
-	local := []types.LocalSourceDigest{{Path: "chart/templates/cm.yaml", Digest: "sha256:ccc"}, {Path: "chart/Chart.yaml", Digest: "sha256:ddd"}}
+	// The reader refuses any digest spelling but the one the writer produces, so
+	// each pin carries a real content digest, derived from a label to stay distinct.
+	srcDigest := digest.ContentDigest([]byte("aaa"))
+	artDigest := digest.ContentDigest([]byte("bbb"))
+	cmDigest := digest.ContentDigest([]byte("ccc"))
+	chartDigest := digest.ContentDigest([]byte("ddd"))
+	src := sampleSourcePin(srcDigest)
+	art := sampleArtifactPin(artDigest)
+	local := []types.LocalSourceDigest{{Path: "chart/templates/cm.yaml", Digest: cmDigest}, {Path: "chart/Chart.yaml", Digest: chartDigest}}
 
 	changed, err := recipepin.WriteLock(p, recipepin.Pins{SourceDigests: src, ArtifactDigests: art, LocalSourceDigests: local})
 	if err != nil {
@@ -117,14 +123,14 @@ func TestWriteLockRecordsEveryPinClass(t *testing.T) {
 	if !present {
 		t.Fatalf("ReadLock reported no lock after one was written")
 	}
-	if len(lock.SourceDigests) != 1 || lock.SourceDigests[0].Digest != "sha256:aaa" {
+	if len(lock.SourceDigests) != 1 || lock.SourceDigests[0].Digest != srcDigest {
 		t.Errorf("source pins round-tripped as %+v", lock.SourceDigests)
 	}
-	if len(lock.ArtifactDigests) != 1 || lock.ArtifactDigests[0].Digest != "sha256:bbb" {
+	if len(lock.ArtifactDigests) != 1 || lock.ArtifactDigests[0].Digest != artDigest {
 		t.Errorf("artifact pins round-tripped as %+v", lock.ArtifactDigests)
 	}
 	// Handed over out of order, recorded in path order.
-	wantLocal := []types.LocalSourceDigest{{Path: "chart/Chart.yaml", Digest: "sha256:ddd"}, {Path: "chart/templates/cm.yaml", Digest: "sha256:ccc"}}
+	wantLocal := []types.LocalSourceDigest{{Path: "chart/Chart.yaml", Digest: chartDigest}, {Path: "chart/templates/cm.yaml", Digest: cmDigest}}
 	if !reflect.DeepEqual(lock.LocalSourceDigests, wantLocal) {
 		t.Errorf("local source pins round-tripped as %+v; want %+v", lock.LocalSourceDigests, wantLocal)
 	}

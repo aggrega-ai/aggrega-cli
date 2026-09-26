@@ -21,8 +21,8 @@ func deprecatedLockfile(stamp string) *lockfile.Lockfile {
 			{
 				URI:             "z-server",
 				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:zzzz",
-				ManifestDigest:  "sha256:zzzzmanifest",
+				Digest:          fixtureDigest("zzzz"),
+				ManifestDigest:  fixtureDigest("zzzzmanifest"),
 				Deprecation: &lockfile.DeprecationRecord{
 					Severity: "retracted",
 					Message:  "withdrawn; use a-db instead",
@@ -30,25 +30,27 @@ func deprecatedLockfile(stamp string) *lockfile.Lockfile {
 						Mode:         "keyless",
 						Identity:     "security@cognitio.it",
 						Issuer:       "https://accounts.google.com",
-						BundleDigest: "sha256:markerbundle",
+						BundleDigest: fixtureDigest("markerbundle"),
 					},
 				},
 			},
 			// A non-deprecated entity carries no deprecation record.
-			{URI: "a-db", ResolvedVersion: "2.0.0", Digest: "sha256:aaaa"},
+			{URI: "a-db", ResolvedVersion: "2.0.0", Digest: fixtureDigest("aaaa")},
 		},
 		Plugins: []lockfile.Plugin{
 			{
+				// A plugin row records its content digest as its resolved
+				// version, because a plugin artifact is pinned by its bytes.
 				URI:             "z-plugin",
-				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:pppp",
-				ManifestDigest:  "sha256:ppppmanifest",
+				ResolvedVersion: fixtureDigest("pppp"),
+				Digest:          fixtureDigest("pppp"),
+				ManifestDigest:  fixtureDigest("ppppmanifest"),
 				Deprecation: &lockfile.DeprecationRecord{
 					Severity: "error",
 					Message:  "plugin no longer maintained",
 					Signer: &lockfile.VerifiedSignature{
 						Mode:         "keyed",
-						BundleDigest: "sha256:keyedmarker",
+						BundleDigest: fixtureDigest("keyedmarker"),
 					},
 				},
 			},
@@ -110,7 +112,7 @@ func TestDeprecationRecordRoundTrip(t *testing.T) {
 	if rec.Signer == nil || rec.Signer.Mode != "keyless" ||
 		rec.Signer.Identity != "security@cognitio.it" ||
 		rec.Signer.Issuer != "https://accounts.google.com" ||
-		rec.Signer.BundleDigest != "sha256:markerbundle" {
+		rec.Signer.BundleDigest != fixtureDigest("markerbundle") {
 		t.Errorf("marker signer round-trip lost data: %+v", rec.Signer)
 	}
 	if byURI["a-db"].Deprecation != nil {
@@ -124,7 +126,7 @@ func TestDeprecationRecordRoundTrip(t *testing.T) {
 	if prec == nil || prec.Severity != "error" || prec.Message != "plugin no longer maintained" {
 		t.Errorf("plugin deprecation record round-trip lost data: %+v", prec)
 	}
-	if prec.Signer == nil || prec.Signer.Mode != "keyed" || prec.Signer.BundleDigest != "sha256:keyedmarker" {
+	if prec.Signer == nil || prec.Signer.Mode != "keyed" || prec.Signer.BundleDigest != fixtureDigest("keyedmarker") {
 		t.Errorf("plugin marker signer round-trip lost data: %+v", prec.Signer)
 	}
 }

@@ -539,7 +539,8 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		Concurrency: workspaceconfig.ConcurrencyConfig{PoolSize: 4},
 		Serve:       workspaceconfig.ServeConfig{BuildOnInspect: true, LintOnValidate: true},
 		MCP: workspaceconfig.MCPConfig{
-			Listen: "0.0.0.0:8443",
+			Transport: workspaceconfig.MCPTransportHTTP,
+			Listen:    "0.0.0.0:8443",
 			TLS: workspaceconfig.MCPTLSConfig{
 				CertFile: "/certs/mcp-chain.pem",
 				KeyFile:  "/certs/mcp-key.pem",
@@ -580,7 +581,9 @@ const (
 // kind that anchors reproducible builds. Each closed vocabulary — signature mode,
 // deprecation severity, transform and verdict role, source-artifact kind,
 // referencing-entity kind — is populated with an admitted member, so a value the
-// schema would reject surfaces here rather than at a user's pull.
+// schema would reject surfaces here rather than at a user's pull. The plugin row
+// records its content digest as its resolved version, as a pull writes it: a
+// plugin artifact is pinned by its bytes rather than named by a version.
 func maximalLockfile() lockfile.Lockfile {
 	sig := &lockfile.VerifiedSignature{
 		BundleDigest: pinDigest,
@@ -665,7 +668,7 @@ func maximalLockfile() lockfile.Lockfile {
 		}},
 		Plugins: []lockfile.Plugin{{
 			URI:             "provider/helm:1.0.0",
-			ResolvedVersion: "1.0.0",
+			ResolvedVersion: pinDigest,
 			Digest:          pinDigest,
 			ManifestDigest:  pinDigest,
 			ReferencedFrom:  []string{"recipe.helm.api-server.spec.capability"},

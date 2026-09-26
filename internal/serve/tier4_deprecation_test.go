@@ -81,9 +81,14 @@ spec:
 		GeneratedAt: deprecationStamp,
 	}
 	if withMarker {
+		// A plugin row records its content digest as both its resolved version and
+		// its digest, because a plugin artifact is pinned by its bytes; the lockfile
+		// refuses a row carrying anything else in either.
+		pin := contentDigestHex([]byte(deprecatedPinURI))
 		lf.Plugins = []lockfile.Plugin{{
 			URI:             deprecatedPinURI,
-			ResolvedVersion: "1.4.0",
+			ResolvedVersion: pin,
+			Digest:          pin,
 			Deprecation: &lockfile.DeprecationRecord{
 				Severity: "retracted",
 				Message:  "withdrawn: unsound renderer",

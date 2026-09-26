@@ -235,14 +235,23 @@ spec:
         store.primary: {}
 `)
 
+	// Each row records its component's own content digest, as a pull would: the
+	// lockfile refuses a row without a well-formed one.
+	componentDigest := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(catalogDir, "components", name))
+		if err != nil {
+			t.Fatalf("read the component fixture %s: %v", name, err)
+		}
+		return contentDigestHex(b)
+	}
 	for _, rel := range []string{nestedPath, flatPath} {
 		lf := &lockfile.Lockfile{
 			Version:     1,
 			Release:     "./" + filepath.Base(rel),
 			GeneratedAt: "2026-06-03T10:00:00Z",
 			Entities: []lockfile.Entity{
-				{URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0"},
-				{URI: "demo/store:1.0.0", ResolvedVersion: "1.0.0"},
+				{URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("edge.yaml")},
+				{URI: "demo/store:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("store.yaml")},
 			},
 		}
 		if err := lockfile.WriteLockfile(lockfile.PathFor(rel), lf); err != nil {

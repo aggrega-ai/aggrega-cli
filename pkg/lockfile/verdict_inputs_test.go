@@ -35,8 +35,8 @@ func TestVerdictInputs_DigestRoundTrip(t *testing.T) {
 		Plugin: "governance/deny-gate:1.0.0",
 		Role:   "ir-verdict",
 		Sources: []lockfile.VerdictSourcePin{
-			{Path: "rules.rego", Digest: "sha256:aaaa"},
-			{Path: "extra.rego", Digest: "sha256:bbbb"},
+			{Path: "rules.rego", Digest: fixtureDigest("aaaa")},
+			{Path: "extra.rego", Digest: fixtureDigest("bbbb")},
 		},
 	}}
 	path := filepath.Join(t.TempDir(), "release.lock")
@@ -67,8 +67,8 @@ func TestVerdictInputs_DigestRoundTrip(t *testing.T) {
 	}
 	// Sources canonicalise to base-name order regardless of input order.
 	if len(got.Sources) != 2 ||
-		got.Sources[0].Path != "extra.rego" || got.Sources[0].Digest != "sha256:bbbb" ||
-		got.Sources[1].Path != "rules.rego" || got.Sources[1].Digest != "sha256:aaaa" {
+		got.Sources[0].Path != "extra.rego" || got.Sources[0].Digest != fixtureDigest("bbbb") ||
+		got.Sources[1].Path != "rules.rego" || got.Sources[1].Digest != fixtureDigest("aaaa") {
 		t.Errorf("source digest roundtrip / ordering: got %+v", got.Sources)
 	}
 }
@@ -115,8 +115,8 @@ func TestVerdictInputs_ChangedDigestIsADiff(t *testing.T) {
 // writes of the same in-memory lockfile produce byte-identical output.
 func TestVerdictInputs_WriteIsDeterministic(t *testing.T) {
 	in := []lockfile.VerdictInput{
-		{Plugin: "governance/gate:1.0.0", Role: "render-verdict", Sources: []lockfile.VerdictSourcePin{{Path: "r.rego", Digest: "sha256:1"}}},
-		{Plugin: "governance/gate:1.0.0", Role: "ir-verdict", Sources: []lockfile.VerdictSourcePin{{Path: "r.rego", Digest: "sha256:2"}}},
+		{Plugin: "governance/gate:1.0.0", Role: "render-verdict", Sources: []lockfile.VerdictSourcePin{{Path: "r.rego", Digest: fixtureDigest("1")}}},
+		{Plugin: "governance/gate:1.0.0", Role: "ir-verdict", Sources: []lockfile.VerdictSourcePin{{Path: "r.rego", Digest: fixtureDigest("2")}}},
 		{Plugin: "governance/aaa:1.0.0", Role: "ir-verdict"},
 	}
 	dir := t.TempDir()

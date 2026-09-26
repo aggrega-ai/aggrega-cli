@@ -21,27 +21,27 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 			{
 				URI:             "z-server",
 				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:zzzz",
-				ManifestDigest:  "sha256:zzzzmanifest",
+				Digest:          fixtureDigest("zzzz"),
+				ManifestDigest:  fixtureDigest("zzzzmanifest"),
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyless",
 					Identity:     "m.ferrero@cognitio.it",
 					Issuer:       "https://accounts.google.com",
-					BundleDigest: "sha256:bbbb",
+					BundleDigest: fixtureDigest("bbbb"),
 				},
 			},
 			{
 				URI:             "a-db",
 				ResolvedVersion: "2.0.0",
-				Digest:          "sha256:aaaa",
-				ManifestDigest:  "sha256:aaaamanifest",
+				Digest:          fixtureDigest("aaaa"),
+				ManifestDigest:  fixtureDigest("aaaamanifest"),
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyed",
-					BundleDigest: "sha256:cccc",
+					BundleDigest: fixtureDigest("cccc"),
 				},
 			},
 			// An unsigned entity carries no signature record.
-			{URI: "m-cache", ResolvedVersion: "3.0.0", Digest: "sha256:dddd"},
+			{URI: "m-cache", ResolvedVersion: "3.0.0", Digest: fixtureDigest("dddd")},
 		},
 	}
 }
@@ -90,7 +90,7 @@ func TestVerifiedSignatureRoundTrip(t *testing.T) {
 		byURI[e.URI] = e
 	}
 
-	if byURI["z-server"].ManifestDigest != "sha256:zzzzmanifest" {
+	if byURI["z-server"].ManifestDigest != fixtureDigest("zzzzmanifest") {
 		t.Errorf("manifest_digest round-trip lost data: %q", byURI["z-server"].ManifestDigest)
 	}
 	if byURI["m-cache"].ManifestDigest != "" {
@@ -102,12 +102,12 @@ func TestVerifiedSignatureRoundTrip(t *testing.T) {
 		t.Fatal("z-server should carry a signature")
 	}
 	if keyless.Mode != "keyless" || keyless.Identity != "m.ferrero@cognitio.it" ||
-		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != "sha256:bbbb" {
+		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != fixtureDigest("bbbb") {
 		t.Errorf("keyless signature round-trip lost data: %+v", keyless)
 	}
 
 	keyed := byURI["a-db"].Signature
-	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != "sha256:cccc" {
+	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != fixtureDigest("cccc") {
 		t.Errorf("keyed signature round-trip lost data: %+v", keyed)
 	}
 	if keyed.Identity != "" || keyed.Issuer != "" {
@@ -119,6 +119,8 @@ func TestVerifiedSignatureRoundTrip(t *testing.T) {
 	}
 }
 
+// signedPluginLockfile's plugin rows record their content digest as their
+// resolved version, because a plugin artifact is pinned by its bytes.
 func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 	return &lockfile.Lockfile{
 		Version:     1,
@@ -127,28 +129,28 @@ func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 		Plugins: []lockfile.Plugin{
 			{
 				URI:             "z-plugin",
-				ResolvedVersion: "1.0.0",
-				Digest:          "sha256:zzzz",
-				ManifestDigest:  "sha256:zzzzmanifest",
+				ResolvedVersion: fixtureDigest("zzzz"),
+				Digest:          fixtureDigest("zzzz"),
+				ManifestDigest:  fixtureDigest("zzzzmanifest"),
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyless",
 					Identity:     "m.ferrero@cognitio.it",
 					Issuer:       "https://accounts.google.com",
-					BundleDigest: "sha256:bbbb",
+					BundleDigest: fixtureDigest("bbbb"),
 				},
 			},
 			{
 				URI:             "a-plugin",
-				ResolvedVersion: "2.0.0",
-				Digest:          "sha256:aaaa",
-				ManifestDigest:  "sha256:aaaamanifest",
+				ResolvedVersion: fixtureDigest("aaaa"),
+				Digest:          fixtureDigest("aaaa"),
+				ManifestDigest:  fixtureDigest("aaaamanifest"),
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyed",
-					BundleDigest: "sha256:cccc",
+					BundleDigest: fixtureDigest("cccc"),
 				},
 			},
 			// An unsigned plugin carries no signature record.
-			{URI: "m-plugin", ResolvedVersion: "3.0.0", Digest: "sha256:dddd"},
+			{URI: "m-plugin", ResolvedVersion: fixtureDigest("dddd"), Digest: fixtureDigest("dddd")},
 		},
 	}
 }
@@ -196,7 +198,7 @@ func TestPluginSignatureRoundTrip(t *testing.T) {
 		byURI[p.URI] = p
 	}
 
-	if byURI["z-plugin"].ManifestDigest != "sha256:zzzzmanifest" {
+	if byURI["z-plugin"].ManifestDigest != fixtureDigest("zzzzmanifest") {
 		t.Errorf("manifest_digest round-trip lost data: %q", byURI["z-plugin"].ManifestDigest)
 	}
 	if byURI["m-plugin"].ManifestDigest != "" {
@@ -208,12 +210,12 @@ func TestPluginSignatureRoundTrip(t *testing.T) {
 		t.Fatal("z-plugin should carry a signature")
 	}
 	if keyless.Mode != "keyless" || keyless.Identity != "m.ferrero@cognitio.it" ||
-		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != "sha256:bbbb" {
+		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != fixtureDigest("bbbb") {
 		t.Errorf("keyless signature round-trip lost data: %+v", keyless)
 	}
 
 	keyed := byURI["a-plugin"].Signature
-	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != "sha256:cccc" {
+	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != fixtureDigest("cccc") {
 		t.Errorf("keyed signature round-trip lost data: %+v", keyed)
 	}
 

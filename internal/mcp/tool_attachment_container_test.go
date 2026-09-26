@@ -14,6 +14,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -164,12 +165,20 @@ spec:
 
 	nestedRelease = filepath.Join(root, "nested-release.yaml")
 	flatRelease = filepath.Join(root, "flat-release.yaml")
+	// The row records the component's own content digest, as a pull would: the
+	// lockfile refuses a row without a well-formed one.
+	edge, err := os.ReadFile(filepath.Join(catalogDir, "components", "edge.yaml"))
+	if err != nil {
+		t.Fatalf("read the component fixture: %v", err)
+	}
 	for _, rel := range []string{nestedRelease, flatRelease} {
 		lf := &lockfile.Lockfile{
 			Version:     1,
 			Release:     "./" + filepath.Base(rel),
 			GeneratedAt: "2026-06-03T10:00:00Z",
-			Entities:    []lockfile.Entity{{URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0"}},
+			Entities: []lockfile.Entity{{
+				URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest(edge),
+			}},
 		}
 		if err := lockfile.WriteLockfile(lockfile.PathFor(rel), lf); err != nil {
 			t.Fatalf("WriteLockfile: %v", err)

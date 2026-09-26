@@ -61,10 +61,11 @@ func TestWriteLockfileWorkloadLibrariesDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	pA := filepath.Join(dir, "a.lock")
 	pA2 := filepath.Join(dir, "a2.lock")
-	if err := lockfile.WriteLockfile(pA, workloadSampleLockfile("sha256:x")); err != nil {
+	pinned := fixtureDigest("x")
+	if err := lockfile.WriteLockfile(pA, workloadSampleLockfile(pinned)); err != nil {
 		t.Fatalf("write A: %v", err)
 	}
-	if err := lockfile.WriteLockfile(pA2, workloadSampleLockfile("sha256:x")); err != nil {
+	if err := lockfile.WriteLockfile(pA2, workloadSampleLockfile(pinned)); err != nil {
 		t.Fatalf("write A2: %v", err)
 	}
 	a, _ := os.ReadFile(pA)
@@ -80,7 +81,7 @@ func TestWriteLockfileWorkloadLibrariesDeterministic(t *testing.T) {
 	if len(got.WorkloadLibraries) != 1 || got.WorkloadLibraries[0].URI != "BaseWorkloads" {
 		t.Fatalf("workload_libraries did not round-trip; got %+v", got.WorkloadLibraries)
 	}
-	if got.WorkloadLibraries[0].Digest != "sha256:x" {
+	if got.WorkloadLibraries[0].Digest != pinned {
 		t.Errorf("workload-library digest did not round-trip; got %q", got.WorkloadLibraries[0].Digest)
 	}
 }

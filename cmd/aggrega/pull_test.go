@@ -483,14 +483,25 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 	}
 
 	// Mutate the lockfile to introduce drift: rewrite one of the
-	// recorded digests to a wrong value. Hex-replacing a known
-	// digest character flips the verification result.
+	// recorded digests to a wrong value. The wrong value is still a
+	// well-formed digest — the load refuses any other spelling, and a
+	// refused load would never reach the drift comparison under test.
 	lockfilePath := filepath.Join(root, "release.lock")
 	data, err := os.ReadFile(lockfilePath)
 	if err != nil {
 		t.Fatalf("read lockfile: %v", err)
 	}
-	mutated := bytes.Replace(data, []byte("digest: sha256:"), []byte("digest: sha256:ff"), 1)
+	const digestLine = "digest: sha256:"
+	at := bytes.Index(data, []byte(digestLine))
+	if at < 0 || len(data) < at+len(digestLine)+64 {
+		t.Fatalf("could not locate a digest line to mutate in:\n%s", data)
+	}
+	start := at + len(digestLine)
+	wrong := strings.Repeat("0", 64)
+	if string(data[start:start+64]) == wrong {
+		wrong = strings.Repeat("1", 64)
+	}
+	mutated := append(append(append([]byte{}, data[:start]...), wrong...), data[start+64:]...)
 	if bytes.Equal(mutated, data) {
 		t.Fatalf("could not locate a digest line to mutate in:\n%s", data)
 	}

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
@@ -73,19 +74,27 @@ spec:
   source: https://example.invalid/c.tgz
 `
 
+// readableLockSourceDigest and readableLockArtifactDigest are the two pins
+// readableLock records, each a real content digest — the one spelling the lock's
+// schema admits.
+var (
+	readableLockSourceDigest   = digest.ContentDigest([]byte("aaa"))
+	readableLockArtifactDigest = digest.ContentDigest([]byte("bbb"))
+)
+
 // readableLock is a lock the published schema admits. It is the positive
 // control for every row below: without it a refusal could equally mean the
 // load rejects any entity with a lock beside it, and the negative rows would
 // pass for the wrong reason.
-const readableLock = `version: 1
+var readableLock = `version: 1
 sourceDigests:
   - kind: helm-https-chart
     url: https://example.invalid/c.tgz
     version: "1.0.0"
-    digest: sha256:aaa
+    digest: ` + readableLockSourceDigest + `
 artifactDigests:
   - name: extra.yaml
-    digest: sha256:bbb
+    digest: ` + readableLockArtifactDigest + `
 `
 
 // unreadableLocks are documents the lock's published schema refuses, one fault
@@ -218,10 +227,10 @@ func TestTheLoadRecordsEachEntitysPinsUnderItsOwnDocument(t *testing.T) {
 					"and every comparison its pins exist for silently does not happen (filed: %d document(s))",
 					kind, document, len(recorded))
 			}
-			if len(pins.SourceDigests) != 1 || pins.SourceDigests[0].Digest != "sha256:aaa" {
+			if len(pins.SourceDigests) != 1 || pins.SourceDigests[0].Digest != readableLockSourceDigest {
 				t.Errorf("%s: the filed source pin is not the recorded one: %+v", kind, pins.SourceDigests)
 			}
-			if len(pins.ArtifactDigests) != 1 || pins.ArtifactDigests[0].Digest != "sha256:bbb" {
+			if len(pins.ArtifactDigests) != 1 || pins.ArtifactDigests[0].Digest != readableLockArtifactDigest {
 				t.Errorf("%s: the filed artifact pin is not the recorded one: %+v", kind, pins.ArtifactDigests)
 			}
 		})

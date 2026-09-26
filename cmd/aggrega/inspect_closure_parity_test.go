@@ -38,6 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -132,7 +133,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `)
-	writeClosureFixture(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
   name: demo/svc
@@ -146,7 +147,8 @@ spec:
         $ref: "BaseTypes:1.0.0#/schemas/PortSpec"
     provides:
       host: { type: string, required: true }
-`)
+`
+	writeClosureFixture(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
 	writeClosureFixture(t, filepath.Join(catalogDir, "components", "other.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -232,11 +234,15 @@ spec:
         app: {}
 `)
 
+	// The row records the component's own content digest, as a pull would: the
+	// lockfile refuses a row without a well-formed one.
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     "./app-release.yaml",
 		GeneratedAt: "2026-06-03T10:00:00Z",
-		Entities:    []lockfile.Entity{{URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0"}},
+		Entities: []lockfile.Entity{{
+			URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte(svcComponent)),
+		}},
 	}
 	if withMarker {
 		lf.Entities[0].Deprecation = &lockfile.DeprecationRecord{
