@@ -179,7 +179,9 @@ func pickKeys(set *jose.JSONWebKeySet, keyID string) []jose.JSONWebKey {
 // request. With none, the keys come from the authorization server, and the
 // client they are fetched with is taken from the caller's own gate, so the
 // refusal an offline workspace produces is that gate's refusal rather than a
-// second reading of the same posture here.
+// second reading of the same posture here. That client is read through
+// keyReadClient, which gives these reads a redirect policy of their own without
+// changing the gate's client for anything else.
 //
 // ctx is whoever asked for the listener, and it belongs to exactly one of the
 // two branches: the file branch reads before the listener answers for anything,
@@ -208,10 +210,11 @@ func resolveVerificationKeys(ctx context.Context, cfg AuthorizationConfig, egres
 	if egress == nil {
 		return nil, errNoKeySource
 	}
-	client, err := egress()
+	supplied, err := egress()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errNoKeySource, err)
 	}
+	client := keyReadClient(supplied)
 	return &keySet{
 		read: func(ctx context.Context) (*jose.JSONWebKeySet, error) {
 			return fetchIssuerKeySet(ctx, client, issuer, cfg.Issuer)
@@ -231,6 +234,58 @@ var errNoKeySource = errors.New(
 	"a listener verifies every caller's token against the keys its authorization server publishes, and " +
 		"this workspace makes no network request, so those keys have to come from a file: set " +
 		"mcp.authorization.jwks_file to a key set for mcp.authorization.issuer")
+
+// errKeysOverPlaintext reports that reading the verification keys would have
+// gone over plain http to another machine, and so was not done.
+//
+// It is one condition reached two ways: the authorization server's metadata
+// names such an address for its keys, or a read of the metadata or of the keys
+// is answered with a redirect to one. Both are the same exposure — whoever sits
+// on that path could answer with keys of their own — so both are refused alike,
+// and in both nothing is requested from the refused address. It is a sentinel
+// rather than a message so the request it refuses can be recorded under a reason
+// of its own, separate from an authorization server that could not be reached.
+var errKeysOverPlaintext = errors.New(
+	"the verification keys would have been read over plain http from another machine, so they were not read")
+
+// keyReadRedirectLimit is how many redirects a read of the verification keys
+// follows before it gives up.
+//
+// It is the number net/http's own policy stops at, restated because setting a
+// policy of one's own replaces that one entirely: a policy that only refused the
+// plaintext hops would otherwise follow every other redirect without end.
+const keyReadRedirectLimit = 10
+
+// keyReadClient returns the client the verification keys are read with: a copy
+// of the one the caller's gate supplied, carrying a redirect policy of its own.
+//
+// The policy refuses a hop to a plain http address on another machine before
+// that hop is requested, which is what keeps a metadata or key address served
+// over https from handing the read to an unprotected path one redirect later.
+// Every other hop is judged as the supplied client would have judged it.
+//
+// It is a copy rather than the supplied client because that client is not this
+// read's to change. The gate may hand back one that other requests share — the
+// process's own default client, say — and a policy set on it would change how
+// every one of those follows a redirect, which is a decision about that traffic
+// rather than about the authorization server whose keys are being read.
+func keyReadClient(supplied *http.Client) *http.Client {
+	reads := *supplied
+	previous := supplied.CheckRedirect
+	reads.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if plaintextOffLoopback(next.URL) {
+			return errKeysOverPlaintext
+		}
+		if previous != nil {
+			return previous(next, via)
+		}
+		if len(via) >= keyReadRedirectLimit {
+			return fmt.Errorf("stopped after %d redirects", keyReadRedirectLimit)
+		}
+		return nil
+	}
+	return &reads
+}
 
 // readKeySetFile reads a key set from disk and refuses one this deployment
 // could not verify anything with.
@@ -279,7 +334,10 @@ type authorizationServerMetadata struct {
 // Where the keys themselves are published is taken as the server states it,
 // including on another host: an authorization server publishing its keys from a
 // separate host is ordinary, and refusing that would refuse working deployments
-// to guard something the issuer check already covers.
+// to guard something the issuer check already covers. The one address refused
+// is a plain http one on another machine, and it is refused before it is asked:
+// the issuer check cannot cover it, because the keys read from such an address
+// are whatever whoever sits on the path to it chooses to answer.
 func fetchIssuerKeySet(ctx context.Context, client *http.Client, issuer *url.URL,
 	declaredIssuer string) (*jose.JSONWebKeySet, error) {
 	discovery := *issuer
@@ -304,6 +362,13 @@ func fetchIssuerKeySet(ctx context.Context, client *http.Client, issuer *url.URL
 	}
 	if published.JWKSURI == "" {
 		return nil, fmt.Errorf("%s names no address for the keys it signs with", discovery.String())
+	}
+	// An address that does not parse is left to the request below, which refuses
+	// it as an address it cannot ask; only one that parses can be read as plain
+	// http on another machine.
+	if keysAt, parseErr := url.Parse(published.JWKSURI); parseErr == nil && plaintextOffLoopback(keysAt) {
+		return nil, fmt.Errorf("%s names %s for the keys it signs with: %w",
+			discovery.String(), published.JWKSURI, errKeysOverPlaintext)
 	}
 
 	keys, err := fetchJSON(ctx, client, published.JWKSURI)

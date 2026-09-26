@@ -24,14 +24,17 @@ import (
 // Anything not carrying it is read as the first form, a host and a port.
 const unixAddressPrefix = "unix:"
 
-// loopbackHostname is the one name a listen address may use in place of a
-// loopback literal. It is checked by resolving it and requiring every address it
-// resolves to be a loopback address, because the name is what an operator types
-// while the addresses behind it are what the listener will actually accept on.
+// loopbackHostname is the one name a listen address, or the address of an
+// authorization server reached in plaintext, may use in place of a loopback
+// literal. It is checked by resolving it and requiring every address it resolves
+// to be a loopback address, because the name is what an operator types while the
+// addresses behind it are what the listener will actually accept on, and what a
+// request naming it will actually reach.
 //
 // No other name is treated this way: a name that happens to resolve to a
 // loopback address is a network address here, because reading it otherwise would
-// make where a listener may bind depend on a resolution that can change under it.
+// make where a listener may bind, and where a plaintext request may go, depend on
+// a resolution that can change under it.
 const loopbackHostname = "localhost"
 
 // listenerDrainBudget bounds how long a listener whose run has ended keeps
@@ -551,14 +554,24 @@ func parseListenAddress(raw string) (listenTarget, error) {
 	return listenTarget{network: "tcp", address: raw, confined: hostIsLoopback(host)}, nil
 }
 
-// hostIsLoopback reports whether a listener bound to this host accepts only from
-// the machine it runs on.
+// hostIsLoopback reports whether this host is the machine this process runs on
+// and nothing else. It answers that one question for two readers: whether a
+// listener bound to the host accepts only from this machine, and whether an
+// address naming the host — an authorization server's, say — reaches only this
+// machine. Every plaintext exception this server makes rests on it, so there is
+// one reading of loopback rather than one per kind of address.
 //
-// An empty host is every interface the machine has, which is the opposite of
-// loopback however it is spelled. An address literal is read directly. The one
-// name is resolved, and every address behind it must be loopback: a name
-// resolving to both a loopback address and a routable one would accept from the
-// network on the second while looking confined on the first.
+// It takes a bare host. A caller holding an address strips the port, and the
+// brackets around an IPv6 literal, before asking.
+//
+// An empty host is not loopback: bound, it is every interface the machine has,
+// and in an address it names no machine at all. An address literal is read
+// directly. The one name is resolved, and every address behind it must be
+// loopback: a name resolving to both a loopback address and a routable one
+// would accept from the network on the second while looking confined on the
+// first, and an address naming it could reach the network the same way. Any
+// other name is not loopback however it resolves, for the reason
+// loopbackHostname states.
 func hostIsLoopback(host string) bool {
 	if host == "" {
 		return false

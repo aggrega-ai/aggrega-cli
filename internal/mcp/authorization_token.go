@@ -126,6 +126,14 @@ const (
 		"types are at+jwt, application/at+jwt, JWT, and no declared type at all"
 	reasonKeysOutOfReach refusalReason = "the verification keys could not be read, so no token could be checked; " +
 		"look at mcp.authorization.issuer and mcp.authorization.jwks_file"
+	// reasonKeysOverPlaintext is kept apart from the one above because the two
+	// ask an operator for different things: that one is an authorization server
+	// this process could not reach, this one a server it reached that pointed
+	// the key read at an unprotected path, which only that server can fix.
+	reasonKeysOverPlaintext refusalReason = "the verification keys were not read, because the authorization " +
+		"server named by mcp.authorization.issuer pointed the read at a plain http address on another machine, " +
+		"in its metadata or with a redirect; nothing was fetched from that address, and that server has to " +
+		"publish its metadata and keys over https"
 	reasonUnknownKey    refusalReason = "the token names a key identifier the verification keys do not carry"
 	reasonSignature     refusalReason = "the token's signature does not verify against any of the verification keys"
 	reasonNoExpiry      refusalReason = "the token carries no expiry, so it would never stop being usable"
@@ -257,6 +265,11 @@ func (v *bearerValidator) principalFor(r *http.Request, raw string) (*principal,
 
 	candidates, err := v.keys.keysFor(r.Context(), header.KeyID)
 	if err != nil {
+		// The same outcome either way, so the caller is told the same thing; only
+		// the operator's line says which of the two it was.
+		if errors.Is(err, errKeysOverPlaintext) {
+			return nil, credentialUnverifiable, reasonKeysOverPlaintext
+		}
 		return nil, credentialUnverifiable, reasonKeysOutOfReach
 	}
 	if len(candidates) == 0 {

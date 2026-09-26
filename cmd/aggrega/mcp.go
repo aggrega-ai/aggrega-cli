@@ -115,10 +115,22 @@ why it is the one answer given without one. What that document publishes
 comes from mcp.authorization.issuer and mcp.authorization.resource, and a
 listener is refused before it binds unless both are set.
 
+The issuer is an https address unless the authorization server runs on
+this machine (localhost, 127.0.0.1 or ::1), and that holds in every
+mode: with the keys read from the issuer, with a key file, and with a
+proxy in front. Every client is sent to the issuer to obtain its token,
+so a plain http issuer on another host would carry each client's
+authorization code and token across the network unprotected, and a
+listener naming one is refused before it binds.
+
 The verification keys are read from the issuer itself, by asking it where
 it publishes them and fetching them from the address it names, and read
 again once when a token arrives signed by a key identifier the held set
-does not carry. A workspace that is offline makes no such request, so
+does not carry. That address is held to the same rule as the issuer, and
+so is every redirect either read is answered with: a plain http address
+on another host is never asked, and a token needing those keys is
+answered 503 until the authorization server publishes its metadata and
+keys over https. A workspace that is offline makes no such request, so
 there mcp.authorization.jwks_file names a file holding those keys and a
 listener is refused before it binds without it.
 

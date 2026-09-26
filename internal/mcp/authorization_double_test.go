@@ -59,7 +59,18 @@ type authorizationServerDouble struct {
 	// them arrive on the server's goroutines.
 	metadataReads atomic.Int64
 	keySetReads   atomic.Int64
+
+	// keysAt, where a proof has set it, is the address the metadata document
+	// names for the keys in place of this server's own key set. It is for the
+	// proofs about an authorization server that points the key read somewhere a
+	// listener must not read it from, and it is atomic because a proof moves it
+	// while the server's goroutines may be reading it.
+	keysAt atomic.Pointer[string]
 }
+
+// publishKeysAt makes the metadata document name address for the keys from the
+// next read on.
+func (d *authorizationServerDouble) publishKeysAt(address string) { d.keysAt.Store(&address) }
 
 // newAuthorizationServerDouble starts one, with a single signing key published
 // under keyID.
@@ -72,9 +83,13 @@ func newAuthorizationServerDouble(t *testing.T) *authorizationServerDouble {
 	mux := http.NewServeMux()
 	mux.HandleFunc(wellKnownAuthorizationServer, func(w http.ResponseWriter, _ *http.Request) {
 		d.metadataReads.Add(1)
+		keysAt := d.ts.URL + keySetPath
+		if moved := d.keysAt.Load(); moved != nil {
+			keysAt = *moved
+		}
 		writeJSON(w, map[string]any{
 			"issuer":   d.issuer(),
-			"jwks_uri": d.ts.URL + keySetPath,
+			"jwks_uri": keysAt,
 		})
 	})
 	mux.HandleFunc(keySetPath, func(w http.ResponseWriter, _ *http.Request) {

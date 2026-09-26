@@ -69,6 +69,9 @@ const metadataCacheControl = "public, max-age=3600"
 type AuthorizationConfig struct {
 	// Issuer is the authorization server that issues the tokens this
 	// deployment accepts, as that server states its own issuer identifier.
+	//
+	// It is an https address, or a plain http one on this machine: a listener
+	// is refused before it binds where it is plain http on any other host.
 	Issuer string
 
 	// Resource is the address this deployment publishes for itself, as a caller
@@ -192,11 +195,23 @@ type protectedResourceMetadata struct {
 // resolveProtectedResource settles every refusal a deployment can meet about
 // what it declares itself to be, and composes what it publishes.
 //
-// It reaches nothing outside the configuration it is given: no file, no
-// network, no clock. That is what lets it be called before anything is built
-// and again while the handler is being built, which is how the refusal is made
-// before the expensive part of a launch without the handler having to trust
-// that its caller made it.
+// It reads no file, makes no request and consults no clock. The one thing it
+// asks outside the configuration it is given is the system resolver, and only
+// for the name localhost, which is how an issuer on this machine is told from
+// one elsewhere — the same question, asked the same way, as for a listen
+// address naming that name. That is what lets it be called before anything is
+// built and again while the handler is being built, which is how the refusal is
+// made before the expensive part of a launch without the handler having to
+// trust that its caller made it.
+//
+// An issuer that is plain http on another machine is refused here, whatever
+// the listener reads its keys and its callers from, because every listener
+// publishes its issuer: the document composed below names it as where a client
+// obtains its token, so a client following that document runs its
+// authorization flow over the unprotected path to it — the authorization code
+// and the token included — whether or not this process ever reads a key from
+// it. Where this process does read its keys from it, whoever sits on that path
+// could also answer with keys of their own choosing.
 func resolveProtectedResource(cfg AuthorizationConfig) (protectedResource, error) {
 	var missing []string
 	if cfg.Issuer == "" {
@@ -212,9 +227,19 @@ func resolveProtectedResource(cfg AuthorizationConfig) (protectedResource, error
 				"resource they are issued for: set %s", strings.Join(missing, " and "))
 	}
 
-	if _, err := parseDeclaredAddress(cfg.Issuer, "mcp.authorization.issuer",
-		"https://login.example.com"); err != nil {
+	issuer, err := parseDeclaredAddress(cfg.Issuer, "mcp.authorization.issuer",
+		"https://login.example.com")
+	if err != nil {
 		return protectedResource{}, err
+	}
+	if plaintextOffLoopback(issuer) {
+		return protectedResource{}, fmt.Errorf(
+			"mcp.authorization.issuer is %q, a plain http address on another machine: a listener publishes its "+
+				"issuer to every client as where to obtain a token, and reads its verification keys there unless it "+
+				"has a key file or a proxy in front checks the tokens, so whoever is on the network path to it could "+
+				"read a client's token or substitute the keys; set mcp.authorization.issuer to an https address, as "+
+				"in https://login.example.com (plain http is accepted only for an authorization server on this "+
+				"machine: localhost, 127.0.0.1 or ::1)", cfg.Issuer)
 	}
 	resource, err := parseDeclaredAddress(cfg.Resource, "mcp.authorization.resource",
 		"https://mcp.example.com/mcp")
@@ -284,6 +309,24 @@ func parseDeclaredAddress(raw, key, example string) (*url.URL, error) {
 			key, raw, example)
 	}
 	return parsed, nil
+}
+
+// plaintextOffLoopback reports whether an address is plain http on a host other
+// than this machine, which is the one shape an authorization server may not be
+// reached at.
+//
+// It is the one test every refusal of such an address makes — the issuer at
+// startup, the key address an authorization server's metadata names, and each
+// redirect a read of either answers with — and it decides nothing about loopback
+// itself. It takes the address's host, with the port and any brackets around an
+// IPv6 literal stripped, and asks hostIsLoopback, the question a plaintext
+// listen address is already held to. A second test of loopback written here for
+// addresses would agree with that one until either of them moved.
+//
+// The scheme comparison ignores case, which a parsed address already does; it is
+// spelled out so an address assembled by hand is read the same way.
+func plaintextOffLoopback(address *url.URL) bool {
+	return strings.EqualFold(address.Scheme, "http") && !hostIsLoopback(address.Hostname())
 }
 
 // The two reasons this deployment gives a caller for not accepting what it
