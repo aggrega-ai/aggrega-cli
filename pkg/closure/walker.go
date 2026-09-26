@@ -6,6 +6,8 @@ package closure
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -570,8 +572,16 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 // Lookup to obtain digest + resolution-path metadata. The axis selects both the
 // accumulator to drain and the kind the resolver dispatches on, so every library
 // axis runs through this one resolution loop rather than a per-axis copy.
+//
+// Libraries are resolved in URI order, never in map order. What is resolved first
+// is visible: the first library that does not resolve is the one the refusal
+// names, and a lookup may announce what it finds while it resolves, so an order
+// the runtime randomises would change both from one run to the next over identical
+// input.
 func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup) error {
-	for uri, lib := range axis.pendingLibs(s) {
+	pending := axis.pendingLibs(s)
+	for _, uri := range slices.Sorted(maps.Keys(pending)) {
+		lib := pending[uri]
 		selected, err := selectMVSVersion(uri, lib.versionByConsumer)
 		if err != nil {
 			return err
@@ -613,11 +623,24 @@ func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, look
 // the max; the result is determined by the pinned consumers
 // alone. If every consumer is unpinned the function returns
 // empty string (the lookup-reported ResolvedVersion wins).
+//
+// The result is a function of the pins alone, never of the order a map is
+// ranged in. Consumers are visited in consumer-URI order: the major every pin is
+// held to is the first pinned consumer's in that order, and a conflict names
+// every pinned consumer visited up to and including the first that disagrees.
+//
+// Two pins compareSemver ranks equal but spelled differently — "1.0" and
+// "1.0.0" — are decided by their spelling: the one naming more version
+// components wins, and between two naming as many, the one that sorts first as a
+// string. The selected spelling is the version recorded for the library and the
+// tag a registry is asked for, and a library's own version is written in the full
+// three-component form its schema declares, so the fuller spelling is preferred.
 func selectMVSVersion(libraryURI string, versionByConsumer map[string]string) (string, error) {
 	var winner string
 	var winnerMajor string
 	conflicts := map[string]string{}
-	for consumer, version := range versionByConsumer {
+	for _, consumer := range slices.Sorted(maps.Keys(versionByConsumer)) {
+		version := versionByConsumer[consumer]
 		if version == "" {
 			continue
 		}
@@ -634,11 +657,22 @@ func selectMVSVersion(libraryURI string, versionByConsumer map[string]string) (s
 				ErrMVSConflict(), libraryURI, formatConsumerConflicts(conflicts))
 		}
 		conflicts[consumer] = version
-		if compareSemver(version, winner) > 0 {
+		if order := compareSemver(version, winner); order > 0 || (order == 0 && preferSpelling(version, winner)) {
 			winner = version
 		}
 	}
 	return winner, nil
+}
+
+// preferSpelling reports whether version a is chosen over version b when
+// compareSemver ranks the two equal: the spelling naming more version components
+// first, then the one that sorts first as a string. It counts components as
+// compareSemver splits them, so the two agree on what a component is.
+func preferSpelling(a, b string) bool {
+	if na, nb := len(strings.Split(a, ".")), len(strings.Split(b, ".")); na != nb {
+		return na > nb
+	}
+	return a < b
 }
 
 // majorComponent returns the leading dotted component of a SemVer

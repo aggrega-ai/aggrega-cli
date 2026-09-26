@@ -6,6 +6,7 @@ package closure
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -117,70 +118,82 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 // the pinned set — and the lockfile written from it — is byte-identical across
 // runs regardless of descent order. A nil loader is a no-op (the caller wired
 // no registry tier).
+//
+// The descent goes one level at a time, and each level's sub-aggregates are
+// loaded in URI order, never in the order a map is ranged in or the order their
+// parents were loaded in. What is loaded first is visible: the first sub-aggregate
+// that fails to load, or whose own references do not resolve, is the one the
+// refusal names, and an entity two siblings both reference keeps the kind and the
+// resolution the sibling loaded first recorded for it.
 func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoader, lookup Lookup) error {
 	if c == nil || loader == nil {
 		return nil
 	}
 
 	index := make(map[string]int, len(c.Entities))
-	var queue []descentFrame
+	var level []descentFrame
 	for i, e := range c.Entities {
 		index[e.URI] = i
 		if e.KindHint == aggregateKindHint {
-			queue = append(queue, descentFrame{uri: e.URI, version: e.ResolvedVersion, digest: e.Digest, depth: 1})
+			level = append(level, descentFrame{uri: e.URI, version: e.ResolvedVersion, digest: e.Digest, depth: 1})
 		}
 	}
 
 	visited := map[string]struct{}{}
-	for len(queue) > 0 {
-		f := queue[0]
-		queue = queue[1:]
-		if _, seen := visited[f.uri]; seen {
-			continue
-		}
-		visited[f.uri] = struct{}{}
-		if f.depth > maxSubAggregateDepth {
-			return fmt.Errorf("%w: %q at depth %d", ErrSubAggregateDepth(), f.uri, f.depth)
-		}
-
-		agg, err := loader.LoadAggregate(f.uri, f.version, f.digest)
-		if err != nil {
-			return fmt.Errorf("resolve: load sub-aggregate %q: %w", f.uri, err)
-		}
-
-		sub := newWalkState()
-		// The loader's contract is a parsed *types.Aggregate; the walk's is a
-		// normalized one. Normalizing here is where the two meet — the walk cannot
-		// be entered without the guarantee, and a loader that already normalized
-		// (every production one loads through the parse core, which does) hands back
-		// the identical value.
-		sub.walkAggregate(types.Normalize(agg), fmt.Sprintf("aggregate(%s)", f.uri))
-		if err := sub.resolveEntities(ctx, lookup); err != nil {
-			return err
-		}
-
-		for uri, p := range sub.entities {
-			if p.resolution == nil {
+	for len(level) > 0 {
+		// Stable, so a URI queued twice within one level keeps the frame of the
+		// parent loaded first, which the previous level's order already fixes.
+		sort.SliceStable(level, func(i, j int) bool { return level[i].uri < level[j].uri })
+		var next []descentFrame
+		for _, f := range level {
+			if _, seen := visited[f.uri]; seen {
 				continue
 			}
-			ref := p.toResolvedRef(uri)
-			if idx, dup := index[uri]; dup {
-				// A transitively-shared entity (a diamond's shared leaf, an
-				// entity also used at the top level) accumulates every
-				// referencing site, like ComputeClosure's single-walkState
-				// accumulation. canonicaliseClosure sorts the merged set, so the
-				// result is independent of descent order.
-				c.Entities[idx].ReferencedFrom = mergeReferencedFrom(c.Entities[idx].ReferencedFrom, ref.ReferencedFrom)
-			} else {
-				c.Entities = append(c.Entities, ref)
-				index[uri] = len(c.Entities) - 1
+			visited[f.uri] = struct{}{}
+			if f.depth > maxSubAggregateDepth {
+				return fmt.Errorf("%w: %q at depth %d", ErrSubAggregateDepth(), f.uri, f.depth)
 			}
-			if ref.KindHint == aggregateKindHint {
-				if _, done := visited[uri]; !done {
-					queue = append(queue, descentFrame{uri: uri, version: ref.ResolvedVersion, digest: ref.Digest, depth: f.depth + 1})
+
+			agg, err := loader.LoadAggregate(f.uri, f.version, f.digest)
+			if err != nil {
+				return fmt.Errorf("resolve: load sub-aggregate %q: %w", f.uri, err)
+			}
+
+			sub := newWalkState()
+			// The loader's contract is a parsed *types.Aggregate; the walk's is a
+			// normalized one. Normalizing here is where the two meet — the walk cannot
+			// be entered without the guarantee, and a loader that already normalized
+			// (every production one loads through the parse core, which does) hands
+			// back the identical value.
+			sub.walkAggregate(types.Normalize(agg), fmt.Sprintf("aggregate(%s)", f.uri))
+			if err := sub.resolveEntities(ctx, lookup); err != nil {
+				return err
+			}
+
+			for uri, p := range sub.entities {
+				if p.resolution == nil {
+					continue
+				}
+				ref := p.toResolvedRef(uri)
+				if idx, dup := index[uri]; dup {
+					// A transitively-shared entity (a diamond's shared leaf, an
+					// entity also used at the top level) accumulates every
+					// referencing site, like ComputeClosure's single-walkState
+					// accumulation. canonicaliseClosure sorts the merged set, so the
+					// result is independent of descent order.
+					c.Entities[idx].ReferencedFrom = mergeReferencedFrom(c.Entities[idx].ReferencedFrom, ref.ReferencedFrom)
+				} else {
+					c.Entities = append(c.Entities, ref)
+					index[uri] = len(c.Entities) - 1
+				}
+				if ref.KindHint == aggregateKindHint {
+					if _, done := visited[uri]; !done {
+						next = append(next, descentFrame{uri: uri, version: ref.ResolvedVersion, digest: ref.Digest, depth: f.depth + 1})
+					}
 				}
 			}
 		}
+		level = next
 	}
 
 	canonicaliseClosure(c)
