@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -93,10 +95,12 @@ type buildFile struct {
 // phases ahead of the halt raised, so a caller acting on a refusal receives the
 // same entries a command-line build printed before it stopped. A refusal reports
 // none of them only where the run stopped before any phase had raised one — a
-// call that never reached the compiler, or one that stopped at closure
-// resolution — and that is a fact about how far the run got rather than about
-// what this shape carries. A caller that wants the findings for a Release
-// without rendering it reads them from the validate tool instead.
+// call refused before the Release resolved, or one that stopped while resolving
+// it — and that is a fact about how far the run got rather than about what this
+// shape carries. The readings over a Release's composed extends chain are raised
+// the moment it resolves, ahead of every gate that can refuse it, so every later
+// refusal carries them. A caller that wants the findings for a Release without
+// rendering it reads them from the validate tool instead.
 //
 // Files reports nothing on a refusal, and its key is NOT a signal a caller may
 // branch on: the field carries no omit option, so it is encoded whatever the
@@ -124,11 +128,15 @@ type buildResultPayload struct {
 	// accurate one; without it the difference is invisible in the returned files.
 	DeclinedExternalInputs []string `json:"declined_external_inputs,omitempty"`
 
-	// Advisories carries every exit-code-neutral finding the build raised, in the
-	// order it raised them — the same findings, in the same order, a command-line
-	// build prints. None of them changes the outcome: a build carrying advisories
-	// and nothing else still succeeded, and the files above are the files it
-	// produced.
+	// Advisories carries every exit-code-neutral finding the build raised — the
+	// same findings, in the same order, a command-line build prints. That order is
+	// the terminal's: the render's own advisories first, in the order the render
+	// raised them, then the findings the shared preview raised about the Release
+	// and what it reaches, in the order it raised them. A terminal prints the
+	// second group once the render has returned, although the preview raised it
+	// earlier, so this list follows the display rather than the moment of raising.
+	// None of them changes the outcome: a build carrying advisories and nothing
+	// else still succeeded, and the files above are the files it produced.
 	//
 	// They are reported for the same reason the deprecation notices are: a caller
 	// with no terminal has no other way to receive them, and a finding nobody is
@@ -190,6 +198,45 @@ func buildAdvisories(advisories []renderer.Diagnostic) []buildAdvisory {
 			entry.KeyPath = d.Location.KeyPath
 		}
 		out = append(out, entry)
+	}
+	return out
+}
+
+// previewAdvisories maps the shared preview's own classed warnings onto the
+// tool's wire shape, in the order the preview raised them.
+//
+// Two classes are routed elsewhere rather than dropped. A recorded deprecation
+// marker has a field of its own, Deprecations. An extends failure detail
+// accompanies a halt and names what refused, so it travels in the refusal's
+// guidance text, the way the deprecation refusal quotes every recorded marker.
+// Every other class is an exit-code-neutral finding, which is what an entry here
+// is: the readings over a Release's composed extends chain, the schema-overlap
+// advisories over what the Release reaches, and the notices a caller's own
+// catalog load handed in. The switch names the two exceptions rather than the
+// carried classes, so a class added to the preview later reaches a caller that
+// reads no terminal by default instead of being lost on the way to it.
+//
+// Every carried class takes warn, the severity for a finding that wants
+// attention. The composition reading is declared at warning severity by the rule
+// that raises it, the overlap advisory is the warning-level sibling of the schema
+// validation beside it, and a catalog notice reports a deprecated shape. None of
+// them merely records an observation, which is what info is for.
+//
+// The message is the warning's own text — what a command-line build prints after
+// the prefix naming its class — and the code is the registered condition's,
+// carried on the warning from where it was raised. A class raised as text
+// carries none.
+func previewAdvisories(preview *compilerops.PreviewResult) []buildAdvisory {
+	if preview == nil {
+		return nil
+	}
+	var out []buildAdvisory
+	for _, w := range preview.Warnings {
+		switch w.Class {
+		case compilerops.WarningDeprecation, compilerops.WarningExtends:
+			continue
+		}
+		out = append(out, buildAdvisory{Severity: abi.SeverityWarn, Message: w.Text, Code: w.Code})
 	}
 	return out
 }
@@ -443,9 +490,11 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		declined = fetchSeam.Declined()
 	}
 
-	// Every recorded marker is reported whatever the outcome, so choosing a
-	// stricter threshold never costs the caller a finding.
-	deprecationNotices := previewDeprecationNotices(preview)
+	// Every recorded marker is reported whatever the outcome — on a success in the
+	// payload, on a refusal quoted in the message as well — because reporting is
+	// unconditional and only halting is configured, so choosing a stricter
+	// threshold never costs the caller a finding.
+	deprecationNotices := previewWarningTexts(preview, compilerops.WarningDeprecation)
 
 	// The findings are assembled BEFORE the verdict is read, and that ordering is
 	// the whole point rather than a tidying. Assembled after a success check, every
@@ -475,11 +524,13 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	payload.DeclinedExternalInputs = declined
 	// The advisories the build raised travel in the answer, so a caller driving the
 	// compiler through this surface receives every finding a command-line build
-	// prints rather than only the ones that stopped it. Read through the accessor
-	// that answers on either verdict — a run that halted raised whatever the phases
-	// ahead of it found, and those are exactly the findings a caller has to act on
-	// to get past the halt.
-	payload.Advisories = buildAdvisories(preview.PipelineOutcome().Advisories())
+	// prints rather than only the ones that stopped it. They come from the two
+	// places the shared preview raises them — the render's advisory channel, read
+	// through the accessor that answers on either verdict, and the preview's own
+	// classed warnings — joined in the order a terminal prints them. A run that
+	// halted raised whatever the phases ahead of it found, and those are exactly
+	// the findings a caller has to act on to get past the halt.
+	payload.Advisories = append(buildAdvisories(preview.PipelineOutcome().Advisories()), previewAdvisories(preview)...)
 
 	if err != nil {
 		// A catalog file the load refused never enters the catalog, so a Release
@@ -517,22 +568,21 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	return textResult(text, payload)
 }
 
-// previewDeprecationNotices pulls the recorded-marker notices out of a preview's
-// warnings. They are reported whatever the outcome — on a success they ride in
-// the payload, and on a refusal they are quoted in the message — because
-// reporting is unconditional and only halting is configured, so raising the halt
-// threshold never reduces what the caller is told.
-func previewDeprecationNotices(preview *compilerops.PreviewResult) []string {
+// previewWarningTexts returns the text of each of a preview's warnings of one
+// class, in the order the preview raised them. It is how the two classes that do
+// not travel as advisories reach the answer: the deprecation notices on their own
+// field, and the extends failure details in the refusal they accompany.
+func previewWarningTexts(preview *compilerops.PreviewResult, class compilerops.WarningClass) []string {
 	if preview == nil {
 		return nil
 	}
-	notices := make([]string, 0, len(preview.Warnings))
+	texts := make([]string, 0, len(preview.Warnings))
 	for _, w := range preview.Warnings {
-		if w.Class == compilerops.WarningDeprecation {
-			notices = append(notices, w.Text)
+		if w.Class == class {
+			texts = append(texts, w.Text)
 		}
 	}
-	return notices
+	return texts
 }
 
 // previewFailureSummary is the caller-facing sentence for a refused build,
@@ -576,7 +626,15 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 	case compilerops.GateClosurePillars:
 		return "The build refused: an entity this Release reaches does not satisfy its schema."
 	case compilerops.GateExtends:
-		return "The build refused: an entity this Release reaches inherits from a parent that could not be resolved."
+		// The halt itself only counts the failures, so each one is quoted here, the
+		// way the deprecation arm quotes every recorded marker: a caller has to know
+		// WHICH inheritance to repair, and the guidance is the one place this
+		// refusal names it.
+		summary := "The build refused: an entity this Release reaches inherits from a parent that could not be resolved."
+		if broken := previewWarningTexts(preview, compilerops.WarningExtends); len(broken) > 0 {
+			summary += " Every inheritance this build could not resolve:\n  " + strings.Join(broken, "\n  ")
+		}
+		return summary
 	case compilerops.GateAxisReconstruction:
 		return "The build could not reconstruct the Release's pinned dependency set from the lockfile."
 	case compilerops.GateRender:
@@ -648,9 +706,9 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 //
 // The advisories print for the same reason and in the same shape: a caller
 // reading the text form rather than the structured one must not receive fewer
-// findings for that choice. They are listed in the order the build raised them,
-// which is the order a command-line build prints them, and their absence prints
-// nothing.
+// findings for that choice. They are listed in the order the payload carries
+// them, which is the order a command-line build prints them, and their absence
+// prints nothing.
 func renderBuildText(p buildResultPayload) string {
 	var b strings.Builder
 	if p.DependencyResolution != nil {

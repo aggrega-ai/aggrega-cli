@@ -1,0 +1,41 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: composition-template-parent
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    frontend-ns:
+      directory: "./dist/{{ .boundary_name }}"
+      annotations:
+        aggrega.ai/namespace: "frontend-zone"
+      components:
+        frontend:
+          infra:
+            replicas: 2
+            port: 3003
+          features:
+            cross-namespace-routing:
+              type: core/k8s-dns-resolver
+              infra:
+                target_var: "API_HOST"
+    backend-ns:
+      directory: "./dist/{{ .boundary_name }}"
+      annotations:
+        aggrega.ai/namespace: "backend-zone"
+      components:
+        backend:
+          infra:
+            replicas: 3
+            port: 8082
+    data-ns:
+      directory: "./dist/{{ .boundary_name }}"
+      annotations:
+        aggrega.ai/namespace: "database-zone"
+      components:
+        data.main-db:
+          infra:
+            replicas: 1

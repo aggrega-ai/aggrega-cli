@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -45,9 +46,17 @@ const (
 
 // Warning is one advisory raised during a preview, carrying the class that
 // produced it so a caller renders it in its own voice.
+//
+// Code is the identity of the registered condition the warning reports, read
+// off that condition where the warning is raised, so a caller matching on it
+// matches the condition rather than its wording. It is read there because that
+// is the last point the finding is still the condition: past it the warning is
+// text, and nothing downstream could recover the identity from the sentence. It
+// is empty for a warning whose producer hands over text naming no condition.
 type Warning struct {
 	Class WarningClass
 	Text  string
+	Code  string
 }
 
 // PreviewInputs carries the explicit state a preview needs. Every value is
@@ -688,7 +697,8 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// whether or not the run goes on to fail for some other reason — and they halt
 	// nothing themselves, which is the verdict this caller owes them.
 	for _, advisory := range resolved.ReleaseCompositionAdvisories {
-		warn(WarningReleaseComposition, advisory.Error())
+		code, _ := cerrors.CodeOf(advisory)
+		out.Warnings = append(out.Warnings, Warning{Class: WarningReleaseComposition, Text: advisory.Error(), Code: code})
 	}
 
 	// The mapping-table verdict. Joined so every inconsistent mapping is

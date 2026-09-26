@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: composition-template-child
+  environment: staging
+  version: "1.0.0"
+spec:
+  extends: ./parent-template.yaml
