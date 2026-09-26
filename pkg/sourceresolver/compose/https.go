@@ -3,15 +3,13 @@
 
 // Package compose implements the compose-https-fragment source-
 // resolver adapter. The adapter fetches a single Docker Compose YAML
-// fragment over HTTPS, wraps it in a deterministic .tar.gz archive
-// (uniform handling across kinds per the source-resolution amendment
-// §3.4), computes the content digest, populates the cache slot, and
-// returns a ResolvedSource for the lockfile writer.
+// fragment over HTTPS, wraps it in a deterministic .tar.gz archive,
+// computes the content digest, populates the cache slot, and returns a
+// ResolvedSource for the lockfile writer.
 //
-// Auth: plain HTTPS at this implementation. Richer auth (per-host
-// tokens, OAuth flows) is deferred to a later implementation; the
-// adapter consumes net/http.Client.Do directly so future auth
-// transports drop in via http.RoundTripper.
+// Auth: the fetch carries no credentials. The adapter sends a plain GET
+// through the client it is handed, and a 401 or 403 answer is reported
+// as an unauthorized fetch.
 package compose
 
 import (
