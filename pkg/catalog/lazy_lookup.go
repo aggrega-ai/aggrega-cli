@@ -646,16 +646,38 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 }
 
 // VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
-// Tier-2 cache slot verify-on-read and returns the first ErrFetchIntegrity — a
-// slot whose content drifted from its lockfile pin (the tier2Skip condition). An
-// absent slot (ErrFetchNotFound) is NOT an error: a pin with no cache slot is a
-// catalog-resident entity resolved at Tier-1, exactly as the cache→catalog bridge
-// treated it. The build calls this after SetPins so a drifted pin halts loudly
-// with the integrity diagnostic ("re-pull") rather than collapsing into a
-// misleading downstream "not resolvable". Serve does NOT call it — its
-// resilient-inspection posture keeps the tier2Skip (the same build-halt /
-// serve-skip split the guard layer uses). Pins are visited in sorted URI order so
-// the surfaced drift is deterministic.
+// Tier-2 cache slot verify-on-read, and halts on a pin no source this view reads
+// holds the bytes of. An absent slot (ErrFetchNotFound) is NOT an error: a pin
+// with no cache slot is a catalog-resident entity resolved at Tier-1, exactly as
+// the cache→catalog bridge treated it. The build calls this after SetPins so a pin
+// nothing holds halts loudly with the integrity diagnostic rather than collapsing
+// into a misleading downstream "not resolvable". The artifact-producing surfaces
+// all run it through the one preview computation — the command-line build, the
+// pull's discovery render, the daemon's build methods and the in-memory build tool
+// — and the inspection posture does not, keeping the tier2Skip (the same
+// build-halt / serve-skip split the guard layer uses). Pins are visited in sorted
+// URI order so the surfaced finding is deterministic.
+//
+// # A slot that does not hold the pin halts only when nothing else does
+//
+// A pin names bytes, not a place. A cache slot of the pinned name and version
+// holding other bytes — an older body of an entity edited in place before its
+// release, or a slot replaced by hand — is therefore not by itself a reason to
+// halt: when a catalog directory this view reads holds a copy of the same identity
+// whose bytes hash to the pin, that copy is what every resolution reads, because
+// the catalog directories are read ahead of the cache everywhere. The slot is then
+// passed over with a notice naming it and both digests, and never read. The
+// question is asked through each kind's own catalog-tier rule at the pinned version
+// (catalogDirectoryCopies), so it names the document a resolution of the reference
+// would read and no other.
+//
+// Only when no catalog directory holds the pinned bytes does the gate halt, and
+// the halt names every source it read: the slot and what it holds, and each
+// catalog-directory copy and what it holds, or that none holds the identity
+// (errNoSourceHoldsPin). A build asks no registry, so a registry is not among the
+// sources; the halt names the pull that can fetch the pinned version again. A
+// complete slot that DOES hold the pinned bytes is read as before, which is what
+// lets it stand in for a catalog-directory entity its author has removed.
 func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -666,12 +688,82 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	sort.Strings(uris)
 	for _, uri := range uris {
 		pin := l.pins[uri]
-		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
-		if err != nil && (errors.Is(err, oci.ErrFetchIntegrity()) || errors.Is(err, oci.ErrCachedManifestIntegrity())) {
-			return fmt.Errorf("pinned entity %s: %w", uri, err)
+		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
+		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+		if err == nil || !(errors.Is(err, oci.ErrFetchIntegrity()) || errors.Is(err, oci.ErrCachedManifestIntegrity())) {
+			continue
 		}
+		heldDigest := ""
+		var mismatch *cachedContentMismatch
+		if errors.As(err, &mismatch) {
+			heldDigest = mismatch.held
+		}
+		held := heldInsteadOfPin(heldDigest, pin)
+		copies := l.catalogDirectoryCopies(slotURI)
+		if holder, ok := copyHoldingPin(copies, pin.Digest); ok {
+			l.announce(fmt.Sprintf("  reuse: cache entry for %s holds %s; passed over for %s, which holds the pinned bytes\n",
+				slotURI, held, holder.path))
+			continue
+		}
+		tried := []string{fmt.Sprintf("the cache entry for %s holds %s", slotURI, held)}
+		if len(copies) == 0 {
+			tried = append(tried, fmt.Sprintf("no catalog directory this workspace reads holds %s", slotURI))
+		}
+		for _, c := range copies {
+			tried = append(tried, fmt.Sprintf("the catalog directory file %s holds %s", c.path, c.digest))
+		}
+		return errNoSourceHoldsPin(uri, pin.Digest, tried, pinRefetchRemedy)
 	}
 	return nil
+}
+
+// catalogDirectoryCopy is a document in one of the catalog directories a view
+// reads that declares the identity a versioned reference names, with the digest of
+// its bytes — the digest a catalog-directory read of that reference pins.
+type catalogDirectoryCopy struct {
+	path   string
+	digest string
+}
+
+// copyHoldingPin returns the first of copies whose bytes hash to pin, and whether
+// there is one.
+func copyHoldingPin(copies []catalogDirectoryCopy, pin string) (catalogDirectoryCopy, bool) {
+	for _, c := range copies {
+		if c.digest == pin {
+			return c, true
+		}
+	}
+	return catalogDirectoryCopy{}, false
+}
+
+// catalogDirectoryCopies returns the catalog-directory documents the versioned
+// reference slotURI resolves to at the catalog tier, of every kind a pin can
+// record: a Component or Feature through the directory index the per-URI cascade
+// reads first (selectIndexedDocument, the first-win copy, so a copy another
+// directory shadows is never returned), and every other kind through the
+// recipe-shell enumeration's own catalog tier (Catalog.catalogDirectoryCopies).
+// Each digest is taken over the document's bytes as a catalog-directory read
+// retains them, so a copy whose digest equals a pin is the copy a resolution of
+// the reference reads and pins.
+//
+// It is asked only about a pin whose slot has failed verification, so a view
+// whose slots all hold their pins never walks for it. The caller holds l.mu.
+func (l *LazyLookup) catalogDirectoryCopies(slotURI string) []catalogDirectoryCopy {
+	l.buildComponentIndex()
+	l.buildFeatureIndex()
+	var copies []catalogDirectoryCopy
+	for _, index := range []map[string]indexedDocument{l.componentIndex, l.featureIndex} {
+		doc, ok := selectIndexedDocument(index, slotURI)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(doc.path)
+		if err != nil {
+			continue
+		}
+		copies = append(copies, catalogDirectoryCopy{path: doc.path, digest: contentDigest(data)})
+	}
+	return append(copies, l.recipeCatalog().catalogDirectoryCopies(slotURI)...)
 }
 
 // Pin is a lockfile entry's resolved version + content digest, keyed in the lazy

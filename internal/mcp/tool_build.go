@@ -610,8 +610,8 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 		return "The build refused: this Release pins a deprecated artifact at or above the configured halt severity. " +
 			"Every recorded marker in this Release:\n  " + strings.Join(deprecationNotices, "\n  ")
 	case compilerops.GatePinnedIntegrity:
-		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it. " +
-			"Re-pull the Release to refill the cache from the registry."
+		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it, " +
+			"and no catalog directory holds the pinned bytes. Re-pull the Release to refill the cache from the registry."
 	case compilerops.GateLockfileDrift:
 		return "The build refused: the lockfile no longer matches the dependencies this Release resolves to, " +
 			"so it would have rendered from pins a build would not have used. Resolving the dependencies " +

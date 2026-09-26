@@ -341,13 +341,14 @@ const (
 // name this type, so no such value can be built or altered there; each exported
 // entry point supplies its own.
 type previewPolicy struct {
-	// verifyPinnedIntegrity halts when a pinned cache slot has drifted from its
-	// lockfile pin, before the closure walk — so a tampered or drifted cache
-	// surfaces as "re-pull" rather than a misleading downstream "not
-	// resolvable". A surface that produces an artifact sets it; a resilient
-	// inspection keeps its skip, because an editor that refuses to draw a graph
-	// over a drifted slot is less useful than one that draws it and reports the
-	// drift.
+	// verifyPinnedIntegrity halts, before the closure walk, on a pin whose cache
+	// slot has drifted from it when no catalog directory holds the pinned bytes
+	// either — so a tampered or drifted cache surfaces as the integrity finding
+	// rather than a misleading downstream "not resolvable" — and passes a drifted
+	// slot over, with a notice, where a catalog directory does hold them. A
+	// surface that produces an artifact sets it; a resilient inspection keeps its
+	// skip, because an editor that refuses to draw a graph over a drifted slot is
+	// less useful than one that draws it and reports the drift.
 	verifyPinnedIntegrity bool
 
 	// haltOnManifestInconsistency decides this surface's verdict on the
@@ -624,8 +625,9 @@ func PreviewForInspection(ctx context.Context, in PreviewInputs, opts pipeline.O
 // gate order carries meaning, and it is not something a caller should be free to
 // re-derive. The orderings that are load-bearing:
 //
-//   - The pinned-integrity gate runs BEFORE the closure walk, so a drifted cache
-//     surfaces as "re-pull" rather than as a downstream "not resolvable".
+//   - The pinned-integrity gate runs BEFORE the closure walk, so a pin no source
+//     holds surfaces as the integrity finding rather than as a downstream "not
+//     resolvable".
 //   - The mapping-table verdict runs before the closure-scoped validation, so a
 //     Manifest that contradicts the catalog is reported as such rather than as
 //     whatever the walk failed on next.
@@ -663,9 +665,10 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	phase(PhaseClosure)
 
 	// Loud integrity gate, ahead of the closure walk. A pinned cache slot that
-	// drifted from its lockfile pin halts here with the integrity diagnostic, so
-	// a tampered or drifted cache surfaces as "re-pull" rather than a misleading
-	// downstream "not resolvable".
+	// drifted from its lockfile pin halts here with the integrity diagnostic when
+	// no catalog directory holds the pinned bytes either, so a tampered or drifted
+	// cache surfaces as the integrity finding rather than a misleading downstream
+	// "not resolvable"; where one does, the slot is passed over with a notice.
 	if pol.verifyPinnedIntegrity {
 		if err := in.view.VerifyPinnedIntegrity(); err != nil {
 			out.FailedGate = GatePinnedIntegrity
