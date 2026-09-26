@@ -152,6 +152,9 @@ type Config struct {
 	// through is read and filled as that run reads and fills it: an entry the cache
 	// holds under its pin is read from there, one it does not hold is fetched, and
 	// one that no longer matches its pin is met exactly as that run meets it.
+	//
+	// It is refused beside Upgrade, DryRun, PinSources or UpgradeTargets; the
+	// exclusions have one home, VerifyConflict.
 	Verify bool
 
 	// DryRun computes everything the run would put on disk and puts none of it
@@ -451,6 +454,10 @@ func stopped(ctx context.Context) error {
 // same resolution, and the files it would have put on disk come back in
 // Result.DryRunFiles instead of landing there.
 //
+// A configuration that asks a verify for something it cannot also do is refused
+// before anything is read, with the *VerifyConflictError Config.VerifyConflict
+// returns.
+//
 // Returns wrapped errors on workspace-config validation failure,
 // Release/Manifest/Aggregate load failure, closure walk failure
 // (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
@@ -493,6 +500,9 @@ func stopped(ctx context.Context) error {
 // the two would leave a lockfile whose companion record does not describe it —
 // a worse state than either finishing or not starting.
 func Run(ctx context.Context, cfg Config) (Result, error) {
+	if err := cfg.VerifyConflict(); err != nil {
+		return Result{}, err
+	}
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr
 	}

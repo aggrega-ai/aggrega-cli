@@ -965,10 +965,45 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 
 // localComponent is resolveComponent with the registry tier closed: the
 // catalog-directory index and a cache slot a pin vouches for, and nothing a
-// registry would have to be asked for. It is the same cascade handed no puller,
-// so the two can never disagree about what the local tiers hold.
+// registry would have to be asked for. It is the cascade's local tiers, which
+// resolveComponentContext runs before its registry tier, so the two can never
+// disagree about what the local tiers hold.
+//
+// It takes no context because nothing it does can be stopped by one: both tiers
+// read files already on this machine, and the one step that leaves the process,
+// the registry pull, is the tier it closes.
 func (l *LazyLookup) localComponent(uri string) (types.Component, bool) {
-	return l.resolveComponentContext(context.Background(), uri, nil)
+	comp, ok, _ := l.localComponentTiers(uri)
+	return comp, ok
+}
+
+// localComponentTiers runs the cascade's two local tiers for uri and reports what
+// they found, and whether the cascade is settled — true when a tier answered, and
+// true when the pinned cache slot has drifted, because the cascade stops there
+// rather than asking a registry for bytes the pin does not name. Unsettled, the
+// registry tier is what runs next.
+func (l *LazyLookup) localComponentTiers(uri string) (types.Component, bool, bool) {
+	if comp, ok := l.tier1ReadComponent(uri); ok {
+		return comp, true, true
+	}
+	bytes, _, slot, outcome := l.tier2Verified(uri)
+	switch outcome {
+	case tier2Use:
+		// parseComponentEntity is the shared per-entity resolve; a non-Component
+		// kind returns an error and the cascade falls through to Tier-3.
+		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
+			if comp, err := parseComponentEntity(doc, path); err == nil {
+				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
+				return comp, true, true
+			}
+		}
+	case tier2Skip:
+		// Cache drifted from the pin; diagnostic already emitted. Do not use the
+		// drifted bytes and do not self-heal — the entity is unavailable for this
+		// request (an honest degraded preview, not a false-green render).
+		return types.Component{}, false, true
+	}
+	return types.Component{}, false, false
 }
 
 // resolveComponentContext is resolveComponent's cascade, under a caller's
@@ -976,23 +1011,8 @@ func (l *LazyLookup) localComponent(uri string) (types.Component, bool) {
 // Tier 3 is a registry pull, so ending the caller's run ends the fetch rather
 // than leaving it to finish for an answer nobody is waiting for.
 func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, puller OCIPuller) (types.Component, bool) {
-	if comp, ok := l.tier1ReadComponent(uri); ok {
-		return comp, true
-	}
-	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		// parseComponentEntity is the shared per-entity resolve; a non-Component
-		// kind returns an error and the cascade falls through to Tier-3.
-		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
-			if comp, err := parseComponentEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
-				return comp, true
-			}
-		}
-	} else if outcome == tier2Skip {
-		// Cache drifted from the pin; diagnostic already emitted. Do not use the
-		// drifted bytes and do not self-heal — the entity is unavailable for this
-		// request (an honest degraded preview, not a false-green render).
-		return types.Component{}, false
+	if comp, ok, settled := l.localComponentTiers(uri); settled {
+		return comp, ok
 	}
 	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component")
 	if err == nil && bytes != nil {

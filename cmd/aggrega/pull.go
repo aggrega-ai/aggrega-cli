@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,26 +81,28 @@ the pull the same way, while a lock that records no pin for a local source is no
 Pass --pin-sources, or set pin_sources_at_pull in the workspace configuration, to have pull run
 that same step instead; --pin-sources=false restores the halt for one run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if opts.verify && opts.upgrade {
-				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
+			cfg := pullConfig{
+				ReleasePath:       opts.releasePath,
+				CatalogDirs:       opts.catalogDirs,
+				Upgrade:           opts.upgrade,
+				UpgradeTargets:    args,
+				Verify:            opts.verify,
+				IncludePrerelease: opts.includePrerelease,
+				Detail:            opts.detail,
+				DryRun:            opts.dryRun,
+				PinSources:        explicitBool(cmd, "pin-sources", opts.pinSources),
+				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			}
-			// A verify already writes none of the files a dry run reports, so the pair
-			// would leave --dry-run with nothing to do. It is refused rather than ignored,
-			// because a flag that quietly does nothing is read as a flag that did something.
-			if opts.verify && opts.dryRun {
-				return fmt.Errorf("--verify and --dry-run are mutually exclusive: --verify already writes no lockfile, entity.lock or plugin trust record")
-			}
-			// --pin-sources decides whether a pull records the pins an entity.lock is
-			// missing or halts on them, and a verify does neither, so the flag would do
-			// nothing under it in either direction. It is refused on the same reasoning
-			// as the pair above, whichever value was passed. The workspace's
-			// pin_sources_at_pull is a setting rather than this invocation's request, so
-			// a verify does not consult it and does not refuse it either.
-			if opts.verify && cmd.Flags().Changed("pin-sources") {
-				return fmt.Errorf("--verify and --pin-sources are mutually exclusive: --verify writes no entity.lock, so it neither records a pin an entity.lock is missing nor halts on one")
+			// A verify asked for something it cannot also do is refused first, ahead of
+			// the confirmation and the workspace resolution below, so nothing has
+			// happened by the time the reader is told. Which pairs those are is the
+			// shared resolution's rule, the one every surface reads; what is written here
+			// is only this command's sentence for each.
+			if err := verifyConflictRefusal(cfg.resolutionRequest().VerifyConflict()); err != nil {
+				return err
 			}
 			if len(args) > 0 && !opts.upgrade {
-				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
+				return errors.New(targetsNeedUpgrade)
 			}
 			// Only the bare form is confirmed: naming targets holds every pin not
 			// named, so there is nothing here for a person to lose. The gate sits
@@ -120,19 +123,8 @@ that same step instead; --pin-sources=false restores the halt for one run.`,
 			if err != nil {
 				return err
 			}
-			return pullRun(cmd.Context(), pullConfig{
-				ReleasePath:       opts.releasePath,
-				CatalogDirs:       opts.catalogDirs,
-				Upgrade:           opts.upgrade,
-				UpgradeTargets:    args,
-				Verify:            opts.verify,
-				IncludePrerelease: opts.includePrerelease,
-				Detail:            opts.detail,
-				DryRun:            opts.dryRun,
-				PinSources:        explicitBool(cmd, "pin-sources", opts.pinSources),
-				ws:                rw,
-				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-			})
+			cfg.ws = rw
+			return pullRun(cmd.Context(), cfg)
 		},
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", helpReleasePath)
@@ -237,6 +229,76 @@ type pullConfig struct {
 	// the very option set that build would have rendered under, so the discovery
 	// render and the build's render are one render under one set of knobs.
 	renderOptions pipeline.Options
+}
+
+// resolutionRequest is the part of the resolution's input contract this
+// invocation's own choices decide: which Release, which catalog directories, and
+// what it asks the resolution to do.
+//
+// It is one mapping rather than a literal at each use because two readers consume
+// it: the command's refusal of a request that contradicts itself, which runs
+// before anything else, and the run itself. Built twice, the refusal could come to
+// judge a request the run was never handed.
+func (cfg pullConfig) resolutionRequest() pullops.Config {
+	return pullops.Config{
+		Workspace:         cfg.ws,
+		ReleasePath:       cfg.ReleasePath,
+		CatalogDirs:       cfg.CatalogDirs,
+		Upgrade:           cfg.Upgrade,
+		UpgradeTargets:    cfg.UpgradeTargets,
+		Verify:            cfg.Verify,
+		DryRun:            cfg.DryRun,
+		PinSources:        cfg.PinSources,
+		IncludePrerelease: cfg.IncludePrerelease,
+	}
+}
+
+// targetsNeedUpgrade refuses positional arguments given without --upgrade.
+//
+// It has one spelling for two checks: the command's own, and this command's
+// sentence for a verify given upgrade targets. On this command targets can reach
+// the second only without --upgrade, since --verify beside --upgrade is refused
+// first, so what the reader acts on is the arguments' own refusal.
+const targetsNeedUpgrade = "positional arguments name upgrade targets and require --upgrade"
+
+// pullRefusal is a refusal this command words in its own flags while the rule it
+// reports belongs to the shared resolution. Error is the sentence a reader sees,
+// and Unwrap hands back the refusal the rule raised, so the chain still says which
+// rule it was.
+type pullRefusal struct {
+	sentence string
+	rule     error
+}
+
+func (r *pullRefusal) Error() string { return r.sentence }
+
+func (r *pullRefusal) Unwrap() error { return r.rule }
+
+// verifyConflictRefusal renders the shared resolution's refusal of a verify asked
+// for something it cannot also do, in this command's flags. Any other error, nil
+// included, is returned as it is.
+//
+// Only the sentences are this command's. Which pairs are refused, and which one a
+// request carrying several is refused for, is decided by the rule and nowhere here.
+func verifyConflictRefusal(err error) error {
+	var conflict *pullops.VerifyConflictError
+	if !errors.As(err, &conflict) {
+		return err
+	}
+	var sentence string
+	switch conflict.With {
+	case pullops.VerifyWithUpgrade:
+		sentence = "--verify and --upgrade are mutually exclusive"
+	case pullops.VerifyWithDryRun:
+		sentence = "--verify and --dry-run are mutually exclusive: --verify already writes no lockfile, entity.lock or plugin trust record"
+	case pullops.VerifyWithPinSources:
+		sentence = "--verify and --pin-sources are mutually exclusive: --verify writes no entity.lock, so it neither records a pin an entity.lock is missing nor halts on one"
+	case pullops.VerifyWithUpgradeTargets:
+		sentence = targetsNeedUpgrade
+	default:
+		return err
+	}
+	return &pullRefusal{sentence: sentence, rule: err}
 }
 
 // Pull phase indices into the pull progress spine's labels.
@@ -348,32 +410,22 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	progress := newProgressReporter(diagOut, diag, pullProgressSpine())
 	defer progress.finish()
 
-	opts := pullops.Config{
-		Workspace:         cfg.ws,
-		ReleasePath:       cfg.ReleasePath,
-		CatalogDirs:       cfg.CatalogDirs,
-		Upgrade:           cfg.Upgrade,
-		UpgradeTargets:    cfg.UpgradeTargets,
-		Verify:            cfg.Verify,
-		DryRun:            cfg.DryRun,
-		PinSources:        cfg.PinSources,
-		IncludePrerelease: cfg.IncludePrerelease,
-		CompilerVersion:   provenanceCompilerVersion(),
-		Toolchain:         toolchainStamp(),
-		DiagOut:           diagOut,
-		// The workspace's account of where it reads local entities travels with the
-		// refusals: a refused file says a document was read and rejected, while the
-		// account says which directories were read at all, and a reference that
-		// resolved to nothing may be explained by either.
-		AnnotateResolutionFailure: func(err error, skipped []catalog.SkippedEntity) error {
-			return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote())
-		},
-		Puller:         cfg.puller,
-		SourceResolver: cfg.sourceResolver,
-		RenderOptions:  cfg.renderOptions,
-		Report: pullops.Reporter{
-			Phase: func(p pullops.Phase) { progress.phase(pullPhaseStep(p)) },
-		},
+	opts := cfg.resolutionRequest()
+	opts.CompilerVersion = provenanceCompilerVersion()
+	opts.Toolchain = toolchainStamp()
+	opts.DiagOut = diagOut
+	// The workspace's account of where it reads local entities travels with the
+	// refusals: a refused file says a document was read and rejected, while the
+	// account says which directories were read at all, and a reference that
+	// resolved to nothing may be explained by either.
+	opts.AnnotateResolutionFailure = func(err error, skipped []catalog.SkippedEntity) error {
+		return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote())
+	}
+	opts.Puller = cfg.puller
+	opts.SourceResolver = cfg.sourceResolver
+	opts.RenderOptions = cfg.renderOptions
+	opts.Report = pullops.Reporter{
+		Phase: func(p pullops.Phase) { progress.phase(pullPhaseStep(p)) },
 	}
 	// The per-entity resolution report is requested by attaching the printer, so
 	// the presence of the callback IS the request and there is no second switch

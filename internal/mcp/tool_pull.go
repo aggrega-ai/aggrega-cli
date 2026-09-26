@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -166,7 +167,7 @@ var pullToolSpec = toolSpec{
     },
     "verify": {
       "type": "boolean",
-      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, the plugin trust record or any entity.lock. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets."
+      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, the plugin trust record or any entity.lock. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets or pin_sources."
     },
     "upgrade_targets": {
       "type": "array",
@@ -176,12 +177,12 @@ var pullToolSpec = toolSpec{
     },
     "pin_sources": {
       "type": "boolean",
-      "description": "Run the entity author's pin step over the Recipes and FeatureRecipes the Release builds from a catalog directory, writing the entity.lock beside each, instead of refusing on one whose lock does not record its pins. Absent follows the workspace's pin_sources_at_pull setting; either value overrides it."
+      "description": "Run the entity author's pin step over the Recipes and FeatureRecipes the Release builds from a catalog directory, writing the entity.lock beside each, instead of refusing on one whose lock does not record its pins. Absent follows the workspace's pin_sources_at_pull setting; either value overrides it. Cannot be combined with verify, whichever value it carries."
     }
   },
   "required": ["release"],
   "anyOf": [
-    {"not":{"required":["upgrade_targets"]}},
+    {"not":{"anyOf":[{"required":["upgrade_targets"]},{"required":["pin_sources"]}]}},
     {"properties":{"verify":{"const":false}}}
   ]
 }`,
@@ -252,11 +253,12 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		}
 		targets = append(targets, trimmed)
 	}
-	if a.Verify && len(targets) > 0 {
-		return errorResult("pull cannot combine 'verify' with 'upgrade_targets': verifying compares the recorded " +
-			"lockfile and leaves it as it is, while upgrading re-resolves pins and rewrites it. Send 'verify' on its " +
-			"own to find out whether the lockfile has drifted, or 'upgrade_targets' on its own to re-resolve the " +
-			"references you name.")
+	// A verify asked for something it cannot also do is refused here, before the
+	// workspace is resolved, so nothing has happened by the time the caller is told.
+	// Which pairs those are is the shared resolution's rule; what is written here is
+	// only this tool's sentence for each.
+	if refusal := pullVerifyConflictRefusal(pullRequest(a, targets).VerifyConflict()); refusal != "" {
+		return errorResult(refusal)
 	}
 
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
@@ -385,45 +387,82 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 	return payload, conserved, nil
 }
 
-// pullResolutionConfig assembles the resolution's input contract for one decoded
-// call: the workspace and Release it named, the arguments it sent, and the sinks
-// this transport supplies.
+// pullRequest is the part of the resolution's input contract one decoded call's
+// arguments decide: what it asks the resolution to do.
 //
-// It is a function rather than a literal at the call site because the upgrade
-// switch is DERIVED, and a derivation is only worth having if something can
-// assert it. That switch is legible nowhere else: it appears in neither the
-// answer nor the lockfile on disk, since over a catalog serving one version of
-// each entity a refresh and a reconcile resolve to the same pins. Assembling the
-// contract here — rather than field by field at the invocation — leaves the
+// It is a function rather than a literal at each use because the upgrade switch
+// is DERIVED, and a derivation is only worth having if something can assert it.
+// That switch is legible nowhere else: it appears in neither the answer nor the
+// lockfile on disk, since over a catalog serving one version of each entity a
+// refresh and a reconcile resolve to the same pins. Deriving it here leaves the
 // derivation one home, so a resolution asked to float every pin on a call that
-// named no target cannot be composed without editing this.
+// named no target cannot be composed without editing this — and the refusal of a
+// request that contradicts itself, which runs before the workspace is resolved,
+// judges the very request the run is later handed.
 //
 // targets arrives already trimmed and free of blank entries. Rejecting a
 // malformed entry stays with the caller, because that refusal answers the caller
 // in the protocol's own shape, which this has no way to return.
-func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pullArgs, targets []string,
-	diagOut io.Writer, report pullops.Reporter) pullops.Config {
+func pullRequest(a pullArgs, targets []string) pullops.Config {
 	return pullops.Config{
-		Workspace:   tw.rw,
-		ReleasePath: releasePath,
-		// The caller's directories are handed over unresolved, which is the contract
-		// of the field: the resolution prepends them to the workspace's own stack
-		// itself, so this call and a command-line one derive the identical search
-		// stack from the same arguments under the same configuration.
-		CatalogDirs: a.CatalogDirs,
 		// Naming targets IS asking for an upgrade, so the switch is derived from the
 		// subject rather than carried beside it, and the two cannot disagree.
-		Upgrade:         len(targets) > 0,
-		UpgradeTargets:  targets,
-		Verify:          a.Verify,
-		PinSources:      a.PinSources,
-		CompilerVersion: s.serverVersion,
-		Toolchain:       s.toolchain,
-		DiagOut:         diagOut,
-		Report:          report,
-		// No prompt is supplied, and that is not an omission: see the notes on
-		// pullInvoke. The report above carries whatever this call asked to be told.
+		Upgrade:        len(targets) > 0,
+		UpgradeTargets: targets,
+		Verify:         a.Verify,
+		PinSources:     a.PinSources,
 	}
+}
+
+// pullResolutionConfig assembles the resolution's input contract for one decoded
+// call: the request its arguments make, the workspace and Release it named, and
+// the sinks this transport supplies.
+func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pullArgs, targets []string,
+	diagOut io.Writer, report pullops.Reporter) pullops.Config {
+	cfg := pullRequest(a, targets)
+	cfg.Workspace = tw.rw
+	cfg.ReleasePath = releasePath
+	// The caller's directories are handed over unresolved, which is the contract of
+	// the field: the resolution prepends them to the workspace's own stack itself,
+	// so this call and a command-line one derive the identical search stack from the
+	// same arguments under the same configuration.
+	cfg.CatalogDirs = a.CatalogDirs
+	cfg.CompilerVersion = s.serverVersion
+	cfg.Toolchain = s.toolchain
+	cfg.DiagOut = diagOut
+	cfg.Report = report
+	// No prompt is supplied, and that is not an omission: see the notes on
+	// pullInvoke. The report above carries whatever this call asked to be told.
+	return cfg
+}
+
+// pullVerifyConflictRefusal is this tool's sentence for the shared resolution's
+// refusal of a verify asked for something it cannot also do, or the empty string
+// when err is not that refusal.
+//
+// Only the sentences are this tool's. Which pairs are refused, and which one a
+// call carrying several is refused for, is decided by the rule and nowhere here.
+// Two of the rule's pairs name arguments this tool does not have — a dry run, and
+// an upgrade given apart from the references it names — so a call cannot reach
+// them; they answer with the rule's own sentence rather than being left unworded.
+func pullVerifyConflictRefusal(err error) string {
+	var conflict *pullops.VerifyConflictError
+	if !errors.As(err, &conflict) {
+		return ""
+	}
+	switch conflict.With {
+	case pullops.VerifyWithUpgrade, pullops.VerifyWithUpgradeTargets:
+		return "pull cannot combine 'verify' with 'upgrade_targets': verifying compares the recorded " +
+			"lockfile and leaves it as it is, while upgrading re-resolves pins and rewrites it. Send 'verify' on its " +
+			"own to find out whether the lockfile has drifted, or 'upgrade_targets' on its own to re-resolve the " +
+			"references you name."
+	case pullops.VerifyWithPinSources:
+		return "pull cannot combine 'verify' with 'pin_sources', whichever value it carries: 'pin_sources' decides " +
+			"whether a resolution records the pins an entity.lock is missing or refuses over them, and verifying " +
+			"writes no entity.lock, so it would do neither. Send 'verify' on its own to find out whether the lockfile " +
+			"has drifted, or 'pin_sources' without 'verify' on a resolution that writes the lockfile."
+	}
+	return conflict.Error()
 }
 
 // pullFailureSummary is the caller-facing sentence for a refused resolution,

@@ -187,18 +187,27 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 
 		// pull: a Release, optionally compared rather than written, or narrowed to
 		// named upgrade targets — and never both, because one leaves the lockfile as
-		// it is and the other rewrites it. There is deliberately no argument that
-		// re-resolves every pin at once, so the wholesale form cannot be composed
-		// here at all rather than being accepted and then refused.
+		// it is and the other rewrites it. A comparison takes no answer to whether
+		// the pin step runs either, whichever value it carries, because a
+		// comparison writes no entity.lock for the step to act on. There is
+		// deliberately no argument that re-resolves every pin at once, so the
+		// wholesale form cannot be composed here at all rather than being accepted
+		// and then refused.
 		{"pull", "a Release", `{"release":"r.yaml"}`, true},
 		{"pull", "compare only", `{"release":"r.yaml","verify":true}`, true},
 		{"pull", "named upgrade targets", `{"release":"r.yaml","upgrade_targets":["core/database"]}`, true},
 		{"pull", "comparison explicitly declined alongside targets", `{"release":"r.yaml","verify":false,"upgrade_targets":["core/database"]}`, true},
 		{"pull", "a Release with every optional argument", `{"release":"r.yaml","workspace_root":"/w","catalog_dirs":["c"],"verify":true}`, true},
+		{"pull", "the pin step asked for", `{"release":"r.yaml","pin_sources":true}`, true},
+		{"pull", "the pin step declined", `{"release":"r.yaml","pin_sources":false}`, true},
+		{"pull", "the pin step asked for with comparison explicitly declined", `{"release":"r.yaml","verify":false,"pin_sources":true}`, true},
+		{"pull", "the pin step asked for alongside targets", `{"release":"r.yaml","pin_sources":true,"upgrade_targets":["core/database"]}`, true},
 		{"pull", "no Release", `{}`, false},
 		{"pull", "a blank Release", `{"release":""}`, false},
 		{"pull", "a Release of the wrong type", `{"release":5}`, false},
 		{"pull", "comparing and upgrading together", `{"release":"r.yaml","verify":true,"upgrade_targets":["core/database"]}`, false},
+		{"pull", "comparing and asking for the pin step", `{"release":"r.yaml","verify":true,"pin_sources":true}`, false},
+		{"pull", "comparing and declining the pin step", `{"release":"r.yaml","verify":true,"pin_sources":false}`, false},
 		{"pull", "an upgrade naming no target", `{"release":"r.yaml","upgrade_targets":[]}`, false},
 		{"pull", "a blank upgrade target", `{"release":"r.yaml","upgrade_targets":[""]}`, false},
 		{"pull", "upgrade targets sent as a bare string", `{"release":"r.yaml","upgrade_targets":"core/database"}`, false},

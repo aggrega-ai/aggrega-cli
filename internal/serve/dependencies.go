@@ -6,6 +6,7 @@ package serve
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,8 @@ import (
 // the highest available version; targets narrows that to the named references,
 // holding every other pin. Verify checks the recorded resolution against the one
 // the request would perform without it, honouring the same pins, and writes no
-// lockfile, trust record or entity.lock.
+// lockfile, trust record or entity.lock; it is refused beside Upgrade, Targets or
+// PinSources, by the shared resolution's rule (pullops.Config.VerifyConflict).
 //
 // There is no catalog-directory parameter, and its absence is the contract rather
 // than an omission. The daemon resolves against the workspace the request named
@@ -218,6 +220,19 @@ func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRe
 // resolution's own words. Nothing is composed here: the answer's notices and the
 // reported lines are one stream read twice, so the two cannot disagree.
 func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDependenciesParams, progress *progressRun) (resolveDependenciesResult, *jsonRPCError) {
+	request := pullops.Config{
+		Upgrade:        params.Upgrade,
+		UpgradeTargets: params.Targets,
+		Verify:         params.Verify,
+		PinSources:     params.PinSources,
+	}
+	// A verify asked for something it cannot also do is refused first, before the
+	// report begins, so a caller watching for progress is told nothing started.
+	// Which pairs those are is the shared resolution's rule; what is written here is
+	// only this method's sentence for each.
+	if refusal := verifyConflictParam(request.VerifyConflict()); refusal != nil {
+		return resolveDependenciesResult{}, refusal
+	}
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
 	if paramErr != nil {
 		return resolveDependenciesResult{}, paramErr
@@ -225,19 +240,14 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 	progress.begin("Resolving dependencies")
 
 	var notices bytes.Buffer
-	res, err := pullops.Run(ctx, pullops.Config{
-		Workspace:       s.resolvedWorkspace,
-		ReleasePath:     releasePath,
-		Upgrade:         params.Upgrade,
-		UpgradeTargets:  params.Targets,
-		Verify:          params.Verify,
-		PinSources:      params.PinSources,
-		CompilerVersion: s.compilerVersion,
-		Toolchain:       s.toolchain,
-		DiagOut:         io.MultiWriter(&notices, progress.writer()),
-		// No prompt is supplied, and that is the posture rather than an omission:
-		// see the method documentation above.
-	})
+	request.Workspace = s.resolvedWorkspace
+	request.ReleasePath = releasePath
+	request.CompilerVersion = s.compilerVersion
+	request.Toolchain = s.toolchain
+	request.DiagOut = io.MultiWriter(&notices, progress.writer())
+	// No prompt is supplied, and that is the posture rather than an omission: see
+	// the method documentation above.
+	res, err := pullops.Run(ctx, request)
 	if err != nil {
 		return resolveDependenciesResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
@@ -250,6 +260,41 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 		dependencyResolutionReport: dependencyResolutionReportOf(res, s.workspaceRoot),
 		Notices:                    noticeLines(notices.String()),
 	}, nil
+}
+
+// verifyConflictParam is this method's invalid-params answer to the shared
+// resolution's refusal of a verify asked for something it cannot also do, or nil
+// when err is not that refusal.
+//
+// A request carrying such a pair is malformed rather than failed — its sender
+// corrects the params, not the workspace — so it draws the invalid-params code.
+// Only the sentences are this method's. Which pairs are refused, and which one a
+// request carrying several is refused for, is decided by the rule and nowhere here.
+// One of the rule's pairs names a field this method does not have, a dry run, which
+// the params decode already refuses as undeclared; it answers with the rule's own
+// sentence rather than being left unworded.
+func verifyConflictParam(err error) *jsonRPCError {
+	var conflict *pullops.VerifyConflictError
+	if !errors.As(err, &conflict) {
+		return nil
+	}
+	var fault string
+	switch conflict.With {
+	case pullops.VerifyWithUpgrade:
+		fault = "verify cannot be combined with upgrade: a verify compares the recorded lockfile against the " +
+			"resolution that honours every pin it records, while upgrade drops pins to re-resolve them; send verify " +
+			"on its own to find out whether the lockfile has drifted"
+	case pullops.VerifyWithUpgradeTargets:
+		fault = "verify cannot be combined with targets: targets name the references an upgrade re-resolves, and a " +
+			"verify re-resolves nothing; send verify on its own to find out whether the lockfile has drifted"
+	case pullops.VerifyWithPinSources:
+		fault = "verify cannot be combined with pinSources, whichever value it carries: pinSources decides whether a " +
+			"resolution records the pins an entity.lock is missing or refuses over them, and a verify writes no " +
+			"entity.lock, so it would do neither; send verify on its own to find out whether the lockfile has drifted"
+	default:
+		fault = conflict.Error()
+	}
+	return &jsonRPCError{Code: jsonRPCInvalidParams, Message: "invalid params: " + fault, cause: err}
 }
 
 // noticeLines splits a captured diagnostic stream into the lines a client
