@@ -16,7 +16,7 @@
 #   2. none of the three re-introduces an inline `git describe` or
 #      `git rev-parse --short` version derivation, and
 #   3. the working-tree-marked (--dirty) provenance recipe appears in no other
-#      build script — only in the shared helper.
+#      script under this module's scripts/ — only in the shared helper.
 #
 # Out of scope by design: the committed hub-catalog generator and the
 # overlay-consistency check derive a deliberately SEPARATE version without the
