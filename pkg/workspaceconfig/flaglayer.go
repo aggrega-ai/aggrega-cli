@@ -31,17 +31,22 @@ type FlagOverlay struct {
 const flagLayerPrefix = "--"
 
 // flagBinding is one row of the command-line overlay table: the source label a
-// setting this row determined carries, and the function that writes the row's
-// SET value onto a Config.
+// setting this row determined carries, the setting it writes, and the function
+// that writes the row's SET value onto a Config.
 //
 // It is the command-line counterpart of envBinding, and deliberately the same
 // shape for the same reason: a layer whose members are a table has one
-// enumeration of what it can carry, so the overlay, the provenance replay and
+// enumeration of what it can carry, so the overlay, the provenance report and
 // the contributing-layer report cannot come to disagree about the set.
 type flagBinding struct {
 	// label is the flag as a reader types it. That spelling is the only one a
 	// reader can act on, so it is what a provenance report and a refusal name.
 	label string
+	// configPath is the dotted name of the setting apply writes, spelled as a
+	// config file writes it. It is how the provenance report knows which setting
+	// a flag that applied set, whatever value it set — a flag typed with the
+	// value already in force is still the layer holding that value.
+	configPath string
 	// apply writes the row's value onto cfg when the overlay carries one, and
 	// reports whether it wrote anything. An unset flag is a no-op
 	// fall-through: it leaves the value the layers beneath resolved untouched
@@ -54,7 +59,8 @@ type flagBinding struct {
 // same way on every run.
 var flagBindings = []flagBinding{
 	{
-		label: "--" + OfflineSettingKey,
+		label:      "--" + OfflineSettingKey,
+		configPath: OfflineSettingKey,
 		apply: func(cfg *Config, f FlagOverlay) bool {
 			if f.Offline == nil {
 				return false

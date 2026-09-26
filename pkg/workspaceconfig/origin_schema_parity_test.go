@@ -233,8 +233,8 @@ func originSchemaRows(schema string) ([]originSchemaRow, error) {
 // setting they excuse and which row accounts for it, never in why, so a copy
 // per row would be one sentence stored five times and the copies are what
 // drift.
-const originAppendCompanionReason = "an additive companion of a base list field, folded into that field's " +
-	"change-detection fingerprint, so a layer contributing only through the companion is attributed the base field's row"
+const originAppendCompanionReason = "an additive companion of a base list field, whose key sets that field, " +
+	"so a layer contributing only through the companion is attributed the base field's row"
 
 // originExemption declares one setting the configuration schema carries that
 // the origin report gives no row of its own, and names the attributed row that
@@ -339,9 +339,9 @@ func originCoverageFindings(rows []originSchemaRow, fields []originField, exempt
 				}
 				findings = append(findings, fmt.Sprintf(
 					"the schema declares the %q setting as %s and the report attributes it as %s. The two differ "+
-						"in behaviour, not only in rendering: a list row additionally folds in the field's "+
-						"additive companion and resolves that companion's key position, and only a list row is "+
-						"attributed by an additive overlay.", r.path, kind, want))
+						"in behaviour, not only in rendering: a list row is also set through the field's "+
+						"additive companion, so a layer writing only the companion is attributed the row and "+
+						"positioned at the companion's key.", r.path, kind, want))
 			}
 		case isExcused:
 			if strings.TrimSpace(e.carriedBy) == "" {
@@ -590,7 +590,6 @@ func TestOriginCoverageRefusesAStaleAttributedRow(t *testing.T) {
 		name:    "build.renamed_away",
 		scalar:  true,
 		display: func(Config) string { return "" },
-		track:   func(Config) string { return "" },
 	})
 
 	findings := originCoverageFindings(rows, fields, originExemptions)

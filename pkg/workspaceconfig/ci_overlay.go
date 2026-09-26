@@ -77,6 +77,16 @@ func ciNonAdditiveKeys(data []byte) []string {
 	if err := yaml.Unmarshal(data, &root); err != nil || root == nil {
 		return nil
 	}
+	return ciNonAdditiveKeysIn(root)
+}
+
+// ciNonAdditiveKeysIn is ciNonAdditiveKeys over a document already decoded.
+//
+// It is the one statement of which keys the overlay is read for. The resolver
+// warns with it, and the provenance report reads it to decide which settings the
+// overlay sets, so a key the overlay ignores is never reported as where a value
+// came from.
+func ciNonAdditiveKeysIn(root map[string]any) []string {
 	var ignored []string
 	for _, k := range sortedMapKeys(root) {
 		switch k {

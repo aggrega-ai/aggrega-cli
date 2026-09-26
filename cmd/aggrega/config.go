@@ -147,9 +147,12 @@ says so rather than failing. The two are mutually exclusive.
 Pass --origin to annotate each effective setting with the layer it came from —
 a command-line flag, an environment variable, a config file, or the built-in
 defaults, highest precedence first. A flag is named as the reader typed it, so
-a setting a flag decided reports that flag as its source. Scalar settings are
-attributed per value; list and map settings are attributed as a whole to the
-layer that last changed them.`,
+a setting a flag decided reports that flag as its source. A setting is
+attributed to the highest-precedence layer that sets it, whatever value that
+layer writes: a file restating the default is the file named, not the built-in
+defaults. List and map settings are attributed as a whole. The signing
+requirement is the one exception: any layer may turn it on and none can turn it
+off, so it names the first layer that turns it on.`,
 		Example: `  # What applies right now, with the contributing layers listed first
   aggrega config show
 

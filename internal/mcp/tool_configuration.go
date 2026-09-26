@@ -308,9 +308,9 @@ func configShowPayload(root string, layers []string, origins []workspaceconfig.V
 //
 // Two conditions, and the second is as load-bearing as the first. The setting has
 // to be one whose value is a location, which the declared set above answers. And
-// some layer of this server's own cascade has to have SET it: a setting still
-// holding what this binary ships was decided by nobody here, so its value is the
-// same on every host running this version and discloses nothing about this one.
+// some layer of this server's own cascade has to have SET it: a setting no layer
+// sets holds what this binary ships, so its value is the same on every host
+// running this version and discloses nothing about this one.
 //
 // 🔴 That second condition is what keeps an unset setting distinguishable from a
 // kept-back one. A reading that marked every location-bearing setting whatever it

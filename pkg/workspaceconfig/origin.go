@@ -15,14 +15,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// originDefaultsLabel is the source label a value carries when no config file or
-// environment override changed it away from the built-in default.
+// originDefaultsLabel is the source label a setting carries when no config file,
+// environment variable or command-line flag sets it, so the built-in default is
+// what applies.
 const originDefaultsLabel = "(built-in defaults)"
-
-// originAppendSep separates the base and append halves of a list field's
-// change-detection fingerprint. It is a control character so it can never
-// collide with a value a config file legitimately carries.
-const originAppendSep = "\x1f"
 
 // originEnvPrefix marks a source label as an environment override rather than a
 // file path, and carries the variable's own name after it.
@@ -71,8 +67,9 @@ func (r *ResolvedWorkspace) ContributingLayers() []string {
 // ValueOrigin pairs one effective configuration setting with the layer that
 // determined it. Field is the setting's dotted config path, Value is its
 // effective value rendered as a stable string, and Source is the origin layer:
-// a config file's absolute path, an "env:AGGREGA_X" environment override, or the
-// built-in-defaults label. Position locates the setting inside that config file.
+// a config file's absolute path, an "env:AGGREGA_X" environment override, a
+// command-line flag as the reader typed it, or the built-in-defaults label.
+// Position locates the setting inside that config file.
 type ValueOrigin struct {
 	Field  string
 	Value  string
@@ -84,11 +81,11 @@ type ValueOrigin struct {
 	//
 	// It is nil — never a zero span — whenever no document key answers. A
 	// command-line flag, an environment override and the built-in defaults have
-	// no file at all, and a file layer may have contributed through a key the
-	// setting's own path does not name. A consumer therefore separates "no
-	// position" from "position at the very start of the file" by the nil check
-	// alone: the first key of a document sits at line 1, column 1, which no
-	// absent position resembles.
+	// no file at all, and a file layer may have set the setting through a merge
+	// key, which leaves no key of the setting's own for the walk to find. A
+	// consumer therefore separates "no position" from "position at the very
+	// start of the file" by the nil check alone: the first key of a document
+	// sits at line 1, column 1, which no absent position resembles.
 	Position *yamlpos.FieldSpan
 }
 
@@ -102,8 +99,8 @@ type ValueOrigin struct {
 type OriginKind int
 
 const (
-	// OriginBuiltInDefault reports a setting no layer changed away from the
-	// value Default() seeds. Such a layer has no name.
+	// OriginBuiltInDefault reports a setting no layer sets, so the value
+	// Default() seeds is what applies. Such a layer has no name.
 	OriginBuiltInDefault OriginKind = iota
 	// OriginConfigFile reports a setting a config file in the cascade
 	// determined. The layer's name is that file's absolute path.
@@ -135,44 +132,62 @@ func (v ValueOrigin) Layer() (OriginKind, string) {
 }
 
 // originField is one row of the fixed provenance enumeration: the setting's
-// dotted name, whether it is a scalar leaf (attributed per-value) or a
-// list/map field (attributed as a unit), the function that renders its
-// effective value for display, and the function that fingerprints a per-layer
-// overlay for change detection. For scalar leaves display and track read the
-// same field; for list fields track additionally folds in the field's
-// merge-time `_append` companion, so a layer that contributes only through the
-// companion is still detected as a contributor.
+// dotted name, whether it is a scalar leaf or a list or map field, and the
+// function that renders its effective value for display.
+//
+// Both kinds are attributed by one rule, and they differ only in which document
+// keys set one: a list field is also set through its merge-time `_append`
+// companion, so a layer that contributes only through the companion is the
+// layer named. See originDocumentPaths.
 type originField struct {
 	name    string
 	scalar  bool
 	display func(Config) string
-	track   func(Config) string
 }
 
 // ValueOrigins attributes each effective configuration setting to the layer
-// that determined it, for a per-value provenance view. It replays the resolved
-// cascade one layer at a time — the same ordered layers ContributingFiles
-// reports, beneath them the built-in defaults — and, for each setting, records
-// the last layer whose overlay changed it. Scalar leaves are attributed
-// per-value; list and map fields are attributed as a whole to the last layer
-// that changed them (per-element provenance is not tracked).
+// that determined it, for a per-value provenance view.
 //
-// The replay reuses the resolver's own per-layer primitives — loadOverlayInto
-// for config files and applyEnvOverlay for environment overrides — so a scalar's
-// attribution matches how the resolver actually merged it. The one setting whose
-// effective value is not a plain per-layer whole-replace is signing.required,
-// which composes monotonically (any layer that turns it on wins and no layer can
-// turn it back off); it is attributed to the first layer that turns it on, which
-// is the layer that made the effective value what it is.
+// A setting is attributed to the highest-precedence layer that sets it,
+// whatever value that layer sets. A layer writing the value already in force —
+// the built-in default, or what a layer beneath it says — is still the layer
+// named: it is the one holding the value in place, and removing it is what
+// changes the answer the day the default or the layer beneath moves. A setting
+// no layer sets is attributed to the built-in defaults.
+//
+// Whether a layer sets a setting is read the way the resolver reads that layer,
+// never re-derived from values. A config file sets a setting when its document
+// carries the setting's key — for a list, the key or its `_append` companion —
+// and the CI-owned additive overlay only through a key it is read for, which is
+// every key ciNonAdditiveKeysIn does not report it ignoring. An environment
+// variable sets the setting its binding mirrors when the cascade applied it,
+// which it does only for a variable exported with a non-empty value, so the
+// cascade's own record answers and the environment is not read again. A flag
+// sets the setting its binding writes when that binding applied. The layers are
+// walked lowest precedence first — the same ordered layers ContributingFiles
+// reports, then the command line — and each layer that sets a setting replaces
+// the one before it, which leaves the highest-precedence one named.
+//
+// A list or map field is attributed as a whole; which layer contributed which
+// entry is not tracked. The one setting whose effective value is not a plain
+// per-layer whole-replace is signing.required, which composes monotonically
+// (any layer that turns it on wins and no layer can turn it back off); it is
+// attributed to the first layer that turns it on, which is the layer that made
+// the effective value what it is. A layer writing `required: false` turns
+// nothing on, so where no layer turns it on the setting is attributed to the
+// built-in defaults.
 //
 // The displayed value of every setting is the effective value from the resolved
-// config, so it always reflects what applies right now. Result order is a fixed
-// field order, so the output is byte-stable for a given resolution.
+// config, so it always reflects what applies right now. The files are read when
+// this is called, as they stand, so an edit since resolution can move a source
+// while the value beside it stays. Result order is a fixed field order, so the
+// output is byte-stable for a given resolution.
 //
-// Each setting a config file was attributed to also carries the position of the
-// key in that file which supplied it, resolved from the parsed document; a
-// setting attributed to an environment override or to the built-in defaults
-// carries no position at all. See ValueOrigin.Position.
+// Each file is read and parsed once, and that one document answers both whether
+// the file sets a setting and where: a setting a config file was attributed to
+// carries the position of the key that set it, and a setting attributed to a
+// flag, an environment override or the built-in defaults carries no position at
+// all. See ValueOrigin.Position.
 func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 	base := r.lookup
 	if base == nil {
@@ -185,61 +200,41 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 		source[f.name] = originDefaultsLabel
 	}
 
-	prev := Default()
+	layers := make(map[string]originLayer, len(r.files))
 	for _, entry := range r.files {
 		if strings.HasPrefix(entry, "$") {
-			varName := entry[1:]
-			curr := prev
-			if _, err := applyEnvOverlay(&curr, singleVarLookup(base, varName)); err != nil {
-				return nil, err
-			}
-			attributeChanges(fields, source, prev, curr, originLayerLabel(entry), false)
-			prev = curr
-			continue
-		}
-
-		// A CI-owned overlay folds additively and cannot set a scalar, so it is
-		// attributed only for the list fields it carries entries in, without
-		// advancing the scalar replay (which would otherwise apply its ignored
-		// scalars).
-		if filepath.Base(entry) == AppendCIConfigFilename {
-			raw, err := load(entry)
-			if err != nil {
-				return nil, err
-			}
-			empty := Config{}
-			for _, f := range fields {
-				if f.scalar {
-					continue
-				}
-				if f.track(raw) != f.track(empty) {
-					source[f.name] = entry
+			for _, b := range envBindings {
+				if b.envVar == entry[1:] {
+					source[b.configPath] = originLayerLabel(entry)
 				}
 			}
 			continue
 		}
 
-		curr, err := loadOverlayInto(entry, prev)
+		layer, err := readOriginLayer(entry)
 		if err != nil {
 			return nil, err
 		}
-		attributeChanges(fields, source, prev, curr, entry, false)
-		prev = curr
+		if filepath.Base(entry) == AppendCIConfigFilename {
+			layer.ignored = ciNonAdditiveKeysIn(layer.values)
+		}
+		layers[entry] = layer
+		for _, f := range fields {
+			if len(layer.setPaths(f)) > 0 {
+				source[f.name] = entry
+			}
+		}
 	}
 
-	// The command line is the top of the ladder, so it is replayed after every
-	// file and every variable: a flag the reader set on this invocation is what
-	// determined the setting whatever a layer beneath said. Each row is applied
-	// on its own rather than the layer as a whole, so a setting is attributed to
-	// the flag that actually determined it rather than to whichever flag the
-	// table happens to list first.
+	// The command line is the top of the ladder, so it is walked after every
+	// file and every variable. Each row is asked on its own, so a setting is
+	// attributed to the flag that set it rather than to whichever flag the table
+	// happens to list first.
 	for _, b := range flagBindings {
-		curr := prev
-		if !b.apply(&curr, r.flags) {
-			continue
+		var scratch Config
+		if b.apply(&scratch, r.flags) {
+			source[b.configPath] = b.label
 		}
-		attributeChanges(fields, source, prev, curr, b.label, false)
-		prev = curr
 	}
 
 	// signing.required composes monotonically rather than whole-replacing per
@@ -248,18 +243,13 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 	// with the effective (monotonically-composed) value.
 	source["signing.required"] = signingRequiredSource(r, base)
 
-	positions, err := originPositions(fields, source)
-	if err != nil {
-		return nil, err
-	}
-
 	out := make([]ValueOrigin, 0, len(fields))
 	for _, f := range fields {
 		out = append(out, ValueOrigin{
 			Field:    f.name,
 			Value:    f.display(r.config),
 			Source:   source[f.name],
-			Position: positions[f.name],
+			Position: originPosition(layers, f, source[f.name]),
 		})
 	}
 	return out, nil
@@ -271,83 +261,123 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 // from it rather than spelled out a second time here.
 const originAppendSuffix = "_append"
 
-// originLayer is one config document parsed for position resolution: the node
-// tree, and the line index whose coordinate space its spans are read in.
-// present is false for a layer with no document to resolve against — one that
-// has gone missing, or one that is empty.
+// originLayer is one config document, parsed once, as the provenance report
+// reads it: the values the document carries, decoded the way the resolver
+// decodes a config file, and the node tree and line index a key's position is
+// read from. present is false for a layer with no document at all — one that has
+// gone missing, or one that is empty — and such a layer sets nothing.
 type originLayer struct {
+	values  map[string]any
 	doc     *yaml.Node
 	index   yamlpos.LineIndex
 	present bool
+
+	// ignored lists the document paths the resolver does not read from this
+	// layer, each standing for itself and everything beneath it. It is empty
+	// for every layer except the CI-owned additive overlay, which is read only
+	// for the keys that add to a list or to the signing policy.
+	ignored []string
 }
 
-// originPositions resolves, for every setting a config file was attributed to,
-// the position of the key in that file which supplied the value. A setting
-// attributed to a command-line flag, to an environment override or to the
-// built-in defaults has no document to resolve against and is absent from the
-// result, which is what makes a nil Position unambiguous rather than a
-// coordinate to interpret. Each contributing file is read and parsed at most
-// once however many settings it carries.
+// setPaths returns the document paths through which the layer sets f, in the
+// order originDocumentPaths tries them: each path the document carries and the
+// layer is read for. An empty result means the layer does not set f.
 //
-// The three document-less layers are skipped by name rather than left to fail
-// the read they would otherwise attempt. A label that is not a path does reach
-// the missing-file branch and does yield nothing, so the result would be the
-// same either way — but only by accident, and an accident that holds is the
-// kind that stops holding when the tolerance it leans on is tightened.
-func originPositions(fields []originField, source map[string]string) (map[string]*yamlpos.FieldSpan, error) {
-	layers := make(map[string]originLayer)
-	out := make(map[string]*yamlpos.FieldSpan, len(fields))
-	for _, f := range fields {
-		path := source[f.name]
-		if path == originDefaultsLabel ||
-			strings.HasPrefix(path, originEnvPrefix) ||
-			strings.HasPrefix(path, flagLayerPrefix) {
-			continue
-		}
-		layer, seen := layers[path]
-		if !seen {
-			var err error
-			layer, err = readOriginLayer(path)
-			if err != nil {
-				return nil, err
-			}
-			layers[path] = layer
-		}
-		if !layer.present {
-			continue
-		}
-		if span := originPositionIn(layer, originDocumentPaths(f)); span != nil {
-			out[f.name] = span
+// Carrying a path means holding a key at every one of its segments, whatever
+// the value at the end — a key written with the value already in force sets the
+// setting as surely as one written with any other.
+func (l originLayer) setPaths(f originField) []string {
+	var out []string
+	for _, path := range originDocumentPaths(f) {
+		if l.readsPath(path) && documentCarries(l.values, path) {
+			out = append(out, path)
 		}
 	}
-	return out, nil
+	return out
 }
 
-// readOriginLayer reads and parses one config file so its keys can be located.
+// readsPath reports whether the resolver reads the document path from this
+// layer at all.
+func (l originLayer) readsPath(path string) bool {
+	for _, ignored := range l.ignored {
+		if path == ignored || strings.HasPrefix(path, ignored+".") {
+			return false
+		}
+	}
+	return true
+}
+
+// documentCarries reports whether values holds a key at every segment of the
+// dotted path.
+func documentCarries(values map[string]any, path string) bool {
+	var node any = values
+	for _, segment := range strings.Split(path, ".") {
+		mapping, ok := node.(map[string]any)
+		if !ok {
+			return false
+		}
+		next, found := mapping[segment]
+		if !found {
+			return false
+		}
+		node = next
+	}
+	return true
+}
+
+// originPosition returns the position of the key that set f in the config file
+// source names, read from the document the attribution itself read.
+//
+// It is nil when source names no document — a command-line flag, an environment
+// override, the built-in defaults — which is what makes a nil Position
+// unambiguous rather than a coordinate to interpret. Those three are told apart
+// from a file by membership in the layers the walk read rather than by how
+// their labels are spelled: a label that is not a path was never read, so there
+// is nothing of its to look up.
+func originPosition(layers map[string]originLayer, f originField, source string) *yamlpos.FieldSpan {
+	layer, read := layers[source]
+	if !read || !layer.present {
+		return nil
+	}
+	return originPositionIn(layer, layer.setPaths(f))
+}
+
+// readOriginLayer reads and parses one config file so the report can read which
+// settings it sets and where each key sits.
 //
 // A file that has gone missing between the cascade's read and this one yields a
-// layer with nothing to resolve against rather than an error, because the
-// cascade's own single-file load treats absence as the documented defaults: a
-// position lookup must not be the thing that turns a working provenance view
-// into a failing one. Every other read failure, and any parse failure, is
-// reported.
+// layer that sets nothing rather than an error, because the cascade's own
+// single-file load treats absence as the documented defaults and the report is
+// read against the files as they stand: an attribution must not be the thing
+// that turns a working provenance view into a failing one. Every other read
+// failure, and any parse failure, is reported.
 func readOriginLayer(path string) (originLayer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return originLayer{}, nil
 		}
-		return originLayer{}, fmt.Errorf("workspaceconfig: read %s for its setting positions: %w", path, err)
+		return originLayer{}, fmt.Errorf("workspaceconfig: read %s to attribute its settings: %w", path, err)
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return originLayer{}, fmt.Errorf("workspaceconfig: parse %s for its setting positions: %w", path, err)
+		return originLayer{}, fmt.Errorf("workspaceconfig: parse %s to attribute its settings: %w", path, err)
 	}
 	if len(doc.Content) == 0 {
 		return originLayer{}, nil
 	}
+	// The values are decoded from the node tree already parsed rather than from
+	// the bytes again. The decode resolves aliases and merge keys the way the
+	// resolver's own decode does, so a setting supplied through a merge key is
+	// read as set even though the node walk that finds positions cannot address
+	// the key that supplied it.
+	var values map[string]any
+	if err := doc.Decode(&values); err != nil {
+		return originLayer{}, fmt.Errorf("workspaceconfig: decode %s to attribute its settings: %w", path, err)
+	}
 	return originLayer{
-		doc: &doc,
+		values: values,
+		doc:    &doc,
 		// UTF-8 pins a span to the document's own coordinates — 1-based line
 		// and 1-based byte column, the pair the parser records on the node —
 		// so no editor-protocol encoding is baked into a configuration value.
@@ -359,7 +389,7 @@ func readOriginLayer(path string) (originLayer, error) {
 }
 
 // originDocumentPaths lists, in the order they are tried, the document key
-// paths that could have supplied f's value.
+// paths through which a layer sets f.
 //
 // A scalar leaf has exactly one. A list field additionally has its `_append`
 // companion: that companion is how a layer contributes to a list it does not
@@ -411,21 +441,6 @@ func originPositionIn(layer originLayer, paths []string) *yamlpos.FieldSpan {
 	return nil
 }
 
-// attributeChanges records label as the source of every field whose per-layer
-// fingerprint differs between before and after. When scalarsOnly excludes a
-// field it is skipped; the caller passes false here because both the file and
-// environment layers can set the fields they are called for.
-func attributeChanges(fields []originField, source map[string]string, before, after Config, label string, scalarsOnly bool) {
-	for _, f := range fields {
-		if scalarsOnly && !f.scalar {
-			continue
-		}
-		if f.track(before) != f.track(after) {
-			source[f.name] = label
-		}
-	}
-}
-
 // signingRequiredSource returns the origin of the effective signing.required
 // stance: the first cascade layer (in resolution order, so lowest precedence
 // first) whose raw signing block turns the requirement on, or the built-in
@@ -454,28 +469,16 @@ func signingRequiredSource(r *ResolvedWorkspace, base func(string) string) strin
 	return originDefaultsLabel
 }
 
-// singleVarLookup returns a lookup that answers only for name (delegating to
-// base) and returns empty for every other variable, so applyEnvOverlay applies
-// exactly one environment override during a per-layer replay step.
-func singleVarLookup(base func(string) string, name string) func(string) string {
-	return func(k string) string {
-		if k == name {
-			return base(k)
-		}
-		return ""
-	}
-}
-
 // originFields enumerates every attributed setting in a fixed order: the scalar
 // leaves first (attributed per-value), then the list and map fields (attributed
 // as a unit). The order is stable so ValueOrigins produces byte-identical output
 // for a given resolution.
 func originFields() []originField {
-	sc := func(name string, get func(Config) string) originField {
-		return originField{name: name, scalar: true, display: get, track: get}
+	sc := func(name string, display func(Config) string) originField {
+		return originField{name: name, scalar: true, display: display}
 	}
-	ls := func(name string, display, track func(Config) string) originField {
-		return originField{name: name, scalar: false, display: display, track: track}
+	ls := func(name string, display func(Config) string) originField {
+		return originField{name: name, scalar: false, display: display}
 	}
 	return []originField{
 		sc("default_registry", func(c Config) string { return c.DefaultRegistry }),
@@ -544,49 +547,17 @@ func originFields() []originField {
 		sc("signing.timestamp_url", func(c Config) string { return c.Signing.TimestampURL }),
 		sc("signing.key_path", func(c Config) string { return c.Signing.KeyPath }),
 		sc("signing.required", func(c Config) string { return strconv.FormatBool(c.Signing.Required) }),
-		ls("mcp.allowed_origins",
-			func(c Config) string { return joinStrings(c.MCP.AllowedOrigins) },
-			func(c Config) string { return joinStrings(c.MCP.AllowedOrigins) }),
-		ls("mcp.deny_reach",
-			func(c Config) string { return joinStrings(c.MCP.DenyReach) },
-			func(c Config) string { return joinStrings(c.MCP.DenyReach) }),
-		ls("mcp.announce_tools",
-			func(c Config) string { return joinStrings(c.MCP.AnnounceTools) },
-			func(c Config) string { return joinStrings(c.MCP.AnnounceTools) }),
-		ls("signing.kinds",
-			func(c Config) string { return joinStrings(c.Signing.Kinds) },
-			func(c Config) string { return joinStrings(c.Signing.Kinds) }),
-		ls("workspace.catalog_dirs",
-			func(c Config) string { return joinStrings(c.Workspace.CatalogDirs) },
-			func(c Config) string {
-				return joinStrings(c.Workspace.CatalogDirs) + originAppendSep + joinStrings(c.Workspace.CatalogDirsAppend)
-			}),
-		ls("plugins.governance",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Governance) },
-			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Governance) + originAppendSep + joinPluginRefs(c.Plugins.GovernanceAppend)
-			}),
-		ls("plugins.linter",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Linter) },
-			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Linter) + originAppendSep + joinPluginRefs(c.Plugins.LinterAppend)
-			}),
-		ls("plugins.importer",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Importer) },
-			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Importer) + originAppendSep + joinPluginRefs(c.Plugins.ImporterAppend)
-			}),
-		ls("plugins.providers",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Providers) },
-			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Providers) + originAppendSep + joinPluginRefs(c.Plugins.ProvidersAppend)
-			}),
-		ls("plugins.cli",
-			func(c Config) string { return joinCLIRefs(c.Plugins.CLI) },
-			func(c Config) string { return joinCLIRefs(c.Plugins.CLI) }),
-		ls("registries",
-			func(c Config) string { return joinRegistries(c.Registries) },
-			func(c Config) string { return joinRegistries(c.Registries) }),
+		ls("mcp.allowed_origins", func(c Config) string { return joinStrings(c.MCP.AllowedOrigins) }),
+		ls("mcp.deny_reach", func(c Config) string { return joinStrings(c.MCP.DenyReach) }),
+		ls("mcp.announce_tools", func(c Config) string { return joinStrings(c.MCP.AnnounceTools) }),
+		ls("signing.kinds", func(c Config) string { return joinStrings(c.Signing.Kinds) }),
+		ls("workspace.catalog_dirs", func(c Config) string { return joinStrings(c.Workspace.CatalogDirs) }),
+		ls("plugins.governance", func(c Config) string { return joinPluginRefs(c.Plugins.Governance) }),
+		ls("plugins.linter", func(c Config) string { return joinPluginRefs(c.Plugins.Linter) }),
+		ls("plugins.importer", func(c Config) string { return joinPluginRefs(c.Plugins.Importer) }),
+		ls("plugins.providers", func(c Config) string { return joinPluginRefs(c.Plugins.Providers) }),
+		ls("plugins.cli", func(c Config) string { return joinCLIRefs(c.Plugins.CLI) }),
+		ls("registries", func(c Config) string { return joinRegistries(c.Registries) }),
 	}
 }
 

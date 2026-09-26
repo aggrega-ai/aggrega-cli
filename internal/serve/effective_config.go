@@ -72,8 +72,8 @@ type effectiveConfigurationResult struct {
 // of its own.
 //
 // Two properties bound what a row means, and neither is a gap in that
-// accounting. A list or map is attributed as a whole to the layer that last
-// changed it, so a property inside a list's entries is covered by that list's
+// accounting. A list or map is attributed as a whole to the highest-precedence
+// layer that sets it, so a property inside a list's entries is covered by that
 // row and is never reported per entry. And the signing requirement, which
 // composes so that any layer turning it on wins, is attributed to the first
 // layer that turned it on rather than the last that mentioned it.

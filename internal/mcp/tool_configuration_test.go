@@ -498,8 +498,8 @@ func transportDifferenceComplaints(atTheKeyboard, overTheListener configShowResu
 // searching the whole answer for each configured location.
 //
 // The second condition is read the same way the reading itself reads it, off the
-// layer the keyboard attributed the setting to: a setting still holding what
-// this binary ships was set by nobody here.
+// layer the keyboard attributed the setting to: a setting no layer sets holds
+// what this binary ships.
 func keyboardValueNamesAHostLocation(setting configSettingResult) bool {
 	if _, declared := settingsNamingAHostLocation[setting.Field]; !declared {
 		return false
