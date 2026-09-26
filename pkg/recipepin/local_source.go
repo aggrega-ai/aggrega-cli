@@ -113,7 +113,12 @@ func ErrLocalSourceContentMismatch() error { return errLocalSourceContentMismatc
 var errLocalSourceContentMismatch = cerrors.Register("local-source-content-mismatch", cerrors.Meta{
 	ShortCode: "E0305",
 	Message:   "the files of the entity's local source do not match the pins recorded for them in entity.lock",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A build evaluates the rule during source resolution, immediately before a " +
+		"provider reads a Recipe's or FeatureRecipe's local source, and a verifying pull and a dependency resolution " +
+		"evaluate it over the entity.lock beside each entity they reach, comparing the pins the source's files digest " +
+		"to now against the pins the lock records for them. The files are read and digested during that resolution " +
+		"rather than during a compilation, and the lock is a file beside the entity rather than a document a " +
+		"compilation reads, so no declared stage holds the two values the rule compares."),
 })
 
 // localSourceMismatchAdvice is what a local-source pin disagreement tells its
