@@ -83,13 +83,24 @@ type importDiagnostic struct {
 }
 
 // importPayload is the import tool's structured payload: the workspace the
-// drafts were written into, how the source was read, what reached disk, and
-// what the importer had to say about the parts it could not translate.
+// drafts were written into, the directory the drafted paths are relative to,
+// how the source was read, what reached disk, and what the importer had to say
+// about the parts it could not translate.
 //
 // It is projected from the shared layer's own result rather than embedded, and
 // the keys are this protocol's own — the same division the edit tool beside it
 // draws. What must not be restated is the layer's result, and nothing here
-// does: every field below is read off it.
+// does: every field that result carries is read off it.
+//
+// OutputDir is the directory the drafted paths are relative to, exactly as the
+// layer reports it, under both deliveries — a dry run writes nothing, but each
+// path it hands back is still relative to it. On this tool it is always the
+// root of the workspace the call resolved, because that root is the destination
+// this surface hands the layer, so it names nothing WorkspaceRoot does not
+// already name, on either transport. It is carried all the same because it is
+// the one fact the layer reports about where an import went and every other
+// surface calling the layer hands it on: a caller reading it learns where the
+// drafts are, and no argument here lets it choose.
 //
 // Drafts carries each drafted file's content under a reporting delivery and is
 // absent otherwise. Under a write the files are on disk and Written names them,
@@ -104,6 +115,7 @@ type importDiagnostic struct {
 // rather than only the refusal.
 type importPayload struct {
 	WorkspaceRoot string             `json:"workspace_root"`
+	OutputDir     string             `json:"output_dir"`
 	Source        string             `json:"source"`
 	Format        string             `json:"format"`
 	Written       []string           `json:"written"`
@@ -120,7 +132,9 @@ var importToolSpec = toolSpec{
 		"source, drafts entities from it, and this writes what it produced, creating parent directories as " +
 		"needed. A drafted file lands at a path relative to the workspace root, which is also the coordinate " +
 		"the other tools here report a file under, and THERE IS NO ARGUMENT NAMING A DESTINATION — the drafts " +
-		"go into the workspace the call resolved, and nowhere else. The workspace must attach an importer that " +
+		"go into the workspace the call resolved, and nowhere else. The answer names that directory as " +
+		"`output_dir`, the one every drafted path is relative to, whether the file was written or handed back: " +
+		"it reports where the drafts went and chooses nothing. The workspace must attach an importer that " +
 		"advertises the source's format, or the call is refused naming the capability no plugin advertises; " +
 		"nothing here ships one. Leave `format` out and the format is recognised from the source's own " +
 		"top-level shape, reading that one file and nothing else — no other file, no network — and a shape " +
@@ -243,6 +257,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 
 	payload := importPayload{
 		WorkspaceRoot: tw.root,
+		OutputDir:     res.OutputDir,
 		Source:        source,
 		Format:        res.Format,
 		Written:       importWritten(res, delivery),
@@ -356,7 +371,7 @@ func renderImportText(p importPayload, delivery authoredcontent.Delivery) string
 	case len(p.Written) == 0:
 		b.WriteString("  the importer drafted no files, so nothing was written\n")
 	default:
-		b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " + p.WorkspaceRoot + "\n")
+		b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " + p.OutputDir + "\n")
 	}
 	for _, d := range p.Diagnostics {
 		b.WriteString("  " + d.Severity + ": " + d.Message + "\n")

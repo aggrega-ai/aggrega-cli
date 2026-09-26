@@ -425,6 +425,138 @@ func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
 	}
 }
 
+// TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo pins the one fact
+// the shared operation reports about where an import went — the directory every
+// drafted path is relative to — on both transports and under both deliveries.
+//
+// The answer is read by its key, into a shape of this test's own rather than into
+// the payload type, because the key is what a caller reads: an answer that
+// stopped carrying it fails here whatever the Go type beside it declares. The key
+// is then held against the tree rather than taken on trust. Under a write, every
+// path the answer names as written is a file under that directory carrying what
+// the importer drafted, and those are the only files the import added. Under a
+// dry run nothing reaches disk and the directory is still reported, because each
+// path handed back is still relative to it.
+//
+// The value is also required to equal the workspace root the same answer names.
+// That is this tool's destination rule read off its own answer — the drafts go
+// into the workspace the call resolved — and it is what keeps the key from
+// telling a caller reaching a listener anything the answer did not already say.
+func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
+	// Not parallel: points the shared import seam, a package-level variable.
+	pointImportSeamAtTheDemoGuest(t)
+
+	// importSession is one workspace seeded with the source, and the way a call
+	// reaches the tool serving it.
+	type importSession struct {
+		root string
+		call func(t *testing.T, args map[string]any) callToolResult
+	}
+	transports := []struct {
+		name string
+		open func(t *testing.T) importSession
+	}{
+		{"over the process's own streams", func(t *testing.T) importSession {
+			root, _ := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+			s := importToolServer(t, root)
+			return importSession{root: root, call: func(t *testing.T, args map[string]any) callToolResult {
+				return *callTool(t, s, importToolName, args)
+			}}
+		}},
+		{"over a listener", func(t *testing.T) importSession {
+			f := newScopeGridFixture(t, false)
+			importOverTheListener(t, f, "flow.json", readImportFixture(t, langflowFixture))
+			credential := f.grantOf(t, scopeWorkspaceWrite)
+			return importSession{root: f.root, call: func(t *testing.T, args map[string]any) callToolResult {
+				return toolResultOf(t, importToolName, f.callTool(t, credential, importToolName, args))
+			}}
+		}},
+	}
+	deliveries := []struct {
+		name   string
+		dryRun bool
+	}{
+		{"a write", false},
+		{"a dry run", true},
+	}
+
+	for _, transport := range transports {
+		for _, delivery := range deliveries {
+			t.Run(transport.name+", "+delivery.name, func(t *testing.T) {
+				session := transport.open(t)
+				before := treeUnder(t, session.root)
+
+				res := session.call(t, map[string]any{"source": "flow.json", "dry_run": delivery.dryRun})
+				if res.IsError {
+					t.Fatalf("the import was refused: %s", res.Content[0].Text)
+				}
+				var answer struct {
+					WorkspaceRoot string   `json:"workspace_root"`
+					OutputDir     *string  `json:"output_dir"`
+					Written       []string `json:"written"`
+					Drafts        []struct {
+						Path    string `json:"path"`
+						Content string `json:"content"`
+					} `json:"drafts"`
+				}
+				if err := json.Unmarshal(res.StructuredContent, &answer); err != nil {
+					t.Fatalf("decode the structured answer: %v (body %s)", err, res.StructuredContent)
+				}
+				if answer.OutputDir == nil {
+					t.Fatalf("the answer carries no output_dir, so a caller is not told the directory its drafted "+
+						"paths are relative to, which the shared operation reports to every other surface: %s",
+						res.StructuredContent)
+				}
+				outputDir := *answer.OutputDir
+				if outputDir != session.root {
+					t.Errorf("the answer names %q as the directory the drafts are relative to, want the resolved "+
+						"workspace %q", outputDir, session.root)
+				}
+				if outputDir != answer.WorkspaceRoot {
+					t.Errorf("output_dir %q differs from the workspace_root %q the same answer names; this tool "+
+						"drafts into the workspace the call resolved", outputDir, answer.WorkspaceRoot)
+				}
+
+				added := treeAdditions(before, treeUnder(t, session.root))
+				if delivery.dryRun {
+					if len(added) != 0 {
+						t.Errorf("a dry run put %v into the workspace", added)
+					}
+					if len(answer.Drafts) != 1 || answer.Drafts[0].Path != "langflow.yaml" {
+						t.Fatalf("the dry run handed back %+v, want one draft for langflow.yaml", answer.Drafts)
+					}
+					draft := filepath.Join(outputDir, filepath.FromSlash(answer.Drafts[0].Path))
+					if _, err := os.Stat(draft); !errors.Is(err, os.ErrNotExist) {
+						t.Errorf("a dry run's draft exists under the directory the answer names: %v", err)
+					}
+					return
+				}
+
+				// The tree, which is the claim. Each written path, resolved against the
+				// directory the answer names, is a file carrying the drafted bytes, and
+				// the written set is exactly what the import added under the root.
+				if !slices.Equal(answer.Written, []string{"langflow.yaml"}) {
+					t.Fatalf("the answer names %v as written, want exactly [langflow.yaml]", answer.Written)
+				}
+				for _, name := range answer.Written {
+					got, err := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(name)))
+					if err != nil {
+						t.Fatalf("%s is not under the directory the answer names, %q: %v", name, outputDir, err)
+					}
+					if string(got) != importDemoEchoBody("langflow") {
+						t.Errorf("%s under %q carries %q, want %q", name, outputDir, string(got),
+							importDemoEchoBody("langflow"))
+					}
+				}
+				if !slices.Equal(added, answer.Written) {
+					t.Errorf("the import added %v under the workspace and the answer names %v as written",
+						added, answer.Written)
+				}
+			})
+		}
+	}
+}
+
 // treeAdditions names the paths present in after and absent from before, so a
 // case states what an import PUT somewhere rather than restating the whole tree
 // — which would pin the fixture's own layout and would then fail for a reason
