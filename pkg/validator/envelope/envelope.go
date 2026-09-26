@@ -342,10 +342,11 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 // diagnostics alike — resolves the path through yamlpos.FieldNode, so the
 // two cannot disagree about where a violation sits.
 //
-// Positions are UTF-8 columns, matching the byte columns yaml.v3 itself
-// records and the source pointers the rest of the compiler's diagnostics
-// carry. A consumer reporting positions in another encoding converts them
-// through its own LineIndex rather than re-walking the document.
+// A position's column counts characters (code points), the unit yaml.v3
+// records a node's column in, so the column the rendered message prints
+// does not grow with the bytes a multi-byte character before the key takes.
+// A surface reporting positions in another encoding resolves the same path
+// through yamlpos.FieldRange over a LineIndex built in that encoding.
 //
 // A position is only ever a position in the bytes handed to ValidateBytes,
 // which is why it is resolved here and not further out. That makes one rule
@@ -365,7 +366,7 @@ func newSchemaError(kind Kind, path string, data []byte, findings []jsonvalidato
 		// the generic decode did produce.
 		return e
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF8)
+	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32)
 	e.Positions = make(map[string]aggerrors.SourceLocation, len(findings))
 	for _, f := range findings {
 		if _, done := e.Positions[f.FieldPath]; done {

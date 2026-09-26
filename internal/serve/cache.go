@@ -18,8 +18,8 @@ import (
 // every Get; entries with mtime newer than cachedAt are evicted and
 // reported as misses.
 //
-// The raw content is retained so position-conversion helpers (LSP
-// UTF-16 character ↔ yaml.v3 byte column) can run without re-reading
+// The raw content is retained so position-conversion helpers (a session
+// position ↔ a yaml.v3 node's character column) can run without re-reading
 // the file. Editor-supplied content (validate's params.Content) and
 // on-disk bytes (workspace-walk reads) flow through the same cache
 // shape; both populate content at Put time.

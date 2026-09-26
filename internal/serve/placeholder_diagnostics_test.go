@@ -301,25 +301,42 @@ func TestTheDaemonNamesEveryPlaceholderADraftCarries(t *testing.T) {
 	}
 }
 
-// TestAPlaceholdersColumnIsCountedInTheSessionsEncoding puts a multi-byte
-// character ahead of a placeholder's key on the same line and reads the key's
-// column in a session counting UTF-16 units and in one counting UTF-8 bytes.
-// The character is one unit in the first and two bytes in the second, so the
-// columns differ by one: the placeholder is positioned in the client's units,
-// never in the byte columns the command's reading prints for a terminal.
+// TestAPlaceholdersColumnIsCountedInTheSessionsEncoding puts a character ahead
+// of a placeholder's key on the same line and reads the key's column in a
+// session counting UTF-16 units, one counting UTF-8 bytes and one counting code
+// points. The key is the 55th character of the line when the character before
+// it is one code point; the rows pin where each session counts it:
+//
+//   - é is one UTF-16 unit and two UTF-8 bytes, so only the UTF-8 column moves;
+//   - 🚀 lies outside the Basic Multilingual Plane, so it is two UTF-16 units
+//     and four UTF-8 bytes, and the three sessions count three columns;
+//   - an ASCII line is counted alike by every session.
+//
+// Each span is also read back as text in its session's units, so a column one
+// unit early reads as a span starting on the space before the key.
 func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 	t.Parallel()
-	const doc = "apiVersion: aggrega.ai/v1alpha1\n" +
-		"kind: Component\n" +
-		"metadata: {name: my-service, description: \"Café API\", version: \"\", labels: {component.aggrega.ai/type: server}}\n" +
-		"spec: {}\n"
+	document := func(description string) string {
+		return "apiVersion: aggrega.ai/v1alpha1\n" +
+			"kind: Component\n" +
+			"metadata: {name: my-service, description: \"" + description + "\", version: \"\", labels: {component.aggrega.ai/type: server}}\n" +
+			"spec: {}\n"
+	}
 	for _, tc := range []struct {
-		encoding          string
-		column, endColumn int
+		name, description, encoding string
+		column, endColumn           int
 	}{
-		{encoding: "utf-16", column: 54, endColumn: 61},
-		{encoding: "utf-8", column: 55, endColumn: 62},
+		{name: "a two-byte character", description: "Café API", encoding: "utf-16", column: 55, endColumn: 62},
+		{name: "a two-byte character", description: "Café API", encoding: "utf-8", column: 56, endColumn: 63},
+		{name: "a two-byte character", description: "Café API", encoding: "utf-32", column: 55, endColumn: 62},
+		{name: "a four-byte character", description: "🚀 API", encoding: "utf-16", column: 53, endColumn: 60},
+		{name: "a four-byte character", description: "🚀 API", encoding: "utf-8", column: 55, endColumn: 62},
+		{name: "a four-byte character", description: "🚀 API", encoding: "utf-32", column: 52, endColumn: 59},
+		{name: "an ASCII line", description: "Cafe API", encoding: "utf-16", column: 55, endColumn: 62},
+		{name: "an ASCII line", description: "Cafe API", encoding: "utf-8", column: 55, endColumn: 62},
+		{name: "an ASCII line", description: "Cafe API", encoding: "utf-32", column: 55, endColumn: 62},
 	} {
+		doc := document(tc.description)
 		root := t.TempDir()
 		srv := newTestServer(t, root, nil, nil)
 		initializeWithEncoding(t, srv, tc.encoding)
@@ -331,12 +348,16 @@ func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 			}
 			found = true
 			if d.Line != 3 || d.Column != tc.column || d.EndLine != 3 || d.EndColumn != tc.endColumn {
-				t.Errorf("%s: the placeholder is drawn at %d:%d-%d:%d, want 3:%d-3:%d",
-					tc.encoding, d.Line, d.Column, d.EndLine, d.EndColumn, tc.column, tc.endColumn)
+				t.Errorf("%s, %s: the placeholder is drawn at %d:%d-%d:%d, want 3:%d-3:%d",
+					tc.name, tc.encoding, d.Line, d.Column, d.EndLine, d.EndColumn, tc.column, tc.endColumn)
+				continue
+			}
+			if got := spanText(t, doc, d, tc.encoding); got != "version" {
+				t.Errorf("%s, %s: the placeholder's span covers %q, not the key", tc.name, tc.encoding, got)
 			}
 		}
 		if !found {
-			t.Errorf("%s: no placeholder entry for metadata.version: %+v", tc.encoding, diags)
+			t.Errorf("%s, %s: no placeholder entry for metadata.version: %+v", tc.name, tc.encoding, diags)
 		}
 	}
 }
@@ -351,10 +372,20 @@ func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 // placeholder reading found.
 //
 // The drafted label line carries no multi-byte character, so the two sessions
-// count the same columns on it.
+// count the same columns on it. A second document puts café before the label
+// key on its line: é is one UTF-16 unit and two UTF-8 bytes, so the UTF-8
+// session counts the key one column further along.
 func TestADottedPlaceholderKeyIsDrawnOnTheKeyItself(t *testing.T) {
 	t.Parallel()
 	const typeLabel = "metadata.labels.component.aggrega.ai/type"
+	const afterCafe = "apiVersion: aggrega.ai/v1alpha1\n" +
+		"kind: Component\n" +
+		"metadata:\n" +
+		"  name: my-service\n" +
+		"  version: \"1.0.0\"\n" +
+		"  labels: {team: \"café\", component.aggrega.ai/type: \"\"}\n" +
+		"spec: {}\n"
+	afterCafeColumns := map[string][2]int{"utf-16": {26, 51}, "utf-8": {27, 52}}
 	const notAPlaceholder = "apiVersion: aggrega.ai/v1alpha1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
@@ -385,6 +416,26 @@ func TestADottedPlaceholderKeyIsDrawnOnTheKeyItself(t *testing.T) {
 		}
 		if got := spanText(t, drafted, label, encoding); got != "component.aggrega.ai/type" {
 			t.Errorf("%s: the type label's span covers %q, not the label key", encoding, got)
+		}
+
+		found = false
+		want := afterCafeColumns[encoding]
+		for _, d := range validateContentOverTheWire(t, srv, filepath.Join(root, "after-cafe.yaml"), afterCafe, "").Diagnostics {
+			if d.KeyPath != typeLabel {
+				continue
+			}
+			found = true
+			if d.Line != 6 || d.Column != want[0] || d.EndLine != 6 || d.EndColumn != want[1] {
+				t.Errorf("%s: after café, the type label is drawn at %d:%d-%d:%d, want 6:%d-6:%d",
+					encoding, d.Line, d.Column, d.EndLine, d.EndColumn, want[0], want[1])
+				continue
+			}
+			if got := spanText(t, afterCafe, d, encoding); got != "component.aggrega.ai/type" {
+				t.Errorf("%s: after café, the type label's span covers %q, not the label key", encoding, got)
+			}
+		}
+		if !found {
+			t.Errorf("%s: no placeholder entry for %s after café", encoding, typeLabel)
 		}
 
 		diags := validateContentOverTheWire(t, srv, filepath.Join(root, "bogus.yaml"), notAPlaceholder, "").Diagnostics
@@ -440,6 +491,8 @@ func byteOffsetOfUnit(t *testing.T, line string, units int, encoding string) int
 			counted += utf8.RuneLen(r)
 		case "utf-16":
 			counted += utf16.RuneLen(r)
+		case "utf-32":
+			counted++
 		default:
 			t.Fatalf("no unit count for the encoding %q", encoding)
 		}

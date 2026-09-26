@@ -5,10 +5,13 @@
 // alongside helpers that map LSP cursor positions to yaml.v3 nodes and
 // classify the structural location a cursor sits in.
 //
-// LSP Position.Character is 0-based UTF-16 code units. yaml.v3 Node
-// coordinates are 1-based UTF-8 bytes. LineIndex bridges the two with
-// rune-by-rune conversion via unicode/utf8 + unicode/utf16; both
-// directions are supported with no ASCII-only approximation.
+// A Position counts its character offset in the code units of the encoding
+// its LineIndex was built with: UTF-16 by default, as LSP does, or UTF-8 or
+// UTF-32 when negotiated. A yaml.v3 Node records a 1-based line and a
+// 1-based column counted in characters (code points), not in bytes.
+// LineIndex bridges the two through the document's UTF-8 bytes, rune by
+// rune via unicode/utf8 + unicode/utf16; both directions are supported
+// with no ASCII-only approximation.
 //
 // The package is consumed by the daemon's navigation handlers (Lookup)
 // and by the hover + completion handlers (Classify).
@@ -38,7 +41,7 @@ var errPositionOutOfRange = cerrors.Register("position-out-of-range", cerrors.Me
 })
 
 // Position matches the LSP shape: 0-based line + 0-based character
-// offset measured in UTF-16 code units.
+// offset in the code units of the encoding its LineIndex was built with.
 type Position struct {
 	Line      int `json:"line"`
 	Character int `json:"character"`
@@ -187,8 +190,8 @@ type PositionEncoding string
 
 const (
 	// PositionEncodingUTF8 reports positions in UTF-8 code units —
-	// equivalent to UTF-8 byte offsets within a line. Native to
-	// yaml.v3's storage; zero per-rune conversion cost.
+	// equivalent to UTF-8 byte offsets within a line, so a position
+	// converts to and from a byte offset with no per-rune walk.
 	PositionEncodingUTF8 PositionEncoding = "utf-8"
 
 	// PositionEncodingUTF16 reports positions in UTF-16 code units.
@@ -260,16 +263,20 @@ func (idx LineIndex) Encoding() PositionEncoding {
 	return idx.encoding
 }
 
-// runeUnits returns the per-encoding unit cost of a rune:
+// runeUnits returns the unit cost of a rune in the index's bound
+// encoding. Used by ScalarEnd's multi-line walk; the byte/char
+// converters dispatch through unitsOf with the encoding they count in.
+func (idx LineIndex) runeUnits(r rune) int {
+	return unitsOf(idx.Encoding(), r)
+}
+
+// unitsOf returns the unit cost of a rune in enc:
 //
 //   - UTF-8: utf8.RuneLen(r) (1..4 bytes per rune)
 //   - UTF-16: utf16.RuneLen(r) (1 for BMP, 2 for supplementary plane)
 //   - UTF-32: 1 (one code point per rune)
-//
-// Used by both the byte/char converters and ScalarEnd's multi-line
-// walk to dispatch per the index's bound encoding.
-func (idx LineIndex) runeUnits(r rune) int {
-	switch idx.Encoding() {
+func unitsOf(enc PositionEncoding, r rune) int {
+	switch enc {
 	case PositionEncodingUTF8:
 		return utf8.RuneLen(r)
 	case PositionEncodingUTF32:
@@ -277,6 +284,33 @@ func (idx LineIndex) runeUnits(r rune) int {
 	default:
 		return utf16.RuneLen(r)
 	}
+}
+
+// nodeColumnEncoding is the unit a yaml.v3 Node's Column counts in. The
+// parser advances a node's column by one for every character it reads,
+// whatever that character's width in bytes, so a node column counts code
+// points — the unit a UTF-32 position counts. This is the one statement of
+// that fact: every conversion between a node column and a byte offset goes
+// through nodeColumnToByte or byteToNodeColumn, which read it here.
+const nodeColumnEncoding = PositionEncodingUTF32
+
+// nodeColumnToByte converts a yaml.v3 column (1-based, in characters) on
+// line (0-based) to a 0-based byte offset within that line's bytes. A
+// column past the line's end clamps to the line's length, and a line
+// outside the document yields 0.
+func (idx LineIndex) nodeColumnToByte(line, column int) int {
+	b, err := idx.unitsToByte(line, column-1, nodeColumnEncoding)
+	if err != nil {
+		return 0
+	}
+	return b
+}
+
+// byteToNodeColumn inverts nodeColumnToByte: a 0-based byte offset within
+// line becomes the yaml.v3 column (1-based, in characters) of the
+// character that starts there.
+func (idx LineIndex) byteToNodeColumn(line, byteOffset int) int {
+	return idx.byteToUnits(line, byteOffset, nodeColumnEncoding) + 1
 }
 
 // lineBytes returns the bytes of line line (0-based), excluding the
@@ -311,27 +345,33 @@ func (idx LineIndex) lineBytes(line int) ([]byte, error) {
 // supplementary-plane rune's UTF-16 encoding), the byte offset snaps
 // to the byte position after the full rune.
 func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
+	return idx.unitsToByte(line, char, idx.Encoding())
+}
+
+// unitsToByte is LSPCharToByte counting in enc rather than in the
+// index's bound encoding.
+func (idx LineIndex) unitsToByte(line, units int, enc PositionEncoding) (int, error) {
 	bytes, err := idx.lineBytes(line)
 	if err != nil {
 		return 0, err
 	}
-	if char <= 0 {
+	if units <= 0 {
 		return 0, nil
 	}
-	// UTF-8: char offset == byte offset (zero conversion cost).
-	if idx.Encoding() == PositionEncodingUTF8 {
-		if char > len(bytes) {
+	// UTF-8: unit offset == byte offset (zero conversion cost).
+	if enc == PositionEncodingUTF8 {
+		if units > len(bytes) {
 			return len(bytes), nil
 		}
-		return char, nil
+		return units, nil
 	}
-	var units int
+	var counted int
 	var pos int
 	for pos < len(bytes) {
 		r, size := utf8.DecodeRune(bytes[pos:])
-		units += idx.runeUnits(r)
+		counted += unitsOf(enc, r)
 		pos += size
-		if units >= char {
+		if counted >= units {
 			return pos, nil
 		}
 	}
@@ -343,6 +383,12 @@ func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
 // per the index's bound encoding. byteOffset is clamped to the
 // line's byte length.
 func (idx LineIndex) ByteToLSPChar(line, byteOffset int) int {
+	return idx.byteToUnits(line, byteOffset, idx.Encoding())
+}
+
+// byteToUnits is ByteToLSPChar counting in enc rather than in the
+// index's bound encoding.
+func (idx LineIndex) byteToUnits(line, byteOffset int, enc PositionEncoding) int {
 	bytes, err := idx.lineBytes(line)
 	if err != nil {
 		return 0
@@ -353,34 +399,35 @@ func (idx LineIndex) ByteToLSPChar(line, byteOffset int) int {
 	if byteOffset > len(bytes) {
 		byteOffset = len(bytes)
 	}
-	// UTF-8: byte offset == char offset.
-	if idx.Encoding() == PositionEncodingUTF8 {
+	// UTF-8: byte offset == unit offset.
+	if enc == PositionEncodingUTF8 {
 		return byteOffset
 	}
-	var units int
+	var counted int
 	var pos int
 	for pos < byteOffset {
 		r, size := utf8.DecodeRune(bytes[pos:])
-		units += idx.runeUnits(r)
+		counted += unitsOf(enc, r)
 		pos += size
 	}
-	return units
+	return counted
 }
 
-// PositionToNodeCoords converts an LSP Position (0-based line,
-// 0-based UTF-16 char) to yaml.v3 coordinates (1-based line, 1-based
-// UTF-8 byte column).
+// PositionToNodeCoords converts a Position (0-based line, 0-based
+// character offset in the index's encoding) to yaml.v3 coordinates
+// (1-based line, 1-based column counted in characters).
 func (idx LineIndex) PositionToNodeCoords(pos Position) (line, col int, err error) {
 	byteOff, err := idx.LSPCharToByte(pos.Line, pos.Character)
 	if err != nil {
 		return 0, 0, err
 	}
-	return pos.Line + 1, byteOff + 1, nil
+	return pos.Line + 1, idx.byteToNodeColumn(pos.Line, byteOff), nil
 }
 
 // NodeToPosition converts a yaml.Node's start coordinates (1-based
-// line, 1-based byte column) to an LSP Position (0-based line,
-// 0-based UTF-16 char). A nil node returns the zero Position.
+// line, 1-based column counted in characters) to a Position (0-based
+// line, 0-based character offset in the index's encoding). A nil node
+// returns the zero Position.
 func (idx LineIndex) NodeToPosition(n *yaml.Node) Position {
 	if n == nil {
 		return Position{}
@@ -389,11 +436,7 @@ func (idx LineIndex) NodeToPosition(n *yaml.Node) Position {
 	if line < 0 {
 		line = 0
 	}
-	col := n.Column - 1
-	if col < 0 {
-		col = 0
-	}
-	return Position{Line: line, Character: idx.ByteToLSPChar(line, col)}
+	return Position{Line: line, Character: idx.ByteToLSPChar(line, idx.nodeColumnToByte(line, n.Column))}
 }
 
 // ScalarEnd returns the end position of the scalar value. The
@@ -550,7 +593,9 @@ func appendPath(path []string, elem string) []string {
 
 // nodeContains reports whether (line, col) (1-based yaml.v3 coords)
 // falls within the scalar span of n. Used for leaf decisions only;
-// container coverage is computed via containsRecursive.
+// container coverage is computed via containsRecursive. A yaml.v3
+// column counts characters, so the scalar's extent is its value's
+// character count, not its length in bytes.
 func nodeContains(n *yaml.Node, line, col int) bool {
 	if n == nil {
 		return false
@@ -562,7 +607,7 @@ func nodeContains(n *yaml.Node, line, col int) bool {
 		return false
 	}
 	startCol := n.Column
-	endCol := startCol + len(n.Value)
+	endCol := startCol + utf8.RuneCountInString(n.Value)
 	if n.Style == yaml.DoubleQuotedStyle || n.Style == yaml.SingleQuotedStyle {
 		endCol += 2
 	}

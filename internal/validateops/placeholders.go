@@ -24,7 +24,8 @@ import (
 // placeholder is one value a document's kind requires that the document leaves
 // as an empty string: the dotted key path, in the spelling the envelope gate
 // reports its findings under, the key node the value sits under and the
-// position read off it, and what the value takes.
+// position read off it, its column counted in characters, and what the value
+// takes.
 type placeholder struct {
 	path   string
 	key    *yaml.Node
@@ -250,7 +251,11 @@ func readPlaceholders(kind envelope.Kind, data []byte, path string) ([]placehold
 	}
 	r := placeholderReader{
 		root: root,
-		idx:  yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF8),
+		// The refusal prints each position for a reader of the document, so its
+		// column counts characters, the unit yaml.v3 records a node's column in:
+		// an index counting bytes would print a later column on a line where a
+		// multi-byte character precedes the key.
+		idx: yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32),
 	}
 	r.walk(root, top, nil, 0)
 	sort.SliceStable(r.found, func(i, j int) bool {

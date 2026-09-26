@@ -379,7 +379,7 @@ func readOriginLayer(path string) (originLayer, error) {
 		values: values,
 		doc:    &doc,
 		// UTF-8 pins a span to the document's own coordinates — 1-based line
-		// and 1-based byte column, the pair the parser records on the node —
+		// and 1-based byte column, not the parser's own character column —
 		// so no editor-protocol encoding is baked into a configuration value.
 		// A consumer wanting protocol coordinates converts through this same
 		// index rather than reinterpreting the numbers.

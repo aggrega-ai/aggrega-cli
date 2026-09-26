@@ -234,11 +234,11 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 // dispatchInitialize selects a position encoding from the client's
 // offered list using SERVER preference order: UTF-8 > UTF-16 > UTF-32.
 //
-// Server-preference (rather than client-preference) because UTF-8 is
-// yaml.v3's native byte representation — every reference target the
-// resolve family handles lands in UTF-8 bytes already, so UTF-8
-// position math is a no-op per scalar lookup, whereas UTF-16 / UTF-32
-// require per-rune decoding. The performance asymmetry between
+// Server-preference (rather than client-preference) because a UTF-8
+// position is a byte offset into the very bytes yaml.v3 parsed, so
+// converting a position to or from those bytes is a no-op, whereas
+// UTF-16 / UTF-32 require per-rune decoding on that leg as well as on
+// the node-column leg every encoding walks. The performance asymmetry between
 // encodings is one-sided enough that the client's preference does
 // not change the optimal choice for THIS server.
 //
