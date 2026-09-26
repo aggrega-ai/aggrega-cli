@@ -64,7 +64,9 @@ var moduleRoutingPlacement = map[string]string{
 // of it — while the placement rules apply to it identically: a resource emitted
 // inside a boundary belongs to that boundary whoever emitted it.
 var moduleRoutingAttachmentPlacement = map[string]string{
-	"cfr--metrics-zdquery--scrape": "observability",
+	"cfr--metrics-zdquery--scrape":             "observability",
+	"cfr--metrics-zdobjstore--root-zupassword": "observability",
+	"cfr--metrics-zdstore--s3-zusecret-zukey":  "observability",
 }
 
 // The well-known labels and annotations the assertions read. Each is emitted on
@@ -108,8 +110,10 @@ func parseRenderedResource(t *testing.T, path string, raw []byte) renderedResour
 // contribute is placed under the boundary its module was routed into, that each
 // placed component inherits that boundary's namespace annotation, that the
 // per-component infra and Feature attachment the routing entry declares reach the
-// one component it names, and that the resource the attached Feature emits
-// carries that same namespace — a resource emitted inside a scope belongs to that
+// one component it names, and that each resource an attached Feature emits
+// carries that same namespace: the ServiceMonitor of the scrape Feature the
+// routing entry attaches, and the Secret each of the metrics module's two
+// credential attachments emits. A resource emitted inside a scope belongs to that
 // scope whoever emitted it, so a Feature's artifact must not be left to land
 // wherever the applying tool defaults to.
 func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
@@ -214,6 +218,24 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	monitorRes := parseRenderedResource(t, monitorPath, monitor)
 	if want, got := moduleRoutingPlacement["metrics-zdquery"], monitorRes.Metadata.Namespace; got != want {
 		t.Errorf("%s: the attached Feature's artifact carries namespace %q; the component it describes is routed into boundary %q, whose namespace it must share:\n%s", monitorPath, got, want, monitor)
+	}
+
+	// The metrics module attaches its credential Feature to the object store's
+	// and the store gateway's credential slots, and each attachment emits one
+	// Secret carrying the attachment's own composed identity. Each is asserted
+	// positively, exactly as the ServiceMonitor is, against the boundary its host
+	// component is routed into: a Secret outside that namespace is one the
+	// workload beside it cannot read, and neither earlier check would notice a
+	// Secret that carried no namespace at all.
+	for _, credential := range []struct{ id, host string }{
+		{id: "cfr--metrics-zdobjstore--root-zupassword", host: "metrics-zdobjstore"},
+		{id: "cfr--metrics-zdstore--s3-zusecret-zukey", host: "metrics-zdstore"},
+	} {
+		secret, secretPath := resourceOfKind(t, run1, "Secret", credential.id)
+		secretRes := parseRenderedResource(t, secretPath, secret)
+		if want, got := moduleRoutingPlacement[credential.host], secretRes.Metadata.Namespace; got != want {
+			t.Errorf("%s: the Secret the credential Feature emits for component %q carries namespace %q; that component is routed into boundary %q, whose namespace the Secret must share:\n%s", secretPath, credential.host, got, want, secret)
+		}
 	}
 }
 

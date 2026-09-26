@@ -7,9 +7,10 @@
 // initialized in the umbrella checkout (paths cross the submodule boundary
 // into aggrega-hub). Run from the umbrella or initialise submodules first.
 //
-// composeWasmFactory is shared with the mariadb Recipe test in this same
-// package rather than duplicated here, so both Recipes render through one
-// definition of the embedded compose guest.
+// composeWasmFactory and composeServiceKeyCount are shared with the mariadb
+// Recipe test in this same package rather than duplicated here, so both Recipes
+// render through one definition of the embedded compose guest and are read by
+// one definition of the service key count.
 
 package compiler_test
 
@@ -147,27 +148,33 @@ func TestMySQLComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		t.Errorf("expected named volume 'db--data' (workload volume 'data' on node 'db') in rendered compose:\n%s", merged)
 	}
 
-	// Healthcheck: the Recipe's container health block reaches the rendered
-	// service. The exec probe becomes a CMD-form test; interval carries
-	// periodSeconds and timeout carries timeoutSeconds. Asserted as one exact
-	// block rather than as scattered substrings, because the shape and the
-	// indentation are both part of what a compose runtime consumes.
+	// Healthcheck: the Recipe's container declares one probe, a readiness exec
+	// probe running mysqladmin ping over TCP against the server's own port, and
+	// it reaches the rendered service as its healthcheck. The exec probe becomes
+	// a CMD-form test; interval carries periodSeconds, timeout carries
+	// timeoutSeconds, and start_period carries initialDelaySeconds. The probe
+	// declares no failureThreshold, so no retries line is rendered. Asserted as
+	// one exact block rather than as scattered substrings, because the shape and
+	// the indentation are both part of what a compose runtime consumes.
 	const wantHealthcheck = "    healthcheck:\n" +
 		"      test:\n" +
 		"        - CMD\n" +
 		"        - mysqladmin\n" +
 		"        - ping\n" +
+		"        - --host=127.0.0.1\n" +
+		"        - --port=3306\n" +
 		"      interval: 10s\n" +
-		"      timeout: 5s\n"
+		"      timeout: 5s\n" +
+		"      start_period: 10s\n"
 	if !strings.Contains(merged, wantHealthcheck) {
 		t.Errorf("expected healthcheck block\n%s\nin rendered compose:\n%s", wantHealthcheck, merged)
 	}
 
-	// Compose carries a single healthcheck per service, so the container's
-	// readiness probe collapses away in favour of the liveness one. Asserting
-	// its absence keeps the collapse a stated property of the rendered output
-	// rather than a silent one.
-	if strings.Contains(merged, "nc -z localhost 3306") {
-		t.Errorf("expected the tcp readiness probe to collapse away (compose carries one healthcheck per service), but its translation is present in rendered compose:\n%s", merged)
+	// Compose carries one healthcheck per service and the Recipe declares one
+	// probe, so the rendered service carries exactly one healthcheck key. It is
+	// counted on the decoded service because the block match above would still
+	// hold beside a second healthcheck key.
+	if n := composeServiceKeyCount(t, merged, "db", "healthcheck"); n != 1 {
+		t.Errorf("expected exactly one healthcheck on service %q (compose carries one per service and the Recipe declares one probe), got %d in rendered compose:\n%s", "db", n, merged)
 	}
 }

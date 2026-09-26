@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
@@ -53,6 +55,34 @@ func composeWasmFactory(t *testing.T) renderer.EngineFactory {
 	return func(string) (renderer.Provider, error) {
 		return wasmengine.NewAssembler(lookup, uri, loader), nil
 	}
+}
+
+// composeServiceKeyCount decodes a rendered compose file and returns how many
+// times the named service's mapping carries key. The service is decoded as a
+// node rather than into a map or a struct, so a key written twice is counted
+// instead of being rejected by the decoder.
+func composeServiceKeyCount(t *testing.T, compose, service, key string) int {
+	t.Helper()
+	var doc struct {
+		Services map[string]yaml.Node `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(compose), &doc); err != nil {
+		t.Fatalf("rendered compose does not parse as YAML: %v\n%s", err, compose)
+	}
+	svc, ok := doc.Services[service]
+	if !ok {
+		t.Fatalf("rendered compose carries no service %q:\n%s", service, compose)
+	}
+	if svc.Kind != yaml.MappingNode {
+		t.Fatalf("service %q in rendered compose is not a mapping:\n%s", service, compose)
+	}
+	n := 0
+	for i := 0; i+1 < len(svc.Content); i += 2 {
+		if svc.Content[i].Value == key {
+			n++
+		}
+	}
+	return n
 }
 
 // TestMariaDBRecipes_LoadCleanly is the smoke test for all three in-repo
@@ -183,27 +213,33 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		t.Errorf("expected named volume 'db--data' (workload volume 'data' on node 'db') in rendered compose:\n%s", merged)
 	}
 
-	// Healthcheck: the Recipe's container health block reaches the rendered
-	// service. The exec probe becomes a CMD-form test; interval carries
-	// periodSeconds and timeout carries timeoutSeconds. Asserted as one exact
-	// block rather than as scattered substrings, because the shape and the
-	// indentation are both part of what a compose runtime consumes.
+	// Healthcheck: the Recipe's container declares one probe, a readiness exec
+	// probe running the image's own healthcheck.sh, and it reaches the rendered
+	// service as its healthcheck. The exec probe becomes a CMD-form test;
+	// interval carries periodSeconds, timeout carries timeoutSeconds, retries
+	// carries failureThreshold, and start_period carries initialDelaySeconds.
+	// Asserted as one exact block rather than as scattered substrings, because
+	// the shape and the indentation are both part of what a compose runtime
+	// consumes.
 	const wantHealthcheck = "    healthcheck:\n" +
 		"      test:\n" +
 		"        - CMD\n" +
-		"        - mysqladmin\n" +
-		"        - ping\n" +
+		"        - healthcheck.sh\n" +
+		"        - --connect\n" +
+		"        - --innodb_initialized\n" +
 		"      interval: 10s\n" +
-		"      timeout: 5s\n"
+		"      timeout: 5s\n" +
+		"      retries: 3\n" +
+		"      start_period: 10s\n"
 	if !strings.Contains(merged, wantHealthcheck) {
 		t.Errorf("expected healthcheck block\n%s\nin rendered compose:\n%s", wantHealthcheck, merged)
 	}
 
-	// Compose carries a single healthcheck per service, so the container's
-	// readiness probe collapses away in favour of the liveness one. Asserting
-	// its absence keeps the collapse a stated property of the rendered output
-	// rather than a silent one.
-	if strings.Contains(merged, "nc -z localhost 3306") {
-		t.Errorf("expected the tcp readiness probe to collapse away (compose carries one healthcheck per service), but its translation is present in rendered compose:\n%s", merged)
+	// Compose carries one healthcheck per service and the Recipe declares one
+	// probe, so the rendered service carries exactly one healthcheck key. It is
+	// counted on the decoded service because the block match above would still
+	// hold beside a second healthcheck key.
+	if n := composeServiceKeyCount(t, merged, "db", "healthcheck"); n != 1 {
+		t.Errorf("expected exactly one healthcheck on service %q (compose carries one per service and the Recipe declares one probe), got %d in rendered compose:\n%s", "db", n, merged)
 	}
 }
