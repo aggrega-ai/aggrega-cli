@@ -29,34 +29,69 @@ func sha256Hex(b []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+// twoVersionComponent is a valid Component document at the given version — the
+// body a real registry serves for the entity axis. The description tells the two
+// versions' bytes apart so their digests differ, which is what the honor/drift
+// assertions turn on. It is a real entity document because the registry tier now
+// puts a fetched body through its kind's schema before caching it.
+func twoVersionComponent(version string) []byte {
+	return []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: test/two-ver
+  version: "` + version + `"
+  description: two-ver at ` + version + `
+  labels:
+    component.aggrega.ai/type: server
+spec: {}
+`)
+}
+
+// twoVersionSchemaLibrary is the library-axis counterpart: a valid SchemaLibrary
+// at the given version, since the library tier validates a fetched body against
+// the SchemaLibrary schema too — whose library name is PascalCase.
+func twoVersionSchemaLibrary(version string) []byte {
+	return []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: TwoVerLib
+  version: "` + version + `"
+spec:
+  schemas:
+    Storage:
+      type: object
+`)
+}
+
 // twoVersionPuller models the real OCI puller's version semantics: a non-empty
 // floor is fetched verbatim (exact), an empty floor lists tags and floats to the
-// highest (here 1.1.0). It serves two versions of one entity so the honor-vs-float
-// distinction is observable.
-type twoVersionPuller struct{ v100, v110 []byte }
+// highest (here 1.1.0). It serves two versions on each axis so the honor-vs-float
+// distinction is observable, and each axis serves the kind that axis validates.
+type twoVersionPuller struct{ ev100, ev110, lv100, lv110 []byte }
 
 func (p *twoVersionPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
 	return nil, oci.ErrFetchNotFound() // legacy path unused
 }
 
 func (p *twoVersionPuller) PullEntity(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
-	return p.byFloor(floorVersion)
+	return byFloor(floorVersion, p.ev100, p.ev110, oci.MediaTypeComponent)
 }
 
-// PullLibrary mirrors PullEntity's floor semantics so the same two-version
-// fixture exercises a sibling (library) resolver's honor-vs-float distinction.
+// PullLibrary mirrors PullEntity's floor semantics so the same fixture exercises a
+// sibling (library) resolver's honor-vs-float distinction, with library bodies.
 func (p *twoVersionPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
-	return p.byFloor(floorVersion)
+	mt, _ := oci.MediaTypeFor("SchemaLibrary", false)
+	return byFloor(floorVersion, p.lv100, p.lv110, mt)
 }
 
-func (p *twoVersionPuller) byFloor(floorVersion string) (*oci.PullResult, string, error) {
+func byFloor(floorVersion string, v100, v110 []byte, mt string) (*oci.PullResult, string, error) {
 	switch floorVersion {
 	case "1.0.0":
-		return &oci.PullResult{Bytes: p.v100}, "1.0.0", nil
+		return &oci.PullResult{Bytes: v100, MediaType: mt}, "1.0.0", nil
 	case "1.1.0":
-		return &oci.PullResult{Bytes: p.v110}, "1.1.0", nil
+		return &oci.PullResult{Bytes: v110, MediaType: mt}, "1.1.0", nil
 	case "": // bare reference → list-tags → highest
-		return &oci.PullResult{Bytes: p.v110}, "1.1.0", nil
+		return &oci.PullResult{Bytes: v110, MediaType: mt}, "1.1.0", nil
 	}
 	return nil, "", oci.ErrFetchNotFound()
 }
@@ -68,9 +103,11 @@ func (p *twoVersionPuller) byFloor(floorVersion string) (*oci.PullResult, string
 func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	const uri = "test/two-ver"
-	v100 := []byte("component-v1.0.0-bytes")
-	v110 := []byte("component-v1.1.0-bytes")
-	puller := &twoVersionPuller{v100: v100, v110: v110}
+	v100 := twoVersionComponent("1.0.0")
+	v110 := twoVersionComponent("1.1.0")
+	lib100 := twoVersionSchemaLibrary("1.0.0")
+	lib110 := twoVersionSchemaLibrary("1.1.0")
+	puller := &twoVersionPuller{ev100: v100, ev110: v110, lv100: lib100, lv110: lib110}
 
 	cat, err := catalog.LoadAll("", t.TempDir()) // empty catalog → Tier-1/Tier-2 miss, Tier-3 puller
 	if err != nil {
@@ -110,7 +147,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	// 4. SIBLING — the same honoring flip governs the library resolver: a pinned
 	// SchemaLibrary resolves the pin's exact version though a higher one is served.
 	const libURI = "test/two-ver-lib"
-	libReuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{libURI: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)}}}
+	libReuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{libURI: {ResolvedVersion: "1.0.0", Digest: sha256Hex(lib100)}}}
 	libRes, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, libReuse).ResolveLibrary(context.Background(), closure.LibraryAxisNamed("SchemaLibraries"), libURI)
 	if err != nil {
 		t.Fatalf("honored library resolve: %v", err)

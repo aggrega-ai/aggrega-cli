@@ -91,7 +91,7 @@ spec:
 func writeCachedLibrary(t *testing.T, ws, cacheDir, slotURI, body string) string {
 	t.Helper()
 	_, version, _ := resolver.SplitVersionedURI(slotURI)
-	slot := oci.CachePath(ws, cacheDir, slotURI, version)
+	slot := mustCachePath(ws, cacheDir, slotURI, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot %s: %v", slotURI, err)
 	}

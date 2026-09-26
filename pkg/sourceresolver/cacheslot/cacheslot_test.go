@@ -7,9 +7,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
@@ -77,15 +79,81 @@ func TestSlotSeparatesGitModuleSubdirectories(t *testing.T) {
 		t.Errorf("empty module subdirectory changed the slot layout:\n  got  %s\n  want %s", whole, want)
 	}
 
-	// A relative component must not steer the slot out of the cache root.
+	// A subdirectory climbing above its own place is refused, even where the
+	// directories above it would absorb the climb and leave the slot under the
+	// cache root: three parent steps from infra/modules.git land in another host's
+	// place, which is no slot of this source's.
 	escaped, err := cacheslot.Slot("/ws", ".aggrega/cache", "git-repository",
 		url, "", "../../../etc", commit, dg)
-	if err != nil {
-		t.Fatalf("Slot escaped: %v", err)
+	if !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+		t.Fatalf("Slot with module_subdir ../../../etc: err = %v, slot = %q; want the cache-location refusal", err, escaped)
 	}
-	root := cacheslot.SourceArtifactsRoot("/ws", ".aggrega/cache")
-	if !strings.HasPrefix(escaped, root+string(filepath.Separator)) {
-		t.Errorf("module subdirectory steered the slot outside %s: %s", root, escaped)
+	if escaped != "" {
+		t.Errorf("a refused slot came back with a path: %q", escaped)
+	}
+	if !strings.Contains(err.Error(), `module_subdir "../../../etc"`) {
+		t.Errorf("refusal does not name the value under its key: %v", err)
+	}
+}
+
+// TestSlotRefusesAValueThatLeavesItsPlace holds the source-artifact slot builder
+// to refusing every value that would place the slot somewhere other than the place
+// its position names: a version carrying a separator, a URL whose path climbs above
+// its host's place, and a module subdirectory that climbs above its own. Each is
+// asserted against the cache-location condition and against the value being named
+// under the source key it was written as. TestSlotShape is the positive control for
+// a well-formed set of values.
+func TestSlotRefusesAValueThatLeavesItsPlace(t *testing.T) {
+	t.Parallel()
+	const (
+		host = "helm-oci-chart"
+		url  = "oci://hub.aggrega.ai/charts/mariadb"
+		dg   = "sha256:abcdef0123456789"
+	)
+	for _, tc := range []struct {
+		name         string
+		kind         string
+		url          string
+		chart        string
+		moduleSubdir string
+		version      string
+		wantKey      string
+		wantValue    string
+	}{
+		{
+			name: "a version with a separator", kind: host, url: url, version: "1.0.0/x",
+			wantKey: "version", wantValue: "1.0.0/x",
+		},
+		{
+			name: "a version with a backslash", kind: host, url: url, version: `1.0.0\x`,
+			wantKey: "version", wantValue: `1.0.0\x`,
+		},
+		{
+			name: "a compose URL path that climbs with ../", kind: "compose-https-fragment",
+			url:     "https://example.com/a/../../../../../../escape-target/f.yaml",
+			version: "1.0.0", wantKey: "url",
+			wantValue: "https://example.com/a/../../../../../../escape-target/f.yaml",
+		},
+		{
+			name: "a module subdirectory that climbs above its place", kind: "git-repository",
+			url: "git://git.example.com/infra/modules.git", moduleSubdir: "../../../../../../escape-target/subdir",
+			version: "b149cd97", wantKey: "module_subdir", wantValue: "../../../../../../escape-target/subdir",
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := cacheslot.Slot("/ws", ".aggrega/cache", tc.kind, tc.url, tc.chart, tc.moduleSubdir, tc.version, dg)
+			if !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+				t.Fatalf("Slot: err = %v, slot = %q; want the cache-location refusal", err, got)
+			}
+			if got != "" {
+				t.Errorf("a refused slot came back with a path: %q", got)
+			}
+			if want := tc.wantKey + " " + strconv.Quote(tc.wantValue); !strings.Contains(err.Error(), want) {
+				t.Errorf("refusal does not name the value under its key %q: %v", want, err)
+			}
+		})
 	}
 }
 

@@ -150,7 +150,10 @@ func digestOf(b []byte) string {
 // path so tests can inspect it.
 func seedSlot(t *testing.T, workspaceRoot, cacheDir, kind, url, version string, blob []byte, metaDigest string) string {
 	t.Helper()
-	slot := sourcecache.SlotPath(workspaceRoot, cacheDir, kind, url, "", "", version, digestOf(blob))
+	slot, err := sourcecache.SlotPath(workspaceRoot, cacheDir, kind, url, "", "", version, digestOf(blob))
+	if err != nil {
+		t.Fatalf("slot: %v", err)
+	}
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir slot: %v", err)
 	}

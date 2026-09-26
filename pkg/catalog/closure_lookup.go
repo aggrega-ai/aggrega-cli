@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ValidateClosureScopedPillars validates ONLY the catalog Components and Features
@@ -402,7 +403,9 @@ func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint 
 	// Honor a prior pin: resolve the pinned EXACT version (never float to
 	// list-tags→highest) and verify the resolved bytes against the pin's digest.
 	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
+	if _, res, ok, err := l.tier2(fetchURI); err != nil {
+		return res, err
+	} else if ok {
 		return l.honorPinDigest(uri, res)
 	}
 	_, res, err := l.tier3CatalogEntity(ctx, fetchURI, ociKindForHint(kindHint))
@@ -568,7 +571,9 @@ func (l *catalogLookup) ResolveAggregate(ctx context.Context, uri string) (closu
 		return res, nil
 	}
 	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
+	if _, res, ok, err := l.tier2(fetchURI); err != nil {
+		return res, err
+	} else if ok {
 		return l.honorPinDigest(uri, res)
 	}
 	res, err := l.tier3Aggregate(ctx, fetchURI)
@@ -601,7 +606,9 @@ func (l *catalogLookup) ResolveLibrary(ctx context.Context, axis closure.Library
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
 	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
+	if _, res, ok, err := l.tier2(fetchURI); err != nil {
+		return closure.LibraryResolution{Resolution: res}, err
+	} else if ok {
 		res, err := l.honorPinDigest(uri, res)
 		return closure.LibraryResolution{Resolution: res}, err
 	}
@@ -988,17 +995,25 @@ func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
 // reports as absent or incomplete (tier2ReadSlotUnverified) is a miss here as it
 // is at every other reader, so the cascade goes on to the registry, which rewrites
 // the slot, or finds nothing where no registry is reachable.
-func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
+//
+// A version that cannot address a slot at all is not a miss. The registry tier
+// would be handed the same reference, so the refusal is returned as the error and
+// the resolution halts naming the value rather than going on to ask a registry
+// for it.
+func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool, error) {
 	bytes, _, res, err := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, uri)
 	if err != nil {
-		return nil, closure.Resolution{}, false
+		if errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+			return nil, closure.Resolution{}, false, err
+		}
+		return nil, closure.Resolution{}, false, nil
 	}
 	if l.priorPins == nil {
-		return bytes, res, true
+		return bytes, res, true, nil
 	}
 	pin, havePin := l.priorPins[uri]
 	if !havePin || slotHoldsPin(res, pin) {
-		return bytes, res, true
+		return bytes, res, true, nil
 	}
 	// Re-pull reuse-check: the cached slot no longer holds what the prior
 	// lockfile pinned. Skip the hit and flag the URI so the Tier-3 re-fetch
@@ -1007,7 +1022,7 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 	// registry is reachable, rather than laundering the drifted slot into the
 	// new lockfile.
 	l.refetchPending[uri] = pin.Digest
-	return nil, closure.Resolution{}, false
+	return nil, closure.Resolution{}, false, nil
 }
 
 // slotHoldsPin reports whether a cache hit still holds what a prior lockfile pin
@@ -1094,9 +1109,13 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // Returns an error wrapping oci.ErrFetchNotFound when the cache directory is
 // unset, when the URI carries no version pin, when the cache slot holds no
 // readable content, or when it holds content but no manifest; a manifest that
-// exists but cannot be read is reported as that failure.
+// exists but cannot be read is reported as that failure, and a version that
+// cannot address a slot as the refusal oci.CachePath returns.
 func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, []byte, closure.Resolution, error) {
-	slot, version, ok := tier2Slot(workspaceRoot, cacheDir, uri)
+	slot, version, ok, err := tier2Slot(workspaceRoot, cacheDir, uri)
+	if err != nil {
+		return nil, nil, closure.Resolution{}, err
+	}
 	if !ok {
 		return nil, nil, closure.Resolution{}, errNotInContentCache(uri)
 	}
@@ -1259,9 +1278,13 @@ func tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest,
 // workspace cache slot. Returns the bytes plus the standard
 // closure.Resolution descriptor.
 //
+// The pulled body is put through its kind's schema before it is written
+// (admitFetchedEntity), so an entity its own schema refuses halts here and
+// nothing is cached for it.
+//
 // Returns (nil, Resolution{NotFound: true}, nil) when the puller is
 // nil (hermetic-build path) or when the URI cannot be split into a
-// valid OCI reference + tag. Returns a wrapped error on pull or
+// valid OCI reference + tag. Returns a wrapped error on pull, schema or
 // cache-write failure.
 func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string, puller OCIPuller, uri, kind string) ([]byte, closure.Resolution, error) {
 	if puller == nil {
@@ -1297,6 +1320,9 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 				return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w\n  %s", uri, err, rem)
 			}
 			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
+		}
+		if aerr := admitFetchedEntity(kind, result.Bytes, name+":"+resolvedVersion); aerr != nil {
+			return nil, closure.Resolution{}, aerr
 		}
 		// A bare-name reference pins the fetched body's metadata.version (identity);
 		// a floored reference keeps the floor. The cache slot is keyed by the
@@ -1341,6 +1367,9 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 		}
 		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
 	}
+	if aerr := admitFetchedEntity(kind, result.Bytes, reference+":"+tag); aerr != nil {
+		return nil, closure.Resolution{}, aerr
+	}
 	if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, tag, result); err != nil {
 		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
 	}
@@ -1352,6 +1381,11 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 	}, nil
 }
 
+// tier3Library is the registry tier of a library on any axis: it fetches the
+// library, puts the fetched body through the schema of the axis's kind before
+// anything is cached (admitFetchedEntity), and caches it. A published library its
+// own schema refuses therefore halts the resolution here rather than being
+// cached and then passed over when the cached copy is read.
 func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (closure.Resolution, error) {
 	if l.ociPuller == nil {
 		return closure.Resolution{NotFound: true}, nil
@@ -1371,6 +1405,9 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 				return closure.Resolution{NotFound: true}, nil
 			}
 			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, name, err)
+		}
+		if aerr := admitFetchedEntity(kind, result.Bytes, name+":"+resolvedVersion); aerr != nil {
+			return closure.Resolution{}, aerr
 		}
 		// For a bare-name reference (no consumer @version floor), pin the fetched
 		// library's metadata.version (identity), not the resolver-selected tag
@@ -1416,6 +1453,9 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 			return closure.Resolution{NotFound: true}, nil
 		}
 		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, uri, err)
+	}
+	if aerr := admitFetchedEntity(kind, result.Bytes, reference+":"+tag); aerr != nil {
+		return closure.Resolution{}, aerr
 	}
 	if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, uri, tag, result); err != nil {
 		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, uri, err)
@@ -1466,7 +1506,9 @@ func (l *catalogLookup) tier3Aggregate(ctx context.Context, uri string) (closure
 // (ErrFetchNotFound) — so a build, or an offline pull, never networks. It is the
 // single fetch+cache+pin primitive shared by the closure's tier3Aggregate (sub
 // path) and the triad resolver's Tier-3 seam (top-level path): one cache layout,
-// one identity rule, two call sites.
+// one identity rule, two call sites. The fetched body is put through the
+// Aggregate schema before anything is cached (admitFetchedEntity), so an
+// Aggregate its own schema refuses is never written.
 //
 // # The document is returned, the digest covers the artifact
 //
@@ -1493,6 +1535,9 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 		}
 		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)
 	}
+	if aerr := admitFetchedEntity("Aggregate", result.Bytes, name+":"+fetchVersion); aerr != nil {
+		return nil, "", "", "", false, aerr
+	}
 	// Pin the fetched entity's metadata.version (identity), not the OCI tag it
 	// was fetched under (fetchVersion, a location coordinate now discarded) — so
 	// the pin matches the build-side tier-1 (bridged) derivation and a
@@ -1516,6 +1561,35 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	return document, version, contentDigest(result.Bytes), result.Digest, true, nil
 }
 
+// admitFetchedEntity puts a body a registry fetch returned through the schema of
+// the kind it was fetched as, before anything is written for it: the same
+// envelope gate the parse that later reads the cached entity applies (the kind's
+// parse in catalog.go). No rule is added by it, only moved ahead of the write, so
+// a published entity its own schema refuses halts the fetch instead of landing in
+// the cache and being refused, or skipped, when something reads it.
+//
+// kind is the catalog kind the fetch asked for. A fetch that named none — the
+// already-located reference path — is held to the kind the document itself
+// declares, which is the kind every later reader of the slot parses it as. A
+// body that carries no entity document at all is refused by the same unwrap every
+// reader applies.
+//
+// coordinate names what was fetched, as `<name>:<version>`; the refusal positions
+// its findings against it, since the document has no file on this machine yet.
+func admitFetchedEntity(kind string, published []byte, coordinate string) error {
+	document, err := oci.EntityYAML(published)
+	if err != nil {
+		return fmt.Errorf("fetched %s was not cached: %w", coordinate, err)
+	}
+	if kind == "" {
+		kind = peekEntityKind(document)
+	}
+	if _, err := envelope.ValidateBytes(envelope.Kind(kind), document, coordinate); err != nil {
+		return fmt.Errorf("fetched %s was not cached: %w", coordinate, err)
+	}
+	return nil
+}
+
 // writeEntityToCacheSlot stores the pulled bytes at the standard
 // cache slot for uri@version. A library on any declared axis lands
 // under the canonical "library.yaml" filename (matching the
@@ -1526,7 +1600,10 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 		return nil
 	}
 	if isLibraryMediaType(result.MediaType) {
-		slot := oci.CachePath(workspaceRoot, cacheDir, uri, version)
+		slot, err := oci.CachePath(workspaceRoot, cacheDir, uri, version)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(slot, 0o755); err != nil {
 			return err
 		}
@@ -1578,25 +1655,35 @@ func isLibraryMediaType(mt string) bool {
 // version. It is the one derivation of that slot, so the read that verifies a
 // slot's bytes and the unpack that lays them out afterwards cannot come to
 // address different directories.
-func tier2Slot(workspaceRoot, cacheDir, uri string) (string, string, bool) {
+//
+// The version is read out of uri, so it is whatever the reference carries — an
+// author's `name:version`, or a pin a record supplied — and a version that would
+// address a place outside the slot's own is refused rather than read from; the
+// refusal is the error, returned with false. See oci.CachePath.
+func tier2Slot(workspaceRoot, cacheDir, uri string) (string, string, bool, error) {
 	if cacheDir == "" {
-		return "", "", false
+		return "", "", false, nil
 	}
 	_, version, hasV := resolver.SplitVersionedURI(uri)
 	if !hasV || version == "" {
-		return "", "", false
+		return "", "", false, nil
 	}
-	return oci.CachePath(workspaceRoot, cacheDir, uri, version), version, true
+	slot, err := oci.CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return "", "", false, err
+	}
+	return slot, version, true, nil
 }
 
 // tier3Slot returns the cache slot tier3PullCatalogEntity wrote the bytes it
 // resolved uri to, given the resolution it returned: the slot is keyed by the URI
 // as passed and by the version the resolution records, which is the version the
 // write used. It returns "" where no slot was written, because no cache directory
-// is configured.
-func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) string {
+// is configured, and the refusal oci.CachePath returns where the version could
+// not address a slot — which the write it follows would have refused first.
+func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) (string, error) {
 	if cacheDir == "" {
-		return ""
+		return "", nil
 	}
 	return oci.CachePath(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
 }

@@ -65,7 +65,7 @@ func TestAnEntitySlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			t.Parallel()
 			ws := t.TempDir()
 			pin, _ := seedVerifiedEntitySlot(t, ws, cacheDir, slotURI, version, oci.MediaTypeComponent, body)
-			shape.lay(t, oci.CachePath(ws, cacheDir, slotURI, version))
+			shape.lay(t, mustCachePath(ws, cacheDir, slotURI, version))
 			cat, err := LoadAll("", t.TempDir())
 			if err != nil {
 				t.Fatalf("LoadAll: %v", err)
@@ -134,7 +134,7 @@ func TestAPluginSlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			if err := writeEntityToCacheSlot(ws, cacheDir, entityURI, version, published); err != nil {
 				t.Fatalf("writeEntityToCacheSlot: %v", err)
 			}
-			shape.lay(t, oci.CachePath(ws, cacheDir, entityURI, version))
+			shape.lay(t, mustCachePath(ws, cacheDir, entityURI, version))
 			_, _, ok, err := NewLazyLookup(ws, cacheDir, nil, nil).PluginFromCacheByURI(entityURI)
 			switch {
 			case err != nil:
@@ -144,7 +144,7 @@ func TestAPluginSlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			}
 
 			pin := writeCachedPluginArtifact(t, ws, cacheDir, artifactURI, wasm)
-			shape.lay(t, oci.CachePath(ws, cacheDir, artifactURI, pin.Digest))
+			shape.lay(t, mustCachePath(ws, cacheDir, artifactURI, pin.Digest))
 			l := &catalogLookup{catalog: &Catalog{}, workspaceRoot: ws, cacheDir: cacheDir}
 			_, hit, err := l.readCachedPluginArtifact(artifactURI, pin.Digest)
 			switch {

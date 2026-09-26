@@ -674,7 +674,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 
 	// Tamper the cached blob: the content check against the manifest halts with
 	// ErrFetchIntegrity rather than serving the corrupted .wasm.
-	slot := oci.CachePath(root, ".aggrega/cache", uri, contentDigest)
+	slot := mustCachePath(root, ".aggrega/cache", uri, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}

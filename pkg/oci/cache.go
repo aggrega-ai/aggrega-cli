@@ -26,15 +26,25 @@ import (
 // the future `aggrega pull` invocation populates both axes
 // uniformly.
 //
-// URI encoding replaces filesystem-unsafe characters (the path
-// separator `/`, the scheme separator `://`, the version-pin `:`,
-// the registry-port `:`) with URL-percent-encoded forms so the slot
-// is a stable, single-segment directory across operating systems.
+// URI encoding replaces the path separators `/` and `\` with
+// URL-percent-encoded forms so the URI occupies one directory level.
 // Two CachePath invocations with the same inputs produce
 // byte-identical paths.
-func CachePath(workspaceRoot, cacheDir, uri, version string) string {
-	encoded := encodeURI(uri)
-	return filepath.Join(EntitiesRoot(workspaceRoot, cacheDir), encoded, version)
+//
+// The reference and the version each name one directory, and a slot
+// that either would move elsewhere is refused rather than built: a
+// version that carries a separator or names `.` or `..`, or a reference
+// whose encoding is `.` or `..`, returns the refusal
+// [ErrCacheLocationOutsideCache] names, quoting the value. The version
+// comes from a record read back from disk, from a reference an author
+// wrote, or from a body a registry served, so nothing upstream of this
+// builder is relied on to have held it to that shape; see
+// [JoinCacheLocation].
+func CachePath(workspaceRoot, cacheDir, uri, version string) (string, error) {
+	return JoinCacheLocation(EntitiesRoot(workspaceRoot, cacheDir), fmt.Sprintf("entity %q", uri),
+		CacheSegment{Key: "reference", Value: uri, Segment: encodeURI(uri)},
+		CacheSegment{Key: "version", Value: version, Segment: version},
+	)
 }
 
 // EntitiesRoot returns the root of the catalog-entity subtree of the
@@ -122,7 +132,11 @@ func SignatureBundlePath(cacheDir, bundleDigest string) string {
 // function with a directory-walking variant; callers should consult
 // the layout convention in effect at their entry point.
 func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	blob := filepath.Join(CachePath(workspaceRoot, cacheDir, uri, version), "blob")
+	slot, err := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return nil, err
+	}
+	blob := filepath.Join(slot, "blob")
 	data, err := os.ReadFile(blob)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -138,7 +152,10 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 // "blob"; callers wanting a multi-file layout should use the
 // directory-aware variants that future implementations introduce.
 func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) error {
-	dir := CachePath(workspaceRoot, cacheDir, uri, version)
+	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("oci: cache mkdir %s: %w", dir, err)
 	}
@@ -157,7 +174,11 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 // content blob written without its manifest); other errors surface as wrapped
 // read failures. Mirrors ReadCached; the filename is "manifest".
 func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	blob := filepath.Join(CachePath(workspaceRoot, cacheDir, uri, version), "manifest")
+	slot, err := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return nil, err
+	}
+	blob := filepath.Join(slot, "manifest")
 	data, err := os.ReadFile(blob)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -175,7 +196,10 @@ func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, e
 // read re-derive the manifest digest from a stored artifact rather than trusting
 // a recorded value with nothing to check it against.
 func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestBytes []byte) error {
-	dir := CachePath(workspaceRoot, cacheDir, uri, version)
+	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("oci: manifest cache mkdir %s: %w", dir, err)
 	}

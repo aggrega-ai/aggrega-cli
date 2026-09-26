@@ -110,7 +110,7 @@ func TestConcurrentReadsOfOnePinnedSlotNeverMeetAMissingLayout(t *testing.T) {
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, row.publish(t, t.TempDir()), row.uri, "1.0.0")
 			pins := map[string]Pin{row.uri: pin}
-			tree := sourcecache.ExtractedTree(oci.CachePath(root, layoutCacheDir, row.uri, "1.0.0"), pin.Digest)
+			tree := sourcecache.ExtractedTree(mustCachePath(root, layoutCacheDir, row.uri, "1.0.0"), pin.Digest)
 			session := NewLazyLookup(root, layoutCacheDir, nil, nil)
 
 			dir, files, ok := row.resolve(session.ForRequest(pins), tree)

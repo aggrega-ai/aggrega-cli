@@ -126,7 +126,7 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 		"Chart.yaml": "apiVersion: v2\nname: mariadb\nversion: 25.0.8\n",
 	})
 	digest := digestOfBytes(blob)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+	slot := mustSlotPath(t, root, ".aggrega/cache", "helm-oci-chart",
 		"oci://hub.aggrega.ai/charts/mariadb", "", "", "25.0.8", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
@@ -200,7 +200,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
 	})
 	digest := digestOfBytes(blob)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+	slot := mustSlotPath(t, root, ".aggrega/cache", "helm-oci-chart",
 		"oci://hub.aggrega.ai/charts/tls", "", "", "1.2.3", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
@@ -268,7 +268,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 		"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
 	})
 	digest := digestOfBytes(blob)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+	slot := mustSlotPath(t, root, ".aggrega/cache", "helm-oci-chart",
 		"oci://hub.aggrega.ai/charts/tls", "", "", "1.2.3", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
@@ -349,7 +349,7 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 			"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
 		})
 		d := digestOfBytes(blob)
-		slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart", url, "", "", pinnedVersion, d)
+		slot := mustSlotPath(t, root, ".aggrega/cache", "helm-oci-chart", url, "", "", pinnedVersion, d)
 		mustMkdirAll(t, slot)
 		mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 		mustWriteChartManifest(t, slot, blob)
@@ -578,6 +578,17 @@ func mustMkdirAll(t *testing.T, path string) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// mustSlotPath is sourcecache.SlotPath for a fixture identity that addresses a
+// slot, failing the test where the identity is refused instead.
+func mustSlotPath(t *testing.T, workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest string) string {
+	t.Helper()
+	slot, err := sourcecache.SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest)
+	if err != nil {
+		t.Fatalf("SlotPath: %v", err)
+	}
+	return slot
 }
 
 func mustWriteFile(t *testing.T, path string, data []byte) {

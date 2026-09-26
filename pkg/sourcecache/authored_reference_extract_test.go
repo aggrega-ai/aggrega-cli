@@ -102,8 +102,11 @@ func TestLookupAndExtractAddressesTheSlotByThePinnedVersion(t *testing.T) {
 	// The slot the fixture seeded is the one addressed by the commit. Deriving it
 	// here from the same public helper the seed used keeps the assertion about
 	// WHICH slot was read rather than about how a path is spelled.
-	wantSlot := sourcecache.SlotPath(root, ".aggrega/cache",
+	wantSlot, err := sourcecache.SlotPath(root, ".aggrega/cache",
 		"git-repository", "git://example.invalid/repo", "", "", commit, lf.SourceArtifacts[0].Digest)
+	if err != nil {
+		t.Fatalf("SlotPath: %v", err)
+	}
 	if want := sourcecache.ExtractedTree(wantSlot, lf.SourceArtifacts[0].Digest); extracted != want {
 		t.Errorf("extracted into %q, want the tree inside the slot addressed by the pinned commit %q", extracted, want)
 	}

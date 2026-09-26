@@ -185,7 +185,7 @@ func relocateMappingLibraryToCache(t *testing.T, root, cacheDir, version string)
 	if err := os.Remove(filepath.Join(root, "catalog", "mappinglibraries", "helmhelpers.yaml")); err != nil {
 		t.Fatalf("remove local mapping library: %v", err)
 	}
-	slot := oci.CachePath(root, cacheDir, "HelmHelpers:"+version, version)
+	slot := mustCachePath(root, cacheDir, "HelmHelpers:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}

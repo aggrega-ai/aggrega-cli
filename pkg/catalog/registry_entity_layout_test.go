@@ -174,7 +174,7 @@ func TestPinnedEntityReadsTheFilesItsArchiveCarries(t *testing.T) {
 				t.Fatalf("the pinned %s did not resolve; skips = %v", row.kind, ll.Skips())
 			}
 
-			slot := oci.CachePath(root, layoutCacheDir, row.uri, "1.0.0")
+			slot := mustCachePath(root, layoutCacheDir, row.uri, "1.0.0")
 			want := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart")
 			if got != want {
 				t.Fatalf("source anchored at %q; want the chart inside the slot's layout %q", got, want)
@@ -211,7 +211,7 @@ func TestPinnedRecipeRenderDocumentIsItsLayoutDocument(t *testing.T) {
 			writeTree(t, pub, map[string]string{"recipe.yaml": row.doc})
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-			want := filepath.Join(sourcecache.ExtractedTree(oci.CachePath(root, layoutCacheDir, uri, "1.0.0"), pin.Digest), "recipe.yaml")
+			want := filepath.Join(sourcecache.ExtractedTree(mustCachePath(root, layoutCacheDir, uri, "1.0.0"), pin.Digest), "recipe.yaml")
 
 			ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
 			ll.SetPins(map[string]Pin{uri: pin})
@@ -260,7 +260,7 @@ func TestPinnedSlotLayoutIsRebuiltFromTheBlobOnEveryRead(t *testing.T) {
 	writeTree(t, pub, map[string]string{"recipe.yaml": carriedRecipeDoc})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
 	template := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "banner.yaml")
 	stray := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "stray.yaml")
 
@@ -316,7 +316,7 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 	writeTree(t, pub, map[string]string{"recipe.yaml": carriedRecipeDoc})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
 
 	substitute := t.TempDir()
 	writeTree(t, substitute, map[string]string{
@@ -367,7 +367,7 @@ spec:
 		t.Fatalf("Bundle: %v", err)
 	}
 	pin := seedPinnedArtifact(t, root, blob, mediaType, uri, "1.0.0")
-	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
 	writeTree(t, slot, map[string]string{"outside-chart/Chart.yaml": "apiVersion: v2\nname: outside\nversion: 0.1.0\n"})
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
@@ -411,7 +411,7 @@ spec:
 	})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Component", filepath.Join(pub, "component.yaml"), uri, "1.0.0")
-	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
 
 	cwd := t.TempDir()
 	t.Chdir(cwd)
@@ -467,7 +467,7 @@ spec:
 `})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Component", filepath.Join(pub, "component.yaml"), uri, "1.0.0")
-	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
 	ll.SetPins(map[string]Pin{uri: pin})

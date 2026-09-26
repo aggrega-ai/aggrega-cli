@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 )
 
@@ -229,7 +228,7 @@ func TestIntegration_RegistryEntityReadsTheFilesItsArchiveCarries(t *testing.T) 
 		{"helm/bannered-local:1.0.0", "chart/templates/greeting.yaml"},
 		{"helm/banner-local:1.0.0", "chart/templates/banner.yaml"},
 	} {
-		dir := oci.CachePath(ws, ".aggrega/cache", slot.uri, "1.0.0")
+		dir := mustCachePath(ws, ".aggrega/cache", slot.uri, "1.0.0")
 		pulled, err := os.ReadFile(filepath.Join(dir, "blob"))
 		if err != nil {
 			t.Fatalf("after the pull, %s's cache slot holds no artifact: %v", slot.uri, err)

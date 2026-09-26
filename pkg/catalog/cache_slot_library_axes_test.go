@@ -42,7 +42,7 @@ func TestCacheSlotUsesLibraryFilenameOnEveryAxis(t *testing.T) {
 				t.Fatalf("writeEntityToCacheSlot: %v", werr)
 			}
 
-			slot := oci.CachePath(ws, cacheDir, uri, version)
+			slot := mustCachePath(ws, cacheDir, uri, version)
 			got, rerr := os.ReadFile(filepath.Join(slot, "library.yaml"))
 			if rerr != nil {
 				t.Fatalf("a %s pulled into the cache was not written under the canonical library filename, "+

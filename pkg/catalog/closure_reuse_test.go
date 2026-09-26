@@ -41,7 +41,7 @@ spec:
 // the miss rather than the reuse decision these rows are about.
 func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 	t.Helper()
-	slot := oci.CachePath(ws, cacheDir, reuseURI, "1.0.0")
+	slot := mustCachePath(ws, cacheDir, reuseURI, "1.0.0")
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir slot: %v", err)
 	}
@@ -56,7 +56,7 @@ func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 
 func readCacheSlot(t *testing.T, ws, cacheDir string) []byte {
 	t.Helper()
-	slot := oci.CachePath(ws, cacheDir, reuseURI, "1.0.0")
+	slot := mustCachePath(ws, cacheDir, reuseURI, "1.0.0")
 	got, err := os.ReadFile(filepath.Join(slot, "library.yaml"))
 	if err != nil {
 		t.Fatalf("read slot library.yaml: %v", err)

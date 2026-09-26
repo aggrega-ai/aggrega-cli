@@ -160,7 +160,7 @@ func relocateArtifactLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err := os.Remove(filepath.Join(root, "catalog", "base", "artifactlibraries", "sharedartifacts.yaml")); err != nil {
 		t.Fatalf("remove local artifact library: %v", err)
 	}
-	slot := oci.CachePath(root, cacheDir, "SharedArtifacts:"+version, version)
+	slot := mustCachePath(root, cacheDir, "SharedArtifacts:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}

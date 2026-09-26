@@ -88,7 +88,7 @@ func TestTier2ReadVerified(t *testing.T) {
 	t.Run("tampered manifest is ErrCachedManifestIntegrity", func(t *testing.T) {
 		tws := t.TempDir()
 		cp, mp := seedVerifiedEntitySlot(t, tws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
-		slot := oci.CachePath(tws, cacheDir, uri, version)
+		slot := mustCachePath(tws, cacheDir, uri, version)
 		if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 			t.Fatalf("tamper manifest: %v", err)
 		}
@@ -145,7 +145,7 @@ func TestTier2ReadVerifiedManifestAuthorityBeatsForgedPins(t *testing.T) {
 	// body), then overwrite ONLY the content blob with a forged body.
 	_, manifestPin := seedVerifiedEntitySlot(t, ws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
 	forged := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {evil: true}\n")
-	slot := oci.CachePath(ws, cacheDir, uri, version)
+	slot := mustCachePath(ws, cacheDir, uri, version)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), forged, 0o644); err != nil {
 		t.Fatalf("forge content: %v", err)
 	}

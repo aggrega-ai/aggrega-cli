@@ -174,7 +174,10 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: api-server\n  version: 2.0.0\n")
+	// A valid Component: the registry tier puts a fetched body through its kind's
+	// schema before it caches it, so the served document must be one its schema admits.
+	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: api-server\n  version: 2.0.0\n" +
+		"  labels:\n    component.aggrega.ai/type: server\nspec: {}\n")
 
 	store := memory.New()
 	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, compBody, nil); err != nil {
@@ -192,7 +195,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	}
 	// Golden literal (not a re-derivation): the exact content-address of the
 	// version-2.0.0 compBody, guarding the digest format.
-	const wantComp2Digest = "sha256:44340f6f2084849530c815c7eb2b797f283cf44d809c83162f161d73d9921dc3"
+	const wantComp2Digest = "sha256:347ccb4ba0cbbd569133e338f62b59b1627c19011b267d252d03b38fad7c9eba"
 	if res.Digest != wantComp2Digest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantComp2Digest)
 	}
@@ -201,7 +204,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	}
 
 	// Verify cache slot was populated as <slot>/blob for non-library mediatypes.
-	slot := oci.CachePath(dir, ".aggrega/cache", "hub.aggrega.ai/component/core/api-server:2.0.0", "2.0.0")
+	slot := mustCachePath(dir, ".aggrega/cache", "hub.aggrega.ai/component/core/api-server:2.0.0", "2.0.0")
 	if _, err := os.Stat(filepath.Join(slot, "blob")); err != nil {
 		t.Errorf("expected cache slot /blob to exist; got %v", err)
 	}
@@ -262,7 +265,7 @@ spec:
 		t.Fatal("expected Tier-3 hit; got NotFound")
 	}
 
-	slot := oci.CachePath(dir, ".aggrega/cache", "hub.aggrega.ai/schemalibrary/core/Probes:1.0.0", "1.0.0")
+	slot := mustCachePath(dir, ".aggrega/cache", "hub.aggrega.ai/schemalibrary/core/Probes:1.0.0", "1.0.0")
 	libYAML := filepath.Join(slot, "library.yaml")
 	got, err := os.ReadFile(libYAML)
 	if err != nil {
@@ -306,7 +309,7 @@ spec:
 		t.Fatalf("ResolveMappingLibrary: %v", err)
 	}
 
-	slot := oci.CachePath(dir, ".aggrega/cache", "hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0", "1.0.0")
+	slot := mustCachePath(dir, ".aggrega/cache", "hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0", "1.0.0")
 	got, err := os.ReadFile(filepath.Join(slot, "library.yaml"))
 	if err != nil {
 		t.Fatalf("expected cache slot /library.yaml: %v", err)
@@ -400,7 +403,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 
 	// Tamper: corrupt the cached blob; the content check must halt with
 	// ErrFetchIntegrity rather than return drifted bytes.
-	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
+	slot := mustCachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
@@ -475,7 +478,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	// manifest digest as the independent pin, the offline read HALTS with
 	// ErrCachedManifestIntegrity — the stored manifest no longer matches the pin
 	// it is anchored to (not a digest re-derived from the cached content).
-	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
+	slot := mustCachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 		t.Fatalf("tamper manifest write: %v", err)
 	}

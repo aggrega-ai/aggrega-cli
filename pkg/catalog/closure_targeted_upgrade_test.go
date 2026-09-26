@@ -24,9 +24,9 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	const uriA = "core/database"
 	const uriB = "core/cache"
-	v100 := []byte("entity-v1.0.0-bytes")
-	v110 := []byte("entity-v1.1.0-bytes")
-	puller := &twoVersionPuller{v100: v100, v110: v110}
+	v100 := twoVersionComponent("1.0.0")
+	v110 := twoVersionComponent("1.1.0")
+	puller := &twoVersionPuller{ev100: v100, ev110: v110, lv100: v100, lv110: v110}
 
 	cat, err := catalog.LoadAll("", t.TempDir()) // empty catalog → Tier-3 puller
 	if err != nil {

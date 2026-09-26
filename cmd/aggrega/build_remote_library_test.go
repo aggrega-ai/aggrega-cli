@@ -337,7 +337,7 @@ func relocateLibraryToCache(t *testing.T, root, cacheDir string) {
 	if err := os.Remove(localPath); err != nil {
 		t.Fatalf("remove local library: %v", err)
 	}
-	slot := oci.CachePath(root, cacheDir, "DbSizing:1.0.0", "1.0.0")
+	slot := mustCachePath(root, cacheDir, "DbSizing:1.0.0", "1.0.0")
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}

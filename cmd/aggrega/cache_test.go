@@ -50,7 +50,7 @@ func writeEntitySlot(t *testing.T, wsRoot, uri, version string, blob []byte) (st
 	if err := oci.WriteCached(wsRoot, cacheTestCacheDir, uri, version, blob); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	return oci.CachePath(wsRoot, cacheTestCacheDir, uri, version), digest.ContentDigest(blob)
+	return mustCachePath(wsRoot, cacheTestCacheDir, uri, version), digest.ContentDigest(blob)
 }
 
 // writeSourceSlot writes a source-artifact cache slot (blob.tgz + metadata.yaml)

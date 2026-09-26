@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -57,7 +56,7 @@ func TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection(t *test
 		url  = "oci://hub.aggrega.ai/charts/bridge"
 		ver  = "2.0.0"
 	)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", kind, url, "", "", ver, digest)
+	slot := mustSlotPath(t, root, ".aggrega/cache", kind, url, "", "", ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)
@@ -154,7 +153,7 @@ func TestDispatchBoundaryScopeFR_InfraTemplatedSourceResolvesFromProjectionInfra
 		url  = "oci://hub.aggrega.ai/charts/bridge"
 		ver  = "3.1.4"
 	)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", kind, url, "", "", ver, digest)
+	slot := mustSlotPath(t, root, ".aggrega/cache", kind, url, "", "", ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)

@@ -51,15 +51,42 @@ type recordingEntityPuller struct {
 	usedLegacy              bool
 }
 
+// The bodies are real entity documents of the kind each path fetches, because the
+// registry tier now puts a fetched body through its kind's schema before caching
+// it. The test asserts only which method bound the reference, so the documents are
+// the minimum each kind's schema accepts.
+const recordingLegacyComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/x
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec: {}
+`
+
+const recordingBoundFeatureRecipe = `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: dotenv-secret
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: compose/dotenv-secret:1.0.0
+  workload: |
+    text: secret
+`
+
 func (p *recordingEntityPuller) Pull(_ context.Context, reference, tag string) (*oci.PullResult, error) {
 	p.usedLegacy = true
 	p.identity, p.version = reference, tag
-	return &oci.PullResult{Bytes: []byte("legacy")}, nil
+	return &oci.PullResult{Bytes: []byte(recordingLegacyComponent), MediaType: oci.MediaTypeComponent}, nil
 }
 
 func (p *recordingEntityPuller) PullEntity(_ context.Context, identity, kind, floorVersion string) (*oci.PullResult, string, error) {
 	p.identity, p.kind, p.version = identity, kind, floorVersion
-	return &oci.PullResult{Bytes: []byte("entity")}, floorVersion, nil
+	mt, _ := oci.MediaTypeFor("FeatureRecipe", false)
+	return &oci.PullResult{Bytes: []byte(recordingBoundFeatureRecipe), MediaType: mt}, floorVersion, nil
 }
 
 // TestTier3PullCatalogEntity_RoutesThroughEntityPuller asserts that, given a

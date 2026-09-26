@@ -146,7 +146,7 @@ func relocateWorkloadLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err := os.Remove(filepath.Join(root, "catalog", "base", "workloadlibraries", "baseworkloads.yaml")); err != nil {
 		t.Fatalf("remove local workload library: %v", err)
 	}
-	slot := oci.CachePath(root, cacheDir, "BaseWorkloads:"+version, version)
+	slot := mustCachePath(root, cacheDir, "BaseWorkloads:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}

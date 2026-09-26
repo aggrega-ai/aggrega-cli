@@ -798,9 +798,17 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, []byte, string, tier2Out
 	bytes, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 	switch {
 	case err == nil:
-		slot, _, _ := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		// The verified read above addressed the slot through this same derivation,
+		// so it cannot refuse here; a refusal would still be no slot to lay out.
+		slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		if serr != nil || !ok {
+			return nil, nil, "", tier2Skip
+		}
 		return bytes, manifest, slot, tier2Use
-	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()):
+	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()),
+		errors.Is(err, oci.ErrCacheLocationOutsideCache()):
+		// A pin whose version cannot address a slot is not fetched around either:
+		// the registry tier would be handed the same version.
 		return nil, nil, "", tier2Skip
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
 		return nil, nil, "", tier2Fetch
@@ -1016,7 +1024,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, pu
 	}
 	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component")
 	if err == nil && bytes != nil {
-		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, uri, res, bytes); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return comp, true
@@ -1056,6 +1064,18 @@ func registryDocument(slot string, published []byte, label string) (string, []by
 	return path, document, err == nil
 }
 
+// registryDocumentAt is registryDocument for the bytes a registry fetch of uri
+// wrote under the resolution res: the slot the write used (tier3Slot), laid out
+// and read. A slot the version cannot address is a miss, in the shape the
+// cascade speaks — the write before it refused the same version first.
+func registryDocumentAt(workspaceRoot, cacheDir, uri string, res closure.Resolution, published []byte) (string, []byte, bool) {
+	slot, err := tier3Slot(workspaceRoot, cacheDir, uri, res)
+	if err != nil {
+		return "", nil, false
+	}
+	return registryDocument(slot, published, uri)
+}
+
 // resolveFeature mirrors resolveComponent for the Feature surface.
 // The same kind-check guards Tier-2 + Tier-3 unmarshal paths against
 // non-Feature bytes arriving from the cache or registry.
@@ -1085,7 +1105,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	}
 	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
 	if err == nil && bytes != nil {
-		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, uri, res, bytes); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return feat, true
@@ -1842,8 +1862,8 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		// The verified read above succeeded through this same derivation, so the slot
 		// is there; an empty one would fold a pinned entity as a catalog-directory
 		// file, which is why the case is skipped rather than passed on.
-		slot, _, ok := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
-		if !ok {
+		slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		if serr != nil || !ok {
 			continue
 		}
 		parseData, uerr := oci.EntityYAML(blob)

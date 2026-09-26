@@ -123,7 +123,10 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	// same string for a kind that pins the authored version verbatim, which is why
 	// reading the authored one worked for as long as those were the only sources a
 	// build could reach.
-	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, entry.PinnedVersion, entry.Digest)
+	slot, err := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, entry.PinnedVersion, entry.Digest)
+	if err != nil {
+		return "", fmt.Errorf("sourcecache: %w", err)
+	}
 	blobPath := filepath.Join(slot, "blob.tgz")
 	blobBytes, err := os.ReadFile(blobPath)
 	if err != nil {
@@ -186,11 +189,11 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 }
 
 // SlotPath returns the cache-slot directory for the given lockfile
-// entry's identity. Mirrors the promoted cacheslot.Slot — takes the
-// digest from the lockfile entry and computes the slot path directly
-// (no directory walk). Used by tests + diagnostics that need the
-// slot path without going through LookupAndExtract.
-func SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest string) string {
-	slot, _ := cacheslot.Slot(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest)
-	return slot
+// entry's identity. It is cacheslot.Slot — the digest taken from the
+// lockfile entry, the slot path computed directly (no directory walk) —
+// and it returns Slot's refusal unchanged: a value that would leave its
+// place in the cache, or an empty workspace root, yields no slot, so an
+// empty path never stands for one.
+func SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest string) (string, error) {
+	return cacheslot.Slot(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest)
 }

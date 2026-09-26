@@ -70,13 +70,17 @@ spec:
     replicas: 1
 `
 
+// bundledSchemaLibraryBody is a library its own schema admits, because the
+// library tier puts a fetched body through that schema before it caches it.
 const bundledSchemaLibraryBody = `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary
 metadata:
-  name: shared-schemas
+  name: SharedSchemas
   version: "2.0.0"
 spec:
-  schemas: {}
+  schemas:
+    Port:
+      type: integer
 `
 
 const bundledAggregateBody = `apiVersion: aggrega.ai/v1alpha1

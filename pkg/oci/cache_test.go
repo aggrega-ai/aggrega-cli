@@ -6,6 +6,7 @@ package oci_test
 import (
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,8 +15,11 @@ import (
 
 func TestCachePathDeterministic(t *testing.T) {
 	t.Parallel()
-	a := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
-	b := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	a, aerr := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	b, berr := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	if aerr != nil || berr != nil {
+		t.Fatalf("CachePath refused a well-formed reference and version: %v / %v", aerr, berr)
+	}
 	if a != b {
 		t.Errorf("two CachePath invocations returned different paths:\n  a: %s\n  b: %s", a, b)
 	}
@@ -30,6 +34,67 @@ func TestCachePathDeterministic(t *testing.T) {
 	}
 	if !strings.Contains(a, "/entities/") {
 		t.Errorf("path should contain the entities subtree segment; got %s", a)
+	}
+}
+
+// TestCachePathRefusesAVersionThatLeavesTheCache holds the entity slot builder to
+// refusing a version that would place the slot somewhere other than the place the
+// version names under the cache: one row per way a value leaves its own directory,
+// each asserted against the cache-location condition and against the value being
+// named under its key, plus a positive control that a well-formed version is
+// accepted.
+func TestCachePathRefusesAVersionThatLeavesTheCache(t *testing.T) {
+	t.Parallel()
+	const uri = "hub.aggrega.ai/component/core/api-server"
+	for _, tc := range []struct {
+		name    string
+		version string
+		refused bool
+	}{
+		{"a plain semver is accepted", "1.0.0", false},
+		{"a prerelease-and-build semver is accepted", "1.0.0-rc.1+build.5", false},
+		{"a traversal", "../../../../../etc", true},
+		{"an interior climb that resolves to a parent", "1.2.3/../../../x", true},
+		{"a bare parent step", "..", true},
+		{"a forward-slash separator", "1.0.0/x", true},
+		{"a backslash separator", `1.0.0\x`, true},
+		{"the current directory", ".", true},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := oci.CachePath("/ws", ".aggrega/cache", uri, tc.version)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("CachePath refused a well-formed version %q: %v", tc.version, err)
+				}
+				return
+			}
+			if !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+				t.Fatalf("CachePath(version=%q): err = %v, path = %q; want the cache-location refusal", tc.version, err, got)
+			}
+			if got != "" {
+				t.Errorf("a refused slot came back with a path: %q", got)
+			}
+			if !strings.Contains(err.Error(), "version "+strconv.Quote(tc.version)) {
+				t.Errorf("refusal does not name the value under its key: %v", err)
+			}
+		})
+	}
+}
+
+// TestCachePathRefusesAReferenceThatEncodesToADotDirectory holds the same builder
+// to refusing a reference whose encoded segment is `.` or `..` — the reference
+// occupies one directory too, and one that names a dot directory would move every
+// slot for it. An ordinary reference encodes to a percent-escaped single segment
+// and is accepted.
+func TestCachePathRefusesAReferenceThatEncodesToADotDirectory(t *testing.T) {
+	t.Parallel()
+	if _, err := oci.CachePath("/ws", ".aggrega/cache", "..", "1.0.0"); !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+		t.Errorf("a reference of .. was not refused: %v", err)
+	}
+	if _, err := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0"); err != nil {
+		t.Errorf("a well-formed reference was refused: %v", err)
 	}
 }
 

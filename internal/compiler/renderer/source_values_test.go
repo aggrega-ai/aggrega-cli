@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -27,7 +26,7 @@ func seedChartCache(t *testing.T, root, url, ver string) string {
 		"Chart.yaml": "apiVersion: v2\nname: db\nversion: " + ver + "\n",
 	})
 	digest := digestOfBytes(blob)
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart", url, "", "", ver, digest)
+	slot := mustSlotPath(t, root, ".aggrega/cache", "helm-oci-chart", url, "", "", ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)

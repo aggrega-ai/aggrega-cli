@@ -155,7 +155,7 @@ func TestAReusedSlotWhoseManifestMovedIsFetchedAgain(t *testing.T) {
 
 	// Replace the persisted manifest and leave the content alone, so only the
 	// manifest half of the pin is violated.
-	manifestPath := filepath.Join(oci.CachePath(ws, cacheDir, reuseURI, "1.0.0"), "manifest")
+	manifestPath := filepath.Join(mustCachePath(ws, cacheDir, reuseURI, "1.0.0"), "manifest")
 	if err := os.WriteFile(manifestPath, []byte(`{"schemaVersion":2,"replaced":true}`), 0o644); err != nil {
 		t.Fatalf("replace the persisted manifest: %v", err)
 	}
