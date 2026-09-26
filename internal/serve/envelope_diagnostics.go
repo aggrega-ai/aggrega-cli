@@ -11,6 +11,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -174,12 +175,21 @@ func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 // first (the workspace config and the named Release's lockfile, which
 // carry no apiVersion+kind envelope) and then by the document's
 // apiVersion+kind (every kind an author writes a document of). The second return is
-// true only when the document classifies AND the envelope rejected it —
-// the signal the caller uses to early-return (which short-circuits the
-// semantic pass for the named Release's Aggregate and is the coverage for
-// every other file).
-// Foreign YAML and envelope-clean documents return (nil, false), so the
-// caller falls through to its existing flow unchanged.
+// true only when the document classifies AND the envelope rejected it or
+// it leaves a required value empty — the signal the caller uses to
+// early-return (which short-circuits the semantic pass for the named
+// Release's Aggregate and is the coverage for every other file).
+// Foreign YAML and envelope-clean documents that owe no value return
+// (nil, false), so the caller falls through to its existing flow unchanged.
+//
+// A document classified above as a kind the single-entity validation accepts
+// is also read for its placeholders — the required values it leaves empty — by
+// the reading that validation itself runs, so the editor names every placeholder the command
+// names for the same bytes, with what each takes. That includes an empty value
+// the schema admits, which the envelope reports nothing about. An envelope
+// finding at a placeholder's key is dropped in the placeholder's favour, by the
+// rule the command's refusal drops it by; every other finding is reported as
+// it would be without the reading.
 func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
 	kind, ok := classifyByFilename(file, releasePath)
 	if !ok {
@@ -190,16 +200,17 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 	}
 	_, err := envelope.ValidateBytes(kind, content, "")
 	var envErr *envelope.Error
-	if !errors.As(err, &envErr) {
-		// Clean (err == nil) or a non-envelope engine error — either way
-		// this leg produces no findings; fall through.
+	if err != nil && !errors.As(err, &envErr) {
+		// A non-envelope engine error: this leg produces no findings; fall
+		// through.
+		return nil, false
+	}
+	owed, hasPlaceholders := validateops.ReadPlaceholders(kind, content, file, err)
+	if envErr == nil && !hasPlaceholders {
+		// Clean, and nothing still owed: this leg produces no findings.
 		return nil, false
 	}
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
-	// One rejection, one condition: every finding beneath it reports the same
-	// identifiers and opens with the same sentence, and what separates them is the
-	// key each one points at.
-	codes := conditionCodesOf(envErr)
 	// The sentence is read off the condition rather than written here, and the
 	// message a terminal shows for the same rejection reads it from that same
 	// place, so the two surfaces cannot disagree about which condition they are
@@ -213,31 +224,77 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 	// repeated once per squiggle and add lines without adding facts.
 	header := cerrors.ComposeMessage(envelope.ErrEntityEnvelope(), []string{string(kind)}, "")
 	var diags []Diagnostic
-	for _, f := range leafmostFindings(envErr.Findings) {
-		// The path is resolved through the same walk the envelope's own
-		// rendered message uses, against the same buffer bytes it just
-		// validated, so the two surfaces cannot disagree about WHICH key a
-		// violation points at. The span is recomputed here rather than read
-		// off the error because it must be expressed in the client's
-		// negotiated position encoding, which only the daemon knows — so the
-		// line is the same number on both surfaces and the column is the same
-		// position counted in the units each surface reports in.
-		line, col := 1, 1
-		var endLine, endCol int
-		if span, ok := yamlpos.FieldRange(doc, idx, f.FieldPath); ok {
-			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
+	if envErr != nil {
+		// One rejection, one condition: every finding beneath it reports the same
+		// identifiers and opens with the same sentence, and what separates them is
+		// the key each one points at.
+		codes := conditionCodesOf(envErr)
+		findings := leafmostFindings(envErr.Findings)
+		if hasPlaceholders {
+			// Dropped after the leaf-most narrowing rather than before it, so a
+			// finding that narrowing hid stays hidden: the placeholder takes the
+			// place of the finding it replaces and uncovers nothing else.
+			findings = owed.FindingsAwayFrom(findings)
 		}
-		diags = append(diags, Diagnostic{
-			Line:           line,
-			Column:         col,
-			EndLine:        endLine,
-			EndColumn:      endCol,
-			Severity:       editorSeverityError,
-			Message:        header + ": " + f.Message,
-			ConditionCodes: codes,
-		})
+		for _, f := range findings {
+			line, col, endLine, endCol := fieldPathSpan(doc, idx, f.FieldPath)
+			diags = append(diags, Diagnostic{
+				Line:           line,
+				Column:         col,
+				EndLine:        endLine,
+				EndColumn:      endCol,
+				Severity:       editorSeverityError,
+				Message:        header + ": " + f.Message,
+				ConditionCodes: codes,
+			})
+		}
+	}
+	if hasPlaceholders {
+		// The refusal the command reports for these bytes is what the identifiers
+		// are read from: the envelope's condition where the gate refused the
+		// document, and none where it admitted every empty value. The message opens
+		// with the condition's sentence exactly when there is a condition to name.
+		codes := conditionCodesOf(owed.Refusal)
+		lead := ""
+		if envErr != nil {
+			lead = header + ": "
+		}
+		for _, p := range owed.Entries {
+			line, col, endLine, endCol := fieldPathSpan(doc, idx, p.KeyPath)
+			diags = append(diags, Diagnostic{
+				Line:      line,
+				Column:    col,
+				EndLine:   endLine,
+				EndColumn: endCol,
+				Severity:  editorSeverityError,
+				Message: lead + p.KeyPath + " is a placeholder still owed. An empty required value is not a value, " +
+					"so it needs one before the document validates",
+				ConditionCodes: codes,
+				Suggest:        "fill it with " + p.Takes,
+				KeyPath:        p.KeyPath,
+			})
+		}
 	}
 	return diags, true
+}
+
+// fieldPathSpan draws a key the envelope's field-path spelling names, in the
+// client's negotiated position encoding, and at the head of the file when the
+// path resolves to nothing.
+//
+// The path is resolved through the same walk the envelope's own rendered
+// message uses, against the same buffer bytes it just validated, so the two
+// surfaces cannot disagree about WHICH key a violation points at. The span is
+// recomputed here rather than read off the error because it must be expressed
+// in the client's negotiated position encoding, which only the daemon knows —
+// so the line is the same number on both surfaces and the column is the same
+// position counted in the units each surface reports in.
+func fieldPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, fieldPath string) (line, col, endLine, endCol int) {
+	line, col = 1, 1
+	if span, ok := yamlpos.FieldRange(doc, idx, fieldPath); ok {
+		line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
+	}
+	return line, col, endLine, endCol
 }
 
 // leafmostFindings keeps only findings whose FieldPath is not a strict

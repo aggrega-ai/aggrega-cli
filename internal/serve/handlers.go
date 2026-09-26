@@ -441,8 +441,8 @@ type validateResult struct {
 
 // checkedDocument is the value validateResult.Checked carries when the request
 // named no Release: the findings cover the document itself — whether it parses,
-// and whether its own shape is admissible — and nothing that needs a Release
-// was run.
+// whether its own shape is admissible, and which required values it still
+// leaves empty — and nothing that needs a Release was run.
 const checkedDocument = "document"
 
 // dispatchValidate parses the request params, calls handleValidate,
@@ -568,17 +568,21 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// Per-file document-envelope validation on the buffer: any classifiable
 	// aggrega document (not just the Release's Aggregate) gets the same
 	// envelope verdict the CLI gives it, on its own file, at the offending
-	// key, on unsaved content. Findings early-return — which short-circuits
-	// the semantic pass for that Aggregate (a structurally invalid buffer
-	// makes the disk-based pipeline's verdict misleading) and is the honest
-	// coverage for every other file. Foreign YAML and envelope-clean
-	// documents fall through to the existing flow unchanged.
+	// key, on unsaved content — and a catalog entity of a kind the single-entity
+	// validation accepts gets every placeholder that validation names, at its
+	// key, whether or not a Release was named. Findings early-return — which
+	// short-circuits the semantic pass for that Aggregate (a structurally
+	// invalid buffer makes the disk-based pipeline's verdict misleading) and
+	// is the honest coverage for every other file. Foreign YAML, and
+	// envelope-clean documents that owe no value, fall through to the
+	// existing flow unchanged.
 	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, []byte(params.Content), &doc); hasFindings {
 		s.setDiagnostics(file, diags)
-		// The document's own shape was rejected, so it is not yet a document the
-		// publishing conventions have anything to say about: a name that is wrong
-		// where the envelope is broken is the second problem, and reporting it here
-		// would bury the first. The layer is cleared rather than left standing.
+		// The document's own shape was rejected, or it still owes a value, so it is
+		// not yet a document the publishing conventions have anything to say about:
+		// a name that is wrong where the envelope is broken is the second problem,
+		// and reporting it here would bury the first. The layer is cleared rather
+		// than left standing.
 		s.setConventionDiagnostics(file, nil)
 		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}

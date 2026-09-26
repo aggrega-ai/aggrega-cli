@@ -120,6 +120,67 @@ func placeholderRefusal(kind envelope.Kind, data []byte, path string, schemaErr 
 	return refusal
 }
 
+// Placeholder is one value a document of a single-entity kind leaves empty, as
+// the single-entity scope names it: the dotted key path, spelled as the envelope
+// gate spells the paths of its findings, and what the value takes.
+type Placeholder struct {
+	KeyPath string
+	Takes   string
+}
+
+// Placeholders is the single-entity scope's reading of a document's
+// placeholders, for a surface that reports each one at its own key rather than
+// as the one grouped refusal ValidateEntity returns.
+type Placeholders struct {
+	// Entries are the placeholders, ordered by where each sits in the document.
+	Entries []Placeholder
+
+	// Refusal is the refusal ValidateEntity returns for the same bytes. Where
+	// the envelope gate refused the document its chain carries the condition
+	// that refusal carries, and where the gate accepted it the chain carries no
+	// condition, so the identifiers a surface reads off it are the ones the
+	// command reports for those bytes.
+	Refusal error
+
+	found []placeholder
+}
+
+// FindingsAwayFrom returns the envelope findings the refusal still reports
+// beside its placeholders: those whose field path is not a placeholder's. It is
+// the rule ValidateEntity applies to the same findings, so a surface dropping
+// what it drops reports the placeholder in place of the finding the empty value
+// fails, and every other finding as the gate reported it.
+func (p Placeholders) FindingsAwayFrom(findings []jsonvalidator.Finding) []jsonvalidator.Finding {
+	return findingsAwayFrom(findings, p.found)
+}
+
+// ReadPlaceholders reads the values a document leaves empty exactly as
+// ValidateEntity reads them before it reports the envelope gate's verdict:
+// kind is the kind the caller classified the document as, and schemaErr is the
+// gate's verdict on the same bytes.
+//
+// It reports false when kind is not one the single-entity scope accepts, when
+// the document leaves no required value empty, and when there was nothing to
+// read — the gate could not parse or validate the document, or the reading
+// could not run over it. The caller then reports the gate's verdict as it
+// stands. A reading that could not run is where this and ValidateEntity part:
+// the command refuses the document naming the failure, and a surface reporting
+// each placeholder at its key has no key to report that failure at.
+func ReadPlaceholders(kind envelope.Kind, data []byte, path string, schemaErr error) (Placeholders, bool) {
+	if _, accepted := knownEntityKind(string(kind)); !accepted {
+		return Placeholders{}, false
+	}
+	var refusal *placeholderError
+	if !errors.As(placeholderRefusal(kind, data, path, schemaErr), &refusal) {
+		return Placeholders{}, false
+	}
+	entries := make([]Placeholder, 0, len(refusal.placeholders))
+	for _, p := range refusal.placeholders {
+		entries = append(entries, Placeholder{KeyPath: p.path, Takes: p.takes})
+	}
+	return Placeholders{Entries: entries, Refusal: refusal, found: refusal.placeholders}, true
+}
+
 // findingsAwayFrom returns the findings whose field path is not a placeholder's.
 // A finding at a placeholder's path is a constraint the empty value fails, and
 // the placeholder line already says what the value takes.
