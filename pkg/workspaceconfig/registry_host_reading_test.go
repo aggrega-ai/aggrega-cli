@@ -5,6 +5,7 @@ package workspaceconfig
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,9 +76,39 @@ var registryHostCorpus = []string{
 	"my_registry.example.com",
 }
 
+// registryAliasRows are the default-registry spellings that name a registries
+// entry rather than a host, each beside the entries it is read against and what
+// it must resolve to — an empty host where the load refuses it. They are
+// exactly the rows the corpus above cannot carry, because whether a default is
+// accepted there turns on the entries rather than on the spelling.
+var registryAliasRows = []struct {
+	name      string
+	value     string
+	entries   []any
+	host      string
+	ambiguous bool
+}{
+	{name: "an alias naming one entry", value: "local",
+		entries: []any{map[string]any{"name": "local", "host": "127.0.0.1:5000"}},
+		host:    "127.0.0.1:5000"},
+	{name: "an alias spelled like a host, naming one entry", value: "hub.aggrega.ai",
+		entries: []any{map[string]any{"name": "hub.aggrega.ai", "host": "mirror.example.com:8443"}},
+		host:    "mirror.example.com:8443"},
+	{name: "an alias spelled in capitals, naming one entry", value: "Private Registry",
+		entries: []any{map[string]any{"name": "Private Registry", "host": "private.example.com"}},
+		host:    "private.example.com"},
+	{name: "a name no entry carries", value: "nowhere",
+		entries: []any{map[string]any{"name": "local", "host": "127.0.0.1:5000"}}},
+	{name: "an alias naming two entries", value: "shared", ambiguous: true,
+		entries: []any{
+			map[string]any{"name": "shared", "host": "a.example.com"},
+			map[string]any{"name": "shared", "host": "b.example.com"},
+		}},
+}
+
 // TestTheRegistryHostPatternAgreesWithThePredicate holds the configuration
-// schema's two host patterns to the one predicate, registryhost.IsHost, and holds
-// the configuration load to the one reading built on it.
+// schema's host pattern to the one predicate, registryhost.IsHost, and holds the
+// configuration load to the one reading built on it.
 //
 // The pattern and the predicate are two independent statements of one shape: the
 // pattern is what an editor or any validator reading the schema alone refuses, and
@@ -89,11 +120,18 @@ var registryHostCorpus = []string{
 // with the predicate: loosening the pattern by one character class makes this test
 // fail on the row that class admits.
 //
-// It then drives the same row through the whole file load and through the
-// environment overlay, which the schema never sees, and requires each to accept
-// exactly the spellings the predicate accepts and the normaliser leaves unchanged
-// — refusing the rest as a configuration error that names the key and, where the
-// value names a host at all, the spelling to write.
+// default_registry carries no pattern at all, because a default may also be the
+// name of a registries entry and a name may be any string; so the schema alone
+// admits every spelling there, and this test requires that it does — a pattern
+// added back to the key would refuse a name the load accepts. What judges the
+// default is the resolution, and the test drives each row through it on both of
+// its layers — the file and the environment overlay, which the schema never sees
+// — requiring each to accept exactly the spellings the predicate accepts and the
+// normaliser leaves unchanged, and to refuse the rest as a configuration error
+// that names the key, the layer, and, where the value names a host at all, the
+// spelling to write. The alias rows then drive a default that names an entry:
+// accepted as that entry's host where one entry carries the name, and refused
+// where none or two do.
 func TestTheRegistryHostPatternAgreesWithThePredicate(t *testing.T) {
 	t.Parallel()
 	for _, s := range registryHostCorpus {
@@ -101,13 +139,10 @@ func TestTheRegistryHostPatternAgreesWithThePredicate(t *testing.T) {
 		canonical := isHost && registryhost.Normalize(s) == s
 		normalised := registryhost.Normalize(s)
 
-		// The schema alone, on both keys. An empty default names no default
-		// registry, which the default's pattern admits and the host's does not.
+		// The schema alone, on both keys.
 		defaultDoc := marshalConfig(t, map[string]any{"workspace": map[string]any{}, "default_registry": s})
-		_, derr := envelope.ValidateBytes(envelope.KindAggregaConfig, defaultDoc, "corpus")
-		if wantDefault := s == "" || isHost; (derr == nil) != wantDefault {
-			t.Errorf("default_registry %q: the schema's pattern accepts=%v but the predicate accepts=%v: %v",
-				s, derr == nil, wantDefault, derr)
+		if _, err := envelope.ValidateBytes(envelope.KindAggregaConfig, defaultDoc, "corpus"); err != nil {
+			t.Errorf("default_registry %q: the schema alone refuses it, but a default may be any entry's name: %v", s, err)
 		}
 		hostDoc := marshalConfig(t, map[string]any{"workspace": map[string]any{},
 			"registries": []any{map[string]any{"host": s}}})
@@ -117,23 +152,26 @@ func TestTheRegistryHostPatternAgreesWithThePredicate(t *testing.T) {
 				s, herr == nil, isHost, herr)
 		}
 
-		// The file layer, through the whole load.
-		checkLayer(t, "default_registry in a file", s, s == "" || canonical, normalised,
-			func() error { _, err := load(writeFixture(t, string(defaultDoc))); return err })
-		checkLayer(t, "registries[].host in a file", s, canonical, normalised,
-			func() error { _, err := load(writeFixture(t, string(hostDoc))); return err })
+		// The file layer, through the whole resolution for the default and through
+		// the file load for an entry's host.
+		defaultPath := writeFixture(t, string(defaultDoc))
+		checkLayer(t, "default_registry in a file", s, s == "" || canonical, normalised, defaultPath, func() error {
+			cfg, err := resolveFixture(defaultPath, nil)
+			if err == nil && cfg.DefaultRegistry != s {
+				t.Errorf("default_registry %q was accepted but the resolved default is %q", s, cfg.DefaultRegistry)
+			}
+			return err
+		})
+		hostPath := writeFixture(t, string(hostDoc))
+		checkLayer(t, "registries[].host in a file", s, canonical, normalised, hostPath,
+			func() error { _, err := load(hostPath); return err })
 
 		// The environment layer. An unset or empty variable falls through by design,
 		// so only a set value is a value this layer carries.
 		if s != "" {
-			checkLayer(t, "$AGGREGA_DEFAULT_REGISTRY", s, canonical, normalised, func() error {
-				cfg := Default()
-				_, err := applyEnvOverlay(&cfg, func(k string) string {
-					if k == "AGGREGA_DEFAULT_REGISTRY" {
-						return s
-					}
-					return ""
-				})
+			envPath := writeFixture(t, "workspace: {}\n")
+			checkLayer(t, "$AGGREGA_DEFAULT_REGISTRY", s, canonical, normalised, "$AGGREGA_DEFAULT_REGISTRY", func() error {
+				cfg, err := resolveFixture(envPath, map[string]string{"AGGREGA_DEFAULT_REGISTRY": s})
 				if err == nil && cfg.DefaultRegistry != s {
 					t.Errorf("$AGGREGA_DEFAULT_REGISTRY %q was accepted but the resolved default is %q", s, cfg.DefaultRegistry)
 				}
@@ -141,12 +179,58 @@ func TestTheRegistryHostPatternAgreesWithThePredicate(t *testing.T) {
 			})
 		}
 	}
+
+	for _, row := range registryAliasRows {
+		doc := marshalConfig(t, map[string]any{"workspace": map[string]any{},
+			"default_registry": row.value, "registries": row.entries})
+		if _, err := envelope.ValidateBytes(envelope.KindAggregaConfig, doc, "alias"); err != nil {
+			t.Errorf("%s: the schema alone refuses the configuration: %v", row.name, err)
+		}
+		entriesOnly := marshalConfig(t, map[string]any{"workspace": map[string]any{}, "registries": row.entries})
+		layers := []struct {
+			label, path, names string
+			env                map[string]string
+		}{
+			{label: "in a file", path: writeFixture(t, string(doc))},
+			{label: "through $AGGREGA_DEFAULT_REGISTRY", path: writeFixture(t, string(entriesOnly)),
+				names: "$AGGREGA_DEFAULT_REGISTRY", env: map[string]string{"AGGREGA_DEFAULT_REGISTRY": row.value}},
+		}
+		for _, layer := range layers {
+			names := layer.names
+			if names == "" {
+				names = layer.path
+			}
+			cfg, err := resolveFixture(layer.path, layer.env)
+			switch {
+			case row.host != "":
+				if err != nil {
+					t.Errorf("%s %s: refused, want it resolved to %q: %v", row.name, layer.label, row.host, err)
+				} else if cfg.DefaultRegistry != row.host {
+					t.Errorf("%s %s: the resolved default is %q, want the entry's host %q", row.name, layer.label, cfg.DefaultRegistry, row.host)
+				}
+			case row.ambiguous:
+				if !errors.Is(err, ErrAmbiguousRegistryAlias()) {
+					t.Errorf("%s %s: got %v, want the default refused as an ambiguous alias", row.name, layer.label, err)
+				} else if !strings.Contains(err.Error(), names) || !strings.Contains(err.Error(), "default_registry") {
+					t.Errorf("%s %s: the refusal does not name the key and the layer %q: %v", row.name, layer.label, names, err)
+				}
+			default:
+				if !errors.Is(err, ErrConfigInvalid()) {
+					t.Errorf("%s %s: got %v, want the default refused as a configuration error", row.name, layer.label, err)
+				} else if !strings.Contains(err.Error(), names) || !strings.Contains(err.Error(), "the name of an entry under registries") {
+					t.Errorf("%s %s: the refusal does not name the layer %q and say a default may name an entry: %v",
+						row.name, layer.label, names, err)
+				}
+			}
+		}
+	}
 }
 
 // checkLayer asserts one layer's verdict on one spelling: accepted exactly when
-// want says, and otherwise refused as a configuration error naming the key and,
+// want says, and otherwise refused as a configuration error naming the key, the
+// layer that carried the value — names, a file's path or the variable — and,
 // where the value names a host, the spelling to write.
-func checkLayer(t *testing.T, layer, s string, want bool, normalised string, run func() error) {
+func checkLayer(t *testing.T, layer, s string, want bool, normalised, names string, run func() error) {
 	t.Helper()
 	err := run()
 	if (err == nil) != want {
@@ -162,12 +246,26 @@ func checkLayer(t *testing.T, layer, s string, want bool, normalised string, run
 	if !strings.Contains(err.Error(), "is not") {
 		t.Errorf("%s %q: the refusal does not say what is wrong: %v", layer, s, err)
 	}
+	if !strings.Contains(err.Error(), names) {
+		t.Errorf("%s %q: the refusal does not name the layer that carried it, %q: %v", layer, s, names, err)
+	}
 	if registryhost.IsHost(normalised) && !strings.Contains(err.Error(), `write "`+normalised+`"`) {
 		t.Errorf("%s %q: the refusal does not name the spelling to write, %q: %v", layer, s, normalised, err)
 	}
 	if strings.Contains(s, "secret") && strings.Contains(err.Error(), "secret") {
 		t.Errorf("%s %q: the refusal repeats the credentials the value carries: %v", layer, s, err)
 	}
+}
+
+// resolveFixture resolves the workspace whose configuration file is path, with
+// an environment holding only env: no ambient variable and no global
+// configuration file reaches the resolution.
+func resolveFixture(path string, env map[string]string) (Config, error) {
+	rw, err := Resolve(filepath.Dir(path), "", fakeEnv(env))
+	if err != nil {
+		return Config{}, err
+	}
+	return rw.Config(), nil
 }
 
 // marshalConfig renders a configuration document, quoting each value the way

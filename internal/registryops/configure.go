@@ -359,7 +359,8 @@ type RemoveResult struct {
 //
 // The default_registry pointer is left untouched. Removing a registry's trust
 // policy reverts that host to default trust; it does not change which registry
-// is the default.
+// is the default. A default written as the removed entry's alias names nothing
+// afterwards, and the next resolution refuses it until it is rewritten.
 func Remove(rw *workspaceconfig.ResolvedWorkspace, opts RemoveOptions) (RemoveResult, error) {
 	var res RemoveResult
 	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace)

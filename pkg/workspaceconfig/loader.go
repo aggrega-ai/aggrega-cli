@@ -32,10 +32,11 @@ func ErrConfigInvalid() error { return errConfigInvalid }
 var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
 	Message:   "file failed schema validation",
-	RulePlace: cerrors.RuleNoStageReaches("Reading one layer of the workspace configuration evaluates the rule — against the schema, and " +
-		"against the further shape and value checks that layer carries. The configuration is read before " +
-		"any build begins, and by commands that run no build at all, so no declared stage of a " +
-		"compilation holds the document being judged."),
+	RulePlace: cerrors.RuleNoStageReaches("Reading the workspace configuration evaluates the rule — each layer against the schema, and " +
+		"against the further shape and value checks that layer carries, and the composed layers against " +
+		"the checks no single layer can answer, such as what the default registry names. The configuration " +
+		"is read before any build begins, and by commands that run no build at all, so no declared stage " +
+		"of a compilation holds the document being judged."),
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
@@ -139,16 +140,18 @@ var errDuplicateRegistryAlias = cerrors.Register("duplicate-registry-alias", cer
 // errors.Is(err, ErrAmbiguousRegistryAlias()) carry the offending alias. An alias
 // selects exactly one host; a hand-edited config that binds the same alias to two
 // hosts makes the selection ambiguous, so resolution halts loudly rather than
-// silently choosing one host over the other.
+// silently choosing one host over the other. The token is either one a command
+// names or the default registry a configuration names, and both are matched by
+// the one alias match.
 func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 
 var errAmbiguousRegistryAlias = cerrors.Register("ambiguous-registry-alias", cerrors.Meta{
 	ShortCode: "E0222",
 	Message:   "registry alias matches more than one host",
-	RulePlace: cerrors.RuleNoStageReaches("Registry-token resolution evaluates the rule, once per invocation, when the token a command " +
-		"names matches the alias of more than one configured entry. The token comes from the invocation " +
-		"rather than from any document a build reads, so no declared stage of a compilation holds the " +
-		"value being resolved."),
+	RulePlace: cerrors.RuleNoStageReaches("Registry-token resolution evaluates the rule when a token matches the alias of more than " +
+		"one configured entry: the token a command names, once per invocation, or the default registry the " +
+		"workspace configuration names, once as that configuration resolves. Both are resolved before any " +
+		"build begins, so no declared stage of a compilation holds the value being resolved."),
 })
 
 // Load reads the workspace's .aggrega-config.yaml file at path,
@@ -356,29 +359,26 @@ func checkConfigShape(probe any, path string) error {
 	return nil
 }
 
-// checkRegistryHosts refuses a default_registry or a registries[].host that is
-// not a registry host in the spelling its trust policy is kept under — the one
-// reading registryhost.Check words — naming the key, the file that carried it,
-// and the spelling to write where the value names a host at all. An empty
-// default_registry names no default and is left alone.
+// checkRegistryHosts refuses a registries[].host that is not a registry host in
+// the spelling its trust policy is kept under — the one reading
+// registryhost.Check words — naming the key, the file that carried it, and the
+// spelling to write where the value names a host at all.
 //
-// It runs ahead of the schema, whose pattern on both keys states the same shape,
+// It runs ahead of the schema, whose pattern on the key states the same shape,
 // so the refusal a reader meets names the fix rather than quoting a pattern; an
 // independent validator reading the schema alone still refuses the same values.
 // A value of another type is left to the schema, which reports the type.
 //
-// The file is one layer of three. The environment overlay and the command line
-// set the same values after every file has been validated, so each of them runs
-// the same check where it sets one; the schema never sees those layers.
+// default_registry is not judged here. It may name a registries entry, which
+// another layer may declare, so no single file can tell a name from a mistake;
+// it is judged once, where the configuration resolves, over every layer — the
+// files and the environment alike. The command line names a publication's
+// destination rather than the default, and holds it to the same reading where
+// it names one.
 func checkRegistryHosts(probe any, path string) error {
 	root, ok := probe.(map[string]any)
 	if !ok {
 		return nil
-	}
-	if v, ok := root["default_registry"].(string); ok && v != "" {
-		if err := registryhost.Check("default_registry", v); err != nil {
-			return fmt.Errorf("workspaceconfig: %s: %v: %w", path, err, ErrConfigInvalid())
-		}
 	}
 	entries, _ := root["registries"].([]any)
 	for i, item := range entries {

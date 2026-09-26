@@ -20,7 +20,8 @@
 //     trust lookup is keyed.
 //   - Normalize produces that keyed spelling from a reference or an authority,
 //     and Same compares two of them through it.
-//   - Check words the refusal for a configured value the two do not accept.
+//   - Check words the refusal for a configured value the two do not accept, and
+//     CheckOr words it for a value that may name something besides a host.
 //   - IsLoopback decides whether an authority addresses this machine, which is
 //     what selects plain HTTP over HTTPS.
 //
@@ -124,9 +125,10 @@ func IsLoopback(authority string) bool {
 //
 // It judges the spelling of a host and nothing else: it never resolves the name
 // and cannot say whether a registry answers there. The configuration schema
-// states the same shape as a pattern on default_registry and on each
-// registries[].host, and a test in the configuration package drives one corpus
-// of spellings through both and fails where they disagree.
+// states the same shape as a pattern on each registries[].host, and a test in the
+// configuration package drives one corpus of spellings through both and fails
+// where they disagree. default_registry carries no such pattern, because it may
+// also name a registries entry, whose name may be any string.
 func IsHost(s string) bool {
 	host, port, ok := splitAuthority(s)
 	if !ok {
@@ -177,6 +179,29 @@ func Normalize(ref string) string {
 // whichever layer carried it. The error wraps nothing: a caller adds whatever
 // condition its own surface raises.
 func Check(what, value string) error {
+	return check(what, value, "")
+}
+
+// CheckOr is Check for a value that may name something besides a registry host.
+// alternative says, in the words a refusal uses, what else the value may name —
+// "the name of an entry under registries", say — and the caller has already
+// established that the value names no such thing. A value that names a host in
+// another spelling is refused exactly as Check refuses it, naming the spelling
+// to write; a value that names no host at all is refused as neither, offering
+// the alternative ahead of the shapes a host takes.
+func CheckOr(what, value, alternative string) error {
+	return check(what, value, alternative)
+}
+
+// hostForms lists, in the words a refusal uses, the shapes IsHost accepts. It is
+// the one wording of that list, so every refusal names the same forms.
+const hostForms = "a lowercase host name containing a dot (registry.example.com), localhost, a single " +
+	"name followed by a port (registry:5000), or an IP address, an IPv6 one in brackets — each with an " +
+	"optional :port and nothing else"
+
+// check is Check and CheckOr: alternative is empty for a value that can only be
+// a registry host.
+func check(what, value, alternative string) error {
 	normalised := Normalize(value)
 	if IsHost(value) && normalised == value {
 		return nil
@@ -190,9 +215,11 @@ func Check(what, value string) error {
 			"lowercase, with no scheme, path, credentials or default port — which is the spelling "+
 			"that host's trust policy is kept under", what, shown, normalised)
 	}
-	return fmt.Errorf("%s %s is not a registry host; write a lowercase host name containing a dot "+
-		"(registry.example.com), localhost, a single name followed by a port (registry:5000), or an "+
-		"IP address, an IPv6 one in brackets — each with an optional :port and nothing else", what, shown)
+	if alternative != "" {
+		return fmt.Errorf("%s %s is not a registry host, and it is not %s; write %s, or %s",
+			what, shown, alternative, alternative, hostForms)
+	}
+	return fmt.Errorf("%s %s is not a registry host; write %s", what, shown, hostForms)
 }
 
 // Same reports whether a and b name the same registry host under the one

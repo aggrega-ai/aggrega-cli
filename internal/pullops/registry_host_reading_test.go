@@ -34,7 +34,9 @@ import (
 // For each spelling the load accepts it resolves a real configuration naming the
 // spelling as the default registry — once in a file and once through the
 // environment variable, which is applied after every file is validated — with an
-// entry for the same spelling requiring a signature. It then walks the decision
+// entry for the same spelling requiring a signature; and then twice more with the
+// default written as that entry's name instead, in the file and through the
+// variable, which the resolution must read as the entry's host. It then walks the decision
 // chain the closure signature pass composes: the location binding, the host the
 // location names, the verification filter, and the trust lookup, which must find
 // the entry configured under that very spelling. And it runs the pass itself over
@@ -42,7 +44,10 @@ import (
 //
 // The single-label row is the one the verification filter used to drop: a bare
 // localhost loaded, fetched, and was skipped with nothing said, so an unsigned
-// artifact from it passed even with a signature required.
+// artifact from it passed even with a signature required. The name rows are the
+// same hazard one step earlier: a default read as the name it is written as,
+// rather than as the host its entry names, binds a location at a host named
+// after the alias, which the filter reads as no registry at all.
 func TestEveryHostTheLoadAcceptsIsVerifiedUnderItsOwnPolicy(t *testing.T) {
 	t.Parallel()
 	hosts := []string{
@@ -56,7 +61,7 @@ func TestEveryHostTheLoadAcceptsIsVerifiedUnderItsOwnPolicy(t *testing.T) {
 		"registry:5000",
 	}
 	for _, host := range hosts {
-		for _, layer := range []string{"file", "environment"} {
+		for _, layer := range []string{"file", "environment", "name in the file", "name through the environment"} {
 			t.Run(layer+"/"+host, func(t *testing.T) {
 				t.Parallel()
 				cfg := resolveWithDefaultRegistry(t, host, layer)
@@ -112,21 +117,36 @@ func TestEveryHostTheLoadAcceptsIsVerifiedUnderItsOwnPolicy(t *testing.T) {
 	}
 }
 
-// resolveWithDefaultRegistry resolves a real workspace whose default registry is
-// host — written in the file, or supplied through AGGREGA_DEFAULT_REGISTRY over a
-// file that names none — and whose one registry entry, keyed under the same
-// spelling, requires a signature. The environment lookup is frozen, so no
-// ambient variable and no global configuration file reaches the resolution.
+// defaultEntryName is the name the one registry entry carries, which a default
+// registry may be written as. It is a single name with no port — the shape that,
+// read as a host, binds a location the verification filter does not read as a
+// registry — so a default read as its name rather than its entry's host fails
+// here rather than passing unverified.
+const defaultEntryName = "local-registry"
+
+// resolveWithDefaultRegistry resolves a real workspace whose one registry entry,
+// keyed under host and named defaultEntryName, requires a signature, and whose
+// default registry names it — as the host, or as the entry's name, written in the
+// file or supplied through AGGREGA_DEFAULT_REGISTRY over a file that names none.
+// The environment lookup is frozen, so no ambient variable and no global
+// configuration file reaches the resolution.
 func resolveWithDefaultRegistry(t *testing.T, host, layer string) workspaceconfig.Config {
 	t.Helper()
 	root := t.TempDir()
-	doc := "workspace: {}\nregistries:\n  - host: " + strconv.Quote(host) + "\n    signing:\n      required: true\n"
+	doc := "workspace: {}\nregistries:\n  - host: " + strconv.Quote(host) + "\n    name: " + defaultEntryName +
+		"\n    signing:\n      required: true\n"
 	env := map[string]string{}
 	switch layer {
 	case "file":
 		doc += "default_registry: " + strconv.Quote(host) + "\n"
 	case "environment":
 		env["AGGREGA_DEFAULT_REGISTRY"] = host
+	case "name in the file":
+		doc += "default_registry: " + defaultEntryName + "\n"
+	case "name through the environment":
+		env["AGGREGA_DEFAULT_REGISTRY"] = defaultEntryName
+	default:
+		t.Fatalf("unknown layer %q", layer)
 	}
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(doc), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

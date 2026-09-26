@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
 // envBindingKind classifies how an environment value is parsed before it
@@ -54,20 +52,17 @@ type envBinding struct {
 // of hosts does not express as a single variable — so they remain config-only.
 var envBindings = []envBinding{
 	{
-		// Checked here because this layer is applied after every file has been
-		// validated, so the schema never sees it: a value no configuration file
-		// could carry fails loudly, naming the variable, rather than reaching the
-		// location binding and the trust lookups in a spelling they disagree on.
+		// Taken as written here and judged where the default registry is resolved,
+		// after this overlay: the value may name a registries entry, which any
+		// layer may declare, so it is read the way a configuration file's value is
+		// read — resolved to the entry's host, or held to the one reading of a
+		// registry host — and a value that is neither fails loudly, naming the
+		// variable, rather than reaching the location binding and the trust
+		// lookups.
 		envVar:     "AGGREGA_DEFAULT_REGISTRY",
 		configPath: "default_registry",
 		kind:       envKindString,
-		apply: func(cfg *Config, raw string) error {
-			if err := registryhost.Check("default_registry", raw); err != nil {
-				return fmt.Errorf("%v: %w", err, ErrConfigInvalid())
-			}
-			cfg.DefaultRegistry = raw
-			return nil
-		},
+		apply:      func(cfg *Config, raw string) error { cfg.DefaultRegistry = raw; return nil },
 	},
 	{
 		envVar:     "AGGREGA_OFFLINE",

@@ -89,12 +89,16 @@ type Config struct {
 	// top-level (not root-defining) settings — global-capable, so they
 	// cascade-merge independently of the root marker.
 	//
-	// DefaultRegistry is a registry host in the spelling its trust policy is
-	// looked up under — registryhost.IsHost holds for it and
-	// registryhost.Normalize leaves it unchanged — or empty, which names no
-	// default. Resolution refuses any other value on every layer that can set
-	// it, so every consumer that binds a location from it binds from that one
-	// spelling.
+	// DefaultRegistry is the default registry. A layer writes it as a registry
+	// host in the spelling its trust policy is looked up under —
+	// registryhost.IsHost holds for it and registryhost.Normalize leaves it
+	// unchanged — or as the Name of an entry under Registries, which then stands
+	// for that entry's Host, the name winning where it is also a host spelling;
+	// empty names no default. Resolution replaces a name with its entry's Host,
+	// once, over every layer, and refuses any other value, and a name two entries
+	// carry; so in a resolved configuration it is a host in that one spelling, or
+	// empty, and every consumer that binds a location from it binds from that
+	// host.
 	DefaultRegistry string `yaml:"default_registry"`
 	// Offline is the posture that refuses every network reach. Its
 	// authored key is OfflineSettingKey, and the yaml tag here is that
@@ -173,9 +177,10 @@ type RegistryConfig struct {
 	Host string `yaml:"host"`
 	// Name is an optional friendly alias for this registry. The host is the
 	// identity; Name is a convenience selector that resolves to this entry's
-	// Host wherever a registry is named (for example the push --registry flag).
-	// Empty means the entry is addressed by host only. An alias is unique across
-	// entries — two entries carrying the same alias make it ambiguous.
+	// Host wherever a registry is named (for example the push --registry flag,
+	// and DefaultRegistry). Empty means the entry is addressed by host only. An
+	// alias is unique across entries — two entries carrying the same alias make
+	// it ambiguous.
 	Name string `yaml:"name,omitempty"`
 	// TrustedIdentities is the OR-set of keyless signing identities
 	// accepted for artifacts pulled from this registry. A signature

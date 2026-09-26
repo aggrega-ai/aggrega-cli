@@ -426,6 +426,15 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		contributing = append(contributing, "$"+name)
 	}
 
+	// The default registry may name a registries entry rather than a host. It is
+	// resolved to the host it stands for here, once, over every layer: the entry
+	// may be declared by any layer and the environment sets the default after all
+	// of them, so this is the first point at which both are known. Every reader of
+	// the resolved configuration then reads that one host.
+	if err := resolveDefaultRegistry(&merged, contributing, lookup); err != nil {
+		return nil, err
+	}
+
 	// Compose the org signing policy across every layer plus the environment
 	// overlay. This is a scoped exception to the whole-replace-per-layer rule:
 	// `required` OR-folds and `kinds` unions, so a lower-precedence layer cannot

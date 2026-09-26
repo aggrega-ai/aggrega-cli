@@ -525,8 +525,10 @@ func RemoveProviderBinding(path, query string) (bool, error) {
 // its resolver error rather than removing one arbitrarily.
 //
 // The default_registry pointer is a separate setting and is deliberately left
-// untouched: an absent entry simply reverts that host to default trust, and the
-// resolver's host passthrough keeps it a valid target. Like the other by-key
+// untouched: an absent entry simply reverts a default written as that host to
+// default trust, and the host stays a valid target. A default written as the
+// removed entry's alias names nothing afterwards, and resolution refuses it
+// until it is rewritten. Like the other by-key
 // removers it routes through mutateConfigDocument, keeping the config-write,
 // schema-gate, and node-surgery discipline in one place.
 func RemoveRegistry(path, token string) (bool, error) {

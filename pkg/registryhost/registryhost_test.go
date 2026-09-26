@@ -235,6 +235,57 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// TestCheckOr pins the refusal for a value that may name something besides a
+// host: it is Check's refusal wherever the value names a host at all, and only a
+// value naming no host is refused as neither, offering the alternative first.
+func TestCheckOr(t *testing.T) {
+	t.Parallel()
+	const alternative = "the name of an entry under registries"
+	cases := []struct {
+		name       string
+		in         string
+		wantErr    bool
+		wantSubstr []string
+		notSubstr  []string
+	}{
+		{name: "canonical host", in: "registry.example.com"},
+		{name: "a host in another spelling is Check's refusal", in: "HUB.AGGREGA.AI", wantErr: true,
+			wantSubstr: []string{`write "hub.aggrega.ai"`}, notSubstr: []string{alternative}},
+		{name: "a repository path is Check's refusal", in: "ghcr.io/acme/catalog", wantErr: true,
+			wantSubstr: []string{`default_registry "ghcr.io/acme/catalog"`, `write "ghcr.io"`}, notSubstr: []string{alternative}},
+		{name: "a single name is refused as neither", in: "nowhere", wantErr: true,
+			wantSubstr: []string{`default_registry "nowhere" is not a registry host, and it is not ` + alternative,
+				"write " + alternative + ", or a lowercase host name containing a dot"}},
+		{name: "credentials are not repeated", in: "user:secret@nowhere", wantErr: true,
+			wantSubstr: []string{alternative}, notSubstr: []string{"secret"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := registryhost.CheckOr("default_registry", tc.in, alternative)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("CheckOr(%q) error = %v; want error %v", tc.in, err, tc.wantErr)
+			}
+			if err == nil {
+				return
+			}
+			for _, s := range tc.wantSubstr {
+				if !strings.Contains(err.Error(), s) {
+					t.Errorf("CheckOr(%q) = %q; want it to contain %q", tc.in, err, s)
+				}
+			}
+			for _, s := range tc.notSubstr {
+				if strings.Contains(err.Error(), s) {
+					t.Errorf("CheckOr(%q) = %q; it carries %q", tc.in, err, s)
+				}
+			}
+			if check := registryhost.Check("default_registry", tc.in); registryhost.IsHost(registryhost.Normalize(tc.in)) && check.Error() != err.Error() {
+				t.Errorf("CheckOr(%q) = %q; a value naming a host must be refused exactly as Check refuses it, %q", tc.in, err, check)
+			}
+		})
+	}
+}
+
 // TestIsLoopback pins the shared plain-HTTP-vs-HTTPS gate: the locked loopback
 // set (127.0.0.0/8, ::1, "localhost", any ".localhost" name, and 0.0.0.0) with
 // and without ports and IPv6 brackets, against non-loopback hosts. The
