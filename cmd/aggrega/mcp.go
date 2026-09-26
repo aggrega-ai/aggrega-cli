@@ -5,15 +5,30 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
 )
+
+// helpTransport is the transport flag's help text, held beside the wiring that
+// reads it for the same reason helpListen is.
+//
+// The flag's own default is left empty rather than set to stdio, so the help
+// shows no default beside it: an untyped flag falls through to the config key,
+// and a help line printing stdio as the flag's default would tell a reader
+// whose configuration chooses http that the command ignores it.
+const helpTransport = "How the server is reached: stdio speaks the protocol over standard input and " +
+	"output, which is how a client that launches this command as a subprocess reaches it; http " +
+	"serves it over HTTP on the address --listen or mcp.listen names, and over HTTPS where mcp.tls " +
+	"names a certificate and key. When set, overrides the mcp.transport config key, whose default " +
+	"is stdio."
 
 // helpListen is the listen flag's help text, held beside the wiring that reads
 // it so the promise a reader is given and the layer that keeps it sit together.
@@ -21,12 +36,12 @@ import (
 // It names the confinement because that is what this flag's own value can be
 // refused for at startup, and a reader who meets that refusal needs the two
 // settings that lift it in the same breath as the rule that raised it.
-const helpListen = "Serve the protocol over HTTP on this address instead of standard input and " +
-	"output, in one of two forms: host:port, or unix: followed by a filesystem path. Without " +
-	"it, and with no mcp.listen in the workspace configuration, the server speaks over standard " +
-	"input and output. A listener with no certificate serves plaintext and is permitted only on " +
-	"loopback (127.0.0.1, ::1, localhost) or on a Unix socket, which is the shape a deployment " +
-	"behind a terminating proxy takes; any other address needs mcp.tls.cert_file and " +
+const helpListen = "The address the HTTP transport listens on, in one of two forms: host:port, or " +
+	"unix: followed by a filesystem path. It names where to listen and chooses no transport: it is " +
+	"read with --transport http, or mcp.transport: http in the workspace configuration, and given " +
+	"with the stdio transport it is refused. A listener with no certificate serves plaintext and is " +
+	"permitted only on loopback (127.0.0.1, ::1, localhost) or on a Unix socket, which is the shape " +
+	"a server behind a terminating proxy takes; any other address needs mcp.tls.cert_file and " +
 	"mcp.tls.key_file, which this process then uses to terminate TLS itself. When set, overrides " +
 	"the mcp.listen config key."
 
@@ -39,13 +54,23 @@ func newMCPCmd() *cobra.Command {
 assistant can discover and drive Aggrega operations through a structured
 protocol instead of scraping command output.
 
-Two transports reach the same server, and the invocation chooses between
-them. With no listen address the server speaks newline-delimited JSON-RPC
-2.0 over the process's standard input and output, which is how an
-MCP-capable client runs it: spawned as a subprocess, not typed by hand.
-Given --listen, or mcp.listen in the workspace configuration, it serves
+Two transports reach the same server, and --transport chooses between
+them, with mcp.transport in the workspace configuration as the key it
+overrides. The default, stdio, speaks newline-delimited JSON-RPC 2.0 over
+the process's standard input and output, which is how an MCP-capable
+client runs it: spawned as a subprocess, not typed by hand. http serves
 the protocol over HTTP instead — one long-running process on a host,
-reached by callers who are not at its keyboard.
+reached by callers who are not at its keyboard — on the address --listen
+names, or mcp.listen when the flag is absent.
+
+An address chooses no transport. --listen given with the stdio transport
+is refused, whether stdio was typed, configured or left as the default,
+because it names where to listen for a transport that does not listen.
+An address mcp.listen names is left unused by a server on standard input
+and output, which says so in one line on stderr, so a client can launch
+this command in a directory whose configuration is written for a
+listener. And the http transport with no address from either is refused
+before anything binds.
 
 It speaks two MCP protocol revisions on both transports, 2026-07-28 and
 2025-06-18, so a client of either connects. In 2026-07-28 nothing is
@@ -171,6 +196,7 @@ process exits. A second request ends the process at once.`,
 		Args: cobra.NoArgs,
 		RunE: runMCP,
 	}
+	c.Flags().String("transport", "", helpTransport)
 	c.Flags().String("listen", "", helpListen)
 	return c
 }
@@ -179,13 +205,9 @@ process exits. A second request ends the process at once.`,
 //
 // The two transports differ in how a client reaches the server and in nothing
 // else: the same configuration, the same workspace and the same tool surface go
-// to both, and the branch below is the whole of the difference.
-//
-// The listen address is read from the flag when the reader set it and from the
-// workspace configuration otherwise. Reading whether the flag CHANGED rather
-// than what it holds is what makes an unset flag fall through to the config key
-// instead of forcing an empty value over it — the same ladder the editor
-// backend's own launch dial takes.
+// to both, and the branch below is the whole of the difference. Which of the two
+// this invocation speaks, and where a listener binds, is resolveMCPLaunch's to
+// decide, before either server starts.
 func runMCP(cmd *cobra.Command, args []string) error {
 	flagRoot, _ := cmd.Flags().GetString("workspace-root")
 	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
@@ -202,9 +224,9 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	}
 	settings := ws.Config().MCP
 
-	listen := settings.Listen
-	if cmd.Flags().Changed("listen") {
-		listen, _ = cmd.Flags().GetString("listen")
+	launch, err := resolveMCPLaunch(cmd, ws)
+	if err != nil {
+		return err
 	}
 
 	cfg := mcp.Config{
@@ -241,7 +263,10 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		ListPlugins: pluginListing,
 	}
 
-	if listen == "" {
+	if launch.transport == workspaceconfig.MCPTransportStdio {
+		if launch.notice != "" {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), launch.notice)
+		}
 		return mcp.Run(cmd.Context(), cfg)
 	}
 	// cmd.Context() is the run's context, which ends when the process is first
@@ -271,11 +296,161 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			Egress: func() (*http.Client, error) { return egress.HTTPClient(ws.Config()) },
 		},
 		mcp.ListenConfig{
-			Address:       listen,
+			Address:       launch.address,
 			CertFile:      settings.TLS.CertFile,
 			KeyFile:       settings.TLS.KeyFile,
 			HealthAddress: settings.Health.Listen,
 		})
+}
+
+// mcpLaunch is what one invocation of `aggrega mcp` resolved to.
+type mcpLaunch struct {
+	// transport is workspaceconfig.MCPTransportStdio or
+	// workspaceconfig.MCPTransportHTTP.
+	transport string
+	// address is where the listener binds on the HTTP transport, and empty on
+	// standard input and output.
+	address string
+	// notice is the one line a server on standard input and output writes to say
+	// that a configured address is not used, and empty where no address was
+	// configured.
+	notice string
+}
+
+// resolveMCPLaunch decides which transport this invocation speaks and, on HTTP,
+// where it listens. It is the one place that decision is made, and runMCP calls
+// it before either server starts, so every refusal it makes is made before
+// anything binds.
+//
+// Each flag is read by whether it was TYPED rather than by what it holds, which
+// is what lets an untyped flag fall through to its config key instead of
+// forcing an empty value over it: a typed --transport wins over mcp.transport,
+// which wins over the default, stdio; a typed --listen wins over mcp.listen.
+//
+// The address chooses nothing. So the HTTP transport with no address is
+// refused; a typed --listen under stdio is refused, however stdio was chosen,
+// because it names where to listen for a transport that does not listen; and an
+// address that only the configuration names is left unused under stdio, with
+// one line saying so. That last case is refused nowhere on purpose: it is the
+// launch a client makes when it spawns this command in a directory whose
+// configuration is written for a listener, and a listener's configuration that
+// forgets the transport already fails where it is seen, with no listener and a
+// process that ends at the end of its input.
+//
+// A typed --listen carrying an empty value is refused before any of that,
+// whatever the transport, rather than falling through to mcp.listen: an empty
+// address names nowhere, and treating it as unset would make the flag's absence
+// and its presence mean the same thing.
+func resolveMCPLaunch(cmd *cobra.Command, ws *workspaceconfig.ResolvedWorkspace) (mcpLaunch, error) {
+	settings := ws.Config().MCP
+	flags := cmd.Flags()
+
+	transport := settings.Transport
+	transportTyped := flags.Changed("transport")
+	if transportTyped {
+		transport, _ = flags.GetString("transport")
+	}
+
+	// chosenBy names what chose the transport, the way a refusal has to name it
+	// for a reader to know what to change, and reports whether nothing did. An
+	// untyped transport's layer is read from the provenance the configuration
+	// reading reports rather than worked out again here, and only a refusal asks
+	// for it, so a launch that is refused nothing reads nothing more.
+	chosenBy := func() (phrase string, byDefault bool, err error) {
+		if transportTyped {
+			return "--transport " + transport, false, nil
+		}
+		origin, err := mcpSettingOrigin(ws, "mcp.transport")
+		if err != nil {
+			return "", false, err
+		}
+		if kind, _ := origin.Layer(); kind == workspaceconfig.OriginBuiltInDefault {
+			return "the default", true, nil
+		}
+		return fmt.Sprintf("mcp.transport: %s in %s", transport, origin.Source), false, nil
+	}
+
+	if transport != workspaceconfig.MCPTransportStdio && transport != workspaceconfig.MCPTransportHTTP {
+		// A configuration file is held to the same two words by the schema when
+		// it loads, so this is met by a typed value; the setting is named either
+		// way so the refusal stays true of whichever was read.
+		setting := "mcp.transport"
+		if transportTyped {
+			setting = "--transport"
+		}
+		return mcpLaunch{}, fmt.Errorf("%s was given %q, which is no transport this command speaks: "+
+			"the two it speaks are %s and %s",
+			setting, transport, workspaceconfig.MCPTransportStdio, workspaceconfig.MCPTransportHTTP)
+	}
+
+	listenTyped := flags.Changed("listen")
+	listen := settings.Listen
+	if listenTyped {
+		listen, _ = flags.GetString("listen")
+		if listen == "" {
+			return mcpLaunch{}, fmt.Errorf("--listen was given an empty address, which names nowhere to listen: "+
+				"give it host:port, or unix: followed by a filesystem path, with --transport %s, or leave it out "+
+				"to speak over standard input and output", workspaceconfig.MCPTransportHTTP)
+		}
+	}
+
+	if transport == workspaceconfig.MCPTransportHTTP {
+		if listen == "" {
+			by, _, err := chosenBy()
+			if err != nil {
+				return mcpLaunch{}, err
+			}
+			return mcpLaunch{}, fmt.Errorf("the HTTP transport, chosen by %s, needs an address to listen on, and "+
+				"neither --listen nor mcp.listen names one: pass --listen host:port, or --listen unix: followed by "+
+				"a filesystem path, or set mcp.listen in the workspace configuration", by)
+		}
+		return mcpLaunch{transport: transport, address: listen}, nil
+	}
+
+	if listenTyped {
+		by, byDefault, err := chosenBy()
+		if err != nil {
+			return mcpLaunch{}, err
+		}
+		if byDefault {
+			return mcpLaunch{}, fmt.Errorf("--listen %s names an address for the HTTP transport, and no transport "+
+				"was chosen, so this server would speak over standard input and output, its default: pass "+
+				"--transport %s to serve over HTTP on that address, or leave --listen out",
+				listen, workspaceconfig.MCPTransportHTTP)
+		}
+		return mcpLaunch{}, fmt.Errorf("--listen %s cannot be used with the stdio transport, chosen by %s: "+
+			"--listen names where the HTTP transport listens, and stdio speaks over standard input and output. "+
+			"Choose --transport %s to serve over HTTP on that address, or leave --listen out",
+			listen, by, workspaceconfig.MCPTransportHTTP)
+	}
+
+	launch := mcpLaunch{transport: transport}
+	if settings.Listen != "" {
+		origin, err := mcpSettingOrigin(ws, "mcp.listen")
+		if err != nil {
+			return mcpLaunch{}, err
+		}
+		launch.notice = fmt.Sprintf("mcp: speaking over standard input and output, so the address %s that "+
+			"mcp.listen names, from %s, is not used; set mcp.transport: %s to serve over HTTP on it",
+			settings.Listen, origin.Source, workspaceconfig.MCPTransportHTTP)
+	}
+	return launch, nil
+}
+
+// mcpSettingOrigin returns the provenance the configuration reading reports for
+// one setting of the resolved workspace, so a line naming where a setting came
+// from names the layer `aggrega config show --origin` names.
+func mcpSettingOrigin(ws *workspaceconfig.ResolvedWorkspace, field string) (workspaceconfig.ValueOrigin, error) {
+	origins, err := ws.ValueOrigins()
+	if err != nil {
+		return workspaceconfig.ValueOrigin{}, err
+	}
+	for _, origin := range origins {
+		if origin.Field == field {
+			return origin, nil
+		}
+	}
+	return workspaceconfig.ValueOrigin{}, fmt.Errorf("the configuration reading reports no %s setting", field)
 }
 
 // commandSurface projects the live command tree into the surface the MCP server

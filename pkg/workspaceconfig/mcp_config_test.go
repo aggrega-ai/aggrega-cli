@@ -5,6 +5,7 @@ package workspaceconfig
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +30,7 @@ import (
 // visibly incomplete rather than silently uncovered.
 const mcpFullConfig = `
 mcp:
+  transport: http
   listen: 127.0.0.1:7777
   tls:
     cert_file: /etc/aggrega/server.pem
@@ -66,6 +68,11 @@ func TestLoadMCPEveryDeclaredKey(t *testing.T) {
 	cfg, err := load(writeFixture(t, mcpFullConfig))
 	if err != nil {
 		t.Fatalf("load a config setting every declared mcp key: %v", err)
+	}
+	// The fixture writes the value that is NOT the default, so a transport that
+	// failed to reach its field reads back as the default and is caught here.
+	if cfg.MCP.Transport != MCPTransportHTTP {
+		t.Errorf("MCP.Transport: got %q, want %q", cfg.MCP.Transport, MCPTransportHTTP)
 	}
 	if cfg.MCP.Listen != "127.0.0.1:7777" {
 		t.Errorf("MCP.Listen: got %q, want %q", cfg.MCP.Listen, "127.0.0.1:7777")
@@ -122,21 +129,24 @@ func TestLoadMCPEveryDeclaredKey(t *testing.T) {
 }
 
 // TestLoadMCPAbsentBlockLeavesDocumentedDefaults pins what a workspace that
-// never mentions the block gets: no listener, no certificate, no origin, and
-// both caps at the values the schema states.
+// never mentions the block gets: the standard-input-and-output transport, no
+// address, no certificate, no origin, and the caps at the values the schema
+// states.
 //
-// The empty listen address is the load-bearing one — it is what leaves the
-// server speaking over standard input and output — so a change that started
-// seeding an address here would be a change of transport for every workspace
-// that never asked for one.
+// The transport is the load-bearing one — it is what leaves the server speaking
+// over standard input and output — so a change that seeded the other transport
+// here would start a listener for every workspace that never asked for one.
 func TestLoadMCPAbsentBlockLeavesDocumentedDefaults(t *testing.T) {
 	t.Parallel()
 	cfg, err := load(writeFixture(t, "default_registry: my-registry.example.com\n"))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
+	if cfg.MCP.Transport != MCPTransportStdio {
+		t.Errorf("MCP.Transport: got %q, want %q (the documented default)", cfg.MCP.Transport, MCPTransportStdio)
+	}
 	if cfg.MCP.Listen != "" {
-		t.Errorf("MCP.Listen: got %q, want empty (no listener, stdio transport)", cfg.MCP.Listen)
+		t.Errorf("MCP.Listen: got %q, want empty (no address named)", cfg.MCP.Listen)
 	}
 	if cfg.MCP.TLS.CertFile != "" || cfg.MCP.TLS.KeyFile != "" {
 		t.Errorf("MCP.TLS: got %+v, want both paths empty", cfg.MCP.TLS)
@@ -184,6 +194,11 @@ func TestLoadMCPPresentBlockPreservesUnsetDefaults(t *testing.T) {
 	}
 	if cfg.MCP.Listen != "unix:/run/aggrega/mcp.sock" {
 		t.Fatal("precondition: the mcp block did not parse, so the defaults below would prove nothing")
+	}
+	// An address alone chooses no transport, so a block naming only where to
+	// listen leaves the default transport in force.
+	if cfg.MCP.Transport != MCPTransportStdio {
+		t.Errorf("MCP.Transport: got %q, want %q (the documented default)", cfg.MCP.Transport, MCPTransportStdio)
 	}
 	if cfg.MCP.Limits.MaxBodyBytes != 4_194_304 {
 		t.Errorf("MCP.Limits.MaxBodyBytes: got %d, want 4194304 (the documented default)", cfg.MCP.Limits.MaxBodyBytes)
@@ -323,6 +338,61 @@ func TestLoadMCPDenyReachOutsideTheClosedSetIsRefused(t *testing.T) {
 				t.Fatalf("expected the loader to refuse %s; got nil", tc.name)
 			} else if !errors.Is(err, ErrConfigInvalid()) {
 				t.Errorf("the refusal must wrap ErrConfigInvalid; got %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadMCPTransportOutsideTheTwoIsRefused drives the refusal a transport the
+// server does not speak earns when the configuration loads, and reads that the
+// refusal names the two it does.
+//
+// A misspelled transport that loaded would leave a server meant to listen on the
+// default, speaking over standard input and output with no listener, and nothing about the
+// running process would say the value was never read — so it is held to the two
+// words here, before anything starts.
+//
+// The two accepting rows are the control: each loads and reads back as written,
+// so a refusal below is about the value rather than about the key existing.
+func TestLoadMCPTransportOutsideTheTwoIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, accepted := range []string{MCPTransportStdio, MCPTransportHTTP} {
+		accepted := accepted
+		t.Run("accepts "+accepted, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := load(writeFixture(t, "mcp:\n  transport: "+accepted+"\n"))
+			if err != nil {
+				t.Fatalf("the loader refused transport %q: %v", accepted, err)
+			}
+			if cfg.MCP.Transport != accepted {
+				t.Errorf("MCP.Transport: got %q, want %q", cfg.MCP.Transport, accepted)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"a transport that does not exist", "mcp:\n  transport: tcp\n"},
+		{"a known transport in the wrong case", "mcp:\n  transport: HTTP\n"},
+		{"the empty string", "mcp:\n  transport: ''\n"},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := load(writeFixture(t, tc.content))
+			if err == nil {
+				t.Fatalf("expected the loader to refuse %s; got nil", tc.name)
+			}
+			if !errors.Is(err, ErrConfigInvalid()) {
+				t.Errorf("the refusal must wrap ErrConfigInvalid; got %v", err)
+			}
+			for _, word := range []string{MCPTransportStdio, MCPTransportHTTP} {
+				if !strings.Contains(err.Error(), word) {
+					t.Errorf("the refusal does not name %q, one of the two transports a file may write: %v", word, err)
+				}
 			}
 		})
 	}

@@ -15,34 +15,42 @@ import (
 
 // denyReachEnum reads the values mcp.deny_reach admits out of a configuration
 // schema, in the order the schema lists them.
+func denyReachEnum(schema string) ([]string, error) {
+	return configSchemaEnum(schema, "the deny_reach entries",
+		[]string{"properties", "mcp", "properties", "deny_reach", "items"})
+}
+
+// configSchemaEnum reads the enumeration declared at the end of a path of
+// schema steps, in the order the schema lists it. subject names what the path
+// leads to, as a finding should call it.
 //
 // Every step of the descent is reported rather than skipped. A path that has
 // moved would otherwise yield an empty list, and an empty list compares equal to
-// nothing at all — which is the shape in which this whole check would go quiet
-// while the two sides drifted.
-func denyReachEnum(schema string) ([]string, error) {
+// nothing at all — which is the shape in which a check comparing it would go
+// quiet while the two sides drifted.
+func configSchemaEnum(schema, subject string, steps []string) ([]string, error) {
 	var node map[string]any
 	if err := json.Unmarshal([]byte(schema), &node); err != nil {
 		return nil, fmt.Errorf("unmarshal the configuration schema: %w", err)
 	}
-	for _, step := range []string{"properties", "mcp", "properties", "deny_reach", "items"} {
+	for _, step := range steps {
 		next, ok := node[step].(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("the configuration schema carries no %q under the path to the "+
-				"deny_reach entries; the setting has moved or been renamed", step)
+			return nil, fmt.Errorf("the configuration schema carries no %q under the path to %s; "+
+				"the setting has moved or been renamed", step, subject)
 		}
 		node = next
 	}
 	raw, ok := node["enum"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("the deny_reach entries declare no enum, so the schema admits any string " +
-			"and nothing refuses a value the operation vocabulary does not hold")
+		return nil, fmt.Errorf("no enum is declared for %s, so the schema admits any string "+
+			"and nothing refuses a value the vocabulary does not hold", subject)
 	}
 	out := make([]string, 0, len(raw))
 	for i, v := range raw {
 		s, ok := v.(string)
 		if !ok {
-			return nil, fmt.Errorf("entry %d of the deny_reach enum is not a string: %v", i, v)
+			return nil, fmt.Errorf("entry %d of the enum for %s is not a string: %v", i, subject, v)
 		}
 		out = append(out, s)
 	}
@@ -116,7 +124,7 @@ func TestTheDenyReachEnumReaderRefusesWhatItCannotRead(t *testing.T) {
 		{
 			name:    "the entries carry no enum",
 			schema:  `{"properties":{"mcp":{"properties":{"deny_reach":{"items":{"type":"string"}}}}}}`,
-			wantSub: "declare no enum",
+			wantSub: "no enum is declared",
 		},
 		{
 			name:    "an entry is not a string",

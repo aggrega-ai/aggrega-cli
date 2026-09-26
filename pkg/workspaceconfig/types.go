@@ -868,27 +868,52 @@ type ServeConfig struct {
 	LintOnValidate bool `yaml:"lint_on_validate"`
 }
 
-// MCPConfig carries the Model Context Protocol server's settings: the
-// listen address that selects the HTTP transport, the certificate and
+// The two transports the Model Context Protocol server speaks, spelled as
+// MCPConfig.Transport and the command's --transport flag take them. The
+// configuration schema's enumeration for the key is a second statement of the
+// same two words, held to these by a test in this package.
+const (
+	// MCPTransportStdio speaks the protocol over the process's standard
+	// input and output. It is the default.
+	MCPTransportStdio = "stdio"
+	// MCPTransportHTTP serves the protocol over HTTP on the address Listen
+	// names, and over HTTPS where TLS names a certificate and key.
+	MCPTransportHTTP = "http"
+)
+
+// MCPConfig carries the Model Context Protocol server's settings: which
+// transport it speaks, the address a listener binds, the certificate and
 // key that let the process terminate TLS itself, the origins it
 // accepts, the caps it applies to the traffic it takes, what it
 // declares about the tokens its callers present, and which tools it
 // announces.
 //
-// Listen decides which transport the rest configures: with it empty the
-// server speaks the protocol over standard input and output and no
-// listener exists for the listener fields to configure. AnnounceTools is
-// the exception, and the only one — which tools a client is offered is a
-// property of the server rather than of how a client reached it, so it
-// is read on both transports. Each field below says which of the two it
-// is. Distinct from ServeConfig, which carries the editor-backend
-// daemon's settings.
+// Transport decides which transport the rest configures: with it at
+// MCPTransportStdio the server speaks the protocol over standard input
+// and output and no listener exists for the listener fields to configure.
+// AnnounceTools is read on both transports, because which tools a client
+// is offered is a property of the server rather than of how a client
+// reached it. Each field below says which it is. Distinct from
+// ServeConfig, which carries the editor-backend daemon's settings.
 type MCPConfig struct {
-	// Listen is the address the server listens on, in one of two forms:
-	// "host:port", or "unix:" followed by a filesystem path. Empty (the
-	// default) starts no listener and speaks over standard input and
-	// output. A --listen flag on the command overrides this key for one
-	// invocation.
+	// Transport is how the server is reached: MCPTransportStdio (the
+	// default) or MCPTransportHTTP. A --transport flag on the command
+	// overrides this key for one invocation. The configuration schema
+	// holds a file to those two values when it loads.
+	//
+	// It is the only setting that chooses a transport. Listen names where
+	// a listener binds and chooses nothing, so a configuration carrying an
+	// address still speaks over standard input and output until this is
+	// MCPTransportHTTP.
+	Transport string `yaml:"transport"`
+
+	// Listen is the address the listener binds when the HTTP transport is
+	// chosen, in one of two forms: "host:port", or "unix:" followed by a
+	// filesystem path. Empty (the default) names no address, and the HTTP
+	// transport chosen with no address from this key or the --listen flag
+	// is refused before anything binds. A --listen flag on the command
+	// overrides this key for one invocation. Under MCPTransportStdio it is
+	// not used.
 	//
 	// A plaintext address — one reached with neither TLS file set — is
 	// permitted only on loopback or on a Unix socket, which is the shape
@@ -921,8 +946,8 @@ type MCPConfig struct {
 
 	// Authorization carries what this deployment declares about the
 	// bearer tokens its callers present. Issuer and Resource are
-	// required whenever Listen is set, and a listener is refused
-	// before it binds without them; none of it is read while the
+	// required whenever the HTTP transport is chosen, and a listener is
+	// refused before it binds without them; none of it is read while the
 	// server speaks over standard input and output.
 	Authorization MCPAuthorizationConfig `yaml:"authorization"`
 
@@ -1152,6 +1177,7 @@ func Default() Config {
 			PoolSize: 4,
 		},
 		MCP: MCPConfig{
+			Transport: MCPTransportStdio,
 			Limits: MCPLimitsConfig{
 				MaxBodyBytes:          4_194_304,
 				MaxConcurrentRequests: 16,

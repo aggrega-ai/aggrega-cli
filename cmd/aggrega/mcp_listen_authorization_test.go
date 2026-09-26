@@ -256,7 +256,7 @@ func TestATokenFromTheDeclaredIssuerReachesTheToolListAndACallerWithoutOneDoesNo
 	// Not parallel: spawns a server subprocess.
 	authorization := startMCPAuthorizationServer(t)
 	socket := filepath.Join(mcpSocketDir(t), "s")
-	startMCPServer(t, makeConnectedMCPWorkspace(t, authorization.issuer()), "--listen", "unix:"+socket)
+	startMCPServer(t, makeConnectedMCPWorkspace(t, authorization.issuer()), "--transport", "http", "--listen", "unix:"+socket)
 	awaitSocket(t, socket)
 	client := mcpUnixClient(socket)
 

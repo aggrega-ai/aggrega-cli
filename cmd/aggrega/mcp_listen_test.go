@@ -4,13 +4,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -255,7 +253,7 @@ func mcpUnixClient(socketPath string) *http.Client {
 func TestTheProtocolEndpointServesNothingWithoutACredential(t *testing.T) {
 	// Not parallel: spawns a server subprocess.
 	socket := filepath.Join(mcpSocketDir(t), "s")
-	startMCPServer(t, makeMCPWorkspace(t, "mcp:\n"+mcpDeclaredDeployment), "--listen", "unix:"+socket)
+	startMCPServer(t, makeMCPWorkspace(t, "mcp:\n"+mcpDeclaredDeployment), "--transport", "http", "--listen", "unix:"+socket)
 	awaitSocket(t, socket)
 	client := mcpUnixClient(socket)
 
@@ -322,103 +320,5 @@ func TestTheProtocolEndpointServesNothingWithoutACredential(t *testing.T) {
 	}
 }
 
-// TestTheListenAddressIsTheFlagThenTheConfigKey drives the three readings of the
-// precedence ladder against the built binary.
-//
-// The unset-flag row is the one that cannot be shown by asserting on a value: an
-// unset string flag and a flag set to the empty string carry the same bits, so
-// the only thing that separates "fell through to the config key" from "forced an
-// empty value over it" is where the process actually listened. Each row below is
-// therefore read off a socket.
-func TestTheListenAddressIsTheFlagThenTheConfigKey(t *testing.T) {
-	// Not parallel: spawns a server subprocess.
-	t.Run("the config key is honoured when the flag is unset", func(t *testing.T) {
-		socket := filepath.Join(mcpSocketDir(t), "s")
-		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+socket+"\n"+mcpDeclaredDeployment)
-		startMCPServer(t, ws)
-		awaitSocket(t, socket)
-	})
-
-	t.Run("the flag wins over the config key", func(t *testing.T) {
-		dir := mcpSocketDir(t)
-		configured := filepath.Join(dir, "config")
-		requested := filepath.Join(dir, "flag")
-		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+configured+"\n"+mcpDeclaredDeployment)
-		startMCPServer(t, ws, "--listen", "unix:"+requested)
-
-		awaitSocket(t, requested)
-		wantNothingListening(t, configured,
-			"that is the address the config key named, and the flag named another one")
-	})
-
-	t.Run("with neither, the server speaks over standard input and output", func(t *testing.T) {
-		ws := makeMCPWorkspace(t, "")
-		bin := buildServeBinary(t)
-		cmd := exec.Command(bin, "mcp")
-		cmd.Dir = ws
-		cmd.Stderr = os.Stderr
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			t.Fatalf("stdin pipe: %v", err)
-		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			t.Fatalf("stdout pipe: %v", err)
-		}
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("start the server: %v", err)
-		}
-		t.Cleanup(func() {
-			_ = stdin.Close()
-			_ = cmd.Wait()
-		})
-
-		request := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",` +
-			`"capabilities":{},"clientInfo":{"name":"probe","version":"0.1"}}}` + "\n"
-		if _, err := io.WriteString(stdin, request); err != nil {
-			t.Fatalf("write the request: %v", err)
-		}
-		frame := readOneStdioLine(t, stdout)
-		if _, refused := frame["error"]; refused {
-			t.Fatalf("the handshake was refused: %+v", frame["error"])
-		}
-		if _, answered := frame["result"]; !answered {
-			t.Fatalf("the answer carries no result, so nothing spoke the protocol on standard output: %+v", frame)
-		}
-	})
-}
-
-// readOneStdioLine reads one newline-delimited protocol message, within the
-// liveness ceiling. The ceiling separates "answered" from "never will" and
-// measures nothing else.
-func readOneStdioLine(t *testing.T, r io.Reader) map[string]any {
-	t.Helper()
-	type result struct {
-		frame map[string]any
-		err   error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		line, err := bufio.NewReader(r).ReadString('\n')
-		if err != nil {
-			ch <- result{err: fmt.Errorf("read a line: %w", err)}
-			return
-		}
-		var frame map[string]any
-		if err := json.Unmarshal([]byte(line), &frame); err != nil {
-			ch <- result{err: fmt.Errorf("the line is not a protocol message: %q: %w", line, err)}
-			return
-		}
-		ch <- result{frame: frame}
-	}()
-	select {
-	case got := <-ch:
-		if got.err != nil {
-			t.Fatalf("%v", got.err)
-		}
-		return got.frame
-	case <-time.After(responseLivenessCeiling(t)):
-		t.Fatal("nothing was framed on standard output within the liveness ceiling")
-		return nil
-	}
-}
+// Which address a listener binds, and which transport a launch speaks at all,
+// are driven in mcp_transport_test.go, row by row against the same built binary.

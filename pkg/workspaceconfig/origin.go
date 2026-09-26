@@ -520,6 +520,7 @@ func originFields() []originField {
 		sc("concurrency.pool_size", func(c Config) string { return strconv.Itoa(c.Concurrency.PoolSize) }),
 		sc("serve.build_on_inspect", func(c Config) string { return strconv.FormatBool(c.Serve.BuildOnInspect) }),
 		sc("serve.lint_on_validate", func(c Config) string { return strconv.FormatBool(c.Serve.LintOnValidate) }),
+		sc("mcp.transport", func(c Config) string { return c.MCP.Transport }),
 		sc("mcp.listen", func(c Config) string { return c.MCP.Listen }),
 		sc("mcp.tls.cert_file", func(c Config) string { return c.MCP.TLS.CertFile }),
 		sc("mcp.tls.key_file", func(c Config) string { return c.MCP.TLS.KeyFile }),
