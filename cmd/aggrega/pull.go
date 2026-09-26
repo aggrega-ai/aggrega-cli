@@ -81,24 +81,31 @@ the pull the same way, while a lock that records no pin for a local source is no
 Pass --pin-sources, or set pin_sources_at_pull in the workspace configuration, to have pull run
 that same step instead; --pin-sources=false restores the halt for one run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := pullConfig{
-				ReleasePath:       opts.releasePath,
-				CatalogDirs:       opts.catalogDirs,
-				Upgrade:           opts.upgrade,
-				UpgradeTargets:    args,
-				Verify:            opts.verify,
-				IncludePrerelease: opts.includePrerelease,
-				Detail:            opts.detail,
-				DryRun:            opts.dryRun,
-				PinSources:        explicitBool(cmd, "pin-sources", opts.pinSources),
-				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
+			// configFor is the one place this invocation's flags become a pullConfig,
+			// so the check below and the run judge the same request.
+			configFor := func(ws *workspaceconfig.ResolvedWorkspace) pullConfig {
+				return pullConfig{
+					ReleasePath:       opts.releasePath,
+					CatalogDirs:       opts.catalogDirs,
+					Upgrade:           opts.upgrade,
+					UpgradeTargets:    args,
+					Verify:            opts.verify,
+					IncludePrerelease: opts.includePrerelease,
+					Detail:            opts.detail,
+					DryRun:            opts.dryRun,
+					PinSources:        explicitBool(cmd, "pin-sources", opts.pinSources),
+					diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
+					ws:                ws,
+				}
 			}
 			// A verify asked for something it cannot also do is refused first, ahead of
 			// the confirmation and the workspace resolution below, so nothing has
 			// happened by the time the reader is told. Which pairs those are is the
 			// shared resolution's rule, the one every surface reads; what is written here
-			// is only this command's sentence for each.
-			if err := verifyConflictRefusal(cfg.resolutionRequest().VerifyConflict()); err != nil {
+			// is only this command's sentence for each. The check is handed no workspace:
+			// it reads the request's own fields alone, and resolving the workspace here
+			// would put resolution output or a configuration error ahead of the refusal.
+			if err := verifyConflictRefusal(configFor(nil).resolutionRequest().VerifyConflict()); err != nil {
 				return err
 			}
 			if len(args) > 0 && !opts.upgrade {
@@ -123,8 +130,7 @@ that same step instead; --pin-sources=false restores the halt for one run.`,
 			if err != nil {
 				return err
 			}
-			cfg.ws = rw
-			return pullRun(cmd.Context(), cfg)
+			return pullRun(cmd.Context(), configFor(rw))
 		},
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", helpReleasePath)
