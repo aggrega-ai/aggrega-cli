@@ -140,24 +140,28 @@ func readFileForTest(t *testing.T, path string) string {
 
 // movedRefPull drives the command's own resolution entry over the fixture.
 //
-// It asks the pull to run the pin step, as --pin-sources does: the fixture's
+// A pull that writes asks for the pin step, as --pin-sources does: the fixture's
 // Recipe carries an authored-identity git source, and by default a pull records
 // no pin beside it and halts, which would stop every case here before the
-// reference it is about is ever compared.
+// reference it is about is ever compared. A verify is not asked, because it
+// runs no pin step and refuses the request, as the command refuses the pair.
 func movedRefPull(t *testing.T, root, releasePath, catalogRoot string, res *movingReferenceResolver, upgrade, verify bool) error {
 	t.Helper()
-	pin := true
-	return pullRun(context.Background(), pullConfig{
+	cfg := pullConfig{
 		ws:             resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath:    releasePath,
 		CatalogDirs:    []string{catalogRoot},
 		Upgrade:        upgrade,
 		Verify:         verify,
-		PinSources:     &pin,
 		sourceResolver: res,
 		DiagOut:        io.Discard,
 		Out:            io.Discard,
-	})
+	}
+	if !verify {
+		pin := true
+		cfg.PinSources = &pin
+	}
+	return pullRun(context.Background(), cfg)
 }
 
 // TestPullRefusesAMovedSourceReference is the defect's end-to-end proof. It
