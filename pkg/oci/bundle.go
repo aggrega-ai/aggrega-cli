@@ -295,7 +295,7 @@ func Bundle(kind, entityPath string, carried []string) ([]byte, string, error) {
 	}
 	archive, err := packArchive(entityPath, carried)
 	if err != nil {
-		return nil, "", fmt.Errorf("oci: bundle %s as tar.gz: %w", entityPath, err)
+		return nil, "", fmt.Errorf("bundle %s as tar.gz: %w", entityPath, err)
 	}
 	return archive, mediaType, nil
 }
@@ -378,7 +378,7 @@ func collectArchiveEntries(entityPath string, carried []string, supplied map[str
 	entries := make([]archiveEntry, 0, len(names))
 	for _, rel := range names {
 		if !filepath.IsLocal(filepath.FromSlash(rel)) || path.Clean(rel) != rel {
-			return nil, fmt.Errorf("oci: carried path %q does not name a file inside %s", rel, dir)
+			return nil, fmt.Errorf("carried path %q does not name a file inside %s", rel, dir)
 		}
 		if seen[rel] {
 			continue
@@ -393,18 +393,18 @@ func collectArchiveEntries(entityPath string, carried []string, supplied map[str
 			if info, err := os.Lstat(full); err == nil {
 				mode = info.Mode()
 			} else if !errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("oci: stat %s: %w", full, err)
+				return nil, fmt.Errorf("stat %s: %w", full, err)
 			}
 			entries = append(entries, archiveEntry{relPath: rel, mode: mode, data: data})
 			continue
 		}
 		info, err := os.Lstat(full)
 		if err != nil {
-			return nil, fmt.Errorf("oci: stat %s: %w", full, err)
+			return nil, fmt.Errorf("stat %s: %w", full, err)
 		}
 		data, err := os.ReadFile(full)
 		if err != nil {
-			return nil, fmt.Errorf("oci: read %s: %w", full, err)
+			return nil, fmt.Errorf("read %s: %w", full, err)
 		}
 		entries = append(entries, archiveEntry{relPath: rel, mode: info.Mode(), data: data})
 	}

@@ -60,7 +60,7 @@ const (
 func NewKeylessAuthority() (*KeylessAuthority, error) {
 	vs, err := ca.NewVirtualSigstore()
 	if err != nil {
-		return nil, fmt.Errorf("signingtest: in-memory sigstore: %w", err)
+		return nil, fmt.Errorf("in-memory sigstore: %w", err)
 	}
 	return &KeylessAuthority{vs: vs}, nil
 }
@@ -73,7 +73,7 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 	loggedAt = loggedAt.UTC().Truncate(time.Second)
 	entity, err := a.vs.SignAtTime(identity, issuer, []byte(artifactDigest), loggedAt)
 	if err != nil {
-		return KeylessSignature{}, fmt.Errorf("signingtest: sign: %w", err)
+		return KeylessSignature{}, fmt.Errorf("sign: %w", err)
 	}
 
 	vc, err := entity.VerificationContent()
@@ -82,7 +82,7 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 	}
 	leaf := vc.Certificate()
 	if leaf == nil {
-		return KeylessSignature{}, fmt.Errorf("signingtest: the in-memory signature carries no certificate")
+		return KeylessSignature{}, fmt.Errorf("the in-memory signature carries no certificate")
 	}
 	sc, err := entity.SignatureContent()
 	if err != nil {
@@ -90,11 +90,11 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 	}
 	msg := sc.MessageSignatureContent()
 	if msg == nil {
-		return KeylessSignature{}, fmt.Errorf("signingtest: the in-memory signature is not a message signature")
+		return KeylessSignature{}, fmt.Errorf("the in-memory signature is not a message signature")
 	}
 	algorithm, ok := protocommon.HashAlgorithm_value[msg.DigestAlgorithm()]
 	if !ok {
-		return KeylessSignature{}, fmt.Errorf("signingtest: unknown digest algorithm %q", msg.DigestAlgorithm())
+		return KeylessSignature{}, fmt.Errorf("unknown digest algorithm %q", msg.DigestAlgorithm())
 	}
 	timestamps, err := entity.Timestamps()
 	if err != nil {
@@ -145,11 +145,11 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 	}
 	b, err := bundle.NewBundle(pb)
 	if err != nil {
-		return KeylessSignature{}, fmt.Errorf("signingtest: assemble bundle: %w", err)
+		return KeylessSignature{}, fmt.Errorf("assemble bundle: %w", err)
 	}
 	bundleJSON, err := b.MarshalJSON()
 	if err != nil {
-		return KeylessSignature{}, fmt.Errorf("signingtest: marshal bundle: %w", err)
+		return KeylessSignature{}, fmt.Errorf("marshal bundle: %w", err)
 	}
 	return KeylessSignature{Bundle: bundleJSON, LoggedAt: loggedAt, SignedAt: signedAt}, nil
 }
@@ -162,7 +162,7 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 func (a *KeylessAuthority) entryWithPromise(entry *tlog.Entry, logID string) (*protorekor.TransparencyLogEntry, error) {
 	tle := entry.TransparencyLogEntry()
 	if tle == nil {
-		return nil, fmt.Errorf("signingtest: the in-memory log entry has no protobuf form")
+		return nil, fmt.Errorf("the in-memory log entry has no protobuf form")
 	}
 	set, err := a.vs.RekorSignPayload(tlog.RekorPayload{
 		Body:           base64.StdEncoding.EncodeToString(tle.CanonicalizedBody),
@@ -171,7 +171,7 @@ func (a *KeylessAuthority) entryWithPromise(entry *tlog.Entry, logID string) (*p
 		LogID:          logID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("signingtest: sign the log's promise: %w", err)
+		return nil, fmt.Errorf("sign the log's promise: %w", err)
 	}
 	return &protorekor.TransparencyLogEntry{
 		LogIndex:          tle.LogIndex,
@@ -198,11 +198,11 @@ func (a *KeylessAuthority) TrustedRoot() ([]byte, error) {
 	}
 	tr, err := root.NewTrustedRoot(root.TrustedRootMediaType01, a.vs.FulcioCertificateAuthorities(), ct, a.vs.TimestampingAuthorities(), rekor)
 	if err != nil {
-		return nil, fmt.Errorf("signingtest: trusted root: %w", err)
+		return nil, fmt.Errorf("trusted root: %w", err)
 	}
 	out, err := tr.MarshalJSON()
 	if err != nil {
-		return nil, fmt.Errorf("signingtest: marshal trusted root: %w", err)
+		return nil, fmt.Errorf("marshal trusted root: %w", err)
 	}
 	return out, nil
 }
@@ -214,7 +214,7 @@ func logsByKeyID(logs map[string]*root.TransparencyLog) (map[string]*root.Transp
 	for keyID, log := range logs {
 		raw, err := hex.DecodeString(keyID)
 		if err != nil {
-			return nil, fmt.Errorf("signingtest: log %q is not named by a hex key digest: %w", keyID, err)
+			return nil, fmt.Errorf("log %q is not named by a hex key digest: %w", keyID, err)
 		}
 		copied := *log
 		copied.ID = raw

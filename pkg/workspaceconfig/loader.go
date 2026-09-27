@@ -388,7 +388,7 @@ func checkRegistryHosts(probe any, path string) error {
 		}
 		if v, ok := entry["host"].(string); ok {
 			if err := registryhost.Check(fmt.Sprintf("registries[%d].host", i), v); err != nil {
-				return fmt.Errorf("workspaceconfig: %s: %v: %w", path, err, ErrConfigInvalid())
+				return fmt.Errorf("%s: %v: %w", path, err, ErrConfigInvalid())
 			}
 		}
 	}

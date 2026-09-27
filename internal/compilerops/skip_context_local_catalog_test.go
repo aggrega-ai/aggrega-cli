@@ -164,7 +164,7 @@ func TestLocalCatalogNoteAttachesOnlyWhereItIsTheRemedy(t *testing.T) {
 		{
 			name: "a lookup that found the entity and could not read its files",
 			err: func(t *testing.T) error {
-				return walkFailure(t, answeringLookup{err: fmt.Errorf("oci: read %s: %w", "/cat/chart/linked-dir",
+				return walkFailure(t, answeringLookup{err: fmt.Errorf("read %s: %w", "/cat/chart/linked-dir",
 					&fs.PathError{Op: "read", Path: "/cat/chart/linked-dir", Err: stderrors.New("is a directory")})})
 			},
 			want: false,

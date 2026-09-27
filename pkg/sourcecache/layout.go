@@ -89,7 +89,7 @@ func RegenerateExtractedDocument(slot, name string, document []byte) (string, er
 func regenerate(slot string, artifact []byte, entries entrySource) (string, error) {
 	tree := ExtractedTree(slot, digest.ContentDigest(artifact))
 	if err := layOut(slot, tree, entries); err != nil {
-		return "", fmt.Errorf("sourcecache: extract into %s: %w", tree, err)
+		return "", fmt.Errorf("extract into %s: %w", tree, err)
 	}
 	return tree, nil
 }

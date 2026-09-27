@@ -46,13 +46,13 @@ type publishedAtPayload struct {
 // trailing newline, so one time always encodes to the same bytes.
 func MarshalPublishedAt(at time.Time) ([]byte, error) {
 	if at.IsZero() {
-		return nil, fmt.Errorf("oci: a publication date needs a time")
+		return nil, fmt.Errorf("a publication date needs a time")
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(publishedAtPayload{PublishedAt: FormatPublishedAt(at)}); err != nil {
-		return nil, fmt.Errorf("oci: marshal publication date: %w", err)
+		return nil, fmt.Errorf("marshal publication date: %w", err)
 	}
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
@@ -65,14 +65,14 @@ func UnmarshalPublishedAt(payload []byte) (time.Time, error) {
 	dec.DisallowUnknownFields()
 	var p publishedAtPayload
 	if err := dec.Decode(&p); err != nil {
-		return time.Time{}, fmt.Errorf("oci: decode publication date: %w", err)
+		return time.Time{}, fmt.Errorf("decode publication date: %w", err)
 	}
 	if p.PublishedAt == "" {
-		return time.Time{}, fmt.Errorf("oci: publication date payload carries no publishedAt")
+		return time.Time{}, fmt.Errorf("publication date payload carries no publishedAt")
 	}
 	at, err := time.Parse(time.RFC3339, p.PublishedAt)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("oci: publication date %q is not an RFC 3339 timestamp: %w", p.PublishedAt, err)
+		return time.Time{}, fmt.Errorf("publication date %q is not an RFC 3339 timestamp: %w", p.PublishedAt, err)
 	}
 	return at.UTC(), nil
 }

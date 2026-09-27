@@ -36,7 +36,7 @@ import (
 func (c Config) ResolveRegistry(token string) (string, error) {
 	host, named, err := c.aliasHost(token)
 	if err != nil {
-		return "", fmt.Errorf("workspaceconfig: %w", err)
+		return "", err
 	}
 	if named {
 		return host, nil
@@ -124,7 +124,7 @@ func resolveDefaultRegistry(cfg *Config, layers []string, lookup func(string) st
 	}
 	host, named, err := cfg.aliasHost(value)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %sdefault_registry: %w", defaultRegistryLayer(*cfg, layers, lookup), err)
+		return fmt.Errorf("%sdefault_registry: %w", defaultRegistryLayer(*cfg, layers, lookup), err)
 	}
 	if named {
 		cfg.DefaultRegistry = host
@@ -132,9 +132,9 @@ func resolveDefaultRegistry(cfg *Config, layers []string, lookup func(string) st
 	}
 	if err := cfg.checkDefaultRegistryLocation(value); err != nil {
 		if errors.Is(err, ErrAmbiguousRegistryAlias()) {
-			return fmt.Errorf("workspaceconfig: %sdefault_registry: %w", defaultRegistryLayer(*cfg, layers, lookup), err)
+			return fmt.Errorf("%sdefault_registry: %w", defaultRegistryLayer(*cfg, layers, lookup), err)
 		}
-		return fmt.Errorf("workspaceconfig: %s%v: %w", defaultRegistryLayer(*cfg, layers, lookup), err, ErrConfigInvalid())
+		return fmt.Errorf("%s%v: %w", defaultRegistryLayer(*cfg, layers, lookup), err, ErrConfigInvalid())
 	}
 	return nil
 }

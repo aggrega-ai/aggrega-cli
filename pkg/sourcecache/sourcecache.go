@@ -125,7 +125,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	// build could reach.
 	slot, err := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, entry.PinnedVersion, entry.Digest)
 	if err != nil {
-		return "", fmt.Errorf("sourcecache: %w", err)
+		return "", err
 	}
 	blobPath := filepath.Join(slot, "blob.tgz")
 	blobBytes, err := os.ReadFile(blobPath)

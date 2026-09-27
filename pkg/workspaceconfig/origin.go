@@ -357,11 +357,11 @@ func readOriginLayer(path string) (originLayer, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return originLayer{}, nil
 		}
-		return originLayer{}, fmt.Errorf("workspaceconfig: read %s to attribute its settings: %w", path, err)
+		return originLayer{}, fmt.Errorf("read %s to attribute its settings: %w", path, err)
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return originLayer{}, fmt.Errorf("workspaceconfig: parse %s to attribute its settings: %w", path, err)
+		return originLayer{}, fmt.Errorf("parse %s to attribute its settings: %w", path, err)
 	}
 	if len(doc.Content) == 0 {
 		return originLayer{}, nil
@@ -373,7 +373,7 @@ func readOriginLayer(path string) (originLayer, error) {
 	// the key that supplied it.
 	var values map[string]any
 	if err := doc.Decode(&values); err != nil {
-		return originLayer{}, fmt.Errorf("workspaceconfig: decode %s to attribute its settings: %w", path, err)
+		return originLayer{}, fmt.Errorf("decode %s to attribute its settings: %w", path, err)
 	}
 	return originLayer{
 		values: values,
