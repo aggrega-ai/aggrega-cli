@@ -355,7 +355,7 @@ func TestRegistryUpdateOnTheDaemonAnswersWhenAListingRepeatsItself(t *testing.T)
 		switch hu.Host {
 		case looping:
 			sawLooping = true
-			for _, want := range []string{"the registry's repository listing repeated itself","named " + repo + " a second time"} {
+			for _, want := range []string{"the registry's repository listing repeated itself", "named " + repo + " a second time"} {
 				if !strings.Contains(hu.Err, want) {
 					t.Errorf("the looping registry's own error must carry %q; got %q", want, hu.Err)
 				}
