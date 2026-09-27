@@ -196,9 +196,11 @@
 // or uri parameter of aggrega/validate, aggrega/diagnostics,
 // aggrega/invalidate, aggrega/hover, aggrega/completion,
 // aggrega/resolve, aggrega/findReferences and
-// aggrega/findImplementations — may spell it either way. Both spellings
-// name one document and are answered alike, because each is resolved to
-// one canonical form at the request boundary before anything reads it.
+// aggrega/findImplementations — may spell it relative to the workspace
+// root, by absolute path, or as the file address a language-server client
+// sends. All three name one document and are answered alike, because each
+// is resolved to one canonical form at the request boundary before
+// anything reads it.
 // The canonical form is the absolute path, which is forced by two
 // consumers rather than preferred: the parse cache stats its own key to
 // decide whether an entry has gone stale, and the working directory is
@@ -1345,11 +1347,14 @@ func (s *session) workspaceFree() *Server {
 	return &Server{session: s}
 }
 
-// canonicalFile renders a path naming a document into the one spelling every
+// canonicalFile renders a value naming a document into the one spelling every
 // per-file store here is keyed by: that document's absolute path. A request may
-// name a file relative to the workspace root or by absolute path, and both name
-// the same document, so what a request is answered with depends on the document
-// it named rather than on how it spelled it.
+// name a file relative to the workspace root, by absolute path, or by its file
+// address, and all three name the same document, so what a request is answered
+// with depends on the document it named rather than on how it spelled it. The
+// address is read first, through documentPath, and from then on it is a path like
+// any other; a value that is not an address reaches the steps below exactly as it
+// arrived.
 //
 // Absolute is the canonical form because two consumers of the key require it and
 // a workspace-relative one satisfies neither. The parse cache stats its own key
@@ -1379,6 +1384,7 @@ func (s *session) workspaceFree() *Server {
 // relative value untouched for the same reason — there is nothing to resolve it
 // against.
 func (s *Server) canonicalFile(file string) string {
+	file = documentPath(file)
 	if file == "" {
 		return file
 	}

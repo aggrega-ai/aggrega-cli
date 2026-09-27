@@ -528,10 +528,11 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 
 	// The request's spelling of the file is resolved once, here at the boundary,
 	// and every cache and store below is reached with the result. A sender may
-	// name the file relative to the workspace root or by absolute path, and the
-	// two name one document; resolving per store instead would let one request
-	// populate a key the next request's spelling cannot read, which reads back as
-	// a file with nothing to report rather than as a request that missed.
+	// name the file relative to the workspace root, by absolute path or by its
+	// file address, and all three name one document; resolving per store instead
+	// would let one request populate a key the next request's spelling cannot
+	// read, which reads back as a file with nothing to report rather than as a
+	// request that missed.
 	file := s.canonicalFile(params.File)
 	// A diagnostics request naming this file while this validation runs waits for
 	// it and is then answered with what it found, rather than being answered from
@@ -750,8 +751,8 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 //
 // The requested file is resolved to its canonical spelling before anything is
 // consulted, so the answer names the document rather than the spelling: a request
-// naming the same file a validation named, in the other spelling, is answered
-// with the same findings rather than with an empty result. Both refusals still
+// naming the same file a validation named, in another spelling, is answered with
+// the same findings rather than with an empty result. Both refusals still
 // name the path the request asked about, not the resolved one, because a sender
 // told about some other spelling of its own value has been handed a puzzle
 // instead of an answer.

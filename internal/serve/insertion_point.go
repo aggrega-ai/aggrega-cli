@@ -112,8 +112,9 @@ func (s *Server) dispatchInsertionPoint(ctx context.Context, req *jsonRPCRequest
 
 // insertionPointParams is the aggrega/insertionPoint request shape.
 //
-// File names the document, relative to the workspace root or by absolute path,
-// as every other per-document request here is named.
+// File names the document, relative to the workspace root, by absolute path or by
+// its file address, as every other request naming a document the client holds is
+// named.
 //
 // Container is the structural path to the container the entry goes inside,
 // from the document root: each element a mapping key, or a sequence position
@@ -155,6 +156,11 @@ func InsertionPoint(root, file string, container []string, enc yamlpos.PositionE
 func insertionPointIn(root, file string, container []string, enc yamlpos.PositionEncoding,
 	overlay func(abs string) ([]byte, bool)) (InsertionPointResult, error) {
 
+	// A file address is read as the path it names before anything else looks at
+	// the value, through the one reading every per-document request shares, so an
+	// address and its path are one document here as they are to the parse cache
+	// this answer overlays.
+	file = documentPath(file)
 	if strings.TrimSpace(file) == "" {
 		return InsertionPointResult{}, errInsertionNoFile
 	}

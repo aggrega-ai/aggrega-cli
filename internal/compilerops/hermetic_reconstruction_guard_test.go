@@ -62,14 +62,22 @@ import (
 // closure, taken by editing this file — which is the point: the edit is what puts
 // the decision in front of a reviewer.
 var hermeticReconstructionHomes = map[string][]string{
-	// The pinned-axis descent has two homes, and they are one computation run over
+	// The pinned-axis descent has three homes, and they are one computation run over
 	// two lookups rather than a duplicate: the pull descends the axes it is about to
 	// pin over its reconciling lookup, and the build descends the same axes over its
 	// hermetic one to hold the lockfile to them. Everything that differs between the
-	// two is an argument of the call, so a third caller is a third place that could
-	// pass a different one.
+	// callers is an argument of the call, so each further caller is a further place
+	// that could pass a different one.
+	//
+	// The third is a validation, and it reconstructs nothing. It descends over a
+	// copy of the entity set with no loader for either plugin pass, only so that a
+	// reference a module makes is resolved — and refused as the author's fault when
+	// nothing resolves it — before the checks that assume every reference resolved;
+	// the copy is discarded, so the closure the validation reports on is the one the
+	// walk computed.
 	".DescendPinnedAxes(": {
 		"internal/compilerops/preview.go",
+		"internal/compilerops/validate.go",
 		"internal/pullops/pull.go",
 	},
 	".ReconstructWorkspaceSocketEntities(": {
