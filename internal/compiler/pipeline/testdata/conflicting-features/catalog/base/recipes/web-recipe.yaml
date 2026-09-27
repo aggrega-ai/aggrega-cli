@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/web
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: web:1.0

@@ -1966,6 +1966,13 @@ func (TopologyViewBase) FeatureAppliesToAnyOf(featureType string) []types.Select
 	panic("this view does not carry feature-applies-to-any-of, which is read from types.FeatureSpec.AppliesToAnyOf")
 }
 
+// FeatureConflictsWith panics. This view does not carry
+// feature-conflicts-with, which is read from
+// types.Interoperability.ConflictsWith.
+func (TopologyViewBase) FeatureConflictsWith(featureType string) []string {
+	panic("this view does not carry feature-conflicts-with, which is read from types.Interoperability.ConflictsWith")
+}
+
 // AttachmentFeatureLabels panics. This view does not carry
 // attachment-feature-labels, which is read from
 // types.FeatureMetadata.Labels.
@@ -2334,6 +2341,12 @@ func (DescribedViewBase) AttachmentResolvedType(node string, attachment string) 
 // types.IRSpec.FeatureValuesMapping.
 func (DescribedViewBase) MergedAttachmentNames(node string) []string {
 	panic("this view does not carry merged-attachment-names, which is read from types.IRSpec.FeatureValuesMapping")
+}
+
+// AttachmentContributions panics. This view does not carry
+// attachment-contributions, which is read from ir.AttachmentSites.
+func (DescribedViewBase) AttachmentContributions(node string, attachment string) []AttachmentContribution {
+	panic("this view does not carry attachment-contributions, which is read from ir.AttachmentSites")
 }
 
 // UsesInjectDeliverySockets panics. This view does not carry
@@ -3136,6 +3149,7 @@ type NormalizedStageFacts interface {
 	SlotInjectMechanismNames(componentType string, slot string) []string
 	FeatureAppliesTo(featureType string) string
 	FeatureAppliesToAnyOf(featureType string) []types.SelectorTerm
+	FeatureConflictsWith(featureType string) []string
 	AttachmentFeatureLabels(featureType string) types.OrderedMap[string]
 	RequiredAttachmentMandates(componentType string) []types.RequiredAttachmentType
 	DeclaredSocketNames(componentType string) []string
@@ -3215,6 +3229,7 @@ type GraphStageFacts interface {
 	PerEdgeResolvedTarget(node string, socket string, alias string) string
 	AttachmentResolvedType(node string, attachment string) string
 	MergedAttachmentNames(node string) []string
+	AttachmentContributions(node string, attachment string) []AttachmentContribution
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
 	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]

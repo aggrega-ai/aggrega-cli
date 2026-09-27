@@ -99,6 +99,33 @@ var errRequiredSlotUnfilled = cerrors.Register("required-slot-unfilled", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrConflictingFeaturesReachOneComponent is the ABI-stable sentinel for a
+// component whose merged attachment set holds two Features one of which names
+// the other in its interoperability.conflictsWith list.
+//
+// It has one emission site, [ConflictingFeaturesDoNotReachOneComponent], which
+// raises it through the framework over the presentation of the finalised graph.
+// The stage is what makes the rule a rule about reach: an attachment written on
+// a subsystem or a boundary lands in the merged set of every component that
+// scope holds, so a boundary's attachment and a component's own meet only in the
+// post-cascade set. The test compares the names a Feature's author declared
+// against the Features a component carries, and reads no meaning into either.
+//
+// A finding leads with the Feature whose list names the other — the value the
+// registered sentence names — then carries, captioned, every place that Feature
+// was attached, the Feature it conflicts with and every place that one was
+// attached, and the component where the two meet. One finding is raised per
+// component and pair, so a pair meeting on several components reports each.
+func ErrConflictingFeaturesReachOneComponent() error {
+	return errConflictingFeaturesReachOneComponent
+}
+
+var errConflictingFeaturesReachOneComponent = cerrors.Register("conflicting-features-reach-one-component", cerrors.Meta{
+	ShortCode: "E0308",
+	Message:   "a Feature reaches a component alongside a Feature it declares a conflict with",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrPolicyViolation is the ABI-stable sentinel for a Step-4
 // policy socket verdict that fails: a plugin result whose
 // pass flag is false. Each failed rule is recorded as an

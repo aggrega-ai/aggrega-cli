@@ -6,6 +6,7 @@ package ir
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -47,6 +48,14 @@ type featureResult struct {
 	// outer scope before inner, so several offending scopes are reported in
 	// the order an author reads their own document.
 	contributedFills []contributedFill
+
+	// contributions records, per attachment instance, every place the cascade
+	// took a contribution to it from, in cascade order and without repeats. It is
+	// merge-time bookkeeping of the same kind as leafOwners and is kept for the
+	// same reason: which tiers wrote an attachment is known while they fold and
+	// nowhere afterwards. Addressed by key only and never iterated for output, so
+	// it has no bearing on the order anything is emitted in.
+	contributions map[string][]constraint.AttachmentContribution
 }
 
 // contributedFill is one fill a node received from a scope broader than
@@ -106,8 +115,43 @@ func componentOwnSite(topoNode *topology.TopologyNode, nodeID string) constraint
 // no caller can produce one whose merge bookkeeping is unallocated.
 func newFeatureResult() *featureResult {
 	return &featureResult{
-		Features:   types.OrderedMap[types.IRFeatureEntry]{},
-		leafOwners: map[scopeKey]leafOwner{},
+		Features:      types.OrderedMap[types.IRFeatureEntry]{},
+		leafOwners:    map[scopeKey]leafOwner{},
+		contributions: map[string][]constraint.AttachmentContribution{},
+	}
+}
+
+// recordContribution notes one place the cascade is about to take a
+// contribution to an attachment from. The same place reached twice is recorded
+// once, because a reader asking where an attachment was written is asking for
+// places and not for how many passes of the cascade reached each.
+func (r *featureResult) recordContribution(instance string, place constraint.AttachmentContribution) {
+	if slices.Contains(r.contributions[instance], place) {
+		return
+	}
+	r.contributions[instance] = append(r.contributions[instance], place)
+}
+
+// contributionFrom is the place a contribution with the given provenance and site
+// was written, named for the surface a reader would edit to remove it.
+//
+// A contribution annotation-driven expansion produced is named by its annotation
+// rather than by the block the expansion wrote it onto, whatever that block is:
+// the author changes the annotation, not the block, to remove what it produced.
+// Every other contribution is named by the surface it was written on and the
+// site within it.
+func contributionFrom(surface string, prov featureProvenance, site constraint.AuthoredSite) constraint.AttachmentContribution {
+	if prov.Origin == types.OriginAnnotation {
+		return constraint.AttachmentContribution{
+			Surface:          constraint.ContributionAnnotation,
+			AnnotationKey:    prov.AnnotationKey,
+			AnnotationSource: prov.AnnotationSource,
+		}
+	}
+	return constraint.AttachmentContribution{
+		Surface:   surface,
+		ScopePath: site.ScopePath,
+		Component: site.Component,
 	}
 }
 
@@ -127,25 +171,32 @@ func (r *featureResult) recordContributedFill(instance, authoredLocator string, 
 	})
 }
 
-// projectAttachmentSites writes this node's per-leaf sites into the shared
-// projection, under the coordinate a rule over such a leaf is invoked at.
+// projectAttachmentSites writes this node's per-leaf sites and per-attachment
+// contributions into the shared projection, under the coordinates a rule over
+// such a leaf or attachment is invoked at.
 //
-// It is written for every leaf the node holds rather than for the leaves some
-// rule might ask about, because a condition deciding which to retain has to be
-// right and a wrong one produces no answer rather than a wrong one — and a rule
-// handed no site reports the same silence as a rule that ran and approved.
+// It is written for every leaf and every attachment the node holds rather than
+// for the ones some rule might ask about, because a condition deciding which to
+// retain has to be right and a wrong one produces no answer rather than a wrong
+// one — and a rule handed no site reports the same silence as a rule that ran
+// and approved.
 //
-// The walk ranges a Go map, whose order is randomised, and that is sound here
-// because it writes into another map addressed by key. Nothing downstream reads
-// either in iteration order, so no order this walk takes reaches the output.
+// The walks range Go maps, whose order is randomised, and that is sound here
+// because each writes into another map addressed by key. Nothing downstream
+// reads either in iteration order, so no order these walks take reaches the
+// output; the order WITHIN one attachment's list of contributions is the
+// cascade's, carried over whole.
 func (r *featureResult) projectAttachmentSites(nodeID string, into AttachmentSites) {
 	for key, owner := range r.leafOwners {
-		into[AttachmentLeafKey{
+		into.leaves[AttachmentLeafKey{
 			Node:       nodeID,
 			Attachment: key.instance,
 			Pillar:     key.pillar,
 			Leaf:       key.leaf,
 		}] = owner.site
+	}
+	for instance, places := range r.contributions {
+		into.contributions[attachmentKey{node: nodeID, attachment: instance}] = places
 	}
 }
 
@@ -447,6 +498,8 @@ func collectNodeFeatures(
 					}
 				}
 			}
+			result.recordContribution(fa.InstanceName,
+				contributionFrom(constraint.ContributionAggregateComponent, prov, componentOwner.site))
 			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentOwner); err != nil {
 				return nil, err
 			}
@@ -469,6 +522,8 @@ func collectNodeFeatures(
 			// contributed an out-of-shape one is a separate edit to make.
 			result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
 			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
+			result.recordContribution(sf.name,
+				contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site))
 			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
@@ -489,6 +544,8 @@ func collectNodeFeatures(
 			// point at and the boundary's own block is the one place it can be
 			// changed.
 			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: bf.scopePath}}
+			result.recordContribution(bf.name,
+				contributionFrom(constraint.ContributionReleaseBoundary, explicitProvenance, owner.site))
 			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
@@ -525,6 +582,8 @@ func collectNodeFeatures(
 				scope: scopeComponent,
 				site:  constraint.AuthoredSite{ScopePath: cf.scopePath, Component: nodeID},
 			}
+			result.recordContribution(cf.name,
+				contributionFrom(constraint.ContributionReleaseComponent, prov, owner.site))
 			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, owner); err != nil {
 				return nil, err
 			}

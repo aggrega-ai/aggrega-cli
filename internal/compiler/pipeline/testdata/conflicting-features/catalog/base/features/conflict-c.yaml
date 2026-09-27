@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/conflict-c
+  version: "1.0.0"
+spec:
+  # The entry carries a version no catalog entity has. An entry names a Feature
+  # whatever its version, so this still conflicts with core/conflict-b.
+  interoperability:
+    conflictsWith: [core/conflict-b:9.9.9]

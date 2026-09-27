@@ -72,35 +72,67 @@ type AttachmentLeafKey struct {
 	Leaf       string
 }
 
-// AttachmentSites is BuildIRContext's third return value: per attachment leaf, the
-// site the contribution that won that leaf was written at.
+// attachmentKey addresses one attachment on one node.
+type attachmentKey struct {
+	node       string
+	attachment string
+}
+
+// AttachmentSites is BuildIRContext's third return value: where the
+// contributions the attachment cascade folded were written. It answers two
+// questions about them — per attachment leaf, the site the contribution that won
+// that leaf was written at; and per attachment, every place that contributed the
+// attachment at all.
 //
-// It exists because the graph cannot answer the question and nothing else can
-// either. An attachment's configuration is assembled from every scope reaching
+// It exists because the graph cannot answer either question and nothing else
+// can. An attachment's configuration is assembled from every scope reaching
 // its node, leaf by leaf, so a scope-wide contribution and a component-scoped
 // one on the same attachment each keep the leaves the other did not mention.
-// Which of them supplied any one leaf is settled while the cascade folds and is
+// Which of them supplied any one leaf, and which scopes contributed the
+// attachment in the first place, is settled while the cascade folds and is
 // gone the moment it finishes: the merged entry carries the winning value and
-// its origin, never the contest. A diagnostic about that leaf has to point at an
-// edit somebody can make, and the only edit that exists is the one that won.
+// its origin, never the contest and never the tiers. A diagnostic about that
+// leaf has to point at an edit somebody can make, and the only edit that exists
+// is the one that won; a diagnostic about the attachment has to name every place
+// it was written, because removing it means changing each of them.
 //
-// Recovering it afterwards is refused rather than merely unimplemented. It would
-// mean re-running the precedence over the authoring documents at each reader,
-// which is a second derivation of a value already derived once, free to disagree
-// with the fold that produced the bytes.
+// Recovering either afterwards is refused rather than merely unimplemented. It
+// would mean re-running the precedence, and walking the scope trees, over the
+// authoring documents at each reader — a second derivation of values already
+// derived once, free to disagree with the fold that produced the bytes.
 //
 // # What it holds, and what bounds it
 //
-// One small site per leaf — a scope path and a component name — and never the
-// contributions themselves. The retention therefore grows with the coordinates
-// the rules are invoked at, which is a leaf apiece, rather than with the number
-// of tiers a build folds into each of them. Keeping the contributions would grow
-// with the build and would hold whole authored payloads to answer a question
-// that two strings answer.
+// One small site per leaf — a scope path and a component name — and one short
+// list of places per attachment, and never the contributions themselves. The
+// retention therefore grows with the coordinates the rules are invoked at, a
+// leaf or an attachment apiece, and with the tiers that actually wrote each
+// attachment, rather than with whole authored payloads.
 //
-// It is addressed by key only and never iterated, so it has no bearing on the
-// order anything is emitted in.
-type AttachmentSites map[AttachmentLeafKey]constraint.AuthoredSite
+// Both halves are addressed by key only and never iterated, so neither has any
+// bearing on the order anything is emitted in. The zero value holds neither and
+// reads as absent, which is what lets a presentation tell a projection nobody
+// supplied from one that simply holds no entry; [newAttachmentSites] is the one
+// construction site of a present one.
+type AttachmentSites struct {
+	leaves        map[AttachmentLeafKey]constraint.AuthoredSite
+	contributions map[attachmentKey][]constraint.AttachmentContribution
+}
+
+// newAttachmentSites is the one construction site of a present projection, so
+// no writer can produce one whose halves are unallocated.
+func newAttachmentSites() AttachmentSites {
+	return AttachmentSites{
+		leaves:        map[AttachmentLeafKey]constraint.AuthoredSite{},
+		contributions: map[attachmentKey][]constraint.AttachmentContribution{},
+	}
+}
+
+// present reports whether this projection was built at all, as against being the
+// zero value a caller that supplied none holds.
+func (s AttachmentSites) present() bool {
+	return s.leaves != nil && s.contributions != nil
+}
 
 // siteOf is the site recorded for one attachment leaf, and the zero site when
 // the projection holds none for it.
@@ -115,12 +147,20 @@ type AttachmentSites map[AttachmentLeafKey]constraint.AuthoredSite
 // The zero site is a real answer and not a lookup failure: it names no scope
 // and no component, which is what a leaf outside the projection has to read as.
 func (s AttachmentSites) siteOf(node, attachment, pillar, leaf string) constraint.AuthoredSite {
-	return s[AttachmentLeafKey{
+	return s.leaves[AttachmentLeafKey{
 		Node:       node,
 		Attachment: attachment,
 		Pillar:     pillar,
 		Leaf:       leaf,
 	}]
+}
+
+// contributionsOf is the list of places one attachment on one node was
+// contributed from, in cascade order, and nil for an attachment the projection
+// holds no entry for. It is the one reader of that half, for the reason siteOf
+// is the one reader of the other.
+func (s AttachmentSites) contributionsOf(node, attachment string) []constraint.AttachmentContribution {
+	return s.contributions[attachmentKey{node: node, attachment: attachment}]
 }
 
 // BuildIRContext executes Step 3 of the compiler pipeline: graph finalization.
@@ -187,7 +227,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// catalog builders) per ErrInjectEntryAmbiguous's contract.
 	if res != nil {
 		if err := ValidateInjectBlocks(types.Normalize(res.Aggregate), res.Release); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, AttachmentSites{}, err
 		}
 	}
 
@@ -196,10 +236,11 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	infraMapping := types.OrderedMap[json.RawMessage]{}
 	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	featureOrder := make(FeatureOrder)
-	// Per attachment leaf, where the contribution that won it was written. It is
-	// filled for every node rather than for the nodes some rule might reach,
-	// per AttachmentSites' own contract.
-	attachmentSites := AttachmentSites{}
+	// Per attachment leaf, where the contribution that won it was written, and per
+	// attachment, every place that contributed it. It is filled for every node
+	// rather than for the nodes some rule might reach, per AttachmentSites' own
+	// contract.
+	attachmentSites := newAttachmentSites()
 
 	// The per-node attachment gates. Both subjects only exist after the 5-Tier
 	// merge below — the merged per-attachment values/infra, and which declared
@@ -260,7 +301,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// 1. Build IR nodes in author order (topo.Nodes is OrderedMap-backed).
 	for nodeID, topoNode := range topo.Nodes.All() {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, AttachmentSites{}, err
 		}
 
 		catalogAnnotations, releaseAnnotations, aggregateAnnotations := buildAnnotationBuckets(
@@ -356,7 +397,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			nodeID, topoNode, topo, res, cfg.CatalogLookup,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, AttachmentSites{}, err
 		}
 
 		if featResult.Features.Len() > 0 {
@@ -384,7 +425,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	}
 
 	if len(attachmentErrs) > 0 {
-		return nil, nil, nil, joinAttachmentViolations(attachmentErrs)
+		return nil, nil, AttachmentSites{}, joinAttachmentViolations(attachmentErrs)
 	}
 
 	// 2. Convert topology edges to IR edges. A socket's declared per-edge

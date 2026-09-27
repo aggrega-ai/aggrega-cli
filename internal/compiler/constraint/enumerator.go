@@ -367,6 +367,37 @@ type AuthoredSite struct {
 	Component string
 }
 
+// The surfaces one attachment a node carries can be contributed from, as an
+// [AttachmentContribution] names them. The set is closed: they are the tiers the
+// attachment cascade folds, with annotation-driven expansion named apart from
+// the block it expanded onto, because an author changes an annotation rather
+// than that block to remove what it produced.
+//
+// 🔴 The values are stable comparison tokens carried in a fact and compared by
+// the rules reading it. Renaming a constant here is safe, and changing the string
+// it holds is a behaviour change.
+const (
+	// ContributionAggregateComponent is an attachment written in a component's
+	// own block in the Aggregate, or in a sub-Aggregate it composes.
+	ContributionAggregateComponent = "aggregate-component"
+
+	// ContributionSubsystem is an attachment written on an Aggregate subsystem,
+	// reaching every component that subsystem holds.
+	ContributionSubsystem = "subsystem"
+
+	// ContributionReleaseBoundary is an attachment written on a Release boundary,
+	// reaching every component that boundary holds, nested boundaries included.
+	ContributionReleaseBoundary = "release-boundary"
+
+	// ContributionReleaseComponent is an attachment written on a Release's entry
+	// for one component.
+	ContributionReleaseComponent = "release-component"
+
+	// ContributionAnnotation is an attachment annotation-driven expansion
+	// produced from an annotation, wherever that annotation was declared.
+	ContributionAnnotation = "annotation"
+)
+
 // AttachmentLeaf is one leaf of one pillar of one attachment's configuration:
 // the leaf's own path, and the site the entry that supplied it was written at.
 //

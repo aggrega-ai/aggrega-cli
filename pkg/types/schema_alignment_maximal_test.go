@@ -95,7 +95,7 @@ func maximalFeature() types.Feature {
 			FeaturesSchema:   om[types.AttachmentSlot]("token", types.AttachmentSlot{Required: true}),
 			AppliesTo:        "component.aggrega.ai/type=server",
 			AppliesToAnyOf:   []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=worker")},
-			Interoperability: &types.Interoperability{ConflictsWith: []string{"core/other"}, ComponentRefPath: "spec.target"},
+			Interoperability: &types.Interoperability{ConflictsWith: []string{"core/other"}},
 			UsesSchema:       om[types.UsesSchemaEntry]("backend", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}),
 			Schema:           mustNode("values:\n  level: { type: string }"),
 			Assertions:       om[string]("rule", "{{ true }}"),

@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: conflicting-features-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/web: web-recipe:1.0.0
+    features:
+      type:
+        core/conflict-a: conflict-a-compose:1.0.0
+        core/conflict-b: conflict-b-compose:1.0.0
+        core/conflict-c: conflict-c-compose:1.0.0
+        core/unrelated: unrelated-compose:1.0.0
+      annotations:
+        feature.aggrega.ai/conflict-a:
+          feature: core/conflict-a
+          maps:
+            infra:
+              - level

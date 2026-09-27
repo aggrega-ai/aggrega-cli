@@ -5,6 +5,7 @@ package validator
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -782,8 +783,7 @@ func TestResolveFeatureExtends_InheritsAttachmentSurface(t *testing.T) {
 				types.MapTerm(anyOfLabels),
 			},
 			Interoperability: &types.Interoperability{
-				ConflictsWith:    []string{"core/fixed-replica-controller"},
-				ComponentRefPath: "/spec/scaleTargetRef/name",
+				ConflictsWith: []string{"core/fixed-replica-controller"},
 			},
 		},
 	}
@@ -817,9 +817,6 @@ func TestResolveFeatureExtends_InheritsAttachmentSurface(t *testing.T) {
 	if got.Spec.Interoperability == nil {
 		t.Fatal("Interoperability should be inherited, got nil")
 	}
-	if got.Spec.Interoperability.ComponentRefPath != "/spec/scaleTargetRef/name" {
-		t.Errorf("ComponentRefPath = %q, want the base's path", got.Spec.Interoperability.ComponentRefPath)
-	}
 	if len(got.Spec.Interoperability.ConflictsWith) != 1 ||
 		got.Spec.Interoperability.ConflictsWith[0] != "core/fixed-replica-controller" {
 		t.Errorf("ConflictsWith = %v, want the base's list", got.Spec.Interoperability.ConflictsWith)
@@ -828,9 +825,9 @@ func TestResolveFeatureExtends_InheritsAttachmentSurface(t *testing.T) {
 
 // TestResolveFeatureExtends_ChildOverridesAttachmentSurface pins the precedence
 // on both axes at once: a declared selector replaces the base's outright, while
-// the interoperability block resolves field by field, so declaring one control
-// never drops the other. A child specialising where its artifacts land keeps the
-// incompatibilities its base declared.
+// the interoperability block resolves field by field, so a child authoring the
+// block without a conflictsWith list keeps the incompatibilities its base
+// declared.
 func TestResolveFeatureExtends_ChildOverridesAttachmentSurface(t *testing.T) {
 	t.Parallel()
 	base := types.Feature{
@@ -839,8 +836,7 @@ func TestResolveFeatureExtends_ChildOverridesAttachmentSurface(t *testing.T) {
 			AppliesTo:      "component.aggrega.ai/type=worker",
 			AppliesToAnyOf: []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=task")},
 			Interoperability: &types.Interoperability{
-				ConflictsWith:    []string{"core/fixed-replica-controller"},
-				ComponentRefPath: "/spec/base/name",
+				ConflictsWith: []string{"core/fixed-replica-controller"},
 			},
 		},
 	}
@@ -850,7 +846,7 @@ func TestResolveFeatureExtends_ChildOverridesAttachmentSurface(t *testing.T) {
 			Extends:          "core/queue",
 			AppliesTo:        "component.aggrega.ai/type=server",
 			AppliesToAnyOf:   []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=gateway")},
-			Interoperability: &types.Interoperability{ComponentRefPath: "/spec/child/name"},
+			Interoperability: &types.Interoperability{},
 		},
 	}
 	lookup := func(uri string) (types.Feature, bool) {
@@ -871,22 +867,97 @@ func TestResolveFeatureExtends_ChildOverridesAttachmentSurface(t *testing.T) {
 		got.Spec.AppliesToAnyOf[0].Selector != "component.aggrega.ai/type=gateway" {
 		t.Errorf("AppliesToAnyOf = %+v, want only the child's term", got.Spec.AppliesToAnyOf)
 	}
-	if got.Spec.Interoperability.ComponentRefPath != "/spec/child/name" {
-		t.Errorf("ComponentRefPath = %q, want the child's path", got.Spec.Interoperability.ComponentRefPath)
-	}
 	if len(got.Spec.Interoperability.ConflictsWith) != 1 ||
 		got.Spec.Interoperability.ConflictsWith[0] != "core/fixed-replica-controller" {
 		t.Errorf("ConflictsWith = %v, want the base's list preserved", got.Spec.Interoperability.ConflictsWith)
 	}
 }
 
+// TestResolveFeatureExtends_ConflictsWithPrecedence pins the conflictsWith
+// merge across every combination of a base and a child declaring or omitting
+// the block and the list: the child's own list replaces the base's rather than
+// extending it, and a child that states no list keeps the base's.
+func TestResolveFeatureExtends_ConflictsWithPrecedence(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		base      *types.Interoperability
+		child     *types.Interoperability
+		wantBlock bool
+		want      []string
+	}{
+		{
+			name:      "neither declares a block",
+			wantBlock: false,
+		},
+		{
+			name:      "the base's list inherits into a child declaring no block",
+			base:      &types.Interoperability{ConflictsWith: []string{"core/a"}},
+			wantBlock: true,
+			want:      []string{"core/a"},
+		},
+		{
+			name:      "the base's list inherits into a child declaring an empty block",
+			base:      &types.Interoperability{ConflictsWith: []string{"core/a"}},
+			child:     &types.Interoperability{},
+			wantBlock: true,
+			want:      []string{"core/a"},
+		},
+		{
+			name:      "the child's list replaces the base's rather than extending it",
+			base:      &types.Interoperability{ConflictsWith: []string{"core/a"}},
+			child:     &types.Interoperability{ConflictsWith: []string{"core/b"}},
+			wantBlock: true,
+			want:      []string{"core/b"},
+		},
+		{
+			name:      "a child's list stands where the base declares none",
+			child:     &types.Interoperability{ConflictsWith: []string{"core/b"}},
+			wantBlock: true,
+			want:      []string{"core/b"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			base := types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/queue", Version: "1.0.0"},
+				Spec:     types.FeatureSpec{Interoperability: tc.base},
+			}
+			child := types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/kafka-queue", Version: "1.0.0"},
+				Spec:     types.FeatureSpec{Extends: "core/queue", Interoperability: tc.child},
+			}
+			lookup := func(uri string) (types.Feature, bool) {
+				if uri == "core/queue" {
+					return base, true
+				}
+				return types.Feature{}, false
+			}
+			got, errs := ResolveFeatureExtends(child, lookup)
+			if len(errs) != 0 {
+				t.Fatalf("unexpected errors: %v", errs)
+			}
+			if (got.Spec.Interoperability != nil) != tc.wantBlock {
+				t.Fatalf("Interoperability = %+v, want a block present: %v", got.Spec.Interoperability, tc.wantBlock)
+			}
+			if !tc.wantBlock {
+				return
+			}
+			if !slices.Equal(got.Spec.Interoperability.ConflictsWith, tc.want) {
+				t.Errorf("ConflictsWith = %v, want %v", got.Spec.Interoperability.ConflictsWith, tc.want)
+			}
+		})
+	}
+}
+
 // TestResolveFeatureExtends_InteroperabilityIsNotAliased pins that the merge
-// hands back a fresh block. The chain walk reads catalog entries the caller
-// still holds, so returning the base's own pointer would let a later write
-// through the resolved Feature reach back into the base entity.
+// hands back a fresh block and a fresh list. The chain walk reads catalog
+// entries the caller still holds, so returning the base's own pointer — or a
+// list sharing the base's backing array — would let a later write through the
+// resolved Feature reach back into the base entity.
 func TestResolveFeatureExtends_InteroperabilityIsNotAliased(t *testing.T) {
 	t.Parallel()
-	baseBlock := &types.Interoperability{ComponentRefPath: "/spec/base/name"}
+	baseBlock := &types.Interoperability{ConflictsWith: []string{"core/base"}}
 	base := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/queue", Version: "1.0.0"},
 		Spec:     types.FeatureSpec{Interoperability: baseBlock},
@@ -909,8 +980,11 @@ func TestResolveFeatureExtends_InteroperabilityIsNotAliased(t *testing.T) {
 	if got.Spec.Interoperability == baseBlock {
 		t.Fatal("resolved Feature shares the base's interoperability block")
 	}
-	got.Spec.Interoperability.ComponentRefPath = "/spec/mutated/name"
-	if baseBlock.ComponentRefPath != "/spec/base/name" {
-		t.Errorf("base block mutated through the resolved Feature: %q", baseBlock.ComponentRefPath)
+	if len(got.Spec.Interoperability.ConflictsWith) != 1 {
+		t.Fatalf("ConflictsWith = %v, want the base's one entry", got.Spec.Interoperability.ConflictsWith)
+	}
+	got.Spec.Interoperability.ConflictsWith[0] = "core/mutated"
+	if baseBlock.ConflictsWith[0] != "core/base" {
+		t.Errorf("base list mutated through the resolved Feature: %q", baseBlock.ConflictsWith[0])
 	}
 }

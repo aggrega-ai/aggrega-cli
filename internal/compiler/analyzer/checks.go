@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // This file holds this package's rules expressed as constraint declarations:
@@ -46,14 +47,14 @@ import (
 // absence of a predicate rather than the presence of graph access.
 //
 // Every rule here is invoked, and each is invoked at the point its own declared
-// facts complete rather than at one point serving all of them. Five read the
-// finalised graph and are invoked where that graph and its enumeration are both
-// in hand; one — [AttachmentRequirementWellFormed] — reads only facts complete
-// once the composition is flattened, and is invoked where that flattening's own
-// presentation is in hand, which is earlier. That difference is the declaration's
-// doing and not a wiring choice: a rule reading fewer facts completes sooner, so
-// an author hears about a broken declaration before anything downstream reasons
-// about what it declares.
+// facts complete rather than at one point serving all of them. The rules reading
+// the finalised graph are invoked where that graph and its enumeration are both
+// in hand; a rule reading only facts complete once the composition is flattened —
+// [AttachmentRequirementWellFormed] is one — is invoked where that flattening's
+// own presentation is in hand, which is earlier. That difference is the
+// declaration's doing and not a wiring choice: a rule reading fewer facts
+// completes sooner, so an author hears about a broken declaration before anything
+// downstream reasons about what it declares.
 //
 // The consequence of the earlier point is worth stating rather than discovering.
 // A finding raised before the graph exists halts there, so a document carrying
@@ -514,6 +515,208 @@ var RequiredAttachmentSlotBound = constraint.Check[
 			constraint.Captioned("declared required by component type", componentType),
 		)}
 	},
+}
+
+// ConflictingFeaturesDoNotReachOneComponent reports each pair of Features a
+// node's merged attachment set holds where either one names the other in its
+// interoperability.conflictsWith list.
+//
+// # Reach is the cascade's, and nothing here computes it
+//
+// An attachment reaches every component whose merged set it lands in: the
+// component it is written on, and every component inside the subsystem or
+// boundary it is written on, nested boundaries included. The attachment cascade
+// has already folded every tier into that set by the time this rule is asked, so
+// the rule reads the set and walks no scope tree of its own — two Features on
+// sibling boundaries that share no component never appear in one node's set, and
+// two Features on an empty boundary appear in none. A rule over the authored
+// blocks instead would let a declared conflict be bypassed by writing one of the
+// two at a boundary.
+//
+// # Matched by name, whatever the versions
+//
+// A Feature is identified by its name with any version removed, and each entry of
+// a conflictsWith list is read the same way, both through the one home for that
+// split. So an entry names every version of the Feature it names, and two
+// attachments of one Feature at different versions are one Feature here. The
+// comparison is between names the Feature's author declared and the Features the
+// node carries; nothing is read out of either name.
+//
+// # One declaration suffices
+//
+// A pair conflicts when either side's list names the other, so a Feature
+// declaring a conflict halts the build although the other declares nothing. The
+// lists are read for every attachment of each Feature the node carries, because
+// two versions of one Feature may declare different lists and either declaring
+// the conflict is enough.
+//
+// # What a finding names
+//
+// It leads with the Feature whose list names the other — the value the
+// registered sentence names — and then every place that Feature was attached,
+// the Feature it conflicts with and every place that one was attached, and the
+// node where the two meet. The places are the ones the cascade recorded while it
+// folded, so the rule names where each attachment was written without walking
+// anything to find out. One finding is raised per node and pair, in the order the
+// merged set first holds each Feature, so a pair meeting on several components
+// reports each of them in the order the graph holds its nodes.
+//
+// Every fact is read in this body, one attachment at a time, and the helpers
+// below it are handed the values rather than the view: the view stays in the
+// predicate so what the rule reads is visible where the rule is declared.
+var ConflictingFeaturesDoNotReachOneComponent = constraint.Check[
+	constraint.GraphView,
+	constraint.NodeSubject,
+]{
+	Sentinel: ErrConflictingFeaturesReachOneComponent(),
+	Severity: constraint.SeverityFatal,
+	Run: func(v constraint.GraphView, s constraint.NodeSubject) []constraint.Objection {
+		node := s.NodeID()
+		var carried []carriedFeature
+		for _, attachment := range v.MergedAttachmentNames(node) {
+			resolved := v.AttachmentResolvedType(node, attachment)
+			if resolved == "" {
+				continue
+			}
+			carried = carry(carried, featureName(resolved),
+				v.FeatureConflictsWith(resolved), v.AttachmentContributions(node, attachment))
+		}
+		var out []constraint.Objection
+		for i := range carried {
+			for j := i + 1; j < len(carried); j++ {
+				declaring, other, conflict := conflictBetween(carried[i], carried[j])
+				if !conflict {
+					continue
+				}
+				detail := []constraint.DetailValue{constraint.Uncaptioned(declaring.name)}
+				detail = append(detail, contributionDetail(declaring.places)...)
+				detail = append(detail, constraint.Captioned("conflicts with", other.name))
+				detail = append(detail, contributionDetail(other.places)...)
+				detail = append(detail, constraint.Captioned("on component", node))
+				out = append(out, s.RaiseWithAdvice(
+					ErrConflictingFeaturesReachOneComponent(),
+					"Attach only one of the two where they meet: remove one attachment, or move it to "+
+						"a scope that does not hold this component.",
+					detail...,
+				))
+			}
+		}
+		return out
+	},
+}
+
+// carriedFeature is one Feature a node's merged attachment set holds, gathered
+// across every attachment of the node that resolves to it: the Feature's name
+// with any version removed, the names its conflictsWith lists declare — each with
+// any version removed, and each once — and every place those attachments were
+// contributed from, each once and in the order the cascade recorded them.
+type carriedFeature struct {
+	name      string
+	conflicts []string
+	places    []constraint.AttachmentContribution
+}
+
+// carry folds one attachment into the Features a node carries, in the order the
+// merged set first holds each Feature: an attachment of a Feature already held
+// adds its declared names and its places to that Feature's, and one of a Feature
+// not yet held starts a new entry.
+//
+// Two versions of one Feature may declare different lists, and the union is what
+// is kept, because either one declaring the conflict is enough.
+func carry(
+	carried []carriedFeature,
+	name string,
+	conflictsWith []string,
+	places []constraint.AttachmentContribution,
+) []carriedFeature {
+	index := slices.IndexFunc(carried, func(c carriedFeature) bool { return c.name == name })
+	if index < 0 {
+		carried = append(carried, carriedFeature{name: name})
+		index = len(carried) - 1
+	}
+	for _, named := range conflictsWith {
+		if declared := featureName(named); !slices.Contains(carried[index].conflicts, declared) {
+			carried[index].conflicts = append(carried[index].conflicts, declared)
+		}
+	}
+	for _, place := range places {
+		if !slices.Contains(carried[index].places, place) {
+			carried[index].places = append(carried[index].places, place)
+		}
+	}
+	return carried
+}
+
+// conflictBetween reports whether either of two Features a node carries names
+// the other in its conflictsWith list, and returns the pair ordered so that the
+// first is one whose list does. Where both lists name the other, the Feature the
+// merged set holds first leads.
+func conflictBetween(first, second carriedFeature) (declaring, other carriedFeature, conflict bool) {
+	if slices.Contains(first.conflicts, second.name) {
+		return first, second, true
+	}
+	if slices.Contains(second.conflicts, first.name) {
+		return second, first, true
+	}
+	return carriedFeature{}, carriedFeature{}, false
+}
+
+// featureName is a Feature reference with any version removed, which is what
+// identifies a Feature to the conflict rule. The split is the shared one, so a
+// reference is read here exactly as every other reader of a versioned reference
+// reads it.
+func featureName(reference string) string {
+	name, _, _ := types.SplitVersionedURI(reference)
+	return name
+}
+
+// contributionDetail spells the places a Feature was contributed from as the
+// captioned values a finding carries, in the order they are held.
+func contributionDetail(places []constraint.AttachmentContribution) []constraint.DetailValue {
+	var detail []constraint.DetailValue
+	for _, place := range places {
+		detail = append(detail, contributionPlace(place)...)
+	}
+	return detail
+}
+
+// contributionPlace spells one place an attachment was contributed from, in the
+// words of the document an author would open to change it. A surface this rule
+// does not know is spelled by its token rather than dropped, so a place added to
+// the cascade is never silently missing from a finding.
+func contributionPlace(place constraint.AttachmentContribution) []constraint.DetailValue {
+	switch place.Surface {
+	case constraint.ContributionAggregateComponent:
+		return []constraint.DetailValue{
+			constraint.Captioned("attached in the Aggregate on component", place.Component),
+		}
+	case constraint.ContributionSubsystem:
+		return []constraint.DetailValue{
+			constraint.Captioned("attached in the Aggregate on subsystem", place.ScopePath),
+		}
+	case constraint.ContributionReleaseBoundary:
+		return []constraint.DetailValue{
+			constraint.Captioned("attached in the Release on boundary", place.ScopePath),
+		}
+	case constraint.ContributionReleaseComponent:
+		detail := []constraint.DetailValue{
+			constraint.Captioned("attached in the Release on the entry for component", place.Component),
+		}
+		if place.ScopePath != "" {
+			detail = append(detail, constraint.Captioned("in boundary", place.ScopePath))
+		}
+		return detail
+	case constraint.ContributionAnnotation:
+		detail := []constraint.DetailValue{
+			constraint.Captioned("attached by annotation-driven expansion of", place.AnnotationKey),
+		}
+		if place.AnnotationSource != "" {
+			detail = append(detail, constraint.Captioned("declared at", place.AnnotationSource))
+		}
+		return detail
+	default:
+		return []constraint.DetailValue{constraint.Captioned("attached on", place.Surface)}
+	}
 }
 
 // OverriddenAnnotationAdvisory reports each leaf of an attachment's

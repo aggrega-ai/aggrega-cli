@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/unrelated
+  version: "1.0.0"
+spec:
+  interoperability:
+    conflictsWith: []

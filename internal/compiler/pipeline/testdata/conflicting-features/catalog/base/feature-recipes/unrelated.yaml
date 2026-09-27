@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: unrelated-compose
+  version: 1.0.0
+  description: Renders nothing, for the reason conflict-a-compose gives.
+spec:
+  capability: compose
+  implements: core/unrelated

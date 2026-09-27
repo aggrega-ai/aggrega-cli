@@ -4,6 +4,8 @@
 package validator
 
 import (
+	"slices"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -256,18 +258,17 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 // parent's one field at a time: a field the child declares wins, and a field it
 // leaves unset keeps the base's value.
 //
-// Per-field rather than whole-block, because the two controls are independent
-// and a Feature routinely needs only one of them. A Feature that specialises
-// where its base's artifacts land, by declaring componentRefPath alone, still
-// carries the incompatibilities its base declared — replacing the block
-// wholesale would drop them without a word, which is exactly the failure the
-// conflictsWith list exists to prevent. The child's conflictsWith list, when it
-// declares one, replaces the base's rather than extending it: naming its own
-// incompatibilities is a deliberate statement about what this Feature may sit
-// beside, not an omission.
+// Per-field rather than whole-block, so a child that authors an interoperability
+// block without a conflictsWith list still carries the incompatibilities its base
+// declared — replacing the block wholesale would drop them without a word, which
+// is exactly the failure the conflictsWith list exists to prevent. The child's
+// conflictsWith list, when it declares one, replaces the base's rather than
+// extending it: naming its own incompatibilities is a deliberate statement about
+// what this Feature may sit beside, not an omission.
 //
-// The result is always a fresh value, so a merge never writes through a pointer
-// a catalog entry still holds.
+// The result is always a fresh value, the list included, so a later write
+// through the resolved Feature never reaches a block or a list a catalog entry
+// still holds.
 func mergeInteroperability(parent, child *types.Interoperability) *types.Interoperability {
 	if parent == nil && child == nil {
 		return nil
@@ -275,14 +276,10 @@ func mergeInteroperability(parent, child *types.Interoperability) *types.Interop
 	var merged types.Interoperability
 	if parent != nil {
 		merged = *parent
+		merged.ConflictsWith = slices.Clone(parent.ConflictsWith)
 	}
-	if child != nil {
-		if len(child.ConflictsWith) > 0 {
-			merged.ConflictsWith = child.ConflictsWith
-		}
-		if child.ComponentRefPath != "" {
-			merged.ComponentRefPath = child.ComponentRefPath
-		}
+	if child != nil && len(child.ConflictsWith) > 0 {
+		merged.ConflictsWith = slices.Clone(child.ConflictsWith)
 	}
 	return &merged
 }

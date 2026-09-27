@@ -64,6 +64,42 @@ type AttachmentDeclaration struct {
 	AuthoredSocketNames []string
 }
 
+// AttachmentContribution is one place an attachment a node carries was
+// contributed from: the authoring surface, the scope and component it was
+// written under, and — where annotation-driven expansion produced it —
+// the annotation that did.
+//
+// It is one fact rather than several because no part of it names a place
+// alone. A scope path is a subsystem on one surface and a boundary on the
+// other, a component name is read under whichever of the two holds it, and
+// an annotation key says nothing about which block it was declared in; a
+// reader handed the parts as separate answers would have to re-pair them,
+// which is the re-derivation a declared fact exists to close.
+type AttachmentContribution struct {
+	// Surface is where the contribution was written: one of
+	// [ContributionAggregateComponent], [ContributionSubsystem],
+	// [ContributionReleaseBoundary], [ContributionReleaseComponent] or
+	// [ContributionAnnotation].
+	Surface string
+
+	// ScopePath is the subsystem or boundary the contribution was written in,
+	// joined the way that surface's axis joins its levels, and empty where the
+	// contribution sits at its document's top level.
+	ScopePath string
+
+	// Component is the component the contribution was keyed under, empty where
+	// it was written scope-wide.
+	Component string
+
+	// AnnotationKey is the annotation whose expansion produced the
+	// contribution, empty where the author wrote the attachment explicitly.
+	AnnotationKey string
+
+	// AnnotationSource names where that annotation was declared, empty where
+	// the author wrote the attachment explicitly.
+	AnnotationSource string
+}
+
 // DerivedNameDeclaration is one contributor's declaration that it derived
 // one name into one of its own key spaces: the space, the name, every
 // coordinate that identifies the contributor, whether a single one of that
@@ -1912,6 +1948,25 @@ type NormalizedView interface {
 	// silently, and the shape is open rather than settled.
 	FeatureAppliesToAnyOf(featureType string) []types.SelectorTerm
 
+	// FeatureConflictsWith are the Features a Feature declares it cannot reach
+	// a component alongside, as its author wrote them and in author order,
+	// empty when it declares none.
+	//
+	// They are names and nothing more: a rule over them compares each against
+	// the Features a component carries, and reads no meaning into either side.
+	// The list is the one the Feature carries once its extends chain has
+	// merged, so a Feature declaring no list of its own answers with its
+	// base's.
+	//
+	// It is complete as soon as the catalog is reachable, so it is placed
+	// there even though the rule reading it runs once the attachment cascade
+	// has folded; a fact is placed at the earliest stage at which it is
+	// complete, the way a Feature's applicability is.
+	//
+	// Keyed by (node, attachment); read from
+	// types.Interoperability.ConflictsWith.
+	FeatureConflictsWith(featureType string) []string
+
 	// AttachmentFeatureLabels is the label set the catalog entity an
 	// attachment resolves to declares, in author order.
 	//
@@ -3482,6 +3537,30 @@ type GraphView interface {
 	// Keyed by (node, attachment); read from
 	// types.IRSpec.FeatureValuesMapping.
 	MergedAttachmentNames(node string) []string
+
+	// AttachmentContributions are the places one attachment a node carries was
+	// contributed from, in the order the attachment cascade folded them: the
+	// Aggregate's own tiers before the Release's, and an outer scope before
+	// the scopes nested inside it. The same place is named once however many
+	// times it contributed.
+	//
+	// It is held rather than derived because the graph cannot answer it. The
+	// merged entry keeps the winning configuration and whether an annotation
+	// produced it, and never which tiers contributed the attachment, so which
+	// subsystem, boundary or Release entry wrote it is settled while the
+	// cascade folds and is gone once it finishes. Reconstructing it from the
+	// authoring documents afterwards would mean walking the scope trees a
+	// second time, beside the walk that produced the merged set, and the two
+	// would be free to disagree about which scopes a node sits under.
+	//
+	// It is a separate fact from the site that won one leaf of the
+	// attachment's configuration. That one names the single place a leaf's
+	// value came from; this names every place the attachment itself was
+	// written, including one whose configuration every other place displaced
+	// and one that wrote no configuration at all.
+	//
+	// Keyed by (node, attachment); read from ir.AttachmentSites.
+	AttachmentContributions(node string, attachment string) []AttachmentContribution
 
 	// UsesInjectDeliverySockets are the dependency sockets through which a
 	// node's own dependency edges deliver one injection key under one

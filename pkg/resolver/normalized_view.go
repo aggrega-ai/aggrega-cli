@@ -1231,6 +1231,20 @@ func (v *normalizedView) FeatureAppliesToAnyOf(featureType string) []types.Selec
 	return feat.Spec.AppliesToAnyOf
 }
 
+// FeatureConflictsWith returns the Features a Feature type declares it cannot
+// reach a component alongside, as its author wrote them and in author order.
+//
+// A Feature the catalog does not hold, one declaring no interoperability block
+// and one whose block lists nothing all answer empty: none of them declares a
+// conflict, and a rule reading this has nothing to compare in any of the three.
+func (v *normalizedView) FeatureConflictsWith(featureType string) []string {
+	feat := lookupFeature(v.catalog, featureType)
+	if feat == nil || feat.Spec.Interoperability == nil {
+		return nil
+	}
+	return feat.Spec.Interoperability.ConflictsWith
+}
+
 // ---------------------------------------------------------------- resolved facts
 
 // CompiledComponentSchema returns the contract a component type declares over

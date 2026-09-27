@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: conflict-a-compose
+  version: 1.0.0
+  description: >
+    Renders nothing. An attachment must resolve to a FeatureRecipe, and what these
+    fixtures exercise is which attachments reach which component, not what any of
+    them renders.
+spec:
+  capability: compose
+  implements: core/conflict-a

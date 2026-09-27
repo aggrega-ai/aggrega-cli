@@ -1042,8 +1042,10 @@ type GraphScope struct {
 	// derived alongside the graph.
 	FeatureOrder ir.FeatureOrder
 
-	// AttachmentSites is the per-attachment-leaf record of which scope's
-	// contribution won that leaf, settled while the cascade folded.
+	// AttachmentSites is the record of where the cascade's contributions were
+	// written: per attachment leaf, which scope's contribution won that leaf; and
+	// per attachment, every place that contributed it. Both are settled while the
+	// cascade folded.
 	AttachmentSites ir.AttachmentSites
 
 	// OriginatedConnections pairs every connection the composition drew with the

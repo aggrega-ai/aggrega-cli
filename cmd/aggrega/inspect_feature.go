@@ -93,9 +93,6 @@ func renderFeatureFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, 
 			if len(io.ConflictsWith) > 0 {
 				fmt.Fprintf(opts.out, "  conflictsWith: %v\n", io.ConflictsWith)
 			}
-			if io.ComponentRefPath != "" {
-				fmt.Fprintf(opts.out, "  componentRefPath: %s\n", io.ComponentRefPath)
-			}
 		}
 		if feat.Spec.Assertions.Len() > 0 {
 			fmt.Fprintln(opts.out, "Assertions:")

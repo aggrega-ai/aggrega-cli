@@ -237,6 +237,24 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// No two Features one of which declares a conflict with the other reach one
+	// component, evaluated once per node over its merged attachment set. Reach is
+	// what that set already holds: an attachment written on a subsystem or a
+	// boundary is folded into every component the scope holds, so a boundary's
+	// attachment and a component's own meet here and nowhere earlier, and two
+	// sibling boundaries sharing no component never meet at all. The signal is
+	// read once per node, which is the granularity the traversal promises.
+	violations, err = constraint.RunOnNodes(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		analyzer.ConflictingFeaturesDoNotReachOneComponent,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// No delivery key a component declares for itself is also delivered by one of
 	// that component's own dependency connections, evaluated once per key the
 	// component's own injection block delivers. The axis is that block as the

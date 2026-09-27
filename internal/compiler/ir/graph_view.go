@@ -67,10 +67,12 @@ type graphView struct {
 	edges []types.IREdge
 
 	// sites names, per attachment leaf, where the contribution that won it was
-	// written. It is held rather than derived because the graph cannot answer
-	// it: the merged entry keeps the winning value and its origin and never the
-	// contest, so which scope supplied any one leaf is settled while the
-	// cascade folds and is gone once it finishes.
+	// written, and per attachment, every place that contributed it. It is held
+	// rather than derived because the graph cannot answer either: the merged
+	// entry keeps the winning value and its origin and never the contest or the
+	// tiers, so which scope supplied any one leaf, and which scopes wrote the
+	// attachment at all, is settled while the cascade folds and is gone once it
+	// finishes.
 	sites AttachmentSites
 
 	// connections holds, per origin-keyed connection, the delivery that
@@ -107,7 +109,7 @@ func NewGraphView(
 	sites AttachmentSites,
 	connections *OriginatedConnections,
 ) constraint.GraphView {
-	if graph == nil || earlier == nil || sites == nil || connections == nil {
+	if graph == nil || earlier == nil || !sites.present() || connections == nil {
 		return nil
 	}
 	return &graphView{
@@ -138,6 +140,17 @@ func (v *graphView) MergedAttachmentNames(node string) []string {
 		return nil
 	}
 	return merged.Keys()
+}
+
+// AttachmentContributions returns the places one attachment a node carries was
+// contributed from, in the order the cascade folded them, and none for an
+// attachment the node does not carry.
+//
+// It is answered from the product the cascade wrote while it folded rather than
+// from the graph, because the merged entry keeps no record of which tiers
+// contributed it.
+func (v *graphView) AttachmentContributions(node string, attachment string) []constraint.AttachmentContribution {
+	return v.sites.contributionsOf(node, attachment)
 }
 
 // AttachmentResolvedType returns the Feature type an attachment resolves to,

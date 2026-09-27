@@ -248,6 +248,26 @@ var records = []recordDecl{
 		},
 	},
 	{
+		Name: "AttachmentContribution",
+		Doc: "AttachmentContribution is one place an attachment a node carries was " +
+			"contributed from: the authoring surface, the scope and component it " +
+			"was written under, and — where annotation-driven expansion produced " +
+			"it — the annotation that did.\n\nIt is one fact rather than several " +
+			"because no part of it names a place alone. A scope path is a " +
+			"subsystem on one surface and a boundary on the other, a component " +
+			"name is read under whichever of the two holds it, and an annotation " +
+			"key says nothing about which block it was declared in; a reader " +
+			"handed the parts as separate answers would have to re-pair them, " +
+			"which is the re-derivation a declared fact exists to close.",
+		Fields: []recordField{
+			{Name: "Surface", Type: "string", Doc: "Surface is where the contribution was written: one of [ContributionAggregateComponent], [ContributionSubsystem], [ContributionReleaseBoundary], [ContributionReleaseComponent] or [ContributionAnnotation]."},
+			{Name: "ScopePath", Type: "string", Doc: "ScopePath is the subsystem or boundary the contribution was written in, joined the way that surface's axis joins its levels, and empty where the contribution sits at its document's top level."},
+			{Name: "Component", Type: "string", Doc: "Component is the component the contribution was keyed under, empty where it was written scope-wide."},
+			{Name: "AnnotationKey", Type: "string", Doc: "AnnotationKey is the annotation whose expansion produced the contribution, empty where the author wrote the attachment explicitly."},
+			{Name: "AnnotationSource", Type: "string", Doc: "AnnotationSource names where that annotation was declared, empty where the author wrote the attachment explicitly."},
+		},
+	},
+	{
 		Name: "DerivedNameDeclaration",
 		Doc: "DerivedNameDeclaration is one contributor's declaration that it " +
 			"derived one name into one of its own key spaces: the space, the " +
@@ -2087,6 +2107,25 @@ var facts = []factDecl{
 			"admitting it silently, and the shape is open rather than settled",
 	},
 	{
+		Name:        "feature-conflicts-with",
+		Stage:       "normalized",
+		SourceField: "types.Interoperability.ConflictsWith",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "FeatureConflictsWith are the Features a Feature declares it cannot " +
+			"reach a component alongside, as its author wrote them and in author " +
+			"order, empty when it declares none.\n\nThey are names and nothing " +
+			"more: a rule over them compares each against the Features a " +
+			"component carries, and reads no meaning into either side. The list " +
+			"is the one the Feature carries once its extends chain has merged, so " +
+			"a Feature declaring no list of its own answers with its base's.\n" +
+			"\nIt is complete as soon as the catalog is reachable, so it is placed " +
+			"there even though the rule reading it runs once the attachment " +
+			"cascade has folded; a fact is placed at the earliest stage at which it " +
+			"is complete, the way a Feature's applicability is.",
+	},
+	{
 		Name:        "attachment-feature-labels",
 		Stage:       "normalized",
 		SourceField: "types.FeatureMetadata.Labels",
@@ -3710,6 +3749,35 @@ var facts = []factDecl{
 			"framework already exposes as a fact of its own, so a rule could " +
 			"re-derive a declared fact from this one — which is the shape every " +
 			"return here exists to keep closed.",
+	},
+	{
+		Name:        "attachment-contributions",
+		Stage:       "graph",
+		SourceField: "ir.AttachmentSites",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "[]AttachmentContribution",
+		Doc: "AttachmentContributions are the places one attachment a node carries " +
+			"was contributed from, in the order the attachment cascade folded " +
+			"them: the Aggregate's own tiers before the Release's, and an outer " +
+			"scope before the scopes nested inside it. The same place is named " +
+			"once however many times it contributed.\n\nIt is held rather than " +
+			"derived because the graph cannot answer it. The merged entry keeps " +
+			"the winning configuration and whether an annotation produced it, and " +
+			"never which tiers contributed the attachment, so which subsystem, " +
+			"boundary or Release entry wrote it is settled while the cascade " +
+			"folds and is gone once it finishes. Reconstructing it from the " +
+			"authoring documents afterwards would mean walking the scope trees a " +
+			"second time, beside the walk that produced the merged set, and the " +
+			"two would be free to disagree about which scopes a node sits " +
+			"under.\n\nIt is a separate fact from the site that won one leaf of " +
+			"the attachment's configuration. That one names the single place a " +
+			"leaf's value came from; this names every place the attachment itself " +
+			"was written, including one whose configuration every other place " +
+			"displaced and one that wrote no configuration at all.",
 	},
 	{
 		Name:        "uses-inject-delivery-sockets",

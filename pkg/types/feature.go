@@ -125,6 +125,8 @@ func (t SelectorTerm) MarshalJSON() ([]byte, error) {
 
 // Interoperability defines operational safety and interoperability controls for a Feature.
 type Interoperability struct {
-	ConflictsWith    []string `json:"conflictsWith,omitempty" yaml:"conflictsWith,omitempty"`
-	ComponentRefPath string   `json:"componentRefPath,omitempty" yaml:"componentRefPath,omitempty"`
+	// ConflictsWith names the Features this Feature cannot reach a component
+	// alongside. A build halts when one component's merged attachment set holds
+	// this Feature and one named here, compared by name with any version removed.
+	ConflictsWith []string `json:"conflictsWith,omitempty" yaml:"conflictsWith,omitempty"`
 }

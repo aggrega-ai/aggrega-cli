@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/conflict-a
+  version: "1.0.0"
+spec:
+  # The one declaration every conflicting row rests on. core/conflict-b declares
+  # nothing back, so a halt proves one declaration is enough.
+  interoperability:
+    conflictsWith: [core/conflict-b]
+  # The leaf the Manifest's annotation binding routes into, which is what lets
+  # annotation-driven expansion attach this Feature.
+  schema:
+    infra:
+      level: { type: string, default: "low" }
