@@ -6,7 +6,6 @@ package serve
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -146,21 +145,12 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 	// against pinned dependencies, and this computation fills no lockfile, so a
 	// workspace without one is told to generate it rather than shown a render
 	// resolved from whatever happened to be on disk. A caller that filled one
-	// first passes the gate on what the fill wrote.
+	// first passes the gate on what the fill wrote. It is the gate the graph
+	// inspection crosses as well, so a refusal for absence withdraws the drift
+	// finding on that path here exactly as it does there.
 	lockfilePath := lockfile.PathFor(releasePath)
-	if _, err := os.Stat(lockfilePath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, &jsonRPCError{
-				Code:    errLockfileAbsent,
-				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, release),
-				Data:    newLockfileErrorData(lockfilePath, release),
-			}
-		}
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
-			Data:    newLockfileErrorData(lockfilePath, release),
-		}
+	if envelope := s.requireLockfile(ctx, lockfilePath, release); envelope != nil {
+		return nil, envelope
 	}
 
 	// A lockfile that is present and unreadable is a refusal here, and this is the

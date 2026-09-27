@@ -558,16 +558,20 @@ type releaseClosureResult struct {
 //
 // # What it deliberately does not do
 //
-// It publishes nothing. A drift verdict and the render advisories belong to the
-// surface that asked for them — publishing is a whole-layer replacement, so a
-// request that published here would erase the layer the graph request wrote.
-// A caller wanting the drift verdict asks for the graph.
+// It publishes nothing of what it finds. A drift verdict and the render
+// advisories belong to the surface that asked for them — publishing is a
+// whole-layer replacement, so a request that published here would erase the
+// layer the graph request wrote. A caller wanting the drift verdict asks for the
+// graph.
 //
 // It carries the same lockfile precondition the graph request carries, and for
 // the same reason: the versions this listing reports are the ones the Release
 // resolved to, and a workspace nobody has prepared has not resolved them yet.
 // A listing produced without one would report what the catalog happens to hold
 // today, which is a different question from what this Release depends on.
+// Crossing that precondition is also why a listing that finds the lockfile gone
+// withdraws the drift finding standing on it: the gate does that for whichever
+// request crossed it, and requireLockfile says why.
 func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest) error {
 	var params releaseClosureParams
 	if err := decodeParams(req, &params); err != nil {

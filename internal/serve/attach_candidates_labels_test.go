@@ -258,7 +258,7 @@ func TestASuppliedLabelSetBuildsNoGraphAndNeedsNoLockfile(t *testing.T) {
 	// The control: the graph-node coordinate DOES refuse on this workspace, so
 	// the acceptance below reflects the absence of a graph build rather than a
 	// precondition that stopped applying.
-	graphResp := attachRequest(t, graphNodeServer(t, ws, dirs...),
+	graphResp := attachRequestPastPushes(t, graphNodeServer(t, ws, dirs...),
 		attachCandidatesParams{GraphNode: "checkout", Release: rel})
 	if graphResp.Error == nil || graphResp.Error.Code != errLockfileAbsent {
 		t.Fatalf("the graph-node coordinate did not refuse with the lockfile removed, so this "+

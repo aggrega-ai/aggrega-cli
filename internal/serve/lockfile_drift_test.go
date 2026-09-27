@@ -46,9 +46,10 @@ type jsonRPCNotificationRead struct {
 // that resolves but no sibling lockfile produces the
 // lockfile-absent envelope with Data.Lockfile pointing at the expected
 // lockfile path and Data.Release naming the Release the request
-// asked for. The post-absent-gate flow (resolveReleaseClosure
-// + verifyDriftAndPublish + pipeline) never fires because the gate
-// blocks.
+// asked for. The post-absent-gate flow (resolveReleaseClosure, the
+// drift verify against a closure, the pipeline) never fires because the
+// gate blocks; what the gate itself publishes for an absent lockfile is
+// TestAbsentLockfileWithdrawsItsDriftFinding's subject.
 //
 // Data.Release is pinned here because the remediating command the
 // envelope suggests is parameterised by the Release: a client reading
@@ -69,10 +70,18 @@ func TestHandleIrGraphLockfileAbsentEmits1003(t *testing.T) {
 	missing := "release.yaml"
 	var in bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: missing}))
-	resp := runOneRequest(t, srv, &in, &out)
+	resp, pushes := runOneRequestPastPushes(t, srv, &in, &out)
 
 	if resp.Error == nil {
 		t.Fatalf("expected error envelope; got result: %s", resp.Result)
+	}
+	// The refusal may be preceded by the withdrawal of a drift finding on the
+	// lockfile it found missing, and by nothing else: no other file is touched,
+	// and a withdrawal carries no finding.
+	for _, p := range pushes {
+		if p.File != filepath.Join(tmp, "release.lock") || len(p.Diagnostics) != 0 {
+			t.Errorf("the refusal pushed %d finding(s) on %s; it may only clear the lockfile it found missing", len(p.Diagnostics), p.File)
+		}
 	}
 	if resp.Error.Code != errLockfileAbsent {
 		t.Errorf("Code: got %d, want %d (errLockfileAbsent)", resp.Error.Code, errLockfileAbsent)

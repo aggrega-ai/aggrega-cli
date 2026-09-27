@@ -329,6 +329,18 @@ func callReleaseClosure(t *testing.T, ws, release string) jsonRPCResponse {
 	return runOneRequest(t, srv, &in, &out)
 }
 
+// callReleaseClosurePastPushes is callReleaseClosure for a workspace whose
+// lockfile is gone. That refusal is preceded by the withdrawal of any drift
+// finding on the lockfile, which callReleaseClosure would decode as the answer.
+func callReleaseClosurePastPushes(t *testing.T, ws, release string) jsonRPCResponse {
+	t.Helper()
+	var in, out bytes.Buffer
+	srv := newPinIsolationServer(t, ws, &in, &out, 1)
+	in.Write(framedRequest(1, "aggrega/releaseClosure", releaseClosureParams{Release: release}))
+	resp, _ := runOneRequestPastPushes(t, srv, &in, &out)
+	return resp
+}
+
 // decodeReleaseClosure decodes a successful response's result payload.
 func decodeReleaseClosure(t *testing.T, resp jsonRPCResponse) releaseClosureResult {
 	t.Helper()
@@ -475,7 +487,7 @@ func TestReleaseClosureComputesNoSecondClosure(t *testing.T) {
 		t.Fatalf("remove the lockfile: %v", err)
 	}
 
-	resp := callReleaseClosure(t, ws, release)
+	resp := callReleaseClosurePastPushes(t, ws, release)
 	if resp.Error == nil {
 		t.Fatalf("a Release with no lockfile was answered, so the closure came from somewhere other "+
 			"than the shared inspection: %s", resp.Result)

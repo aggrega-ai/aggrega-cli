@@ -4,9 +4,7 @@
 package serve
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -50,19 +48,7 @@ import (
 // written to.
 func driveIrGraphOn(t *testing.T, srv *Server, out *bytes.Buffer, id int, releaseRel string) {
 	t.Helper()
-	var in bytes.Buffer
-	in.Write(framedRequest(id, "aggrega/irGraph", irGraphParams{Release: releaseRel}))
-	srv.in = bufio.NewReader(&in)
-	srv.out = out
-	body, err := readMessage(srv.in)
-	if err != nil {
-		t.Fatalf("readMessage: %v", err)
-	}
-	var req jsonRPCRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		t.Fatalf("unmarshal request: %v", err)
-	}
-	driveHandle(t, srv, &req, out)
+	driveRequestOn(t, srv, out, id, "aggrega/irGraph", irGraphParams{Release: releaseRel})
 }
 
 // unrenderableRecipe rewrites the fixture's Recipe so its workload cannot be

@@ -122,7 +122,9 @@ func TestIrGraphAcceptsWorkspaceRelativeRelease(t *testing.T) {
 
 			var in bytes.Buffer
 			in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: tc.release}))
-			resp := runOneRequest(t, srv, &in, &out)
+			// The gate withdraws any drift finding on the lockfile it found missing
+			// before it refuses, so the answer is read past that publication.
+			resp, _ := runOneRequestPastPushes(t, srv, &in, &out)
 
 			if resp.Error == nil {
 				t.Fatalf("expected the lockfile gate to answer; got result: %s", resp.Result)

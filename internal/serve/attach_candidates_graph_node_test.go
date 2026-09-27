@@ -287,6 +287,17 @@ func attachRequest(t *testing.T, srv *Server, params attachCandidatesParams) jso
 	return runOneRequest(t, srv, in, out)
 }
 
+// attachRequestPastPushes is attachRequest for a graph-node request over a
+// workspace whose lockfile is gone. That refusal is preceded by the withdrawal
+// of any drift finding on the lockfile, which attachRequest would decode as the
+// answer.
+func attachRequestPastPushes(t *testing.T, srv *Server, params attachCandidatesParams) jsonRPCResponse {
+	t.Helper()
+	in := bytes.NewBuffer(framedRequest(1, "aggrega/attachCandidates", params))
+	resp, _ := runOneRequestPastPushes(t, srv, in, &bytes.Buffer{})
+	return resp
+}
+
 // attachResult is the decoded response shape these tests assert against.
 type attachResult struct {
 	Node        string            `json:"node"`
@@ -477,7 +488,7 @@ func TestAttachCandidatesGateOnTheLockfileOnlyForAGraphNode(t *testing.T) {
 		t.Fatalf("remove lockfile: %v", err)
 	}
 
-	graphResp := attachRequest(t, graphNodeServer(t, ws, dirs...),
+	graphResp := attachRequestPastPushes(t, graphNodeServer(t, ws, dirs...),
 		attachCandidatesParams{GraphNode: "checkout", Release: rel})
 	if graphResp.Error == nil {
 		t.Fatalf("a graph-node request answered with no lockfile present: %s", graphResp.Result)

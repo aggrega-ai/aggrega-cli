@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -964,7 +963,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    fires the aggrega/publishDiagnostics notification. Non-blocking — irGraph
 	//    still produces the IR graph; drift is a Problems-panel signal, not a halt,
 	//    which is why it runs here rather than as one of the preview's own gates.
-	s.verifyDriftAndPublish(ctx, preview.lockfilePath, preview.resolved.Closure)
+	s.verifyDriftAndPublish(ctx, preview.lockfilePath, &preview.resolved.Closure)
 
 	// 5. Advisories to the Problems panel. Every exit-code-neutral finding the run
 	//    raised — the binding-lint findings, the static-analysis advisory stream,
@@ -1058,13 +1057,18 @@ type releasePreview struct {
 //
 // # What it deliberately does NOT do
 //
-// It publishes nothing. Drift diagnostics and advisories are a property of the
-// surface that asked, not of the computation: a graph query draws a picture a
-// reader then reasons about and owes them the Problems panel, while a question
-// about which Features may attach to a node owes nothing to that panel and
-// would, by publishing, replace a layer another request wrote. So the
-// publications stay with the caller that wants them — which is exactly why the
-// partial result above must survive the refusal.
+// It publishes nothing of what it computes. Drift diagnostics and advisories are
+// a property of the surface that asked, not of the computation: a graph query
+// draws a picture a reader then reasons about and owes them the Problems panel,
+// while a question about which Features may attach to a node owes nothing to
+// that panel and would, by publishing, replace a layer another request wrote. So
+// the publications stay with the caller that wants them — which is exactly why
+// the partial result above must survive the refusal.
+//
+// The one thing it does publish is not a finding of its own. The lockfile gate
+// withdraws a drift finding whose lockfile it has found gone, whichever surface
+// asked, because absence is a fact about the file rather than about the request
+// — requireLockfile carries the reasoning.
 //
 // # Why the pipeline options are the caller's
 //
@@ -1083,21 +1087,11 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    until the operator regenerates the lockfile (via the
 	//    extension's "Generate Lockfile" toast button, which runs
 	//    aggrega pull in a terminal, or by running aggrega pull
-	//    manually).
+	//    manually). A refusal for absence also withdraws the drift
+	//    finding standing on that path; requireLockfile says why.
 	lockfilePath := lockfile.PathFor(releasePath)
-	if _, err := os.Stat(lockfilePath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, &jsonRPCError{
-				Code:    errLockfileAbsent,
-				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, release),
-				Data:    newLockfileErrorData(lockfilePath, release),
-			}
-		}
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
-			Data:    newLockfileErrorData(lockfilePath, release),
-		}
+	if envelope := s.requireLockfile(ctx, lockfilePath, release); envelope != nil {
+		return nil, envelope
 	}
 
 	// 2. Build the per-request catalog view, seeded with THIS request's pins so

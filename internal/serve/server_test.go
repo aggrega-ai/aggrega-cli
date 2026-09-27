@@ -266,6 +266,11 @@ func rawFramed(body string) []byte {
 
 // decodeOneResponse reads a single Content-Length-framed message from
 // out and decodes it as jsonRPCResponse.
+//
+// It reads the FIRST frame, and tests rely on that: a notification pushed ahead
+// of the answer breaks the decode, which is how a test built on it asserts that
+// its request pushed nothing. A test whose request is expected to push reads the
+// answer through decodeResponsePastPushes instead.
 func decodeOneResponse(t *testing.T, out *bytes.Buffer) jsonRPCResponse {
 	t.Helper()
 	r := bufio.NewReader(out)
@@ -278,6 +283,45 @@ func decodeOneResponse(t *testing.T, out *bytes.Buffer) jsonRPCResponse {
 		t.Fatalf("unmarshal response: %v (body: %s)", err, body)
 	}
 	return resp
+}
+
+// decodeResponsePastPushes reads every Content-Length-framed message on out and
+// returns the response together with the aggrega/publishDiagnostics
+// notifications that preceded it, in the order they were written.
+//
+// It exists for a request that pushes before it answers — one that finds a
+// Release's lockfile gone withdraws the drift finding on that path before it
+// refuses — so the pushes are handed to the test rather than skipped: a test
+// reading through here can still assert on what was pushed, and one that has no
+// interest in it says so by discarding the second value.
+func decodeResponsePastPushes(t *testing.T, out *bytes.Buffer) (jsonRPCResponse, []publishDiagnosticsParams) {
+	t.Helper()
+	var pushes []publishDiagnosticsParams
+	for _, body := range readAllFrames(t, out) {
+		var f wireFrame
+		if err := json.Unmarshal(body, &f); err != nil {
+			t.Fatalf("decode frame: %v\nframe: %s", err, body)
+		}
+		if f.Method != "" && len(f.ID) == 0 {
+			// A notification. Only a diagnostics publication is handed back; any
+			// other kind is not what these tests are about.
+			if f.Method == "aggrega/publishDiagnostics" {
+				var params publishDiagnosticsParams
+				if err := json.Unmarshal(f.Params, &params); err != nil {
+					t.Fatalf("decode publishDiagnostics params: %v\nparams: %s", err, f.Params)
+				}
+				pushes = append(pushes, params)
+			}
+			continue
+		}
+		var resp jsonRPCResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("unmarshal response: %v (body: %s)", err, body)
+		}
+		return resp, pushes
+	}
+	t.Fatalf("no response was written; %d publication(s) were", len(pushes))
+	return jsonRPCResponse{}, nil
 }
 
 // runOneRequest drives a single request through the same serializer
@@ -309,6 +353,26 @@ func runOneRequestIn(t *testing.T, sess *session, root string, in *bytes.Buffer,
 	}
 	req.Params = declareWorkspace(t, &req, root)
 	return dispatchOne(t, sess, &req, out)
+}
+
+// runOneRequestPastPushes is runOneRequest for a request expected to push before
+// it answers. It returns the answer together with the diagnostics publications
+// that preceded it, read by decodeResponsePastPushes, rather than decoding the
+// first frame as the answer.
+func runOneRequestPastPushes(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffer) (jsonRPCResponse, []publishDiagnosticsParams) {
+	t.Helper()
+	srv.in = bufio.NewReader(in)
+	srv.out = out
+	body, err := readMessage(srv.in)
+	if err != nil {
+		t.Fatalf("readMessage: %v", err)
+	}
+	var req jsonRPCRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	driveHandle(t, srv, &req, out)
+	return decodeResponsePastPushes(t, out)
 }
 
 // runOneRequestVerbatim is runOneRequest with the request put on the wire

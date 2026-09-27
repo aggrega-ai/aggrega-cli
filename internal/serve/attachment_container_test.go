@@ -289,6 +289,17 @@ func attachmentContainerRequest(t *testing.T, srv *Server, params attachmentCont
 	return runOneRequest(t, srv, in, &bytes.Buffer{})
 }
 
+// attachmentContainerRequestPastPushes is attachmentContainerRequest for a
+// request that may find the Release's lockfile missing. That refusal is preceded
+// by the withdrawal of any drift finding on the lockfile, which
+// attachmentContainerRequest would decode as the answer.
+func attachmentContainerRequestPastPushes(t *testing.T, srv *Server, params attachmentContainerParams) jsonRPCResponse {
+	t.Helper()
+	in := bytes.NewBuffer(framedRequest(1, "aggrega/attachmentContainer", params))
+	resp, _ := runOneRequestPastPushes(t, srv, in, &bytes.Buffer{})
+	return resp
+}
+
 func decodeAttachmentContainer(t *testing.T, resp jsonRPCResponse) AttachmentContainerResult {
 	t.Helper()
 	if resp.Error != nil {
@@ -674,7 +685,9 @@ func TestAttachmentContainerRefusesWhatItCannotName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := attachmentContainerServer(t, ws)
-			resp := attachmentContainerRequest(t, srv, tc.params)
+			// Read past any publication: a Release that is not there has no lockfile
+			// either, and the gate withdraws a drift finding on that path first.
+			resp := attachmentContainerRequestPastPushes(t, srv, tc.params)
 			switch {
 			case tc.refuses == "" && resp.Error != nil:
 				t.Fatalf("an answerable request was refused: %+v", resp.Error)
