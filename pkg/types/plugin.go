@@ -324,18 +324,19 @@ type PluginCommandFlag struct {
 	// Name is the flag's long name — the --name token an operator passes on the
 	// command line. Every declared flag names it.
 	Name string `json:"name" yaml:"name"`
-	// Shorthand is the flag's optional single-character short alias — the -x form
-	// an operator may pass instead of the long name. Empty means the flag has no
-	// short alias.
+	// Shorthand is the flag's optional short alias — the -x form an operator may
+	// pass instead of the long name — as a single ASCII letter or digit. Empty
+	// means the flag has no short alias.
 	Shorthand string `json:"shorthand,omitempty" yaml:"shorthand,omitempty"`
 	// Description is the flag's one-line help text, shown in the command's help
 	// output. Documentation only; the host does not act on it.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	// Type is the flag's value type — for example string, bool, or int. Empty
-	// carries no type claim.
+	// Type is the flag's value type — string, bool or int — and the kind of flag
+	// help renders it as. Empty renders it as a string flag.
 	Type string `json:"type,omitempty" yaml:"type,omitempty"`
 	// Default is the flag's default value when the operator does not pass it,
-	// expressed as a string. Empty means the flag declares no default.
+	// expressed as a string; for a bool or int flag it is a value of that type.
+	// Empty means the flag declares no default.
 	Default string `json:"default,omitempty" yaml:"default,omitempty"`
 }
 

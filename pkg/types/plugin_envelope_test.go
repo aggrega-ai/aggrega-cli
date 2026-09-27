@@ -5,6 +5,7 @@ package types_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -287,6 +288,61 @@ spec:
 			if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 				t.Fatalf("expected ErrEntityEnvelope for %q; got %v", name, err)
 			}
+		})
+	}
+}
+
+// pluginWithCommandFlag renders a CLI Plugin whose one mirrored command carries
+// the given flag entry, written as a YAML flow mapping.
+func pluginWithCommandFlag(flag string) string {
+	return `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata: {name: greet, version: 1.0.0, pluginType: cli}
+spec:
+  abiVersion: v1alpha1
+  commands:
+    - name: greet
+      flags:
+        - ` + flag + "\n"
+}
+
+// TestPlugin_EnvelopeJudgesCommandFlagShape proves the command mirror's flag
+// bounds are live at the envelope, one fault per row beside positive controls:
+// a shorthand is a single ASCII letter or digit, and a type is one of string,
+// bool or int. A refused row must be refused for the field it breaks.
+func TestPlugin_EnvelopeJudgesCommandFlagShape(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		flag  string
+		field string // empty: the document is valid
+	}{
+		{"well-formed flag", `{name: times, shorthand: t, type: int, default: "3"}`, ""},
+		{"digit shorthand, no type", `{name: seven, shorthand: "7"}`, ""},
+		{"two-character shorthand", `{name: verbose, shorthand: vv}`, "shorthand"},
+		{"non-ASCII shorthand", `{name: accent, shorthand: é}`, "shorthand"},
+		{"hyphen shorthand", `{name: dash, shorthand: "-"}`, "shorthand"},
+		{"type outside the set", `{name: loud, type: boolean}`, "type"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(pluginWithCommandFlag(tc.flag)), "plugin.yaml")
+			if tc.field == "" {
+				if err != nil {
+					t.Fatalf("valid flag declaration rejected: %v", err)
+				}
+				return
+			}
+			var envErr *envelope.Error
+			if !errors.As(err, &envErr) {
+				t.Fatalf("expected a schema violation for %s; got %v", tc.name, err)
+			}
+			for _, f := range envErr.Findings {
+				if strings.Contains(f.FieldPath, tc.field) {
+					return
+				}
+			}
+			t.Fatalf("no finding names the %q field: %v", tc.field, err)
 		})
 	}
 }

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -120,6 +120,33 @@ type cliCommandReg struct {
 	digest string
 }
 
+// cliPluginIdentity names the configured plugin a registration came from: the
+// artifact reference and the digest the config pinned it to. Every command one
+// plugin contributes carries the same identity, which is what lets registration
+// skip a plugin whole rather than command by command.
+type cliPluginIdentity struct {
+	uri    string
+	digest string
+}
+
+func (r cliCommandReg) plugin() cliPluginIdentity {
+	return cliPluginIdentity{uri: r.uri, digest: r.digest}
+}
+
+// The value types a CLI plugin may declare for a flag. Each names the kind of
+// flag help renders it as; a flag declaring no type renders as a string flag.
+//
+// The Plugin entity schema's command mirror states the same set as an enum on
+// its flag type, and the shorthand shape isPluginFlagShorthand accepts as a
+// pattern. The two sides are held together by a test driving one corpus of
+// declarations through both, since the schema and this check sit on either side
+// of a language boundary and neither can read the other.
+const (
+	pluginFlagTypeString = "string"
+	pluginFlagTypeBool   = "bool"
+	pluginFlagTypeInt    = "int"
+)
+
 // productionCLIPluginRegistrations is the seam-facing form of
 // productionCLIPluginRegistrationsContext, for the command-tree construction
 // that reaches it.
@@ -209,10 +236,38 @@ func describeConfiguredCLI(ctx context.Context, ref workspaceconfig.CLIPluginRef
 // always win, reserved names stay reserved, and one command name registers once.
 // Each registered command's help comes from the describe cache; no guest is
 // loaded to list or help while that cache is warm.
+//
+// Every command a plugin contributes is built, and its flags declared, before
+// any command is attached. A plugin one of whose commands declares a flag the
+// host cannot declare for help is skipped whole — none of its commands is added
+// — with one diagnostic naming the plugin, the command, the flag and what is
+// wrong with it. The flags are declared here, while the tree is built and before
+// any command runs, so a declaration the flag library refuses would otherwise
+// stop every command in the workspace, built-ins included, rather than only the
+// plugin that made it. The registrations read here are the same whether the
+// describe cache or a fresh describe of the guest supplied them, so the check
+// covers a plugin either way.
 func registerInstalledCLIPlugins(root *cobra.Command) {
 	regs := cliPluginRegistrations()
 	if len(regs) == 0 {
 		return
+	}
+
+	carried := flagsEveryCommandCarries(root)
+	built := make([]*cobra.Command, len(regs))
+	refused := map[cliPluginIdentity]bool{}
+	for i, reg := range regs {
+		if refused[reg.plugin()] {
+			continue
+		}
+		cmd, err := newCLIPluginCmd(reg, carried)
+		if err != nil {
+			refused[reg.plugin()] = true
+			fmt.Fprintf(pluginRegistrationWarnWriter,
+				"warning: CLI plugin %q was not added as a command: %v\n", reg.uri, err)
+			continue
+		}
+		built[i] = cmd
 	}
 
 	builtin := map[string]bool{}
@@ -221,7 +276,10 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 	}
 
 	added := map[string]bool{}
-	for _, reg := range regs {
+	for i, reg := range regs {
+		if refused[reg.plugin()] {
+			continue
+		}
 		switch {
 		case builtin[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
@@ -237,8 +295,22 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 			continue
 		}
 		added[reg.name] = true
-		mustAttachContributed(root, newCLIPluginCmd(reg))
+		mustAttachContributed(root, built[i])
 	}
+}
+
+// flagsEveryCommandCarries returns the flags a command attached under root holds
+// besides the ones it declares: the root's persistent flags, which every command
+// inherits, and the help flag the command library gives every command. Both are
+// read from the library rather than listed here, so a global flag added to the
+// root is covered without a second list to keep in step with it.
+func flagsEveryCommandCarries(root *cobra.Command) *pflag.FlagSet {
+	carried := pflag.NewFlagSet(root.Name(), pflag.ContinueOnError)
+	carried.AddFlagSet(root.PersistentFlags())
+	probe := &cobra.Command{Use: "probe"}
+	probe.InitDefaultHelpFlag()
+	carried.AddFlagSet(probe.Flags())
+	return carried
 }
 
 // newCLIPluginCmd builds the cobra command that dispatches a configured CLI
@@ -256,7 +328,11 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 // guest as the invoked-command discriminator; a non-zero exit is returned as an
 // exitCodeError so the process mirrors the plugin's status without treating it as
 // a host error.
-func newCLIPluginCmd(reg cliCommandReg) *cobra.Command {
+//
+// carried is the set of flags every command already holds, which a declared flag
+// may not reuse. A declaration the host cannot declare for help returns an error
+// naming the command, the flag and the fault, and no command.
+func newCLIPluginCmd(reg cliCommandReg, carried *pflag.FlagSet) (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:                reg.name,
 		Short:              reg.short,
@@ -286,28 +362,128 @@ func newCLIPluginCmd(reg cliCommandReg) *cobra.Command {
 			return nil
 		},
 	}
-	declarePluginCommandFlags(cmd, reg.flags)
-	return cmd
+	if err := declarePluginCommandFlags(cmd, reg.flags, carried); err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 // declarePluginCommandFlags registers a configured CLI plugin command's declared
-// flags on cmd so help renders them like a core command's flags. The declaration
-// is a help-rendering surface only: because the command keeps flag parsing
-// disabled, cobra never parses these flags and the guest remains the sole parser
-// of the forwarded argument vector. A flag whose type is bool declares a bool
-// flag (its default parsed from the declared default string, defaulting to
-// false); every other type declares a string flag carrying the declared default
-// verbatim, so the flag kind and default shown in help follow the guest's own
-// declaration while the host performs no flag interpretation.
-func declarePluginCommandFlags(cmd *cobra.Command, flags []wasm.PluginCommandFlag) {
+// flags on cmd so help renders them like a core command's flags, and checks every
+// declaration before it declares any. It declares nothing unless every
+// declaration passes, and otherwise returns the first that does not:
+//
+//   - a flag with no name, or a name the command declares twice;
+//   - a shorthand other than a single ASCII letter or digit, or one the command
+//     declares for two flags;
+//   - a name or shorthand already held by a flag in carried, the set every
+//     command carries;
+//   - a type other than string, bool or int;
+//   - a default that does not parse as the declared type.
+//
+// A declaration the flag library refuses would otherwise panic while the command
+// tree is built, and one it accepts could still misreport in help: an unknown
+// type shown as a string flag, a default that does not parse shown as the type's
+// zero value.
+//
+// A bool flag declares a bool, an int flag an int, and a flag of type string or
+// of no type a string; a declared default is parsed by the flag library itself,
+// so help shows the default the library holds. The declaration is a
+// help-rendering surface only: because the command keeps flag parsing disabled,
+// cobra never parses these flags and the guest remains the sole parser of the
+// forwarded argument vector. So the check judges whether the host can declare a
+// flag as written — whether the guest reads the flags it declares is outside
+// what the host can see.
+func declarePluginCommandFlags(cmd *cobra.Command, flags []wasm.PluginCommandFlag, carried *pflag.FlagSet) error {
+	command := cmd.Name()
+	declared := pflag.NewFlagSet(command, pflag.ContinueOnError)
+	declared.SortFlags = false
 	for _, f := range flags {
-		if f.Type == "bool" {
-			def, _ := strconv.ParseBool(f.Default)
-			cmd.Flags().BoolP(f.Name, f.Shorthand, def, f.Description)
-			continue
+		if err := checkPluginFlag(command, f, declared, carried); err != nil {
+			return err
 		}
-		cmd.Flags().StringP(f.Name, f.Shorthand, f.Default, f.Description)
+		if err := declarePluginFlag(declared, f); err != nil {
+			return fmt.Errorf("its command %q declares the flag %q with the default %q, which is not a valid %s value",
+				command, "--"+f.Name, f.Default, f.Type)
+		}
 	}
+	cmd.Flags().AddFlagSet(declared)
+	return nil
+}
+
+// checkPluginFlag reports what, if anything, stops f from being declared on the
+// command named command alongside the flags already in declared. Every check
+// runs before the flag library sees the declaration, because the library answers
+// a malformed or repeated shorthand, and a repeated name, by panicking.
+func checkPluginFlag(command string, f wasm.PluginCommandFlag, declared, carried *pflag.FlagSet) error {
+	long := "--" + f.Name
+	switch {
+	case f.Name == "":
+		return fmt.Errorf("its command %q declares a flag with no name", command)
+	case declared.Lookup(f.Name) != nil:
+		return fmt.Errorf("its command %q declares the flag %q twice", command, long)
+	case carried.Lookup(f.Name) != nil:
+		return fmt.Errorf("its command %q declares the flag %q, which every aggrega command already has", command, long)
+	}
+	if f.Shorthand != "" {
+		if !isPluginFlagShorthand(f.Shorthand) {
+			return fmt.Errorf("its command %q declares the flag %q with the shorthand %q; a shorthand is a single ASCII letter or digit",
+				command, long, f.Shorthand)
+		}
+		if other := declared.ShorthandLookup(f.Shorthand); other != nil {
+			return fmt.Errorf("its command %q declares the shorthand %q for both %q and %q",
+				command, f.Shorthand, "--"+other.Name, long)
+		}
+		if other := carried.ShorthandLookup(f.Shorthand); other != nil {
+			return fmt.Errorf("its command %q declares the shorthand %q for %q, which every aggrega command already uses for %q",
+				command, f.Shorthand, long, "--"+other.Name)
+		}
+	}
+	switch f.Type {
+	case "", pluginFlagTypeString, pluginFlagTypeBool, pluginFlagTypeInt:
+		return nil
+	default:
+		return fmt.Errorf("its command %q declares the flag %q with the type %q; a flag's type is %s, %s or %s",
+			command, long, f.Type, pluginFlagTypeString, pluginFlagTypeBool, pluginFlagTypeInt)
+	}
+}
+
+// isPluginFlagShorthand reports whether s is a shorthand a CLI plugin may
+// declare: exactly one ASCII letter or digit. The flag library measures a
+// shorthand in bytes, so a single non-ASCII character is already more than it
+// takes; within ASCII, a letter or a digit is what reads as a short option, where
+// a hyphen, a space or punctuation would render in help as something other than
+// the -x form it stands for.
+func isPluginFlagShorthand(s string) bool {
+	if len(s) != 1 {
+		return false
+	}
+	c := s[0]
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')
+}
+
+// declarePluginFlag declares f on fs as the kind of flag its type names, holding
+// its declared default. The default is handed to the flag's own value, so it is
+// parsed exactly as the flag library parses a value of that kind; an error means
+// the default is not a value of the declared type.
+func declarePluginFlag(fs *pflag.FlagSet, f wasm.PluginCommandFlag) error {
+	switch f.Type {
+	case pluginFlagTypeBool:
+		fs.BoolP(f.Name, f.Shorthand, false, f.Description)
+	case pluginFlagTypeInt:
+		fs.IntP(f.Name, f.Shorthand, 0, f.Description)
+	default:
+		fs.StringP(f.Name, f.Shorthand, "", f.Description)
+	}
+	if f.Default == "" {
+		return nil
+	}
+	flag := fs.Lookup(f.Name)
+	if err := flag.Value.Set(f.Default); err != nil {
+		return err
+	}
+	flag.DefValue = flag.Value.String()
+	return nil
 }
 
 // shortDigest renders a content digest in an abbreviated form for a diagnostic,
