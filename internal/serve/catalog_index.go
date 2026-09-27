@@ -107,9 +107,14 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // it would hand the client an identity it could not resolve to anything
 // displayable. The two therefore widen together or not at all.
 //
-// Only Features are drawn from the catalog today, because Features are the
-// only population the candidate surfaces resolve from it. That is a bound on
-// what has a consumer, not a claim that other kinds are unreachable.
+// Only Features are drawn from the catalog, because Features are the only
+// population a candidate surface reports from it as an identity a client joins
+// against this index. A completion candidate is not such an identity: it is a
+// name the author types into a document, so the Components completion offers
+// from the catalog directories need no entry here, and listing them would fill
+// a palette built from this index with every Component a standard library
+// declares. That is a bound on what has a consumer, not a claim that other
+// kinds are unreachable.
 //
 // Ordering is the shared workspace-entity order — kind, then name, then
 // source file — which the traversal's own delivery order is not. An index

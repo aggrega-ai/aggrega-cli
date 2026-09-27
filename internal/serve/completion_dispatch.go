@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/completion"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -24,8 +25,8 @@ import (
 //
 //  1. Classify the cursor via yamlpos.Classify (navigation context).
 //  2. If the navigation Kind is non-Unknown, route to a parallel
-//     completion handler (extends-value cursor → workspace URIs of
-//     the host file's kind).
+//     completion handler (extends-value cursor → the URIs of the host
+//     file's kind the workspace can name, per enumerateEntityNames).
 //  3. If the navigation Kind is Unknown, invoke completion's
 //     secondary classifier (completion-only contexts: kind:,
 //     apiVersion:, label-values, target:, schema-keywords).
@@ -88,20 +89,20 @@ func (s *Server) handleCompletion(reqCtx context.Context, params completionParam
 func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yamlpos.Context, hostKind string, sourceDoc *yaml.Node, prefix string) ([]completion.CompletionItem, bool) {
 	switch ctx.Kind {
 	case yamlpos.ContextKindExtendsValue:
-		uris := s.enumerateWorkspaceURIs(reqCtx, hostKind)
+		uris := s.enumerateEntityNames(reqCtx, hostKind)
 		return completion.Extends(uris, prefix), true
 	case yamlpos.ContextKindComponentsType:
-		uris := s.enumerateWorkspaceURIs(reqCtx, "Component")
+		uris := s.enumerateEntityNames(reqCtx, "Component")
 		return completion.ComponentsType(uris, prefix), true
 	case yamlpos.ContextKindFeaturesType:
-		uris := s.enumerateWorkspaceURIs(reqCtx, "Feature")
+		uris := s.enumerateEntityNames(reqCtx, "Feature")
 		return completion.FeaturesType(uris, prefix), true
 	case yamlpos.ContextKindRecipeImplements:
 		targetKind := "Component"
 		if hostKind == "FeatureRecipe" {
 			targetKind = "Feature"
 		}
-		uris := s.enumerateWorkspaceURIs(reqCtx, targetKind)
+		uris := s.enumerateEntityNames(reqCtx, targetKind)
 		return completion.Implements(uris, prefix), true
 	case yamlpos.ContextKindManifestRecipeReference:
 		// Implements-aware ranking: a Manifest mapping value binds a component
@@ -125,7 +126,7 @@ func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yaml
 		if isTypeMapping && len(ctx.Path) > 0 {
 			mappingType = ctx.Path[len(ctx.Path)-1]
 		}
-		uris := s.enumerateWorkspaceURIs(reqCtx, recipeKind)
+		uris := s.enumerateEntityNames(reqCtx, recipeKind)
 		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(reqCtx, recipeKind)), true
 	case yamlpos.ContextKindReleaseAggregatePath:
 		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Aggregate")
@@ -173,40 +174,75 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 	return nil
 }
 
-// enumerateWorkspaceURIs projects the workspace document traversal down
-// to the metadata.name values of documents whose kind: matches the
-// filter. Returns them deduped and sorted. Empty filter matches every
-// kind (rare).
+// enumerateEntityNames is the candidate population every completion that names
+// an entity by kind offers: the metadata.name of each workspace document of that
+// kind, together with the name of each entity of that kind the configured
+// catalog directories declare.
+//
+// Both populations are needed because an ordinary workspace consumes most of
+// what it names rather than authoring it. A workspace whose Components and
+// Features come from a catalog has no workspace document of either kind, so
+// offering the workspace documents alone answers a component's type or a
+// Feature attachment's type with nothing the author can actually use there.
 //
 // The traversal runs under the request's own context. Its on-disk pass reads
 // every YAML file under the root, so a withdrawal that lands mid-traversal ends
 // it between files; the dispatcher's entry check answers only the request that
 // had already been withdrawn when it arrived.
-func (s *Server) enumerateWorkspaceURIs(reqCtx context.Context, kindFilter string) []string {
+func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string) []string {
+	return entityNamesIn(reqCtx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), kind)
+}
+
+// entityNamesIn is the whole of enumerateEntityNames with the root, the catalog
+// lookup and the fresher-than-disk overlay supplied rather than read off a
+// session.
+//
+// It reads the two sources every other candidate surface reads, and no third:
+// the workspace document traversal, and the catalog lookup's directory index by
+// name. The second reports names only for the kinds that index holds, so a kind
+// it does not hold is offered from the workspace documents alone, and the
+// enumeration reaches no artifact cache and no registry for any kind.
+//
+// A name both sources carry is offered once — the workspace root is frequently
+// itself a configured catalog directory, so the overlap is the ordinary case —
+// and the result is sorted, so the list is a function of what the two sources
+// hold rather than of the order either delivered it in. An empty kind matches
+// every workspace document and no catalog entity. A request withdrawn during
+// the traversal does not go on to read the directory index.
+func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, kind string) []string {
+	var names []string
 	seen := map[string]bool{}
-	s.rangeWorkspaceDocs(reqCtx, func(doc workspaceDoc) bool {
-		if kindFilter != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
+	offer := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
+		if kind != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kind {
 			return true
 		}
 		name, _ := metadataNameOf(doc.node)
-		if name != "" {
-			seen[name] = true
-		}
+		offer(name)
 		return true
 	})
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
+	if ctx.Err() == nil && view != nil {
+		for _, name := range view.EntityNames(kind) {
+			offer(name)
+		}
 	}
-	sortStringSlice(out)
-	return out
+	sortStringSlice(names)
+	return names
 }
 
 // enumerateRecipeImplements projects the workspace document traversal
 // down to a map from each Recipe/FeatureRecipe's metadata.name to its
 // spec.implements value, for implements-aware Manifest recipe-reference
-// completion ranking. Its keys match enumerateWorkspaceURIs's output
-// exactly because both read the same traversal; first document to
+// completion ranking. Its keys are the workspace half of the names
+// enumerateEntityNames offers for the same kind, because both read the same
+// traversal; the directory index holds no recipe kind, so for these kinds
+// that half is the whole list. The first document to
 // declare a name wins, which the traversal's per-path ordering makes
 // deterministic. It runs under the request's own context, for the reason stated
 // on the projection above.

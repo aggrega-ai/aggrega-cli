@@ -71,7 +71,7 @@ func catalogFeaturesFrom(view *catalog.LazyLookup, alreadyReported map[string]bo
 	if view == nil {
 		return nil
 	}
-	names := view.FeatureNames()
+	names := view.EntityNames("Feature")
 	out := make([]types.Feature, 0, len(names))
 	for _, name := range names {
 		if alreadyReported[name] {

@@ -994,34 +994,53 @@ func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 	return l.feature(uri)
 }
 
-// FeatureNames reports the metadata.name of every Feature the configured
+// EntityNames reports the metadata.name of every entity of kind the configured
 // catalog directories declare, in sorted order.
 //
+// It answers for the kinds the directory index holds, Component and Feature,
+// and reports no names for any other kind: no directory index of that kind
+// exists to read, and where this lookup enumerates another kind at all, that
+// enumeration also folds entries read from the artifact cache, which this
+// method never reads. A kind is added here, beside the index that holds it,
+// and nowhere else, so every caller asking what the catalog directories
+// declare reads one answer.
+//
 // It enumerates the Tier-1 directory index and only that, so it reads the
-// filesystem and never the network. A Feature reachable only from the
+// filesystem and never the network. An entity reachable only from the
 // artifact cache or from a registry has no entry in that index and
 // is not reported — the honest bound, because enumerating those would mean
 // fetching, and a caller asking what is already here must not be the thing
 // that reaches out. Callers that need the whole surface resolve a URI they
-// already hold through Feature instead.
+// already hold through Component or Feature instead.
 //
 // It reports names rather than entities on purpose. The name is the lookup
-// coordinate, so a caller resolves each through Feature and the tier
-// cascade, the version selection, the extends merge and the miss bookkeeping
-// all stay in the one place that implements them. Returning resolved entities
-// here would be a second resolution path free to disagree with the first. A
-// name the directories hold at several versions is reported once, and resolving
-// it selects the highest of them, as an unversioned reference does anywhere.
+// coordinate, so a caller resolves each through Component or Feature and the
+// tier cascade, the version selection, the extends merge and the miss
+// bookkeeping all stay in the one place that implements them. Returning
+// resolved entities here would be a second resolution path free to disagree
+// with the first. A name the directories hold at several versions is reported
+// once, and resolving it selects the highest of them, as an unversioned
+// reference does anywhere.
 //
 // Sorted, so the order is a function of the catalog's content rather than of
 // directory-walk order, which varies between filesystems.
-func (l *LazyLookup) FeatureNames() []string {
+func (l *LazyLookup) EntityNames(kind string) []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.buildFeatureIndex()
-	seen := make(map[string]bool, len(l.featureIndex))
-	names := make([]string, 0, len(l.featureIndex))
-	for _, doc := range l.featureIndex {
+	var index map[string]indexedDocument
+	switch kind {
+	case "Component":
+		l.buildComponentIndex()
+		index = l.componentIndex
+	case "Feature":
+		l.buildFeatureIndex()
+		index = l.featureIndex
+	default:
+		return nil
+	}
+	seen := make(map[string]bool, len(index))
+	names := make([]string, 0, len(index))
+	for _, doc := range index {
 		if seen[doc.name] {
 			continue
 		}

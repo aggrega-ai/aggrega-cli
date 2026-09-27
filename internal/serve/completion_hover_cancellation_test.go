@@ -39,11 +39,11 @@ import (
 const traversalReturnCeiling = 30 * time.Second
 
 func parkedControlTraversal(srv *Server, ctx context.Context, done chan<- int) {
-	done <- len(srv.enumerateWorkspaceURIs(ctx, "Component"))
+	done <- len(srv.enumerateEntityNames(ctx, "Component"))
 }
 
 func parkedStoppedTraversal(srv *Server, ctx context.Context, done chan<- int) {
-	done <- len(srv.enumerateWorkspaceURIs(ctx, "Component"))
+	done <- len(srv.enumerateEntityNames(ctx, "Component"))
 }
 
 func parkedControlHoverTraversal(srv *Server, ctx context.Context, done chan<- bool) {
@@ -313,7 +313,7 @@ func TestACompletionWhoseRequestHasAlreadyEndedWalksNothing(t *testing.T) {
 	stop()
 
 	done := make(chan int, 1)
-	go func() { done <- len(srv.enumerateWorkspaceURIs(withdrawn, "Component")) }()
+	go func() { done <- len(srv.enumerateEntityNames(withdrawn, "Component")) }()
 
 	select {
 	case got := <-done:
@@ -329,7 +329,7 @@ func TestACompletionWhoseRequestHasAlreadyEndedWalksNothing(t *testing.T) {
 	// The live control must behave differently, or the assertion above is
 	// satisfied by a traversal that never reads anything under any circumstances.
 	liveDone := make(chan int, 1)
-	go func() { liveDone <- len(srv.enumerateWorkspaceURIs(context.Background(), "Component")) }()
+	go func() { liveDone <- len(srv.enumerateEntityNames(context.Background(), "Component")) }()
 	select {
 	case <-liveDone:
 		t.Fatal("the live control returned without parking, so the withdrawn arm above proves " +

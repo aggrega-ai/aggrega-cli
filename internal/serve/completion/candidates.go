@@ -48,22 +48,24 @@ func LabelValue(labelName string) []CompletionItem {
 }
 
 // Extends returns the candidate list for a spec.extends: cursor.
-// uris is the pre-enumerated list of same-kind URIs from the
-// workspace (the dispatcher reads the host file's kind: and filters
-// accordingly).
+// uris is the pre-enumerated list of same-kind URIs the workspace can
+// name — its own documents and, for a kind the configured catalog
+// directories are enumerated for, the entities they declare (the
+// dispatcher reads the host file's kind: and filters accordingly).
 //
 // prefix narrows by string prefix when non-empty (per the
 // trigger-character "/" narrowing convention).
 func Extends(uris []string, prefix string) []CompletionItem {
 	items := alphabeticalItems(uris, KindReference, func(label string) string {
-		return "Workspace entity URI"
+		return "Entity URI"
 	})
 	return filterByPrefix(items, prefix)
 }
 
 // ComponentsType returns the candidate list for a
 // spec.components.<n>.type: cursor (Aggregate). uris is the
-// pre-enumerated list of Component URIs from the workspace.
+// pre-enumerated list of Component URIs the workspace can name: its
+// own documents and the configured catalog directories.
 func ComponentsType(uris []string, prefix string) []CompletionItem {
 	items := alphabeticalItems(uris, KindClass, func(label string) string {
 		return "Component URI"
@@ -73,7 +75,8 @@ func ComponentsType(uris []string, prefix string) []CompletionItem {
 
 // FeaturesType returns the candidate list for a
 // spec.components.<c>.features.<f>.type: cursor (Aggregate). uris is
-// the pre-enumerated list of Feature URIs from the workspace.
+// the pre-enumerated list of Feature URIs the workspace can name: its
+// own documents and the configured catalog directories.
 func FeaturesType(uris []string, prefix string) []CompletionItem {
 	items := alphabeticalItems(uris, KindClass, func(label string) string {
 		return "Feature URI"

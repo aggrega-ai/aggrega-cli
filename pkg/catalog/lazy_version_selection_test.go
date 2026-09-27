@@ -444,22 +444,39 @@ spec: {}
 	}
 }
 
-// TestFeatureNamesReportsEachNameOnceAcrossVersions pins that the enumeration of
-// what a catalog directory declares is by name: a Feature held at two versions is
-// one name, and resolving it selects the highest.
-func TestFeatureNamesReportsEachNameOnceAcrossVersions(t *testing.T) {
+// TestEntityNamesReportsEachNameOnceAcrossVersions pins that the enumeration of
+// what a catalog directory declares is by name: an entity held at two versions is
+// one name, and resolving it selects the highest. Each kind the directory index
+// holds is a row, so a kind whose enumeration reported one entry per version
+// would fail on its own row.
+func TestEntityNamesReportsEachNameOnceAcrossVersions(t *testing.T) {
 	t.Parallel()
 	_, catalogDir, _ := writeMultiVersionCatalog(t)
 	lazy := NewLazyLookup(filepath.Dir(catalogDir), "", []string{catalogDir}, nil)
 
-	names := lazy.FeatureNames()
-	if len(names) != 1 || names[0] != "test/tag" {
-		t.Fatalf("FeatureNames() = %q; want [test/tag] once", names)
-	}
-	f, ok := lazy.Feature(names[0])
-	if !ok || f.Metadata.Version != "2.0.0" {
-		t.Errorf("resolving the enumerated name gave (%q, %v); an unversioned name selects the highest, 2.0.0",
-			f.Metadata.Version, ok)
+	for _, tc := range []struct {
+		kind, want string
+		resolve    func(string) (string, bool)
+	}{
+		{"Component", "test/svc", func(n string) (string, bool) {
+			c, ok := lazy.Component(n)
+			return c.Metadata.Version, ok
+		}},
+		{"Feature", "test/tag", func(n string) (string, bool) {
+			f, ok := lazy.Feature(n)
+			return f.Metadata.Version, ok
+		}},
+	} {
+		names := lazy.EntityNames(tc.kind)
+		if len(names) != 1 || names[0] != tc.want {
+			t.Errorf("EntityNames(%q) = %q; want [%s] once", tc.kind, names, tc.want)
+			continue
+		}
+		version, ok := tc.resolve(names[0])
+		if !ok || version != "2.0.0" {
+			t.Errorf("resolving the enumerated %s name gave (%q, %v); an unversioned name selects the highest, 2.0.0",
+				tc.kind, version, ok)
+		}
 	}
 }
 
