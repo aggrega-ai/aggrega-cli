@@ -36,9 +36,10 @@ import (
 // signature, so a consumer reads a signed claim from the local index rather than
 // probing the registry live; a version whose marker does not verify contributes
 // no entry. Published carries, for every entry of Versions and in the same order,
-// the manifest digest that version's tag resolved to and the verified signer of
-// its own signature, so a reader addresses each published version by the bytes it
-// names rather than by a tag. All are omitted when empty.
+// the manifest digest that version's tag resolved to, the verified signer of its
+// own signature and its publication date with that date's source, so a reader
+// addresses each published version by the bytes it names rather than by a tag.
+// All are omitted when empty.
 //
 // The facets — kind, description, category, labels, plugin type and
 // capabilities — are the latest version's alone, read from its manifest. An older
@@ -62,8 +63,9 @@ type Record struct {
 }
 
 // PublishedVersion is one published version as the index build read it: the
-// version, the manifest digest its tag resolved to, and the signer of the
-// version's own signature where the host's trust policy verified one.
+// version, the manifest digest its tag resolved to, the signer of the version's
+// own signature where the host's trust policy verified one, and when the version
+// was published, where anything records it, with the source that says so.
 //
 // Signer is set only for a signature that verified, so its presence is a trust
 // decision already made, as it is on a recorded deprecation. It is absent for a
@@ -72,18 +74,34 @@ type Record struct {
 // those gives a basis for naming a signer, and a reader must not read the absence
 // as more than that.
 //
-// Only manifests and signature referrers are read to produce it; the entity's
-// content is never fetched.
+// PublishedAt is an RFC 3339 UTC timestamp and PublishedAtSource names where it
+// came from (see PublicationDate): the transparency log's attested time for a
+// keyless signature this host verified, or the publisher's own statement in a
+// published-at referrer. The two are kept apart so a reader never mistakes the
+// publisher's clock for an attested time. Both are absent where neither source
+// gives a date — a publication that wrote no published-at referrer and whose
+// signature this host did not verify as keyless — and a reader must not read that
+// absence as more than that either.
+//
+// Only manifests, signature referrers and published-at referrers are read to
+// produce it; the entity's content is never fetched.
 type PublishedVersion struct {
-	Version        string                      `json:"version"`
-	ManifestDigest string                      `json:"manifestDigest"`
-	Signer         *lockfile.VerifiedSignature `json:"signer,omitempty"`
+	Version           string                      `json:"version"`
+	ManifestDigest    string                      `json:"manifestDigest"`
+	Signer            *lockfile.VerifiedSignature `json:"signer,omitempty"`
+	PublishedAt       string                      `json:"publishedAt,omitempty"`
+	PublishedAtSource string                      `json:"publishedAtSource,omitempty"`
 }
 
 // CoversVersions reports whether the record carries a published-version entry
 // for every version it lists, in the same order. A record written before those
 // entries were recorded does not, so a refresh reads that repository again
 // rather than reuse it.
+//
+// It does not ask whether a publication date was looked for. A version may
+// legitimately have none, so an entry without one says nothing about when it was
+// written, and a record written before dates were read is reused by a
+// conditional refresh until a full refresh reads the repository again.
 func (r Record) CoversVersions() bool {
 	if len(r.Published) != len(r.Versions) {
 		return false

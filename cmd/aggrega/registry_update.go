@@ -31,8 +31,9 @@ type (
 
 // newRegistryUpdateCmd builds `registry update [<name|host>]`, which walks each
 // configured registry's repositories, reads each repository's latest-version
-// manifest annotations and every version's manifest digest and verified signer,
-// and writes a deterministic local searchable index a later offline search reads.
+// manifest annotations and every version's manifest digest, verified signer and
+// publication date, and writes a deterministic local searchable index a later
+// offline search reads.
 func newRegistryUpdateCmd() *cobra.Command {
 	var upgrade bool
 	c := &cobra.Command{
@@ -75,9 +76,20 @@ published under that version. Where the registry's trust policy pins a public ke
 or trusted identities, and verification is not switched off, each version's own
 signature is verified against that policy and the signer is recorded when one
 verifies; a version with no signature, or none that verifies, is recorded with no
-signer. Only manifests and signature attachments are read: no entity's content is
-fetched. 'aggrega search -o json' reports these under each record's 'published'
-field.
+signer.
+
+Each version's publication date is recorded too, with its source. Where the
+version's keyless signature verified, the date is the time the transparency log
+recorded that signature, as the verified log entry attests it (source
+'transparency-log'). Otherwise it is the date the publication itself stated
+beside what it published (source 'publisher'): the publishing machine's own
+clock, which nothing attests, read from any registry whatever its trust policy.
+A version with neither — published without stating a date, and not signed
+keyless in a way this policy verifies — is recorded with no date.
+
+Only manifests, signature attachments and publication-date attachments are read:
+no entity's content is fetched. 'aggrega search -o json' reports these under each
+record's 'published' field.
 
 The per-repository records are byte-identical across two runs against the same
 registry state; the freshness timestamp is written to a sibling file so it never
@@ -88,10 +100,11 @@ version's manifest digest and reuses the cached record untouched when the tag se
 and digest are unchanged, so an unchanged registry costs a round of cheap digest
 resolves rather than a full re-read of every repository's manifest and referrers.
 Use --upgrade to ignore the cached validators and re-read every repository — this
-picks up a change a conditional refresh skips, such as a deprecation marker or a
-signature added to an existing version whose digest did not change, or an older
-version published again under its existing tag while the selected one stayed the
-same.
+picks up a change a conditional refresh skips, such as a deprecation marker, a
+signature or a publication date added to an existing version whose digest did not
+change, or an older version published again under its existing tag while the
+selected one stayed the same. A record written by an index build that read no
+publication dates keeps none until such a re-read.
 
 Each published version's deprecation markers are read as the walk goes, and the ones
 whose own signature verifies are recorded into the index. Every marker met is

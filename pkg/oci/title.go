@@ -30,7 +30,8 @@ import (
 //     (the entity, as the config descriptor) beside entity.wasm (its
 //     executable, as the layer);
 //   - a signature bundle attached as a referrer is signature.json;
-//   - a deprecation marker attached as a referrer is deprecation.json.
+//   - a deprecation marker attached as a referrer is deprecation.json;
+//   - a publication date attached as a referrer is published-at.json.
 //
 // A standalone data artifact carries no entity, so its title is not derived
 // here: its publisher supplies the name (see PushNamed).
@@ -44,6 +45,7 @@ const (
 	titleStemEntity      = "entity"
 	titleStemSignature   = "signature"
 	titleStemDeprecation = "deprecation"
+	titleStemPublishedAt = "published-at"
 )
 
 // contentTitle returns the title a content descriptor of mediaType is stamped
@@ -69,6 +71,8 @@ func titleStem(mediaType string) string {
 		return titleStemSignature
 	case deprecation.ArtifactType:
 		return titleStemDeprecation
+	case MediaTypePublishedAt:
+		return titleStemPublishedAt
 	}
 	if _, _, ok := KindOfMediaType(mediaType); ok {
 		return titleStemEntity

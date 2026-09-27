@@ -261,5 +261,8 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
 	}
+	if err := recordPublicationDate(ctx, out, target, reference, version, signatureBundle, cfg.Now); err != nil {
+		return PushResult{}, err
+	}
 	return result, nil
 }

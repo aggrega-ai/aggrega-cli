@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"oras.land/oras-go/v2"
@@ -70,7 +71,14 @@ type Entity struct {
 
 // Result is the verified-signature fact for one entity, plus the cached
 // bundle bytes the caller writes to the closure as a content-addressed
-// blob. Mode is "keyless" or "keyed"; Identity/Issuer are set for keyless.
+// blob. Mode is "keyless" or "keyed"; Issuer is set for keyless, and Identity
+// for both (for keyed, the pinned key's fingerprint).
+//
+// LoggedAt is the time the transparency log recorded a keyless signature, as
+// the verified log entry attests it, in UTC. It is the zero time for a keyed
+// signature, which no log records, and for a keyless one whose verified
+// entries carry no time. It is a verified fact like the others, so a caller
+// may use it as a trustworthy time where it is set.
 type Result struct {
 	URI          string
 	Mode         string
@@ -78,6 +86,7 @@ type Result struct {
 	Issuer       string
 	BundleDigest string
 	Bundle       []byte
+	LoggedAt     time.Time
 }
 
 // TargetFor returns the read-only OCI target and subject reference to
@@ -313,6 +322,7 @@ func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest
 		Issuer:       matched.Issuer,
 		BundleDigest: digest,
 		Bundle:       bundleBytes,
+		LoggedAt:     matched.LoggedAt,
 	}, nil
 }
 

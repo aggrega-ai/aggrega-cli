@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"oras.land/oras-go/v2"
 
@@ -52,10 +53,14 @@ type PushArtifactConfig struct {
 	// the target from the reference.
 	PushTarget oras.Target
 
+	// Now supplies the publication date the publication states beside the
+	// artifact. Nil reads the live clock; tests inject a fixed time.
+	Now func() time.Time
+
 	// Out is the sink for the operation's user-facing status output (the dry-run
-	// line and the publication line). Nil defaults to os.Stdout, so a caller
-	// that wants to capture the output passes a buffer rather than mutating a
-	// process global.
+	// line, the publication line and the publication-date note). Nil defaults to
+	// os.Stdout, so a caller that wants to capture the output passes a buffer
+	// rather than mutating a process global.
 	Out io.Writer
 }
 
@@ -103,7 +108,8 @@ type PushArtifactResult struct {
 //
 // Signing is not performed here: the published artifact is signed by reference
 // with the signing verb, which is kind-agnostic and needs only the reference this
-// operation reports.
+// operation reports. So the publication states when it landed, as a published-at
+// referrer beside the artifact, which moves no digest.
 //
 // When cfg.DryRun is true, PushArtifact prints the proposed <reference>:<tag>
 // plus media type and byte count and returns without constructing a remote
@@ -229,5 +235,8 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, cfg.Tag, digest)
 	writePublicationFacts(out, "", mediaType, len(content), 0)
 	result.Digest = digest
+	if err := recordPublicationDate(ctx, out, target, reference, cfg.Tag, nil, cfg.Now); err != nil {
+		return PushArtifactResult{}, err
+	}
 	return result, nil
 }

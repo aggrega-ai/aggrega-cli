@@ -48,3 +48,33 @@ func LoadBundle(bundleBytes []byte) (*bundle.Bundle, error) {
 	}
 	return b, nil
 }
+
+// CarriesLogTime reports whether a signature bundle carries a transparency-log
+// entry that records when the log integrated it, together with the log's
+// signed promise of that time — the entry a keyless verification reads a
+// signature's logged time from. A keyless bundle carries one; a keyed bundle
+// carries no log entry at all, and bytes that are not a bundle carry nothing.
+//
+// The bundle is read, not verified. The answer is for a publisher deciding
+// whether it must state its own publication date beside what it signed; a
+// reader that records a date takes the log's time only from a verification
+// against its own trust policy, never from this.
+func CarriesLogTime(bundleBytes []byte) bool {
+	if len(bundleBytes) == 0 {
+		return false
+	}
+	b, err := LoadBundle(bundleBytes)
+	if err != nil {
+		return false
+	}
+	entries, err := b.TlogEntries()
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IntegratedTime().IsZero() && entry.HasInclusionPromise() {
+			return true
+		}
+	}
+	return false
+}

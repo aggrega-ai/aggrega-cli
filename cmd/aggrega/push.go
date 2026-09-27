@@ -90,6 +90,15 @@ Push signs before it publishes: where signing applies, the signature is made
 over the manifest digest before any bytes reach the registry, so a failed
 signing refuses the push rather than leaving unsigned content published.
 
+The manifest's creation time is pinned, so the digest depends only on what is
+published and never on when. Push states when it published beside the manifest
+instead, as a small published-at attachment carrying this machine's clock, in
+UTC to the second — unless the signature it attached already carries a time a
+transparency log attests, as a keyless signature does. So a keyed or unsigned
+publication writes one, and a keyless one does not. The attachment moves no
+digest and changes no tag. "aggrega registry update" records the date, with
+which of the two it came from.
+
 Push refuses to replace content already published at the same version:
 publish changed content under a new version instead.
 

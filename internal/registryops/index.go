@@ -553,8 +553,8 @@ func skipRepo(hu *HostUpdate, notices io.Writer, repo string, reason string) {
 //
 // The reuse compares the latest version's digest only. An older version whose tag
 // was moved to other bytes while the latest stayed put keeps its prior digest until
-// a full-upgrade refresh, which is the same bound a deprecation marker or a
-// signature added to an unchanged version carries.
+// a full-upgrade refresh, which is the same bound a deprecation marker, a
+// signature or a publication date added to an unchanged version carries.
 //
 // A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository that cannot be read — no per-repo target, a tag-list
@@ -667,10 +667,11 @@ func indexRepo(
 }
 
 // readPublishedVersions records, for each version in the ascending order it is
-// given, the manifest digest its tag resolves to and — where this host's policy
-// gives a basis to judge one — the verified signer of that version's own
-// signature. The latest version's digest was resolved already and is passed in
-// rather than resolved again.
+// given, the manifest digest its tag resolves to; where this host's policy gives
+// a basis to judge one, the verified signer of that version's own signature; and
+// its publication date with the date's source. The latest
+// version's digest was resolved already and is passed in rather than resolved
+// again.
 //
 // A version whose tag cannot be resolved fails the whole repository rather than
 // leaving a gap. A record listing a version it gives no digest for would send a
@@ -680,8 +681,12 @@ func indexRepo(
 //
 // A signature is judged through the one verification home, against the host's
 // own trust policy, and is best-effort: a version whose signatures do not verify
-// is recorded with no signer, never with an unverified one. Only manifests and
-// signature referrers are read; no entity content is fetched.
+// is recorded with no signer, never with an unverified one. The date is the
+// verified signature's log time where it carries one, and otherwise what the
+// version's published-at referrers state (registryindex.PublicationDate); that
+// second read needs no trust anchor, so it is made on every host, and it too is
+// best-effort. Only manifests, signature referrers and published-at referrers
+// are read; no entity content is fetched.
 func readPublishedVersions(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -705,11 +710,14 @@ func readPublishedVersions(
 			digest = d
 		}
 		pv := registryindex.PublishedVersion{Version: v, ManifestDigest: digest}
+		var verified *pullverify.Result
 		if judge {
 			if res := registryindex.VerifiedSignerAt(ctx, wsCfg, target, v, digest, policy); res != nil {
 				pv.Signer = pluginfetchverify.SignatureFact(*res)
+				verified = res
 			}
 		}
+		pv.PublishedAt, pv.PublishedAtSource = registryindex.PublicationDate(ctx, target, v, verified)
 		out = append(out, pv)
 	}
 	return out, nil

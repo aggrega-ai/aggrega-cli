@@ -98,19 +98,32 @@ func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error 
 	return nil
 }
 
-// KeylessIdentity is the certificate identity a keyless verification
-// actually matched: the signer's certificate subject (the OIDC identity
-// bound into the signing certificate) and the OIDC issuer that vouched for
-// it. It is the verified provenance of one bundle — the truth read from the
-// matched certificate, not the policy that admitted it — so two bundles can
-// be compared for "same signer".
+// KeylessIdentity is what a keyless verification established about one
+// bundle's signer: the certificate identity it actually matched — the
+// signer's certificate subject (the OIDC identity bound into the signing
+// certificate) and the OIDC issuer that vouched for it — and when the
+// transparency log recorded the signature. It is the verified provenance of
+// one bundle — the truth read from the matched certificate and the verified
+// log entry, not the policy that admitted it — so two bundles can be compared
+// for "same signer" by Identity and Issuer.
 type KeylessIdentity struct {
 	// Identity is the certificate subject alternative name — the OIDC
 	// identity the signing certificate was issued for.
 	Identity string
 	// Issuer is the OIDC issuer recorded in the signing certificate.
 	Issuer string
+	// LoggedAt is the time the transparency log integrated the signature, in
+	// UTC, as a verified log entry attests it with the log's signed promise.
+	// Where several verified entries carry one, it is the earliest. It is the
+	// zero time when no verified entry carries a time: a signed timestamp from
+	// a timestamp authority is not read here.
+	LoggedAt time.Time
 }
+
+// logTimestampType is the verification library's name for a verified
+// timestamp that a transparency-log entry's integrated time supplied, as
+// distinct from one a timestamp authority signed.
+const logTimestampType = "Tlog"
 
 // VerifyKeylessBundle verifies a Sigstore bundle against a trust anchor
 // (trustedMaterial) and an OR-set of acceptable signing identities. The
@@ -128,7 +141,8 @@ type KeylessIdentity struct {
 // On success it returns the certificate identity that actually matched —
 // the verified signer's subject and issuer, read from the matched
 // certificate — so callers can record the provenance and compare two
-// bundles for a shared signer. The error is nil; ErrNoTrustedIdentities
+// bundles for a shared signer, together with the time the transparency log
+// recorded the signature, read from the verified log entry. The error is nil; ErrNoTrustedIdentities
 // when identities is empty; a wrapped ErrUntrustedIdentity when the
 // certificate matches no identity; a wrapped ErrSignatureVerificationFailed
 // for any other verification failure (broken chain, missing tlog entry,
@@ -208,24 +222,50 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 // (result.Signature.Certificate) are the truth — they carry the actual
 // signer even when the policy matched by regexp — so they are preferred;
 // the matched policy identity (result.VerifiedIdentity) is the fallback when
-// no certificate summary is present.
+// no certificate summary is present. The log time is read from the result's
+// verified timestamps whichever of the two supplied the identity.
 func matchedKeylessIdentity(result *verify.VerificationResult) KeylessIdentity {
 	if result == nil {
 		return KeylessIdentity{}
 	}
+	loggedAt := verifiedLogTime(result.VerifiedTimestamps)
 	if sig := result.Signature; sig != nil && sig.Certificate != nil {
 		return KeylessIdentity{
 			Identity: sig.Certificate.SubjectAlternativeName,
 			Issuer:   sig.Certificate.Issuer,
+			LoggedAt: loggedAt,
 		}
 	}
 	if vi := result.VerifiedIdentity; vi != nil {
 		return KeylessIdentity{
 			Identity: vi.SubjectAlternativeName.SubjectAlternativeName,
 			Issuer:   vi.Issuer.Issuer,
+			LoggedAt: loggedAt,
 		}
 	}
-	return KeylessIdentity{}
+	return KeylessIdentity{LoggedAt: loggedAt}
+}
+
+// verifiedLogTime returns the earliest time among the verified timestamps a
+// transparency-log entry supplied, in UTC, or the zero time when none did.
+// Only those timestamps are read: a timestamp authority's signed time is a
+// different source, and the log's time is the one a keyless verification here
+// requires. The earliest is taken so the answer does not depend on the order
+// the library lists several entries in.
+func verifiedLogTime(timestamps []verify.TimestampVerificationResult) time.Time {
+	var earliest time.Time
+	for _, ts := range timestamps {
+		if ts.Type != logTimestampType || ts.Timestamp.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || ts.Timestamp.Before(earliest) {
+			earliest = ts.Timestamp
+		}
+	}
+	if earliest.IsZero() {
+		return time.Time{}
+	}
+	return earliest.UTC()
 }
 
 // mismatchCertIdentity reads the leaf certificate's OIDC issuer and subject

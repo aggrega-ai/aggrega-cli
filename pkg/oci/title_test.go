@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -139,9 +140,10 @@ func TestPluginManifestTitlesBothDescriptors(t *testing.T) {
 	}
 }
 
-// TestReferrerPayloadIsTitledByItsArtifactType proves the two referrer payloads
-// this product attaches — a signature bundle and a deprecation marker — are each
-// titled, and that a referrer of a referrer is titled the same way.
+// TestReferrerPayloadIsTitledByItsArtifactType proves the referrer payloads this
+// product attaches — a signature bundle, a deprecation marker and a publication
+// date — are each titled, and that a referrer of a referrer is titled the same
+// way.
 func TestReferrerPayloadIsTitledByItsArtifactType(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -162,6 +164,10 @@ func TestReferrerPayloadIsTitledByItsArtifactType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AttachReferrerToDescriptor(signature over the marker): %v", err)
 	}
+	dated, err := oci.AttachPublishedAt(ctx, store, "1.0.0", time.Date(2026, 9, 27, 18, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("AttachPublishedAt: %v", err)
+	}
 
 	cases := []struct {
 		name string
@@ -171,6 +177,7 @@ func TestReferrerPayloadIsTitledByItsArtifactType(t *testing.T) {
 		{"signature", sig, "signature.json"},
 		{"deprecation marker", marker, "deprecation.json"},
 		{"signature over the marker", markerSig, "signature.json"},
+		{"publication date", dated, "published-at.json"},
 	}
 	for _, c := range cases {
 		m := titleManifestAt(t, store, c.desc)

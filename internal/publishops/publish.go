@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
@@ -117,11 +118,16 @@ type PushConfig struct {
 	// keyless signer from the resolved signing inputs.
 	Signer signing.Signer
 
+	// Now supplies the publication date a publication states beside what it
+	// published, where its signature carries no time a transparency log attests.
+	// Nil reads the live clock; tests inject a fixed time.
+	Now func() time.Time
+
 	// Out is the sink for the operation's user-facing status output (the
-	// dry-run line, the publication line, the already-published line, and the
-	// signature-attached note). Nil defaults to os.Stdout, so a caller that
-	// wants to capture the output passes a buffer rather than mutating a
-	// process global.
+	// dry-run line, the publication line, the already-published line, the
+	// signature-attached note and the publication-date note). Nil defaults to
+	// os.Stdout, so a caller that wants to capture the output passes a buffer
+	// rather than mutating a process global.
 	Out io.Writer
 }
 
@@ -363,6 +369,13 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // signature bundle is attached as a referrer only after the publication
 // succeeds; the bundle commits to the digest string, so the pre-publication
 // signature is valid for the published bytes.
+//
+// A publication then states when it landed, as a published-at referrer, unless
+// the signature it attached carries a transparency log's attested time — a
+// keyless one does, a keyed one does not, and an unsigned publication has none
+// (recordPublicationDate). Neither the entity's manifest nor its tag is touched,
+// so the date moves no digest, and a re-publication of the same bytes states
+// nothing, because it returns before anything is written.
 //
 // Returns wrapped errors on workspace-config validation failure,
 // entity-file read / parse failure, the shared-directory halt
@@ -689,6 +702,9 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 			return PushResult{}, fmt.Errorf("attach signature to %s:%s: %w", reference, tag, err)
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
+	}
+	if err := recordPublicationDate(ctx, out, target, reference, tag, signatureBundle, cfg.Now); err != nil {
+		return PushResult{}, err
 	}
 	return result, nil
 }
