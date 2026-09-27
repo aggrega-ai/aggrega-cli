@@ -210,7 +210,7 @@ var listingRows = []struct {
 // matches the error itself.
 func checkRefusalText(t *testing.T, msg, refusedAt string) {
 	t.Helper()
-	if !strings.HasPrefix(msg, ErrRepositoryListingRepeated.Error()) {
+	if !strings.HasPrefix(msg, errRepositoryListingRepeated.Error()) {
 		t.Fatalf("want the repeated-listing refusal; got %q", msg)
 	}
 	if refusedAt != "" && !strings.Contains(msg, "named "+refusedAt+" a second time") {
@@ -239,7 +239,7 @@ func TestTheEnumerationEndsAListingThatDoesNotAdvance(t *testing.T) {
 			src := newPagingSource(t, row.pages, row.cycle)
 			got, err := EnumerateRepositories(t.Context(), src, "", CatalogScope)
 			if row.refused {
-				if !errors.Is(err, ErrRepositoryListingRepeated) {
+				if !errors.Is(err, errRepositoryListingRepeated) {
 					t.Fatalf("want the repeated-listing refusal; got %v", err)
 				}
 				checkRefusalText(t, err.Error(), row.refusedAt)

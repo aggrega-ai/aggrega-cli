@@ -54,13 +54,13 @@ func PluginScope(repoPath string) bool {
 // entity surface, not one kind.
 func CatalogScope(string) bool { return true }
 
-// ErrRepositoryListingRepeated is the refusal a registry whose repository
+// errRepositoryListingRepeated is the refusal a registry whose repository
 // listing repeats itself produces: a page named a repository the listing had
 // already delivered, or two pages in a row named no repository and still linked
 // to a next one. The walk of that registry stops there, so a listing that never
 // reaches its end cannot hold a caller forever. Match it with errors.Is; the
 // error returned wraps it with what the listing repeated.
-var ErrRepositoryListingRepeated = errors.New("the registry's repository listing repeated itself")
+var errRepositoryListingRepeated = errors.New("the registry's repository listing repeated itself")
 
 // EnumerateRepositories is the single registry-enumeration primitive. It walks
 // the registry's repositories, keeps those the scope admits whose path contains
@@ -74,7 +74,7 @@ var ErrRepositoryListingRepeated = errors.New("the registry's repository listing
 // listing whose link leads back to where it has been would be followed without
 // end. The listing continues after the last repository of the page before, so
 // no listing that advances names a repository twice; the walk therefore refuses
-// the registry, with ErrRepositoryListingRepeated, at the first repository the
+// the registry, with errRepositoryListingRepeated, at the first repository the
 // listing delivers a second time — on the same page or a later one — and at a
 // page naming no repository that follows another such page. One page naming
 // nothing is not refused, because it may be the last. The check applies to every
@@ -102,7 +102,7 @@ func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, sc
 		if len(repos) == 0 {
 			if previousPageEmpty {
 				return fmt.Errorf("%w: two pages in a row named no repository and linked to a next one, so the walk stopped rather than follow the listing round again",
-					ErrRepositoryListingRepeated)
+					errRepositoryListingRepeated)
 			}
 			previousPageEmpty = true
 			return nil
@@ -111,7 +111,7 @@ func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, sc
 		for _, repo := range repos {
 			if _, again := delivered[repo]; again {
 				return fmt.Errorf("%w: it named %s a second time, so the walk stopped rather than follow the listing round again",
-					ErrRepositoryListingRepeated, repo)
+					errRepositoryListingRepeated, repo)
 			}
 			delivered[repo] = struct{}{}
 			if !scope(repo) {
@@ -125,7 +125,7 @@ func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, sc
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, ErrRepositoryListingRepeated) {
+		if errors.Is(err, errRepositoryListingRepeated) {
 			return nil, err
 		}
 		if serr := stopped(ctx); serr != nil {

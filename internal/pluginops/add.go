@@ -303,7 +303,10 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	under := enumerationLocation(rw.Config(), host)
 	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(under, socket))
 	if err != nil {
-		return res, err
+		// The enumeration's refusal is about one registry's listing, so it names
+		// that registry: a reader with several configured cannot otherwise tell
+		// which one to look at.
+		return res, fmt.Errorf("%s: %s: %w", command, host, err)
 	}
 	repoPath, err := ResolveSingleRepo(matches, opts.Query, socket)
 	if err != nil {
@@ -400,7 +403,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 	}
 	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(enumerationLocation(rw.Config(), host), string(wasm.PluginTypeCLI)))
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("%s: %s: %w", command, host, err)
 	}
 	repoPath, err := ResolveSingleRepo(matches, opts.Query, string(wasm.PluginTypeCLI))
 	if err != nil {
