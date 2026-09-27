@@ -125,8 +125,16 @@ type initializeResult struct {
 // candidate set matches exactly what the daemon resolves — a Release named
 // without a conventional prefix is included, and a non-Release file that
 // happens to be named like one is not.
+//
+// Lockfiles maps each of those Releases to the absolute path of its lockfile,
+// keyed by the same string Releases carries. It is on the answer so a client
+// that has to know where a Release's lockfile lives — to watch it, or to tell
+// its own deletion from anything else — reads the path the daemon checks rather
+// than keeping a copy of the rule that places it. It is always an object, empty
+// when the workspace holds no Release.
 type releaseCandidatesResult struct {
-	Releases []string `json:"releases"`
+	Releases  []string          `json:"releases"`
+	Lockfiles map[string]string `json:"lockfiles"`
 }
 
 // dispatchReleaseCandidates returns the Release-candidate set of the workspace
@@ -149,7 +157,10 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 	if releases == nil {
 		releases = []string{}
 	}
-	return s.writeResult(ctx, req.ID, releaseCandidatesResult{Releases: releases})
+	return s.writeResult(ctx, req.ID, releaseCandidatesResult{
+		Releases:  releases,
+		Lockfiles: LockfilesFor(releases),
+	})
 }
 
 // activeReleaseResult is the aggrega/activeRelease response: the absolute
@@ -174,10 +185,17 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 // parse: its wording, its layout and the labels it uses follow the cascade
 // itself and change whenever the cascade does. Pass it through; do not match
 // patterns against it or lift values out of it.
+//
+// Lockfile is the absolute path of the selected Release's lockfile, placed by
+// the same rule every command that writes or reads one applies, so it names
+// the file a pull writes and the file the graph request checks. It is omitted
+// when no Release was selected, because there is then no Release to have a
+// lockfile; Release being present and empty already says which case this is.
 type activeReleaseResult struct {
-	Release string `json:"release"`
-	Reason  string `json:"reason,omitempty"`
-	Trace   string `json:"trace,omitempty"`
+	Release  string `json:"release"`
+	Lockfile string `json:"lockfile,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Trace    string `json:"trace,omitempty"`
 }
 
 // dispatchActiveRelease reports which Release a client should select by
@@ -226,6 +244,8 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 	if releasePath == "" {
 		result.Reason = attempt.diagnosticMessage()
 		result.Trace = attempt.fullTrace()
+	} else {
+		result.Lockfile = lockfile.PathFor(releasePath)
 	}
 	return s.writeResult(ctx, req.ID, result)
 }

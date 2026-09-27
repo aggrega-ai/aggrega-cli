@@ -11,6 +11,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
@@ -168,6 +169,27 @@ func ReleaseCandidates(root string) []string {
 		out = append(out, rel)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// LockfilesFor maps each Release path to the path of its lockfile, placed by
+// [lockfile.PathFor] — the rule every command that writes or reads a lockfile
+// applies — so an answer carrying it names the file a pull writes and a build
+// or a graph request reads, and no client keeps a copy of the rule.
+//
+// Each lockfile path is in the coordinate its Release was given in: absolute for
+// an absolute Release, relative to the same root for a relative one, because the
+// rule reads only the path's name. A caller therefore looks a Release up under
+// exactly the string it received the Release as.
+//
+// The map is never nil, and it is filled and never ranged over. It reaches the
+// wire through the JSON encoder, which writes a map's keys in sorted order, so
+// the answer is byte-identical for identical input.
+func LockfilesFor(releases []string) map[string]string {
+	out := make(map[string]string, len(releases))
+	for _, release := range releases {
+		out[release] = lockfile.PathFor(release)
+	}
 	return out
 }
 

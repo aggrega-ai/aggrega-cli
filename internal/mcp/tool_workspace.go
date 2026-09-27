@@ -412,6 +412,13 @@ type listReleasesArgs struct {
 //
 // Releases is always an array, empty when the workspace declares none and empty in
 // the summary shape.
+//
+// Lockfiles maps each path Releases carries to the path of that Release's
+// lockfile, in the same workspace-relative coordinate, computed by the rule the
+// language server's Release answers use, so every surface names the same file.
+// It covers the page rather than the whole listing: it describes the records
+// this answer carries, so the summary shape carries an empty object and a
+// page's map grows with the page and not with the workspace.
 type listReleasesResult struct {
 	WorkspaceRoot  string                  `json:"workspace_root"`
 	ResponseFormat string                  `json:"response_format"`
@@ -421,6 +428,7 @@ type listReleasesResult struct {
 	Returned       int                     `json:"returned"`
 	MoreRemaining  bool                    `json:"more_remaining"`
 	Releases       []string                `json:"releases"`
+	Lockfiles      map[string]string       `json:"lockfiles"`
 }
 
 var listReleasesToolSpec = toolSpec{
@@ -431,7 +439,9 @@ var listReleasesToolSpec = toolSpec{
 		"count per top-level directory — so you learn how many there are and where they sit before asking for any. " +
 		"Send `response_format` detailed for the paths themselves, each relative to the workspace root — the " +
 		"coordinate list-entities reports a file under, so the two answers line up — bounded to `limit` paths from " +
-		"`offset`, with `more_remaining` saying whether to ask again. Membership is decided by the file's own kind " +
+		"`offset`, with `more_remaining` saying whether to ask again. `lockfiles` maps each returned path to the " +
+		"path of that Release's lockfile, in the same coordinate: the file pull writes and build reads, so you never " +
+		"work out where it lives yourself. Membership is decided by the file's own kind " +
 		"header, never by its name: a Release named without a conventional prefix is included, and a file merely " +
 		"named like one is not. Call this when you need to name a Release and do not know which exist — build, " +
 		"describe and validate each require one named and none can enumerate for you. Feed a returned path straight " +
@@ -487,6 +497,7 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 
 	releases := serve.ReleaseCandidates(tw.root)
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(releases))
+	page := releases[from:to]
 	payload := listReleasesResult{
 		WorkspaceRoot:  tw.root,
 		ResponseFormat: format,
@@ -495,14 +506,16 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		Offset:         from,
 		Returned:       to - from,
 		MoreRemaining:  more,
-		Releases:       releases[from:to],
+		Releases:       page,
+		Lockfiles:      serve.LockfilesFor(page),
 	}
 	return textResult(renderListReleasesText(payload), payload)
 }
 
 // renderListReleasesText renders the human-readable Release listing, and says
 // what an empty one means: the walk ran and found none, rather than the question
-// having been refused.
+// having been refused. Each path is printed with its lockfile, read off the
+// answer's own map, so the text and the structured result name the same file.
 func renderListReleasesText(p listReleasesResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Releases in %s (%d):\n", p.WorkspaceRoot, p.Count)
@@ -520,7 +533,7 @@ func renderListReleasesText(p listReleasesResult) string {
 	}
 	fmt.Fprintf(&b, "\nPaths %d-%d of %d:\n", p.Offset+1, p.Offset+p.Returned, p.Count)
 	for _, r := range p.Releases {
-		fmt.Fprintf(&b, "  %s\n", r)
+		fmt.Fprintf(&b, "  %s (lockfile %s)\n", r, p.Lockfiles[r])
 	}
 	if p.MoreRemaining {
 		fmt.Fprintf(&b, "\nMore remain: call again with offset %d.", p.Offset+p.Returned)
