@@ -46,11 +46,13 @@ func newPushCmd() *cobra.Command {
 resolve it with "aggrega pull".
 
 The entity is read from the path given, bundled for transport, and pushed to
-<registry>/<kind>/<metadata.name>:<metadata.version>. The tag is the entity's
-own metadata.version. Run "aggrega push --list-kinds" for the kinds this binary
-publishes, one per line and nothing else, so a script can read it directly.
-Release and Manifest are deployment-side inputs rather than catalog artifacts
-and are refused.
+<registry>/<kind>/<metadata.name>:<metadata.version>, the repository path
+lowercased; a Recipe or FeatureRecipe carries its spec.capability, and a Plugin
+its metadata.pluginType, as a segment between <kind> and <metadata.name>. The
+tag is the entity's own metadata.version. Run "aggrega push --list-kinds" for
+the kinds this binary publishes, one per line and nothing else, so a script can
+read it directly. Release and Manifest are deployment-side inputs rather than
+catalog artifacts and are refused.
 
 Every kind has a directory of its own except Aggregate, Release and Manifest: an
 entity of any other kind is refused when another entity sits in its directory,
