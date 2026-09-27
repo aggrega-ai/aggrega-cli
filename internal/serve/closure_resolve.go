@@ -238,15 +238,26 @@ func (s *Server) closureErrorData(releasePath string, stage compilerops.ClosureS
 // reader to apply the distinction. That is a property of what a single-line
 // envelope can carry, not of what the backing knows: the same backing does
 // recover each refused document's declared identity for a caller that needs to
-// single one out.
+// single one out, and a caller that has singled one out and led its message with
+// it lists the rest through skipContextBesides.
 func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
+	return s.skipContextBesides(view, msg, "")
+}
+
+// skipContextBesides is skipContext listing every refusal except the one
+// recorded under promoted, which the message already leads with. Naming it again
+// in the list would state the same refusal twice in one line. An empty promoted
+// lists every refusal.
+func (s *Server) skipContextBesides(view *catalog.LazyLookup, msg, promoted string) string {
 	skips := view.Skips()
-	if len(skips) == 0 {
-		return msg
-	}
 	paths := make([]string, 0, len(skips))
 	for p := range skips {
-		paths = append(paths, p)
+		if p != promoted {
+			paths = append(paths, p)
+		}
+	}
+	if len(paths) == 0 {
+		return msg
 	}
 	sort.Strings(paths)
 	var b strings.Builder

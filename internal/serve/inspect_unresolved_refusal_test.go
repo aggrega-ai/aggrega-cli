@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -164,6 +166,109 @@ func TestEntityDefinitionRefusalArguesWithNoDeclaredAbsenceOfALocalCatalog(t *te
 	if strings.Contains(resp.Error.Message, workspaceconfig.CatalogDirsSetting) {
 		t.Errorf("the refusal names the catalog-directory setting to a reader who declared the list empty: %s",
 			resp.Error.Message)
+	}
+}
+
+// refusedDocumentWorkspace builds a workspace whose catalog directory holds a
+// Feature its kind's schema refuses, and whose root — not a catalog directory —
+// holds a valid Feature, and returns a server holding the resolution for it.
+func refusedDocumentWorkspace(t *testing.T) *Server {
+	t.Helper()
+	ws := t.TempDir()
+	catalogDir := filepath.Join(ws, "catalog")
+	writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace:\n  catalog_dirs:\n    - ./catalog\n")
+	// The one fault is the missing metadata.version.
+	writeFixtureFile(t, filepath.Join(catalogDir, "feature", "nightly-backup.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: local/nightly-backup
+spec:
+  appliesTo: "component.aggrega.ai/category=datastore"
+`)
+	writeFixtureFile(t, filepath.Join(ws, "feature-at-root.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: local/at-root
+  version: 1.0.0
+spec:
+  appliesTo: "component.aggrega.ai/category=datastore"
+`)
+	var in, out bytes.Buffer
+	srv := newTestServer(t, ws, &in, &out)
+	srv.lazyCatalog = catalog.NewLazyLookup(ws, "", []string{catalogDir}, nil)
+	rw, err := workspaceconfig.ResolveWithoutGlobal(ws, ws, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("resolve the fixture workspace: %v", err)
+	}
+	srv.resolvedWorkspace = rw
+	srv.wsConfig = rw.Config()
+	return srv
+}
+
+// TestEntityDefinitionStatesARefusedDocumentOnce is the invocation proof for the
+// refusal of a name a document declares: driven through the production dispatch,
+// the refusal for a document the catalog read and refused leads with that
+// document's fault, stated once, and carries no advice to move a file that sits
+// where the catalog reads; a document the catalog does not read still gets the
+// account of where it reads.
+//
+// The first row is asserted by equality, so a second copy of the refusal, a
+// second category head, the absolute path after the relative one, or the account
+// appearing anywhere in it fails the row. The second row is the positive control
+// for the account: a refusal withheld everywhere would pass the first row and
+// fail this one.
+func TestEntityDefinitionStatesARefusedDocumentOnce(t *testing.T) {
+	srv := refusedDocumentWorkspace(t)
+	account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote())
+	if account == "" {
+		t.Fatal("precondition: this workspace composes no account, so the rows below would say nothing about it")
+	}
+	code, ok := cerrors.ShortCodeOf(envelope.ErrEntityEnvelope())
+	if !ok {
+		t.Fatal("the envelope-validation condition must be registered with a short code")
+	}
+
+	for _, tc := range []struct {
+		name     string
+		file     string
+		want     string
+		wantLead string
+	}{
+		{
+			name: "local/nightly-backup",
+			file: "catalog/feature/nightly-backup.yaml",
+			want: "[" + string(cerrors.CatalogError) + " " + code + "] catalog/feature/nightly-backup.yaml: " +
+				"document envelope validation failed (Feature); 3:1: metadata.version: missing required property: version. " +
+				"correct the document to match its kind's schema; note: this file was skipped at load, so the catalog " +
+				`holds nothing under the identity it declares, and "local/nightly-backup" resolved to no entity`,
+		},
+		{
+			name:     "local/at-root",
+			file:     "feature-at-root.yaml",
+			wantLead: `"local/at-root" is declared as a Feature by feature-at-root.yaml, but the catalog resolved no entity for it; `,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := callEntityDefinition(t, srv, map[string]any{"name": tc.name})
+			if resp.Error == nil {
+				t.Fatalf("a name the catalog resolves nothing for was answered: %s", resp.Result)
+			}
+			if resp.Error.Code != errEntityNotResolvable {
+				t.Errorf("the refusal carries code %d; want %d", resp.Error.Code, errEntityNotResolvable)
+			}
+			if resp.Error.Data == nil || resp.Error.Data.File != tc.file {
+				t.Errorf("the refusal names %+v; want the declaring document %q", resp.Error.Data, tc.file)
+			}
+			if tc.want != "" {
+				if resp.Error.Message != tc.want {
+					t.Errorf("the refusal reads\n  %s\nwant\n  %s", resp.Error.Message, tc.want)
+				}
+				return
+			}
+			if want := tc.wantLead + account; resp.Error.Message != want {
+				t.Errorf("the refusal reads\n  %s\nwant\n  %s", resp.Error.Message, want)
+			}
+		})
 	}
 }
 

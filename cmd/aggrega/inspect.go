@@ -562,6 +562,14 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	dirs := rw.ResolveCatalogDirs(catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
+		// A load that stopped on one document reports that document's refusal once:
+		// the document and the fault it carries, in the words every other surface
+		// reporting the same refusal uses. Rendered as the load raised it, the one
+		// fault reads as a directory frame, a step frame and the constraint, each
+		// nested under the last.
+		if refused, ok := compilerops.RefusedCatalogDocument(err); ok {
+			return compilerops.RefusedDocument(refused.Path, refused.Err)
+		}
 		return fmt.Errorf("catalog load: %w", err)
 	}
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
@@ -577,9 +585,14 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// it sits somewhere this workspace does not read. Only the second is fixed by
 	// moving a file or naming a directory, and only the workspace can say which
 	// directories were read.
+	//
+	// It is decided by the one predicate every surface carrying the account
+	// reads. A strict load that got this far refused no document, so there is no
+	// refusal record to hold the name against, and the account is given.
 	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
 	if !found {
-		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier, rw.LocalCatalogAdviceNote())
+		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier,
+			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(), nil, identifier, ""))
 	}
 	// The identity the withdrawal advisory is looked up by is read from the
 	// resolved entity, never from the typed identifier, which may carry a version

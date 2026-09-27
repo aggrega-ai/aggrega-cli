@@ -113,19 +113,20 @@ func (e *SkipContextError) PromotedRefusal() (catalog.SkippedEntity, bool) {
 // rendered. It answers the other half of "nothing resolved": a reference may
 // name an entity no file declares anywhere, or one declared in a directory this
 // workspace does not read, and only the second is something the reader fixes by
-// moving a file or naming a directory. It is reported whether or not a file was
-// refused, because the two explain different things and a workspace can be in
-// both states at once. An empty string reports nothing — which is what a reader
-// who declared that this workspace has no local catalog gets, since advice about
-// where local entities are read from would contradict that declaration.
+// moving a file or naming a directory. It is reported beside refusals of files
+// that declare something else, because the two explain different things and a
+// workspace can be in both states at once. An empty string reports nothing —
+// which is what a reader who declared that this workspace has no local catalog
+// gets, since advice about where local entities are read from would contradict
+// that declaration.
 //
-// 🔴 It is reported ONLY on a failure that names an entity nothing resolved, and
-// the guard is here rather than at the callers for the reason the whole file is
-// here: a caller's own failure is not always one of those. A Release that does
-// not match its kind's schema fails the same step, and telling THAT reader where
-// entities are read from sends them looking for a file when what is wrong is the
-// document in front of them. The reference-carrying failure is the only one this
-// account explains.
+// 🔴 Whether it is reported is decided by LocalCatalogAdvice, the one predicate
+// every surface that carries the account reads, and the guard is here rather than
+// at the callers for the reason the whole file is here: a caller's own failure is
+// not always one the account explains. It is reported only where the reference
+// resolved to nothing, and not where a document the catalog read and refused
+// declares what the reference names — that document was found where the catalog
+// reads, so moving it is the wrong remedy.
 //
 // CAUSE BEFORE CONSEQUENCE, where the cause can be named exactly. A refused
 // file never enters the catalog, so what fails is the attempt to resolve a
@@ -166,16 +167,14 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 	if err == nil {
 		return err
 	}
-	if !namesAnUnresolvedEntity(err) {
-		localCatalogNote = ""
-	}
+	localCatalogNote = localCatalogAdviceFor(err, skipped, localCatalogNote)
 	if len(skipped) == 0 && localCatalogNote == "" {
 		return err
 	}
 	var b strings.Builder
 	cause, promoted := refusalExplaining(err, skipped)
 	if promoted {
-		b.WriteString("\n  note: this file was skipped at load, so the catalog holds nothing under the identity it declares.")
+		b.WriteString("\n  note: " + RefusedDocumentNote + ".")
 		b.WriteString("\n  This Release reaches that identity, so what failed is the attempt to resolve the reference to it:")
 		fmt.Fprintf(&b, "\n    %s", indentContinuations(cerrors.CauseChain(err), "    "))
 		if rest := refusalsBesides(skipped, cause); len(rest) > 0 {
@@ -195,28 +194,84 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 	return &SkipContextError{err: err, note: b.String()}
 }
 
+// RefusedDocumentNote is the sentence that follows a refused document's fault
+// where a report leads with it: why a document refused at load explains a
+// reference to what it declares resolving to nothing.
+//
+// It is shared rather than written at each surface that leads with a refusal,
+// because the multi-line note a terminal reads and the one-line message a
+// connection reads teach the same fact, and two copies of one sentence agree
+// only until one of them is edited.
+const RefusedDocumentNote = "this file was skipped at load, so the catalog holds nothing under the identity it declares"
+
+// LocalCatalogAdvice returns note — the workspace's account of where it reads
+// local entities, as the resolved workspace composes it — where that account is
+// the remedy for a lookup of uri that resolved nothing, and the empty string
+// where it is not.
+//
+// It is the one predicate for the account, and every surface that carries it
+// decides through it: a failure the closure walk raised reaches it through
+// AnnotateSkipContext, and a by-name lookup that matched nothing calls it
+// directly. A caller calls it only for a lookup that resolved nothing, which is
+// the one failure the account can explain at all.
+//
+// The account says the document is not where the catalog reads. That is false
+// for a document the catalog read and refused, and every such document is in the
+// refusal record skipped — so where a refusal there declares the identity uri
+// names, the document was found where the catalog reads, moving it is the wrong
+// remedy, and nothing is returned. Deciding it from the record rather than from
+// the configured directories is what keeps it free of a second walk of those
+// directories: the record is the part of that walk that already happened.
+//
+// kindHint is the kind hint the reference was collected with, in the vocabulary
+// catalog.SoleRefusalFor reads. A reference whose hint maps to no kind can match
+// no refusal, so for it the account is returned whenever the lookup resolved
+// nothing.
+func LocalCatalogAdvice(note string, skipped []catalog.SkippedEntity, uri, kindHint string) string {
+	if note == "" || refusalDeclares(skipped, uri, kindHint) {
+		return ""
+	}
+	return note
+}
+
+// localCatalogAdviceFor is LocalCatalogAdvice for a failure the closure walk
+// raised: it establishes that the failure resolved nothing, and reads the
+// reference off the failure.
+//
+// A walk that could not record the reference it failed on raises the bare
+// condition, and with no reference there is no refusal to match, so the account
+// is returned as it is for a reference no refusal declares.
+func localCatalogAdviceFor(err error, skipped []catalog.SkippedEntity, note string) string {
+	if !namesAnUnresolvedEntity(err) {
+		return ""
+	}
+	var unresolved *closure.UnresolvedEntityError
+	if !stderrors.As(err, &unresolved) || unresolved == nil {
+		return note
+	}
+	return LocalCatalogAdvice(note, skipped, unresolved.URI, unresolved.KindHint)
+}
+
 // namesAnUnresolvedEntity reports whether err failed because a reference named
 // an entity nothing resolved — the one failure the workspace's account of where
 // it reads local entities explains.
 //
-// It is the narrow question, not the broad one. A failure raised while resolving
-// what a Release reaches can be about the shape of a document rather than about
-// finding one: a Release that does not match its kind's schema stops the same
-// step, and a reader told where entities are read from would go looking through
-// directories for a file that is already open in front of them. So the test is
-// the failure's own subject, and the subject is carried in the chain rather than
-// inferred from which step raised it.
+// It is the narrow question, not the broad one, and the condition is what
+// answers it. A failure raised while resolving what a Release reaches can be
+// about the shape of a document rather than about finding one — a Release that
+// does not match its kind's schema stops the same step — and a lookup can find
+// the entity and still fail: bytes a registry now serves that no longer match
+// their pin, or a document's own files that cannot be read. The walk decorates
+// every lookup failure with the reference it was resolving, so the decoration
+// says which reference failed and never that nothing was found; the
+// unresolvable-reference condition is raised only where every tier answered that
+// it holds no such entity. Matching the decoration would give a reader told that
+// their pinned bytes changed the advice to move a file.
 //
-// Both forms are matched. A walk that could record the reference it could not
-// resolve decorates the failure with it; one reached by a path that recorded
-// none raises the bare condition. The condition is matched through its exported
-// accessor rather than by its registered identifier, which keeps the match
-// working if that identifier is ever re-registered.
+// The condition is matched through its exported accessor rather than by its
+// registered identifier, which keeps the match working if that identifier is
+// ever re-registered.
 func namesAnUnresolvedEntity(err error) bool {
-	var unresolved *closure.UnresolvedEntityError
-	if stderrors.As(err, &unresolved) && unresolved != nil {
-		return true
-	}
 	return stderrors.Is(err, closure.ErrUnresolvableURI())
 }
 
@@ -231,20 +286,77 @@ func namesAnUnresolvedEntity(err error) bool {
 // A failure carrying no reference at all cannot be explained by any single
 // refusal, so it reports false: a validation failure over an entity that DID
 // load names no missing entity, and blaming a refusal for it would be a guess.
-//
-// A matched refusal carrying no reason of its own is declined too. There would
-// be nothing to lead the report with, and leading with a note whose subject is
-// absent reads worse than the report it replaced.
 func refusalExplaining(err error, skipped []catalog.SkippedEntity) (catalog.SkippedEntity, bool) {
 	var unresolved *closure.UnresolvedEntityError
 	if !stderrors.As(err, &unresolved) || unresolved == nil {
 		return catalog.SkippedEntity{}, false
 	}
-	cause, ok := catalog.SoleRefusalFor(skipped, unresolved.URI, unresolved.KindHint)
+	return SoleRefusal(skipped, unresolved.URI, unresolved.KindHint)
+}
+
+// SoleRefusal reports the one refused catalog file declaring the identity a
+// reference names, and whether exactly one does — catalog.SoleRefusalFor, with
+// the refusal that leads a report held to carrying a reason of its own.
+//
+// A matched refusal carrying no reason is declined. There would be nothing to
+// lead the report with, and leading with a note whose subject is absent reads
+// worse than the report it replaced.
+//
+// Every surface that leads a report with a refusal asks this, so a terminal and
+// a connection single out the same file for the same reference.
+func SoleRefusal(skipped []catalog.SkippedEntity, uri, kindHint string) (catalog.SkippedEntity, bool) {
+	cause, ok := catalog.SoleRefusalFor(skipped, uri, kindHint)
 	if !ok || cause.Err == nil {
 		return catalog.SkippedEntity{}, false
 	}
 	return cause, true
+}
+
+// refusalDeclares reports whether any refusal in skipped declares the identity
+// uri names.
+//
+// It asks catalog.SoleRefusalFor of each record on its own, which is that
+// function's own match applied one record at a time rather than a second
+// statement of it. The question here is whether any document declaring the
+// identity was read, so two refused documents declaring it answer yes, where
+// promotion — which needs exactly one — declines.
+func refusalDeclares(skipped []catalog.SkippedEntity, uri, kindHint string) bool {
+	for _, s := range skipped {
+		if _, ok := catalog.SoleRefusalFor([]catalog.SkippedEntity{s}, uri, kindHint); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// KindHintFor returns the kind hint catalog.SoleRefusalFor reads for an entity
+// kind as a document declares it, or the empty string for a kind it holds no
+// hint for.
+//
+// A surface that knows the kind a document declares, rather than the site a
+// reference was collected at, holds no hint to pass. The hint is derived from
+// the kind — the kind's words, lowercased and joined by an underscore — and kept
+// only where catalog.EntityKindForHint maps it back to that same kind. That
+// mapping stays the single home of the vocabulary: a derived hint it does not
+// map back is refused rather than trusted, so this cannot come to disagree with
+// it silently, and a kind it holds no hint for matches no refusal, which is the
+// answer the matcher gives for such a reference anyway.
+func KindHintFor(kind string) string {
+	var b strings.Builder
+	for i, r := range kind {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			r += 'a' - 'A'
+		}
+		b.WriteRune(r)
+	}
+	hint := b.String()
+	if hint == "" || catalog.EntityKindForHint(hint) != kind {
+		return ""
+	}
+	return hint
 }
 
 // refusalsBesides returns the refusals other than the promoted one, keeping the

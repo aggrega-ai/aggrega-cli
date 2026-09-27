@@ -326,6 +326,16 @@ func (s *Server) publishedEntityDefinition(ctx context.Context, reference string
 // reached the daemon and matched nothing anywhere, which is the request to
 // correct.
 //
+// Where exactly one document the catalog refused declares the name, that
+// refusal leads the message, stated once: the document by the path this daemon
+// reports it at, then the fault it carries — the constraint and the line — in the
+// words `aggrega inspect <name>` states the same refusal in, since both render it
+// through compilerops.RefusedDocument. The consequence follows it, and every
+// other refusal is listed after that. The file singled out is the one a build
+// singles out for the same reference, because both ask compilerops.SoleRefusal;
+// where it cannot single one out, the declaration leads and every refusal is
+// listed, exactly as with no refusal at all.
+//
 // The workspace question is asked only on the failing path. The catalog view is
 // the authority on what resolves, so a name that resolved needs no second
 // opinion, and the traversal — which reads the parse cache and then walks the
@@ -336,12 +346,22 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 	// the same way every other reference-shaped lookup here strips it.
 	identity, _, _ := resolver.SplitVersionedURI(name)
 	if file, kind, ok := s.workspaceDeclarationOf(ctx, identity); ok {
-		return &jsonRPCError{
-			Code: errEntityNotResolvable,
-			Message: s.localCatalogContext(s.skipContext(view, fmt.Sprintf(
+		skipped := view.SkippedEntities()
+		hint := compilerops.KindHintFor(kind)
+		var message string
+		if refusal, found := compilerops.SoleRefusal(skipped, name, hint); found {
+			message = s.skipContextBesides(view, fmt.Sprintf("%s; note: %s, and %q resolved to no entity",
+				compilerops.RefusedDocumentLine(pathscope.ReportedName(s.workspaceRoot, refusal.Path), refusal.Err),
+				compilerops.RefusedDocumentNote, name), refusal.Path)
+		} else {
+			message = s.skipContext(view, fmt.Sprintf(
 				"%q is declared as %s %s by %s, but the catalog resolved no entity for it",
-				name, indefiniteArticle(kind), kind, file))),
-			Data: newErrorData(file, 0, 0),
+				name, indefiniteArticle(kind), kind, file))
+		}
+		return &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: s.localCatalogContext(message, skipped, name, hint),
+			Data:    newErrorData(file, 0, 0),
 		}
 	}
 	return &jsonRPCError{
@@ -353,13 +373,20 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 }
 
 // localCatalogContext appends the workspace's own account of where it reads
-// local entities from, and what to change so the one that was named is read.
+// local entities from, and what to change so the one that was named is read,
+// where that account is the remedy for the name that resolved to nothing.
 //
 // It answers the half of "the catalog resolved nothing" that naming the
-// document cannot: a reader looking at the very file the refusal names still
+// document cannot: a reader looking at a file the catalog does not read still
 // has no statement of why it was not read, and the directories a catalog search
 // covers are the fact a reader driving this daemon over a connection has least
 // access to.
+//
+// Whether it is the remedy is decided by compilerops.LocalCatalogAdvice, the one
+// predicate every surface carrying the account reads, over the refusals this
+// request's view recorded. A document the catalog read and refused declaring the
+// name was found where the catalog reads, so moving it is the wrong remedy, and
+// nothing is appended.
 //
 // The sentences are the workspace's rather than this surface's. The one place
 // that composes them is asked for them, so a reader here is told what a reader
@@ -373,8 +400,9 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 // break and an indent, which is the shape an error printed to a terminal wants;
 // an envelope message is one line, so it is folded on the way the skips already
 // are.
-func (s *Server) localCatalogContext(msg string) string {
-	note := strings.TrimSpace(s.resolvedWorkspace.LocalCatalogAdviceNote())
+func (s *Server) localCatalogContext(msg string, skipped []catalog.SkippedEntity, name, kindHint string) string {
+	note := strings.TrimSpace(compilerops.LocalCatalogAdvice(
+		s.resolvedWorkspace.LocalCatalogAdviceNote(), skipped, name, kindHint))
 	if note == "" {
 		return msg
 	}
