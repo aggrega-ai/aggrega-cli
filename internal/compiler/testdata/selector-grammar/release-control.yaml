@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-grammar-control-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-control.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/control
+      components:
+        consumer:
+          infra: { replicas: 1 }
+        web:
+          infra: { replicas: 1 }

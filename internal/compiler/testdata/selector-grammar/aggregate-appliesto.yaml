@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-grammar-appliesto
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/frontend
+      features:
+        nf:
+          type: core/not-frontend

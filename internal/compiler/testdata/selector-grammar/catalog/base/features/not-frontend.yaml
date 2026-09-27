@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/not-frontend
+  version: "1.0.0"
+
+spec:
+  appliesTo: "!tier=frontend"
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

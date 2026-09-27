@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/consumer-control
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+
+spec:
+  usesSchema:
+    backend:
+      selector: "tier=frontend"
+      inject: ["env"]
+  featuresSchema:
+    audit:
+      selector: "tier=frontend"
+  schema:
+    infra:
+      replicas: { type: integer, default: 1 }

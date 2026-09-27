@@ -114,6 +114,22 @@ func applicabilityCases() []applicabilityCase {
 			want:    false,
 			wantErr: true,
 		},
+		{
+			// Written to exclude edge nodes; read as an absence test on a key
+			// named "tier=edge" it would admit every node, this one included.
+			name:    "an appliesTo whose absence test carries a value does not admit",
+			applies: "!tier=edge",
+			labels:  edge,
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "an appliesToAnyOf item made of separators does not admit",
+			anyOf:   []types.SelectorTerm{types.StringTerm(" , ")},
+			labels:  edge,
+			want:    false,
+			wantErr: true,
+		},
 	}
 }
 

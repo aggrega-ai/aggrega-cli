@@ -17,11 +17,16 @@
 // Two API styles cover the two authoring surfaces:
 //
 //   - String selectors: MatchString / Parse — used by `usesSchema.selector`
-//     entries, Feature `appliesTo`, and the string-form items of
-//     `appliesToAnyOf`. Syntax follows Kubernetes label-selector
-//     conventions: comma-separated requirements (AND-combined), with `=`,
-//     `!=`, `in (...)`, `notin (...)`, bare key (Exists), and `!key`
-//     (DoesNotExist) — the grammar `kubectl get -l` accepts.
+//     entries, attachment-slot `selector` entries, Feature `appliesTo`, and
+//     the string-form items of `appliesToAnyOf`. Syntax follows Kubernetes
+//     label-selector conventions: comma-separated requirements
+//     (AND-combined), with `=`, `!=`, `in (...)`, `notin (...)`, bare key
+//     (Exists), and `!key` (DoesNotExist). A selector carrying a requirement
+//     outside those forms — an empty requirement, or a key carrying
+//     whitespace or one of the grammar's own characters — is refused with a
+//     *SyntaxError naming it, so every surface that evaluates a selector
+//     refuses the same strings. Keys and values are otherwise opaque: nothing
+//     here holds them to Kubernetes label syntax.
 //
 //   - Map and disjunction matchers: MatchLabels / MatchAnyOf — MatchLabels
 //     evaluates a flat key-value map (equality-only AND), the shape of an

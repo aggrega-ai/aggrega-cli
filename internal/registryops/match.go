@@ -74,9 +74,20 @@ func (e *SelectorError) Unwrap() error { return e.Err }
 // selector is a caller error that propagates rather than silently matching
 // nothing.
 //
+// The selector is parsed once before any record is read, so a malformed one is
+// reported whatever the records are — including when the index is empty or the
+// other clauses leave no record for the selector to be evaluated against. A
+// search answering "nothing matched" for a selector it could not read would be
+// reporting a result for a question it never asked.
+//
 // The input order is preserved and no map is iterated in the result path, so the
 // output is byte-stable across runs of the same input.
 func filterRecords(records []registryindex.Record, q Query) ([]registryindex.Record, error) {
+	if q.Selector != "" {
+		if _, err := selector.Parse(q.Selector); err != nil {
+			return nil, &SelectorError{Err: err}
+		}
+	}
 	query := strings.ToLower(q.Text)
 	var out []registryindex.Record
 	for _, rec := range records {

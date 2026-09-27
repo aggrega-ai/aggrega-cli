@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm-chart
+  version: 1.0.0
+  pluginType: provider
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - helm-chart
+  # BOTH exports: render_node copies each sourced sub-chart into a file set;
+  # assemble_boundary merges the dispatch group's sub-charts into a single
+  # umbrella Chart.yaml + values.yaml. The dual-export signal routes the
+  # helm-chart provider to the assembler adapter.
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation (a sandboxed
+    # environment that denies executable memory falls back to slow interpretation).
+    timeoutMs: 300000

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: frontend-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/frontend
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      app:
+        image: app:latest
+        ports:
+          http: 8080

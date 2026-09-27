@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-grammar-socket
+  version: "1.0.0"
+spec:
+  components:
+    consumer:
+      type: core/consumer-socket
+      uses:
+        backend:
+          link:
+            target: web
+    web:
+      type: core/frontend

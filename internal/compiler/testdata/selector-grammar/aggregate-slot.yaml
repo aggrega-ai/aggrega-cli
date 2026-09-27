@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-grammar-slot
+  version: "1.0.0"
+spec:
+  components:
+    consumer:
+      type: core/consumer-slot
+      features:
+        audit:
+          type: core/tagged

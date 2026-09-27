@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-grammar-control
+  version: "1.0.0"
+spec:
+  components:
+    consumer:
+      type: core/consumer-control
+      uses:
+        backend:
+          link:
+            target: web
+      features:
+        audit:
+          type: core/tagged
+    web:
+      type: core/frontend
+      features:
+        fo:
+          type: core/frontend-only

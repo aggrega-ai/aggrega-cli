@@ -4,10 +4,12 @@
 package registryops
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -208,6 +210,89 @@ func TestFilterRecordsMalformedSelector(t *testing.T) {
 	_, err := filterRecords(sampleRecords(), Query{Selector: "component.aggrega.ai/category in ("})
 	if err == nil {
 		t.Fatal("filterRecords: want error for malformed selector, got nil")
+	}
+}
+
+// TestFilterRecordsRefusesASelectorTheGrammarDoesNotDefine pins, one fault per
+// row, that each shape the selector grammar refuses reaches the search as the
+// search's own selector error wrapping the grammar's refusal — including when no
+// record is left for the selector to be evaluated against, where a search that
+// read the selector only per record would answer "nothing matched". The control
+// row is a well-formed selector over the same inputs.
+func TestFilterRecordsRefusesASelectorTheGrammarDoesNotDefine(t *testing.T) {
+	cases := []struct {
+		name    string
+		records []registryindex.Record
+		filter  Query
+		refused bool
+		want    []string
+	}{
+		{
+			name:    "an absence test whose key carries a value",
+			records: sampleRecords(),
+			filter:  Query{Selector: "!component.aggrega.ai/category=datastore"},
+			refused: true,
+		},
+		{
+			name:    "separators alone",
+			records: sampleRecords(),
+			filter:  Query{Selector: " , , "},
+			refused: true,
+		},
+		{
+			name:    "a set written without parentheses",
+			records: sampleRecords(),
+			filter:  Query{Selector: "component.aggrega.ai/category in datastore"},
+			refused: true,
+		},
+		{
+			name:    "a malformed selector over an empty index",
+			records: nil,
+			filter:  Query{Selector: "!component.aggrega.ai/category=datastore"},
+			refused: true,
+		},
+		{
+			name:    "a malformed selector when the text query leaves no record",
+			records: sampleRecords(),
+			filter:  Query{Text: "nonesuch", Selector: "!component.aggrega.ai/category=datastore"},
+			refused: true,
+		},
+		{
+			name:    "control: the inequality the absence test was written in place of",
+			records: sampleRecords(),
+			filter:  Query{Kinds: []string{"Component"}, Selector: "component.aggrega.ai/category!=datastore"},
+			want:    []string{"redis"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("filterRecords panicked: %v", r)
+				}
+			}()
+			got, err := filterRecords(tc.records, tc.filter)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("filterRecords: unexpected error: %v", err)
+				}
+				if !reflect.DeepEqual(names(got), tc.want) {
+					t.Errorf("filterRecords = %v; want %v", names(got), tc.want)
+				}
+				return
+			}
+			var searchErr *SelectorError
+			if !errors.As(err, &searchErr) {
+				t.Fatalf("filterRecords error = %v (%T), want a *SelectorError", err, err)
+			}
+			var syntax *selector.SyntaxError
+			if !errors.As(err, &syntax) {
+				t.Fatalf("filterRecords error = %v does not carry the grammar's refusal", err)
+			}
+			if got != nil {
+				t.Errorf("filterRecords returned %v alongside its refusal", names(got))
+			}
+		})
 	}
 }
 

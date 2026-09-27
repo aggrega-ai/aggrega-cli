@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: fr-frontend-only
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/frontend-only

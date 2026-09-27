@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: selector-grammar-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/frontend: frontend-recipe:1.0.0
+        core/consumer-socket: consumer-socket-recipe:1.0.0
+        core/consumer-slot: consumer-slot-recipe:1.0.0
+        core/consumer-control: consumer-control-recipe:1.0.0
+    features:
+      type:
+        core/tagged: fr-tagged:1.0.0
+        core/not-frontend: fr-not-frontend:1.0.0
+        core/separators: fr-separators:1.0.0
+        core/frontend-only: fr-frontend-only:1.0.0

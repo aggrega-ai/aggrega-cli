@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-grammar-socket-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-socket.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/socket
+      components:
+        consumer:
+          infra: { replicas: 1 }
+        web:
+          infra: { replicas: 1 }

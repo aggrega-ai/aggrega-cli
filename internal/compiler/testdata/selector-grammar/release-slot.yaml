@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-grammar-slot-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-slot.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/slot
+      components:
+        consumer:
+          infra: { replicas: 1 }

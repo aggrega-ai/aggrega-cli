@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/tagged
+  version: "1.0.0"
+  labels:
+    tier: "frontend"
+spec:
+
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

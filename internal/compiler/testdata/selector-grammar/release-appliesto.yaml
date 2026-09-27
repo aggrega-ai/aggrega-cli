@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-grammar-appliesto-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-appliesto.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/appliesto
+      components:
+        web:
+          infra: { replicas: 1 }
