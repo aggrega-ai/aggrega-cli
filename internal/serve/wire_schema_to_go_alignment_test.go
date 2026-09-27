@@ -50,8 +50,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -125,6 +127,14 @@ var wireExternalSchemaRoots = map[string]wireExternalSchemaRoot{
 	"#/$defs/DeprecationNote": {
 		root: reflect.TypeOf(registryops.DeprecationNote{}),
 		why:  "one deprecation marker an index walk met, reached through the per-registry refresh row",
+	},
+	"#/$defs/PublishedVersion": {
+		root: reflect.TypeOf(registryindex.PublishedVersion{}),
+		why:  "one version the local index records with its manifest digest and verified signer, reached as the entries of the search record's published list",
+	},
+	"#/$defs/VerifiedSignature": {
+		root: reflect.TypeOf(lockfile.VerifiedSignature{}),
+		why:  "the verified-signature fact the lockfile and the local index share, reached as the signer of a published version",
 	},
 	"#/$defs/PluginCLICommand": {
 		root: reflect.TypeOf(wasm.PluginCLICommand{}),

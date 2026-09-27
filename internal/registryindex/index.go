@@ -35,7 +35,15 @@ import (
 // discovered from that version's referrers together with that marker's verified
 // signature, so a consumer reads a signed claim from the local index rather than
 // probing the registry live; a version whose marker does not verify contributes
-// no entry. All are omitted when empty.
+// no entry. Published carries, for every entry of Versions and in the same order,
+// the manifest digest that version's tag resolved to and the verified signer of
+// its own signature, so a reader addresses each published version by the bytes it
+// names rather than by a tag. All are omitted when empty.
+//
+// The facets — kind, description, category, labels, plugin type and
+// capabilities — are the latest version's alone, read from its manifest. An older
+// version's facets are not recorded; a reader wanting them reads that version by
+// its digest.
 type Record struct {
 	URI            string                    `json:"uri"`
 	Name           string                    `json:"name"`
@@ -50,6 +58,42 @@ type Record struct {
 	ManifestDigest string                    `json:"manifestDigest,omitempty"`
 	ListingDigest  string                    `json:"listingDigest,omitempty"`
 	Deprecations   []VersionDeprecation      `json:"deprecations,omitempty"`
+	Published      []PublishedVersion        `json:"published,omitempty"`
+}
+
+// PublishedVersion is one published version as the index build read it: the
+// version, the manifest digest its tag resolved to, and the signer of the
+// version's own signature where the host's trust policy verified one.
+//
+// Signer is set only for a signature that verified, so its presence is a trust
+// decision already made, as it is on a recorded deprecation. It is absent for a
+// version with no signature, for one whose signatures do not verify, and on a
+// host whose policy pins no trust anchor or switches verification off. None of
+// those gives a basis for naming a signer, and a reader must not read the absence
+// as more than that.
+//
+// Only manifests and signature referrers are read to produce it; the entity's
+// content is never fetched.
+type PublishedVersion struct {
+	Version        string                      `json:"version"`
+	ManifestDigest string                      `json:"manifestDigest"`
+	Signer         *lockfile.VerifiedSignature `json:"signer,omitempty"`
+}
+
+// CoversVersions reports whether the record carries a published-version entry
+// for every version it lists, in the same order. A record written before those
+// entries were recorded does not, so a refresh reads that repository again
+// rather than reuse it.
+func (r Record) CoversVersions() bool {
+	if len(r.Published) != len(r.Versions) {
+		return false
+	}
+	for i, v := range r.Versions {
+		if r.Published[i].Version != v || r.Published[i].ManifestDigest == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // VersionDeprecation pairs a strict-SemVer version with the authoritative

@@ -368,7 +368,7 @@ var publishEntityToolSpec = toolSpec{
     },
     "timestamp_url": {
       "type": "string",
-      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured or public-good default."
+      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured one; none is used by default."
     },
     "pin_sources": {
       "type": "boolean",
@@ -757,7 +757,7 @@ var signArtifactsToolSpec = toolSpec{
     },
     "timestamp_url": {
       "type": "string",
-      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured or public-good default."
+      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured one; none is used by default."
     },
     "workspace_root": {
       "type": "string",
@@ -956,7 +956,7 @@ var deprecateArtifactToolSpec = toolSpec{
     },
     "timestamp_url": {
       "type": "string",
-      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured or public-good default."
+      "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured one; none is used by default."
     },
     "workspace_root": {
       "type": "string",

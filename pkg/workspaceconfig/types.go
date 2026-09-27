@@ -254,8 +254,9 @@ type SigningConfig struct {
 	// RekorURL overrides the public-good Rekor transparency-log URL for
 	// keyless signing. Empty means use the public-good default.
 	RekorURL string `yaml:"rekor_url,omitempty"`
-	// TimestampURL overrides the public-good RFC3161 timestamp-authority URL
-	// for keyless signing. Empty means use the public-good default.
+	// TimestampURL names an RFC3161 timestamp authority for keyless signing. It
+	// has no default: empty means none is contacted, and a keyless signature's
+	// trusted time then comes from its transparency-log entry.
 	TimestampURL string `yaml:"timestamp_url,omitempty"`
 	// KeyPath is a path to a held ECDSA P-256 private-key PEM file for
 	// offline keyed signing. It is a POINTER to a file, never inline key

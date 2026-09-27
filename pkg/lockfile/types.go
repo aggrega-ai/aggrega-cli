@@ -139,8 +139,8 @@ type DeprecationRecord struct {
 // document uses throughout. Both encodings are declared here, on the single
 // type, so the two cannot come to describe the same recorded fact under
 // different key names. Each field's optionality is decided once and expressed
-// identically in both: an empty identity or issuer — the keyed case — is
-// omitted from either encoding rather than written as an empty value.
+// identically in both: an empty identity or issuer — a keyed signature has no
+// issuer — is omitted from either encoding rather than written as an empty value.
 type VerifiedSignature struct {
 	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
 	// bundle blob stored in the closure. It both names the cache blob and

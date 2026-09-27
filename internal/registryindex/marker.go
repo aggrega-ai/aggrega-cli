@@ -188,6 +188,20 @@ func VerifiedArtifactSigner(
 	if err != nil || !exists {
 		return nil
 	}
+	return VerifiedSignerAt(ctx, wsCfg, target, subjectRef, digest, policy)
+}
+
+// VerifiedSignerAt is VerifiedArtifactSigner for a caller that has already
+// resolved subjectRef to its manifest digest, so the resolve is not repeated. The
+// signature is verified against that digest, which is what a bundle commits to,
+// and it is the same best-effort answer: nil when no signature verifies.
+func VerifiedSignerAt(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	target oras.ReadOnlyTarget,
+	subjectRef, digest string,
+	policy workspaceconfig.RegistryConfig,
+) *pullverify.Result {
 	sigRefs, err := oci.ListReferrers(ctx, target, subjectRef, signing.BundleMediaType)
 	if err != nil || len(sigRefs) == 0 {
 		return nil

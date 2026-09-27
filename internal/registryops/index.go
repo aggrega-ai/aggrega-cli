@@ -17,6 +17,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
@@ -476,9 +477,15 @@ func skipRepo(hu *HostUpdate, notices io.Writer, repo string, reason string) {
 // read, no content blob): when the digest also matches the prior record, that
 // record is reused untouched — skipping the manifest read and the per-version
 // referrer scan, so an unchanged repository costs one conditional tag listing plus
-// one cheap digest resolve. Only a changed or previously-unseen repository re-reads
-// the manifest annotations and re-scans referrers. A nil prior (a full-upgrade
-// refresh, or the first build) reuses nothing.
+// one cheap digest resolve. Only a changed or previously-unseen repository, or one
+// whose prior record gives no digest for some version it lists, re-reads the
+// manifest annotations, resolves each version's digest and re-scans referrers. A
+// nil prior (a full-upgrade refresh, or the first build) reuses nothing.
+//
+// The reuse compares the latest version's digest only. An older version whose tag
+// was moved to other bytes while the latest stayed put keeps its prior digest until
+// a full-upgrade refresh, which is the same bound a deprecation marker or a
+// signature added to an unchanged version carries.
 //
 // A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository that cannot be read — no per-repo target, a tag-list
@@ -520,7 +527,7 @@ func indexRepo(
 		// too — a tag re-pushed to new content changes the digest without changing the
 		// set — and reuse the prior record when it is.
 		digest, exists, rerr := oci.Resolve(ctx, target, p.Version)
-		if rerr == nil && exists && p.ManifestDigest != "" && p.ManifestDigest == digest {
+		if rerr == nil && exists && p.ManifestDigest != "" && p.ManifestDigest == digest && p.CoversVersions() {
 			return p, true
 		}
 		// The headline manifest moved (or the resolve failed): re-list unconditionally
@@ -558,7 +565,7 @@ func indexRepo(
 		skipRepo(hu, notices, repo, fmt.Sprintf("selected version %s no longer resolves", version))
 		return registryindex.Record{}, false
 	}
-	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
+	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) && p.CoversVersions() {
 		// The manifest and tag set are unchanged; reuse the prior record but carry the
 		// refreshed listing validator forward (it may have been absent before).
 		p.ListingDigest = listingDigest
@@ -578,10 +585,74 @@ func indexRepo(
 	rec.Versions = versions
 	rec.ManifestDigest = manifestDigest
 	rec.ListingDigest = listingDigest
+	published, err := readPublishedVersions(ctx, wsCfg, policy, target, versions, version, manifestDigest)
+	if err != nil {
+		skipRepo(hu, notices, repo, err.Error())
+		return registryindex.Record{}, false
+	}
+	rec.Published = published
 	deprecations, notes := CollectVersionDeprecations(ctx, wsCfg, policy, target, repo, versions, notices)
 	rec.Deprecations = deprecations
 	hu.Deprecations = append(hu.Deprecations, notes...)
 	return rec, true
+}
+
+// readPublishedVersions records, for each version in the ascending order it is
+// given, the manifest digest its tag resolves to and — where this host's policy
+// gives a basis to judge one — the verified signer of that version's own
+// signature. The latest version's digest was resolved already and is passed in
+// rather than resolved again.
+//
+// A version whose tag cannot be resolved fails the whole repository rather than
+// leaving a gap. A record listing a version it gives no digest for would send a
+// reader addressing versions by digest to a version it cannot address, and
+// skipping the repository with a note is the walk's posture for any read it
+// could not complete.
+//
+// A signature is judged through the one verification home, against the host's
+// own trust policy, and is best-effort: a version whose signatures do not verify
+// is recorded with no signer, never with an unverified one. Only manifests and
+// signature referrers are read; no entity content is fetched.
+func readPublishedVersions(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	policy workspaceconfig.RegistryConfig,
+	target oras.ReadOnlyTarget,
+	versions []string,
+	latest, latestDigest string,
+) ([]registryindex.PublishedVersion, error) {
+	judge := signerVerificationEnabled(wsCfg, policy)
+	out := make([]registryindex.PublishedVersion, 0, len(versions))
+	for _, v := range versions {
+		digest := latestDigest
+		if v != latest {
+			d, exists, err := oci.Resolve(ctx, target, v)
+			if err != nil {
+				return nil, err
+			}
+			if !exists {
+				return nil, fmt.Errorf("version %s no longer resolves", v)
+			}
+			digest = d
+		}
+		pv := registryindex.PublishedVersion{Version: v, ManifestDigest: digest}
+		if judge {
+			if res := registryindex.VerifiedSignerAt(ctx, wsCfg, target, v, digest, policy); res != nil {
+				pv.Signer = pluginfetchverify.SignatureFact(*res)
+			}
+		}
+		out = append(out, pv)
+	}
+	return out, nil
+}
+
+// signerVerificationEnabled reports whether the walk judges each published
+// version's own signature. It needs verification switched on for the host and a
+// trust anchor the host's policy pins — a public key, or keyless identities. With
+// no anchor there is nothing a signature could verify against, so no signature is
+// read at all rather than read and refused.
+func signerVerificationEnabled(wsCfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) bool {
+	return deprecationScanEnabled(wsCfg, policy) && TrustOf(policy).Anchor != ""
 }
 
 // equalStrings reports whether two string slices are element-wise equal. The
