@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 )
 
 // IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is the
@@ -356,10 +358,14 @@ type archiveEntry struct {
 }
 
 // collectArchiveEntries reads the entity document and every carried file, each
-// once, the document first. A file's mode is read from the entry itself rather
-// than from what a link points at, and its bytes from what it names, so a packed
-// archive is the same one whether the files were reached one by one or by walking
-// their directory.
+// once, the document first, so a packed archive is the same one whether the files
+// were reached one by one or by walking their directory.
+//
+// A symbolic link is refused rather than read, wherever it sits among them: its
+// own permission bits would be packed as the entry's mode and the bytes it points
+// to — from wherever it points — under its name. The walk that names the carried
+// set already refuses one; refusing here as well keeps the archive from carrying
+// a link whatever list it is handed.
 //
 // supplied holds bytes to use in place of what is on disk, keyed by carried path:
 // a caller that already holds the document it parsed, or that asks what a file
@@ -379,6 +385,9 @@ func collectArchiveEntries(entityPath string, carried []string, supplied map[str
 		}
 		seen[rel] = true
 		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := sourcewalk.RefuseLink(full, rel); err != nil {
+			return nil, err
+		}
 		if data, ok := supplied[rel]; ok {
 			mode := os.FileMode(0o644)
 			if info, err := os.Lstat(full); err == nil {

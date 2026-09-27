@@ -21,9 +21,10 @@ import (
 // it: slash-separated paths relative to dir. This function reads what it is
 // given and decides nothing about which files belong, so the set a publication
 // carries for the source and the set the lock pins cannot come apart here; the
-// one reading of that set is the declared set's. A file is read through any link
-// in its path, as a publication reads it, so what is pinned is what would be
-// published.
+// one reading of that set is the declared set's. The walk that names the set
+// refuses a symbolic link rather than naming it, so a file reaches here as the
+// bytes at its own path, as a publication reads it, and what is pinned is what
+// would be published.
 func LocalSourcePins(dir string, files []string) ([]types.LocalSourceDigest, error) {
 	pins := make([]types.LocalSourceDigest, 0, len(files))
 	for _, f := range files {

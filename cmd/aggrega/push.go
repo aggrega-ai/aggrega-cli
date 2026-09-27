@@ -71,10 +71,12 @@ names, the entity.lock beside it, and each schema file a Component or Feature
 imports — and nothing else in its directory. An entity that names nothing
 publishes as its document, unchanged; one that names a file publishes as a
 gzipped archive of the document and those files. A directory it names travels
-with every file under it except those whose name starts with a dot. A local
-source written as a template names no one directory until a Release fills it in,
-so an entity with one carries every such file in its own directory, and push
-says so.
+with every file under it that the ignore rules recorded in its entity.lock keep:
+the rules the plugin serving its capability declared, and the author's own
+.aggregaignore beside it, composed when the entity was pinned. A symbolic link
+among those files is refused rather than followed. A local source written as a
+template names no one directory until a Release fills it in, so an entity with
+one carries every such file in its own directory, and push says so.
 
 Each file travels with mode 0644, or 0755 where it has any execute bit set,
 whatever the checkout it is published from. The OCI manifest names the digest of

@@ -77,7 +77,10 @@ func TestDeclaredFilesAreWhatTheEntityNames(t *testing.T) {
 			want:  nil,
 		},
 		{
-			name: "a local source directory contributes every file under it bar the hidden ones",
+			// No lock records any ignore rule, so nothing is left out — a hidden file
+			// included. A walk that still skipped dot-named files on a rule of its own
+			// fails this row by leaving .editor-leftover.swp out.
+			name: "a local source directory contributes every file under it where no ignore rule is recorded",
 			doc:  "recipe.yaml",
 			files: with(stray, map[string]string{
 				"recipe.yaml":                declaredRecipeHead + "  source: ./chart\n  valuesMapping: '{}'\n",
@@ -85,8 +88,31 @@ func TestDeclaredFilesAreWhatTheEntityNames(t *testing.T) {
 				"chart/templates/cm.yaml":    "kind: ConfigMap\n",
 				"chart/.editor-leftover.swp": "x",
 			}),
-			want:     []string{"chart/Chart.yaml", "chart/templates/cm.yaml"},
+			want:     []string{"chart/.editor-leftover.swp", "chart/Chart.yaml", "chart/templates/cm.yaml"},
 			surfaces: []string{"spec.source"},
+		},
+		{
+			// The lock's recorded rules decide, and only they: a directory one of
+			// them excludes is not entered, a file one excludes is left out, and the
+			// author's .aggregaignore beside the entity never travels itself. A walk
+			// that ignored the recorded rules fails by carrying .git/HEAD and the
+			// .swp file; one that read .aggregaignore afresh instead fails by leaving
+			// out notes.txt, which that file names and the lock does not.
+			name: "the rules the lock records decide which of a local source directory's files belong",
+			doc:  "recipe.yaml",
+			files: with(stray, map[string]string{
+				"recipe.yaml":                declaredRecipeHead + "  source: ./chart\n  valuesMapping: '{}'\n",
+				"chart/Chart.yaml":           declaredChart,
+				"chart/.git/HEAD":            "ref: refs/heads/main\n",
+				"chart/.editor-leftover.swp": "x",
+				"chart/notes.txt":            "kept\n",
+				".aggregaignore":             "notes.txt\n",
+				"entity.lock": "version: 1\nignore:\n  rules:\n" +
+					"    - pattern: .git/\n      within: chart\n      from: plugin\n" +
+					"    - pattern: '*.swp'\n      within: .\n      from: .aggregaignore\n",
+			}),
+			want:     []string{"chart/Chart.yaml", "chart/notes.txt", "entity.lock"},
+			surfaces: []string{"spec.source", "entity.lock"},
 		},
 		{
 			name: "a structured source's local url is read like a scalar source",
@@ -131,6 +157,8 @@ func TestDeclaredFilesAreWhatTheEntityNames(t *testing.T) {
 			surfaces: []string{"entity.lock"},
 		},
 		{
+			// The whole directory, a hidden file in it included, bar the author's
+			// .aggregaignore, whose rules travel in the lock rather than as a file.
 			name: "a local source written as a template contributes the whole directory, and says so",
 			doc:  "recipe.yaml",
 			files: with(stray, map[string]string{
@@ -138,8 +166,9 @@ func TestDeclaredFilesAreWhatTheEntityNames(t *testing.T) {
 				"chart/Chart.yaml": declaredChart,
 				"other/Chart.yaml": declaredChart,
 				".hidden":          "x",
+				".aggregaignore":   "# nothing left out\n",
 			}),
-			want:     []string{"NOTES.md", "chart/Chart.yaml", "dist/out.yaml", "other/Chart.yaml"},
+			want:     []string{".hidden", "NOTES.md", "chart/Chart.yaml", "dist/out.yaml", "other/Chart.yaml"},
 			whole:    "{{ .locals.dir }}",
 			surfaces: []string{"spec.source"},
 		},

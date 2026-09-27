@@ -42,6 +42,15 @@ a publication of the entity carries is digested as it stands and pinned by its p
 refuses a file added, changed or removed after the pin. A local source written as a template
 contributes every file in the entity's directory, so each of those is pinned.
 
+Which files a source directory contributes is decided here, once, and recorded. The step reads the
+ignore rules the plugin serving the entity's capability declares — this workspace's provider binding
+for that capability, or else the plugin built into aggrega — together with the ignore files that
+plugin names inside the source, such as a chart's .helmignore, and the .aggregaignore beside the
+entity, in gitignore syntax, whose lines come last and so have the final say. It records the plugin
+and the composed rules in the entity.lock, and every publication, pull, build and render of the
+entity applies the recorded rules and no others, so a changed binding or a newer binary moves
+nothing until you pin again. A symbolic link among the files is refused rather than followed.
+
 The step writes beside the entity, so the entity needs a writable home: the document you name is
 read from its own directory and the lock lands next to it. The entity file itself is never
 written to. Re-running over unchanged inputs leaves the lock byte-identical; an entity that reads

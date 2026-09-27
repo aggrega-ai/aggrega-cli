@@ -38,7 +38,10 @@ func TestEveryPinListTheLockCarriesIsAClassTheHaltKnows(t *testing.T) {
 		carried := map[string]bool{}
 		for i := 0; i < pinSet.NumField(); i++ {
 			f := pinSet.Field(i)
-			if f.Name == "Version" {
+			// The version is the lock's schema, and the ignore rules decide which
+			// files the local-source class covers: neither is a pin list a halt
+			// could name an input of.
+			if f.Name == "Version" || f.Name == "Ignore" {
 				continue
 			}
 			carried[f.Name] = true

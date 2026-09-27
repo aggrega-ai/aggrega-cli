@@ -649,6 +649,7 @@ func phaseB6(
 			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}
 		frNodeCtx.Source = resolvedSrc
+		frNodeCtx.SourceIgnore = localSourceIgnore(input, evaluatedSource, frDocument)
 
 		// Return the helper error directly: its internal errors (the central
 		// gate's uniform capability diagnostic, engine.Render failures, and the

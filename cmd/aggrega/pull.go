@@ -79,7 +79,13 @@ the entity, each input and its class, and the command that records them. A local
 are held to their pins as one set: a file added, changed or removed since the pin halts the pull
 the same way.
 Pass --pin-sources, or set pin_sources_at_pull in the workspace configuration, to have pull run
-that same step instead; --pin-sources=false restores the halt for one run.`,
+that same step instead; --pin-sources=false restores the halt for one run.
+
+Which files of a local source directory belong to its entity was decided when the entity was
+pinned, by the ignore rules of the plugin that served its capability for the author, and is
+recorded in its entity.lock. Where the plugin this workspace binds for that capability declares
+different rules, pull prints a warning naming both plugins and the difference, and carries on:
+the entity's files are the ones its recorded rules kept.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// configFor is the one place this invocation's flags become a pullConfig,
 			// so the check below and the run judge the same request.

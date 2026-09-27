@@ -6,8 +6,8 @@ package wasmengine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +15,7 @@ import (
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -343,7 +344,8 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 			nodeCtx.NodeID, nodeCtx.Source)
 	}
 
-	listing, err := enumerateSource(src)
+	source := readSourceThrough(src, nodeCtx.SourceIgnore)
+	listing, err := enumerateSource(source)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +355,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		Context:       e.renderContext(nodeCtx),
 		SourceListing: listing,
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, src)
+	out, err := e.invoke(ctx, RenderNodeExport, input, source)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +410,7 @@ func (e *Engine) SynthesizeWorkload(
 			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, "")
+	out, err := e.invoke(ctx, RenderNodeExport, input, renderSource{})
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +458,7 @@ func (e *Engine) EmitArtifacts(
 		Context:             e.renderContext(nodeCtx),
 		ArtifactsProjection: &proj,
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, "")
+	out, err := e.invoke(ctx, RenderNodeExport, input, renderSource{})
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +544,7 @@ func (e *Engine) Warm(ctx context.Context) error {
 // time through the same instance and compares the emitted bytes; a guest whose two
 // renders of identical input diverge halts the build (ErrRenderNondeterministic),
 // naming the node and provider.
-func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) (renderer.RenderNodeOutput, error) {
+func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, source renderSource) (renderer.RenderNodeOutput, error) {
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
@@ -558,8 +560,9 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	// selections under this node's acquired source. The root is set per crossing
 	// rather than captured at load because a plugin instance may render many nodes,
 	// each with its own source; an empty root disables source packing (the synthesis
-	// path passes none).
-	plugin.SetSourceRoot(sourceRoot)
+	// path passes none). The scope is set with it, so a selection is read through
+	// the rules recorded for this node's source and no other's.
+	plugin.SetSource(source.root, source.scope)
 
 	payload, err := input.MarshalJSON()
 	if err != nil {
@@ -726,14 +729,16 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 		Context: e.renderContext(nodeCtx),
 	}
 	src, _ := nodeCtx.Source.(string)
+	var source renderSource
 	if src != "" {
-		listing, err := enumerateSource(src)
+		source = readSourceThrough(src, nodeCtx.SourceIgnore)
+		listing, err := enumerateSource(source)
 		if err != nil {
 			return nil, err
 		}
 		input.SourceListing = listing
 	}
-	return e.invokeValidate(ctx, ValidateNodeInputExport, input, src)
+	return e.invokeValidate(ctx, ValidateNodeInputExport, input, source)
 }
 
 // invokeValidate acquires a guest instance, calls the input-validation export
@@ -745,7 +750,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 // decodes the validate wire shape — a diagnostics-only payload with no files.
 // Guest-emitted warnings are folded into the returned diagnostics as
 // warn-severity entries.
-func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) ([]renderer.Diagnostic, error) {
+func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, source renderSource) ([]renderer.Diagnostic, error) {
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
@@ -757,7 +762,7 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	}
 	defer release()
 
-	plugin.SetSourceRoot(sourceRoot)
+	plugin.SetSource(source.root, source.scope)
 
 	payload, err := input.MarshalJSON()
 	if err != nil {
@@ -1106,7 +1111,18 @@ func valuesToOrdered(values map[string]any) types.OrderedMap[any] {
 // the root itself. The guest applies its own resolution logic over the listing
 // and asks the host to pack a chosen selection through the pack-source host
 // function, so no per-provider source knowledge lives in this enumerator.
-func enumerateSource(root string) (*renderer.SourceListing, error) {
+//
+// The listing is read through the source's scope — the ignore rules the entity's
+// lock records — so an entry the rules leave out is never shown to the guest, and
+// a directory they leave out is not entered. A symbolic link anywhere beneath the
+// root is refused with the condition every other reading of an entity's files
+// raises, before the guest is invoked. What remains is exactly what a publication
+// of the entity carries under the root.
+func enumerateSource(source renderSource) (*renderer.SourceListing, error) {
+	root := source.root
+	if err := sourcewalk.RefuseLink(root, source.show(root)); err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(root)
 	if err != nil {
 		return nil, fmt.Errorf("wasmengine: stat source %q: %w", root, err)
@@ -1116,27 +1132,60 @@ func enumerateSource(root string) (*renderer.SourceListing, error) {
 		return listing, nil
 	}
 
-	var entries []renderer.SourceEntry
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		entries = append(entries, renderer.SourceEntry{Path: filepath.ToSlash(rel), IsDir: d.IsDir()})
-		return nil
+	kept, walkErr := source.scope.Entries(root, func(rel string) string {
+		return source.show(filepath.Join(root, filepath.FromSlash(rel)))
 	})
 	if walkErr != nil {
+		if errors.Is(walkErr, sourcewalk.ErrSymbolicLinkInEntityFiles()) {
+			return nil, walkErr
+		}
 		return nil, fmt.Errorf("wasmengine: enumerate source %q: %w", root, walkErr)
+	}
+	entries := make([]renderer.SourceEntry, 0, len(kept))
+	for _, e := range kept {
+		entries = append(entries, renderer.SourceEntry{Path: e.Path, IsDir: e.IsDir})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	listing.Entries = entries
 	return listing, nil
+}
+
+// renderSource is one node's source as a guest crossing reads it: the directory
+// or file the node's source resolved to, and the scope its files are read through.
+// The zero value is no source at all, which is what a synthesis or an artifacts
+// crossing hands a guest.
+type renderSource struct {
+	root  string
+	scope sourcewalk.Scope
+	// base is the directory the scope's rules are spelled against — the entity's
+	// own directory for a local source — and empty where no rule applies.
+	base string
+}
+
+// readSourceThrough pairs a resolved source root with the ignore rules recorded
+// for it. A local source reads through the rules the entity's lock records,
+// spelled against the entity's directory; any other source reads through no rule.
+func readSourceThrough(root string, ignore renderer.SourceIgnore) renderSource {
+	if ignore.EntityDirectory == "" {
+		return renderSource{root: root, scope: sourcewalk.NewScope(root, nil)}
+	}
+	return renderSource{
+		root:  root,
+		scope: sourcewalk.NewScope(ignore.EntityDirectory, ignore.Rules),
+		base:  ignore.EntityDirectory,
+	}
+}
+
+// show spells a path under the source for a reader: relative to the entity's own
+// directory where the source is a local one, since that is how its author knows
+// the file, and as it stands otherwise.
+func (s renderSource) show(abs string) string {
+	if s.base != "" {
+		if rel, err := filepath.Rel(s.base, abs); err == nil && filepath.IsLocal(rel) {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return abs
 }
 
 // sortedKeys returns m's keys in lexical order.

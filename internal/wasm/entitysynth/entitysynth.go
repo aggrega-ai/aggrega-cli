@@ -212,7 +212,8 @@ func IsZeroContract(c wasm.ProviderContract) bool {
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
 		!c.CrossBoundaryLinking &&
-		c.NestSegment == ""
+		c.NestSegment == "" &&
+		c.SourceIgnore == nil
 }
 
 // descriptorContract maps the describe() provider render-behavior self-report
@@ -256,6 +257,12 @@ func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 		out.AssemblyNameAnnotation = &types.PluginAssemblyNameAnnotation{
 			Annotation:    c.AssemblyNameAnnotation.Annotation,
 			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
+		}
+	}
+	if c.SourceIgnore != nil {
+		out.SourceIgnore = &types.PluginSourceIgnore{
+			Patterns: append([]string(nil), c.SourceIgnore.Patterns...),
+			Files:    append([]string(nil), c.SourceIgnore.Files...),
 		}
 	}
 	return out

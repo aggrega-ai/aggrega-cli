@@ -12,10 +12,12 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	extism "github.com/extism/go-sdk"
 )
@@ -713,6 +715,10 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 		stack[0] = p.writeSourceFileFailure(writer, err.Error(), code)
 		return
 	}
+	if err := p.sourceFileReadable(resolved, req.Path); err != nil {
+		stack[0] = p.writeSourceFileFailure(writer, "aggrega_read_source_file: "+err.Error(), abi.CodeSourceReadFailed)
+		return
+	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
 		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading %q failed: %v", req.Path, err), abi.CodeSourceReadFailed)
@@ -857,6 +863,12 @@ func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message, cod
 // hits alongside the error, so the host boundary sets one code per condition
 // (the sandbox escape's code is owned by resolveUnderSourceRoot). On success the
 // code is the empty string.
+//
+// Every selection is read through the plugin's source scope — the ignore rules
+// the entity's lock records — so what a guest is packed is exactly what a
+// publication of the entity carries: a file or directory the rules leave out is
+// not packed, a file named directly that they leave out answers as absent with
+// its path named, and a symbolic link is refused rather than followed.
 func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, string, error) {
 	resolved, code, err := p.resolveUnderSourceRoot(rel)
 	if err != nil {
@@ -864,6 +876,9 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 	}
 	switch op {
 	case "file":
+		if err := p.sourceFileReadable(resolved, rel); err != nil {
+			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: %v", err)
+		}
 		data, err := os.ReadFile(resolved)
 		if err != nil {
 			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", rel, err)
@@ -876,10 +891,17 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 		}
 		var files []abi.SourceFile
 		for _, e := range entries {
-			if e.IsDir() {
+			full := filepath.Join(resolved, e.Name())
+			if e.Type()&fs.ModeSymlink != 0 {
+				if err := p.sourceFileReadable(full, path.Join(rel, e.Name())); err != nil {
+					return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: %v", err)
+				}
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(resolved, e.Name()))
+			if e.IsDir() || p.sourceScope.Excluded(full, false) {
+				continue
+			}
+			data, err := os.ReadFile(full)
 			if err != nil {
 				return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", e.Name(), err)
 			}
@@ -887,32 +909,41 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 		}
 		return &abi.SourceProjection{Files: files}, "", nil
 	case "tree":
-		var files []abi.SourceFile
-		walkErr := filepath.WalkDir(resolved, func(pth string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			relPath, err := filepath.Rel(resolved, pth)
-			if err != nil {
-				return err
-			}
-			data, err := os.ReadFile(pth)
-			if err != nil {
-				return err
-			}
-			files = append(files, abi.SourceFile{Path: filepath.ToSlash(relPath), Content: data})
-			return nil
-		})
+		entries, walkErr := p.sourceScope.Entries(resolved, nil)
 		if walkErr != nil {
 			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, walkErr)
+		}
+		var files []abi.SourceFile
+		for _, e := range entries {
+			if e.IsDir {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(resolved, filepath.FromSlash(e.Path)))
+			if err != nil {
+				return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, err)
+			}
+			files = append(files, abi.SourceFile{Path: e.Path, Content: data})
 		}
 		return &abi.SourceProjection{Files: files}, "", nil
 	default:
 		return nil, abi.CodeUnknownSelectionOp, fmt.Errorf("aggrega_pack_source: unknown selection op %q", op)
 	}
+}
+
+// sourceFileReadable reports why the file at resolved — named rel by the guest —
+// is not one of the source's files, or nil where it is: a symbolic link is
+// refused, and a file the scope's rules leave out answers as not there, naming
+// it, because a publication of the entity does not carry it and a consumer's
+// render could not read it either.
+func (p *Plugin) sourceFileReadable(resolved, rel string) error {
+	if err := sourcewalk.RefuseLink(resolved, rel); err != nil {
+		return err
+	}
+	if p.sourceScope.Excluded(resolved, false) {
+		return fmt.Errorf("%q is not among the source's files: the ignore rules recorded for the entity leave it out, "+
+			"so a publication of the entity does not carry it", rel)
+	}
+	return nil
 }
 
 // resolveUnderSourceRoot resolves a slash-separated, source-root-relative path

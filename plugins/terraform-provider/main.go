@@ -153,6 +153,13 @@ func descriptor() aggrega.PluginDescriptor {
 			// Each contributor is a module of its own, and the directory Terraform
 			// calls those is this target's word rather than the host's.
 			NestSegment: terraformcore.ModulesDirName,
+			// What the module ecosystem never ships beside a module. The host
+			// records these rules when an entity is pinned and applies them; the
+			// guest declares them and filters nothing itself.
+			SourceIgnore: &aggrega.SourceIgnore{
+				Patterns: terraformcore.SourceIgnorePatterns(),
+				Files:    terraformcore.SourceIgnoreFiles(),
+			},
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}

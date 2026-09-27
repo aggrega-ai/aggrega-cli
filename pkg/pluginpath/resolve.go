@@ -258,6 +258,11 @@ type ProviderContractClaim struct {
 	// sits under, for a plugin whose boundary assembly nests. Empty when the
 	// plugin names none.
 	NestSegment string
+	// SourceIgnore is the authored record of the ignore rules the plugin declares
+	// for a source it renders, or nil where the entity records none — in which
+	// case the load compares nothing about them. It is the entity's own type
+	// rather than a neutral copy, because the claim carries it unchanged.
+	SourceIgnore *types.PluginSourceIgnore
 }
 
 // PluginAssemblyNameAnnotationClaim is an entity's authored assembly-name

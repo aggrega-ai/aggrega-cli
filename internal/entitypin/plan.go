@@ -17,9 +17,11 @@ import (
 // PlanInputs is what one run of the pin step reads.
 //
 // It is not named Inputs, the compiler pipeline's own inputs type: the pin step
-// drives no pipeline and resolves no plugin, so it has no plugin pin source to
-// name, and a type sharing that name would be read as a pipeline construction by
-// every check that matches the pipeline's inputs by name.
+// drives no pipeline and loads no plugin, so it has no plugin pin source to name,
+// and a type sharing that name would be read as a pipeline construction by every
+// check that matches the pipeline's inputs by name. The one plugin fact it reads —
+// the ignore rules a serving provider's entity declares — comes through
+// ServingProvider, below.
 //
 // View is the catalog the entities are read through, and the one whose walk
 // decides which of them has a writable home. URIs names the entities to
@@ -35,13 +37,23 @@ import (
 // to that, which is what keeps a pull that does not pin from refusing a
 // directory it writes nothing into. Only a plan computed for writing can be
 // written or reported.
+//
+// ServingProvider resolves the plugin serving a capability in the workspace the
+// step runs in — its provider binding, or else the plugin built into the binary —
+// and is asked only by a plan for writing, for an entity whose local source is a
+// directory: that plan composes the plugin's ignore rules with the author's
+// .aggregaignore and records them, with the plugin, in the lock. A plan computed
+// only to be checked applies the rules the lock already records and asks no
+// plugin, so a binding changed or a binary upgraded since the pin moves nothing it
+// compares. Nil records no plugin and composes the author's rules alone.
 type PlanInputs struct {
-	View          *catalog.LazyLookup
-	URIs          []string
-	Resolver      closure.SourceResolver
-	WorkspaceRoot string
-	CacheDir      string
-	ForWriting    bool
+	View            *catalog.LazyLookup
+	URIs            []string
+	Resolver        closure.SourceResolver
+	WorkspaceRoot   string
+	CacheDir        string
+	ForWriting      bool
+	ServingProvider func(capability string) (catalog.ServingProvider, bool, error)
 }
 
 // Plan is what the pin step would record for each entity it was given, computed
@@ -135,6 +147,7 @@ func Compute(in PlanInputs) (Plan, error) {
 
 	type homed struct {
 		uri, kindHint string
+		capability    string
 		plan          entityPlan
 		artifacts     types.OrderedMap[types.ArtifactEntry]
 	}
@@ -149,15 +162,15 @@ func Compute(in PlanInputs) (Plan, error) {
 		seen[uri] = true
 
 		var (
-			kind, kindHint, name, path string
-			artifacts                  types.OrderedMap[types.ArtifactEntry]
-			ok                         bool
+			kind, kindHint, name, path, capability string
+			artifacts                              types.OrderedMap[types.ArtifactEntry]
+			ok                                     bool
 		)
 		if r, err := loader.LoadRecipe(uri); err == nil {
-			kind, kindHint, name, artifacts = "Recipe", "recipe", r.Metadata.Name, r.Spec.Artifacts
+			kind, kindHint, name, artifacts, capability = "Recipe", "recipe", r.Metadata.Name, r.Spec.Artifacts, r.Spec.Capability
 			path, ok = WritableHome(in.View, kind, r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
 		} else if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
-			kind, kindHint, name, artifacts = "FeatureRecipe", "feature_recipe", fr.Metadata.Name, fr.Spec.Artifacts
+			kind, kindHint, name, artifacts, capability = "FeatureRecipe", "feature_recipe", fr.Metadata.Name, fr.Spec.Artifacts, fr.Spec.Capability
 			path, ok = WritableHome(in.View, kind, fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
 		}
 		if !ok {
@@ -175,10 +188,11 @@ func Compute(in PlanInputs) (Plan, error) {
 		}
 		byPath[path] = len(planned)
 		planned = append(planned, homed{
-			uri:       uri,
-			kindHint:  kindHint,
-			artifacts: artifacts,
-			plan:      entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path)},
+			uri:        uri,
+			kindHint:   kindHint,
+			capability: capability,
+			artifacts:  artifacts,
+			plan:       entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path)},
 		})
 	}
 	// One refusal is returned as itself, so the diagnostic a reader meets is the
@@ -211,11 +225,39 @@ func Compute(in PlanInputs) (Plan, error) {
 		// declared set says it contributes, which is what a publication of the
 		// entity carries for it and what a build compares. The lock's local
 		// source pins are held to it only where the entity declares one.
-		local, err := catalog.LocalSourceAt(h.plan.path)
+		//
+		// Which files a local source directory contributes is decided by ignore
+		// rules. A plan for writing composes them afresh — the serving plugin's,
+		// then the author's — and pins the source under them, so the lock it
+		// writes records the rules its own pins were taken under. A plan only
+		// checked applies the rules the lock records, as every other reading of
+		// the source does.
+		ignore := h.plan.recorded.Ignore
+		var local catalog.LocalSource
+		if in.ForWriting {
+			capability := h.capability
+			serving := func() (*catalog.ServingProvider, error) {
+				if in.ServingProvider == nil {
+					return nil, nil
+				}
+				served, found, err := in.ServingProvider(capability)
+				if err != nil || !found {
+					return nil, err
+				}
+				return &served, nil
+			}
+			if ignore, err = catalog.ComposeIgnore(h.plan.path, serving); err != nil {
+				return Plan{}, err
+			}
+			local, err = catalog.LocalSourceUnder(h.plan.path, ignore)
+		} else {
+			local, err = catalog.LocalSourceAt(h.plan.path)
+		}
 		if err != nil {
 			return Plan{}, err
 		}
-		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: local.Pins}
+		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: local.Pins,
+			Ignore: ignore}
 		h.plan.recorded.LocalSourceDigests = local.RecordedPinsInForce(h.plan.recorded.LocalSourceDigests)
 		plan.entities = append(plan.entities, h.plan)
 	}

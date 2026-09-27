@@ -1225,11 +1225,22 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				return err
 			}
 			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
-				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun)
+				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun,
+				wsCfg.Plugins.ProviderTargetURIs())
 			if err != nil {
 				return fmt.Errorf("pin sources: %w", err)
 			}
 			reported = append(reported, pinnedFiles...)
+			// Where an entity's local source was pinned under the ignore rules of a
+			// plugin other than the one this workspace binds for its capability, say
+			// so — never halt. It runs after the pin step, so an entity this run has
+			// just pinned is compared with the lock as written; a run that reports
+			// rather than writes would compare the lock it did not write, and says
+			// nothing.
+			if !(cfg.DryRun && wsCfg.PullPinsSources(cfg.PinSources)) {
+				adviseIgnoreRuleDifferences(cfg.DiagOut, lazyView, cl.Entities, perEntityInfra,
+					wsCfg.Plugins.ProviderTargetURIs())
+			}
 
 			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, pinnedEntityDigests)
 			// Carry forward each unchanged pin's recorded facts — its verified

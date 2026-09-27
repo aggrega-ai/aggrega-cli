@@ -23,7 +23,10 @@ import (
 // output, a hidden file — so a pin taken over a directory listing rather than
 // over the declaration fails a row by naming the file it should not have pinned.
 // The whole-directory rows are the one shape where the declaration itself reaches
-// the document and the lock, which is what the two exclusions are for.
+// the document and the lock, which is what the two exclusions are for. No lock here
+// records an ignore rule, so a hidden file the declaration reaches is pinned like
+// any other: a walk that still dropped dot-named files on a rule of its own fails
+// by leaving one out.
 func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 	stray := map[string]string{"NOTES.md": "a note\n", "dist/out.yaml": "rendered: true\n", ".hidden": "x"}
 	with := func(more map[string]string) map[string]string {
@@ -50,7 +53,7 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 				"chart/templates/cm.yaml": "kind: ConfigMap\n",
 				"chart/.helmignore":       "*.tmp\n",
 			}),
-			want:     []string{"chart/Chart.yaml", "chart/templates/cm.yaml"},
+			want:     []string{"chart/.helmignore", "chart/Chart.yaml", "chart/templates/cm.yaml"},
 			declares: true,
 		},
 		{
@@ -60,7 +63,7 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 				"charts/app/Chart.yaml": declaredChart,
 				"charts/db/Chart.yaml":  declaredChart,
 			}),
-			want:     []string{"NOTES.md", "charts/app/Chart.yaml", "charts/db/Chart.yaml", "dist/out.yaml"},
+			want:     []string{".hidden", "NOTES.md", "charts/app/Chart.yaml", "charts/db/Chart.yaml", "dist/out.yaml"},
 			declares: true,
 		},
 		{
@@ -69,14 +72,16 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 				"recipe.yaml": declaredRecipeHead + "  source: .\n  valuesMapping: '{}'\n",
 				"Chart.yaml":  declaredChart,
 			}),
-			want:     []string{"Chart.yaml", "NOTES.md", "dist/out.yaml"},
+			want:     []string{".hidden", "Chart.yaml", "NOTES.md", "dist/out.yaml"},
 			declares: true,
 		},
 		{
-			name: "a declared source whose directory holds no file is still declared, and pins nothing",
+			// The directory's one file is one the lock's recorded rules leave out.
+			name: "a declared source whose directory holds no file it contributes is still declared, and pins nothing",
 			files: with(map[string]string{
 				"recipe.yaml":       declaredRecipeHead + "  source: ./chart\n  valuesMapping: '{}'\n",
 				"chart/.helmignore": "*.tmp\n",
+				"entity.lock":       "version: 1\nignore:\n  rules:\n    - pattern: .helmignore\n      within: chart\n      from: plugin\n",
 			}),
 			declares: true,
 		},

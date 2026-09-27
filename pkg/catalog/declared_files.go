@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -29,11 +29,13 @@ import (
 // carry only what they declare, because no declaration of one can name the
 // other's files.
 //
-// The set is what the compiler can determine from the entity's document alone,
-// with no provider and no Release in hand. Which files inside a declared source
-// an ecosystem would treat as belonging to it is a provider's question and is not
-// asked here: a declared source directory contributes every file under it, bar the
-// hidden ones.
+// The set is what the compiler can determine from the entity's document and the
+// lock beside it, with no provider and no Release in hand. Which files inside a
+// declared source directory belong to the entity is decided by the ignore rules
+// the lock records — the serving plugin's ecosystem rules and the author's own
+// .aggregaignore, composed once by the pin step — and by nothing else here: a
+// declared source directory contributes every file under it those rules keep,
+// and every file under it where the lock records none.
 type DeclaredFiles struct {
 	// Document is the path of the entity document the declarations were read
 	// from, as the caller named it.
@@ -62,9 +64,9 @@ type Declaration struct {
 	// template, and is empty otherwise. Such a source picks its directory only
 	// once a Release fills the template in, so no read of the document can say
 	// which directory it names; its contribution is therefore every file in the
-	// entity's own directory, bar the hidden ones, so whichever one a Release
-	// picks has travelled. That is more than the source needs, and it is said
-	// rather than done silently: a publication reports it.
+	// entity's own directory the recorded ignore rules keep, so whichever one a
+	// Release picks has travelled. That is more than the source needs, and it is
+	// said rather than done silently: a publication reports it.
 	WholeDirectory string
 }
 
@@ -185,6 +187,28 @@ func LocalSourceOf(data []byte, path string) (LocalSource, error) {
 	if err != nil {
 		return LocalSource{}, err
 	}
+	return localSourceOf(declared, path)
+}
+
+// LocalSourceUnder is [LocalSourceAt] over the entity document on disk at path,
+// with the ignore rules given in place of the ones the lock beside it records.
+// It is the pin step's reading, which pins a source under the rules it is about
+// to record; every other reader applies what is recorded.
+func LocalSourceUnder(path string, ignore *types.IgnoreRules) (LocalSource, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return LocalSource{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	declared, err := DeclaredFilesUnder(data, path, ignore)
+	if err != nil {
+		return LocalSource{}, err
+	}
+	return localSourceOf(declared, path)
+}
+
+// localSourceOf digests the local source files declared names beside the
+// document at path.
+func localSourceOf(declared DeclaredFiles, path string) (LocalSource, error) {
 	files, declaresLocalSource := declared.LocalSourceFiles()
 	if !declaresLocalSource {
 		return LocalSource{}, nil
@@ -250,7 +274,43 @@ const entityLockSurface = recipepin.LockFileName
 // Every other kind declares no file beside its document — an Aggregate's paths
 // each name another entity, which is resolved and pinned on its own terms — so
 // its set is the document alone.
+//
+// Which files under a declared source directory belong to the entity is decided
+// by the ignore rules the lock beside the document records, and a lock recording
+// none keeps every file there. A symbolic link among the files is refused with
+// the condition the walk raises, and so is a declared path that is one.
 func DeclaredFilesOf(data []byte, path string) (DeclaredFiles, error) {
+	ignore, err := recordedIgnore(data, path)
+	if err != nil {
+		return DeclaredFiles{}, err
+	}
+	return DeclaredFilesUnder(data, path, ignore)
+}
+
+// recordedIgnore returns the ignore rules the lock beside the Recipe or
+// FeatureRecipe document at path records, and none for any other kind or where
+// no lock records any. A lock that will not read is refused, as every reader of
+// it refuses it: rules nobody could read would leave the walk applying none and
+// reading that as the author's choice.
+func recordedIgnore(data []byte, path string) (*types.IgnoreRules, error) {
+	switch peekEntityKind(data) {
+	case "Recipe", "FeatureRecipe":
+	default:
+		return nil, nil
+	}
+	lock, present, err := recipepin.ReadLock(path)
+	if err != nil || !present {
+		return nil, err
+	}
+	return lock.Ignore, nil
+}
+
+// DeclaredFilesUnder is [DeclaredFilesOf] with the ignore rules given rather
+// than read from the lock beside the document: the pin step's reading, which
+// names the files the rules it is about to record keep, and the reading of a run
+// that reports the lock it would write rather than writing it. nil keeps every
+// file under a declared source directory.
+func DeclaredFilesUnder(data []byte, path string, ignore *types.IgnoreRules) (DeclaredFiles, error) {
 	out := DeclaredFiles{Document: path}
 	dir, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
@@ -263,7 +323,7 @@ func DeclaredFilesOf(data []byte, path string) (DeclaredFiles, error) {
 		if err != nil {
 			return DeclaredFiles{}, err
 		}
-		decls, err = sourcedDeclarations(dir, path, e.Spec.Source,
+		decls, err = sourcedDeclarations(dir, path, ignore, e.Spec.Source,
 			importedFile{"spec.valuesMapping", e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping},
 			importedFile{"spec.workload", e.Spec.Workload.Import, e.Spec.Workload},
 			artifactImports(&e.Spec.Artifacts))
@@ -275,7 +335,7 @@ func DeclaredFilesOf(data []byte, path string) (DeclaredFiles, error) {
 		if err != nil {
 			return DeclaredFiles{}, err
 		}
-		decls, err = sourcedDeclarations(dir, path, e.Spec.Source,
+		decls, err = sourcedDeclarations(dir, path, ignore, e.Spec.Source,
 			importedFile{"spec.valuesMapping", e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping},
 			importedFile{"spec.workload", e.Spec.Workload.Import, e.Spec.Workload},
 			artifactImports(&e.Spec.Artifacts))
@@ -327,28 +387,24 @@ func artifactImports(artifacts *types.OrderedMap[types.ArtifactEntry]) []importe
 
 // sourcedDeclarations collects the declarations a Recipe or a FeatureRecipe
 // makes, in the order the kind declares them: its source, each import-bearing
-// field, and the lock beside it.
-func sourcedDeclarations(dir, path string, source any, valuesMapping, workload importedFile, artifacts []importedFile) ([]Declaration, error) {
+// field, and the lock beside it. ignore is the rule list that decides which files
+// under a local source directory belong to the entity.
+func sourcedDeclarations(dir, path string, ignore *types.IgnoreRules, source any, valuesMapping, workload importedFile, artifacts []importedFile) ([]Declaration, error) {
 	var decls []Declaration
-	if ref, readable := sourceref.Reference(source); readable && sourceref.IsLocalURL(ref) {
-		decl := Declaration{Surface: sourceSurface}
-		target := ref
-		if sourceref.IsTemplated(ref) {
-			decl.WholeDirectory = ref
-			target = dir
-		}
-		files, err := filesUnder(dir, target)
+	if target, whole, declared := localSourceTarget(dir, source); declared {
+		decl := Declaration{Surface: sourceSurface, WholeDirectory: whole}
+		files, err := filesUnder(dir, target, sourcewalk.NewScope(dir, recipepin.IgnoreRulesOf(ignore)))
 		if err != nil {
 			return nil, fmt.Errorf("list the files spec.source names: %w", err)
 		}
-		decl.Files = files
+		decl.Files = withoutAuthorIgnoreFile(files)
 		decls = append(decls, decl)
 	}
 	for _, imp := range append([]importedFile{valuesMapping, workload}, artifacts...) {
 		if !importNamesFile(imp.target, imp.ref) {
 			continue
 		}
-		files, err := filesUnder(dir, imp.target)
+		files, err := filesUnder(dir, imp.target, sourcewalk.Scope{})
 		if err != nil {
 			return nil, fmt.Errorf("list the file %s imports: %w", imp.surface, err)
 		}
@@ -398,17 +454,106 @@ func (r *schemaFileReads) declarations(dir string) ([]Declaration, error) {
 	return decls, nil
 }
 
+// localSourceTarget reports the path a Recipe's or FeatureRecipe's local source
+// names beside the document in dir, whether the entity declares a local source at
+// all, and — for a source written as a template — its authored reference, in which
+// case the path is dir itself: such a source picks its directory only once a
+// Release fills the template in, so the whole of the entity's directory stands in
+// for it.
+func localSourceTarget(dir string, source any) (target, whole string, declared bool) {
+	ref, readable := sourceref.Reference(source)
+	if !readable || !sourceref.IsLocalURL(ref) {
+		return "", "", false
+	}
+	if sourceref.IsTemplated(ref) {
+		return dir, ref, true
+	}
+	return ref, "", true
+}
+
+// LocalSourceDirectory reports the directory an entity's local source walks, for
+// the Recipe or FeatureRecipe document data found at path, and whether it walks
+// one: a local source naming a directory on disk, or one written as a template,
+// which walks the entity's own directory. A source naming a file, a remote source
+// and a document of any other kind walk none.
+//
+// It reads the document through the per-entity parse a catalog load runs, so the
+// directory it names is anchored and contained as every reader of the source sees
+// it. It is what the pin step composes ignore rules for: only a walked directory
+// has files the rules could leave out.
+func LocalSourceDirectory(data []byte, path string) (string, bool, error) {
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return "", false, err
+	}
+	var source any
+	switch peekEntityKind(data) {
+	case "Recipe":
+		e, err := resolveRecipeDocument(data, path)
+		if err != nil {
+			return "", false, err
+		}
+		source = e.Spec.Source
+	case "FeatureRecipe":
+		e, err := resolveFeatureRecipeDocument(data, path)
+		if err != nil {
+			return "", false, err
+		}
+		source = e.Spec.Source
+	default:
+		return "", false, nil
+	}
+	target, whole, declared := localSourceTarget(dir, source)
+	if !declared {
+		return "", false, nil
+	}
+	if whole != "" {
+		return dir, true, nil
+	}
+	info, err := os.Stat(target)
+	if err != nil || !info.IsDir() {
+		return "", false, nil
+	}
+	return target, true, nil
+}
+
+// withoutAuthorIgnoreFile leaves the author's ignore file beside the document out
+// of what a source contributes. Its rules travel in the lock the pin step writes,
+// so the file itself never does — the one file of the entity's own directory,
+// like the document and the lock, that a walk of that directory does not hand a
+// source.
+func withoutAuthorIgnoreFile(files []string) []string {
+	out := files[:0:0]
+	for _, f := range files {
+		if f == sourcewalk.AuthorIgnoreFile {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // filesUnder returns the files a declared path contributes, relative to dir: the
-// path itself where it is a file, and every file beneath it where it is a
-// directory, bar a file whose name starts with a dot. A path that is not on disk
-// contributes nothing.
+// path itself where it is a file, and every file beneath it that scope keeps
+// where it is a directory. A path that is not on disk contributes nothing.
 //
 // A file named directly is taken whatever it is called, because a declaration
-// naming it is the author asking for it. The dot rule applies only to what a walk
-// of a declared directory finds — editor leftovers and version-control files an
-// author would not mean to publish — and is the one rule about which files a
-// declared directory contributes.
-func filesUnder(dir, target string) ([]string, error) {
+// naming it is the author asking for it. The ignore rules apply only to what a
+// walk of a declared directory finds, and they are the recorded ones: the
+// serving plugin's ecosystem rules and the author's own, composed when the entity
+// was pinned. A symbolic link is refused rather than followed — whether it is the
+// declared path itself or an entry the walk finds — because the bytes it points to
+// would travel under its name.
+func filesUnder(dir, target string, scope sourcewalk.Scope) ([]string, error) {
+	shown := func(abs string) string {
+		if rel, err := relativeTo(dir, abs); err == nil {
+			return rel
+		}
+		return abs
+	}
+	if err := sourcewalk.RefuseLink(target, shown(target)); err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(target)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -423,26 +568,9 @@ func filesUnder(dir, target string) ([]string, error) {
 		}
 		return []string{rel}, nil
 	}
-	var files []string
-	err = filepath.WalkDir(target, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
-		rel, err := relativeTo(dir, p)
-		if err != nil {
-			return err
-		}
-		files = append(files, rel)
-		return nil
+	return scope.Files(target, func(rel string) string {
+		return shown(filepath.Join(target, filepath.FromSlash(rel)))
 	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(files)
-	return files, nil
 }
 
 // relativeTo spells an absolute path inside dir as the slash-separated path a

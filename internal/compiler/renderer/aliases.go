@@ -112,6 +112,7 @@ type (
 	Segment                    = rendercore.Segment
 	IREdgeInfo                 = rendercore.IREdgeInfo
 	NodeRenderContext          = rendercore.NodeRenderContext
+	SourceIgnore               = rendercore.SourceIgnore
 	ProvenanceContext          = rendercore.ProvenanceContext
 	DeclaredSensitivity        = rendercore.DeclaredSensitivity
 )

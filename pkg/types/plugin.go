@@ -21,7 +21,8 @@ import (
 // the optional nested blocks the generator names but does not
 // descend into (PluginSignature, PluginRuntime, the three per-plugin-type
 // blocks PluginPipelineStep, PluginParser and PluginImporter, and the
-// contract's nested PluginArtifactDelimiters and PluginAssemblyNameAnnotation),
+// contract's nested PluginArtifactDelimiters, PluginAssemblyNameAnnotation and
+// PluginSourceIgnore),
 // plus the Plugin methods and the aliases below. The shared Maintainer and
 // WellKnownAnnotation types the generated fields reference live in common.go.
 //
@@ -431,6 +432,21 @@ type PluginAssemblyNameAnnotation struct {
 	// contributing boundaries resolve the annotation to different values halts the
 	// build; when false, the plugin accepts the first resolved value.
 	RequireUnique bool `json:"requireUnique,omitempty" yaml:"requireUnique,omitempty"`
+}
+
+// PluginSourceIgnore is a provider's declaration of the files its ecosystem never
+// ships beside a source it renders, as ignore rules in gitignore syntax: its own
+// patterns, scoped to the root of the source directory, and the names of the
+// ignore files it honours inside a source, whose lines are further patterns scoped
+// to the directory holding each. The block is hand-written because the generator
+// names it via x-aggrega-go-type on the schema's object node and does not descend
+// into it.
+type PluginSourceIgnore struct {
+	// Patterns are the ecosystem's own ignore patterns, in the order they apply.
+	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty"`
+	// Files are the names of the ignore files the ecosystem honours inside a
+	// source.
+	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
 }
 
 // PluginSignature is the optional, documentation-only pointer to a

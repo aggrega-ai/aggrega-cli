@@ -55,8 +55,16 @@ type NodeRenderContext struct {
 	// OriginalSource — Source is the load-bearing path; the helper
 	// sourceForDiagnostic centralises the diagnostic formatting.
 	OriginalSource any
-	RecipeName     string // recipe metadata.name; empty when no Recipe selected for this node
-	RecipeVersion  string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
+	// SourceIgnore is what the render reads a local source directory through
+	// before any of it reaches a provider: the ignore rules the lock beside the
+	// entity records, and the entity's directory they are spelled against. The
+	// listing a provider is handed and every file it asks to have packed or read
+	// are held to it, so a render reads exactly the files a publication of the
+	// entity carries. Its zero value applies no rule. Host-only: it is not part of
+	// any wire projection sent to a guest.
+	SourceIgnore  SourceIgnore
+	RecipeName    string // recipe metadata.name; empty when no Recipe selected for this node
+	RecipeVersion string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
 	// ProviderName is the bare provider engine kind rendering this node
 	// (recipe.spec.capability with any version pin stripped). When set it is the
 	// value of the aggrega.ai/provider label.
@@ -174,6 +182,19 @@ type NodeRenderContext struct {
 	// byte-identical whether or not a sink is attached. Host-only: not part of any
 	// wire projection sent to a guest.
 	DerivedKeySink func(types.OrderedMap[[]string])
+}
+
+// SourceIgnore is the recorded ignore rule list a render applies to an entity's
+// local source directory, with the directory holding the entity's document,
+// which every rule's scope is spelled relative to. It is plain data: the render
+// host matches it, and nothing a guest imports reads it.
+type SourceIgnore struct {
+	// EntityDirectory is the absolute directory holding the entity's document,
+	// or empty where the source is not a local one.
+	EntityDirectory string
+	// Rules is the composed rule list the entity's lock records, in the order it
+	// applies.
+	Rules []types.IgnoreRule
 }
 
 // ProvenanceContext carries build identity for resource labels.

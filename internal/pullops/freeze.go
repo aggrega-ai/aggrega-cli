@@ -69,8 +69,18 @@ import (
 // is then held to is resolved through the same view, so it reads the same locks
 // through the same computation, and the report agrees with the build it predicts
 // just as a writing run's lockfile agrees with the files it wrote.
+//
+// # The ignore rules a pinning run records
+//
+// A run that pins composes each local source directory's ignore rules from the
+// plugin this workspace binds for the entity's capability — providerBindings, the
+// workspace's own plugins.providers selection, read through the same view and the
+// same resolution the rest of the run binds providers by — and the author's
+// .aggregaignore, and records them with the pins. A run that only holds the locks
+// applies the rules they record and asks no plugin.
 func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
-	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
+	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool,
+	providerBindings map[string]string) (map[string]string, []dryrunreport.File, error) {
 	var uris []string
 	for _, ent := range entities {
 		if len(used[ent.URI]) == 0 {
@@ -85,6 +95,9 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      cacheDir,
 		ForWriting:    pin,
+		ServingProvider: func(capability string) (catalog.ServingProvider, bool, error) {
+			return lazyView.ServingProvider(capability, providerBindings)
+		},
 	})
 	if err != nil {
 		return nil, nil, err

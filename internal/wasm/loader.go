@@ -63,6 +63,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	extism "github.com/extism/go-sdk"
@@ -622,6 +623,11 @@ type Plugin struct {
 	// load. The host-function closures read it at call time, so a stale value
 	// from a prior node never leaks into a later one.
 	sourceRoot string
+	// sourceScope is what those host functions read the source's files through:
+	// the ignore rules the entity's lock records, set with the root by
+	// SetSource and cleared by SetSourceRoot, so a rule list never outlives the
+	// node it was set for.
+	sourceScope sourcewalk.Scope
 	// sourceParser is the producer-consumption seam the aggrega_parse_source host
 	// function runs to obtain a source's canonical tree through the host. It is
 	// injected per invocation through SetSourceParser, the same way sourceRoot is
@@ -660,6 +666,19 @@ type Plugin struct {
 // not-available error rather than resolving against a stale or absent root.
 func (p *Plugin) SetSourceRoot(root string) {
 	p.sourceRoot = root
+	p.sourceScope = sourcewalk.Scope{}
+}
+
+// SetSource sets the acquired source location as [Plugin.SetSourceRoot] does,
+// together with the scope its files are read through: the ignore rules the
+// entity's lock records, spelled against the entity's own directory. A pack or a
+// read of a file the rules leave out answers as though the file were not there,
+// naming it, so a guest reads exactly the files a publication of the entity
+// carries; a symbolic link is refused whatever the rules say. The zero scope
+// applies no rule.
+func (p *Plugin) SetSource(root string, scope sourcewalk.Scope) {
+	p.sourceRoot = root
+	p.sourceScope = scope
 }
 
 // SetSourceParser injects the producer-consumption seam the aggrega_parse_source

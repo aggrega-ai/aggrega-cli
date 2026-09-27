@@ -117,8 +117,11 @@ BUILD_VER="$(git describe --tags --always 2>/dev/null || echo dev)"; BUILD_VER="
 # Both flatteners reduce a contract to sorted "path=value" lines in one dotted,
 # snake_case key space, so a descriptor written in JSON and an entity written in
 # YAML become directly comparable without either side being transcribed into a
-# list of expected field names. Each refuses loudly, naming the construct, on a
-# shape it does not model.
+# list of expected field names. A list of scalars is one line, its items quoted
+# and kept in the order written — `path=["a", "b"]` — because a contract list is
+# an ordered declaration and two sides listing the same items in another order
+# say different things. Each flattener refuses loudly, naming the construct, on a
+# shape it does not model: a list holding an object or another list.
 
 # contract_fields_from_descriptor DESCRIPTOR — the contract a guest's describe()
 # descriptor declares. Emits nothing when the descriptor declares no contract,
@@ -145,7 +148,6 @@ contract_fields_from_descriptor() {
         if (c == "\\") { esc = 1; continue }
         if (c == "\"") { inq = 1 - inq; continue }
         if (inq) continue
-        if (c == "[") bail("a list inside the contract is not modelled")
         if (c == "{") depth++
         else if (c == "}") { depth--; if (depth == 0) { last = p; break } }
       }
@@ -156,7 +158,7 @@ contract_fields_from_descriptor() {
     # emit OBJ — tokenize the object, then walk the token stream with a prefix
     # stack. Two passes rather than one so the key/value distinction is decided
     # by lookahead on the next token instead of by nested parser state.
-    function emit(o,   p, n, c, inq, esc, buf, nt, i, prefix, key, sp) {
+    function emit(o,   p, n, c, inq, esc, buf, nt, i, prefix, key, sp, inlist, items) {
       n = length(o); inq = 0; esc = 0; buf = ""; nt = 0
       for (p = 1; p <= n; p++) {
         c = substr(o, p, 1)
@@ -167,7 +169,7 @@ contract_fields_from_descriptor() {
           buf = buf c; continue
         }
         if (c == "\"") { inq = 1; buf = ""; continue }
-        if (c == "{" || c == "}" || c == ":" || c == ",") {
+        if (c == "{" || c == "}" || c == ":" || c == "," || c == "[" || c == "]") {
           if (buf != "") { nt++; ttype[nt] = "v"; tval[nt] = buf; buf = "" }
           nt++; ttype[nt] = "p"; tval[nt] = c
           continue
@@ -177,9 +179,27 @@ contract_fields_from_descriptor() {
       }
       if (buf != "") { nt++; ttype[nt] = "v"; tval[nt] = buf }
 
-      sp = 0; prefix = ""; key = ""
+      sp = 0; prefix = ""; key = ""; inlist = 0; items = ""
       for (i = 1; i <= nt; i++) {
+        # A list of scalars is gathered whole and emitted as one line, its items
+        # in the order written.
+        if (inlist) {
+          if (ttype[i] == "v") { items = items (items == "" ? "" : ", ") "\"" tval[i] "\""; continue }
+          if (tval[i] == ",") continue
+          if (tval[i] == "]") {
+            print (prefix == "" ? key : prefix "." key) "=[" items "]"
+            inlist = 0; items = ""; key = ""
+            continue
+          }
+          bail("a list holding an object or another list inside the contract is not modelled")
+        }
         if (ttype[i] == "p") {
+          if (tval[i] == "[") {
+            if (key == "") bail("a contract list with no key")
+            inlist = 1; items = ""
+            continue
+          }
+          if (tval[i] == "]") bail("a contract list closed that was never opened")
           if (tval[i] == "{") {
             if (key != "") {
               sp++; stack[sp] = prefix
@@ -225,6 +245,14 @@ contract_fields_from_entity() {
       }
       return o
     }
+    # unquote S — a YAML scalar with its surrounding quotes, if any, removed.
+    function unquote(s,   q) {
+      if (length(s) > 1) {
+        q = substr(s, 1, 1)
+        if ((q == "\"" || q == "'"'"'") && substr(s, length(s), 1) == q) s = substr(s, 2, length(s) - 2)
+      }
+      return s
+    }
     { if (done) next }
     !inblock {
       if ($0 ~ /^[ ]+contract:[ ]*$/) { base = match($0, /[^ ]/) - 1; inblock = 1; sp = 0 }
@@ -235,7 +263,25 @@ contract_fields_from_entity() {
       ind = match($0, /[^ ]/) - 1
       if (ind <= base) { done = 1; next }
       line = substr($0, ind + 1)
-      if (substr(line, 1, 2) == "- ") bail("a list inside the published contract is not modelled")
+
+      # A list item belongs to the key the nearest enclosing level opened. Its
+      # items are gathered in the order written and emitted as one line at the
+      # end, in the shape the descriptor side emits.
+      if (substr(line, 1, 2) == "- ") {
+        # An item may sit at the indent of the key holding it, which YAML allows,
+        # so only a level indented deeper than the item is closed by it.
+        while (sp > 0 && ind < lvlind[sp]) sp--
+        if (sp == 0) bail("a published contract list item with no key: " line)
+        path = ""
+        for (i = 1; i <= sp; i++) path = (path == "" ? lvlkey[i] : path "." lvlkey[i])
+        item = substr(line, 3)
+        sub(/^[ ]+/, "", item)
+        if (item ~ /^[A-Za-z_][A-Za-z0-9_]*:( |$)/ || substr(item, 1, 2) == "- " || substr(item, 1, 1) == "[" || substr(item, 1, 1) == "{")
+          bail("a list holding an object or another list inside the published contract is not modelled: " line)
+        if (!(path in listed)) { listed[path] = 1; lists[++nlists] = path }
+        listitems[path] = listitems[path] (listitems[path] == "" ? "" : ", ") "\"" unquote(item) "\""
+        next
+      }
 
       while (sp > 0 && ind <= lvlind[sp]) sp--
       prefix = ""
@@ -248,16 +294,17 @@ contract_fields_from_entity() {
       sub(/^[ ]+/, "", val)
 
       if (val == "") { sp++; lvlind[sp] = ind; lvlkey[sp] = key; next }
+      if (val == "[]") { print (prefix == "" ? key : prefix "." key) "=[]"; next }
       if (val == "|" || val == ">" || substr(val, 1, 1) == "[" || substr(val, 1, 1) == "{")
         bail("a published contract value shape that is not a scalar: " line)
 
-      if (length(val) > 1) {
-        q = substr(val, 1, 1)
-        if ((q == "\"" || q == "'"'"'") && substr(val, length(val), 1) == q) val = substr(val, 2, length(val) - 2)
-      }
+      val = unquote(val)
       # A field a side declares false is written by neither side, so it is
       # dropped here and on the descriptor side alike.
       if (val != "false") print (prefix == "" ? key : prefix "." key) "=" val
+    }
+    END {
+      for (i = 1; i <= nlists; i++) print lists[i] "=[" listitems[lists[i]] "]"
     }
   ' "$1" | LC_ALL=C sort
 }

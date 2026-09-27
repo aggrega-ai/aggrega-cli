@@ -210,5 +210,11 @@ func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
 		}
 	}
+	if c.SourceIgnore != nil {
+		caps.SourceIgnore = &wasm.SourceIgnore{
+			Patterns: append([]string(nil), c.SourceIgnore.Patterns...),
+			Files:    append([]string(nil), c.SourceIgnore.Files...),
+		}
+	}
 	return caps
 }

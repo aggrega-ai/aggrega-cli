@@ -71,6 +71,50 @@ type LocalSourceDigest struct {
 	Digest string `json:"digest" yaml:"digest"`
 }
 
+// IgnoreRules is what an entity's lock records about which files under its local
+// source directory belong to it: the plugin that served the entity's capability
+// when it was pinned, with the rules that plugin declared, and the exact composed
+// rules every later reading of the directory applies.
+//
+// It is recorded rather than worked out again at each reading, so a change to the
+// author's ignore file, to the workspace's provider binding or to the binary moves
+// nothing a publication, a comparison or a render reads until the entity is
+// pinned again. A lock recording none keeps every file under the directory.
+//
+// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore.
+type IgnoreRules struct {
+	Plugin *IgnorePlugin `json:"plugin,omitempty" yaml:"plugin,omitempty"`
+	Rules  []IgnoreRule  `json:"rules,omitempty" yaml:"rules,omitempty"`
+}
+
+// IgnorePlugin is the plugin an entity's ignore rules were composed from: its
+// entity reference and the digest of its entity document, and the patterns and
+// ignore-file names it declared.
+//
+// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore/properties/plugin.
+type IgnorePlugin struct {
+	Ref      string   `json:"ref" yaml:"ref"`
+	Digest   string   `json:"digest" yaml:"digest"`
+	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty"`
+	Files    []string `json:"files,omitempty" yaml:"files,omitempty"`
+}
+
+// IgnoreRule is one composed ignore rule: a pattern in gitignore syntax, the
+// directory it is scoped to relative to the entity's own directory ("." for that
+// directory), and where it was declared — "plugin", or the path of the ignore file
+// it was read from.
+//
+// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore/properties/rules/items.
+type IgnoreRule struct {
+	Pattern string `json:"pattern" yaml:"pattern"`
+	Within  string `json:"within" yaml:"within"`
+	From    string `json:"from" yaml:"from"`
+}
+
+// IgnoreRuleFromPlugin is the IgnoreRule.From value of a pattern the plugin
+// declared itself, as distinct from a line read out of an ignore file.
+const IgnoreRuleFromPlugin = "plugin"
+
 // WellKnownAnnotation is one platform-native annotation key a provider's
 // rendering engine reads, with the scope it is read at and the behavior applied
 // when it is absent. It is the provider's support claim for that key, and the

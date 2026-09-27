@@ -195,12 +195,13 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 		return Result{}, Plan{}, fmt.Errorf("stopped before anything was resolved: %w", err)
 	}
 	plan, err := Compute(PlanInputs{
-		View:          view,
-		URIs:          []string{uri},
-		Resolver:      SourceResolver(ctx, wsCfg),
-		WorkspaceRoot: root,
-		CacheDir:      cacheDir,
-		ForWriting:    forWriting,
+		View:            view,
+		URIs:            []string{uri},
+		Resolver:        SourceResolver(ctx, wsCfg),
+		WorkspaceRoot:   root,
+		CacheDir:        cacheDir,
+		ForWriting:      forWriting,
+		ServingProvider: WorkspaceServingProvider(rw),
 	})
 	if err != nil {
 		return Result{}, Plan{}, err
@@ -209,6 +210,25 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 		return Result{}, Plan{}, notReadAsItself(view, abs, plan)
 	}
 	return res, plan, nil
+}
+
+// WorkspaceServingProvider returns the resolution of the plugin serving a
+// capability in the workspace rw: the workspace's own provider bindings, read
+// from its configuration, over the plugins its catalog directories hold and the
+// ones built into the binary — the resolution the workspace's build runs. The
+// catalog directories are read only when a capability is first asked about.
+//
+// The entity's own directory is not enough to answer from, because a binding may
+// name a provider plugin authored elsewhere in the workspace.
+func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace) func(capability string) (catalog.ServingProvider, bool, error) {
+	var view *catalog.LazyLookup
+	return func(capability string) (catalog.ServingProvider, bool, error) {
+		cfg := rw.Config()
+		if view == nil {
+			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs(nil), nil)
+		}
+		return view.ServingProvider(capability, cfg.Plugins.ProviderTargetURIs())
+	}
 }
 
 // notReadAsItself explains why the catalog view over an entity's own directory

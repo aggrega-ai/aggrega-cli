@@ -61,18 +61,25 @@ const lockHeader = "# Content pins for this entity's external inputs, written by
 //
 // The rows are the same types the entity's own pin blocks are built from, which
 // is what keeps one pin from reading two ways depending on where it was written.
+//
+// Ignore is not a class of pin. It is the recorded rule list deciding which files
+// under a local source directory the local-source class covers, so it travels
+// with the pins but is compared by nothing: every reading of the directory
+// applies it, and only the pin step writes a new one.
 type Lock struct {
 	Version            int                       `json:"version" yaml:"version"`
 	SourceDigests      []types.SourceDigest      `json:"sourceDigests,omitempty" yaml:"sourceDigests,omitempty"`
 	ArtifactDigests    []types.ArtifactDigest    `json:"artifactDigests,omitempty" yaml:"artifactDigests,omitempty"`
 	LocalSourceDigests []types.LocalSourceDigest `json:"localSourceDigests,omitempty" yaml:"localSourceDigests,omitempty"`
+	Ignore             *types.IgnoreRules        `json:"ignore,omitempty" yaml:"ignore,omitempty"`
 }
 
 // Pins returns the pin lists the lock records, without its version: the shape a
 // build and the pin step compare. It is the one place a lock's lists become pins,
 // so a class the lock gains reaches every reader of its pins by this edit alone.
 func (l Lock) Pins() Pins {
-	return Pins{SourceDigests: l.SourceDigests, ArtifactDigests: l.ArtifactDigests, LocalSourceDigests: l.LocalSourceDigests}
+	return Pins{SourceDigests: l.SourceDigests, ArtifactDigests: l.ArtifactDigests, LocalSourceDigests: l.LocalSourceDigests,
+		Ignore: l.Ignore}
 }
 
 // LockPath returns the lock file path for the entity document at entityPath —
@@ -105,14 +112,27 @@ func ReadLock(entityPath string) (Lock, bool, error) {
 		}
 		return Lock{}, false, lockReadError(path, err)
 	}
+	lock, err := DecodeLock(data, path)
+	if err != nil {
+		return Lock{}, false, err
+	}
+	return lock, true, nil
+}
+
+// DecodeLock validates the bytes of a lock against its published schema and
+// decodes them, for bytes a caller holds rather than a file on disk — the lock a
+// run that reports rather than writes would leave beside an entity. path names
+// the lock in a refusal. It is [ReadLock]'s own reading of the bytes, so a lock
+// held in memory is refused and decoded exactly as the same lock on disk is.
+func DecodeLock(data []byte, path string) (Lock, error) {
 	if _, verr := envelope.ValidateBytes(envelope.KindEntityLock, data, path); verr != nil {
-		return Lock{}, false, lockReadError(path, verr)
+		return Lock{}, lockReadError(path, verr)
 	}
 	var lock Lock
 	if uerr := yaml.Unmarshal(data, &lock); uerr != nil {
-		return Lock{}, false, lockReadError(path, uerr)
+		return Lock{}, lockReadError(path, uerr)
 	}
-	return lock, true, nil
+	return lock, nil
 }
 
 // lockReadError reports a lock file that could not be read as the catalog-level
@@ -140,6 +160,7 @@ func PreviewLock(entityPath string, pins Pins) ([]byte, bool, error) {
 	lock.SourceDigests = append(lock.SourceDigests, pins.SourceDigests...)
 	lock.ArtifactDigests = append(lock.ArtifactDigests, pins.ArtifactDigests...)
 	lock.LocalSourceDigests = append(lock.LocalSourceDigests, pins.LocalSourceDigests...)
+	lock.Ignore = pins.Ignore
 	sortSourcePins(lock.SourceDigests)
 	sortArtifactPins(lock.ArtifactDigests)
 	sortLocalSourcePins(lock.LocalSourceDigests)
@@ -153,6 +174,9 @@ func PreviewLock(entityPath string, pins Pins) ([]byte, bool, error) {
 
 	// A lock holding no list at all says the same thing as no lock, and leaving
 	// one behind would put a file in the author's directory that records nothing.
+	// A lock recording ignore rules records something even with no pin beside
+	// them: without it, a later reading of the source directory would apply no
+	// rules and find the files those rules left out.
 	if lock.Pins().Empty() {
 		return nil, present, nil
 	}

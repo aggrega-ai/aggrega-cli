@@ -7,6 +7,7 @@ package renderer
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
@@ -81,7 +82,33 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPat
 		return err
 	}
 	nodeCtx.Source = resolved
+	nodeCtx.SourceIgnore = localSourceIgnore(input, recipe.Spec.Source, documentPath)
 	return nil
+}
+
+// localSourceIgnore returns what a render reads the local source declared in the
+// document at documentPath through: the ignore rules the lock beside it records,
+// read from the render input's record of what the load settled for that
+// document, and the directory holding the document, which the rules are spelled
+// against. A remote source, and an entity declared in no document on disk, read
+// through no rule — a fetched source's identity is the archive it was fetched as,
+// and a published entity's files are already the ones its publisher's rules kept.
+//
+// It is the one place a render turns the recorded rules into the reading a
+// provider is handed, so what a render reads and what a publication of the same
+// entity carries come from one record.
+func localSourceIgnore(input RendererInput, source any, documentPath string) SourceIgnore {
+	if source == nil || documentPath == "" || !sourceref.IsLocal(source) {
+		return SourceIgnore{}
+	}
+	dir, err := filepath.Abs(filepath.Dir(documentPath))
+	if err != nil {
+		return SourceIgnore{}
+	}
+	return SourceIgnore{
+		EntityDirectory: dir,
+		Rules:           recipepin.IgnoreRulesOf(input.RecordedPins.For(documentPath).Ignore),
+	}
 }
 
 // resolveEntitySource resolves one entity's source — a component Recipe's or a

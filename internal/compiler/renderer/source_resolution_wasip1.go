@@ -36,3 +36,10 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPat
 func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string) (any, error) {
 	return source, nil
 }
+
+// localSourceIgnore reads no rule in the Wasm guest build, which reads no
+// directory: it carries the host implementation's signature for the package's
+// compile-time call graph, and the guest render path never invokes it.
+func localSourceIgnore(input RendererInput, source any, documentPath string) SourceIgnore {
+	return SourceIgnore{}
+}

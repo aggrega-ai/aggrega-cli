@@ -255,7 +255,21 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 			// pin a file a publication does not carry or to miss one it does.
 			callee: "recipepin.LocalSourcePins",
 			why:    "a local source's files are pinned over the declared set's answer and over no other listing",
-			want:   []string{"catalog.LocalSourceOf"},
+			want:   []string{"catalog.localSourceOf"},
+		},
+		{
+			// The declared set is read two ways: under the rules the lock beside the
+			// entity records, and — for the pin step alone — under the rules it is
+			// about to record. Both readings hand their declared set to the one
+			// digesting helper.
+			callee: "catalog.localSourceOf",
+			why:    "both readings of a local source digest its files through one helper",
+			want:   []string{"catalog.LocalSourceOf", "catalog.LocalSourceUnder"},
+		},
+		{
+			callee: "catalog.LocalSourceUnder",
+			why:    "only the pin step reads a local source under rules it has not recorded yet",
+			want:   []string{"entitypin.Compute"},
 		},
 		{
 			callee: "catalog.LocalSourceOf",

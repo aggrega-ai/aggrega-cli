@@ -63,7 +63,8 @@ type EntityExportClaim struct {
 // field-by-field against the descriptor's self-reported contract: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
 // assembly-name annotation, the reusable-instance claim, the cross-boundary-linking
-// claim, and the nest segment must each agree. A nil contract skips the
+// claim, and the nest segment must each agree, and so must the source ignore rules
+// where the entity records any. A nil contract skips the
 // provider-level comparison — an entity is not required to author a
 // render-behavior contract.
 //
@@ -214,7 +215,50 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 			"entity %q declares nest_segment %q but the plugin's describe() reports %q: %w",
 			entityIdentity, want.NestSegment, got.NestSegment, ErrWasmContractMismatch())
 	}
+	return crossCheckSourceIgnore(entityIdentity, want.SourceIgnore, got.SourceIgnore)
+}
+
+// crossCheckSourceIgnore compares an entity's recorded ignore rules with the ones
+// describe() reports, where the entity records any. The comparison is one-sided
+// on purpose: the rules are what the pin step reads off the entity, so a record
+// that differs from the plugin would pin a source under rules the plugin never
+// declared and is refused, while an entity recording none makes no claim — it
+// keeps loading against a plugin that declares some, and the pin step then
+// records no plugin rules from it. Order is part of the rules, because a
+// later rule overrides an earlier one, so the lists are compared in order.
+func crossCheckSourceIgnore(entityIdentity string, want, got *SourceIgnore) error {
+	if want == nil {
+		return nil
+	}
+	var reported SourceIgnore
+	if got != nil {
+		reported = *got
+	}
+	if !sameStrings(want.Patterns, reported.Patterns) {
+		return fmt.Errorf(
+			"entity %q declares source_ignore patterns %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want.Patterns, reported.Patterns, ErrWasmContractMismatch())
+	}
+	if !sameStrings(want.Files, reported.Files) {
+		return fmt.Errorf(
+			"entity %q declares source_ignore files %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want.Files, reported.Files, ErrWasmContractMismatch())
+	}
 	return nil
+}
+
+// sameStrings reports whether two lists hold the same strings in the same order,
+// an absent list and an empty one alike.
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // crossCheckDelimiters compares the authored and self-reported artifact-template

@@ -31,6 +31,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/chartignore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
@@ -82,6 +83,11 @@ func descriptor() aggrega.PluginDescriptor {
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly: "none",
 			ReusableInstance: true,
+			// What the chart ecosystem never ships beside a chart, the chart's own
+			// .helmignore among it. The host records these rules when an entity is
+			// pinned and applies them to every publication and render of its chart,
+			// so a render and a publication of one chart read the same tree.
+			SourceIgnore: &aggrega.SourceIgnore{Patterns: chartignore.Patterns(), Files: chartignore.Files()},
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}

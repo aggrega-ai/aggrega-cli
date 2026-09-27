@@ -4,7 +4,6 @@
 package serve
 
 import (
-	"bufio"
 	"context"
 	"io/fs"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
@@ -195,7 +195,8 @@ func (w *gitignoreWalker) ancestorsToRoot(path string) []string {
 // the walker's root, so a directory's patterns only match paths within
 // that directory's subtree. The root `.gitignore` carries an empty
 // domain and therefore applies tree-wide. Comment lines (`#`) and blank
-// lines are skipped, matching gitignore file conventions.
+// lines are skipped, matching gitignore file conventions, by the one reading
+// of an ignore file's lines the entity walk reads too.
 func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	if cached, ok := w.cache[dir]; ok {
 		return cached
@@ -209,19 +210,14 @@ func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	defer f.Close()
 
 	domain := w.relComponents(dir)
-	var patterns []gitignore.Pattern
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		patterns = append(patterns, gitignore.ParsePattern(line, domain))
-	}
-	if err := scanner.Err(); err != nil {
+	lines, err := sourcewalk.PatternLines(f)
+	if err != nil {
 		w.cache[dir] = nil
 		return nil
+	}
+	patterns := make([]gitignore.Pattern, 0, len(lines))
+	for _, line := range lines {
+		patterns = append(patterns, gitignore.ParsePattern(line, domain))
 	}
 	matcher := gitignore.NewMatcher(patterns)
 	w.cache[dir] = matcher

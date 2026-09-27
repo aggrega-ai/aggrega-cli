@@ -566,6 +566,7 @@ func dispatchBoundaryScopeFR(
 		return wrapSourceResolutionError(err, frNodeCtx.NodeID, fmt.Sprintf("boundary-scope FR %q source resolution", frInstance))
 	}
 	frNodeCtx.Source = resolvedSrc
+	frNodeCtx.SourceIgnore = localSourceIgnore(input, evaluatedSource, frDocument)
 
 	// Evaluate the FR's valuesMapping against the boundary-scope context — the same
 	// evaluator the per-component FR path uses (phase_b_subpasses.go), not a parallel

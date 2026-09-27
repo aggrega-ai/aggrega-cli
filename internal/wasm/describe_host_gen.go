@@ -103,7 +103,7 @@ type PluginDescriptorMeta struct {
 	Commit string `json:"commit,omitempty" yaml:"commit,omitempty" cbor:"commit,omitempty"`
 }
 
-// ProviderContract A provider's self-declaration of the compile-time render behaviors it performs across the nodes it renders — the input kinds it accepts, whether and how it assembles a dispatch group's per-node output into a single artifact, and the Go-template delimiter pair it applies to imported artifact files. It describes the provider as a whole, not any one export. The load gate cross-checks it against the entity's authored claim.
+// ProviderContract A provider's self-declaration of the compile-time render behaviors it performs across the nodes it renders — the input kinds it accepts, whether and how it assembles a dispatch group's per-node output into a single artifact, the Go-template delimiter pair it applies to imported artifact files, and the files its ecosystem never ships beside a source. It describes the provider as a whole, not any one export. The load gate cross-checks it against the entity's authored claim.
 type ProviderContract struct {
 	// InputKinds Which of the three Recipe input kinds the plugin renders: a sourced file set, a synthesized workload, and a standalone artifacts-only node.
 	InputKinds InputKinds `json:"input_kinds" yaml:"input_kinds" cbor:"input_kinds"`
@@ -119,6 +119,16 @@ type ProviderContract struct {
 	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty" yaml:"cross_boundary_linking,omitempty" cbor:"cross_boundary_linking,omitempty"`
 	// NestSegment The directory the plugin's target places each contributor's own sub-directory under, for a plugin that nests a dispatch group's per-node output. The host joins this segment, the contributor's authoring-level name, and each file's own path. Read only when boundary_assembly is nest. Absent, the host places each contributor's sub-directory directly at the dispatch position, with no enclosing directory. The value names one directory and never a path: a value carrying a path separator, or naming the current or the parent directory, is refused, because the host composes the contributor's name into it and a path fragment would place a contributor's files somewhere other than beneath the dispatch position.
 	NestSegment string `json:"nest_segment,omitempty" yaml:"nest_segment,omitempty" cbor:"nest_segment,omitempty"`
+	// SourceIgnore The files this plugin's ecosystem never ships beside a source it renders, declared as ignore rules. The host reads the declaration when an author pins a Recipe or FeatureRecipe whose capability this plugin serves for them: it composes these rules with the author's own ignore file, records the composed rules in the entity lock beside the entity, and from then on every publication of the entity, every comparison of its local source and every render of it applies the recorded rules rather than asking a plugin again. So a Recipe published for a capability carries the files its publisher's rules kept, and a plugin renders it when it speaks the same ABI version, its contract matches its entity's claim, and it needs no file outside that set. A plugin that needs a file the set left out must fail its build loudly and name the file; the host's part is to refuse a pack or a read of a file the set does not hold, naming it. Absent declares no ignore rules, and a source the plugin renders then keeps every file the author's own rules keep.
+	SourceIgnore *SourceIgnore `json:"source_ignore,omitempty" yaml:"source_ignore,omitempty" cbor:"source_ignore,omitempty"`
+}
+
+// SourceIgnore The ignore rules a plugin's ecosystem applies to a source directory, in gitignore syntax: a pattern holding no slash, or only a trailing one, matches a name at any depth, a pattern holding any other slash is read from the root of the directory it is scoped to, a trailing slash matches only a directory, and a leading ! brings back what an earlier rule excluded. Rules apply in order and a later match overrides an earlier one. A directory a rule excludes is not entered, so nothing under it comes back unless the directory itself is brought back first.
+type SourceIgnore struct {
+	// Patterns The ecosystem's own ignore patterns, each scoped to the root of the local source directory being walked, in the order they apply. Absent or empty declares none.
+	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty" cbor:"patterns,omitempty"`
+	// Files The names of the ignore files the ecosystem honours inside a source — .helmignore for a chart, for instance. Wherever the walk of a source finds a file of one of these names, its lines are read as further patterns in the same syntax, each scoped to the directory holding the file, and they apply after the patterns above; a blank line and a line opening with # are skipped. A file of such a name is itself carried unless a rule excludes it. Absent or empty names none.
+	Files []string `json:"files,omitempty" yaml:"files,omitempty" cbor:"files,omitempty"`
 }
 
 // InputKinds Which Recipe input kinds a plugin renders. Each field is an independent claim; a plugin may report any combination.
@@ -1035,6 +1045,18 @@ func (t ProviderContract) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"nest_segment\":")
 		writeJSONString(&buf, t.NestSegment)
 	}
+	if t.SourceIgnore != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"source_ignore\":")
+		if enc, err := t.SourceIgnore.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1105,6 +1127,16 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 			} else {
 				t.NestSegment = s
 			}
+		case "source_ignore":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				v := new(SourceIgnore)
+				if err := v.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+				t.SourceIgnore = v
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1124,7 +1156,122 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ProviderContract) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment", "source_ignore"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes SourceIgnore in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourceIgnore) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.Patterns) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"patterns\":")
+		buf.WriteByte('[')
+		for i := range t.Patterns {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Patterns[i]
+			writeJSONString(&buf, ev)
+		}
+		buf.WriteByte(']')
+	}
+	if len(t.Files) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"files\":")
+		buf.WriteByte('[')
+		for i := range t.Files {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Files[i]
+			writeJSONString(&buf, ev)
+		}
+		buf.WriteByte(']')
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourceIgnore with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourceIgnore) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "patterns":
+			t.Patterns = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					elem = s
+				}
+				t.Patterns = append(t.Patterns, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "files":
+			t.Files = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					elem = s
+				}
+				t.Files = append(t.Files, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes SourceIgnore exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *SourceIgnore) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "patterns", "files"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -2148,6 +2295,9 @@ func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	if t.NestSegment != "" {
 		n++
 	}
+	if t.SourceIgnore != nil {
+		n++
+	}
 	if t.ReusableInstance != false {
 		n++
 	}
@@ -2169,6 +2319,14 @@ func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	if t.NestSegment != "" {
 		dst = appendCBORTextString(dst, "nest_segment")
 		dst = appendCBORTextString(dst, t.NestSegment)
+	}
+	if t.SourceIgnore != nil {
+		dst = appendCBORTextString(dst, "source_ignore")
+		if t.SourceIgnore == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.SourceIgnore.appendCBOR(dst); err != nil {
+			return nil, err
+		}
 	}
 	dst = appendCBORTextString(dst, "boundary_assembly")
 	dst = appendCBORTextString(dst, t.BoundaryAssembly)
@@ -2261,6 +2419,14 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.NestSegment = s
 			}
+		case "source_ignore":
+			{
+				v := new(SourceIgnore)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.SourceIgnore = v
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -2277,7 +2443,120 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ProviderContract) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment", "source_ignore"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes SourceIgnore as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceIgnore) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceIgnore's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceIgnore) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if len(t.Files) != 0 {
+		n++
+	}
+	if len(t.Patterns) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if len(t.Files) != 0 {
+		dst = appendCBORTextString(dst, "files")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Files)))
+		for i := range t.Files {
+			ev := t.Files[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	if len(t.Patterns) != 0 {
+		dst = appendCBORTextString(dst, "patterns")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Patterns)))
+		for i := range t.Patterns {
+			ev := t.Patterns[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceIgnore from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceIgnore) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceIgnore) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "patterns":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.Patterns = s
+			}
+		case "files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.Files = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes SourceIgnore exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceIgnore) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "patterns", "files"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AuthoredEntityDigest returns the digest a lockfile's entity row records for the
@@ -70,14 +71,34 @@ func authoredEntityDigestAt(path string, unwritten UnwrittenLocks) (string, erro
 // [AuthoredEntityDigest], with the lock unwritten holds for the document at path,
 // where it holds one, read in place of the lock on disk — carried with the bytes
 // it would hold, or left out where the run would remove it.
+//
+// The unwritten lock is read for its ignore rules as well as carried, because
+// those rules decide which files under the entity's local source directory the
+// row covers: a row taken over the lock a run would write is a row over the
+// files that lock's rules keep.
 func authoredEntityDigest(data []byte, path string, unwritten UnwrittenLocks) (string, error) {
-	declared, err := DeclaredFilesOf(data, path)
+	lock, overlaid := unwritten[path]
+	var declared DeclaredFiles
+	var err error
+	if overlaid {
+		var ignore *types.IgnoreRules
+		if len(lock) > 0 {
+			decoded, derr := recipepin.DecodeLock(lock, recipepin.LockPath(path))
+			if derr != nil {
+				return "", derr
+			}
+			ignore = decoded.Ignore
+		}
+		declared, err = DeclaredFilesUnder(data, path, ignore)
+	} else {
+		declared, err = DeclaredFilesOf(data, path)
+	}
 	if err != nil {
 		return "", err
 	}
 	files := declared.Files()
 	supplied := map[string][]byte{filepath.Base(path): data}
-	if lock, overlaid := unwritten[path]; overlaid {
+	if overlaid {
 		kept := make([]string, 0, len(files)+1)
 		for _, f := range files {
 			if f != recipepin.LockFileName {

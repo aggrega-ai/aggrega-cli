@@ -39,6 +39,7 @@ import (
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/chartignore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmchartcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
@@ -109,6 +110,10 @@ func descriptor() aggrega.PluginDescriptor {
 			ArtifactDelimiters:     &aggrega.ArtifactDelimiters{Left: "[[", Right: "]]"},
 			AssemblyNameAnnotation: &aggrega.AssemblyNameAnnotation{Annotation: "aggrega.ai/chart-name", RequireUnique: true},
 			ReusableInstance:       true,
+			// What the chart ecosystem never ships beside a chart, the chart's own
+			// .helmignore among it — the same declaration the chart-rendering
+			// guest makes, so a chart travels alike whichever of the two serves it.
+			SourceIgnore: &aggrega.SourceIgnore{Patterns: chartignore.Patterns(), Files: chartignore.Files()},
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
