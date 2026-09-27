@@ -6,6 +6,7 @@ package registryops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,6 +54,14 @@ func PluginScope(repoPath string) bool {
 // entity surface, not one kind.
 func CatalogScope(string) bool { return true }
 
+// ErrRepositoryListingRepeated is the refusal a registry whose repository
+// listing repeats itself produces: a page named a repository the listing had
+// already delivered, or two pages in a row named no repository and still linked
+// to a next one. The walk of that registry stops there, so a listing that never
+// reaches its end cannot hold a caller forever. Match it with errors.Is; the
+// error returned wraps it with what the listing repeated.
+var ErrRepositoryListingRepeated = errors.New("the registry's repository listing repeated itself")
+
 // EnumerateRepositories is the single registry-enumeration primitive. It walks
 // the registry's repositories, keeps those the scope admits whose path contains
 // the case-insensitive query substring (an empty query matches every in-scope
@@ -60,20 +69,51 @@ func CatalogScope(string) bool { return true }
 // in the scope they pass; the walk, the filtering and the ordering live here
 // once so they never drift into several enumerations.
 //
+// 🔴 The walk ends even when the listing does not. The registry client follows
+// each page's link to the next for as long as the registry supplies one, so a
+// listing whose link leads back to where it has been would be followed without
+// end. The listing continues after the last repository of the page before, so
+// no listing that advances names a repository twice; the walk therefore refuses
+// the registry, with ErrRepositoryListingRepeated, at the first repository the
+// listing delivers a second time — on the same page or a later one — and at a
+// page naming no repository that follows another such page. One page naming
+// nothing is not refused, because it may be the last. The check applies to every
+// repository the listing names, before the scope and the query narrow them, so
+// every caller stops on the same listing. A refused registry yields no
+// repositories at all, so none is counted, read or reported twice.
+//
 // The walk is progress-aware. The registry delivers each catalog page to the
 // callback before it parses that page's pagination header, so a registry that
 // serves a malformed pagination header fails only after the first page's
 // repositories were already collected. In that case the matches gathered so far
 // are returned rather than discarded — a partial result beats no result. An
 // error raised before any page was delivered (a connection or first-request
-// failure) still propagates, since there is nothing to fall back to.
+// failure) still propagates, since there is nothing to fall back to. A caller
+// that stopped the walk gets the stop rather than a partial result, because a
+// partial result from a withdrawn walk reads as a complete one.
 func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, scope RepoScope) ([]string, error) {
 	q := strings.ToLower(query)
 	var matches []string
 	pageDelivered := false
+	delivered := make(map[string]struct{})
+	previousPageEmpty := false
 	err := reg.Repositories(ctx, "", func(repos []string) error {
 		pageDelivered = true
+		if len(repos) == 0 {
+			if previousPageEmpty {
+				return fmt.Errorf("%w: two pages in a row named no repository and linked to a next one, so the walk stopped rather than follow the listing round again",
+					ErrRepositoryListingRepeated)
+			}
+			previousPageEmpty = true
+			return nil
+		}
+		previousPageEmpty = false
 		for _, repo := range repos {
+			if _, again := delivered[repo]; again {
+				return fmt.Errorf("%w: it named %s a second time, so the walk stopped rather than follow the listing round again",
+					ErrRepositoryListingRepeated, repo)
+			}
+			delivered[repo] = struct{}{}
 			if !scope(repo) {
 				continue
 			}
@@ -84,8 +124,16 @@ func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, sc
 		}
 		return nil
 	})
-	if err != nil && !pageDelivered {
-		return nil, fmt.Errorf("search registry: %w", err)
+	if err != nil {
+		if errors.Is(err, ErrRepositoryListingRepeated) {
+			return nil, err
+		}
+		if serr := stopped(ctx); serr != nil {
+			return nil, serr
+		}
+		if !pageDelivered {
+			return nil, fmt.Errorf("search registry: %w", err)
+		}
 	}
 	sort.Strings(matches)
 	return matches, nil
@@ -272,6 +320,15 @@ type UpdateOptions struct {
 // a non-nil error summarising the count so the exit status stays non-zero, but
 // only after every reachable registry has been indexed and written.
 //
+// 🔴 Only a finished walk writes. A registry whose walk failed, was refused
+// because its repository listing repeated itself, or was stopped part-way keeps
+// the index it had before the run, byte for byte: writing replaces a host's whole
+// index, so writing what an unfinished walk gathered would put a short index in
+// place of a complete one and nothing would say so. Such a host is reported with
+// its error and counts as not indexed. A listing that errors after delivering
+// pages is not a failed walk: EnumerateRepositories returns what those pages
+// named, and that partial result is indexed and written.
+//
 // notices carries the walk's running commentary — a skipped repository, a
 // deprecation marker met — for a surface with a person watching it. It is a
 // writer rather than returned data because the prose is written for a reader,
@@ -281,7 +338,8 @@ type UpdateOptions struct {
 // The result is returned alongside any error rather than instead of it, so a
 // partial walk is never reported as no walk at all. A stop is reported the same
 // way and for the same reason: the hosts already indexed have been written, so a
-// withdrawn walk reports what it indexed rather than claiming it indexed nothing.
+// withdrawn walk reports what it indexed rather than claiming it indexed nothing,
+// and the host it was walking when it stopped is reported as not indexed.
 func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts UpdateOptions, notices io.Writer) (UpdateResult, error) {
 	var res UpdateResult
 	if notices == nil {
@@ -337,6 +395,11 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 		if herr != nil {
 			hu.Err = herr.Error()
 			res.Hosts = append(res.Hosts, hu)
+			// A stop that landed inside this host's walk ends the run here, as one
+			// landing between hosts does: the registry did not fail, the caller left.
+			if serr := stopped(ctx); serr != nil {
+				return res, serr
+			}
 			if singleExplicit {
 				return res, fmt.Errorf("aggrega registry update: %s: %w", host, herr)
 			}
@@ -382,6 +445,12 @@ func updateHostIndex(
 	idx, err := buildHostIndex(ctx, cfg, policy, host, src, prior, &hu, notices)
 	if err != nil {
 		return hu, err
+	}
+	// A stop during the repository reads leaves every read after it skipped, so
+	// what was gathered is not this registry's index and is not written over the
+	// one already on disk.
+	if serr := stopped(ctx); serr != nil {
+		return hu, serr
 	}
 	if err := WriteHostIndex(root, cacheDir, idx, now().UTC()); err != nil {
 		return hu, err

@@ -6,14 +6,21 @@ package serve
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"oras.land/oras-go/v2"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -269,6 +276,107 @@ func TestRegistryUpdateOnTheDaemonRefusesLoudlyWhenACredentialIsMissing(t *testi
 	// some other failure, and the assertions above would have passed on it.
 	if reached == 0 {
 		t.Error("the registry was never contacted, so the refusal above is not the credential refusal this test is about")
+	}
+}
+
+// TestRegistryUpdateOnTheDaemonAnswersWhenAListingRepeatsItself drives a walk
+// over two registries, one of them a loopback registry whose repository listing
+// never ends: its first page names a repository and links to a cursor that answers
+// an empty page, whose own link starts the listing again from the top. The other
+// is a well-behaved registry served from memory.
+//
+// The loopback registry is reached through the production index source, so the
+// registry client's own paging is what follows the links. The call is bounded by
+// a LIVENESS CEILING rather than a performance budget: before the enumeration
+// refused a repeating listing, this request never returned.
+//
+// The answer must name the looping registry in failed with the refusal as its own
+// error, and must still carry the well-behaved registry indexed. A planted defect
+// makes it fail: with the repeat check removed from the enumeration, the request
+// does not return within the ceiling.
+func TestRegistryUpdateOnTheDaemonAnswersWhenAListingRepeatsItself(t *testing.T) {
+	// Not parallel: it points the process-wide index-target seam.
+	const repo = "component/proof/compute/title-retrieval"
+	var pages atomic.Int64
+	var ts *httptest.Server
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/_catalog" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		pages.Add(1)
+		repos, next := []string{repo}, repo+"/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000"
+		if r.URL.Query().Get("last") != "" {
+			repos, next = []string{}, ""
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<%s/v2/_catalog?n=1000&last=%s>; rel="next"`, ts.URL, url.QueryEscape(next)))
+		_ = json.NewEncoder(w).Encode(map[string][]string{"repositories": repos})
+	}))
+	t.Cleanup(ts.Close)
+	looping := strings.TrimPrefix(ts.URL, "http://")
+
+	const steady = "steady.aggrega.test"
+	steadySrc := fakeIndexSource{
+		repos: []string{"component/core/api-server"},
+		targets: map[string]oras.ReadOnlyTarget{
+			"component/core/api-server": seedComponentRepo(t, []string{"1.0.0"}, oci.SearchableMetadata{
+				Description: "the registry that answers", Category: "compute", Kind: "Component", Labels: componentFixtureLabels(),
+			}),
+		},
+	}
+	prev := registryops.IndexTarget
+	registryops.IndexTarget = func(cfg workspaceconfig.Config, host string) (registryops.IndexSource, error) {
+		if host == steady {
+			return steadySrc, nil
+		}
+		return prev(cfg, host)
+	}
+	t.Cleanup(func() { registryops.IndexTarget = prev })
+
+	srv, _, _ := registryWriteFixture(t, "workspace: {}\nregistries:\n  - host: "+looping+"\n  - host: "+steady+"\n")
+
+	done := make(chan jsonRPCResponse, 1)
+	go func() { done <- callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{}) }()
+
+	var resp jsonRPCResponse
+	select {
+	case resp = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the request did not return: a listing that repeats itself must end the walk of that registry")
+	}
+	var res registryUpdateResult
+	decodeDaemonResult(t, resp, &res)
+
+	if len(res.Failed) != 1 || res.Failed[0] != looping {
+		t.Errorf("failed = %v; want exactly the looping registry %s", res.Failed, looping)
+	}
+	var sawLooping, sawSteady bool
+	for _, hu := range res.Hosts {
+		switch hu.Host {
+		case looping:
+			sawLooping = true
+			for _, want := range []string{registryops.ErrRepositoryListingRepeated.Error(), "named " + repo + " a second time"} {
+				if !strings.Contains(hu.Err, want) {
+					t.Errorf("the looping registry's own error must carry %q; got %q", want, hu.Err)
+				}
+			}
+			if len(hu.Skipped) != 0 {
+				t.Errorf("a refused registry has no repository read, so none is skipped; got %+v", hu.Skipped)
+			}
+		case steady:
+			sawSteady = true
+			if hu.Err != "" || hu.Indexed != 1 {
+				t.Errorf("the well-behaved registry must still be indexed; got %+v", hu)
+			}
+		}
+	}
+	if !sawLooping || !sawSteady {
+		t.Fatalf("both registries must be reported; got %+v", res.Hosts)
+	}
+	// Calibration: the refusal is the one this test is about only if the client
+	// followed the listing round — the full page, the empty page, the full page.
+	if got := pages.Load(); got < 3 {
+		t.Errorf("the listing was served %d page(s); the walk must have followed it round before refusing", got)
 	}
 }
 
