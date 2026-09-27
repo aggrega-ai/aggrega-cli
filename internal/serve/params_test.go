@@ -85,7 +85,9 @@ func TestTheRoutingFieldsAreAcceptedOnAMethodThatDeclaresNeither(t *testing.T) {
 		}
 	}
 
-	srv, globalPath, _ := registryWriteFixture(t, "workspace: {}\n")
+	// Offline, so the seeding's trust fetch is refused before any dial rather than
+	// sent to a name no resolver answers.
+	srv, globalPath, _ := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
 	// The fixture seeds the global layer, and the existing-file guard now applies
 	// under every delivery — so the file is cleared rather than forced, keeping
 	// this test's subject the routing union alone.

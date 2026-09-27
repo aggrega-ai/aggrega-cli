@@ -49,13 +49,14 @@ func trustProbe(t *testing.T) (host string, contacted *atomic.Int32, client *htt
 }
 
 // registrationProbeWorkspace resolves a workspace over a two-layer cascade of this
-// test's own and returns it with the workspace configuration file a registration
-// targeted at the workspace will write.
+// test's own, with workspaceDoc as its workspace layer, and returns it with the
+// workspace configuration file a registration targeted at the workspace will write.
 //
 // The global layer is redirected through a frozen lookup rather than read from the
 // machine, because the operation under test defaults to the global file: a fixture
-// that did not redirect it would write the developer's own registries.
-func registrationProbeWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorkspace, string) {
+// that did not redirect it would write the developer's own registries. The frozen
+// lookup is also what keeps the posture the layer states the only one in force.
+func registrationProbeWorkspace(t *testing.T, workspaceDoc string) (*workspaceconfig.ResolvedWorkspace, string) {
 	t.Helper()
 	root := t.TempDir()
 	globalPath := filepath.Join(t.TempDir(), "config.yaml")
@@ -63,7 +64,7 @@ func registrationProbeWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorkspac
 		t.Fatalf("write the global layer: %v", err)
 	}
 	wsPath := filepath.Join(root, workspaceconfig.ConfigFilename)
-	if err := os.WriteFile(wsPath, []byte("workspace: {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(wsPath, []byte(workspaceDoc), 0o644); err != nil {
 		t.Fatalf("write the workspace layer: %v", err)
 	}
 	lookup := func(k string) string {
@@ -96,7 +97,7 @@ func registrationProbeWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorkspac
 func TestRegistrationNeverReachesTheRegistryWhenTheCallerStops(t *testing.T) {
 	t.Parallel()
 	host, contacted, client := trustProbe(t)
-	rw, wsPath := registrationProbeWorkspace(t)
+	rw, wsPath := registrationProbeWorkspace(t, "workspace: {}\n")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -137,7 +138,7 @@ func TestRegistrationNeverReachesTheRegistryWhenTheCallerStops(t *testing.T) {
 func TestRegistrationReachesTheRegistryWhenNobodyStops(t *testing.T) {
 	t.Parallel()
 	host, contacted, client := trustProbe(t)
-	rw, wsPath := registrationProbeWorkspace(t)
+	rw, wsPath := registrationProbeWorkspace(t, "workspace: {}\n")
 
 	res, err := Add(t.Context(), rw, AddOptions{
 		Host:        host,

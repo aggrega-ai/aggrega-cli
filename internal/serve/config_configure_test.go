@@ -273,7 +273,9 @@ func TestConfigInitOnTheDaemonHonoursTheWorkspaceOverride(t *testing.T) {
 // every other field.
 func TestConfigInitOnTheDaemonDryRunsWithoutWriting(t *testing.T) {
 	t.Parallel()
-	srv, globalPath, _ := registryWriteFixture(t, "")
+	// Offline, so the seeding's trust fetch is refused before any dial rather than
+	// sent to a name no resolver answers; this test is about the delivery alone.
+	srv, globalPath, _ := registryWriteFixture(t, "offline: true\n")
 	if err := os.Remove(globalPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("clear the global layer: %v", err)
 	}

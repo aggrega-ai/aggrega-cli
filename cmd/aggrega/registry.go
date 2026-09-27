@@ -425,9 +425,9 @@ type registryAddConfig struct {
 	// and would simply be dropped. Which advisory qualifies, and why only one of
 	// the fetch outcomes does, is writeTrustFetchNotice's decision.
 	ErrOut interface{ Write([]byte) (int, error) }
-	// trustClient transports the well-known trust fetch. Nil selects a default
-	// client in the fetch path; tests inject an httptest client so no live
-	// network is contacted.
+	// trustClient transports the well-known trust fetch. Nil takes the
+	// network-egress gate's client in the registration; tests inject an httptest
+	// client so no live network is contacted.
 	trustClient *http.Client
 }
 

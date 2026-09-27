@@ -108,7 +108,7 @@ type registryUpdateParams struct {
 
 // registryUpdateResult is the aggrega/registryUpdate response.
 //
-// It is the one registry method here that reaches the network, and the one whose
+// It is the one registry method here that walks registries, and the one whose
 // write is workspace-local: IndexRoot names the directory under this workspace's
 // own configured cache the indexes were written to, which is what says the
 // refresh changed nothing another project on the machine resolves through.
@@ -144,9 +144,12 @@ type registryUpdateResult struct {
 // that.
 //
 // Where the registration takes the registry's advertised trust policy it makes
-// one unauthenticated request to that registry's own origin. Nothing is
-// prompted for: a registry that advertises nothing is reported as advertising
-// nothing and the registration proceeds on what the request supplied.
+// one unauthenticated request to that registry's own origin, over the client
+// the shared registration takes from the network-egress gate — the one the
+// command line's registration takes — so an offline workspace refuses it in the
+// same sentence. Nothing is prompted for: a registry that advertises nothing is
+// reported as advertising nothing and the registration proceeds on what the
+// request supplied.
 func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryAddParams
 	if len(req.Params) > 0 {
@@ -254,7 +257,7 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 // dispatchRegistryUpdate refreshes the local searchable index of the configured
 // registries.
 //
-// 🔴 It REACHES REGISTRIES — the only method here that does — and it writes what
+// 🔴 It WALKS REGISTRIES — the only method here that does — and it writes what
 // it finds under this workspace's own configured cache directory. Those two
 // properties pull in opposite directions and the response states both: the reach
 // is machine-external, and the write is workspace-local, so a refresh changes

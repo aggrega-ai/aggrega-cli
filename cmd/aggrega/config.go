@@ -411,8 +411,8 @@ type configInitConfig struct {
 	// moved. It goes to ErrOut, which leaves the document's shape alone.
 	Out    io.Writer
 	ErrOut io.Writer
-	// trustClient transports the advertised-trust fetch. Nil selects a default
-	// client; tests inject one so no live network is contacted.
+	// trustClient transports the advertised-trust fetch. Nil takes the network-egress
+	// gate's client in the registration; tests inject one so no live network is contacted.
 	trustClient *http.Client
 }
 

@@ -20,12 +20,12 @@ import (
 //
 // It is a loopback authority nothing listens on, and deliberately so. The
 // observable these tests turn on is whether the REGISTRATION happened — the entry
-// in the configuration file — and not what the trust endpoint said: the daemon
-// supplies no transport for the advertised-trust fetch, so that fetch is refused
-// before any dial whatever is listening. A counted endpoint here would therefore
-// read zero under every outcome, which is a vacuous assertion wearing the shape of
-// a strong one. The transport-level proof lives beside the registration, in
-// internal/registryops, where a test can inject one.
+// in the configuration file — and not what the trust endpoint said: the fetch
+// meets a connection refused at once, which the registration tolerates as a
+// registry advertising nothing, so a seeding nobody withdrew writes its entry
+// without waiting on any network. What a trust endpoint was asked is proved where
+// an endpoint is counted: beside the registration in internal/registryops, and
+// over this protocol in registry_trust_fetch_test.go.
 const probeRegistryHost = "127.0.0.1:9"
 
 // seedingProbeWorkspace stands a daemon over a real two-layer configuration

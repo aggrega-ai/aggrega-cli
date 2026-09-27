@@ -180,8 +180,8 @@ const fetchTimeout = 15 * time.Second
 //
 // host is the registry authority (e.g. "hub.aggrega.ai" or "localhost:5000"),
 // as produced by pkg/registryhost.Of — no scheme, no path. The client passed
-// in transports the request; callers inject an httptest client in tests. A nil
-// client uses a default client bounded by fetchTimeout.
+// in transports the request, bounded by fetchTimeout; it comes from pkg/egress,
+// and a nil client is that gate's offline refusal, reported before any dial.
 func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTrust, error) {
 	if host == "" {
 		return AdvertisedTrust{}, fmt.Errorf("registrytrust: a registry host is required")

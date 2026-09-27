@@ -5,11 +5,17 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -235,6 +241,103 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "Pinned advertised trust policy") {
 		t.Errorf("--no-fetch-trust must not pin from a fetch; got %q", out.String())
+	}
+}
+
+// TestRegistryAddTakesItsTrustClientFromTheEgressGate drives `registry add` the
+// way the command runs it — with no transport supplied — against a loopback
+// registry that advertises a policy, online and offline.
+//
+// Every other test in this file injects a client, so none of them can see which
+// client the command reaches for when nothing is injected, and that is the only
+// client a person running the command ever gets. Online, the endpoint is asked
+// once and its policy pinned; offline, it is never asked and the notice carries
+// the network-egress gate's refusal as its reason, the same reason the daemon's
+// answer carries. The count is read at the endpoint, so a fetch refused before
+// any dial and one sent and failed cannot be mistaken for each other.
+//
+// Planted defects: a registration handed no client fails the online row, which
+// sees the endpoint never asked and the workspace reported offline; a command
+// building a client of its own fails the offline row, which sees the endpoint
+// asked under a posture that forbids it.
+func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
+	t.Parallel()
+	const doc = `{"requires_signatures": true, "trusted_identities": [` +
+		`{"identity": "signer@example.test", "issuer": "https://issuer.example.test"}, ` +
+		`{"identity": "ci@example.test", "issuer": "https://ci-issuer.example.test"}]}`
+
+	for _, tc := range []struct {
+		name       string
+		seed       string
+		wantAsked  int32
+		wantPinned bool
+	}{
+		{"an online workspace fetches the advertised policy once and pins it", "workspace: {}\n", 1, true},
+		{"an offline workspace never reaches the registry and says why", "offline: true\nworkspace: {}\n", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			asked := &atomic.Int32{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				asked.Add(1)
+				if r.URL.Path != registrytrust.WellKnownPath {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(doc))
+			}))
+			t.Cleanup(srv.Close)
+			host := strings.TrimPrefix(srv.URL, "http://")
+
+			// The workspace is resolved against a frozen environment, so the
+			// posture under test is the one this row wrote and never one the
+			// machine running the test happens to carry.
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(tc.seed), 0o644); err != nil {
+				t.Fatalf("write the workspace configuration: %v", err)
+			}
+			rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: root}, frozenEnv(nil))
+
+			var out bytes.Buffer
+			if err := registryAddRun(t.Context(), registryAddConfig{
+				Host:       host,
+				FetchTrust: true,
+				Workspace:  true,
+				ws:         rw,
+				Out:        &out,
+			}); err != nil {
+				t.Fatalf("registryAddRun: %v", err)
+			}
+
+			if got := asked.Load(); got != tc.wantAsked {
+				t.Errorf("the trust endpoint was asked %d time(s); want %d", got, tc.wantAsked)
+			}
+			reloaded, err := workspaceconfig.ResolveWithoutGlobal("", root, frozenEnv(nil))
+			if err != nil {
+				t.Fatalf("re-resolve: %v", err)
+			}
+			pol, found := reloaded.Config().RegistryTrustPolicy(host)
+			if !found {
+				t.Fatalf("the registration wrote no entry for %s", host)
+			}
+			if tc.wantPinned {
+				if want := fmt.Sprintf("Pinned advertised trust policy from %s (2 identities)\n", host); !strings.Contains(out.String(), want) {
+					t.Errorf("output = %q; want the pin notice %q", out.String(), want)
+				}
+				if !pol.Signing.Required || len(pol.TrustedIdentities) != 2 {
+					t.Errorf("the advertised policy was not pinned: %+v", pol)
+				}
+				return
+			}
+			reason := "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error()
+			if want := "Notice: registry " + host + " advertises no trust config (" + reason + ")"; !strings.Contains(out.String(), want) {
+				t.Errorf("output = %q; want the notice carrying the offline refusal %q", out.String(), want)
+			}
+			if pol.Signing.Required || len(pol.TrustedIdentities) != 0 {
+				t.Errorf("an offline registration pinned a policy it could not have fetched: %+v", pol)
+			}
+		})
 	}
 }
 

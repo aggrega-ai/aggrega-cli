@@ -70,8 +70,8 @@ type InitOptions struct {
 
 	Delivery authoredcontent.Delivery
 
-	// TrustClient transports the advertised-trust fetch. Nil selects a default
-	// client in the fetch path; a test injects one so no live network is reached.
+	// TrustClient transports the advertised-trust fetch. Nil takes the network-egress
+	// gate's client in the registration; a test injects one so no live network is reached.
 	TrustClient *http.Client
 }
 

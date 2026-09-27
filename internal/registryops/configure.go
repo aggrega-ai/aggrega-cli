@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -105,8 +106,9 @@ type AddOptions struct {
 
 	Delivery authoredcontent.Delivery
 
-	// TrustClient transports the advertised-trust fetch. Nil selects a default
-	// client in the fetch path; a test injects one so no live network is reached.
+	// TrustClient transports the advertised-trust fetch. Nil, which is what every
+	// surface passes, takes the client the network-egress gate hands out for the
+	// workspace's own resolution; a test injects one so no live network is reached.
 	TrustClient *http.Client
 }
 
@@ -165,6 +167,14 @@ type AddResult struct {
 // The write target is resolved before any fetch, so a write-target misuse or an
 // unresolvable global path fails before the network is reached.
 //
+// The fetch runs over the client the network-egress gate hands out for rw, and
+// that is the one construction every surface's registration reaches: the command
+// line, the daemon and the tool protocol's generated command tools alike. So one
+// registry registers under one trust outcome wherever the registration was asked
+// for. An offline workspace is refused by that gate, before any dial, and the
+// registration proceeds on the flags with the refusal as the reason the policy
+// was not advertised.
+//
 // Under a reporting delivery it composes the same document and returns it on the
 // result instead of writing it, touching no file and creating no directory. The
 // trust-policy precedence above is unchanged by the delivery: the fetch is a read
@@ -215,7 +225,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 
 	switch {
 	case opts.FetchTrust && !manualPolicy:
-		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, opts.TrustClient)
+		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, trustClientFor(rw, opts.TrustClient))
 		if ferr != nil {
 			return res, ferr
 		}
@@ -268,6 +278,30 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return res, err
 	}
 	return res, nil
+}
+
+// trustClientFor returns the transport the advertised-trust fetch runs over: the
+// one a test injected, or else the one the network-egress gate hands out for the
+// workspace's own resolution.
+//
+// 🔴 It is resolved here, inside the one registration every surface calls, and
+// never by a surface. A client each surface had to supply is a client a surface
+// can omit, and an omitted one reads as offline: the registration would proceed,
+// pin nothing, and report the workspace offline when it is not.
+//
+// An offline workspace yields no client, and that is the gate's refusal rather
+// than a failure of this step. The fetch reads a nil client as exactly that
+// refusal and reports it in the gate's own words before any dial, so whether the
+// workspace is offline is decided once, by the gate, and read nowhere here.
+func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client) *http.Client {
+	if injected != nil {
+		return injected
+	}
+	client, err := egress.HTTPClient(rw.Config())
+	if err != nil {
+		return nil
+	}
+	return client
 }
 
 // pinAdvertisedTrust fetches host's advertised trust document and copies its
