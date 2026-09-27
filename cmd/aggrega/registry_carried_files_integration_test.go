@@ -200,6 +200,9 @@ func TestIntegration_RegistryEntityReadsTheFilesItsArchiveCarries(t *testing.T) 
 		writeFixture(t, filepath.Join(pub, filepath.FromSlash(rel)), body)
 	}
 	publisher := resolveTempWorkspace(t, tempWorkspaceOptions{Root: pub})
+	// Each publication pins first, as the publisher would: a Recipe or FeatureRecipe
+	// reading a local chart is refused unpinned. A Component or a Feature has
+	// nothing to pin and publishes exactly as it would without it.
 	for _, entity := range []string{
 		"component/acme/compute/bannered/1.0.0/component.yaml",
 		"recipe/helm/bannered-local/1.0.0/recipe.yaml",
@@ -208,7 +211,7 @@ func TestIntegration_RegistryEntityReadsTheFilesItsArchiveCarries(t *testing.T) 
 		"component/acme/compute/templated/1.0.0/component.yaml",
 		"recipe/helm/templated-local/1.0.0/recipe.yaml",
 	} {
-		if err := pushRun(t.Context(), pushConfig{Workspace: publisher, EntityPath: filepath.Join(pub, entity), Registry: host}); err != nil {
+		if err := pushRun(t.Context(), pushConfig{Workspace: publisher, EntityPath: filepath.Join(pub, entity), Registry: host, PinSources: boolPtr(true)}); err != nil {
 			t.Fatalf("push %s: %v", entity, err)
 		}
 	}

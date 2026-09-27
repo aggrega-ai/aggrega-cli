@@ -55,10 +55,11 @@ const shapeChart = "apiVersion: v2\nname: app\nversion: 0.1.0\n"
 // its document publishes as that document, byte for byte, with a stray note beside
 // it or without. One declaring a file publishes an archive holding the document and
 // that file and nothing else. A local source naming one of two sibling directories
-// publishes that directory alone; one written as a template over both publishes the
-// whole directory and says so. And an Aggregate at a workspace root — beside the
-// Release, the Manifest, the workspace configuration and a build's output — publishes
-// as its document alone, because nothing it declares names any of them.
+// publishes that directory alone, beside the lock its pin wrote; one written as a
+// template over both publishes the whole directory and says so. And an Aggregate at
+// a workspace root — beside the Release, the Manifest, the workspace configuration
+// and a build's output — publishes as its document alone, because nothing it
+// declares names any of them.
 //
 // A packer that archived everything passes every archive row and fails the document
 // rows; one that walked the directory passes the document rows only where the
@@ -110,7 +111,7 @@ func TestAPublicationCarriesExactlyWhatItsEntityDeclares(t *testing.T) {
 				"recipe/helm/shaped/1.0.0/NOTES.md":                     "a note nothing declares\n",
 			},
 			archive: true,
-			entries: []string{"charts/app/Chart.yaml", "charts/app/templates/cm.yaml", "recipe.yaml"},
+			entries: []string{"charts/app/Chart.yaml", "charts/app/templates/cm.yaml", "entity.lock", "recipe.yaml"},
 		},
 		{
 			name:   "a source written as a template over two subdirectories publishes both, and says so",
@@ -123,7 +124,7 @@ func TestAPublicationCarriesExactlyWhatItsEntityDeclares(t *testing.T) {
 				"recipe/helm/shaped/1.0.0/NOTES.md":                "a note nothing declares, carried with the whole directory\n",
 			},
 			archive:   true,
-			entries:   []string{"NOTES.md", "charts/app/Chart.yaml", "charts/other/Chart.yaml", "recipe.yaml"},
+			entries:   []string{"NOTES.md", "charts/app/Chart.yaml", "charts/other/Chart.yaml", "entity.lock", "recipe.yaml"},
 			wholeNote: true,
 		},
 		{
@@ -151,12 +152,17 @@ func TestAPublicationCarriesExactlyWhatItsEntityDeclares(t *testing.T) {
 			entityPath := filepath.Join(root, filepath.FromSlash(row.entity))
 			store := memory.New()
 			var out bytes.Buffer
+			// Each publication pins first, as its author would: a Recipe reading a
+			// local source is refused unpinned, and the lock the pin writes is then
+			// part of what that Recipe declares. An entity with nothing to pin is
+			// left exactly as it was.
 			if err := pushRun(t.Context(), pushConfig{
 				Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 				EntityPath: entityPath,
 				Registry:   "example.com",
 				PushTarget: store,
 				Out:        &out,
+				PinSources: boolPtr(true),
 			}); err != nil {
 				t.Fatalf("pushRun: %v\n%s", err, out.String())
 			}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,8 @@ metadata:
 data:
   releaseName: {{ .Release.Name | quote }}
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	recipePath := filepath.Join(catalogRoot, "recipes", "server.yaml")
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -87,6 +89,10 @@ spec:
   implements: server
   source: ./charts/echo
 `)
+	// The Recipe reads a local chart, so its author pins it before any pull reads it.
+	if err := pinRun(context.Background(), io.Discard, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), recipePath, false); err != nil {
+		t.Fatalf("pin the fixture's Recipe: %v", err)
+	}
 	return filepath.Join(root, "release.yaml")
 }
 

@@ -132,37 +132,96 @@ func (d DeclaredFiles) LocalSourceFiles() ([]string, bool) {
 	return nil, false
 }
 
-// LocalSourcePinsOf returns the pins the pin step records for the local source of
-// the entity document data found at path, one per file [DeclaredFiles.LocalSourceFiles]
-// names, or none where the entity declares no local source.
+// LocalSource is an entity's local source as it stands beside its document:
+// whether the entity declares one at all, and the pins its files digest to now.
+//
+// The two answers are kept apart because they are different facts. An entity
+// that declares no local source and one whose declared source holds no file
+// both have no pins here, and they are not the same entity: the second still
+// reads its source, so a lock's pins for it are pins of an input it reads, and
+// comparing them with no file is the change to the source it is.
+type LocalSource struct {
+	// Declared reports whether the entity declares a local source. It is the
+	// declared set's answer — the spec.source declaration [DeclaredFiles.LocalSourceFiles]
+	// reads — and never a reading of whether the source holds any file.
+	Declared bool
+
+	// Pins is what the pin step records for the source now, one per file
+	// [DeclaredFiles.LocalSourceFiles] names, in path order. It is empty where
+	// the entity declares no local source and where the source it declares holds
+	// no file.
+	Pins []types.LocalSourceDigest
+}
+
+// RecordedPinsInForce returns the pins of recorded — the local source pins a
+// lock beside the entity records — that are pins of this entity's local source:
+// every one of them where the entity declares a local source, and none where it
+// declares none.
+//
+// A lock's local source pins are the pins of the one local source its entity
+// declares, so beside an entity that declares none they pin nothing the entity
+// reads. They are then passed over, as a pin for any other input an entity no
+// longer reads is: nothing a build compares is missing, and the next pin drops
+// them. A pull holding the lock to the pin step and a verifying pull both read a
+// lock's local source pins through this, and a build compares them only over a
+// source it forwards as local, which is a source the entity declares — so the
+// three compare a lock's local source pins beside the same entities.
+func (s LocalSource) RecordedPinsInForce(recorded []types.LocalSourceDigest) []types.LocalSourceDigest {
+	if !s.Declared {
+		return nil
+	}
+	return recorded
+}
+
+// LocalSourceOf reads the local source of the entity document data found at
+// path: whether the entity declares one, and the pins the pin step records for
+// it, one per file [DeclaredFiles.LocalSourceFiles] names.
 //
 // It reads the entity through [DeclaredFilesOf], the one function that says which
 // files an entity carries, so the pin step, a build's comparison and a
 // publication's bundle cannot come to disagree about what a source contributes.
-func LocalSourcePinsOf(data []byte, path string) ([]types.LocalSourceDigest, error) {
+func LocalSourceOf(data []byte, path string) (LocalSource, error) {
 	declared, err := DeclaredFilesOf(data, path)
 	if err != nil {
-		return nil, err
+		return LocalSource{}, err
 	}
 	files, declaresLocalSource := declared.LocalSourceFiles()
 	if !declaresLocalSource {
-		return nil, nil
+		return LocalSource{}, nil
 	}
 	dir, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
-		return nil, err
+		return LocalSource{}, err
 	}
-	return recipepin.LocalSourcePins(dir, files)
+	pins, err := recipepin.LocalSourcePins(dir, files)
+	if err != nil {
+		return LocalSource{}, err
+	}
+	return LocalSource{Declared: true, Pins: pins}, nil
 }
 
-// LocalSourcePinsAt is [LocalSourcePinsOf] over the entity document on disk at
-// path.
-func LocalSourcePinsAt(path string) ([]types.LocalSourceDigest, error) {
+// LocalSourceAt is [LocalSourceOf] over the entity document on disk at path.
+func LocalSourceAt(path string) (LocalSource, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return LocalSource{}, fmt.Errorf("read %s: %w", path, err)
 	}
-	return LocalSourcePinsOf(data, path)
+	return LocalSourceOf(data, path)
+}
+
+// LocalSourcePinsAt returns the pins the pin step records now for the local
+// source of the entity document on disk at path — [LocalSourceAt]'s pins — or
+// none where the entity declares no local source.
+//
+// It is the reading a build is handed through its catalog lookup, and a build
+// reaches it only over a source it forwards as local, which is a source the
+// entity declares.
+func LocalSourcePinsAt(path string) ([]types.LocalSourceDigest, error) {
+	src, err := LocalSourceAt(path)
+	if err != nil {
+		return nil, err
+	}
+	return src.Pins, nil
 }
 
 // sourceSurface names the declaration a Recipe's or FeatureRecipe's local source

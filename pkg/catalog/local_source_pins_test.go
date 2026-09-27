@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestALocalSourcePinsExactlyWhatItContributes holds a local source's pins to the
@@ -72,6 +73,14 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 			declares: true,
 		},
 		{
+			name: "a declared source whose directory holds no file is still declared, and pins nothing",
+			files: with(map[string]string{
+				"recipe.yaml":       declaredRecipeHead + "  source: ./chart\n  valuesMapping: '{}'\n",
+				"chart/.helmignore": "*.tmp\n",
+			}),
+			declares: true,
+		},
+		{
 			name: "a remote source is no local source and pins nothing here",
 			files: with(map[string]string{
 				"recipe.yaml": declaredRecipeHead + "  source: oci://registry.example/charts/app\n  valuesMapping: '{}'\n",
@@ -105,10 +114,14 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 				t.Errorf("LocalSourceFiles = %v; want %v", files, row.want)
 			}
 
-			pins, err := LocalSourcePinsOf(data, doc)
+			src, err := LocalSourceOf(data, doc)
 			if err != nil {
-				t.Fatalf("LocalSourcePinsOf: %v", err)
+				t.Fatalf("LocalSourceOf: %v", err)
 			}
+			if src.Declared != row.declares {
+				t.Errorf("LocalSourceOf declared = %v; the declared set says %v — the two must be one answer", src.Declared, row.declares)
+			}
+			pins := src.Pins
 			var pinned []string
 			for _, p := range pins {
 				pinned = append(pinned, p.Path)
@@ -135,6 +148,39 @@ func TestALocalSourcePinsExactlyWhatItContributes(t *testing.T) {
 			}
 			if !reflect.DeepEqual(byPath, pins) {
 				t.Errorf("reading the document from disk gave %+v; reading its bytes gave %+v", byPath, pins)
+			}
+			atPath, err := LocalSourceAt(doc)
+			if err != nil {
+				t.Fatalf("LocalSourceAt: %v", err)
+			}
+			if !reflect.DeepEqual(atPath, src) {
+				t.Errorf("reading the document from disk gave %+v; reading its bytes gave %+v", atPath, src)
+			}
+		})
+	}
+}
+
+// TestALockPinsALocalSourceOnlyWhereTheEntityDeclaresOne holds the scoping every
+// reader of a lock's local source pins applies to the declared answer rather than
+// to the pins: an entity declaring a local source is held to every pin the lock
+// records for it — even where its source now holds no file, which is the change
+// to the source a build refuses — and an entity declaring none is held to none of
+// them, whatever the lock records.
+func TestALockPinsALocalSourceOnlyWhereTheEntityDeclaresOne(t *testing.T) {
+	recorded := []types.LocalSourceDigest{{Path: "charts/app/Chart.yaml", Digest: "sha256:aa"}}
+	rows := []struct {
+		name   string
+		source LocalSource
+		want   []types.LocalSourceDigest
+	}{
+		{name: "a declared source is held to every recorded pin", source: LocalSource{Declared: true, Pins: recorded}, want: recorded},
+		{name: "a declared source holding no file is still held to them", source: LocalSource{Declared: true}, want: recorded},
+		{name: "an entity declaring no local source is held to none", source: LocalSource{}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			if got := row.source.RecordedPinsInForce(recorded); !reflect.DeepEqual(got, row.want) {
+				t.Errorf("RecordedPinsInForce = %+v; want %+v", got, row.want)
 			}
 		})
 	}

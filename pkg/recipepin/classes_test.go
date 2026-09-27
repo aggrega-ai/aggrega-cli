@@ -112,28 +112,12 @@ func TestUnrecordedPinsReportsMissingAndStaleAndNothingElse(t *testing.T) {
 	}
 }
 
-// switchUnpinnedLocalSourceRefusal sets the unpinned-local-source switch to on for
-// the rest of t, and restores the value it had once t ends. It is how a test
-// reaches the switch, so the refusal the switch enables is exercised before the
-// switch is flipped rather than after.
-func switchUnpinnedLocalSourceRefusal(t *testing.T, on bool) {
-	t.Helper()
-	was := refuseUnpinnedLocalSource
-	refuseUnpinnedLocalSource = on
-	t.Cleanup(func() { refuseUnpinnedLocalSource = was })
-}
-
 // TestUnrecordedPinsReadsALocalSourceAsOneSet drives the local-source class over
 // the cases that make it the one exception to "a recorded pin the entity no
 // longer needs is not a finding": a source's files are one input, so a file the
 // lock records that the source no longer holds is a change to it, which a build
 // refuses and a pull must report too.
-//
-// It runs with the unpinned-local-source refusal switched on, because its "never
-// pinned" row is that refusal; the switch's own two behaviours are
-// TestTheUnpinnedLocalSourceRefusalFollowsItsSwitch.
 func TestUnrecordedPinsReadsALocalSourceAsOneSet(t *testing.T) {
-	switchUnpinnedLocalSourceRefusal(t, true)
 	chart := types.LocalSourceDigest{Path: "chart/Chart.yaml", Digest: "sha256:aa"}
 	tmpl := types.LocalSourceDigest{Path: "chart/templates/cm.yaml", Digest: "sha256:bb"}
 	editedTmpl := types.LocalSourceDigest{Path: "chart/templates/cm.yaml", Digest: "sha256:cc"}
@@ -186,16 +170,14 @@ func TestUnrecordedPinsReadsALocalSourceAsOneSet(t *testing.T) {
 	}
 }
 
-// TestTheUnpinnedLocalSourceRefusalFollowsItsSwitch pins the unpinned-local-source
-// switch's two behaviours over one never-pinned local source, read through what
-// the hold composes: the comparison, then the halt built from what it found.
-//
-// Off, the source is not refused — alone, or beside an imported file whose pin the
-// lock does record — while a source whose lock records its files and whose content
-// has moved is still refused, so the switch reaches the source nobody pinned and
-// nothing else. On, the same never-pinned source is refused under the
-// unpinned-entity condition and its short code, naming each of its files.
-func TestTheUnpinnedLocalSourceRefusalFollowsItsSwitch(t *testing.T) {
+// TestTheHoldRefusesALocalSourceNobodyPinnedAndOneThatMoved reads the local-source
+// class through what the hold composes — the comparison, then the halt built from
+// what it found — over the three shapes a reader of the halt meets: a source the
+// lock records no pin for, alone and beside an imported file whose pin the lock
+// does record, and a source whose lock records its files at digests they no
+// longer have. Each is refused under the unpinned-entity condition and its short
+// code, naming each file that is missing or stale and nothing that is not.
+func TestTheHoldRefusesALocalSourceNobodyPinnedAndOneThatMoved(t *testing.T) {
 	chart := types.LocalSourceDigest{Path: "chart/Chart.yaml", Digest: "sha256:aa"}
 	tmpl := types.LocalSourceDigest{Path: "chart/templates/cm.yaml", Digest: "sha256:bb"}
 	editedTmpl := types.LocalSourceDigest{Path: "chart/templates/cm.yaml", Digest: "sha256:cc"}
@@ -211,42 +193,57 @@ func TestTheUnpinnedLocalSourceRefusalFollowsItsSwitch(t *testing.T) {
 			"Recipe", "server", missing, Remedy{Operation: "pull", Setting: "pin_sources_at_pull"})
 	}
 
-	t.Run("off, a never-pinned local source is not refused and a drifted one is", func(t *testing.T) {
-		switchUnpinnedLocalSourceRefusal(t, false)
-		if err := hold(Pins{LocalSourceDigests: source}, Pins{}); err != nil {
-			t.Errorf("a local source no lock records must not be refused with the switch off; got %v", err)
-		}
-		withImport := Pins{ArtifactDigests: []types.ArtifactDigest{art}, LocalSourceDigests: source}
-		if err := hold(withImport, Pins{ArtifactDigests: []types.ArtifactDigest{art}}); err != nil {
-			t.Errorf("a lock recording an imported file's pin and no local source pin must not be refused with the "+
-				"switch off; got %v", err)
-		}
-		err := hold(Pins{LocalSourceDigests: []types.LocalSourceDigest{chart, editedTmpl}}, Pins{LocalSourceDigests: source})
-		if !errors.Is(err, ErrEntityNotPinned()) {
-			t.Fatalf("a local source whose recorded pins no longer match must still be refused with the switch off; got %v", err)
-		}
-		if want := "local source file chart/templates/cm.yaml: the recorded pin no longer matches it"; !strings.Contains(err.Error(), want) {
-			t.Errorf("the halt does not carry %q:\n%v", want, err)
-		}
-	})
-
-	t.Run("on, a never-pinned local source is refused naming each file", func(t *testing.T) {
-		switchUnpinnedLocalSourceRefusal(t, true)
-		err := hold(Pins{LocalSourceDigests: source}, Pins{})
-		if !errors.Is(err, ErrEntityNotPinned()) {
-			t.Fatalf("a local source no lock records must be refused with the switch on; got %v", err)
-		}
-		if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0302" {
-			t.Errorf("the halt's short code = %q (found %v); want E0302", code, ok)
-		}
-		for _, want := range []string{
-			`Recipe "server"`,
-			"local source file chart/Chart.yaml: no pin recorded",
-			"local source file chart/templates/cm.yaml: no pin recorded",
-		} {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("the halt does not carry %q:\n%v", want, err)
+	rows := []struct {
+		name          string
+		want          Pins
+		recorded      Pins
+		carries, lack []string
+	}{
+		{
+			name:    "a local source the lock records no pin for is refused naming each file",
+			want:    Pins{LocalSourceDigests: source},
+			carries: []string{"local source file chart/Chart.yaml: no pin recorded", "local source file chart/templates/cm.yaml: no pin recorded"},
+		},
+		{
+			name:     "beside an imported file the lock does pin, only the local source's files are named",
+			want:     Pins{ArtifactDigests: []types.ArtifactDigest{art}, LocalSourceDigests: source},
+			recorded: Pins{ArtifactDigests: []types.ArtifactDigest{art}},
+			carries:  []string{"local source file chart/Chart.yaml: no pin recorded", "local source file chart/templates/cm.yaml: no pin recorded"},
+			lack:     []string{"imported file netpol.yaml"},
+		},
+		{
+			name:     "a local source whose recorded pins no longer match is refused naming the moved file",
+			want:     Pins{LocalSourceDigests: []types.LocalSourceDigest{chart, editedTmpl}},
+			recorded: Pins{LocalSourceDigests: source},
+			carries:  []string{"local source file chart/templates/cm.yaml: the recorded pin no longer matches it"},
+			lack:     []string{"local source file chart/Chart.yaml"},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			err := hold(row.want, row.recorded)
+			if !errors.Is(err, ErrEntityNotPinned()) {
+				t.Fatalf("the hold must refuse under the unpinned-entity condition; got %v", err)
 			}
+			if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0302" {
+				t.Errorf("the halt's short code = %q (found %v); want E0302", code, ok)
+			}
+			for _, want := range append([]string{`Recipe "server"`}, row.carries...) {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt does not carry %q:\n%v", want, err)
+				}
+			}
+			for _, not := range row.lack {
+				if strings.Contains(err.Error(), not) {
+					t.Errorf("the halt names %q, which is not missing or stale:\n%v", not, err)
+				}
+			}
+		})
+	}
+
+	t.Run("a local source whose lock records every file at its digest is not refused", func(t *testing.T) {
+		if err := hold(Pins{LocalSourceDigests: source}, Pins{LocalSourceDigests: source}); err != nil {
+			t.Errorf("a lock recording every file of the source at its digest must be accepted; got %v", err)
 		}
 	})
 }

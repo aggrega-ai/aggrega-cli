@@ -33,7 +33,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // externalInputSchemaBody is the schema document the loopback endpoint serves. It
@@ -90,7 +92,8 @@ data:
 	writeFixtureFile(t, filepath.Join(chartDir, "values.schema.json"),
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
 
-	writeFixtureFile(t, filepath.Join(ws, "catalog", "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	recipePath := filepath.Join(ws, "catalog", "recipes", "server.yaml")
+	writeFixtureFile(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -106,6 +109,16 @@ spec:
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"),
 		[]byte("workspace:\n  catalog_dirs: [catalog]\n"), 0o644); err != nil {
 		t.Fatalf("write the workspace configuration: %v", err)
+	}
+
+	// The Recipe reads a local chart, so its author pins it — through the step the
+	// daemon's own pin method runs — before any resolution reads it.
+	rw, err := workspaceconfig.Resolve(ws, "")
+	if err != nil {
+		t.Fatalf("resolve the workspace to pin in: %v", err)
+	}
+	if _, err := entitypin.Pin(context.Background(), entitypin.Options{Workspace: rw, EntityPath: recipePath}); err != nil {
+		t.Fatalf("pin the fixture's Recipe: %v", err)
 	}
 	return ws, releaseRel
 }

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -155,6 +156,11 @@ func TestBuild_RealSourceRecipeStillBuilds(t *testing.T) {
 	// The chart sits in the Recipe's own directory, which is where content an
 	// entity reads has to live.
 	writeMinimalChart(t, filepath.Join(catalogRoot, "recipes", "helm", "chart"))
+	// A Recipe reading a local chart is pinned by its author before a pull reads it.
+	if err := pinRun(context.Background(), io.Discard, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), false); err != nil {
+		t.Fatalf("pin the Recipe: %v", err)
+	}
 	primeLockfile(t, root, releasePath, catalogRoot)
 
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {

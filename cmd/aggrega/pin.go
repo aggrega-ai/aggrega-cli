@@ -30,8 +30,8 @@ in full, a file an artifacts entry imports with $import, and each file of a loca
 Pinning is the entity author's step. Run it on an entity before it is consumed — before you
 publish it, and after every change to one of its inputs — and commit the entity.lock it writes
 beside the entity. A pull over an entity whose lock does not record these pins halts and names
-this command, and so does a push of it. A lock that records no pin for a local source is the one
-exception and is not refused; once it records them, the source is held to them.
+this command, and so does a push of it; so does one whose local source has had a file added,
+changed or removed since it was pinned.
 
 No Release is needed. A source whose coordinates carry no template names one artifact for every
 Release that uses the entity, so it is resolved and pinned here, with nothing supplied. A remote

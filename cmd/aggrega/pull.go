@@ -75,9 +75,9 @@ the pins for its own inputs in the entity.lock beside it: a remote source: writt
 a file an artifacts entry imports, and each file of a local source:. Recording them is the
 entity author's step, aggrega pin.
 By default pull records none of them, and halts on an entity whose lock is missing any, naming
-the entity, each input and its class, and the command that records them. A local source is
-held to its pins once its lock records them: a file added, changed or removed since then halts
-the pull the same way, while a lock that records no pin for a local source is not refused.
+the entity, each input and its class, and the command that records them. A local source's files
+are held to their pins as one set: a file added, changed or removed since the pin halts the pull
+the same way.
 Pass --pin-sources, or set pin_sources_at_pull in the workspace configuration, to have pull run
 that same step instead; --pin-sources=false restores the halt for one run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

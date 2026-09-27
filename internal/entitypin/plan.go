@@ -73,7 +73,8 @@ var errPlanNotForWriting = errors.New("internal: the pin step's plan was compute
 
 // entityPlan is one entity the step would pin: the document it was read from,
 // the kind and name that identify it to a reader, the pins its inputs need now
-// and the pins its lock records.
+// and the pins its lock records for them — a lock's local source pins only where
+// the entity declares a local source for them to pin.
 type entityPlan struct {
 	path     string
 	kind     string
@@ -206,12 +207,14 @@ func Compute(in PlanInputs) (Plan, error) {
 		}
 		// A local source is pinned file by file over the files the entity's
 		// declared set says it contributes, which is what a publication of the
-		// entity carries for it and what a build compares.
-		localPins, err := catalog.LocalSourcePinsAt(h.plan.path)
+		// entity carries for it and what a build compares. The lock's local
+		// source pins are held to it only where the entity declares one.
+		local, err := catalog.LocalSourceAt(h.plan.path)
 		if err != nil {
 			return Plan{}, err
 		}
-		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: localPins}
+		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: local.Pins}
+		h.plan.recorded.LocalSourceDigests = local.RecordedPinsInForce(h.plan.recorded.LocalSourceDigests)
 		plan.entities = append(plan.entities, h.plan)
 	}
 	sort.Slice(plan.entities, func(i, j int) bool { return plan.entities[i].path < plan.entities[j].path })

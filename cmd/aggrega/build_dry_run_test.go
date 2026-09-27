@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -209,7 +210,8 @@ data:
 			fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaRef))
 	}
 
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -219,6 +221,12 @@ spec:
   implements: server
   source: ./charts/webapp
 `)
+	// The Recipe reads a local chart, so its author pins it, as a pull that does
+	// not pin refuses a local source whose files the lock beside it does not
+	// record. The pin runs last, over the chart as every case here reads it.
+	if err := pinRun(context.Background(), io.Discard, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), recipePath, false); err != nil {
+		t.Fatalf("pin the fixture's Recipe: %v", err)
+	}
 
 	return filepath.Join(root, "release.yaml"), catalogDir
 }

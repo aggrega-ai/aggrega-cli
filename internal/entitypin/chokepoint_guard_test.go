@@ -245,20 +245,29 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 			// pin a file a publication does not carry or to miss one it does.
 			callee: "recipepin.LocalSourcePins",
 			why:    "a local source's files are pinned over the declared set's answer and over no other listing",
-			want:   []string{"catalog.LocalSourcePinsOf"},
+			want:   []string{"catalog.LocalSourceOf"},
 		},
 		{
-			callee: "catalog.LocalSourcePinsOf",
-			why:    "the pins of a local source are read from an entity document in one place",
-			want:   []string{"catalog.LocalSourcePinsAt"},
+			callee: "catalog.LocalSourceOf",
+			why:    "a local source is read from an entity document in one place",
+			want:   []string{"catalog.LocalSourceAt"},
 		},
 		{
-			// The build reaches the same function as a value the catalog hands the
-			// render through its lookup, which a call walk does not see; the value is
-			// set where the catalog builds that lookup and nowhere else.
+			// The reading carries whether the entity declares a local source at all,
+			// which is what decides whether a lock's local source pins are held to
+			// it, so the pin step's hold and a verifying pull read it here and scope
+			// the lock's pins through its answer.
+			callee: "catalog.LocalSourceAt",
+			why:    "the pin step, a verifying pull and a build read a local source through the one reading",
+			want:   []string{"catalog.LocalSourcePinsAt", "entitypin.Compute", "pullops.verifyEntityLocks"},
+		},
+		{
+			// The build reaches this as a value the catalog hands the render through
+			// its lookup, which a call walk does not see; the value is set where the
+			// catalog builds that lookup and nowhere else, so nothing calls it.
 			callee: "catalog.LocalSourcePinsAt",
-			why:    "the pin step and a verifying pull read a local source's pins through the one reading",
-			want:   []string{"entitypin.Compute", "pullops.verifyEntityLocks"},
+			why:    "the render's reading of a local source's pins is the one value its lookup carries",
+			want:   []string{},
 		},
 		{
 			callee: "recipepin.CheckLocalSourcePins",

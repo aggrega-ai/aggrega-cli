@@ -127,11 +127,13 @@ func TestIntegration_PulledComponentValidatesAgainstTheSchemaItsArchiveCarries(t
 		writeFixture(t, filepath.Join(pub, filepath.FromSlash(rel)), body)
 	}
 	publisher := resolveTempWorkspace(t, tempWorkspaceOptions{Root: pub})
+	// Each publication pins first, as the publisher would: the Recipe reads a local
+	// chart and is refused unpinned, and the Component has nothing to pin.
 	for _, entity := range []string{
 		"component/acme/compute/imported/1.0.0/component.yaml",
 		"recipe/helm/imported-local/1.0.0/recipe.yaml",
 	} {
-		if err := pushRun(t.Context(), pushConfig{Workspace: publisher, EntityPath: filepath.Join(pub, entity), Registry: host}); err != nil {
+		if err := pushRun(t.Context(), pushConfig{Workspace: publisher, EntityPath: filepath.Join(pub, entity), Registry: host, PinSources: boolPtr(true)}); err != nil {
 			t.Fatalf("push %s: %v", entity, err)
 		}
 	}

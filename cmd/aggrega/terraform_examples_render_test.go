@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
 // The terraform worked examples render through the full build path against the
@@ -105,9 +107,11 @@ func workedExampleDir(t *testing.T, name string) string {
 }
 
 // copyExampleInputs copies an example's committed inputs into dst, skipping the
-// regenerated build artifacts (dist/, *.lock, .aggrega/) and the example's
-// workspace config (its relative catalog_dirs do not resolve from a temp copy;
-// the catalog is supplied to the build explicitly instead).
+// regenerated build artifacts (dist/, a Release's *.lock, .aggrega/) and the
+// example's workspace config (its relative catalog_dirs do not resolve from a temp
+// copy; the catalog is supplied to the build explicitly instead). An entity.lock
+// is an input rather than an artifact — the pin its author committed, which a pull
+// holds the entity beside it to — so it is copied.
 func copyExampleInputs(t *testing.T, src, dst string) {
 	t.Helper()
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
@@ -132,7 +136,8 @@ func copyExampleInputs(t *testing.T, src, dst string) {
 		if d.IsDir() {
 			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
 		}
-		if strings.HasSuffix(rel, ".lock") || rel == ".aggrega-config.yaml" {
+		releaseLock := strings.HasSuffix(rel, ".lock") && filepath.Base(rel) != recipepin.LockFileName
+		if releaseLock || rel == ".aggrega-config.yaml" {
 			return nil
 		}
 		data, err := os.ReadFile(p)

@@ -123,9 +123,11 @@ var lockClasses = []lockClass{
 // A local source's files are the one exception, because together they are one
 // input rather than several: a file the lock records that the source no longer
 // holds is a change to the source a build refuses, so it is reported as stale,
-// after the files want carries. A local source the lock records no pin for at
-// all is not reported: that refusal is not in force while the standard-library
-// catalog and the worked examples do not yet record a local source's pins.
+// after the files want carries. A local source the lock records no pin for is
+// reported file by file, as missing, like any other input nobody pinned. Which
+// of a lock's local source pins are the source's is the caller's to settle
+// before it asks, because it turns on what the entity declares rather than on
+// any pin: beside an entity declaring no local source, recorded carries none.
 func UnrecordedPins(want, recorded Pins) []Unrecorded {
 	var out []Unrecorded
 	for _, class := range lockClasses {
@@ -158,34 +160,13 @@ func unrecordedArtifacts(want, recorded Pins) []Unrecorded {
 	return out
 }
 
-// refuseUnpinnedLocalSource is the switch for the one refusal the local-source
-// class carries that is not yet in force: the unpinned-entity halt over an entity
-// whose local source the lock beside it records no pin for at all. It is off.
-//
-// It is off because the standard-library catalog and the worked examples do not
-// yet record a local source's pins, so with it on, every pull and every
-// publication over one of their entities with a local source would halt until
-// that entity was pinned again. Setting it to true, once they record those pins,
-// is the whole of turning the refusal on: the comparison it enables is
-// [unrecordedLocalSourceFiles], which is tested with the switch set either way.
-//
-// It governs nothing else. With it off the pin step still records a local
-// source's pins, and once a lock records any, this halt, a build and a verifying
-// pull all compare the source with them as one set.
-var refuseUnpinnedLocalSource = false
-
 // unrecordedLocalSourceFiles is the local-source class's comparison, and it reads
 // the class as one set: [localSourceDifferences] is the one statement of how two
 // sets of a source's file pins differ, and a build's refusal reads the same
 // function, so the files a pull reports and the files a build refuses are one
-// answer.
-//
-// A lock recording no pin for the source at all is reported only while
-// [refuseUnpinnedLocalSource] is on.
+// answer. A lock recording no pin for the source reports every file the source
+// holds, as missing.
 func unrecordedLocalSourceFiles(want, recorded Pins) []Unrecorded {
-	if len(recorded.LocalSourceDigests) == 0 && !refuseUnpinnedLocalSource {
-		return nil
-	}
 	var out []Unrecorded
 	for _, d := range localSourceDifferences(recorded.LocalSourceDigests, want.LocalSourceDigests) {
 		out = append(out, Unrecorded{Class: classLocalSourceFile, Input: d.path, Stale: d.recorded != ""})

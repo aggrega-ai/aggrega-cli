@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
@@ -96,16 +97,13 @@ spec:
 
 // TestALocalSourceIsPinnedAndABuildRefusesItsDrift drives a local source's pins end
 // to end, through the command paths a user runs: a never-published Recipe with a
-// local chart that nobody pinned pulls and builds, because the refusal of an
-// unpinned local source is switched off in the lock package; the pin records one
-// row per file its source contributes and none for the note beside it; the build
-// is intact; a file edited inside the source halts the build and a verifying pull
-// under the one condition, naming the file and both digests; and a file edited
-// beside the source, outside what the entity declares, halts nothing.
-//
-// The first step is the one that moves when that switch is turned on: the pull
-// over the never-pinned Recipe then halts under the unpinned-entity condition,
-// naming each file of the source, and this test changes with it.
+// local chart that nobody pinned is refused by a pull and by a build that
+// resolves its own dependencies, under the unpinned-entity condition, naming each
+// file of the source and not the note beside it, and neither writes a lock; the
+// pin records one row per file its source contributes and none for the note; the
+// build is intact; a file edited inside the source halts the build and a
+// verifying pull under the one condition, naming the file and both digests; and a
+// file edited beside the source, outside what the entity declares, halts nothing.
 func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -126,17 +124,42 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 			releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
 	}
 
-	// Nobody has pinned the Recipe, and a lock that records no pin for a local
-	// source is not refused: the pull and the build both pass, and the pull writes
-	// nothing beside the entity.
-	if err := pull(false); err != nil {
-		t.Fatalf("a pull over a local source nobody pinned must not be refused; got %v", err)
+	// Nobody has pinned the Recipe, so a pull that does not pin refuses it, and so
+	// does a build asked to resolve its own dependencies, which runs the same hold.
+	// Each names every file of the source and not the note beside it, and neither
+	// writes anything beside the entity.
+	buildFillingItsLockfile := func() error {
+		return dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+			releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{AutoPull: true},
+			io.Discard, io.Discard)
 	}
-	if err := build(); err != nil {
-		t.Fatalf("a build over a local source nobody pinned must not be refused; got %v", err)
-	}
-	if _, err := os.Stat(recipepin.LockPath(recipePath)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("a pull that does not pin must write no lock beside the entity; stat: %v", err)
+	for _, step := range []struct {
+		name string
+		run  func() error
+	}{
+		{"a pull", func() error { return pull(false) }},
+		{"a build resolving its own dependencies", buildFillingItsLockfile},
+	} {
+		err := step.run()
+		if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+			t.Fatalf("%s over a local source nobody pinned must halt under the unpinned-entity condition; got %v", step.name, err)
+		}
+		chain := cerrors.CauseChain(err)
+		for _, want := range []string{
+			`Recipe "server"`,
+			"local source file chart/Chart.yaml: no pin recorded",
+			"local source file chart/templates/cm.yaml: no pin recorded",
+		} {
+			if !strings.Contains(chain, want) {
+				t.Errorf("%s's halt does not name %q:\n%s", step.name, want, chain)
+			}
+		}
+		if strings.Contains(chain, "NOTES.md") {
+			t.Errorf("%s's halt names the note beside the Recipe, which nothing declares:\n%s", step.name, chain)
+		}
+		if _, err := os.Stat(recipepin.LockPath(recipePath)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s that does not pin must write no lock beside the entity; stat: %v", step.name, err)
+		}
 	}
 
 	var out bytes.Buffer
@@ -204,5 +227,142 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 	}
 	if err := build(); err != nil {
 		t.Fatalf("an edit outside the declared source must not halt the build: %v", err)
+	}
+}
+
+// sourcelessServerRecipe is the Recipe localSourcePinWorkspace writes with its
+// local source taken out: the workload is synthesised, so the Recipe renders and
+// declares no local source for the lock's local source pins to pin.
+const sourcelessServerRecipe = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      server:
+        image: test-server:latest
+`
+
+// TestALockOutlivingItsLocalSourceIsHeldOnlyWhileTheSourceIsDeclared drives a
+// lock's local source pins through the three readers that hold an entity to them
+// — a pull that does not pin, a verifying pull and a build — over the two ways a
+// Recipe can stop matching what its lock records for a local source.
+//
+// A declared source whose files were all removed is a change to the source, so
+// all three refuse it, each naming every file that is gone. A Recipe that no
+// longer declares a local source reads nothing those pins pin, so all three admit
+// it, exactly as a pin recorded for an imported file the Recipe no longer declares
+// is admitted; the pin step then drops them. The discriminator is what the Recipe
+// declares, never whether any file is left, which is why the two halves are one
+// test.
+func TestALockOutlivingItsLocalSourceIsHeldOnlyWhileTheSourceIsDeclared(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath, catalogDir, recipePath := localSourcePinWorkspace(t, root)
+	pull := func(verify bool) error {
+		return pullRun(context.Background(), pullConfig{
+			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+			ReleasePath: releasePath,
+			CatalogDirs: []string{catalogDir},
+			Verify:      verify,
+			DiagOut:     io.Discard,
+			Out:         io.Discard,
+			diag:        buildDiagOptions{quiet: true},
+		})
+	}
+	build := func() error {
+		return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+			releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
+	}
+	pin := func() error {
+		return pinRun(context.Background(), io.Discard, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), recipePath, false)
+	}
+
+	if err := pin(); err != nil {
+		t.Fatalf("aggrega pin: %v", err)
+	}
+	if err := pull(false); err != nil {
+		t.Fatalf("a pull over the pinned Recipe must pass, or nothing below is about the lock: %v", err)
+	}
+	lockPath := recipepin.LockPath(recipePath)
+	pinned := mustReadFile(t, lockPath)
+
+	// The declared source's files, every one removed; its directories stay.
+	recipeDir := filepath.Dir(recipePath)
+	sourceFiles := []string{"chart/Chart.yaml", "chart/templates/cm.yaml"}
+	saved := map[string][]byte{}
+	for _, f := range sourceFiles {
+		p := filepath.Join(recipeDir, filepath.FromSlash(f))
+		saved[f] = mustReadFile(t, p)
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, reader := range []struct {
+		name      string
+		run       func() error
+		condition error
+		names     func(file string) string
+	}{
+		{"a pull that does not pin", func() error { return pull(false) }, recipepin.ErrEntityNotPinned(),
+			func(f string) string { return "local source file " + f + ": the recorded pin no longer matches it" }},
+		{"a verifying pull", func() error { return pull(true) }, recipepin.ErrLocalSourceContentMismatch(),
+			func(f string) string { return "file " + f + " is no longer in the source" }},
+		{"a build", build, recipepin.ErrLocalSourceContentMismatch(),
+			func(f string) string { return "file " + f + " is no longer in the source" }},
+	} {
+		err := reader.run()
+		if !errors.Is(err, reader.condition) {
+			t.Fatalf("%s over a declared source whose files were all removed must refuse it; got %v", reader.name, err)
+		}
+		chain := cerrors.CauseChain(err)
+		for _, f := range sourceFiles {
+			if want := reader.names(f); !strings.Contains(chain, want) {
+				t.Errorf("%s's refusal does not name %q:\n%s", reader.name, want, chain)
+			}
+		}
+	}
+	for f, body := range saved {
+		if err := os.WriteFile(filepath.Join(recipeDir, filepath.FromSlash(f)), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := build(); err != nil {
+		t.Fatalf("the build must be intact again once the source's files are restored: %v", err)
+	}
+
+	// The Recipe stops declaring a local source; its lock still records the chart's
+	// files, and the chart still sits beside it.
+	writeFixture(t, recipePath, sourcelessServerRecipe)
+	for _, reader := range []struct {
+		name string
+		run  func() error
+	}{
+		// A pull that does not pin goes first: the Recipe document moved, and it is
+		// what records the document's new digest in the lockfile the other two read.
+		{"a pull that does not pin", func() error { return pull(false) }},
+		{"a verifying pull", func() error { return pull(true) }},
+		{"a build", build},
+	} {
+		if err := reader.run(); err != nil {
+			t.Fatalf("%s over a Recipe that declares no local source must not be held to the lock's local source pins; got %v",
+				reader.name, err)
+		}
+	}
+	if got := mustReadFile(t, lockPath); !bytes.Equal(got, pinned) {
+		t.Fatalf("no reader may rewrite the lock; it moved from\n%s\nto\n%s", pinned, got)
+	}
+	if err := pin(); err != nil {
+		t.Fatalf("aggrega pin over the sourceless Recipe: %v", err)
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the pin step must drop the pins of a source the Recipe no longer declares, leaving no lock; stat: %v", err)
 	}
 }

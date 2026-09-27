@@ -43,7 +43,10 @@ import (
 //   - A local source's pins are compared with the pins its files digest to now,
 //     read through the catalog's declared set as the pin step and a build read
 //     them, by recipepin.CheckLocalSourcePins, the comparison a build makes before
-//     a provider reads the source.
+//     a provider reads the source. They are compared only where the entity
+//     declares a local source — catalog.LocalSource.RecordedPinsInForce, which
+//     the pull holding the lock to the pin step reads too — because a build
+//     compares them only over a source it reads.
 //   - A source pin is compared with the digest the lockfile records for that
 //     source by recipepin.CheckSourcePin, which is the comparison a build makes
 //     before it reads the cache.
@@ -126,11 +129,11 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 		}
 
 		if len(pins.LocalSourceDigests) > 0 {
-			current, err := catalog.LocalSourcePinsAt(locked.path)
+			local, err := catalog.LocalSourceAt(locked.path)
 			if err != nil {
 				return err
 			}
-			if err := recipepin.CheckLocalSourcePins(locked.path, pins.LocalSourceDigests, current); err != nil {
+			if err := recipepin.CheckLocalSourcePins(locked.path, local.RecordedPinsInForce(pins.LocalSourceDigests), local.Pins); err != nil {
 				report(locked.path+"\x00local-source", err)
 			}
 		}

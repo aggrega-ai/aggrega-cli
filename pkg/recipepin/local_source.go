@@ -100,8 +100,11 @@ func localSourceDifferences(recorded, current []types.LocalSourceDigest) []local
 // source as it stands with them before any provider reads it, so a chart or a
 // module edited after it was pinned never renders as though it had been checked.
 // A verifying pull reports the same disagreement under the same condition. A lock
-// recording no local source pin at all leaves nothing to compare: that is an
-// entity nobody pinned, which neither a build nor a pull refuses.
+// recording no local source pin at all leaves nothing to compare here: that is an
+// entity nobody pinned, which a pull or a publication that does not pin refuses
+// under [ErrEntityNotPinned] instead, before any build reads it. A lock's local
+// source pins beside an entity that declares no local source pin nothing it
+// reads, and are compared with nothing.
 //
 // The diagnostic is positioned at the entity document and names every file that
 // differs, with the digest its content has now and the digest recorded for it;
@@ -137,7 +140,8 @@ const localSourceMismatchAdvice = "If the source was changed on purpose, run `ag
 // every command that makes the comparison calls it: a build, immediately before a
 // provider reads the source, and a verify, over the locks beside a Release's own
 // entities. documentPath is the entity document, which positions the diagnostic;
-// current is what the pin step would record for the source now.
+// recorded is the lock's pins for the source the entity declares, and none where
+// it declares none; current is what the pin step would record for the source now.
 func CheckLocalSourcePins(documentPath string, recorded, current []types.LocalSourceDigest) error {
 	if len(recorded) == 0 {
 		return nil

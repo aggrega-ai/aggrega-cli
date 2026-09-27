@@ -74,11 +74,14 @@ spec:
 	if err != nil {
 		t.Fatalf("orasoci.New: %v", err)
 	}
+	// The Recipe reads a local source, so the publication pins it first rather than
+	// refusing a source whose files no lock beside it records.
 	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: filepath.Join(recipeDir, "mariadb.yaml"),
 		Registry:   "example.com",
 		PushTarget: store,
+		PinSources: boolPtr(true),
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
 	}

@@ -90,8 +90,8 @@ var pinToolSpec = toolSpec{
 		"a remote source whose coordinates come from a template is pinned per Release by the pull tool instead, so no " +
 		"Release is needed here. Pinning is the entity author's step: call it before an entity is consumed or " +
 		"published, and after changing one of its inputs, because a pull over an entity whose lock does not " +
-		"record its pins refuses and names this step — bar a lock recording no pin for a local source, which is " +
-		"not refused; once it records them, the source is held to them. The entity file itself is never written, " +
+		"record its pins, or whose local source has had a file added, changed or removed since it was pinned, " +
+		"refuses and names this step. The entity file itself is never written, " +
 		"and re-running over unchanged inputs leaves the lock byte-identical. Set `dry_run` to get the lock it would write " +
 		"without writing it. The pull tool's `pin_sources` and the publish-entity tool's `pin_sources` run this " +
 		"same step and write the same bytes.",
