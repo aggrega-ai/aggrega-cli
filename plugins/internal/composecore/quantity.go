@@ -11,30 +11,47 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/quantity"
 )
 
-// Quantity translation for the compose deploy.resources block. This is the
-// single home for converting Kubernetes-shaped resource quantities into the
-// compose forms; helm passes the quantities through verbatim (its target IS
-// Kubernetes) and needs no translation. The translator is deliberately
-// dependency-free — it does not pull the Kubernetes quantity library into the
-// wasip1 guest that compiles this package — and loud-halts on any quantity it
-// cannot convert exactly rather than round or emit a wrong value.
+// Quantity conversion for the compose deploy.resources block. The grammar a
+// quantity is read in is not decided here: it is the shared quantity package's,
+// the same grammar the Kubernetes-shaped target checks its own output against,
+// so the two targets agree on what is a quantity. What is decided here is only
+// whether compose can hold a parsed value, and that is asked of the exact value
+// rather than of the text: a value compose cannot hold exactly halts rather than
+// being rounded or emitted wrong. Both refusals say which of the two the value
+// failed — not a quantity at all, or a quantity compose has no exact form for —
+// because the repair differs.
+
+// nanosPerCore is the count of the finest cpus unit in one core. A compose cpus
+// value is emitted to at most nine decimal places, the finest precision a
+// Kubernetes quantity itself keeps, so a cpu quantity finer than that has no
+// exact compose form.
+const nanosPerCore = 1_000_000_000
+
+// quantityUnconvertible closes both quantity refusals, whole in one literal, so
+// one sentence matches every refusal a compose resources quantity raises
+// whichever of the two failures it met.
+const quantityUnconvertible = "resources quantity cannot be converted to a compose deploy.resources value"
 
 // translateComposeResources maps a Workload container's resource requests and
 // limits to a compose deploy block. Kubernetes requests become compose
 // reservations (guaranteed minimum) and limits become compose limits (hard
-// cap). Returns nil when the spec carries no convertible quantity. nodeID
-// attributes any halt to the offending node.
-func translateComposeResources(r *types.ResourceSpec, nodeID string) (*Deploy, error) {
+// cap). Returns nil when the spec carries no convertible quantity.
+//
+// resourcesPath is the authored path to the container's resources block —
+// `containers.<name>.resources` or `initContainers[<i>].resources` — and reaches
+// the refusal sentences and nothing else.
+func translateComposeResources(r *types.ResourceSpec, resourcesPath, nodeID string) (*Deploy, error) {
 	if r == nil {
 		return nil, nil
 	}
-	limits, err := composeQuantities(r.Limits, nodeID)
+	limits, err := composeQuantities(r.Limits, resourcesPath+".limits", "limit", nodeID)
 	if err != nil {
 		return nil, err
 	}
-	reservations, err := composeQuantities(r.Requests, nodeID)
+	reservations, err := composeQuantities(r.Requests, resourcesPath+".requests", "request", nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,27 +62,27 @@ func translateComposeResources(r *types.ResourceSpec, nodeID string) (*Deploy, e
 }
 
 // composeQuantities converts one Kubernetes ResourceList (cpu/memory) into the
-// compose cpus/memory pair. Returns nil when both fields are empty.
-func composeQuantities(rl *types.ResourceList, nodeID string) (*ResourceQuantities, error) {
+// compose cpus/memory pair. Returns nil when both fields are empty. listPath is
+// the authored path to the list and role names it for a reader — "request" or
+// "limit".
+func composeQuantities(rl *types.ResourceList, listPath, role, nodeID string) (*ResourceQuantities, error) {
 	if rl == nil {
 		return nil, nil
 	}
 	out := &ResourceQuantities{}
 	if rl.CPU != "" {
-		cpus, err := k8sCPUToComposeCPUs(rl.CPU)
+		cpus, err := convertQuantity(rl.CPU, composeCPUs, "cpu", role, listPath+".cpu", nodeID,
+			"a compose cpus value is a core count from 0 to 9223372036.854775807 with at most nine decimal places")
 		if err != nil {
-			return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
-				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("compose: cannot convert cpu quantity %q to a deploy.resources cpus value; use a millicpu (e.g. 500m) or a plain core count (e.g. 0.5, 2): resources quantity cannot be converted to a compose deploy.resources value", rl.CPU))
+			return nil, err
 		}
 		out.CPUs = cpus
 	}
 	if rl.Memory != "" {
-		mem, err := k8sMemToComposeBytes(rl.Memory)
+		mem, err := convertQuantity(rl.Memory, composeMemory, "memory", role, listPath+".memory", nodeID,
+			"a compose memory value is a whole number of bytes from 0 to 9223372036854775807")
 		if err != nil {
-			return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
-				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("compose: cannot convert memory quantity %q to a deploy.resources byte count; use an integer quantity with a binary (Ki/Mi/Gi/Ti/Pi) or decimal (k/M/G/T/P) suffix, or a plain byte integer: resources quantity cannot be converted to a compose deploy.resources value", rl.Memory))
+			return nil, err
 		}
 		out.Memory = mem
 	}
@@ -75,115 +92,65 @@ func composeQuantities(rl *types.ResourceList, nodeID string) (*ResourceQuantiti
 	return out, nil
 }
 
-// k8sCPUToComposeCPUs converts a Kubernetes CPU quantity to a compose cpus
-// fractional-core string. A millicpu quantity ("<int>m") is divided by 1000
-// and formatted minimally (500m → "0.5", 1500m → "1.5", 2000m → "2"); a plain
-// decimal or integer core count ("0.5", "2") passes through unchanged. Any
-// other shape returns an error.
-func k8sCPUToComposeCPUs(s string) (string, error) {
-	if strings.HasSuffix(s, "m") {
-		milli, err := strconv.Atoi(strings.TrimSuffix(s, "m"))
-		if err != nil || milli < 0 {
-			return "", fmt.Errorf("invalid millicpu quantity %q", s)
-		}
-		return formatMillicores(milli), nil
+// convertQuantity parses one authored quantity and converts it with convert,
+// returning the compose form. It raises one of two refusals, both under the
+// value-not-representable condition and both naming the resource, the role,
+// the authored path and the value: one when the value is not a quantity at all,
+// and one when it is a quantity compose has no exact form for — the sentence
+// then states compose's range, which is what the author repairs against.
+func convertQuantity(value string, convert func(quantity.Quantity) (string, bool), resource, role, path, nodeID, composeRange string) (string, error) {
+	q, err := quantity.Parse(value)
+	if err != nil {
+		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: the %s %s at %s: %v; %s: %s",
+				resource, role, path, err, quantity.Shape, quantityUnconvertible))
 	}
-	// Plain core count: accept an unsigned decimal number and pass it through.
-	if !isUnsignedDecimal(s) {
-		return "", fmt.Errorf("invalid cpu quantity %q", s)
+	converted, ok := convert(q)
+	if !ok {
+		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: the %s %s at %s is %q, a quantity compose cannot represent exactly; %s: %s",
+				resource, role, path, value, composeRange, quantityUnconvertible))
 	}
-	return s, nil
+	return converted, nil
 }
 
-// formatMillicores renders millicores as a minimal fractional-core string using
-// integer math only (no float), so output is deterministic.
-func formatMillicores(milli int) string {
-	whole := milli / 1000
-	frac := milli % 1000
+// composeCPUs converts a parsed cpu quantity to a compose cpus value: a decimal
+// core count. It reports false for a negative value and for one that is not a
+// whole number of billionths of a core within an int64. A value written as a
+// bare unsigned number ("2", "0.5") is already in that form and is emitted as
+// written; any other form — a millicpu, a suffix, an exponent, a sign — is
+// emitted as its minimal decimal (500m becomes 0.5, 2000m becomes 2).
+func composeCPUs(q quantity.Quantity) (string, bool) {
+	nanos, ok := q.ExactInt64(-9)
+	if !ok || nanos < 0 {
+		return "", false
+	}
+	if q.Plain() {
+		return q.String(), true
+	}
+	return formatNanocores(nanos), true
+}
+
+// formatNanocores renders a count of billionths of a core as a minimal decimal
+// core count using integer math only (no float), so output is deterministic.
+func formatNanocores(nanos int64) string {
+	whole := nanos / nanosPerCore
+	frac := nanos % nanosPerCore
 	if frac == 0 {
-		return strconv.Itoa(whole)
+		return strconv.FormatInt(whole, 10)
 	}
-	s := fmt.Sprintf("%d.%03d", whole, frac)
-	return strings.TrimRight(s, "0")
+	return strings.TrimRight(fmt.Sprintf("%d.%09d", whole, frac), "0")
 }
 
-// binarySuffixes and decimalSuffixes map Kubernetes memory suffixes to their
-// byte multipliers. Binary suffixes are powers of 1024; decimal suffixes are
-// powers of 1000 (Kubernetes uses a lowercase 'k' for the decimal kilo).
-var binarySuffixes = []struct {
-	suffix string
-	mult   int64
-}{
-	{"Ki", 1 << 10}, {"Mi", 1 << 20}, {"Gi", 1 << 30}, {"Ti", 1 << 40}, {"Pi", 1 << 50}, {"Ei", 1 << 60},
-}
-
-var decimalSuffixes = []struct {
-	suffix string
-	mult   int64
-}{
-	{"k", 1_000}, {"M", 1_000_000}, {"G", 1_000_000_000}, {"T", 1_000_000_000_000}, {"P", 1_000_000_000_000_000}, {"E", 1_000_000_000_000_000_000},
-}
-
-// k8sMemToComposeBytes converts a Kubernetes memory quantity to an exact byte
-// count string. It accepts an integer mantissa with a binary (Ki/Mi/Gi/Ti/Pi/Ei)
-// or decimal (k/M/G/T/P/E) suffix, or a plain byte integer. A fractional
-// mantissa, an unknown suffix, or an overflowing product returns an error so the
-// caller halts rather than rounding.
-func k8sMemToComposeBytes(s string) (string, error) {
-	// Binary suffixes (two-character) are checked before decimal so "Mi" is not
-	// mistaken for the decimal "M".
-	for _, b := range binarySuffixes {
-		if strings.HasSuffix(s, b.suffix) {
-			return scaleBytes(strings.TrimSuffix(s, b.suffix), b.mult, s)
-		}
+// composeMemory converts a parsed memory quantity to an exact byte count. It
+// reports false for a negative value, for a value that is not a whole number of
+// bytes (1500m, 0.5), and for one past the int64 range (8Ei).
+func composeMemory(q quantity.Quantity) (string, bool) {
+	bytes, ok := q.ExactInt64(0)
+	if !ok || bytes < 0 {
+		return "", false
 	}
-	for _, d := range decimalSuffixes {
-		if strings.HasSuffix(s, d.suffix) {
-			return scaleBytes(strings.TrimSuffix(s, d.suffix), d.mult, s)
-		}
-	}
-	// No suffix: a plain byte integer.
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || n < 0 {
-		return "", fmt.Errorf("invalid memory quantity %q", s)
-	}
-	return strconv.FormatInt(n, 10), nil
-}
-
-// scaleBytes multiplies an integer mantissa by a byte multiplier, guarding
-// against a non-integer mantissa and int64 overflow. original is the full
-// quantity, used only for the error message.
-func scaleBytes(mantissa string, mult int64, original string) (string, error) {
-	n, err := strconv.ParseInt(mantissa, 10, 64)
-	if err != nil || n < 0 {
-		return "", fmt.Errorf("invalid memory quantity %q (mantissa must be a non-negative integer)", original)
-	}
-	if n != 0 && mult > (1<<63-1)/n {
-		return "", fmt.Errorf("memory quantity %q overflows int64 bytes", original)
-	}
-	return strconv.FormatInt(n*mult, 10), nil
-}
-
-// isUnsignedDecimal reports whether s is a non-negative decimal number with at
-// most one decimal point and at least one digit (e.g. "2", "0.5", ".5").
-func isUnsignedDecimal(s string) bool {
-	if s == "" {
-		return false
-	}
-	dots := 0
-	digits := 0
-	for _, r := range s {
-		switch {
-		case r >= '0' && r <= '9':
-			digits++
-		case r == '.':
-			dots++
-			if dots > 1 {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return digits > 0
+	return strconv.FormatInt(bytes, 10), true
 }

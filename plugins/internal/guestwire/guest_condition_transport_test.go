@@ -62,7 +62,7 @@ type guestFailureKind struct {
 }
 
 // guestFailureKinds is every failure a provider guest core raises that carries a
-// halting condition across the socket.
+// halting condition across the socket and has a retired short code of its own.
 //
 // Each row pairs a sentence with the generic condition the raise site names. The
 // sentence is the part that says what happened — WHICH construct, which input,

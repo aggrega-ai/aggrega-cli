@@ -449,7 +449,7 @@ func translateContainer(
 
 	// Container resource requests/limits → compose deploy.resources
 	// (reservations/limits). Honored by docker compose in non-swarm mode.
-	deploy, err := translateComposeResources(c.Resources, nodeCtx.NodeID)
+	deploy, err := translateComposeResources(c.Resources, containerPath+".resources", nodeCtx.NodeID)
 	if err != nil {
 		return Service{}, nil, err
 	}

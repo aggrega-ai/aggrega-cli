@@ -29,6 +29,9 @@
 //     (no new ConfigMap or Secret resource emitted; those come from
 //     artifacts or Features).
 //   - ephemeral volume variant → emptyDir { sizeLimit }.
+//   - Resource quantities (cpu, memory, extended resources, volume sizes) are
+//     emitted verbatim, after each has been checked against the shared quantity
+//     grammar; a value outside it halts the build (checkEmittedQuantities).
 //
 // Author-order preservation: containers, services, volumes, container
 // ports, container variables, container attachments — all iterated via
@@ -101,6 +104,14 @@ func SynthesizeWorkloadCore(
 	// consumers via provides, per the AOT boundary).
 	if form == rendercore.WorkloadFormReference {
 		return synthesizeReference(w, nodeCtx)
+	}
+
+	// Every resource quantity the translation below copies into the manifests
+	// is checked against the quantity grammar before any of it is translated,
+	// so a value the cluster would refuse halts the build instead of reaching
+	// the chart.
+	if err := checkEmittedQuantities(w, nodeCtx.NodeID); err != nil {
+		return nil, err
 	}
 
 	labels := buildAggregaLabels(nodeCtx)
@@ -565,7 +576,8 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, attac
 }
 
 // translateResources copies requests/limits maps from the Workload's
-// ResourceSpec to K8s ResourceRequirements.
+// ResourceSpec to K8s ResourceRequirements. The values are copied verbatim;
+// checkEmittedQuantities has already refused any that is not a quantity.
 func translateResources(r *types.ResourceSpec) *ResourceRequirements {
 	out := &ResourceRequirements{}
 	if r.Requests != nil {

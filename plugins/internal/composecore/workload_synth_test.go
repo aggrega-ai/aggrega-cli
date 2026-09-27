@@ -511,21 +511,48 @@ func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
 	}
 }
 
-// TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts — a fractional
-// memory quantity has no exact compose byte count and halts rather than round.
+// TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts — a memory quantity
+// that is not a whole number of bytes has no exact compose byte count and halts
+// rather than round, and the halt names the container's authored path.
 func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Resources = &types.ResourceSpec{Limits: &types.ResourceList{Memory: "1.5Gi"}}
+	c.Resources = &types.ResourceSpec{Limits: &types.ResourceList{Memory: "1500m"}}
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
 		t.Errorf("expected the value-not-representable condition, got %v", err)
 	}
-	if want := "resources quantity cannot be converted to a compose deploy.resources value"; !strings.Contains(errorChainText(err), want) {
-		t.Errorf("the halt no longer says which value has no representation.\n  want: %s\n  got:  %v", want, err)
+	for _, want := range []string{
+		"resources quantity cannot be converted to a compose deploy.resources value",
+		"containers.main.resources.limits.memory",
+		"a quantity compose cannot represent exactly",
+	} {
+		if !strings.Contains(errorChainText(err), want) {
+			t.Errorf("the halt no longer says which value has no representation.\n  want: %s\n  got:  %v", want, err)
+		}
+	}
+}
+
+// TestSynthesizeWorkload_InitContainerQuantityHaltNamesItsPosition — an init
+// container is located by its list position, so a refusal of one of its
+// quantities names that position rather than a container name.
+func TestSynthesizeWorkload_InitContainerQuantityHaltNamesItsPosition(t *testing.T) {
+	t.Parallel()
+	w := minimalWorkload()
+	w.InitContainers = []types.ContainerSpec{{
+		Image:     "migrate:1.0",
+		Resources: &types.ResourceSpec{Requests: &types.ResourceList{CPU: "lots"}},
+	}}
+
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Fatalf("expected the value-not-representable condition, got %v", err)
+	}
+	if want := "initContainers[0].resources.requests.cpu"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt does not name the init container's position.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
