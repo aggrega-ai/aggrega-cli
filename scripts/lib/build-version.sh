@@ -4,8 +4,10 @@
 # The single home for the build-provenance version recipe, SOURCED (never executed)
 # by every script that stamps one into an output: the shipped aggrega binary, the
 # embedded guests' describe() self-report, the CLI generating the embedded plugin
-# entities, and the editor extension's compile step. Sourcing one recipe means none
-# of them invokes git on its own, so outputs stamped from one tree at one moment agree.
+# entities, the editor extension's compile step, and the extension's end-to-end
+# runner, which reads the catalog's and the extension's provenance through it.
+# Sourcing one recipe means none of them invokes git on its own, so outputs stamped
+# from one tree at one moment agree.
 #
 # It does NOT make outputs produced at different moments agree, and nothing here
 # should be read as promising that. Each output is stamped when it is produced, so
@@ -30,6 +32,7 @@
 #
 # The caller must have changed into the root of the git working tree whose build it
 # stamps — the aggrega-cli module root for the compiler's outputs, the extension's
-# own root for the extension — before sourcing this file, so `git describe` resolves there.
+# own root for the extension, the tree whose provenance the runner reads — before sourcing
+# this file, so `git describe` resolves there.
 _ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"
 _sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
