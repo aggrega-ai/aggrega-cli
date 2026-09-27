@@ -352,8 +352,10 @@ func TestInitReportsWithoutWriting(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 
+	// The hub is seeded because the workspace is offline: any other registry has
+	// no policy to pin offline and is refused, which is not this test's subject.
 	res, err := configops.Init(t.Context(), rw, configops.InitOptions{
-		Registry: "example.test",
+		Registry: workspaceconfig.HubBaselineHost,
 		Delivery: authoredcontent.DeliveryFor(true),
 	})
 	if err != nil {
@@ -365,7 +367,7 @@ func TestInitReportsWithoutWriting(t *testing.T) {
 	if len(res.Registration.Content) == 0 {
 		t.Error("no content reported; a reporting delivery owes the document a write would produce")
 	}
-	if !strings.Contains(string(res.Registration.Content), "example.test") {
+	if !strings.Contains(string(res.Registration.Content), workspaceconfig.HubBaselineHost) {
 		t.Errorf("reported content does not carry the seeded registry:\n%s", res.Registration.Content)
 	}
 	if res.Registration.Target.Path != globalPath {
@@ -408,7 +410,8 @@ func TestInitWritesAndReportsItsReach(t *testing.T) {
 			}
 
 			res, err := configops.Init(t.Context(), rw, configops.InitOptions{
-				Registry:  "example.test",
+				// Offline, only the hub can be seeded; see TestInitReportsWithoutWriting.
+				Registry:  workspaceconfig.HubBaselineHost,
 				Workspace: tc.workspaceFlag,
 				// The workspace file exists in both rows, so the local target needs
 				// force; the guard itself is covered by its own test above.
@@ -433,7 +436,7 @@ func TestInitWritesAndReportsItsReach(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read the seeded file: %v", err)
 			}
-			if !strings.Contains(string(written), "example.test") {
+			if !strings.Contains(string(written), workspaceconfig.HubBaselineHost) {
 				t.Errorf("the seeded file does not carry the registry:\n%s", written)
 			}
 		})

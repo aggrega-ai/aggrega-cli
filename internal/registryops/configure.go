@@ -163,6 +163,11 @@ type AddResult struct {
 //     flags and the result says the policy was not advertised. A document that
 //     fetched but did not decode IS an error, because the endpoint answered with
 //     content that is not a usable trust policy.
+//   - No first use offline. Where the offline posture refuses the fetch, the
+//     registry was never asked, so there is nothing to fall back from: a
+//     registry other than the official hub is refused with
+//     registrytrust.ErrOfflineRegistrationWithoutTrustPolicy rather than written
+//     with no policy, while the hub proceeds on its built-in baseline.
 //
 // The write target is resolved before any fetch, so a write-target misuse or an
 // unresolvable global path fails before the network is reached.
@@ -171,9 +176,11 @@ type AddResult struct {
 // that is the one construction every surface's registration reaches: the command
 // line, the daemon and the tool protocol's generated command tools alike. So one
 // registry registers under one trust outcome wherever the registration was asked
-// for. An offline workspace is refused by that gate, before any dial, and the
-// registration proceeds on the flags with the refusal as the reason the policy
-// was not advertised.
+// for, and an offline registration refuses in one sentence wherever it was asked
+// for. An offline workspace is refused by that gate, before any dial; the hub then
+// proceeds on its baseline with the refusal as the reason the policy was not
+// advertised, and every other registry is refused. A manual policy skips the
+// fetch, so it registers offline exactly as it does online.
 //
 // Under a reporting delivery it composes the same document and returns it on the
 // result instead of writing it, touching no file and creating no directory. The
@@ -216,7 +223,8 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	// Adding the official hub with no explicit manual policy pins the embedded
 	// baseline (the maintainer and continuous-integration identity set, with
 	// signatures required).
-	if host == workspaceconfig.HubBaselineHost && !manualPolicy {
+	baseline := host == workspaceconfig.HubBaselineHost && !manualPolicy
+	if baseline {
 		reg = workspaceconfig.DefaultBaseline()
 	}
 	// The friendly alias rides on the same host-keyed entry regardless of how the
@@ -225,7 +233,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 
 	switch {
 	case opts.FetchTrust && !manualPolicy:
-		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, trustClientFor(rw, opts.TrustClient))
+		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, trustClientFor(rw, opts.TrustClient), baseline)
 		if ferr != nil {
 			return res, ferr
 		}
@@ -292,7 +300,9 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 // An offline workspace yields no client, and that is the gate's refusal rather
 // than a failure of this step. The fetch reads a nil client as exactly that
 // refusal and reports it in the gate's own words before any dial, so whether the
-// workspace is offline is decided once, by the gate, and read nowhere here.
+// workspace is offline is decided once, by the gate, and read nowhere here — the
+// registration's own offline refusal matches the gate's condition on the fetch's
+// error rather than reading the posture a second time.
 func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client) *http.Client {
 	if injected != nil {
 		return injected
@@ -323,7 +333,17 @@ func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client
 // would be left holding a configuration that requires no signatures because a
 // request was interrupted. The context is consulted rather than the error's
 // prose, because a transport error's wording is not a contract.
-func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig, host string, client *http.Client) (TrustFetchOutcome, error) {
+//
+// 🔴 A fetch the offline posture refused is the fourth outcome, and it is
+// tolerated only where baseline says reg already carries the built-in baseline —
+// the official hub. Anywhere else the registry was never asked, so there is no
+// answer to fold into "advertises nothing", and writing the entry would create one
+// that trusts nothing at the one moment trust is pinned. So that case refuses,
+// naming both remedies; a caller that supplied identities or a key never reaches
+// here, because a manual policy skips the fetch. The refusal is recognised by the
+// gate's own condition rather than by reading whether the workspace is offline, so
+// the offline posture is still decided once, by the network-egress gate.
+func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig, host string, client *http.Client, baseline bool) (TrustFetchOutcome, error) {
 	adv, ferr := registrytrust.Fetch(ctx, client, host)
 	if ferr != nil {
 		if cerr := ctx.Err(); cerr != nil {
@@ -332,6 +352,10 @@ func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig
 		}
 		if errors.Is(ferr, registrytrust.ErrMalformedTrust()) {
 			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %w", ferr)
+		}
+		if !baseline && errors.Is(ferr, egress.ErrOfflineEgress()) {
+			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %s: %w",
+				host, registrytrust.ErrOfflineRegistrationWithoutTrustPolicy())
 		}
 		return TrustFetchOutcome{NotAdvertised: true, Reason: ferr.Error()}, nil
 	}

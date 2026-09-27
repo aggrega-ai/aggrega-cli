@@ -7,7 +7,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// seededRegistry is the registry the seeding tests below seed. They run offline,
+// so no seeding reaches the network, and offline only the official hub can be
+// seeded: any other registry has no policy to pin and is refused, which is a test
+// of its own. So the hub is the registry to seed wherever the registry is not the
+// subject.
+const seededRegistry = workspaceconfig.HubBaselineHost
 
 // The workspace layer both freeze tests resolve over. The governance socket
 // carries one attachment of each tier, which is what makes the default and the
@@ -191,7 +200,7 @@ func TestConfigInitOnTheDaemonReportsItsMachineWideScope(t *testing.T) {
 	srv, globalPath, wsPath := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
 
 	resp := callDaemonMethod(t, srv, "aggrega/configInit", map[string]any{
-		"registry": "seeded.example.test",
+		"registry": seededRegistry,
 		// The fixture's global layer already exists, so a seeding that means to
 		// write it says so; the guard itself has its own test below.
 		"force": true,
@@ -199,8 +208,8 @@ func TestConfigInitOnTheDaemonReportsItsMachineWideScope(t *testing.T) {
 	var res configInitResult
 	decodeDaemonResult(t, resp, &res)
 
-	if res.Host != "seeded.example.test" {
-		t.Errorf("host: got %q, want seeded.example.test", res.Host)
+	if res.Host != seededRegistry {
+		t.Errorf("host: got %q, want %s", res.Host, seededRegistry)
 	}
 	if !res.Written {
 		t.Error("written: got false, want true — the default delivery writes")
@@ -219,14 +228,14 @@ func TestConfigInitOnTheDaemonReportsItsMachineWideScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the global layer: %v", err)
 	}
-	if !strings.Contains(string(global), "seeded.example.test") {
+	if !strings.Contains(string(global), seededRegistry) {
 		t.Errorf("the global layer does not carry the entry the answer said it wrote:\n%s", global)
 	}
 	ws, err := os.ReadFile(wsPath)
 	if err != nil {
 		t.Fatalf("read the workspace layer: %v", err)
 	}
-	if strings.Contains(string(ws), "seeded.example.test") {
+	if strings.Contains(string(ws), seededRegistry) {
 		t.Errorf("the entry reached the workspace layer, which the answer did not claim:\n%s", ws)
 	}
 }
@@ -238,7 +247,7 @@ func TestConfigInitOnTheDaemonHonoursTheWorkspaceOverride(t *testing.T) {
 	srv, globalPath, wsPath := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
 
 	resp := callDaemonMethod(t, srv, "aggrega/configInit", map[string]any{
-		"registry":  "local.example.test",
+		"registry":  seededRegistry,
 		"workspace": true,
 		"force":     true,
 	})
@@ -255,14 +264,14 @@ func TestConfigInitOnTheDaemonHonoursTheWorkspaceOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the workspace layer: %v", err)
 	}
-	if !strings.Contains(string(ws), "local.example.test") {
+	if !strings.Contains(string(ws), seededRegistry) {
 		t.Errorf("the workspace layer does not carry the entry:\n%s", ws)
 	}
 	global, err := os.ReadFile(globalPath)
 	if err != nil {
 		t.Fatalf("read the global layer: %v", err)
 	}
-	if strings.Contains(string(global), "local.example.test") {
+	if strings.Contains(string(global), seededRegistry) {
 		t.Errorf("the entry reached the machine's own configuration:\n%s", global)
 	}
 }
@@ -281,7 +290,7 @@ func TestConfigInitOnTheDaemonDryRunsWithoutWriting(t *testing.T) {
 	}
 
 	resp := callDaemonMethod(t, srv, "aggrega/configInit", map[string]any{
-		"registry": "reported.example.test",
+		"registry": seededRegistry,
 		"dryRun":   true,
 	})
 	var res configInitResult
@@ -290,7 +299,7 @@ func TestConfigInitOnTheDaemonDryRunsWithoutWriting(t *testing.T) {
 	if res.Written {
 		t.Error("written: got true under a dry run, want false")
 	}
-	if !strings.Contains(res.Content, "reported.example.test") {
+	if !strings.Contains(res.Content, seededRegistry) {
 		t.Errorf("content does not carry the seeded registry: %q", res.Content)
 	}
 	if res.Scope.ConfigFile != globalPath {
@@ -332,7 +341,11 @@ func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
 
 	seed := func(t *testing.T) (*Server, string) {
 		t.Helper()
-		srv, globalPath, _ := registryWriteFixture(t, "workspace: {}\n")
+		// The workspace layer carries the offline posture, not the global layer
+		// seeded below: the fixture resolves before that layer is rewritten, so
+		// the posture it states is not the one in force, and a seeding resolved
+		// online would send its fetch to the network.
+		srv, globalPath, _ := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
 		if err := os.WriteFile(globalPath, []byte(existingGlobal), 0o644); err != nil {
 			t.Fatalf("seed the global layer: %v", err)
 		}
@@ -350,7 +363,7 @@ func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, globalPath := seed(t)
 
-			params := map[string]any{"registry": "reported.example.test", "dryRun": true}
+			params := map[string]any{"registry": seededRegistry, "dryRun": true}
 			if tc.force {
 				params["force"] = true
 			}
@@ -369,7 +382,7 @@ func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
 				if res.Written {
 					t.Error("written: got true under a dry run, want false")
 				}
-				for _, want := range []string{"reported.example.test", "already.example.test", "offline"} {
+				for _, want := range []string{seededRegistry, "already.example.test", "offline"} {
 					if !strings.Contains(res.Content, want) {
 						t.Errorf("content is not the MERGE — %q is missing:\n%s", want, res.Content)
 					}
@@ -390,13 +403,13 @@ func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
 		reportSrv, reportPath := seed(t)
 		var reported configInitResult
 		decodeDaemonResult(t, callDaemonMethod(t, reportSrv, "aggrega/configInit", map[string]any{
-			"registry": "reported.example.test", "force": true, "dryRun": true,
+			"registry": seededRegistry, "force": true, "dryRun": true,
 		}), &reported)
 
 		writeSrv, writePath := seed(t)
 		var written configInitResult
 		decodeDaemonResult(t, callDaemonMethod(t, writeSrv, "aggrega/configInit", map[string]any{
-			"registry": "reported.example.test", "force": true,
+			"registry": seededRegistry, "force": true,
 		}), &written)
 
 		onDisk, err := os.ReadFile(writePath)
@@ -408,7 +421,7 @@ func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
 				reported.Content, onDisk)
 		}
 		// The control: without it, two identically-empty answers would pass.
-		if !strings.Contains(reported.Content, "reported.example.test") {
+		if !strings.Contains(reported.Content, seededRegistry) {
 			t.Errorf("the compared content carries nothing: %q", reported.Content)
 		}
 		untouched, err := os.ReadFile(reportPath)

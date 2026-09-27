@@ -317,10 +317,13 @@ YAML by hand.
 By default it registers the official hub (hub.aggrega.ai) with signatures
 required and the official trusted identities. The registry's advertised trust
 policy is fetched once from its own origin and pinned locally — trust-on-first-
-use; when the registry is unreachable or advertises nothing, the built-in
-official baseline is written instead, so init still produces a usable config
-offline. Pass --registry to seed a different registry (for an air-gapped or
-private hub).
+use; when the hub is unreachable, advertises nothing, or the workspace is
+offline, its built-in official baseline is written instead, so init still
+produces a usable config offline. Pass --registry to seed a different registry
+(for an air-gapped or private hub). Such a registry has no built-in baseline,
+so seeding it while the workspace is offline is refused: init takes no
+identities or key to pin by hand, so register it once while online, or add it
+with "aggrega registry add --identity" or "--key".
 
 The entry is written to the global config shared across every workspace by
 default; pass --workspace to write it to this project's workspace config

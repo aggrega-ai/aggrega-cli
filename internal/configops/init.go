@@ -96,10 +96,13 @@ type InitResult struct {
 // trust policy, and reports what it wrote and where.
 //
 // The registration itself — the write-target resolution, the trust-policy
-// precedence, the advertised-trust fetch with its offline fallback, the schema
+// precedence, the advertised-trust fetch with its offline behaviour, the schema
 // gate and the merge into an existing document — comes from the shared
 // registration layer, so seeding a configuration and registering a registry
-// perform one registration rather than each performing its own.
+// perform one registration rather than each performing its own. That includes
+// the offline refusal: seeding supplies no identities or key, so seeding a
+// registry other than the official hub while offline is refused exactly as the
+// registration refuses it, and the hub is seeded with its built-in baseline.
 //
 // What this decides on top of that is the refuse-if-exists guard, which is local
 // to seeding: the shared writer merges into an existing document by design, which

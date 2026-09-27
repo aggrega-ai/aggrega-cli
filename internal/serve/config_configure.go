@@ -85,7 +85,11 @@ type configInitResult struct {
 // that means to sends force. Where it takes the registry's advertised trust
 // policy it makes one unauthenticated request to that registry's own origin, and
 // nothing is prompted for: a registry that advertises nothing is reported as
-// advertising nothing and the seeding proceeds on the built-in baseline.
+// advertising nothing and the seeding proceeds — on the built-in baseline for the
+// official hub, on no policy for any other registry. Offline, seeding a registry
+// other than the hub is refused, because this method takes no identities or key
+// to pin by hand; the refusal is the registration's own sentence with its short
+// code ahead of it.
 func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) error {
 	var params configInitParams
 	if len(req.Params) > 0 {
@@ -139,7 +143,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 				"config init: "+existing.Path()+" already exists and was left untouched; "+
 					"send force to proceed anyway, which merges the registry entry into what is already there")
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, registrationRefusal(err))
 	}
 	return s.writeResult(ctx, req.ID, configInitResult{
 		Host:    res.Registration.Host,

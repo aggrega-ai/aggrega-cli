@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -70,6 +71,76 @@ func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 	}
 	if len(pol.TrustedDeprecationIdentities) != len(want.TrustedDeprecationIdentities) {
 		t.Errorf("deprecation identities = %d; want the baseline set of %d", len(pol.TrustedDeprecationIdentities), len(want.TrustedDeprecationIdentities))
+	}
+}
+
+// TestConfigInitRefusesARegistryItCannotPinOffline drives `config init` on an
+// offline workspace the way the command runs it — no transport supplied — for a
+// registry other than the hub and for the hub.
+//
+// Seeding takes no identities or key, so offline a registry other than the hub
+// has nothing to pin and is refused with the offline-registration condition,
+// leaving no file behind and printing nothing; the hub is seeded on its built-in
+// baseline. Planted defects: removing the offline refusal fails the first row,
+// which sees a configuration written that trusts nothing; refusing the hub fails
+// the second.
+func TestConfigInitRefusesARegistryItCannotPinOffline(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		registry    string
+		wantRefused bool
+	}{
+		{name: "a registry other than the hub is refused", registry: "private.example.test", wantRefused: true},
+		{name: "the hub is seeded on its built-in baseline", registry: workspaceconfig.HubBaselineHost},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename),
+				[]byte("offline: true\nworkspace: {}\n"), 0o644); err != nil {
+				t.Fatalf("write the workspace configuration: %v", err)
+			}
+			global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
+			lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: global})
+			rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: root}, lookup)
+
+			var out, errOut bytes.Buffer
+			err := configInitRun(t.Context(), configInitConfig{
+				Registry: tc.registry,
+				ws:       rw,
+				Out:      &out,
+				ErrOut:   &errOut,
+			})
+			_, statErr := os.Stat(global)
+
+			if tc.wantRefused {
+				if !errors.Is(err, registrytrust.ErrOfflineRegistrationWithoutTrustPolicy()) {
+					t.Fatalf("configInitRun = %v; want the offline seeding refused", err)
+				}
+				if !os.IsNotExist(statErr) {
+					t.Errorf("a refused seeding left a configuration at %s (stat err = %v)", global, statErr)
+				}
+				if out.Len() != 0 || errOut.Len() != 0 {
+					t.Errorf("a refused seeding printed %q / %q; the refusal is the whole answer", out.String(), errOut.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("configInitRun: %v", err)
+			}
+			if statErr != nil {
+				t.Fatalf("the hub seeding wrote no configuration at %s: %v", global, statErr)
+			}
+			reloaded, err := workspaceconfig.Resolve(rw.Root(), "", lookup)
+			if err != nil {
+				t.Fatalf("re-resolve: %v", err)
+			}
+			pol, _ := reloaded.Config().RegistryTrustPolicy(workspaceconfig.HubBaselineHost)
+			if want := workspaceconfig.DefaultBaseline(); len(pol.TrustedIdentities) != len(want.TrustedIdentities) || !pol.Signing.Required {
+				t.Errorf("the hub was not seeded on its built-in baseline: %+v", pol)
+			}
+		})
 	}
 }
 

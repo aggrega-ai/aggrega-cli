@@ -95,7 +95,7 @@ func TestTheRoutingFieldsAreAcceptedOnAMethodThatDeclaresNeither(t *testing.T) {
 		t.Fatalf("clear the global layer: %v", err)
 	}
 	resp := callDaemonMethod(t, srv, "aggrega/configInit", map[string]any{
-		"registry":      "routing.example.test",
+		"registry":      seededRegistry,
 		"dryRun":        true,
 		"workspaceRoot": srv.workspaceRoot,
 	})

@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // configWriteScope states how far a write to a configuration file reached.
@@ -43,6 +44,22 @@ func (s *Server) scopeOfWriteTarget(t registryops.WriteTarget) configWriteScope 
 		MachineWide:   t.Scope == registryops.ScopeMachine,
 		WorkspaceRoot: s.workspaceRoot,
 	}
+}
+
+// registrationRefusal is the message a refused registration or seeding answers
+// with: the shared registration's own sentence, preceded by the short code of
+// the condition it names where it names one.
+//
+// The sentence is the command line's, unchanged, so a caller reads what a person
+// at a terminal reads. The short code is what a terminal prints in the
+// diagnostic's bracketed head, and this answer has no head, so it leads the
+// message instead — the form the daemon's other refusals naming a condition take.
+// A refusal naming no condition is the sentence alone.
+func registrationRefusal(err error) string {
+	if short, ok := cerrors.ShortCodeOf(err); ok {
+		return short + ": " + err.Error()
+	}
+	return err.Error()
 }
 
 // registryAddParams is what aggrega/registryAdd takes.
@@ -149,7 +166,9 @@ type registryUpdateResult struct {
 // command line's registration takes — so an offline workspace refuses it in the
 // same sentence. Nothing is prompted for: a registry that advertises nothing is
 // reported as advertising nothing and the registration proceeds on what the
-// request supplied.
+// request supplied. Offline, a registry other than the official hub is refused
+// unless the request supplies identities or a key, in the sentence the command
+// line prints, with the condition's short code ahead of it.
 func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryAddParams
 	if len(req.Params) > 0 {
@@ -194,7 +213,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, registrationRefusal(err))
 	}
 	// projection-omits internal/registryops.AddResult.Content: the registration
 	// fills that document only under a reporting delivery, and this method takes

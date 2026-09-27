@@ -337,6 +337,13 @@ When the registry advertises no trust policy (a 404 or an unreachable endpoint),
 the add does not fail: it writes the policy from the flags (or an empty policy)
 and prints a notice suggesting manual --identity / --key pinning.
 
+When the workspace is offline the advertised policy cannot be fetched, so the
+registry is never asked. Adding a registry other than the official hub is then
+refused unless --identity or --key supplies the policy, rather than writing an
+entry that trusts nothing: register it once while online, or pin it by hand.
+Adding the official hub offline pins its built-in baseline, and a manual policy
+registers offline exactly as it does online.
+
 Existing settings in the target config file are preserved.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

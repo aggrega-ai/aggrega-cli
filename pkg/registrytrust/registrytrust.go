@@ -167,6 +167,38 @@ var errMalformedTrust = cerrors.Register("malformed-trust-policy", cerrors.Meta{
 		"over fetched content that did not yield a usable policy."),
 })
 
+// ErrOfflineRegistrationWithoutTrustPolicy reports that a registry other than
+// the official hub was asked to be registered while the workspace is offline,
+// with no trust policy supplied by hand.
+//
+// Registration is the one moment a registry's trust is pinned: every later pull
+// verifies against the pinned copy and never re-fetches it. Offline, the
+// advertised policy cannot be fetched, so an entry written anyway would trust
+// nothing while nothing said so — the pin trust-on-first-use exists to take would
+// simply not have been taken. The registration therefore refuses rather than
+// write that entry. The official hub is not refused, because its entry carries
+// the built-in baseline whether or not the fetch runs; and a registration that
+// supplies identities or a key pins exactly those and does not fetch at all.
+//
+// The remedies are in the sentence rather than supplied per raise site, because
+// every path that reaches this condition offers the same two: register once while
+// online, so the advertised policy is fetched and pinned, or supply the policy by
+// hand.
+func ErrOfflineRegistrationWithoutTrustPolicy() error {
+	return errOfflineRegistrationWithoutTrustPolicy
+}
+
+var errOfflineRegistrationWithoutTrustPolicy = cerrors.Register("offline-registration-without-trust-policy", cerrors.Meta{
+	ShortCode: "E0310",
+	Message: "a registry other than the official hub is not registered offline without a trust policy supplied by " +
+		"hand, because the policy it advertises cannot be fetched; register it once while online, or pin its trust " +
+		"by hand with `aggrega registry add <host> --identity <identity>=<issuer>` or `--key <public-key-file>`",
+	RulePlace: cerrors.RuleNoStageReaches("A configuration write evaluates the rule, as a registration composes a registry " +
+		"entry while the workspace is offline, with no identity or key supplied and the advertised policy refused " +
+		"by the offline posture before any dial. The write edits a file rather than compiling anything, so no " +
+		"declared stage of a compilation holds the request or the posture it reads."),
+})
+
 // fetchTimeout bounds the one-time well-known GET so a hung endpoint cannot
 // stall registration indefinitely.
 const fetchTimeout = 15 * time.Second
