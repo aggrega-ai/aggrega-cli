@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 )
 
 // concurrentComponentDoc is a Component published as its document alone, the shape
@@ -110,7 +109,7 @@ func TestConcurrentReadsOfOnePinnedSlotNeverMeetAMissingLayout(t *testing.T) {
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, row.publish(t, t.TempDir()), row.uri, "1.0.0")
 			pins := map[string]Pin{row.uri: pin}
-			tree := sourcecache.ExtractedTree(mustCachePath(root, layoutCacheDir, row.uri, "1.0.0"), pin.Digest)
+			tree := slotTree(t, mustCachePath(root, layoutCacheDir, row.uri, "1.0.0"))
 			session := NewLazyLookup(root, layoutCacheDir, nil, nil)
 
 			dir, files, ok := row.resolve(session.ForRequest(pins), tree)

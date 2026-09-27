@@ -17,7 +17,7 @@ import (
 // entityPins is the pin step as a dependency resolution runs it: over every
 // Recipe and FeatureRecipe this Release builds that has a writable home, it
 // either records the pins in the lock beside each entity or holds the lock on
-// disk to them, and it returns the content digest of each such entity's document.
+// disk to them, and it returns the digest each such entity's lockfile row records.
 //
 // # One step, and this is a caller of it
 //
@@ -53,11 +53,22 @@ import (
 //
 // # The digests
 //
-// The entity document is never opened for writing, so its digest is the same
-// value whether or not a lock is written beside it. That is what the returned map
-// reports, keyed by entity URI, for the pull to overlay onto the matching
-// lockfile entity; the overlay is keyed strictly by URI so a lockfile entity of
-// another kind that happens to share the recipe's bare name is never touched.
+// The returned map is, keyed by entity URI, the digest the lockfile's entity row
+// records for each such entity: over what a publication of it would carry, and so
+// over the lock beside it too. It is taken after the step has done its work — over
+// the lock as written, over the lock a writing run would write where this run only
+// reports, and over the lock on disk where the step only holds it — because the
+// dependency resolution that produced the closure digested each entity before the
+// step ran. The pull overlays it onto the matching lockfile entity; the overlay is
+// keyed strictly by URI so a lockfile entity of another kind that happens to share
+// the recipe's bare name is never touched.
+//
+// On a reporting run the locks the step would write are installed on lazyView
+// before the rows are read (catalog.LazyLookup.SetUnwrittenLocks), and they stay
+// installed for the rest of the run. The build-side closure the composed lockfile
+// is then held to is resolved through the same view, so it reads the same locks
+// through the same computation, and the report agrees with the build it predicts
+// just as a writing run's lockfile agrees with the files it wrote.
 func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
 	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
 	var uris []string
@@ -80,25 +91,37 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 	}
 
 	var reported []dryrunreport.File
+	var entityDigests map[string]string
 	switch {
 	case !pin:
 		if err := plan.Unpinned(pullRemedy); err != nil {
 			return nil, nil, err
 		}
+		entityDigests, err = plan.EntityDigests()
 	case reportOnly:
-		_, files, rerr := plan.Report()
+		outcomes, files, rerr := plan.Report()
 		if rerr != nil {
 			return nil, nil, rerr
 		}
 		reported = files
+		// The view reads each lock as the writing run would leave it, for the rows
+		// taken here and for every row the rest of this run takes through it — the
+		// build-side closure the composed lockfile is held to included — so the
+		// lockfile reported and the build it predicts read one entity.
+		lazyView.SetUnwrittenLocks(entitypin.Unwritten(outcomes, files))
+		entityDigests, err = plan.EntityDigests()
 	default:
 		if _, werr := plan.Write(); werr != nil {
 			return nil, nil, werr
 		}
+		entityDigests, err = plan.EntityDigests()
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 
 	digests := map[string]string{}
-	for uri, d := range plan.EntityDigests() {
+	for uri, d := range entityDigests {
 		if !uriShadowedByComponentOrFeature(lazyView, uri) {
 			digests[uri] = d
 		}
@@ -117,11 +140,11 @@ var pullRemedy = recipepin.Remedy{Operation: "pull", Setting: workspaceconfig.Pi
 // Component or Feature. The closure resolves an entity URI component-first, then
 // feature, then recipe — so when a bare recipe name is shared with a Component or
 // Feature of the same identity, the lockfile entity for that URI tracks the
-// shadowing Component/Feature bytes, not the recipe's. Such an entity's recorded
-// digest must NOT be overlaid with the recipe file's digest — doing so would
-// fabricate drift the build would then flag. Only a URI that resolves solely to
-// the recipe carries the recipe's bytes in the lockfile, and only that entity
-// takes the overlay.
+// shadowing Component/Feature, not the recipe. Such an entity's recorded digest
+// must NOT be overlaid with the recipe's — doing so would fabricate drift the
+// build would then flag. Only a URI that resolves solely to the recipe carries the
+// recipe's digest in the lockfile, and only that entity takes the overlay. So no
+// row covers such a recipe; the lock beside it still covers its sources.
 //
 // It is the caller's rule rather than the pin step's, because it is a fact about
 // what the LOCKFILE records rather than about what the step does to a file.

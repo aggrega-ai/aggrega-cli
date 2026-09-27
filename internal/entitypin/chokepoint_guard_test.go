@@ -182,6 +182,16 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 			want:   []string{"entitypin.Plan.Report", "recipepin.WriteLock"},
 		},
 		{
+			// A run that reports rather than writes hands a view the locks it would
+			// write, read off its own report, so its rows and the build it predicts are
+			// taken over those locks; the report is the only source of that set, so a
+			// second caller would be a view digesting an entity against locks nobody
+			// reported.
+			callee: "entitypin.Unwritten",
+			why:    "the locks a view reads in place of the disk come from the pin step's own report, in the one run that reports it",
+			want:   []string{"pullops.entityPins"},
+		},
+		{
 			callee: "closure.DescendAuthoredSources",
 			why:    "the Release-free resolution of an entity's sources is the pin step's own",
 			want:   []string{"entitypin.Compute"},

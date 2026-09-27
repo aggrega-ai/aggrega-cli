@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
@@ -270,13 +269,14 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 				if err != nil {
 					t.Fatalf("read the Component: %v", err)
 				}
+				// The pulled bytes are what the pin names: laid in the slot, they would
+				// verify against it, which is what makes a pin-first read pass wrongly.
+				if got := publishedRowDigest(t, pulled); got != f.recorded {
+					t.Fatalf("the pulled Component row-digests to %s, not the pinned %s, so the slot would not hold the pin", got, f.recorded)
+				}
 				layFetchedSlot(t, f.root, refusalComponentURI, "1.0.0", pulled, true)
 				replaceOnce(t, f.componentPath, "default: 8080 }", "default: 8081 }")
-				edited, err := os.ReadFile(f.componentPath)
-				if err != nil {
-					t.Fatalf("read the edited Component: %v", err)
-				}
-				want := `entity "` + refusalComponentURI + `" changed: lockfile=(1.0.0,` + f.recorded + `) current=(1.0.0,` + digest.ContentDigest(edited) + `)`
+				want := `entity "` + refusalComponentURI + `" changed: lockfile=(1.0.0,` + f.recorded + `) current=(1.0.0,` + rowDigestAt(t, f.componentPath) + `)`
 				return func(t *testing.T, err error) {
 					if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 						t.Fatalf("want the lockfile-drift condition; got %v", err)

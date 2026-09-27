@@ -108,6 +108,30 @@ func writeMultiVersionCatalog(t *testing.T) (ws, catalogDir string, digests map[
 	return ws, catalogDir, digests
 }
 
+// rowDigests returns, keyed as writeMultiVersionCatalog keys the documents' own
+// digests, the digest a lockfile row records for each fixture document laid into
+// catalogDir: taken over what a publication of that version's own document would
+// carry, through the product's own reading of it (AuthoredEntityDigestAt). The
+// two versions of a name must row-digest apart, or a reader that digests one
+// version's document for the other would pass the rows below by coincidence.
+func rowDigests(t *testing.T, catalogDir string) map[string]string {
+	t.Helper()
+	rows := map[string]string{}
+	for _, d := range multiVersionDocs() {
+		row, err := AuthoredEntityDigestAt(filepath.Join(catalogDir, filepath.FromSlash(d.rel)))
+		if err != nil {
+			t.Fatalf("row digest of %s: %v", d.rel, err)
+		}
+		rows[d.kind+"@"+d.version] = row
+	}
+	for _, k := range fixtureKinds {
+		if rows[k.kind+"@1.0.0"] == rows[k.kind+"@2.0.0"] {
+			t.Fatalf("the two %s documents row-digest alike; the table below would not discriminate", k.kind)
+		}
+	}
+	return rows
+}
+
 // referenceForms are the three reference forms, written so the four rows do not
 // agree on the version they select.
 var referenceForms = []struct {
@@ -144,10 +168,12 @@ func resolveForKind(ctx context.Context, lookup closure.Lookup, kind, uri, hint 
 // catalog, the build's lazy view and the daemon's per-request view resolve to the
 // highest satisfying version, report that version — a caret reference included,
 // which is recorded at the version it selected rather than as its constraint — and
-// take the digest over that version's own document.
+// take the digest over that version's own document: the row a publication of that
+// document records, which no other version's document digests to.
 func TestEveryPathSelectsOneVersionAndHashesItsOwnBytes(t *testing.T) {
 	t.Parallel()
-	ws, catalogDir, digests := writeMultiVersionCatalog(t)
+	ws, catalogDir, _ := writeMultiVersionCatalog(t)
+	rows := rowDigests(t, catalogDir)
 	ctx := context.Background()
 
 	eager, _, err := LoadPassOneTolerant(ws, "", catalogDir)
@@ -167,7 +193,7 @@ func TestEveryPathSelectsOneVersionAndHashesItsOwnBytes(t *testing.T) {
 	for _, k := range fixtureKinds {
 		for _, f := range referenceForms {
 			uri := k.name + f.suffix
-			want := digests[k.kind+"@"+f.want]
+			want := rows[k.kind+"@"+f.want]
 			for _, p := range paths {
 				t.Run(k.kind+"/"+f.form+"/"+p.name, func(t *testing.T) {
 					res, err := resolveForKind(ctx, p.lookup, k.kind, uri, k.hint)
@@ -183,7 +209,7 @@ func TestEveryPathSelectsOneVersionAndHashesItsOwnBytes(t *testing.T) {
 							uri, res.ResolvedVersion, p.name, f.want)
 					}
 					if res.Digest != want {
-						t.Errorf("%s: the digest %s is not the digest %s of the %s document it resolved to",
+						t.Errorf("%s: the digest %s is not the row digest %s of the %s document it resolved to",
 							uri, res.Digest, want, f.want)
 					}
 				})

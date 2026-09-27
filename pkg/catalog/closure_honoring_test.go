@@ -17,16 +17,28 @@ import (
 
 // sha256Hex is intentionally an INDEPENDENT re-derivation of the content
 // digest, NOT a call to pkg/digest.ContentDigest. The pin-honoring and
-// reuse/drift tests seed a PriorPin with this digest, then production recomputes
-// via ContentDigest and compares to honor (or detect drift against) the pin.
-// Keeping the test computation independent makes that a genuine cross-check: a
-// format change in ContentDigest makes production disagree with the seeded pin
-// and the test fails. Delegating to the shared helper would move both together
-// and blind the check. The fixed-input literal-format guard lives in
-// pkg/digest's own test and the fixed-body assertions in closure_lookup_test.go.
+// reuse/drift tests seed a PriorPin with it — directly for a library, whose row
+// records its bytes, and through documentRowDigest for an entity — then
+// production recomputes the row and compares to honor (or detect drift against)
+// the pin. Keeping the test computation independent makes that a genuine
+// cross-check: a format change in the production digest makes production
+// disagree with the seeded pin and the test fails. Delegating to the shared
+// helper would move both together and blind the check. The fixed-input
+// literal-format guard lives in pkg/digest's own test and the fixed-body
+// assertions in closure_lookup_test.go.
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// documentRowDigest is, independently of production for the reason sha256Hex
+// gives, the digest an entity row records for an entity document published
+// alone: the SHA-256 of its one-entry listing — the entry's mode (644, a document
+// is not executable), the SHA-256 of its bytes and its length-prefixed path,
+// under the name a consumer lays a lone document out as.
+func documentRowDigest(document []byte) string {
+	sum := sha256.Sum256(document)
+	return sha256Hex([]byte("644 " + hex.EncodeToString(sum[:]) + " 11:entity.yaml\n"))
 }
 
 // twoVersionComponent is a valid Component document at the given version — the
@@ -115,7 +127,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	}
 
 	// 1. HONORED — a pin @1.0.0 resolves 1.0.0 though the registry also has 1.1.0.
-	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)}}}
+	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)}}}
 	res, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse).ResolveCatalogEntity(context.Background(), uri, "component")
 	if err != nil {
 		t.Fatalf("honored resolve: %v", err)
@@ -123,7 +135,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	if res.ResolvedVersion != "1.0.0" {
 		t.Errorf("honored: resolved %q; want 1.0.0 (the pin honored, NOT floated to 1.1.0)", res.ResolvedVersion)
 	}
-	if res.Digest != sha256Hex(v100) {
+	if res.Digest != documentRowDigest(v100) {
 		t.Errorf("honored: digest %q; want the v1.0.0 digest", res.Digest)
 	}
 
@@ -138,7 +150,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 
 	// 3. HALT (honor != launder) — a pin whose pinned-version bytes no longer match
 	// the pinned digest halts with ErrFetchIntegrity rather than re-pinning.
-	drift := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: sha256Hex([]byte("STALE-PINNED-BYTES"))}}}
+	drift := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: documentRowDigest([]byte("STALE-PINNED-BYTES"))}}}
 	_, err = cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, drift).ResolveCatalogEntity(context.Background(), uri, "component")
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("drifted pin: err %v; want ErrFetchIntegrity (no launder/re-pin)", err)

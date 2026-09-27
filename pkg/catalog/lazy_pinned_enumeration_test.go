@@ -148,7 +148,25 @@ func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob
 	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
 		t.Fatalf("write cache slot %s: %v", slotURI, err)
 	}
-	return Pin{ResolvedVersion: version, Digest: contentDigest(blob), ManifestDigest: md}
+	return Pin{ResolvedVersion: version, Digest: rowDigestOf(blob), ManifestDigest: md}
+}
+
+// rowDigestOf returns the digest a lockfile row records for published bytes, taken
+// through the product's own rule (PinDigest) so a fixture's pin cannot fall out of
+// step with it: for an entity, the digest of the entries the publication carries;
+// for a library or an executable, the digest of the bytes.
+//
+// Bytes no entity can be read out of — an archive that does not unpack, or one
+// whose root holds no entity document or several — have no row digest, and no
+// pull could record one for them. A fixture seeding such a slot still needs a pin
+// to hold it to, so it pins the bytes' own digest: the verified read refuses the
+// slot while taking the row digest, before any pin is compared, so the value is
+// never read.
+func rowDigestOf(blob []byte) string {
+	if d, err := PinDigest(blob); err == nil {
+		return d
+	}
+	return contentDigest(blob)
 }
 
 // TestLazyLookup_PinnedCacheEnumeration_Resolves proves that a determinism-wired

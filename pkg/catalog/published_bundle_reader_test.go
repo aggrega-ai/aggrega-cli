@@ -26,6 +26,14 @@ import (
 // media type the bundler reports, which these readers take from the puller.
 func bundledEntity(t *testing.T, fileName, body string) []byte {
 	t.Helper()
+	return bundledEntityWith(t, fileName, body, nil)
+}
+
+// bundledEntityWith is bundledEntity with the files beside (relative path →
+// body) carried too, for a reader whose assertion is about everything an archive
+// carries rather than about the document alone.
+func bundledEntityWith(t *testing.T, fileName, body string, beside map[string]string) []byte {
+	t.Helper()
 	dir := filepath.Join(t.TempDir(), entityVersionOf(t, body))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -34,7 +42,14 @@ func bundledEntity(t *testing.T, fileName, body string) []byte {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	blob, _, err := oci.Bundle("Recipe", path, []string{fileName})
+	carried := []string{fileName}
+	for rel, content := range beside {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		carried = append(carried, rel)
+	}
+	blob, _, err := oci.Bundle("Recipe", path, carried)
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -201,10 +216,13 @@ func TestRegistryTierPinsTheEntityIdentityInsideAnArchive(t *testing.T) {
 // the aggregate tier: the bytes it returns are what the pull path parses as an
 // Aggregate and what the lockfile's external-entity scan reads, so they must be
 // the entity document rather than the artifact it arrived in. The digest it
-// returns is separately asserted to still cover the WHOLE artifact, because that
-// is what the pin commits to.
+// returns is separately asserted to still cover EVERYTHING the artifact carries —
+// the entries of the archive, a file beside the document included — because that
+// is what the pin commits to; and to be neither the digest of the document alone
+// nor the digest of the compressed bytes, which are the transport's object and
+// move with a recompression that carries the same entries.
 func TestPullAndCacheAggregateHandsBackTheEntityDocument(t *testing.T) {
-	blob := bundledEntity(t, "aggregate.yaml", bundledAggregateBody)
+	blob := bundledEntityWith(t, "aggregate.yaml", bundledAggregateBody, map[string]string{"notes.txt": "carried beside the document\n"})
 	p := &archivePuller{blob: blob, mediaType: mediaTypeFor(t, "Aggregate", false), tag: "9.9.9"}
 
 	data, _, digest, _, _, err := PullAndCacheAggregate(context.Background(), t.TempDir(), ".aggrega/cache", p, "acme/db-module")
@@ -230,8 +248,18 @@ func TestPullAndCacheAggregateHandsBackTheEntityDocument(t *testing.T) {
 		t.Errorf("the returned bytes read as metadata.version %q; want the entity document declaring 3.0.0",
 			hdr.Metadata.Version)
 	}
-	if digest != contentDigest(blob) {
-		t.Errorf("digest %s does not cover the whole published artifact; the pin must commit to the artifact, not to the document inside it", digest)
+	carried, err := oci.PublishedDigest(blob)
+	if err != nil {
+		t.Fatalf("PublishedDigest: %v", err)
+	}
+	if digest != carried {
+		t.Errorf("digest %s is not the digest %s of what the published artifact carries; the pin must commit to every entry of the artifact, not to the document inside it", digest, carried)
+	}
+	if alone := oci.DocumentDigest(data); digest == alone {
+		t.Errorf("digest %s is the digest of the document alone; the file carried beside it would be covered by nothing", digest)
+	}
+	if digest == contentDigest(blob) {
+		t.Errorf("digest %s is the digest of the compressed bytes, which a recompression of the same entries moves", digest)
 	}
 }
 
@@ -259,7 +287,11 @@ func TestSubAggregateDescentReadsAnArchivedCacheSlot(t *testing.T) {
 	}
 
 	l := &catalogLookup{catalog: &Catalog{}, workspaceRoot: root, cacheDir: ".aggrega/cache"}
-	agg, err := l.LoadAggregate(uri, "3.0.0", contentDigest(pulled.Bytes))
+	pin, err := PinDigest(pulled.Bytes)
+	if err != nil {
+		t.Fatalf("PinDigest: %v", err)
+	}
+	agg, err := l.LoadAggregate(uri, "3.0.0", pin)
 	if err != nil {
 		t.Fatalf("LoadAggregate over an archived cache slot: %v", err)
 	}

@@ -168,6 +168,13 @@ type Catalog struct {
 	// the answer it has always had.
 	origins map[string]entityOrigin
 
+	// unwrittenLocks is the lazy view's record of the locks a reporting run would
+	// leave beside the documents it pins (see UnwrittenLocks), handed to the shell
+	// it builds so the entity rows the shell takes read them as the view does. A
+	// catalog loaded from directories, and a Catalog literal, hold none and read
+	// every lock from disk.
+	unwrittenLocks UnwrittenLocks
+
 	// Shadows records, in deterministic listed-directory order, every entity a
 	// higher-precedence catalog directory overrode during a multi-directory
 	// load (see ShadowedEntity). Empty for a single-directory load. Surfaced on

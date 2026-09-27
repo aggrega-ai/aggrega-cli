@@ -75,9 +75,9 @@ var publishedByteReaders = map[string]string{
 	"pkg/catalog.DefaultOCIPuller.PullEntity":      "the kind-bound fetch; returns what the registry served, parses nothing",
 	"pkg/catalog.DefaultOCIPuller.PullLibrary":     "the kind-bound fetch; returns what the registry served, parses nothing",
 	"pkg/catalog.DefaultOCIPuller.PullAggregate":   "the bare-name fetch; returns what the registry served, parses nothing",
-	"pkg/catalog.tier2ReadVerifiedWithManifest":    "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor and to the content pin, all by digest, and returns the bytes unread beside the manifest. It parses the manifest, never the bytes",
+	"pkg/catalog.tier2ReadVerifiedWithManifest":    "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor, then to the content pin over the subject its row records (catalog.PinDigest, which reads the entity through oci.EntityYAML to learn its kind), and returns the bytes beside the manifest",
 	"pkg/catalog.tier2ReadVerified":                "hands on the verified read's bytes unread and drops the manifest; verifies nothing itself",
-	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check; parses nothing",
+	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check, described through catalog.PinDigest (oci.EntityYAML); parses nothing else",
 	"pkg/catalog.LazyLookup.tier2Verified":         "hands the verified read's bytes, the manifest they were verified against, and the slot they were read from to the cascade under the verify posture; parses nothing",
 	"pkg/catalog.LazyLookup.VerifyPinnedIntegrity": "verifies every pinned slot and discards the bytes; nothing is parsed",
 

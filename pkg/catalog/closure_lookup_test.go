@@ -78,10 +78,13 @@ spec:
 	if res.ResolvedVersion != "1.0.0" {
 		t.Errorf("ResolvedVersion: got %q; want %q", res.ResolvedVersion, "1.0.0")
 	}
-	// Golden literal (not a re-derivation): the exact content-address of
-	// compBody. Guards the digest format itself — a spelling change in
+	// Golden literal (not a re-derivation): the exact entity-row digest of
+	// compBody, which declares nothing beside itself and so publishes alone — the
+	// SHA-256 of its one-entry listing "644 63a6f938…ddb19fd 11:entity.yaml\n",
+	// where 63a6f938…ddb19fd is the SHA-256 of compBody's bytes. Guards the digest
+	// format itself — a spelling change in the listing or in
 	// pkg/digest.ContentDigest fails here loudly instead of being mirrored.
-	const wantCompDigest = "sha256:63a6f93856eff3633dba32c5d7c1d92236ee48930a4c7fbe4bce2f63bddb19fd"
+	const wantCompDigest = "sha256:e0738cf0c50e6d0c7ddd0f15b6ea724256670874bc9fc5f640053995efffd5f7"
 	if res.Digest != wantCompDigest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantCompDigest)
 	}
@@ -143,9 +146,11 @@ spec:
 	if res.ResolvedVersion != "2.5.0" {
 		t.Errorf("ResolvedVersion: got %q; want %q", res.ResolvedVersion, "2.5.0")
 	}
-	// Golden literal (not a re-derivation): the exact content-address of
-	// recipeBody, guarding the digest format.
-	const wantRecipeDigest = "sha256:1e2507fcdc810835bad282236c776c987c13305a43ec96b70da971ab1118eb06"
+	// Golden literal (not a re-derivation): the exact entity-row digest of
+	// recipeBody, which declares no file beside itself and so publishes alone —
+	// the SHA-256 of "644 1e2507fc…1118eb06 11:entity.yaml\n", where
+	// 1e2507fc…1118eb06 is the SHA-256 of recipeBody — guarding the digest format.
+	const wantRecipeDigest = "sha256:134b69ba8e4745a5348b102f7915165ca592225daf3cc2e0c6a5cfd281bc7b3f"
 	if res.Digest != wantRecipeDigest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantRecipeDigest)
 	}
@@ -193,9 +198,12 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	if res.NotFound {
 		t.Fatal("expected Tier-3 hit; got NotFound")
 	}
-	// Golden literal (not a re-derivation): the exact content-address of the
-	// version-2.0.0 compBody, guarding the digest format.
-	const wantComp2Digest = "sha256:347ccb4ba0cbbd569133e338f62b59b1627c19011b267d252d03b38fad7c9eba"
+	// Golden literal (not a re-derivation): the exact entity-row digest of the
+	// version-2.0.0 compBody as the registry published it, a document alone — the
+	// SHA-256 of "644 347ccb4b…ad7c9eba 11:entity.yaml\n", where 347ccb4b…ad7c9eba
+	// is the SHA-256 of compBody — guarding the digest format. The registry names
+	// compBody's own digest in its manifest; the row is not that digest.
+	const wantComp2Digest = "sha256:71b047421149ce4b96723591660e9d9b2a642ea71aec42da40b451c6e9767efe"
 	if res.Digest != wantComp2Digest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantComp2Digest)
 	}

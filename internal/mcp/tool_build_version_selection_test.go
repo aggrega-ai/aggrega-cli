@@ -17,15 +17,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // versionSelectionWorkspace writes a workspace whose catalog directory holds a
 // Component, a Feature and a sub-aggregate at 1.0.0 and 2.0.0, with one Release per
-// reference form, and returns the server, the root and each versioned document's
-// own digest keyed "<name>@<version>".
+// reference form, and returns the server, the root and, keyed "<name>@<version>",
+// the digest each versioned document's lockfile row records: over what a
+// publication of that document would carry, through the product's own reading of
+// it (catalog.AuthoredEntityDigestAt).
 func versionSelectionWorkspace(t *testing.T) (s *server, root string, digests map[string]string) {
 	t.Helper()
 	root = t.TempDir()
@@ -41,7 +43,11 @@ func versionSelectionWorkspace(t *testing.T) (s *server, root string, digests ma
 	}
 	versioned := func(key, rel, body string) {
 		write(rel, body)
-		digests[key] = digest.ContentDigest([]byte(body))
+		row, err := catalog.AuthoredEntityDigestAt(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("row digest of %s: %v", rel, err)
+		}
+		digests[key] = row
 	}
 	write(workspaceconfig.ConfigFilename, "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\n")
 	for _, v := range []string{"1.0.0", "2.0.0"} {
@@ -204,7 +210,7 @@ var buildToolVersionForms = []struct {
 // TestBuildToolSelectsTheVersionTheRuleSelects drives the tool twice per reference
 // form: rendering straight from the catalog directory, and filling the lockfile
 // first. Both render the selected version's values, and the fill pins that version
-// at its own document's digest — the pin the build it then renders against has to
+// at its own document's row digest — the pin the build it then renders against has to
 // agree with, or the fill refuses to write it.
 func TestBuildToolSelectsTheVersionTheRuleSelects(t *testing.T) {
 	for _, f := range buildToolVersionForms {

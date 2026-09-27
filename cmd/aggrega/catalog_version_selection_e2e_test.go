@@ -26,7 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -42,8 +42,10 @@ func multiVersionWorkspaceConfig(offline bool) string {
 	return cfg
 }
 
-// writeMultiVersionWorkspace writes the workspace and returns its root and each
-// versioned document's own digest, keyed "<name>@<version>". The four Releases
+// writeMultiVersionWorkspace writes the workspace and returns its root and, keyed
+// "<name>@<version>", the digest each versioned document's lockfile row records:
+// over what a publication of that document would carry, through the product's own
+// reading of it (catalog.AuthoredEntityDigestAt). The four Releases
 // differ only in the reference form their Aggregate, Manifest and Recipe write.
 func writeMultiVersionWorkspace(t *testing.T) (root string, digests map[string]string) {
 	t.Helper()
@@ -58,7 +60,11 @@ func writeMultiVersionWorkspace(t *testing.T) (root string, digests map[string]s
 	}
 	versioned := func(key, rel, body string) {
 		doc(rel, body)
-		digests[key] = digest.ContentDigest([]byte(body))
+		row, err := catalog.AuthoredEntityDigestAt(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("row digest of %s: %v", rel, err)
+		}
+		digests[key] = row
 	}
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), multiVersionWorkspaceConfig(true))
 

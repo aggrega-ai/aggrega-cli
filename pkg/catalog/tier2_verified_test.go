@@ -17,8 +17,10 @@ import (
 // seedVerifiedEntitySlot pushes body to an in-memory CAS, pulls it to obtain the
 // authoritative manifest bytes, and writes BOTH the content blob and the manifest
 // blob into the workspace cache slot for uri@version — the exact two-blob slot a
-// real Tier-3 pull writes. It returns the content pin and the manifest digest the
-// pull recorded, so callers pass the same pins a lockfile would carry.
+// real Tier-3 pull writes. It returns the pin the lockfile row records for the
+// bytes (rowDigestOf: an entity's over what it carries, a library's over its
+// bytes) and the manifest digest the pull recorded, so callers pass the same pins
+// a lockfile would carry.
 func seedVerifiedEntitySlot(t *testing.T, ws, cacheDir, uri, version, mediaType string, body []byte) (contentPin, manifestPin string) {
 	t.Helper()
 	mb, md := manifestBytesFor(t, mediaType, body)
@@ -28,7 +30,7 @@ func seedVerifiedEntitySlot(t *testing.T, ws, cacheDir, uri, version, mediaType 
 	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, mb); err != nil {
 		t.Fatalf("seed write manifest: %v", err)
 	}
-	return contentDigest(body), md
+	return rowDigestOf(body), md
 }
 
 // manifestBytesFor round-trips body through an in-memory CAS to obtain the

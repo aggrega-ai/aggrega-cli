@@ -33,14 +33,17 @@ import (
 // upgrade is how it is adopted. Splitting them would give one remediation two
 // identities.
 //
-// Cross-tier digest semantics: ClosureLookup standardises on the
-// content digest at every tier — Tier-3 (OCI pull) computes
-// sha256(result.Bytes) directly after pkg/oci.Pull returns, ignoring
-// pkg/oci.Pull's manifest-digest field; Tier-1 and Tier-2 hits hash
-// the entity bytes the same way. Identical content vendored across
-// tiers does not drift; drift surfaces only when the content
-// actually changes (re-published tag, vendored re-tarred content,
-// edited workspace catalog entity).
+// Cross-tier digest semantics: an entity row records one subject at
+// every tier — what a publication of the entity carries, each file by
+// its path, its bytes and whether it is executable. A catalog-directory
+// entity is digested over its declared files and a fetched or cached one
+// over the entries of the bytes it was published as, so identical content
+// does not drift between tiers, between checkouts that differ only in
+// permission bits, or between two compressions of the same entries; drift
+// surfaces when the content changes (an edited entity, a chart edited
+// under it, a file added to a source it declares, a flipped execute bit,
+// a re-published tag). A library row records its document's bytes, the
+// same at every tier.
 func ErrLockfileDrift() error { return errLockfileDrift }
 
 var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{

@@ -84,7 +84,21 @@ func seedPinnedArtifact(t *testing.T, root string, blob []byte, mediaType, slotU
 	if err := writeEntityToCacheSlot(root, layoutCacheDir, slotURI, version, pulled); err != nil {
 		t.Fatalf("writeEntityToCacheSlot: %v", err)
 	}
-	return Pin{ResolvedVersion: version, Digest: contentDigest(pulled.Bytes), ManifestDigest: pulled.Digest}
+	return Pin{ResolvedVersion: version, Digest: rowDigestOf(pulled.Bytes), ManifestDigest: pulled.Digest}
+}
+
+// slotTree returns the tree a pinned slot's files are laid out in. The tree is
+// named by the bytes the slot holds — the digest of its blob, as the layout itself
+// derives it — and not by the pin: a pin records what the publication carries,
+// entry by entry, while the tree is keyed by the one artifact it was unpacked
+// from, so an artifact replaced under a reader gets a tree of its own.
+func slotTree(t *testing.T, slot string) string {
+	t.Helper()
+	blob, err := os.ReadFile(filepath.Join(slot, "blob"))
+	if err != nil {
+		t.Fatalf("read the slot's blob: %v", err)
+	}
+	return sourcecache.ExtractedTree(slot, contentDigest(blob))
 }
 
 // carriedChart is the local chart a Recipe or FeatureRecipe carries beside it.
@@ -175,7 +189,7 @@ func TestPinnedEntityReadsTheFilesItsArchiveCarries(t *testing.T) {
 			}
 
 			slot := mustCachePath(root, layoutCacheDir, row.uri, "1.0.0")
-			want := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart")
+			want := filepath.Join(slotTree(t, slot), "chart")
 			if got != want {
 				t.Fatalf("source anchored at %q; want the chart inside the slot's layout %q", got, want)
 			}
@@ -211,7 +225,7 @@ func TestPinnedRecipeRenderDocumentIsItsLayoutDocument(t *testing.T) {
 			writeTree(t, pub, map[string]string{"recipe.yaml": row.doc})
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-			want := filepath.Join(sourcecache.ExtractedTree(mustCachePath(root, layoutCacheDir, uri, "1.0.0"), pin.Digest), "recipe.yaml")
+			want := filepath.Join(slotTree(t, mustCachePath(root, layoutCacheDir, uri, "1.0.0")), "recipe.yaml")
 
 			ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
 			ll.SetPins(map[string]Pin{uri: pin})
@@ -261,8 +275,8 @@ func TestPinnedSlotLayoutIsRebuiltFromTheBlobOnEveryRead(t *testing.T) {
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
 	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
-	template := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "banner.yaml")
-	stray := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "stray.yaml")
+	template := filepath.Join(slotTree(t, slot), "chart", "templates", "banner.yaml")
+	stray := filepath.Join(slotTree(t, slot), "chart", "templates", "stray.yaml")
 
 	read := func() {
 		t.Helper()
@@ -435,14 +449,14 @@ spec:
 	if strings.Contains(string(contract), "planted_by_the_consumer") {
 		t.Errorf("the resolved contract was read from the consumer's working directory:\n%s", contract)
 	}
-	laid, err := os.ReadFile(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "component.yaml"))
+	laid, err := os.ReadFile(filepath.Join(slotTree(t, slot), "component.yaml"))
 	if err != nil {
 		t.Fatalf("the slot's layout does not hold the published document under its own name: %v", err)
 	}
 	if string(laid) != doc {
 		t.Errorf("the laid-out document differs from the one published:\n%s", laid)
 	}
-	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "schema.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(slotTree(t, slot), "schema.yaml")); err != nil {
 		t.Errorf("the layout does not hold the schema file the publication carried: %v", err)
 	}
 }
@@ -474,7 +488,7 @@ spec:
 	if _, ok := ll.Component(uri); !ok {
 		t.Fatalf("the pinned Component did not resolve from its slot; skips = %v", ll.Skips())
 	}
-	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), oci.SingleDocumentFileName)); err != nil {
+	if _, err := os.Stat(filepath.Join(slotTree(t, slot), oci.SingleDocumentFileName)); err != nil {
 		t.Errorf("the slot's layout does not hold the document: %v", err)
 	}
 }

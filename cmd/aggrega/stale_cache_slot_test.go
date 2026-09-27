@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -121,8 +120,10 @@ type staleSlotFixture struct {
 	root          string
 	catalogDirs   []string
 	componentPath string
-	// pinned and cached are the digests of the pinned body and of the body the
-	// stale slot holds.
+	// pinned and cached are the row digests a lockfile records for the pinned
+	// body, as the catalog directory authors it, and for the body the stale slot
+	// holds, as a registry published it: both over what the entity carries, so the
+	// two are digests of one kind and a message naming both compares like with like.
 	pinned string
 	cached string
 }
@@ -209,8 +210,8 @@ spec:
 		root:          root,
 		catalogDirs:   catalogDirs,
 		componentPath: componentPath,
-		pinned:        digest.ContentDigest([]byte(staleSlotPinnedBody)),
-		cached:        digest.ContentDigest([]byte(staleSlotCachedBody)),
+		pinned:        rowDigestAt(t, componentPath),
+		cached:        publishedRowDigest(t, []byte(staleSlotCachedBody)),
 	}
 }
 

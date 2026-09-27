@@ -5,8 +5,6 @@ package catalog_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,16 +42,21 @@ func seedVerifiedComponentSlot(t *testing.T, ws, cacheDir, uri, version string, 
 	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, mb); err != nil {
 		t.Fatalf("WriteCachedManifest: %v", err)
 	}
-	return pinFor(body), md
+	return pinFor(t, body), md
 }
 
-// pinFor computes the lockfile content-digest pin for cached bytes, matching
-// the catalog's internal contentDigest (sha256, "sha256:" prefix). Tests use it
-// to set a verify-on-read pin that matches (or, when altered, mismatches) a
-// pre-populated cache slot.
-func pinFor(body []byte) string {
-	sum := sha256.Sum256(body)
-	return "sha256:" + hex.EncodeToString(sum[:])
+// pinFor computes the lockfile pin for cached bytes through the product's own
+// rule (catalog.PinDigest) — for an entity published as its document alone, the
+// digest of the one-entry set it carries, which is not the digest of the bytes.
+// Tests use it to set a verify-on-read pin that matches (or, when altered,
+// mismatches) a pre-populated cache slot.
+func pinFor(t *testing.T, body []byte) string {
+	t.Helper()
+	d, err := catalog.PinDigest(body)
+	if err != nil {
+		t.Fatalf("PinDigest: %v", err)
+	}
+	return d
 }
 
 // mockPuller is a stand-in for the production OCI puller. Records

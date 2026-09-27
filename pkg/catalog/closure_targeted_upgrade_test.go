@@ -35,8 +35,8 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 
 	// The full prior-lockfile pin set: both entities pinned at 1.0.0.
 	fullPins := map[string]catalog.Pin{
-		uriA: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)},
-		uriB: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)},
+		uriA: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
+		uriB: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
 	}
 
 	// Targeted upgrade of entity A == drop A from the pin set fed to the reuse
@@ -61,7 +61,7 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	if resB.ResolvedVersion != "1.0.0" {
 		t.Errorf("held entity B: resolved %q; want 1.0.0 (pin still honored, not floated)", resB.ResolvedVersion)
 	}
-	if resB.Digest != sha256Hex(v100) {
+	if resB.Digest != documentRowDigest(v100) {
 		t.Errorf("held entity B: digest %q; want the v1.0.0 digest", resB.Digest)
 	}
 

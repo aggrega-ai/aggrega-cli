@@ -30,7 +30,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -360,8 +359,8 @@ func TestIntegration_PullVerifyHaltsWhereAPullHaltsOnRepublishedBytes(t *testing
 			t.Fatalf("pull %d: %v", i, err)
 		}
 	}
-	if got := f.pinned(t).Digest; got != digest.ContentDigest(original) {
-		t.Fatalf("the pull pinned remote/db at %s; want the published document's digest %s", got, digest.ContentDigest(original))
+	if got, want := f.pinned(t).Digest, publishedRowDigest(t, original); got != want {
+		t.Fatalf("the pull pinned remote/db at %s; want the row digest %s of the document the registry published", got, want)
 	}
 	lockPath := lockfile.PathFor("release.yaml")
 	pulled := readForTest(t, lockPath)
@@ -373,8 +372,8 @@ func TestIntegration_PullVerifyHaltsWhereAPullHaltsOnRepublishedBytes(t *testing
 		t.Fatalf("clear the cache: %v", err)
 	}
 
-	want := `pinned entity "remote/db": registry now serves digest ` + digest.ContentDigest(republished) +
-		` for the pinned version, not the pinned digest ` + digest.ContentDigest(original)
+	want := `pinned entity "remote/db": registry now serves digest ` + publishedRowDigest(t, republished) +
+		` for the pinned version, not the pinned digest ` + publishedRowDigest(t, original)
 	for _, run := range []struct {
 		name string
 		run  func() error

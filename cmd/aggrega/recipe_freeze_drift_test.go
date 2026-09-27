@@ -12,10 +12,37 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
+
+// rowDigestAt is the digest a lockfile's entity row records for the entity
+// authored in the document at path, taken through the product's own reading of it
+// (catalog.AuthoredEntityDigestAt) so an expectation cannot fall out of step with
+// the rule: over what a publication of the entity would carry — the document, the
+// files it declares and, for a Recipe or FeatureRecipe, the lock beside it.
+func rowDigestAt(t *testing.T, path string) string {
+	t.Helper()
+	d, err := catalog.AuthoredEntityDigestAt(path)
+	if err != nil {
+		t.Fatalf("row digest of %s: %v", path, err)
+	}
+	return d
+}
+
+// publishedRowDigest is the digest a lockfile row records for bytes a registry
+// published — as a fetch or a cache slot holds them — through the product's own
+// rule (catalog.PinDigest): for an entity, over what the publication carries, so a
+// document published alone digests as its one-entry set rather than as its bytes.
+func publishedRowDigest(t *testing.T, published []byte) string {
+	t.Helper()
+	d, err := catalog.PinDigest(published)
+	if err != nil {
+		t.Fatalf("row digest of published bytes: %v", err)
+	}
+	return d
+}
 
 // fullURICollisionFixture authors a buildable workspace whose Recipe is
 // referenced from the Manifest by its FULL provider-qualified URI
@@ -132,17 +159,18 @@ spec:
 
 // TestFreezeFullURIRecipeOnePullFixpoint proves the one-pull fixpoint for a
 // recipe referenced by full URI whose freeze writes a lock beside it: after a
-// SINGLE pull, the lockfile records the content digest the recipe file actually
-// has, so a build (which verifies the lockfile against a freshly-recomputed
-// closure) sees no drift — no "lockfile out of date" halt and no need for a
-// second, healing pull. It also asserts the collision guard: the Component that
-// shares the recipe's bare name keeps its own untouched content digest in the
-// lockfile.
+// SINGLE pull, the lockfile records the row the recipe actually has — over what a
+// publication of it carries, the lock the freeze just wrote included — so a build
+// (which verifies the lockfile against a freshly-recomputed closure) sees no drift
+// — no "lockfile out of date" halt and no need for a second, healing pull. It
+// also asserts the collision guard: the Component that shares the recipe's bare
+// name keeps its own untouched row in the lockfile.
 //
 // The freeze is observed on the lock, because that is the file it writes. A
 // freeze that wrote nothing at all would leave the lockfile trivially in
 // agreement with a recipe nobody touched, which is why the lock's presence and
-// content are asserted before the fixpoint claim is made.
+// content are asserted before the fixpoint claim is made — and why the row taken
+// before the pull must differ from the one after it.
 func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -151,9 +179,12 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
 	componentPath := filepath.Join(root, "catalog", "components", "server.yaml")
 
-	// Content digest of the Component file, which the freeze never touches — the
-	// value the lockfile must carry for the Component both before and after the fix.
-	componentDigest := digest.ContentDigest(mustReadFile(t, componentPath))
+	// The row of the Component, which the freeze never touches — the value the
+	// lockfile must carry for the Component both before and after the fix.
+	componentDigest := rowDigestAt(t, componentPath)
+	// The recipe's row before the freeze: no lock beside it yet. A lockfile
+	// carrying this after the pull is the one-pull-lag bug.
+	preFreezeRecipeDigest := rowDigestAt(t, recipePath)
 
 	// A single pull: resolves the closure, freezes the recipe's pins into the
 	// lock beside it, and writes the lockfile.
@@ -168,12 +199,15 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	if !strings.Contains(lockBody, "artifactDigests") {
 		t.Fatalf("freeze did not write artifactDigests into %s; the test does not exercise the frozen path:\n%s", lockPath, lockBody)
 	}
-	// The content digest of the recipe file as it stands after the freeze — the
-	// value the lockfile's recipe entity must carry, and the value the build
-	// recomputes from the file.
-	recipeDigest := digest.ContentDigest(mustReadFile(t, recipePath))
+	// The recipe's row as it stands after the freeze — over the document and the
+	// lock beside it — the value the lockfile's recipe entity must carry, and the
+	// value the build recomputes from the files.
+	recipeDigest := rowDigestAt(t, recipePath)
 	if recipeDigest == componentDigest {
-		t.Fatalf("test setup degenerate: recipe and component share a content digest")
+		t.Fatalf("test setup degenerate: recipe and component share a row digest")
+	}
+	if recipeDigest == preFreezeRecipeDigest {
+		t.Fatalf("test setup degenerate: the freeze's lock did not move the recipe's row, so the lag this test names cannot show")
 	}
 
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -201,10 +235,10 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 		}
 	}
 	if recipeEntity == nil {
-		t.Fatalf("no lockfile entity carries the recipe's post-freeze content digest %s; lockfile records the pre-freeze bytes (the one-pull-lag bug):\n%+v", recipeDigest, lf.Entities)
+		t.Fatalf("no lockfile entity carries the recipe's post-freeze row digest %s; lockfile records the pre-freeze recipe (the one-pull-lag bug):\n%+v", recipeDigest, lf.Entities)
 	}
 	if componentEntity == nil {
-		t.Fatalf("no lockfile entity carries the component's content digest %s (collision guard: the fix corrupted the component digest):\n%+v", componentDigest, lf.Entities)
+		t.Fatalf("no lockfile entity carries the component's row digest %s (collision guard: the fix corrupted the component digest):\n%+v", componentDigest, lf.Entities)
 	}
 	if recipeEntity.URI == componentEntity.URI {
 		t.Fatalf("recipe and component collapsed to one entity URI %q — a by-name reconciliation corrupted the collision", recipeEntity.URI)

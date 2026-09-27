@@ -1441,11 +1441,12 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 	}
 
 	for _, e := range cl.Entities {
-		// A writable recipe's content digest is overlaid from the pin step's own
-		// reading of the document (keyed strictly by URI), taken after anything
-		// the step wrote, so the lockfile records the file as the build will
-		// re-hash it. The step writes beside the document and never into it, so
-		// the two readings agree; the overlay keeps them one reading.
+		// A writable recipe's row is overlaid from the pin step's own reading of the
+		// entity (keyed strictly by URI), taken after anything the step wrote,
+		// so the lockfile records the entity as the build will digest it. The
+		// row covers the lock beside the document, which the step writes after
+		// the dependency resolution digested the entity, so the overlay is what
+		// makes the recorded row describe the lock the step left.
 		entDigest := e.Digest
 		if pf, ok := pinnedEntityDigests[e.URI]; ok {
 			entDigest = pf

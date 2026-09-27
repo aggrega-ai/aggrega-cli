@@ -76,8 +76,13 @@ source written as a template names no one directory until a Release fills it in,
 so an entity with one carries every such file in its own directory, and push
 says so.
 
-A content digest is computed over what is published and embedded in the OCI
-manifest, so "aggrega pull" can detect tampering between publish and pull.
+Each file travels with mode 0644, or 0755 where it has any execute bit set,
+whatever the checkout it is published from. The OCI manifest names the digest of
+the published bytes, so "aggrega pull" refuses a download that does not match
+it. The lockfile a pull writes records the entity by the digest of its content —
+each file's path, its bytes, and whether it is executable — which is the digest a
+pull in the author's own workspace records for the same entity in its catalog
+directory, so a build on either side refuses content that no longer matches.
 
 Push signs before it publishes: where signing applies, the signature is made
 over the manifest digest before any bytes reach the registry, so a failed

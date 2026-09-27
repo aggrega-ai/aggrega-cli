@@ -5,14 +5,11 @@ package entitypin
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -56,7 +53,16 @@ type PlanInputs struct {
 type Plan struct {
 	workspaceRoot string
 	entities      []entityPlan
-	digests       map[string]string
+
+	// view is the catalog the plan was computed over. The rows EntityDigests
+	// returns are read through it, so they are the rows a closure resolved
+	// through the same view holds for the same entities.
+	view *catalog.LazyLookup
+
+	// documents maps every URI the plan resolved to an entity with a writable
+	// home to that entity's document, so the row a lockfile records for the URI can
+	// be taken over the entity as the step leaves it (EntityDigests).
+	documents map[string]string
 
 	// forWriting records that the plan was computed for writing, so each of its
 	// entities was held to a directory of its own before it was planned. Write
@@ -124,7 +130,7 @@ type Outcome struct {
 // never be pinned would spend a fetch on a verdict already decided — or, for a
 // source that does not resolve, report the fetch instead of the rule.
 func Compute(in PlanInputs) (Plan, error) {
-	plan := Plan{workspaceRoot: in.WorkspaceRoot, digests: map[string]string{}, forWriting: in.ForWriting}
+	plan := Plan{workspaceRoot: in.WorkspaceRoot, view: in.View, documents: map[string]string{}, forWriting: in.ForWriting}
 	loader := in.View.ClosureRecipeLoader()
 
 	type homed struct {
@@ -157,11 +163,7 @@ func Compute(in PlanInputs) (Plan, error) {
 		if !ok {
 			continue
 		}
-		d, err := fileContentDigest(path)
-		if err != nil {
-			return Plan{}, err
-		}
-		plan.digests[uri] = d
+		plan.documents[uri] = path
 		if _, dup := byPath[path]; dup {
 			continue
 		}
@@ -284,15 +286,60 @@ func WritableHome(view *catalog.LazyLookup, kind, capability, name, version stri
 }
 
 // EntityDigests returns, for every URI the plan resolved to an entity with a
-// writable home, the content digest of that entity's document as it stands.
+// writable home, the digest the lockfile's entity row records for that entity:
+// over what a publication of it would carry, the lock beside it included, read
+// through the view the plan was computed over (catalog.LazyLookup.EntityRowDigestAt).
 //
-// The step never opens the entity document for writing, so the digest is the
-// same before and after the lock is written, and a caller recording it describes
-// the file as a later build will hash it.
-func (p Plan) EntityDigests() map[string]string {
-	out := make(map[string]string, len(p.digests))
-	for uri, d := range p.digests {
+// The lock is one of the files the digest covers, so the digest is taken after
+// the step has done whatever it does to the lock. After Write, and where the step
+// only holds the locks on disk to its pins, the view reads each lock from disk. A
+// run that reports rather than writes installs its report on the view first
+// (catalog.LazyLookup.SetUnwrittenLocks, over Unwritten), so the view reads each
+// lock as the writing run would leave it. Either way the row is the one a closure
+// resolved through the same view holds for the entity — which is what a build of
+// the same Release compares it with — because both are one reading of one view.
+func (p Plan) EntityDigests() (map[string]string, error) {
+	byPath := map[string]string{}
+	out := make(map[string]string, len(p.documents))
+	for uri, path := range p.documents {
+		d, ok := byPath[path]
+		if !ok {
+			var err error
+			if d, err = p.view.EntityRowDigestAt(path); err != nil {
+				return nil, err
+			}
+			byPath[path] = d
+		}
 		out[uri] = d
+	}
+	return out, nil
+}
+
+// Unwritten returns what Report reported as the locks a catalog view reads in
+// place of the files on disk (catalog.UnwrittenLocks): keyed by the entity
+// document each lock sits beside, the bytes Report names for a lock that would
+// move, and nil for one the step would remove. A lock the step would leave as it
+// is has no entry, because the file on disk already holds what a writing run
+// would leave there.
+//
+// It reads Report's own outcomes and files rather than previewing any lock again,
+// so the lock an entity row is taken over is, byte for byte, the lock the report
+// shows.
+func Unwritten(outcomes []Outcome, files []dryrunreport.File) catalog.UnwrittenLocks {
+	content := make(map[string][]byte, len(files))
+	for _, f := range files {
+		content[f.Path] = f.Content
+	}
+	out := catalog.UnwrittenLocks{}
+	for _, o := range outcomes {
+		if !o.Changed {
+			continue
+		}
+		if o.Removed {
+			out[o.EntityPath] = nil
+			continue
+		}
+		out[o.EntityPath] = content[o.LockPath]
 	}
 	return out
 }
@@ -396,15 +443,4 @@ func (e entityPlan) outcome(changed bool) Outcome {
 		Removed:    changed && e.want.Empty(),
 		Pins:       recipepin.CountPins(e.want),
 	}
-}
-
-// fileContentDigest hashes a file's on-disk bytes with the content-address
-// spelling the closure and a build's drift check use, so a digest computed here
-// is comparable with the digest a build recomputes from the same file.
-func fileContentDigest(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
-	return digest.ContentDigest(data), nil
 }

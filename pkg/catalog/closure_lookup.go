@@ -195,16 +195,16 @@ type EntityPuller interface {
 //	        so the closure walker surfaces ErrUnresolvableURI cleanly
 //	        rather than attempting an out-of-band network call.
 //
-// Digest discipline: every tier returns a CONTENT digest (sha256 of
-// the entity bytes), even at Tier-3 where pkg/oci.Pull also returns a
-// manifest digest in its PullResult. The ClosureLookup layer
-// standardises on content digests so the pull → build round-trip is
-// deterministic: pull writes the same bytes to the cache that it
-// recorded a content digest of in the lockfile; build re-reads those
-// bytes at Tier-2 and computes the identical content digest. Re-using
-// pkg/oci.Pull's manifest digest as the lockfile digest would break
-// this without a per-slot sidecar metadata file; standardising on
-// content digest avoids the sidecar entirely.
+// Digest discipline: every tier returns the digest the row it feeds
+// records, never the manifest digest pkg/oci.Pull also returns. An
+// entity's row records what its publication carries — each file's path,
+// bytes and whether it is executable — so a catalog-directory entity is
+// digested over its declared files (AuthoredEntityDigest) and a fetched
+// or cached one over the entries of the bytes it was published as
+// (oci.PublishedDigest), and the two agree for one publication. A
+// library's row records its bytes, which are its document at every tier.
+// The manifest digest is recorded beside the row, and a cached read holds
+// the bytes to the manifest's descriptor before it reads the row's digest.
 //
 // Library cache layout: at Tier-3 pulls of SchemaLibrary or
 // MappingLibrary mediatypes, ClosureLookup writes the bytes under the
@@ -233,8 +233,8 @@ func (c *Catalog) ClosureLookup(ociPuller OCIPuller, workspaceRoot, cacheDir str
 //
 // The externals map is consulted BEFORE the in-memory catalog;
 // duplicate keys (same URI registered both as external and as
-// catalog entity) are resolved as external. The bytes are hashed for
-// the content-digest exactly like Tier-1 catalog hits.
+// catalog entity) are resolved as external. Each is recorded by the
+// digest its row records for a document published alone (lookupExternal).
 func (c *Catalog) ClosureLookupWithExternals(ociPuller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte) closure.Lookup {
 	return &catalogLookup{
 		catalog:       c,
@@ -389,14 +389,14 @@ func versionedSlotURI(uri, version string) string {
 }
 
 func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
-	if res, ok := l.lookupExternal(uri); ok {
-		return res, nil
+	if res, ok, err := l.lookupExternal(uri); err != nil || ok {
+		return res, err
 	}
 	if res, ok := l.lookupRegistry(uri); ok {
 		return res, nil
 	}
-	if res, ok := l.tier1CatalogEntity(uri); ok {
-		return res, nil
+	if res, ok, err := l.tier1CatalogEntity(uri); err != nil || ok {
+		return res, err
 	}
 	// A core provider that ships inside the binary is already on the machine: resolve
 	// it here, before the registry tiers, so no network round-trip is attempted for
@@ -526,7 +526,7 @@ func (l *catalogLookup) embeddedPluginEntity(uri, kindHint string) (closure.Reso
 		}
 		return closure.Resolution{
 			ResolvedVersion: p.Metadata.Version,
-			Digest:          contentDigest(raw),
+			Digest:          oci.DocumentDigest(raw),
 			ResolutionPath:  closure.ResolutionPathEmbedded,
 		}, true
 	}
@@ -573,11 +573,11 @@ func (l *catalogLookup) lookupRegistry(uri string) (closure.Resolution, bool) {
 // pull (and the puller is nil on the hermetic build path, so it never fetches at
 // build — the sub resolves there via the build-side cache→catalog bridge).
 func (l *catalogLookup) ResolveAggregate(ctx context.Context, uri string) (closure.Resolution, error) {
-	if res, ok := l.lookupExternal(uri); ok {
-		return res, nil
+	if res, ok, err := l.lookupExternal(uri); err != nil || ok {
+		return res, err
 	}
-	if res, ok := l.tier1CatalogEntity(uri); ok {
-		return res, nil
+	if res, ok, err := l.tier1CatalogEntity(uri); err != nil || ok {
+		return res, err
 	}
 	fetchURI := l.pinnedFetchURI(uri)
 	if _, res, ok, err := l.tier2(uri, fetchURI); err != nil {
@@ -595,17 +595,25 @@ func (l *catalogLookup) ResolveAggregate(ctx context.Context, uri string) (closu
 	return l.honorPinDigest(uri, res)
 }
 
-func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
+// lookupExternal resolves uri against the Release's own Aggregate and Manifest,
+// which a caller registered by their bytes. Each is recorded by the digest of what
+// it would publish as — its document alone — so the row is the one subject every
+// entity row has.
+func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool, error) {
 	bytes, ok := l.externals[uri]
 	if !ok {
-		return closure.Resolution{}, false
+		return closure.Resolution{}, false, nil
+	}
+	d, err := oci.PublishedDigest(bytes)
+	if err != nil {
+		return closure.Resolution{}, false, fmt.Errorf("catalog: %s: %w", uri, err)
 	}
 	_, version, _ := resolver.SplitVersionedURI(uri)
 	return closure.Resolution{
 		ResolvedVersion: version,
-		Digest:          contentDigest(bytes),
+		Digest:          d,
 		ResolutionPath:  closure.ResolutionPathExternal,
-	}, true
+	}, true, nil
 }
 
 // ResolveLibrary resolves a library reference on any axis through the same three
@@ -794,7 +802,11 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 		// the bytes gives the manifest digest. Nothing about this hit touched the
 		// registry, so nothing downstream asks the registry about it either — its
 		// signature fact is the one the pull that fetched it recorded.
-		return cacheHitResolution(contentPin, bytes, manifestBytes), true, nil
+		res, rerr := cacheHitResolution(contentPin, bytes, manifestBytes)
+		if rerr != nil {
+			return closure.Resolution{}, false, fmt.Errorf("catalog: cached plugin artifact %s: %w", uri, rerr)
+		}
+		return res, true, nil
 	case errors.Is(mrerr, oci.ErrFetchNotFound()):
 		return closure.Resolution{}, false, nil
 	default:
@@ -861,14 +873,20 @@ func embeddedPluginResolution(refDigest string) closure.Resolution {
 // indexes. Each kind is selected by its own resolution rule, and the resolution
 // reports the version that rule selected — the entity's own metadata.version —
 // rather than the constraint the reference wrote, so a caret reference is
-// recorded at the version it resolved to. The digest is taken over the retained
-// bytes of that same indexed entity.
-func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
+// recorded at the version it resolved to. The digest is the entity row's over that
+// same indexed entity (Catalog.entityRowDigest): what a publication of it carries.
+// A declared set that cannot be read is returned as the error, because a row
+// recorded without it would describe a publication nobody could make.
+func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool, error) {
 	kind, key, version, ok := l.tier1CatalogEntry(uri)
 	if !ok {
-		return closure.Resolution{}, false
+		return closure.Resolution{}, false, nil
 	}
-	return l.tier1Resolution(kind, key, version), true
+	d, err := l.catalog.entityRowDigest(kind, key)
+	if err != nil {
+		return closure.Resolution{}, false, fmt.Errorf("catalog: %s: %w", uri, err)
+	}
+	return l.tier1Resolution(kind, key, version, d), true, nil
 }
 
 // tier1CatalogEntry is the entry this lookup's catalog indexes that uri resolves
@@ -929,7 +947,9 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
-	return l.tier1Resolution(axis.Kind, metaName, resolved), entries, true
+	// A library's row records the digest of its bytes (isLibraryKind).
+	d := contentDigest(l.catalog.entityBytes[entityBytesKey(axis.Kind, metaName)])
+	return l.tier1Resolution(axis.Kind, metaName, resolved, d), entries, true
 }
 
 // localLibrary reads one library out of the locally-authored catalog, returning its
@@ -989,22 +1009,27 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (met
 // catalogDirectoryCopies returns the entries this catalog holds from a catalog
 // directory that the reference uri resolves to at the catalog tier — through the
 // rule tier1CatalogEntry states for an entity, and localLibrary's for a library on
-// each axis — each with the document it was authored in and the digest of the
-// bytes retained for it, which is the digest a catalog-tier resolution of the
-// reference pins. An entry the enumeration placed from a cache slot has no
-// authored document and is not returned, and nor is anything from a catalog that
-// records no origins, such as one loaded whole from its directories.
+// each axis — each with the document it was authored in and the digest a
+// catalog-tier resolution of the reference pins: the entity row's over what the
+// entity's publication would carry, and a library's over its bytes. An entry the
+// enumeration placed from a cache slot has no authored document and is not
+// returned, and nor is anything from a catalog that records no origins, such as
+// one loaded whole from its directories. An entity whose declared set cannot be
+// read holds no digest a pin could name, and is not returned either.
 func (c *Catalog) catalogDirectoryCopies(uri string) []catalogDirectoryCopy {
 	lookup := &catalogLookup{catalog: c}
-	type entry struct{ kind, key string }
+	type entry struct {
+		kind, key string
+		library   bool
+	}
 	var entries []entry
 	if kind, key, _, ok := lookup.tier1CatalogEntry(uri); ok {
-		entries = append(entries, entry{kind, key})
+		entries = append(entries, entry{kind, key, false})
 	}
 	name := schemaLibraryNameFromURI(uri)
 	for _, axis := range closure.LibraryAxes() {
 		if metaName, _, _, ok := lookup.localLibrary(axis, name); ok {
-			entries = append(entries, entry{axis.Kind, metaName})
+			entries = append(entries, entry{axis.Kind, metaName, true})
 		}
 	}
 	var copies []catalogDirectoryCopy
@@ -1014,24 +1039,32 @@ func (c *Catalog) catalogDirectoryCopies(uri string) []catalogDirectoryCopy {
 		if !ok {
 			continue
 		}
-		copies = append(copies, catalogDirectoryCopy{path: document, digest: contentDigest(c.entityBytes[bytesKey])})
+		d := contentDigest(c.entityBytes[bytesKey])
+		if !e.library {
+			var err error
+			if d, err = c.entityRowDigest(e.kind, e.key); err != nil {
+				continue
+			}
+		}
+		copies = append(copies, catalogDirectoryCopy{path: document, digest: d})
 	}
 	return copies
 }
 
 // tier1Resolution is the resolution descriptor for the entity this lookup's
-// catalog indexes under kind and indexKey, reported at resolvedVersion. indexKey
-// keys both the retained bytes the digest is taken over and the record of where
-// the entry came from, so the digest is always of the indexed entity's own bytes.
+// catalog indexes under kind and indexKey, reported at resolvedVersion with the
+// digest its row records, which the caller takes: an entity's over what its
+// publication carries (tier1CatalogEntity), a library's over its bytes
+// (tier1Library).
 //
 // The resolution path is the catalog's own answer to where that index entry came
 // from, never an assumption that an indexed entity was authored in a catalog
 // directory: an index can also hold an entity it received from a lockfile-pinned
 // cache slot, and a pull-time pin decision keys on the difference.
-func (l *catalogLookup) tier1Resolution(kind, indexKey, resolvedVersion string) closure.Resolution {
+func (l *catalogLookup) tier1Resolution(kind, indexKey, resolvedVersion, digest string) closure.Resolution {
 	return closure.Resolution{
 		ResolvedVersion: resolvedVersion,
-		Digest:          contentDigest(l.catalog.entityBytes[entityBytesKey(kind, indexKey)]),
+		Digest:          digest,
 		ResolutionPath:  l.catalog.indexedResolutionPath(kind, indexKey),
 	}
 }
@@ -1070,11 +1103,18 @@ func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
 // taken on trust and only the digest refused afterwards; the versioned form is
 // the fallback for a pin recorded under it.
 func (l *catalogLookup) tier2(uri, fetchURI string) ([]byte, closure.Resolution, bool, error) {
-	bytes, _, res, err := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, fetchURI)
+	bytes, manifest, version, err := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, fetchURI)
 	if err != nil {
 		if errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
 			return nil, closure.Resolution{}, false, err
 		}
+		return nil, closure.Resolution{}, false, nil
+	}
+	// A slot whose bytes yield no digest — an archive that does not unpack — holds
+	// nothing a pin could name, so it is a miss here as an absent one is, and the
+	// cascade goes on to the registry, which rewrites it.
+	res, err := cacheHitResolution(version, bytes, manifest)
+	if err != nil {
 		return nil, closure.Resolution{}, false, nil
 	}
 	if l.priorPins == nil {
@@ -1093,16 +1133,23 @@ func (l *catalogLookup) tier2(uri, fetchURI string) ([]byte, closure.Resolution,
 	// halts naming it (pinHeldNowhere). Re-establishing the pin from
 	// authoritative registry bytes is the correct action where the registry is
 	// reachable, rather than laundering the drifted slot into the new lockfile.
-	l.refetchPending[fetchURI] = passedOverSlot{pin: pin.Digest, held: heldInsteadOfPin(res.Digest, pin)}
+	l.refetchPending[fetchURI] = passedOverSlot{
+		pin:               pin.Digest,
+		held:              heldInsteadOfPin(res.Digest, pin),
+		manifestDisagrees: res.Digest == pin.Digest,
+	}
 	return nil, closure.Resolution{}, false, nil
 }
 
 // passedOverSlot is what the reuse check found in a cache slot it did not reuse:
 // the content pin the slot no longer holds, and what it holds instead, worded by
-// heldInsteadOfPin.
+// heldInsteadOfPin. manifestDisagrees records that the slot holds the pinned
+// content and it is the manifest beside it that is not the pinned one, which is
+// the condition a halt over the slot reports (pinDisagreementCondition).
 type passedOverSlot struct {
-	pin  string
-	held string
+	pin               string
+	held              string
+	manifestDisagrees bool
 }
 
 // heldInsteadOfPin words what a cache entry holds where a pin names other bytes,
@@ -1152,7 +1199,7 @@ func (l *catalogLookup) pinHeldNowhere(uri, fetchURI string, res closure.Resolut
 		fmt.Sprintf("no catalog directory this workspace reads holds %s", fetchURI),
 		fmt.Sprintf("the cache entry for %s holds %s", fetchURI, slot.held),
 		registry,
-	}, remedy)
+	}, remedy, pinDisagreementCondition(slot.manifestDisagrees))
 }
 
 // pinRefetchRemedy is the step that supplies a pinned version's bytes again when
@@ -1163,17 +1210,39 @@ const pinRefetchRemedy = "with a registry reachable, `aggrega pull --release <re
 // errNoSourceHoldsPin is the halt a read of a pinned entity meets when no source
 // it reads holds bytes that hash to the pin. tried names each source read and what
 // it held, in the order the read reached them; remedy, when not empty, is the step
-// that can supply the pinned bytes. It is the fetch-integrity condition — every
-// source offered bytes other than the ones the pin commits to, or none — and the
-// one wording every reader of a pinned entity gives it: the build's integrity
-// gate (LazyLookup.VerifyPinnedIntegrity) and the pull's reuse check
-// (pinHeldNowhere).
-func errNoSourceHoldsPin(uri, pin string, tried []string, remedy string) error {
+// that can supply the pinned bytes. It is the one wording every reader of a pinned
+// entity gives it: the build's integrity gate (LazyLookup.VerifyPinnedIntegrity)
+// and the pull's reuse check (pinHeldNowhere).
+//
+// condition is the integrity condition the halt reports, which the reader takes
+// from what its own read of the cache entry found (pinDisagreementCondition). The
+// wording names every source either way; the condition says which record
+// disagreed.
+func errNoSourceHoldsPin(uri, pin string, tried []string, remedy string, condition error) error {
 	msg := fmt.Sprintf("pinned entity %s: no source holds the pinned bytes %s (%s)", uri, pin, strings.Join(tried, "; "))
 	if remedy != "" {
 		msg += "; " + remedy
 	}
-	return fmt.Errorf("%s: %w", msg, oci.ErrFetchIntegrity())
+	return fmt.Errorf("%s: %w", msg, condition)
+}
+
+// pinDisagreementCondition returns the integrity condition a halt reports for a
+// cache entry that does not hold its pin: the cached-manifest condition where it is
+// the manifest persisted beside the content that disagrees with the manifest digest
+// the pin records, and the fetch-integrity condition where it is the content —
+// other content than the pin names, or content that does not verify against its
+// own manifest. Each reader supplies which of the two its own read found: the
+// build's integrity gate from its verifying read's refusal, which compares the
+// manifest first (tier2ReadVerifiedWithManifest), and the pull's reuse check from
+// the entry's digests against the pin (slotHoldsPin). So a build, a verifying pull
+// and a pull that halt over one entry name one condition for it, and a tampered
+// manifest is reported as a manifest that does not match its pin rather than as
+// content that does not match.
+func pinDisagreementCondition(manifestDisagrees bool) error {
+	if manifestDisagrees {
+		return oci.ErrCachedManifestIntegrity()
+	}
+	return oci.ErrFetchIntegrity()
 }
 
 // slotHoldsPin reports whether a cache hit still holds what a prior lockfile pin
@@ -1255,31 +1324,32 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // pull's reuse check and the build's verifying read therefore cannot come to
 // disagree about such a slot — neither is handed its content.
 //
-// The resolution it returns is the cache hit's description (cacheHitResolution),
-// taken over the bytes read and the manifest persisted beside them.
+// It returns, beside the bytes and the manifest, the version the slot is keyed
+// by, which is what a caller describing the hit reports it at
+// (cacheHitResolution).
 //
 // Returns an error wrapping oci.ErrFetchNotFound when the cache directory is
 // unset, when the URI carries no version pin, when the cache slot holds no
 // readable content, or when it holds content but no manifest; a manifest that
 // exists but cannot be read is reported as that failure, and a version that
 // cannot address a slot as the refusal oci.CachePath returns.
-func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, []byte, closure.Resolution, error) {
+func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, []byte, string, error) {
 	slot, version, ok, err := tier2Slot(workspaceRoot, cacheDir, uri)
 	if err != nil {
-		return nil, nil, closure.Resolution{}, err
+		return nil, nil, "", err
 	}
 	if !ok {
-		return nil, nil, closure.Resolution{}, errNotInContentCache(uri)
+		return nil, nil, "", errNotInContentCache(uri)
 	}
 	bytes, err := readCacheSlotBytes(slot)
 	if err != nil {
-		return nil, nil, closure.Resolution{}, errNotInContentCache(uri)
+		return nil, nil, "", errNotInContentCache(uri)
 	}
 	manifest, err := persistedManifest(workspaceRoot, cacheDir, uri, version)
 	if err != nil {
-		return nil, nil, closure.Resolution{}, err
+		return nil, nil, "", err
 	}
-	return bytes, manifest, cacheHitResolution(version, bytes, manifest), nil
+	return bytes, manifest, version, nil
 }
 
 // errNotInContentCache is the miss a cache read reports for a slot that holds no
@@ -1327,11 +1397,12 @@ func persistedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, er
 }
 
 // cacheHitResolution is the one description of an entry the content cache served:
-// the version its slot is keyed by, the content digest of the bytes the slot
-// holds, and the digest of the OCI manifest persisted beside them — every fact the
-// registry read that filled the slot reported — marked as served from the cache.
-// Every cache-tier read describes what it served through this, so a warm pull
-// reports what a cold pull did and the lockfile it writes is the same.
+// the version its slot is keyed by, the digest the row pinning the bytes the slot
+// holds records for them (PinDigest), and the digest of the OCI manifest persisted
+// beside them — every fact the registry read that filled the slot reported —
+// marked as served from the cache. Every cache-tier read describes what it served
+// through this, so a warm pull reports what a cold pull did and the lockfile it
+// writes is the same.
 //
 // The manifest digest is derived from the persisted manifest rather than carried
 // in from a record, so a cache hit reports the manifest it actually holds and a
@@ -1341,17 +1412,22 @@ func persistedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, er
 //
 // It verifies nothing. What a reader has established about the bytes before
 // describing them is that reader's own discipline, and each states it where it
-// reads.
-func cacheHitResolution(version string, content, manifest []byte) closure.Resolution {
+// reads. Bytes that yield no digest — an archive that does not unpack — are
+// returned as the error.
+func cacheHitResolution(version string, content, manifest []byte) (closure.Resolution, error) {
+	d, err := PinDigest(content)
+	if err != nil {
+		return closure.Resolution{}, err
+	}
 	res := closure.Resolution{
 		ResolvedVersion: version,
-		Digest:          contentDigest(content),
+		Digest:          d,
 		ResolutionPath:  closure.ResolutionPathCache,
 	}
 	if len(manifest) > 0 {
 		res.ManifestDigest = contentDigest(manifest)
 	}
-	return res
+	return res, nil
 }
 
 // tier2ReadVerified is the verifying Tier-2 cache read. It reads the cached
@@ -1393,6 +1469,13 @@ func tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest,
 	if err != nil {
 		return nil, nil, err
 	}
+	// The download is held to the manifest: the manifest to the pinned manifest
+	// digest where the pin records one, and the bytes to the digest the manifest's
+	// descriptor names for them. That is transport integrity, and it is complete
+	// before the pin's own digest is read. The pin's digest is then compared over
+	// the subject its row records (PinDigest): for an entity, what the publication
+	// carries rather than its compressed bytes, which is why a recompression of the
+	// same entries still verifies.
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
 	// content; it is the root the content is verified against. Verify the manifest
 	// against the independent pin (when one is recorded — a registry-resolved
@@ -1417,7 +1500,11 @@ func tier2ReadVerifiedWithManifest(workspaceRoot, cacheDir, uri, expectedDigest,
 		return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 	}
 	// Content still matches the recorded content pin.
-	if got := contentDigest(bytes); got != expectedDigest {
+	got, derr := PinDigest(bytes)
+	if derr != nil {
+		return nil, nil, fmt.Errorf("catalog: cached %s: %w", uri, derr)
+	}
+	if got != expectedDigest {
 		return nil, nil, &cachedContentMismatch{uri: uri, held: got, pin: expectedDigest}
 	}
 	return bytes, manifestBytes, nil
@@ -1509,12 +1596,16 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 				pinnedVersion = mv
 			}
 		}
+		d, derr := oci.PublishedDigest(result.Bytes)
+		if derr != nil {
+			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, derr)
+		}
 		if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, pinnedVersion, result); err != nil {
 			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
 		}
 		return result.Bytes, closure.Resolution{
 			ResolvedVersion: pinnedVersion,
-			Digest:          contentDigest(result.Bytes),
+			Digest:          d,
 			ManifestDigest:  result.Digest,
 			ResolutionPath:  closure.ResolutionPathRegistry,
 		}, nil
@@ -1542,12 +1633,16 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 	if aerr := admitFetchedEntity(kind, result.Bytes, reference+":"+tag); aerr != nil {
 		return nil, closure.Resolution{}, aerr
 	}
+	d, derr := oci.PublishedDigest(result.Bytes)
+	if derr != nil {
+		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, derr)
+	}
 	if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, tag, result); err != nil {
 		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
 	}
 	return result.Bytes, closure.Resolution{
 		ResolvedVersion: tag,
-		Digest:          contentDigest(result.Bytes),
+		Digest:          d,
 		ManifestDigest:  result.Digest,
 		ResolutionPath:  closure.ResolutionPathRegistry,
 	}, nil
@@ -1686,11 +1781,11 @@ func (l *catalogLookup) tier3Aggregate(ctx context.Context, uri string) (closure
 //
 // data is what a caller parses and interpolates, so it is the entity document,
 // already taken out of whatever shape the coordinate served — the caller does
-// not meet the published shape and therefore cannot get it wrong. digest is
-// computed over the whole fetched artifact, because that is what the content pin
-// commits to and what the cache slot holds; the two are deliberately not the
-// same bytes, and collapsing them either pins less than was fetched or hands a
-// parser something that is not a document.
+// not meet the published shape and therefore cannot get it wrong. digest is the
+// entity row's over everything the fetched artifact carries
+// (oci.PublishedDigest), because that is what the content pin commits to; the
+// two are deliberately not the same thing, and collapsing them either pins less
+// than was fetched or hands a parser something that is not a document.
 func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest, manifestDigest string, found bool, err error) {
 	if puller == nil {
 		return nil, "", "", "", false, nil
@@ -1730,7 +1825,11 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	if derr != nil {
 		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, derr)
 	}
-	return document, version, contentDigest(result.Bytes), result.Digest, true, nil
+	d, perr := oci.PublishedDigest(result.Bytes)
+	if perr != nil {
+		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)
+	}
+	return document, version, d, result.Digest, true, nil
 }
 
 // admitFetchedEntity puts a body a registry fetch returned through the schema of

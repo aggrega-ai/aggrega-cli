@@ -341,6 +341,7 @@ func (l *LazyLookup) Reset() {
 	l.entityBytes = map[string][]byte{}
 	l.origins = map[string]entityOrigin{}
 	l.recordedPins = recipepin.Lookup{}
+	l.unwrittenLocks = nil
 }
 
 // Prime copies the supplied catalog's already-merged Components and
@@ -567,6 +568,12 @@ type LazyLookup struct {
 	// records nothing here and is answered as recording nothing.
 	recordedPins recipepin.Lookup
 
+	// unwrittenLocks holds the locks a run that reports its writes would leave
+	// beside the documents it pins, read in place of the lock on disk wherever this
+	// view takes an entity row (SetUnwrittenLocks). nil for every view whose owner
+	// writes, or writes nothing.
+	unwrittenLocks UnwrittenLocks
+
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, index key) — the same key
 	// the eager catalog uses: name:version for a Component, Feature or
@@ -675,9 +682,13 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 // the halt names every source it read: the slot and what it holds, and each
 // catalog-directory copy and what it holds, or that none holds the identity
 // (errNoSourceHoldsPin). A build asks no registry, so a registry is not among the
-// sources; the halt names the pull that can fetch the pinned version again. A
-// complete slot that DOES hold the pinned bytes is read as before, which is what
-// lets it stand in for a catalog-directory entity its author has removed.
+// sources; the halt names the pull that can fetch the pinned version again. It
+// reports the condition the slot's own refusal named (pinDisagreementCondition): a
+// manifest that no longer hashes to the manifest digest the pin records halts
+// with the cached-manifest condition, and content that does not match with the
+// fetch-integrity condition. A complete slot that DOES hold the pinned bytes is
+// read as before, which is what lets it stand in for a catalog-directory entity
+// its author has removed.
 func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -712,7 +723,8 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 		for _, c := range copies {
 			tried = append(tried, fmt.Sprintf("the catalog directory file %s holds %s", c.path, c.digest))
 		}
-		return errNoSourceHoldsPin(uri, pin.Digest, tried, pinRefetchRemedy)
+		return errNoSourceHoldsPin(uri, pin.Digest, tried, pinRefetchRemedy,
+			pinDisagreementCondition(errors.Is(err, oci.ErrCachedManifestIntegrity())))
 	}
 	return nil
 }
@@ -742,9 +754,11 @@ func copyHoldingPin(copies []catalogDirectoryCopy, pin string) (catalogDirectory
 // reads first (selectIndexedDocument, the first-win copy, so a copy another
 // directory shadows is never returned), and every other kind through the
 // recipe-shell enumeration's own catalog tier (Catalog.catalogDirectoryCopies).
-// Each digest is taken over the document's bytes as a catalog-directory read
-// retains them, so a copy whose digest equals a pin is the copy a resolution of
-// the reference reads and pins.
+// Each digest is the one a catalog-directory read of the reference records — for
+// an entity, over what a publication of it carries (AuthoredEntityDigest) — so a
+// copy whose digest equals a pin is the copy a resolution of the reference reads
+// and pins. A copy whose declared set cannot be read holds no digest a pin could
+// name, and is not returned.
 //
 // It is asked only about a pin whose slot has failed verification, so a view
 // whose slots all hold their pins never walks for it. The caller holds l.mu.
@@ -757,11 +771,11 @@ func (l *LazyLookup) catalogDirectoryCopies(slotURI string) []catalogDirectoryCo
 		if !ok {
 			continue
 		}
-		data, err := os.ReadFile(doc.path)
+		d, err := authoredEntityDigestAt(doc.path, l.unwrittenLocks)
 		if err != nil {
 			continue
 		}
-		copies = append(copies, catalogDirectoryCopy{path: doc.path, digest: contentDigest(data)})
+		copies = append(copies, catalogDirectoryCopy{path: doc.path, digest: d})
 	}
 	return append(copies, l.recipeCatalog().catalogDirectoryCopies(slotURI)...)
 }
@@ -1245,14 +1259,22 @@ func selectIndexedDocument(index map[string]indexedDocument, uri string) (indexe
 // (lazily-built) component index and reads + full-unmarshals it. Returns the
 // unmerged Component on hit.
 func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
+	comp, _, ok := l.tier1ReadComponentDocument(uri)
+	return comp, ok
+}
+
+// tier1ReadComponentDocument is tier1ReadComponent returning, beside the
+// Component, the indexed document it was read from, for a caller that digests the
+// files the document declares beside it.
+func (l *LazyLookup) tier1ReadComponentDocument(uri string) (types.Component, indexedDocument, bool) {
 	l.buildComponentIndex()
 	doc, ok := selectIndexedDocument(l.componentIndex, uri)
 	if !ok {
-		return types.Component{}, false
+		return types.Component{}, indexedDocument{}, false
 	}
 	data, err := os.ReadFile(doc.path)
 	if err != nil {
-		return types.Component{}, false
+		return types.Component{}, indexedDocument{}, false
 	}
 	comp, perr := parseComponentEntity(data, doc.path)
 	if perr != nil {
@@ -1263,31 +1285,38 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 		// which file was refused and why — in the refusal the whole-catalog load
 		// records for it, so the reason reads as a build's annotation reads it.
 		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
-		return types.Component{}, false
+		return types.Component{}, indexedDocument{}, false
 	}
 	l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = data
-	return comp, true
+	return comp, doc, true
 }
 
 // tier1ReadFeature mirrors tier1ReadComponent for the Feature surface,
 // recording a rejection for the same reason.
 func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
+	feat, _, ok := l.tier1ReadFeatureDocument(uri)
+	return feat, ok
+}
+
+// tier1ReadFeatureDocument mirrors tier1ReadComponentDocument for the Feature
+// surface.
+func (l *LazyLookup) tier1ReadFeatureDocument(uri string) (types.Feature, indexedDocument, bool) {
 	l.buildFeatureIndex()
 	doc, ok := selectIndexedDocument(l.featureIndex, uri)
 	if !ok {
-		return types.Feature{}, false
+		return types.Feature{}, indexedDocument{}, false
 	}
 	data, err := os.ReadFile(doc.path)
 	if err != nil {
-		return types.Feature{}, false
+		return types.Feature{}, indexedDocument{}, false
 	}
 	feat, perr := parseFeatureEntity(data, doc.path)
 	if perr != nil {
 		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
-		return types.Feature{}, false
+		return types.Feature{}, indexedDocument{}, false
 	}
 	l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = data
-	return feat, true
+	return feat, doc, true
 }
 
 // buildComponentIndex walks the catalog directories once (header-only
@@ -1928,9 +1957,10 @@ func refusalOr(refusal, fallback error) error {
 // unreadable slot leaves nothing to report about. An entity the build actually
 // needs that goes missing this way surfaces as a loud halt at the guard layer.
 //
-// A slot that is present, verified against its pin, and then cannot be unwrapped
-// is a different outcome and is RECORDED. The artifact is there and is the bytes
-// the lockfile committed to; what failed is reading an entity out of it. Left
+// A slot that is present, held to its manifest, and then cannot be unwrapped is a
+// different outcome and is RECORDED. The artifact is there and is the bytes the
+// manifest names; what failed is reading an entity out of it — which is also what
+// the pin's digest is taken over, so the verified read itself reports it. Left
 // silent it is indistinguishable from the entity never having been pinned, which
 // is a claim about the lockfile rather than about the artifact — so it is skipped
 // through the same channel every other unindexable document uses, keyed by the
@@ -1949,6 +1979,9 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
 		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 		if err != nil {
+			if unwrapRefusal(err) {
+				l.recordRecipeSkip("lockfile-pinned:"+uri, err)
+			}
 			continue
 		}
 		// The verified read above succeeded through this same derivation, so the slot
@@ -1973,6 +2006,15 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		}
 		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, noCatalogDirectory)
 	}
+}
+
+// unwrapRefusal reports whether err is one of the refusals reading an entity out
+// of published bytes gives: an archive that does not unpack, or one whose root
+// carries no entity document or more than one.
+func unwrapRefusal(err error) bool {
+	return errors.Is(err, oci.ErrBundleUnreadable()) ||
+		errors.Is(err, oci.ErrBundleNoEntityDocument()) ||
+		errors.Is(err, oci.ErrBundleAmbiguousEntityDocument())
 }
 
 // contentAnchor returns the path a Recipe's or FeatureRecipe's parse anchors the
@@ -2089,8 +2131,11 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		// that resolved it rather than from a second one free to disagree. An entity
 		// read from a pinned slot is absent here: its slot is a label naming a pin,
 		// and a lock sits beside a document.
-		recordedPins:  l.recordedPins,
-		workspaceRoot: l.workspaceRoot,
+		recordedPins: l.recordedPins,
+		// The locks a reporting run would leave, so an entity row the shell takes
+		// is the one the view takes of the same entity.
+		unwrittenLocks: l.unwrittenLocks,
+		workspaceRoot:  l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
@@ -2902,13 +2947,13 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindH
 	// directly (recipe/provider → base). Neither probe reads a registry, so an
 	// answer this path cannot give locally is the base's to give.
 	if kindHint != "feature" {
-		if res, ok := x.l.resolveComponentForClosure(uri); ok {
-			return res, nil
+		if res, ok, err := x.l.resolveComponentForClosure(uri); err != nil || ok {
+			return res, err
 		}
 	}
 	if kindHint != "component" {
-		if res, ok := x.l.resolveFeatureForClosure(uri); ok {
-			return res, nil
+		if res, ok, err := x.l.resolveFeatureForClosure(uri); err != nil || ok {
+			return res, err
 		}
 	}
 	return x.base.ResolveCatalogEntity(ctx, uri, kindHint)
@@ -2983,53 +3028,64 @@ func (x *lazyClosureLookup) ResolvePlugin(ctx context.Context, uri, version stri
 //
 // It has no registry tier, and that is deliberate rather than an omission: see
 // lazyClosureLookup for why every registry read of the walk belongs to the base.
-func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution, bool) {
-	if comp, ok := l.tier1ReadComponent(uri); ok {
-		return l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), comp.Metadata.Version, closure.ResolutionPathCatalog), true
+func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution, bool, error) {
+	if comp, doc, ok := l.tier1ReadComponentDocument(uri); ok {
+		res, err := l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), doc.path, comp.Metadata.Version)
+		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
-				return cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest), true
+				res, rerr := cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest)
+				return res, rerr == nil, rerr
 			}
 		}
 	}
-	return closure.Resolution{}, false
+	return closure.Resolution{}, false, nil
 }
 
 // resolveFeatureForClosure mirrors resolveComponentForClosure for the Feature
 // surface, and reads no registry for the same reason.
-func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, bool) {
-	if feat, ok := l.tier1ReadFeature(uri); ok {
-		return l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), feat.Metadata.Version, closure.ResolutionPathCatalog), true
+func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, bool, error) {
+	if feat, doc, ok := l.tier1ReadFeatureDocument(uri); ok {
+		res, err := l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), doc.path, feat.Metadata.Version)
+		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
-				return cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest), true
+				res, rerr := cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest)
+				return res, rerr == nil, rerr
 			}
 		}
 	}
-	return closure.Resolution{}, false
+	return closure.Resolution{}, false, nil
 }
 
-// closureResolution builds the closure.Resolution for a lazily-resolved entity,
-// mirroring catalogLookup.tier1Resolution: the digest of the raw bytes retained
-// under the entity's own identity, reported at resolvedVersion on the tier path,
-// whose tag matches the eager path's vocabulary so a drift compare never differs
-// on it. A catalog-directory hit is reported at the version the select chose — its
-// metadata.version, as the eager catalog reports it — so a caret reference is
-// recorded at the version it resolved to. A cache hit is not described here but
-// through cacheHitResolution, so it reports the manifest it holds as every
-// cache-tier read does.
-func (l *LazyLookup) closureResolution(kind, identityKey, resolvedVersion, path string) closure.Resolution {
+// closureResolution builds the closure.Resolution for an entity the lazy view read
+// from the catalog-directory document at document, mirroring
+// catalogLookup.tier1CatalogEntity: the entity row's digest over what a
+// publication of it carries — the raw bytes retained under the entity's own
+// identity and every file they declare beside them (AuthoredEntityDigest), with
+// any lock the view holds as unwritten read in place of the one on disk —
+// reported at resolvedVersion as served from a catalog directory, the tag the
+// eager path reports, so a drift compare never differs on it. It is reported at
+// the version the select chose — its metadata.version, as the eager catalog
+// reports it — so a caret reference is recorded at the version it resolved to. A
+// cache hit is not described here but through cacheHitResolution, so it reports
+// the manifest it holds as every cache-tier read does.
+func (l *LazyLookup) closureResolution(kind, identityKey, document, resolvedVersion string) (closure.Resolution, error) {
+	d, err := authoredEntityDigest(l.entityBytes[entityBytesKey(kind, identityKey)], document, l.unwrittenLocks)
+	if err != nil {
+		return closure.Resolution{}, fmt.Errorf("catalog: %s %s: %w", kind, identityKey, err)
+	}
 	return closure.Resolution{
 		ResolvedVersion: resolvedVersion,
-		Digest:          contentDigest(l.entityBytes[entityBytesKey(kind, identityKey)]),
-		ResolutionPath:  path,
-	}
+		Digest:          d,
+		ResolutionPath:  closure.ResolutionPathCatalog,
+	}, nil
 }
 
 // closureVersion is the version an entity the lazy view read from the content

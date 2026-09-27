@@ -41,6 +41,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
@@ -268,11 +269,12 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 }
 
 // enumEntities enumerates the entity-cache slots. Each slot is an
-// <encoded-uri>/<version> directory holding a content blob; the slot's content
-// digest is the blob's content digest, which equals the pinned digest a lockfile
-// records for that entity, schema library, mapping library, or plugin artifact.
-// A slot whose blob cannot be read carries an empty digest and is retained by a
-// prune rather than removed on a guess.
+// <encoded-uri>/<version> directory holding a content blob; the slot's digest is
+// the one the lockfile row pinning that blob records for it (catalog.PinDigest):
+// for an entity, the digest of what its publication carries, which is what the
+// entity row records, and for a plugin artifact the digest of its bytes. A slot
+// whose blob cannot be read, or yields no digest, carries an empty digest and is
+// retained by a prune rather than removed on a guess.
 func enumEntities(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
 	uriDirs, err := os.ReadDir(root)
@@ -309,7 +311,9 @@ func enumEntities(ctx context.Context, root string) ([]Element, error) {
 				Size:  dirSize(slot),
 			}
 			if blob, berr := os.ReadFile(filepath.Join(slot, "blob")); berr == nil {
-				el.DigestHex = NormalizeDigestHex(digest.ContentDigest(blob))
+				if d, derr := catalog.PinDigest(blob); derr == nil {
+					el.DigestHex = NormalizeDigestHex(d)
+				}
 			}
 			out = append(out, el)
 		}

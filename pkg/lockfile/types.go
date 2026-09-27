@@ -68,18 +68,26 @@ type Lockfile struct {
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
-// FeatureRecipe, Plugin, or Aggregate. URI is the canonical
-// identifier; ResolvedVersion and Digest are the content-addressing
-// pair that anchor deterministic builds. ReferencedFrom records the
-// authoring-site origins that pulled the URI into closure.
+// FeatureRecipe, Plugin, or Aggregate, and the Release's own Aggregate and
+// Manifest. URI is the canonical identifier; ResolvedVersion and Digest are the
+// content-addressing pair that anchor deterministic builds. ReferencedFrom
+// records the authoring-site origins that pulled the URI into closure.
 type Entity struct {
 	URI             string `yaml:"uri"`
 	ResolvedVersion string `yaml:"resolved_version"`
-	Digest          string `yaml:"digest"`
+	// Digest is the digest of what a publication of the entity carries: the
+	// SHA-256 over its files sorted by path, each contributing its path, whether
+	// it is executable, and the SHA-256 of its bytes — a document published alone
+	// as a set of one. It is one subject for every entity, recorded alike by an
+	// author building from a catalog directory and by a consumer building from a
+	// registry, and nothing about the archive's compression or a checkout's
+	// permission bits enters it.
+	Digest string `yaml:"digest"`
 	// ManifestDigest is the OCI manifest digest the artifact's signature
-	// commits to — the verify subject. It differs from Digest, the portable
-	// content digest used for the cache pin and integrity check. Present only
-	// for a registry-resolved entity; empty (and omitted) otherwise.
+	// commits to — the verify subject. The manifest names the digest of the
+	// published bytes, which is what a cached read holds a download to; Digest
+	// is the entity's content, compared after that. Present only for a
+	// registry-resolved entity; empty (and omitted) otherwise.
 	ManifestDigest string   `yaml:"manifest_digest,omitempty"`
 	ReferencedFrom []string `yaml:"referenced_from"`
 	// Deprecation records a verified retroactive deprecation marker discovered

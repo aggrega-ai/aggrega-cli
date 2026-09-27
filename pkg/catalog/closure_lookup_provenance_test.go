@@ -326,7 +326,7 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 		{name: "cache-folded workload library", want: closure.ResolutionPathCache, wantDigest: pins[pulledWorkloadURI].Digest, resolve: library("WorkloadLibraries", pulledWorkloadURI)},
 		{name: "catalog-authored artifacts library", want: closure.ResolutionPathCatalog, resolve: library("ArtifactLibraries", "AuthoredArtifacts:1.0.0")},
 		{name: "cache-folded artifacts library", want: closure.ResolutionPathCache, wantDigest: pins[pulledArtifactsURI].Digest, resolve: library("ArtifactLibraries", pulledArtifactsURI)},
-		{name: "cached entity no pin names", want: closure.ResolutionPathCache, wantDigest: contentDigest(unpinnedBlob), resolve: entity(unpinnedRecipeURI, "recipe")},
+		{name: "cached entity no pin names", want: closure.ResolutionPathCache, wantDigest: rowDigestOf(unpinnedBlob), resolve: entity(unpinnedRecipeURI, "recipe")},
 		{name: "cached plugin artifact", want: closure.ResolutionPathCache, wantDigest: artifactPin.Digest, artifact: true,
 			resolve: func(ctx context.Context, lookup closure.Lookup) (closure.Resolution, error) {
 				return lookup.ResolvePlugin(ctx, pulledArtifactURI, pulledArtifactVersion)
@@ -397,7 +397,8 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 					t.Errorf("ResolutionPath = %q; want %q", res.ResolutionPath, s.want)
 				}
 				if s.wantDigest != "" && res.Digest != s.wantDigest {
-					t.Errorf("Digest = %q; want %q — a cache-served entity is hashed over the slot's verified bytes", res.Digest, s.wantDigest)
+					t.Errorf("Digest = %q; want %q — a cache-served entry is recorded by the row its slot's bytes are pinned by: "+
+						"what an entity's publication carries, a library's or an executable's own bytes", res.Digest, s.wantDigest)
 				}
 			})
 		}

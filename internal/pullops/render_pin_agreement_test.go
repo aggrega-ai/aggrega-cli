@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -18,7 +17,8 @@ import (
 
 // seedVerifiedSlot writes the two-blob Tier-2 cache slot a real fetch lays down —
 // the content, and the OCI manifest that commits to it — for uri@version, and
-// returns the content digest and manifest digest a lockfile would record for it.
+// returns the entity row's digest (rowDigest) and manifest digest a lockfile would
+// record for it.
 //
 // It rebuilds the manifest by round-tripping the body through an in-memory
 // content store rather than hand-assembling one, so the manifest is the same
@@ -40,7 +40,19 @@ func seedVerifiedSlot(t *testing.T, ws, cacheDir, uri, version string, body []by
 	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, res.ManifestBytes); err != nil {
 		t.Fatalf("seed write manifest: %v", err)
 	}
-	return digest.ContentDigest(body), res.Digest
+	return rowDigest(t, body), res.Digest
+}
+
+// rowDigest is the digest a lockfile row records for published bytes, through the
+// product's own rule (catalog.PinDigest): for a Recipe published as its document
+// alone, the digest of the one-entry set it carries rather than of its bytes.
+func rowDigest(t *testing.T, published []byte) string {
+	t.Helper()
+	d, err := catalog.PinDigest(published)
+	if err != nil {
+		t.Fatalf("PinDigest: %v", err)
+	}
+	return d
 }
 
 // TestDiscoveryRenderIsPinnedToTheLockfileItRecords proves that the pin set the
@@ -51,8 +63,8 @@ func seedVerifiedSlot(t *testing.T, ws, cacheDir, uri, version string, body []by
 // is read from the local catalog rather than from a pinned cache slot, so a stale
 // pin for it changes no output today and a whole-artifact comparison passes under
 // either ordering. What does separate them is the verifying read itself: it
-// recomputes a cache slot's content digest and compares it to the pin the view
-// holds, so a view holding a stale digest reports drift against the very slot a
+// recomputes the row digest of a cache slot's content and compares it to the pin
+// the view holds, so a view holding a stale digest reports drift against the very slot a
 // view holding the lockfile's digest accepts.
 //
 // The fixture is built around that. The slot carries the bytes the lockfile
@@ -82,12 +94,12 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 		"spec: {}\n")
 
 	recordedDigest, manifestDigest := seedVerifiedSlot(t, ws, cacheDir, uri+":"+version, version, recorded)
-	staleDigest := digest.ContentDigest(divergent)
+	staleDigest := rowDigest(t, divergent)
 	if staleDigest == recordedDigest {
 		t.Fatal("fixture is inert: the two bodies digest identically, so no view state can disagree with the slot")
 	}
 
-	// What buildLockfile produces: the digest of the recipe file as it stands.
+	// What buildLockfile produces: the row digest of the recipe as it stands.
 	lf := &lockfile.Lockfile{
 		Version: 1,
 		Entities: []lockfile.Entity{{

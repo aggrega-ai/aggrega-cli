@@ -32,10 +32,104 @@ import (
 //
 // Each class is driven through the command's own entry point over a real
 // workspace, with one planted defect at a time and a positive control on either
-// side of it: the intact lock verifies, the drifted one is refused under the
-// condition a build halts with, and the restored one verifies again. A verify that
-// refused everything would fail the controls; one that refused nothing would fail
-// the plant.
+// side of it: the intact lock verifies, the drifted one is refused by the verify
+// and by a build of the same tree under one condition, and the restored one
+// verifies again. A verify that refused everything would fail the controls; one
+// that refused nothing would fail the plant.
+//
+// The condition both meet is the lockfile's: the Recipe's entity row covers every
+// file a publication of it carries — the file an artifacts entry imports and the
+// lock beside it included — so a change to either moves the row, and the row is
+// compared before any single file is. Which file moved is named by the pull that
+// holds the lock to the pin step, which is where the per-file detail lives; each
+// plant drives that pull too.
+
+// pullHolding drives the pull as it runs when it does not pin, which is the
+// command's own default: it holds the lock beside each entity to the pins the step
+// would record, and halts on an input the lock does not record at that value,
+// naming the entity, the input and its class. These fixtures' workspaces may pin at
+// a pull, so the run names the default rather than inheriting the setting.
+func pullHolding(t *testing.T, root, releasePath, catalogDir string, res closure.SourceResolver) error {
+	t.Helper()
+	hold := false
+	return pullRun(context.Background(), pullConfig{
+		ws:             resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		ReleasePath:    releasePath,
+		CatalogDirs:    []string{catalogDir},
+		PinSources:     &hold,
+		sourceResolver: res,
+		DiagOut:        io.Discard,
+		Out:            io.Discard,
+		diag:           buildDiagOptions{quiet: true},
+	})
+}
+
+// entityRow returns the digest the lockfile written for releasePath records for
+// uri, failing the test where it records none.
+func entityRow(t *testing.T, releasePath, uri string) string {
+	t.Helper()
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	for _, e := range lf.Entities {
+		if e.URI == uri {
+			return e.Digest
+		}
+	}
+	t.Fatalf("the lockfile records no row for %q: %+v", uri, lf.Entities)
+	return ""
+}
+
+// assertRowRefusal holds a verify and a build of one tree to one refusal: the
+// lockfile-drift condition, naming the entity whose row moved with the recorded and
+// the current digest, in the same words on both surfaces. before is the condition a
+// comparison of a single file raises, which must not be what either surface met: the
+// row is compared first, so meeting the file's condition instead would mean a
+// surface reached the file before the record that covers it.
+func assertRowRefusal(t *testing.T, verifyErr, buildErr error, uri, recorded, current string, before error) {
+	t.Helper()
+	want := `entity "` + uri + `" changed: lockfile=(1.0.0,` + recorded + `) current=(1.0.0,` + current + `)`
+	for _, s := range []struct {
+		name string
+		err  error
+	}{{"pull --verify", verifyErr}, {"build", buildErr}} {
+		if s.err == nil {
+			t.Errorf("%s reported a match over a tree whose entity row moved", s.name)
+			continue
+		}
+		if !errors.Is(s.err, lockfile.ErrLockfileDrift()) {
+			t.Errorf("%s: want the lockfile-drift condition, which a build and a verify both halt with; got %v", s.name, s.err)
+		}
+		if errors.Is(s.err, before) {
+			t.Errorf("%s met the single file's condition rather than the row that covers it: %v", s.name, s.err)
+		}
+		if !strings.Contains(s.err.Error(), want) {
+			t.Errorf("%s: the refusal does not name the entity and both digests; want %q in:\n%v", s.name, want, s.err)
+		}
+	}
+}
+
+// assertHoldingPullNames holds the pull that does not pin to naming what moved: the
+// unpinned-entity condition, naming the input whose recorded pin no longer matches,
+// and leaving the lock and the lockfile as they were.
+func assertHoldingPullNames(t *testing.T, err error, lockPath, lockfilePath string, lockBefore, lockfileBefore []byte, input string) {
+	t.Helper()
+	if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+		t.Fatalf("the pull that holds the lock must refuse it under the unpinned-entity condition; got %v", err)
+	}
+	for _, want := range []string{input, "the recorded pin no longer matches it"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the pull does not name %q, so a reader cannot tell which input moved: %v", want, err)
+		}
+	}
+	if got := mustReadFile(t, lockPath); string(got) != string(lockBefore) {
+		t.Error("the pull that holds the lock rewrote it")
+	}
+	if got := mustReadFile(t, lockfilePath); string(got) != string(lockfileBefore) {
+		t.Error("the pull that halted rewrote the lockfile")
+	}
+}
 
 // verifyPull drives the command's verify over a workspace, with the source
 // resolver the seed pull used so the two runs resolve through the same seam.
@@ -72,7 +166,9 @@ func readLockForTest(t *testing.T, entityPath string) recipepin.Lock {
 // never-published workspace has no other cover for: the digest of a file an
 // artifacts entry imports. It is planted two ways, because either file can be the
 // one that moved — the imported file edited with no pull afterwards, and the pin
-// itself edited in the lock.
+// itself edited in the lock. Each is refused by the verify and by a build of the
+// same tree under one condition, and named, file by file, by the pull that holds
+// the lock.
 func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -80,19 +176,27 @@ func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) 
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
 	importPath := filepath.Join(catalogDir, "recipes", "extra.yaml")
+	const recipeURI = "helm/server:1.0.0"
 
 	pullWriting(t, root, releasePath, catalogDir)
 	lock := readLockForTest(t, recipePath)
 	if len(lock.ArtifactDigests) != 1 {
 		t.Fatalf("the fixture must pin exactly one imported file; the lock records %d", len(lock.ArtifactDigests))
 	}
-	recordedPin := lock.ArtifactDigests[0].Digest
 	lockPath := recipepin.LockPath(recipePath)
+	lockfilePath := lockfile.PathFor(releasePath)
 	lockBytes := mustReadFile(t, lockPath)
 	importBytes := mustReadFile(t, importPath)
+	recorded := entityRow(t, releasePath, recipeURI)
+	if got := rowDigestAt(t, recipePath); got != recorded {
+		t.Fatalf("the lockfile records %s for %s, not the row %s the Recipe digests to, so the plants below are not about that row", recorded, recipeURI, got)
+	}
 
 	if err := verifyPull(t, root, releasePath, catalogDir, nil); err != nil {
 		t.Fatalf("verify must pass over the lock the pull just wrote, or its refusals below prove nothing: %v", err)
+	}
+	if err := buildOver(t, root, releasePath, catalogDir); err != nil {
+		t.Fatalf("a build must pass over the lock the pull just wrote, or its refusals below prove nothing: %v", err)
 	}
 
 	// Plant one: the imported file edited after the pull that pinned it.
@@ -103,24 +207,13 @@ func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) 
 	if err := os.WriteFile(importPath, edited, 0o644); err != nil {
 		t.Fatalf("edit the imported file: %v", err)
 	}
-	err := verifyPull(t, root, releasePath, catalogDir, nil)
-	if err == nil {
-		t.Fatal("verify reported a match over an imported file a build of this Release refuses")
-	}
-	if !errors.Is(err, renderer.ErrArtifactContentMismatch()) {
-		t.Fatalf("the refusal must carry the condition a build halts with for the same file; got: %v", err)
-	}
-	if errors.Is(err, lockfile.ErrLockfileDrift()) {
-		t.Errorf("the lockfile did not drift, so the refusal must not report that it did: %v", err)
-	}
-	for _, want := range []string{"extra.yaml", recordedPin, digest.ContentDigest(edited)} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %q, so a reader cannot tell which file moved: %v", want, err)
-		}
-	}
+	lockfileBytes := mustReadFile(t, lockfilePath)
+	assertRowRefusal(t, verifyPull(t, root, releasePath, catalogDir, nil), buildOver(t, root, releasePath, catalogDir),
+		recipeURI, recorded, rowDigestAt(t, recipePath), renderer.ErrArtifactContentMismatch())
 	if got := mustReadFile(t, lockPath); string(got) != string(lockBytes) {
 		t.Error("a verify rewrote the lock; verify writes nothing")
 	}
+	assertHoldingPullNames(t, pullHolding(t, root, releasePath, catalogDir, nil), lockPath, lockfilePath, lockBytes, lockfileBytes, "extra.yaml")
 
 	if err := os.WriteFile(importPath, importBytes, 0o644); err != nil {
 		t.Fatalf("restore the imported file: %v", err)
@@ -136,10 +229,10 @@ func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) 
 	if _, err := recipepin.WriteLock(recipePath, plantedPins); err != nil {
 		t.Fatalf("plant a drifted pin: %v", err)
 	}
-	err = verifyPull(t, root, releasePath, catalogDir, nil)
-	if !errors.Is(err, renderer.ErrArtifactContentMismatch()) {
-		t.Fatalf("a drifted pin in the lock must be refused under the same condition; got: %v", err)
-	}
+	plantedBytes := mustReadFile(t, lockPath)
+	assertRowRefusal(t, verifyPull(t, root, releasePath, catalogDir, nil), buildOver(t, root, releasePath, catalogDir),
+		recipeURI, recorded, rowDigestAt(t, recipePath), renderer.ErrArtifactContentMismatch())
+	assertHoldingPullNames(t, pullHolding(t, root, releasePath, catalogDir, nil), lockPath, lockfilePath, plantedBytes, lockfileBytes, "extra.yaml")
 	if err := os.WriteFile(lockPath, lockBytes, 0o644); err != nil {
 		t.Fatalf("restore the lock: %v", err)
 	}
@@ -170,8 +263,9 @@ func (verbatimSourceResolver) Resolve(spec closure.SourceSpec) (*closure.Resolve
 
 // TestPullVerifyRefusesASourcePinTheLockfileDisagreesWith covers the other pin
 // class: the digest a pull records beside a Recipe for the remote source it
-// acquired. A build compares it with the digest the lockfile records for the same
-// source and halts on a disagreement, so a verify must too.
+// acquired. A pin edited in the lock moves the Recipe's entity row, which covers the
+// lock, so the verify and a build of the same tree refuse it under one condition;
+// the pull that holds the lock names the source whose pin moved.
 func TestPullVerifyRefusesASourcePinTheLockfileDisagreesWith(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -234,7 +328,13 @@ spec:
 			lf.SourceArtifacts, lock.SourceDigests)
 	}
 	lockPath := recipepin.LockPath(recipePath)
+	lockfilePath := lockfile.PathFor(releasePath)
 	lockBytes := mustReadFile(t, lockPath)
+	const recipeURI = "server-recipe:1.0.0"
+	recorded := entityRow(t, releasePath, recipeURI)
+	if got := rowDigestAt(t, recipePath); got != recorded {
+		t.Fatalf("the lockfile records %s for %s, not the row %s the Recipe digests to, so the plant below is not about that row", recorded, recipeURI, got)
+	}
 
 	if err := verifyPull(t, root, releasePath, catalogDir, res); err != nil {
 		t.Fatalf("verify must pass over the lock the pull just wrote, or its refusal below proves nothing: %v", err)
@@ -248,24 +348,14 @@ spec:
 		t.Fatalf("plant a drifted source pin: %v", err)
 	}
 	plantedBytes := mustReadFile(t, lockPath)
-	err = verifyPull(t, root, releasePath, catalogDir, res)
-	if err == nil {
-		t.Fatal("verify reported a match over a source pin a build of this Release refuses")
-	}
-	if !errors.Is(err, oci.ErrFetchIntegrity()) {
-		t.Fatalf("the refusal must carry the condition a build halts with for the same pin; got: %v", err)
-	}
-	if errors.Is(err, lockfile.ErrLockfileDrift()) {
-		t.Errorf("the lockfile did not drift, so the refusal must not report that it did: %v", err)
-	}
-	for _, want := range []string{drifted[0].Digest, lf.SourceArtifacts[0].Digest, recipepin.LockFileName} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %q, so a reader cannot tell which record moved: %v", want, err)
-		}
-	}
+	lockfileBytes := mustReadFile(t, lockfilePath)
+	assertRowRefusal(t, verifyPull(t, root, releasePath, catalogDir, res), buildOver(t, root, releasePath, catalogDir),
+		recipeURI, recorded, rowDigestAt(t, recipePath), oci.ErrFetchIntegrity())
 	if got := mustReadFile(t, lockPath); string(got) != string(plantedBytes) {
 		t.Error("a verify rewrote the lock; verify writes nothing")
 	}
+	assertHoldingPullNames(t, pullHolding(t, root, releasePath, catalogDir, res), lockPath, lockfilePath, plantedBytes, lockfileBytes,
+		lf.SourceArtifacts[0].URL)
 
 	if err := os.WriteFile(lockPath, lockBytes, 0o644); err != nil {
 		t.Fatalf("restore the lock: %v", err)
