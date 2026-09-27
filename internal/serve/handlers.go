@@ -111,11 +111,26 @@ type serverCapabilities struct {
 // A client that declared the empty workspace — asking for no pushes at all —
 // reads an empty WorkspaceRoot, which is the honest answer: there is no
 // workspace these fields could be about.
+//
+// Version is the version of the binary answering this session: the value
+// `aggrega version` reports for that same binary. It is the build identity the
+// command layer hands the daemon when it starts it (RunConfig.CompilerVersion),
+// and that identity comes from the one derivation the version command reads, so
+// the two cannot report different versions for one binary. The daemon derives
+// no version of its own: package main is where the build stamp lives, and a
+// second reading of it here would agree on some builds and not on others.
+//
+// It describes the running process rather than the file the process was
+// started from, which is why it is on the handshake. Once the file at the
+// launched path has been replaced, asking that file for its version answers for
+// a binary that is not the one running. The key is always present; it carries
+// the empty string only for a server built without a build identity.
 type initializeResult struct {
 	Capabilities    serverCapabilities `json:"capabilities"`
 	WorkspaceRoot   string             `json:"workspaceRoot"`
 	ConfigSource    string             `json:"configSource"`
 	WorkspaceMarker string             `json:"workspaceMarker,omitempty"`
+	Version         string             `json:"version"`
 }
 
 // releaseCandidatesResult is the aggrega/releaseCandidates response: the
@@ -272,6 +287,10 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 // what the reply carries is the client's own declaration, which is what
 // tells a client its tokens will be honoured before it sends one.
 //
+// The reply also names the version of the binary answering, which is a fact
+// about this process rather than about any workspace; initializeResult says
+// where that value comes from.
+//
 // # It is where a client declares the workspace it wants pushes for
 //
 // The handshake is the one exchange in the protocol that is about the
@@ -313,6 +332,7 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 		WorkspaceRoot:   declared.workspaceRoot,
 		ConfigSource:    declared.configSource,
 		WorkspaceMarker: declared.workspaceMarker.String(),
+		Version:         s.compilerVersion,
 	}); err != nil {
 		return err
 	}

@@ -42,7 +42,8 @@
 //	                               client declares for pushed diagnostics,
 //	                               and reports that workspace's root, the
 //	                               configuration layer that supplied it,
-//	                               and the marker that anchored it
+//	                               the marker that anchored it, and the
+//	                               version of the binary answering
 //	aggrega/validate               parses one file and returns its
 //	                               diagnostics, adding the semantic checks
 //	                               when the request names a Release to run
@@ -328,10 +329,11 @@ type RunConfig struct {
 	DrainTimeout time.Duration
 
 	// CompilerVersion is the binary's build identity, stamped into the IR
-	// provenance the daemon produces for inspect and Tier-4 diagnostics so its
-	// output names the same compiler version the CLI reports. The command layer
-	// derives it (the daemon cannot, living below the main package); an empty
-	// value stamps an empty compiler-version.
+	// provenance the daemon produces for inspect and Tier-4 diagnostics and
+	// reported as the version on the aggrega/initialize answer, so both name the
+	// same compiler version the CLI reports. The command layer derives it (the
+	// daemon cannot, living below the main package); an empty value stamps an
+	// empty compiler-version and reports an empty version.
 	CompilerVersion string
 
 	// Toolchain is the versions a dependency resolution performed here records
@@ -742,9 +744,9 @@ func stampSource(diags []Diagnostic, src string) []Diagnostic {
 // the sole owner of the output writer, so no worker touches out directly.
 type session struct {
 	// compilerVersion is the binary build identity injected from the command
-	// layer (RunConfig.CompilerVersion) and stamped into the IR provenance the
-	// daemon produces, so inspect and Tier-4 output report the same version the
-	// CLI does.
+	// layer (RunConfig.CompilerVersion), stamped into the IR provenance the
+	// daemon produces and reported on the handshake's answer, so inspect output,
+	// Tier-4 output and the handshake report the same version the CLI does.
 	compilerVersion string
 	// toolchain is the stamp a dependency resolution performed here records into
 	// the lockfile it writes, injected from the command layer

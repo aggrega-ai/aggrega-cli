@@ -192,6 +192,46 @@ func TestInitializeReportsWorkspaceMarkerConfig(t *testing.T) {
 	}
 }
 
+// TestInitializeReportsTheInjectedBuildIdentityAsTheVersion pins that the
+// handshake's version is the build identity the session was started with, and
+// nothing the daemon works out for itself.
+//
+// The identity is a synthetic value no build ever carries, so a version the
+// daemon derived on its own — a hard-coded string, or a second reading of the
+// build information — cannot match it by coincidence, and an unset field reads
+// as the empty string rather than the value. The key is asserted present in the
+// generic decode as well, because a decode into the struct reports an absent key
+// and an empty one identically.
+func TestInitializeReportsTheInjectedBuildIdentityAsTheVersion(t *testing.T) {
+	const injected = "0.0.0-handshake-version-probe"
+	out := &bytes.Buffer{}
+	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
+	srv.compilerVersion = injected
+
+	req := framedRequest(1, "aggrega/initialize", map[string]any{
+		"capabilities": map[string]any{},
+	})
+	var reqBody jsonRPCRequest
+	bodyStart := bytes.Index(req, []byte("\r\n\r\n")) + 4
+	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	driveHandle(t, srv, &reqBody, out)
+	resp := decodeOneResponse(t, out)
+
+	var generic map[string]any
+	if err := json.Unmarshal(resp.Result, &generic); err != nil {
+		t.Fatalf("unmarshal generic: %v (raw: %s)", err, resp.Result)
+	}
+	got, present := generic["version"]
+	if !present {
+		t.Fatalf("the initialize answer carries no version key: %s", resp.Result)
+	}
+	if got != injected {
+		t.Errorf("version = %#v; want the injected build identity %q", got, injected)
+	}
+}
+
 // TestInitializeOmitsWorkspaceMarkerWhenExplicitRoot verifies that
 // markerNone (the zero value, set when --workspace-root was used)
 // produces an omitted field on the wire — the omitempty JSON tag
