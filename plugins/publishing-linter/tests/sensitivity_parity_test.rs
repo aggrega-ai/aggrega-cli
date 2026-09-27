@@ -505,7 +505,7 @@ fn selector_operator_vocabulary_matches_the_source_of_truth() {
     // the inequality token win over the equality token it contains. Both are
     // read out of the clause classifier itself rather than the whole file, so
     // the operator-constant block's own ordering cannot stand in for them.
-    let clause_classifier = delimited_block(&parse, "func parseOne(s string) (Requirement, error) {")
+    let clause_classifier = delimited_block(&parse, "func parseOne(s string) (Requirement, string) {")
         .expect("the clause classifier not found; the selector parser's shape moved");
     for token in slot_rule::SELECTOR_OPERATOR_TOKENS {
         assert!(
