@@ -77,7 +77,19 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 		}
 	}
 
+	// A format name outside the supported set is refused before anything is
+	// built, wherever in the schema it sits, so a misspelt or unsupported name is
+	// a diagnostic when the schema loads rather than a constraint that checks
+	// nothing.
+	if err := refuseUnsupportedFormats(schema, false); err != nil {
+		return nil, err
+	}
+
 	a := &googleAdapter{
+		root:                  schema,
+		formats:               map[string]string{},
+		regions:               map[string][]*jsonschema.Schema{},
+		unresolvedNodes:       map[string]*jsonschema.Schema{},
 		subResolved:           map[string]*jsonschema.Resolved{},
 		subPruned:             map[string]*jsonschema.Resolved{},
 		subDefinition:         map[string]string{},
@@ -276,6 +288,25 @@ type googleAdapter struct {
 	// them, which is the signal that nothing beyond the declared-property
 	// families needs walking there.
 	keywords map[string]*positionKeywords
+
+	// root is the schema document New was handed, read to resolve an
+	// in-document reference inside a region the format sweep covers.
+	root *jsonschema.Schema
+
+	// formats maps an instance path to the format its position declares, for
+	// the positions that declare one. The library ignores the keyword, so the
+	// walk checks it beside the constraints the library checks there.
+	formats map[string]string
+
+	// regions maps an instance path to the sub-schemas the library evaluates
+	// whole at that position on the walk's behalf, each swept for format; see
+	// libraryRegions.
+	regions map[string][]*jsonschema.Schema
+
+	// unresolvedNodes maps the instance path of each position that could not be
+	// stood up on its own to its schema, so the format sweep reaches the subtree
+	// the whole-document check covers for everything else.
+	unresolvedNodes map[string]*jsonschema.Schema
 }
 
 // branchIndex carries a single combinator branch's (or
@@ -340,6 +371,12 @@ type branchIndex struct {
 	// own position, so a keyword is evaluated inside a combinator branch
 	// exactly as it is at the top level.
 	keywords *positionKeywords
+
+	// format and regions mirror the adapter's per-path format index at this
+	// branch's own position, so a format inside a combinator branch takes part
+	// in deciding whether the branch matches, as every other constraint does.
+	format  string
+	regions []*jsonschema.Schema
 }
 
 // patternEntry pairs a compiled regex with its sub-schema's
@@ -378,6 +415,10 @@ type whenNode struct {
 	// author omitted else:, in which case no constraint applies when the
 	// predicate is falsy.
 	elseResolved *jsonschema.Resolved
+
+	// elseSchema is the else: branch as authored, swept for format when the
+	// predicate is falsy, since the library checking elseResolved ignores it.
+	elseSchema *jsonschema.Schema
 }
 
 // validateNode is a single x-aggrega-validate: position with its

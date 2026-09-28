@@ -57,7 +57,7 @@ const parameterContractSchemaJSON = `{
       "minLength":       { "type": "integer", "minimum": 0 },
       "maxLength":       { "type": "integer", "minimum": 0 },
       "pattern":         { "type": "string" },
-      "format":          { "type": "string" },
+      "format":          { "type": "string", "enum": ["email", "uri", "hostname", "ipv4", "ipv6", "uuid", "date-time", "date"] },
       "validate":        { "type": "string" },
       "validateMessage": { "type": "string" },
       "required":        { "type": "boolean" },

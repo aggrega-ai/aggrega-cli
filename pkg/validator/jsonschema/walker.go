@@ -209,6 +209,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 			}
 		}
 		wn.elseResolved = resolved
+		wn.elseSchema = s.Else
 	}
 
 	a.whenNodes = append(a.whenNodes, wn)
@@ -428,9 +429,20 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			}
 		}
 		a.recordUnresolvedPosition(path, pointer)
+		a.unresolvedNodes[path] = s
 		return nil
 	}
 	a.subResolved[path] = resolved
+
+	// The library ignores format, so the walk checks it at each position beside
+	// the constraints the library checks there, and sweeps for it any region the
+	// library evaluates whole at this position.
+	if s.Format != "" {
+		a.formats[path] = s.Format
+	}
+	if regions := a.libraryRegions(s); len(regions) > 0 {
+		a.regions[path] = regions
+	}
 
 	if len(s.Required) > 0 {
 		req := append([]string{}, s.Required...)
@@ -651,7 +663,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		return nil
 	}
 
-	bi := &branchIndex{definition: definition}
+	bi := &branchIndex{definition: definition, format: s.Format, regions: a.libraryRegions(s)}
 
 	// Uses the same ambient-defs threading as indexSubSchemas;
 	// nextAmbient = s.Defs post-graft.

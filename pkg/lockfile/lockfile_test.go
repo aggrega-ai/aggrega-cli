@@ -455,6 +455,43 @@ release: ./release-prod.yaml
 	}
 }
 
+// TestLoadHoldsGeneratedAtToRFC3339 pins that the schema's pattern on
+// generated_at refuses a value that is not an RFC 3339 timestamp when the
+// lockfile loads, and admits the shapes a pull writes and an author may quote.
+func TestLoadHoldsGeneratedAtToRFC3339(t *testing.T) {
+	t.Parallel()
+	rows := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "a word", value: "yesterday", valid: false},
+		{name: "a date alone", value: `"2026-05-22"`, valid: false},
+		{name: "no offset", value: `"2026-05-22T10:23:14"`, valid: false},
+		{name: "what a pull writes", value: "2026-05-22T10:23:14Z", valid: true},
+		{name: "quoted, with fractional seconds and an offset", value: `"2026-05-22T10:23:14.5+02:00"`, valid: true},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFixture(t, "version: 1\nrelease: ./release-prod.yaml\ngenerated_at: "+r.value+"\n")
+			_, _, err := lockfile.LoadLockfile(path)
+			if r.valid {
+				if err != nil {
+					t.Fatalf("generated_at %s: want the lockfile to load; got %v", r.value, err)
+				}
+				return
+			}
+			if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
+				t.Fatalf("generated_at %s: want ErrLockfileInvalid; got %v", r.value, err)
+			}
+			if !strings.Contains(err.Error(), "generated_at") {
+				t.Errorf("the refusal does not name generated_at: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadDoesNotEmitDiagnosticForExplicitlyEmptySchemaLibraries(t *testing.T) {
 	t.Parallel()
 	// Explicit empty list (schema_libraries: []) is distinct from

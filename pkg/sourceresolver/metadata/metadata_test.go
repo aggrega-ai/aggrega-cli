@@ -172,8 +172,8 @@ pulled_at: "2026-05-22T12:30:00Z"
 
 func TestReadRejectsInvalidPulledAtPattern(t *testing.T) {
 	t.Parallel()
-	// pulled_at value is a string but not RFC 3339 shape. Schema's
-	// pattern enforces this strictly (format: date-time is documentation).
+	// pulled_at value is a string but not RFC 3339 shape. The schema's
+	// pattern is what refuses it.
 	content := `kind: helm-oci-chart
 url: oci://r/c
 version: "1.0.0"

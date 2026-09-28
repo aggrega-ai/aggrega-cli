@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/stringformat"
 )
 
 // refuseMalformedParameterContract is the one pass over a parameter contract's own
@@ -26,6 +27,13 @@ import (
 // whether or not any Release supplies the parameter; the per-value check later
 // matches against the expression compiled here rather than compiling its own.
 //
+// A format: name is held here too, for a narrower reason. The schema closes the
+// name on a parameter's own declaration, but it does not describe a sub-contract
+// nested in one, so a name under properties:, items: or valuesType: reaches this
+// pass unjudged. Every name is therefore held to the supported set at every depth;
+// at a parameter's own declaration that repeats what the envelope already refused,
+// and is reached only by a contract that did not come through the envelope.
+//
 // A declaration that does not decode is passed over rather than refused here. The
 // value check owns that refusal and reports it naming the level it was decoding —
 // a parameter's own declaration on every build, a nested one when a value for it
@@ -33,7 +41,8 @@ import (
 // halt an Aggregate whose malformed sub-contract no Release ever reaches.
 //
 // Every refusal found is returned together, in author order, so one load reports
-// every broken pattern in the contract rather than the first.
+// every broken pattern and unsupported format in the contract rather than the
+// first.
 func refuseMalformedParameterContract(contract types.OrderedMap[any]) error {
 	var verrs []*ResolverError
 	for _, key := range contract.Keys() {
@@ -65,6 +74,16 @@ func appendParameterShapeRefusals(verrs []*ResolverError, path string, entry any
 			})
 		}
 	}
+	if pc.Format != "" {
+		if ferr := stringformat.CheckName(pc.Format); ferr != nil {
+			verrs = append(verrs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s.format", path),
+				Message: formatNotSupported(path, ferr),
+				Err:     ErrParameterContractViolation(),
+			})
+		}
+	}
 	for _, child := range pc.Properties.Keys() {
 		sub, _ := pc.Properties.Get(child)
 		verrs = appendParameterShapeRefusals(verrs, path+".properties."+child, sub)
@@ -83,6 +102,13 @@ func appendParameterShapeRefusals(verrs []*ResolverError, path string, entry any
 // and the reason it does not compile.
 func patternDoesNotCompile(path, pattern string, err error) string {
 	return fmt.Sprintf("parameter %q pattern %q does not compile: %v", path, pattern, err)
+}
+
+// formatNotSupported is the one wording of a parameter declaring a format name
+// outside the supported set, naming where it was declared; err is the checkers'
+// own refusal, which names the format and lists every supported one.
+func formatNotSupported(path string, err error) string {
+	return fmt.Sprintf("parameter %q: %v", path, err)
 }
 
 // parameterPatterns holds every parameter pattern compiled in this process,

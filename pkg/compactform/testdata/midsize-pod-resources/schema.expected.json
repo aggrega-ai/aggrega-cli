@@ -10,8 +10,8 @@
       "additionalProperties": false,
       "properties": {
         "password": {
-          "format": "password",
-          "type": "string"
+          "type": "string",
+          "x-aggrega-sensitive": true
         },
         "username": {
           "default": "app_user",

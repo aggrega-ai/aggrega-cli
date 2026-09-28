@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -1735,8 +1736,9 @@ func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 // parseSchemaLibraryEntity is the single per-entity SchemaLibrary resolution shared
 // by both backings: full unmarshal, kind-check, the forbidden-keyword
 // (ValidateSchemaEntry) / template-body (ValidateTemplateBody) scans the eager load
-// applies, and the `$instantiate:` substitution that resolves a template reference
-// into the entry's body. Sharing it is what gives the lazy backing reject-parity
+// applies, the `$instantiate:` substitution that resolves a template reference
+// into the entry's body, and the refusal of a format name outside the supported
+// set in any resolved entry (refuseUnsupportedLibraryFormats). Sharing it is what gives the lazy backing reject-parity
 // once it resolves libraries directly (no longer Prime-copied from an
 // already-validated eager Catalog): an invalid library the eager build rejects is
 // rejected by the lazy resolution too.
@@ -1784,7 +1786,55 @@ func parseSchemaLibraryEntity(data []byte, path string) (types.SchemaLibrary, er
 			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
 		}
 	}
+	if err := refuseUnsupportedLibraryFormats(e, path); err != nil {
+		return types.SchemaLibrary{}, err
+	}
 	return e, nil
+}
+
+// refuseUnsupportedLibraryFormats refuses a SchemaLibrary whose entries name a
+// format outside the supported set, when the library loads rather than when a
+// consumer first references the entry — an entry nothing references yet would
+// otherwise carry a constraint that reads as one and checks nothing.
+//
+// Each entry is compiled against its own library, which is what resolves a
+// reference from one of its entries to another, and the names judged are those
+// the entry authors itself: a position another entry contributed is judged at
+// that entry. An entry that does not compile against its own library alone — one
+// referencing another library, or one whose body is malformed — is left to the
+// consumer that compiles it, where the same judgement is made of the whole
+// consuming schema; this pass refuses nothing it did not already hold a compiled
+// entry for.
+//
+// The refusal is the condition a declared contract no validator can be built
+// from raises, located at the entry's own line, so a library entry and a
+// Component pillar carrying the same fault are refused as one fault.
+func refuseUnsupportedLibraryFormats(e types.SchemaLibrary, path string) error {
+	own := map[string]types.SchemaLibrary{e.Metadata.Name: e}
+	for name, entry := range e.Spec.Schemas.All() {
+		content := entry.Content
+		if content.Kind == 0 {
+			continue
+		}
+		compiled, err := compactform.Compile(&content,
+			compactform.WithSchemaLibraries(own), compactform.WithConsumerFile(path))
+		if err != nil {
+			continue
+		}
+		if ferr := jsonvalidator.RefuseUnsupportedAuthoredFormats(compiled); ferr != nil {
+			return cerrors.Wrap(
+				resolver.ErrSchemaContractCompileFailure(),
+				cerrors.CatalogError,
+				cerrors.SourceLocation{File: path, Line: entry.Content.Line},
+				cerrors.ComposeMessage(resolver.ErrSchemaContractCompileFailure(), nil, fmt.Sprintf(
+					"SchemaLibrary %q: schema %q names a format no validator can check, so the values "+
+						"it constrains would go unmeasured: %s",
+					e.Metadata.Name, name, ferr.Error(),
+				)),
+			)
+		}
+	}
+	return nil
 }
 
 // parseMappingLibraryEntity is the single per-entity MappingLibrary resolution,

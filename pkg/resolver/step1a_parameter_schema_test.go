@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/stringformat"
 )
 
 // TestLoadAggregateParameterContract_EnvelopeRejection_BadType pins
@@ -171,6 +173,62 @@ func TestParameterContractSchema_NoDrift(t *testing.T) {
 			"  Update the literal in lockstep with the canonical schema.\n\n"+
 			"  Canonical:\n%s\n\n  Hardcoded:\n%s\n",
 			canonicalSource, canonical, hardcodedCanonical)
+	}
+}
+
+// TestParameterFormatEnumIsTheSupportedSet holds the Aggregate schema's closed
+// list of parameter format names equal to the names the format checkers support.
+// The schema refuses an unknown name when the Aggregate loads and the checkers
+// judge a value against a known one, so a name on one side only is either refused
+// although it could be checked, or admitted with nothing to check it. Each
+// difference is named, in both directions, and the order is held too, since the
+// schema's list is what an editor offers an author.
+func TestParameterFormatEnumIsTheSupportedSet(t *testing.T) {
+	t.Parallel()
+
+	var root map[string]any
+	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), &root); err != nil {
+		t.Fatalf("unmarshal canonical schema: %v", err)
+	}
+	node := any(root)
+	for _, key := range []string{"properties", "spec", "properties", "parameters",
+		"additionalProperties", "properties", "format", "enum"} {
+		m, ok := node.(map[string]any)
+		if !ok {
+			t.Fatalf("aggregate-v1alpha1.schema.json: no %q on the path to the parameter format enum", key)
+		}
+		node = m[key]
+	}
+	raw, ok := node.([]any)
+	if !ok {
+		t.Fatalf("aggregate-v1alpha1.schema.json: the parameter format carries no enum; got %T", node)
+	}
+	inSchema := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("parameter format enum member %v is not a string", v)
+		}
+		inSchema = append(inSchema, s)
+	}
+	supported := stringformat.Names()
+
+	for _, name := range inSchema {
+		if !stringformat.Supported(name) {
+			t.Errorf("the Aggregate schema admits parameter format %q, which no checker supports", name)
+		}
+	}
+	listed := make(map[string]bool, len(inSchema))
+	for _, name := range inSchema {
+		listed[name] = true
+	}
+	for _, name := range supported {
+		if !listed[name] {
+			t.Errorf("format %q is supported but the Aggregate schema refuses it on a parameter", name)
+		}
+	}
+	if strings.Join(inSchema, ",") != strings.Join(supported, ",") {
+		t.Errorf("parameter format enum order %v; want the supported order %v", inSchema, supported)
 	}
 }
 

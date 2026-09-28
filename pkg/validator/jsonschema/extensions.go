@@ -120,6 +120,7 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 			Message:   findingMessage(err, instance, ""),
 		})
 	}
+	a.checkFormatAt("", instance, rpt, "")
 
 	// Checks each position against the constraints declared at that
 	// position, in sorted-key order, and checks required at each level.
@@ -213,6 +214,7 @@ nextWhen:
 			if err := wn.elseResolved.Validate(subInstance); err != nil {
 				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr, subInstance)
 			}
+			a.sweepSchema(wn.elseSchema, subInstance, whenPathStr, "", rpt)
 		}
 
 		// Record this path as consumed; nested when: nodes inside it
@@ -339,6 +341,7 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 						Message:   findingMessage(err, m[k], a.subDefinition[subPath]),
 					})
 				}
+				a.checkFormatAt(subPath, m[k], rpt, a.subDefinition[subPath])
 				a.deterministicWalk(m[k], subPath, rpt)
 				continue
 			}
@@ -350,8 +353,10 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 			// declared — a refusal naming the wrong problem, on a document
 			// that may have nothing wrong with it at all. Its constraints are
 			// checked against the whole document instead, which is the only
-			// scope its reference resolves in.
+			// scope its reference resolves in. That check is the library's, which
+			// ignores format, so the position's schema is swept for it here.
 			if a.isUnresolvedPosition(subPath) {
+				a.sweepSchema(a.unresolvedNodes[subPath], m[k], subPath, a.subDefinition[subPath], rpt)
 				continue
 			}
 
@@ -471,6 +476,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 				Message:   findingMessage(err, instance, bi.definition),
 			})
 		}
+		a.checkBranchFormat(bi, instance, path, rpt)
 		return rpt
 	}
 
@@ -512,6 +518,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 			})
 		}
 	}
+	a.checkBranchFormat(bi, instance, path, rpt)
 
 	// Compound branch: required check + per-key dispatch + combinators + dependentSchemas.
 	if req, ok := bi.required[""]; ok {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/stringformat"
 )
 
 // LoadAggregateParameterContract reads the raw Aggregate YAML at path and
@@ -55,9 +56,10 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 // failing either is refused whether or not any Release supplies the parameter at
 // fault. The envelope validation holds it to the schema's shape — which keys a
 // declaration carries, the type of each, a non-negative minLength and maxLength
-// on each parameter's own declaration. Then [refuseMalformedParameterContract]
-// compiles every pattern the contract declares, at every nesting, and refuses
-// one that does not compile with ErrParameterContractViolation.
+// and a supported format name on each parameter's own declaration. Then
+// [refuseMalformedParameterContract] compiles every pattern the contract
+// declares and holds every format name to the supported set, at every nesting,
+// and refuses a fault with ErrParameterContractViolation.
 //
 // sourcePath is used only for ResolverError.Field provenance — it identifies
 // where the bytes came from for error display, but the function performs no
@@ -463,6 +465,27 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q value %q does not match pattern %q", path, s, pc.Pattern),
+				Err:     ErrParameterContractViolation(),
+			})
+		}
+	}
+	if pc.Format != "" {
+		// The contract load refused a name outside the supported set, so the name
+		// here is one the checkers know. The unsupported arm is reached only by a
+		// contract that did not come through that load, and refuses in the load's
+		// own words rather than letting an unknown name pass as a constraint.
+		if nerr := stringformat.CheckName(pc.Format); nerr != nil {
+			errs = append(errs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s", path),
+				Message: formatNotSupported(path, nerr),
+				Err:     ErrParameterContractViolation(),
+			})
+		} else if ferr := stringformat.Check(pc.Format, s); ferr != nil {
+			errs = append(errs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s", path),
+				Message: fmt.Sprintf("parameter %q value %v", path, ferr),
 				Err:     ErrParameterContractViolation(),
 			})
 		}

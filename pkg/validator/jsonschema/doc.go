@@ -87,6 +87,14 @@
 //   - The conditional applicator if/then/else, except at a node carrying
 //     x-aggrega-when:, where the predicate governs instead.
 //   - The Aggrega extension keywords described above.
+//   - The format keyword, which the library records and does not evaluate.
+//     The names it may carry are the closed set package stringformat supports,
+//     and New refuses a schema naming any other, wherever in the document the
+//     name sits and whether or not an instance reaches it. A string value is
+//     checked against its position's format beside every other constraint
+//     there, so inside a combinator branch a format failure is a reason the
+//     branch does not match, as any other failure is; a value that is not a
+//     string passes, its type being its type keyword's to judge.
 //
 // A combinator branch is checked against the type its own shape requires
 // before any of that shape is walked. A branch declaring properties,
@@ -99,11 +107,26 @@
 // matches on both branches, and the one real type mismatch surfaces as a
 // spurious multiple-match at the combinator instead of at the value.
 //
-// Everything else — every scalar constraint, so type, enum, const, the
-// numeric and string bounds, format, dependentRequired — is evaluated by
-// the underlying library at the single position that declares it. Those
-// carry no ordering hazard: one position, one constraint, one message, with
-// no map iterated to produce it.
+// Everything else — every other scalar constraint, so type, enum, const, the
+// numeric and string bounds, dependentRequired — is evaluated by the
+// underlying library at the single position that declares it. Those carry no
+// ordering hazard: one position, one constraint, one message, with no map
+// iterated to produce it.
+//
+// Where the library evaluates a whole subtree on the walk's behalf — the
+// schema a reference names where the reference carries a constraint of its own
+// beside it and so cannot stand in for it, the then: branch of a node carrying
+// x-aggrega-when: under the always-true if: the compact form emits, the else:
+// branch of such a node once its predicate is false, and a position that cannot
+// be stood up on its own (below) — format is still checked, by a sweep of that
+// subtree for it.
+// The sweep follows only the applicators that apply unconditionally: declared,
+// pattern and additional properties, array elements, allOf and in-document
+// references. Inside anyOf, oneOf, not, if/then/else, dependentSchemas,
+// contains or a nested x-aggrega-when: within such a subtree it does not
+// descend, because deciding which branch applies there takes the evaluation
+// the library performs; so a format there is not checked, and the sweep
+// never refuses a value no constraint applies to.
 //
 // # What it is not the authority for
 //
@@ -125,7 +148,8 @@
 //
 // A position the adapter cannot resolve on its own is enforced, but not by
 // the walk, and what it loses is reporting precision rather than the
-// constraint. Such a position is reached by a reference the adapter cannot
+// constraint — format included, which the sweep described above checks
+// there within the bound stated with it. Such a position is reached by a reference the adapter cannot
 // resolve standalone — a pointer into a declared property rather than into a
 // reusable definition, a pointer into another document, or a definition whose
 // own references reach outside the definitions in scope — because standing a
