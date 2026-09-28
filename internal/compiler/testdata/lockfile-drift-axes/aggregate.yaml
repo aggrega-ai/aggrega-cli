@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    svc:
+      type: demo/svc
+    web:
+      type: demo/web

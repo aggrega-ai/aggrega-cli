@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web
+  version: "1.0.0"
+spec:
+  capability: helm-chart
+  implements: demo/web
+  source: ./chart
+  valuesMapping:
+    $import: "BaseMappings#/mappings/WebValues"

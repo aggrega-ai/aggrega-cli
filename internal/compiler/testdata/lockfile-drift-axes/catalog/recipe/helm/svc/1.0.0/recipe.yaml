@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: svc
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: demo/svc
+  workload:
+    $import: "BaseWorkloads#/workloads/SimpleServer"
+  artifacts:
+    support:
+      $import: "PlatformArtifacts#/artifacts/Support"

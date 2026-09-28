@@ -618,11 +618,9 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 			"again clears it. Through this protocol that is the pull tool, called with this same 'release' " +
 			"path and no 'upgrade_targets': it reconciles the lockfile against what the Release resolves to " +
 			"today, which is what this condition needs. The command line the diagnostic names is that same " +
-			"operation at a terminal, asked additionally to re-resolve every pin to the highest available " +
-			"version — more than this refusal requires, and it clears it too. Where the pull tool completes " +
-			"and this refusal comes back, the two calls resolved over different inputs — most often " +
-			"'catalog_dirs' given to one and not the other, or a workspace configuration edited between " +
-			"them — so call both with the same ones."
+			"operation at a terminal. Where the pull tool completes and this refusal comes back, the two " +
+			"calls resolved over different inputs — most often 'catalog_dirs' given to one and not the " +
+			"other, or a workspace configuration edited between them — so call both with the same ones."
 	case compilerops.GateClosurePillars:
 		return "The build refused: an entity this Release reaches does not satisfy its schema."
 	case compilerops.GateExtends:

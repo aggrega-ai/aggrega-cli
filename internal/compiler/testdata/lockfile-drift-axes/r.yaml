@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    svc-b:
+      directory: ./dist/svc
+      components:
+        svc: {}
+    web-b:
+      directory: ./dist/web
+      components:
+        web: {}

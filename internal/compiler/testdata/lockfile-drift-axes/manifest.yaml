@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        demo/svc:1.0.0: helm/svc:1.0.0
+        demo/web:1.0.0: helm-chart/web:1.0.0

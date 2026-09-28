@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: ArtifactLibrary
+metadata:
+  name: PlatformArtifacts
+  version: "1.0.0"
+spec:
+  artifacts:
+    Support:
+      config.yaml: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: "{{ .context.instance_id }}-support"
+        data:
+          owner: platform

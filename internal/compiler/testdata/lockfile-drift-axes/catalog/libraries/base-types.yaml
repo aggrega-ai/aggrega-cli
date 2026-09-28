@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseTypes
+  version: "1.0.0"
+spec:
+  schemas:
+    PortSpec:
+      port: { type: integer, default: 8080 }

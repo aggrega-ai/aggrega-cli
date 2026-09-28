@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: WorkloadLibrary
+metadata:
+  name: BaseWorkloads
+  version: "1.0.0"
+spec:
+  workloads:
+    SimpleServer: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Workload
+      replicas: 1
+      containers:
+        main:
+          image: svc:latest
+          ports:
+            web: 8080
+          variables:
+            NODE_LABELS: "{{ range $k, $v := .context.labels }}{{ $v }};{{ end }}"
+      services:
+        http:
+          type: ClusterIP
+          ports:
+            web: 8080

@@ -22,16 +22,22 @@ import (
 // VerifySourceReferences — every source reference whose authored ref now
 // resolves elsewhere. Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
-// in one diagnostic rather than one URI per iteration. The
-// documented remediation is
-// `aggrega pull --upgrade --release <release>`; an edited Release file
-// needs only `aggrega pull --release <release>`, which its entry says.
+// in one diagnostic rather than one URI per iteration.
+//
+// What clears it depends on which raise site reported it, and each says so.
+// Everything Verify reports is cleared by `aggrega pull --release <release>`,
+// which resolves the Release as it now stands, rewrites the pins that moved and
+// holds every other one — after the pin step that pull names, where what moved is
+// a file under a Recipe's local source — and an edited Release file's entry names
+// that command. A moved source reference is reported by that pull itself, which
+// is why its entry names `aggrega pull --upgrade --release <release>` instead:
+// only an upgrade adopts where a reference now points.
 //
 // The two raise sites report one condition rather than two, because what an
-// operator is told and what they do about it are the same in both: a pin
-// recorded in the lockfile no longer describes what resolves now, and an
-// upgrade is how it is adopted. Splitting them would give one remediation two
-// identities.
+// operator is told is the same in both: a pin recorded in the lockfile no longer
+// describes what resolves now. The difference is in what moved, which is why the
+// command that clears it is named where each is reported rather than by the
+// condition itself.
 //
 // Cross-tier digest semantics: an entity row records one subject at
 // every tier — what a publication of the entity carries, each file by
@@ -41,8 +47,10 @@ import (
 // does not drift between tiers, between checkouts that differ only in
 // permission bits, or between two compressions of the same entries; drift
 // surfaces when the content changes (an edited entity, a chart edited
-// under it, a file added to a source it declares, a flipped execute bit,
-// a re-published tag). A library row records its document's bytes, the
+// under it, a file added to a source it declares, a flipped execute bit).
+// A registry serving other bytes under a pinned version is not among them:
+// the pull that fetches them refuses them against the pinned digest before
+// any comparison runs. A library row records its document's bytes, the
 // same at every tier.
 func ErrLockfileDrift() error { return errLockfileDrift }
 

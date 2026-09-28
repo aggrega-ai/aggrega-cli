@@ -1,0 +1,2 @@
+image: web:latest
+replicas: 1

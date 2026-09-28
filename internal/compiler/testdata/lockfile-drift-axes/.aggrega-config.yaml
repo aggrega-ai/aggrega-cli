@@ -1,0 +1,24 @@
+# A workspace whose one Release reaches something on every axis a lockfile pins:
+# catalog Components and Recipes, the Aggregate and Manifest beside the Release,
+# a SchemaLibrary, a MappingLibrary, a WorkloadLibrary and an ArtifactLibrary, a
+# plugin attached at a transform role whose .wasm sits beside its entity, and the
+# Release file itself. So an edit to exactly one of them drifts exactly one axis,
+# and a pull over the edit shows what clears it.
+#
+# The plugin's .wasm is not kept here. A test lays the guest it builds beside the
+# Plugin entity, under the file name the plugin cascade reads, in its own copy of
+# this workspace.
+#
+# Offline, so every resolution answers from this directory alone and a pull
+# reaches no registry. auto_pull is written out rather than left to the default,
+# so a machine whose own configuration turns the fill on still builds from the
+# lockfile as it stands.
+workspace:
+  catalog_dirs:
+    - ./catalog
+offline: true
+auto_pull: false
+plugins:
+  governance:
+    - uri: governance/tag-injector:1.0.0
+      role: label-transform

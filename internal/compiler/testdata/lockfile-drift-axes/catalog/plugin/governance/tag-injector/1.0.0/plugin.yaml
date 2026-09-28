@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: tag-injector
+  pluginType: governance
+  version: "1.0.0"
+spec:
+  abiVersion: v1alpha1
+  exports:
+    - name: mutate

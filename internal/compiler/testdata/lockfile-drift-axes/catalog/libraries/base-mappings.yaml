@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: MappingLibrary
+metadata:
+  name: BaseMappings
+  version: "1.0.0"
+spec:
+  mappings:
+    WebValues: |
+      {
+        "image": "web:latest",
+        "replicas": 2
+      }

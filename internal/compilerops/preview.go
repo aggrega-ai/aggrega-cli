@@ -258,10 +258,20 @@ var errPreviewInputsZeroValue = stderrors.New(
 // drift warning among them — so the two cannot come to name different remedies
 // for one condition. It names an act that clears the condition whichever axis
 // drifted — an entity, a library, a plugin or a Release file — which is why it
-// speaks of the Release rather than of a catalog. An entry that needs less, such
-// as an edited Release file, names the lighter command on itself.
+// speaks of the Release rather than of a catalog.
+//
+// That act is an ordinary pull, never an upgrade. A build resolves its closure
+// from what is on the machine, under the pins the lockfile records, so every
+// disagreement it reports is a change a pull reads back: the pull resolves the
+// Release as it now stands, rewrites the pins that moved and holds every other
+// one, so nothing floats that the reader did not change. Where the change is a
+// file under a Recipe's local source, that pull first names the pin step for the
+// entity whose recorded pins moved. The two cases an upgrade is for are raised by
+// a pull rather than by a build, and each names the upgrade on its own entry: a
+// source reference that moved at its remote, and a registry serving different
+// bytes under a pinned version.
 func LockfileDriftRemedy(release string) string {
-	return fmt.Sprintf("run `aggrega pull --upgrade --release %s` to re-resolve the Release and rewrite its lockfile", release)
+	return fmt.Sprintf("run `aggrega pull --release %s` to re-resolve the Release and rewrite its lockfile", release)
 }
 
 // errComposedLockfileRefused is the refusal for a composed lockfile (see
@@ -758,7 +768,12 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 			if in.lockfileComposed {
 				return out, &composedLockfileRefusal{findings: err}
 			}
-			return out, fmt.Errorf("%w; %s", err, LockfileDriftRemedy(in.releasePath))
+			// The remedy is wrapped as an error of its own rather than formatted into
+			// the frame, and that is what puts it in front of a reader at a terminal:
+			// the command line renders a chain carrying several errors element by
+			// element and shows no frame's own text, so advice written into the frame
+			// reaches nobody there. The text of the whole is the same either way.
+			return out, fmt.Errorf("%w; %w", err, stderrors.New(LockfileDriftRemedy(in.releasePath)))
 		}
 	}
 

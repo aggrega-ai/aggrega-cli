@@ -162,9 +162,10 @@ func TestBuildToolWithNoLockfileStillBuilds(t *testing.T) {
 // build. The third step succeeding is the whole point.
 //
 // It also pins the reconciling form as SUFFICIENT. Drift is a membership or
-// identity divergence, and re-resolving the closure is enough to clear it; the
-// wholesale refresh the command-line diagnostic names is a superset this surface
-// cannot compose and does not need.
+// identity divergence, and re-resolving the closure is enough to clear it. The
+// command-line diagnostic that travels in the same guidance names that same
+// reconcile at a terminal, and the refusal is held to carrying it, so the two
+// instructions a caller receives cannot come to disagree.
 func TestBuildToolDriftIsClearedByTheRemedyItNames(t *testing.T) {
 	s, root, dirs, releasePath := pullWorkspace(t)
 	lockPath := resolveTheWorkspace(t, s, root, dirs, releasePath)
@@ -174,6 +175,10 @@ func TestBuildToolDriftIsClearedByTheRemedyItNames(t *testing.T) {
 	if !refused.IsError {
 		t.Fatalf("the drifted build did not refuse, so this case would prove the remedy clears nothing: %s",
 			refused.Content[0].Text)
+	}
+	if remedy := compilerops.LockfileDriftRemedy(releasePath); !strings.Contains(refused.Content[0].Text, remedy) {
+		t.Errorf("the refusal does not carry the shared remedy %q, so the command line it names is not the one "+
+			"every other surface names:\n%s", remedy, refused.Content[0].Text)
 	}
 	drifted, err := os.ReadFile(lockPath)
 	if err != nil {
