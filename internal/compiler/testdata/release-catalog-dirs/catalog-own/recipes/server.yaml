@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: demo-own-server
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: demo/own-svc
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: own-server:latest

@@ -1,0 +1,20 @@
+# A workspace whose two Releases build against different catalog directories.
+#
+# catalog-own and catalog-shared declare no Component in common, and there is no
+# conventional catalog/ directory at this root, so each Release resolves only
+# from the directories it is given: release-own.yaml builds only when its own
+# entry below is read, and release-shared.yaml, which no entry names, builds
+# from the workspace list.
+workspace:
+  catalog_dirs:
+    - catalog-shared
+  releases:
+    release-own.yaml:
+      catalog_dirs:
+        - catalog-own
+
+# Written out rather than left to the default, so a machine whose own
+# configuration turns the fill on still builds from the lockfile as it stands:
+# a build that fills first renders through the dependency resolution instead of
+# through its own read of the Release's directories.
+auto_pull: false

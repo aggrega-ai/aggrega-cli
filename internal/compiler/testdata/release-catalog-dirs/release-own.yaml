@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: own-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./own-aggregate.yaml
+  manifest: ./own-manifest.yaml
+  boundaries:
+    app:
+      directory: ./app
+      components:
+        app: {}

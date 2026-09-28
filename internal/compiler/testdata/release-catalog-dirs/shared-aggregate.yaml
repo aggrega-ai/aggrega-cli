@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: shared-aggregate
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: "demo/shared-svc:1.0.0"

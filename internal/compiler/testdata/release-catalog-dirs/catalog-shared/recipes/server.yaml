@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: demo-shared-server
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: demo/shared-svc
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: shared-server:latest

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/own-svc
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }
