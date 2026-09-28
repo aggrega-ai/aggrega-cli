@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -255,7 +256,10 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 // once and its policy pinned. Offline, it is never asked: with no policy supplied
 // the command refuses with the offline-registration condition, prints no notice
 // and writes no entry; with an identity supplied by hand it registers exactly
-// that identity and nothing a fetch would have brought. The count is read at the
+// that identity and nothing a fetch would have brought; the hub is written on its
+// built-in baseline, and the one line printed says that baseline was pinned and
+// why no advertised policy was taken — not that the hub advertises nothing, and
+// not that identities should be pinned by hand. The count is read at the
 // endpoint, so a fetch refused before any dial and one sent and failed cannot be
 // mistaken for each other.
 //
@@ -264,7 +268,8 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 // building a client of its own fails both offline rows, which see the endpoint
 // asked under a posture that forbids it; removing the offline refusal fails the
 // refusal row, which sees an entry written that trusts nothing; refusing a
-// registration that supplied its own policy fails the pinned row.
+// registration that supplied its own policy fails the pinned row; printing the
+// not-advertised sentence for the hub fails the hub row.
 func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 	t.Parallel()
 	const doc = `{"requires_signatures": true, "trusted_identities": [` +
@@ -275,6 +280,7 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		seed        string
+		hub         bool
 		identities  []string
 		wantAsked   int32
 		wantPinned  bool
@@ -286,6 +292,8 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			seed: offline, wantRefused: true},
 		{name: "an offline workspace registers exactly the identity pinned by hand",
 			seed: offline, identities: []string{"hand@example.test=https://issuer.example.test"}},
+		{name: "an offline workspace registers the hub on its built-in baseline and says so",
+			seed: offline, hub: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -301,6 +309,9 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 			host := strings.TrimPrefix(srv.URL, "http://")
+			if tc.hub {
+				host = workspaceconfig.HubBaselineHost
+			}
 
 			// The workspace is resolved against a frozen environment, so the
 			// posture under test is the one this row wrote and never one the
@@ -349,6 +360,23 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			}
 			if !found {
 				t.Fatalf("the registration wrote no entry for %s", host)
+			}
+			if tc.hub {
+				// The hub resolves to its baseline whether or not an entry was written,
+				// so the written file is read rather than the resolved policy.
+				written, err := os.ReadFile(filepath.Join(root, workspaceconfig.ConfigFilename))
+				if err != nil {
+					t.Fatalf("read the workspace configuration: %v", err)
+				}
+				if issuer := workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer; !strings.Contains(string(written), host) || !strings.Contains(string(written), issuer) {
+					t.Errorf("the hub was not written on its built-in baseline:\n%s", written)
+				}
+				want := fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (registrytrust: fetch %s: %s)\n",
+					host, host, egress.ErrOfflineEgress().Error())
+				if !strings.HasPrefix(out.String(), want) || strings.Contains(out.String(), "advertises no trust config") {
+					t.Errorf("output = %q; want it to open with the one baseline notice %q", out.String(), want)
+				}
+				return
 			}
 			if tc.wantPinned {
 				if want := fmt.Sprintf("Pinned advertised trust policy from %s (2 identities)\n", host); !strings.Contains(out.String(), want) {

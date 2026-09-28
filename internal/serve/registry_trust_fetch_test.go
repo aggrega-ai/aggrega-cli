@@ -5,11 +5,13 @@ package serve
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -55,6 +57,27 @@ func countingTrustRegistry(t *testing.T, doc string) (host string, asked *atomic
 	return strings.TrimPrefix(srv.URL, "http://"), asked
 }
 
+// trustOnTheWire returns the trust object exactly as the daemon's answer carries
+// it, key for key.
+//
+// It reads the raw answer rather than decoding into the Go type, because which
+// keys are ABSENT is part of what is asserted: a decoded struct reads an absent
+// key and a false one alike, so it cannot tell an answer that says the hub was
+// never asked from one that says the hub advertised nothing.
+func trustOnTheWire(t *testing.T, resp jsonRPCResponse) map[string]any {
+	t.Helper()
+	if resp.Error != nil {
+		t.Fatalf("expected a result; got error %d: %s", resp.Error.Code, resp.Error.Message)
+	}
+	var answer struct {
+		Trust map[string]any `json:"trust"`
+	}
+	if err := json.Unmarshal(resp.Result, &answer); err != nil {
+		t.Fatalf("unmarshal the trust object: %v (raw: %s)", err, resp.Result)
+	}
+	return answer.Trust
+}
+
 // wantRegistrationRefusal holds a daemon answer to the refusal the shared layer
 // returned: the same sentence, preceded by the condition's short code, so a
 // caller of the daemon reads what the command line prints.
@@ -88,12 +111,14 @@ func wantRegistrationRefusal(t *testing.T, resp jsonRPCResponse, shared error) {
 // trust, or refuse to, in a way the command line does not.
 //
 // Parity alone would pass over two surfaces that are wrong together, so each row
-// also pins the absolute outcome: an online workspace asks the endpoint once and
-// pins what it advertises; a registry advertising nothing is reported as that,
-// with its own reason; an offline workspace never reaches the endpoint and
-// refuses a registry it cannot pin, registers exactly the identity a request pins
-// by hand, and registers the hub on its built-in baseline with the gate's refusal
-// as the reason.
+// also pins the absolute outcome, and pins it as the wire carries it, key for
+// key: an online workspace asks the endpoint once and pins what it advertises; a
+// registry advertising nothing is reported as that, with its own reason; an
+// offline workspace never reaches the endpoint and refuses a registry it cannot
+// pin, registers exactly the identity a request pins by hand, and registers the
+// hub on its built-in baseline, answered as the baseline pinned with the gate's
+// refusal as the reason and with no not-advertised key, since the hub was never
+// asked.
 //
 // Planted defects, each caught by a row here: a registration handed no client
 // fails the online row, which sees an endpoint never asked, nothing pinned and
@@ -101,22 +126,25 @@ func wantRegistrationRefusal(t *testing.T, resp jsonRPCResponse, shared error) {
 // offline rows, which see the endpoint asked under a posture that forbids the
 // fetch; removing the offline refusal fails the refusal row, which sees a result
 // and an entry that trusts nothing; refusing the hub, or a registration pinned by
-// hand, fails that row.
+// hand, fails that row; answering the hub registered offline as not advertised,
+// or without the baseline, fails the hub row.
 func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) {
 	t.Parallel()
 	const offline = "offline: true\nworkspace: {}\n"
 	const handIdentity = "hand@example.test"
 	for _, tc := range []struct {
-		name        string
-		seed        string
-		doc         string
-		hub         bool
-		identity    bool
-		wantAsked   int32
-		wantPinned  bool
-		wantOffline bool
-		wantRefused bool
-		wantOnDisk  string
+		name              string
+		seed              string
+		doc               string
+		hub               bool
+		identity          bool
+		wantAsked         int32
+		wantPinned        bool
+		wantNotAdvertised bool
+		wantBaseline      bool
+		wantOffline       bool
+		wantRefused       bool
+		wantOnDisk        string
 	}{
 		{
 			name:       "an online workspace fetches the advertised policy once and pins it",
@@ -127,9 +155,10 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			wantOnDisk: "signer@example.test",
 		},
 		{
-			name:      "a registry advertising nothing is reported as advertising nothing",
-			seed:      "workspace: {}\n",
-			wantAsked: 1,
+			name:              "a registry advertising nothing is reported as advertising nothing",
+			seed:              "workspace: {}\n",
+			wantAsked:         1,
+			wantNotAdvertised: true,
 		},
 		{
 			name:        "an offline workspace never reaches the registry and refuses to register it unpinned",
@@ -145,11 +174,12 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			wantOnDisk: handIdentity,
 		},
 		{
-			name:        "an offline workspace registers the hub on its built-in baseline",
-			seed:        offline,
-			hub:         true,
-			wantOffline: true,
-			wantOnDisk:  workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer,
+			name:         "an offline workspace registers the hub on its built-in baseline, never asked",
+			seed:         offline,
+			hub:          true,
+			wantBaseline: true,
+			wantOffline:  true,
+			wantOnDisk:   workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,8 +246,11 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			if res.Trust.Pinned != tc.wantPinned {
 				t.Errorf("pinned = %v; want %v (trust %+v)", res.Trust.Pinned, tc.wantPinned, res.Trust)
 			}
-			if !tc.wantPinned && !tc.identity && !res.Trust.NotAdvertised {
-				t.Errorf("a policy that was not pinned must be reported as not advertised; got %+v", res.Trust)
+			if res.Trust.NotAdvertised != tc.wantNotAdvertised {
+				t.Errorf("notAdvertised = %v; want %v (trust %+v)", res.Trust.NotAdvertised, tc.wantNotAdvertised, res.Trust)
+			}
+			if res.Trust.Baseline != tc.wantBaseline {
+				t.Errorf("baseline = %v; want %v (trust %+v)", res.Trust.Baseline, tc.wantBaseline, res.Trust)
 			}
 			if tc.identity && !res.Trust.Skipped {
 				t.Errorf("a registration pinned by hand fetched anyway: %+v", res.Trust)
@@ -226,6 +259,31 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			if gotOffline := res.Trust.Reason == offlineReason; gotOffline != tc.wantOffline {
 				t.Errorf("reason = %q; want the offline refusal as the reason: %v", res.Trust.Reason, tc.wantOffline)
 			}
+
+			// The same outcome as the wire carries it, key for key, so a key present
+			// that should be absent fails as surely as one missing.
+			wantWire := map[string]any{"pinned": tc.wantPinned}
+			switch {
+			case tc.wantPinned:
+				wantWire["identities"] = float64(2)
+			case tc.wantOffline:
+				wantWire["reason"] = offlineReason
+			case tc.wantNotAdvertised:
+				wantWire["reason"] = registrytrust.ErrNoTrustAdvertised().Error()
+			}
+			if tc.wantNotAdvertised {
+				wantWire["notAdvertised"] = true
+			}
+			if tc.wantBaseline {
+				wantWire["baseline"] = true
+			}
+			if tc.identity {
+				wantWire["skipped"] = true
+			}
+			if got := trustOnTheWire(t, resp); !reflect.DeepEqual(got, wantWire) {
+				t.Errorf("the daemon's trust object = %v; want %v", got, wantWire)
+			}
+
 			if res.Trust != refRes.Trust {
 				t.Errorf("the daemon's trust outcome %+v differs from the shared registration's %+v", res.Trust, refRes.Trust)
 			}
@@ -252,9 +310,13 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 // against the shared seeding directly, so the daemon cannot refuse, or seed, where
 // the command line would not.
 //
+// The hub row reads its trust object as the wire carries it: the baseline pinned,
+// the offline refusal as the reason, and no not-advertised key, because the hub
+// was never asked.
+//
 // Planted defects: removing the offline refusal fails the first row, which sees
 // a result and a written entry that trusts nothing; refusing the hub fails the
-// second.
+// second, and so does answering it as not advertised.
 func TestConfigInitOnTheDaemonRefusesARegistryItCannotPinOffline(t *testing.T) {
 	t.Parallel()
 	const offline = "offline: true\nworkspace: {}\n"
@@ -310,8 +372,16 @@ func TestConfigInitOnTheDaemonRefusesARegistryItCannotPinOffline(t *testing.T) {
 			}
 			var res configInitResult
 			decodeDaemonResult(t, resp, &res)
-			if !res.Written || !res.Trust.NotAdvertised {
+			if !res.Written || !res.Trust.Baseline {
 				t.Errorf("the hub was not seeded offline on its baseline: %+v", res)
+			}
+			wantWire := map[string]any{
+				"pinned":   false,
+				"baseline": true,
+				"reason":   "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error(),
+			}
+			if got := trustOnTheWire(t, resp); !reflect.DeepEqual(got, wantWire) {
+				t.Errorf("the daemon's trust object for the hub seeded offline = %v; want %v", got, wantWire)
 			}
 			if issuer := workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer; !strings.Contains(string(daemonBytes), issuer) {
 				t.Errorf("the seeded configuration does not carry the built-in baseline:\n%s", daemonBytes)

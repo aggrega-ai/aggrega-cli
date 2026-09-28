@@ -52,10 +52,11 @@ type configInitParams struct {
 // the document instead. The two are never both meaningful — the file Content is
 // for is Scope.ConfigFile, so nothing here carries a second copy of the path.
 //
-// Trust reports what the advertised-trust fetch found, as the three distinguished
-// outcomes rather than as a line of prose. A caller deciding whether the
-// configuration it just seeded is usable needs to know which, and a registry that
-// advertises nothing is not a failure — the seeding proceeds and says so.
+// Trust reports what the advertised-trust fetch found, as distinguished outcomes
+// rather than as a line of prose, among them the built-in baseline pinned for the
+// official hub. A caller deciding whether the configuration it just seeded is
+// usable needs to know which, and a registry that advertises nothing is not a
+// failure — the seeding proceeds and says so.
 type configInitResult struct {
 	Host    string                        `json:"host"`
 	Scope   configWriteScope              `json:"scope"`
@@ -86,10 +87,10 @@ type configInitResult struct {
 // policy it makes one unauthenticated request to that registry's own origin, and
 // nothing is prompted for: a registry that advertises nothing is reported as
 // advertising nothing and the seeding proceeds — on the built-in baseline for the
-// official hub, on no policy for any other registry. Offline, seeding a registry
-// other than the hub is refused, because this method takes no identities or key
-// to pin by hand; the refusal is the registration's own sentence with its short
-// code ahead of it.
+// official hub, which the answer reports as pinned, on no policy for any other
+// registry. Offline, seeding a registry other than the hub is refused, because
+// this method takes no identities or key to pin by hand; the refusal is the
+// registration's own sentence with its short code ahead of it.
 func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) error {
 	var params configInitParams
 	if len(req.Params) > 0 {

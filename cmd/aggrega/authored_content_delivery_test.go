@@ -380,20 +380,26 @@ func trustAdvisoryStreams(t *testing.T, dryRun bool, registry string, client *ht
 // deliveries.
 //
 // The grid is what matters, not the two axes separately. Delivery and fetch
-// outcome are independent, so there are four cells, and the notice's behaviour
-// differs in three ways across them:
+// outcome are independent, so there are six cells — two deliveries by three
+// outcomes: an advertised policy pinned, no policy advertised and none behind it,
+// and the hub's built-in baseline pinned where it could not be reached — and the
+// notice's behaviour differs in three ways across them:
 //
-//   - writing, either outcome — the notice is on the answer stream, where a
-//     person watching a terminal reads it, and the error stream is silent;
+//   - writing, any outcome — the notice is on the answer stream, where a person
+//     watching a terminal reads it, and the error stream is silent;
 //   - reporting, policy not advertised — the answer stream holds one parseable
 //     document and nothing else, and the advisory is on the error stream, still
 //     naming the flags that supply a policy by hand;
-//   - reporting, policy pinned — nothing is emitted anywhere, because the pinned
-//     policy IS the reported content and a notice about it would be a duplicate.
+//   - reporting, a policy pinned, advertised or the built-in baseline — nothing
+//     is emitted anywhere, because the pinned policy IS the reported content and
+//     a notice about it would be a duplicate.
 //
-// That last cell is the one that fails a notice emitted on the delivery alone: an
-// implementation that moved BOTH outcomes to the error stream under a reporting
-// delivery satisfies every other assertion here.
+// The pinned cell is the one that fails a notice emitted on the delivery alone:
+// an implementation that moved BOTH outcomes to the error stream under a reporting
+// delivery satisfies every other assertion here. The baseline cells are the ones
+// that fail a notice routed by "was it advertised": the hub could not be reached,
+// so it advertised nothing and ALSO carries a policy, and only the second fact
+// decides the stream.
 func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *testing.T) {
 	t.Parallel()
 
@@ -401,6 +407,11 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 	// content: an absence conveys neither that a policy is missing nor what to do.
 	const remedy = "--identity/--key"
 	const absence = "advertises no trust config"
+	const baseline = "Pinned the built-in trust baseline for " + workspaceconfig.HubBaselineHost
+
+	// A registry other than the hub, which carries no baseline, so a registry that
+	// cannot be reached leaves its entry with no policy at all.
+	const absentHost = "private.example.test"
 
 	pinnedHost, pinnedClient := advertisedTrustServer(t, `{
   "requires_signatures": true,
@@ -410,7 +421,7 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 }`)
 
 	// Cell 1 — writing, policy not advertised.
-	writeAbsentAnswer, writeAbsentAdvisory := trustAdvisoryStreams(t, false, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	writeAbsentAnswer, writeAbsentAdvisory := trustAdvisoryStreams(t, false, absentHost, offlineTrustClient())
 	if !strings.Contains(writeAbsentAnswer, absence) || !strings.Contains(writeAbsentAnswer, remedy) {
 		t.Errorf("a writing delivery must keep the advisory on the answer stream, remedy included; it carried:\n%s", writeAbsentAnswer)
 	}
@@ -429,7 +440,7 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 
 	// Cell 3 — reporting, policy not advertised. The advisory moves to the error
 	// stream and the answer stream keeps its contract.
-	reportAbsentAnswer, reportAbsentAdvisory := trustAdvisoryStreams(t, true, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	reportAbsentAnswer, reportAbsentAdvisory := trustAdvisoryStreams(t, true, absentHost, offlineTrustClient())
 	if !strings.Contains(reportAbsentAdvisory, absence) {
 		t.Errorf("the unrecoverable outcome must reach the error stream under a reporting delivery; it carried:\n%s", reportAbsentAdvisory)
 	}
@@ -474,6 +485,35 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 	}
 	if pinnedDocs := reportedDocuments(t, []byte(reportPinnedAnswer)); len(pinnedDocs) != 1 {
 		t.Errorf("seeding reported %d documents; it writes one file, so it reports one", len(pinnedDocs))
+	}
+
+	// Cell 5 — writing, the hub's built-in baseline pinned. The hub could not be
+	// reached, so it advertised nothing; the entry carries its baseline anyway, and
+	// the notice says so rather than sending the reader to pin identities by hand.
+	writeBaselineAnswer, writeBaselineAdvisory := trustAdvisoryStreams(t, false, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	if !strings.HasPrefix(writeBaselineAnswer, baseline) {
+		t.Errorf("a writing delivery must say the built-in baseline was pinned; it carried:\n%s", writeBaselineAnswer)
+	}
+	if strings.Contains(writeBaselineAnswer, absence) || strings.Contains(writeBaselineAnswer, remedy) {
+		t.Errorf("the hub's baseline was reported as an absence to fill by hand:\n%s", writeBaselineAnswer)
+	}
+	if writeBaselineAdvisory != "" {
+		t.Errorf("a writing delivery has a free answer stream, so nothing belongs on the error stream; it carried:\n%s", writeBaselineAdvisory)
+	}
+
+	// Cell 6 — reporting, the hub's built-in baseline pinned. Nothing is emitted on
+	// either stream: the baseline is a pinned policy, and the reported content
+	// carries it.
+	reportBaselineAnswer, reportBaselineAdvisory := trustAdvisoryStreams(t, true, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	if reportBaselineAdvisory != "" {
+		t.Errorf("the built-in baseline is in the reported content, so a notice about it belongs on no stream; the error stream carried:\n%s", reportBaselineAdvisory)
+	}
+	baselineDocs := reportedDocuments(t, []byte(reportBaselineAnswer))
+	if len(baselineDocs) != 1 {
+		t.Fatalf("seeding reported %d documents; it writes one file, so it reports one", len(baselineDocs))
+	}
+	if issuer := workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer; !strings.Contains(baselineDocs[0].Content, issuer) {
+		t.Errorf("the reported content does not carry the built-in baseline the notice was dropped for:\n%s", baselineDocs[0].Content)
 	}
 }
 

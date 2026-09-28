@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -81,9 +83,12 @@ func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 // Seeding takes no identities or key, so offline a registry other than the hub
 // has nothing to pin and is refused with the offline-registration condition,
 // leaving no file behind and printing nothing; the hub is seeded on its built-in
-// baseline. Planted defects: removing the offline refusal fails the first row,
-// which sees a configuration written that trusts nothing; refusing the hub fails
-// the second.
+// baseline, and the one line printed says the baseline was pinned and why no
+// advertised policy was taken. Planted defects: removing the offline refusal fails
+// the first row, which sees a configuration written that trusts nothing; refusing
+// the hub fails the second, and so does printing the not-advertised sentence for
+// it, whose advice to pin identities by hand is wrong for an entry that carries a
+// policy.
 func TestConfigInitRefusesARegistryItCannotPinOffline(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -139,6 +144,15 @@ func TestConfigInitRefusesARegistryItCannotPinOffline(t *testing.T) {
 			pol, _ := reloaded.Config().RegistryTrustPolicy(workspaceconfig.HubBaselineHost)
 			if want := workspaceconfig.DefaultBaseline(); len(pol.TrustedIdentities) != len(want.TrustedIdentities) || !pol.Signing.Required {
 				t.Errorf("the hub was not seeded on its built-in baseline: %+v", pol)
+			}
+			host := workspaceconfig.HubBaselineHost
+			want := fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (registrytrust: fetch %s: %s)\n",
+				host, host, egress.ErrOfflineEgress().Error())
+			if got := strings.SplitAfter(out.String(), "\n")[0]; got != want {
+				t.Errorf("the seeding's first line = %q; want the one baseline notice %q", got, want)
+			}
+			if errOut.Len() != 0 {
+				t.Errorf("a writing seeding put %q on the error stream; its answer stream is free for the notice", errOut.String())
 			}
 		})
 	}

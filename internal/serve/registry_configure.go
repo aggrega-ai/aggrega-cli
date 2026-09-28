@@ -90,10 +90,12 @@ type registryAddParams struct {
 
 // registryAddResult is the aggrega/registryAdd response.
 //
-// Trust reports what the advertised-trust fetch did, as the three distinguished
-// outcomes rather than as a line of prose: pinned, not advertised, or skipped.
-// A caller deciding whether the entry it just wrote is usable needs to know
-// which, and a registry that advertises nothing is not a failure.
+// Trust reports what the advertised-trust fetch did, as distinguished outcomes
+// rather than as a line of prose: pinned, not advertised, the built-in baseline
+// pinned, or skipped. A caller deciding whether the entry it just wrote is usable
+// needs to know which, and a registry that advertises nothing is not a failure.
+// The value is the shared registration's own, carried unchanged, so the answer
+// reports exactly the outcome the command line prints its notice from.
 type registryAddResult struct {
 	Host  string                        `json:"host"`
 	Scope configWriteScope              `json:"scope"`
@@ -168,7 +170,9 @@ type registryUpdateResult struct {
 // reported as advertising nothing and the registration proceeds on what the
 // request supplied. Offline, a registry other than the official hub is refused
 // unless the request supplies identities or a key, in the sentence the command
-// line prints, with the condition's short code ahead of it.
+// line prints, with the condition's short code ahead of it; the hub is written on
+// its built-in baseline, answered as the baseline pinned with the offline refusal
+// as the reason.
 func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryAddParams
 	if len(req.Params) > 0 {

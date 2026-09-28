@@ -5,14 +5,36 @@ package registryops
 
 import (
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// notFoundTransport answers every request with a not-found, without dialing, and
+// counts the requests it was handed.
+//
+// It is what lets a test ask the official hub's own host whether it advertises a
+// policy: the request reaches this transport and goes no further, so the answer
+// is the one a registry publishing no trust document gives, and nothing leaves the
+// machine.
+type notFoundTransport struct{ asked *atomic.Int32 }
+
+func (n notFoundTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	n.asked.Add(1)
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    r,
+	}, nil
+}
 
 // TestTheRegistrationTakesItsTrustClientFromTheEgressGate is the unit-level proof
 // of where the advertised-trust fetch gets its transport when the caller supplies
@@ -25,17 +47,26 @@ import (
 // entry would carry a policy without the fetch: a registry other than the hub is
 // refused with no entry written; the same registry with an identity supplied by
 // hand is written with exactly that identity; the hub is written with its
-// built-in baseline and the gate's refusal as the reason nothing was advertised.
-// The count is observed at the endpoint, so a fetch refused before any dial and
-// one sent and failed cannot be mistaken for each other.
+// built-in baseline, reported as the baseline pinned with the gate's refusal as
+// the reason and never as a registry that advertises nothing, since it was never
+// asked. The hub asked online and answering that it advertises nothing is the
+// control on that last row: it was asked, so it is reported as not advertised
+// AND as the baseline pinned. The count is observed at the endpoint, so a fetch
+// refused before any dial and one sent and failed cannot be mistaken for each
+// other.
+//
+// Every completed row compares the whole outcome, so a key set that should not be
+// fails as surely as one missing.
 //
 // Planted defects: returning no client where none was injected fails the online
 // row, which sees the endpoint never asked and the workspace reported offline;
 // building a client that ignores the posture fails the offline rows, which see
 // the endpoint asked and the policy pinned; removing the offline refusal fails
 // the refusal row, which sees an entry written that trusts nothing; refusing the
-// hub as well fails the hub row; refusing a registration that supplied its own
-// policy fails the pinned row.
+// hub as well fails the hub row; reporting the hub registered offline as not
+// advertised fails the hub row; dropping the baseline from the outcome fails both
+// hub rows; refusing a registration that supplied its own policy fails the
+// pinned row.
 func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 	t.Parallel()
 	const offline = "offline: true\nworkspace: {}\n"
@@ -45,11 +76,20 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 		workspace string
 		hub       bool
 		identity  bool
+		// hubAnswersNotFound hands the registration a transport that answers every
+		// request with a not-found without dialing, so the hub's own host can be
+		// asked from a test and never reached.
+		hubAnswersNotFound bool
 
 		wantAsked   int32
 		wantRefused bool
-		wantPinned  bool
-		wantOffline bool
+		// wantTrust is the whole outcome a completed registration reports, with
+		// Reason left for the row's reason flags to fill.
+		wantTrust TrustFetchOutcome
+		// wantOfflineReason and wantNotFoundReason name the reason the outcome
+		// carries: the gate's offline refusal, or the no-trust answer.
+		wantOfflineReason  bool
+		wantNotFoundReason bool
 		// wantOnDisk is a string the written entry must carry; wantAbsent is one it
 		// must not.
 		wantOnDisk string
@@ -59,7 +99,7 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			name:       "an online workspace asks the registry once and pins what it advertises",
 			workspace:  "workspace: {}\n",
 			wantAsked:  1,
-			wantPinned: true,
+			wantTrust:  TrustFetchOutcome{Pinned: true, Identities: 1},
 			wantOnDisk: "dev@example.com",
 		},
 		{
@@ -71,15 +111,27 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			name:       "an offline workspace registers a registry whose trust is pinned by hand",
 			workspace:  offline,
 			identity:   true,
+			wantTrust:  TrustFetchOutcome{Skipped: true},
 			wantOnDisk: handIdentity,
 			wantAbsent: "dev@example.com",
 		},
 		{
-			name:        "an offline workspace registers the hub on its built-in baseline",
-			workspace:   offline,
-			hub:         true,
-			wantOffline: true,
-			wantOnDisk:  workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer,
+			name:              "an offline workspace registers the hub on its built-in baseline, never asked",
+			workspace:         offline,
+			hub:               true,
+			wantTrust:         TrustFetchOutcome{Baseline: true},
+			wantOfflineReason: true,
+			wantOnDisk:        workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer,
+		},
+		{
+			name:               "the hub asked online and advertising nothing is written on its built-in baseline",
+			workspace:          "workspace: {}\n",
+			hub:                true,
+			hubAnswersNotFound: true,
+			wantAsked:          1,
+			wantTrust:          TrustFetchOutcome{NotAdvertised: true, Baseline: true},
+			wantNotFoundReason: true,
+			wantOnDisk:         workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,6 +145,10 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 				Host:       host,
 				FetchTrust: true,
 				Workspace:  true,
+			}
+			if tc.hubAnswersNotFound {
+				contacted = &atomic.Int32{}
+				opts.TrustClient = &http.Client{Transport: notFoundTransport{asked: contacted}}
 			}
 			if tc.identity {
 				opts.Identities = []string{handIdentity + "=https://issuer.example.test"}
@@ -125,15 +181,20 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Add: %v", err)
 			}
-			if res.Trust.Pinned != tc.wantPinned {
-				t.Errorf("pinned = %v; want %v (trust %+v)", res.Trust.Pinned, tc.wantPinned, res.Trust)
+			want := tc.wantTrust
+			switch {
+			case tc.wantOfflineReason:
+				want.Reason = "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error()
+			case tc.wantNotFoundReason:
+				want.Reason = registrytrust.ErrNoTrustAdvertised().Error()
 			}
-			offlineReason := "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error()
-			if gotOffline := res.Trust.NotAdvertised && res.Trust.Reason == offlineReason; gotOffline != tc.wantOffline {
-				t.Errorf("trust = %+v; want the offline refusal as a not-advertised reason: %v", res.Trust, tc.wantOffline)
+			// The property the hub's offline row exists for, named on its own so a
+			// failure says which fact went wrong rather than only that two values differ.
+			if tc.wantOfflineReason && res.Trust.NotAdvertised {
+				t.Errorf("a registry the offline posture kept from being asked was reported as advertising nothing: %+v", res.Trust)
 			}
-			if tc.identity && !res.Trust.Skipped {
-				t.Errorf("a registration pinned by hand fetched anyway: %+v", res.Trust)
+			if res.Trust != want {
+				t.Errorf("trust = %+v; want %+v", res.Trust, want)
 			}
 			if !strings.Contains(string(ws), host) {
 				t.Errorf("the registration wrote no entry:\n%s", ws)

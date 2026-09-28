@@ -335,14 +335,16 @@ official baseline.
 
 When the registry advertises no trust policy (a 404 or an unreachable endpoint),
 the add does not fail: it writes the policy from the flags (or an empty policy)
-and prints a notice suggesting manual --identity / --key pinning.
+and prints a notice suggesting manual --identity / --key pinning. The official
+hub writes its built-in baseline instead, and the notice says the baseline was
+pinned.
 
 When the workspace is offline the advertised policy cannot be fetched, so the
 registry is never asked. Adding a registry other than the official hub is then
 refused unless --identity or --key supplies the policy, rather than writing an
 entry that trusts nothing: register it once while online, or pin it by hand.
-Adding the official hub offline pins its built-in baseline, and a manual policy
-registers offline exactly as it does online.
+Adding the official hub offline pins its built-in baseline, with a notice saying
+so, and a manual policy registers offline exactly as it does online.
 
 Existing settings in the target config file are preserved.`,
 		Args: cobra.ExactArgs(1),
@@ -510,19 +512,22 @@ func writeRegistrationOutcome(out, errOut io.Writer, delivery authoredcontent.De
 // delivery leaves free for prose, and says nothing where the outcome is already
 // recoverable from the answer.
 //
-// Under a writing delivery both outcomes go to Out, which is where a person
-// watching a terminal reads them.
+// Under a writing delivery every outcome goes to Out, which is where a person
+// watching a terminal reads it.
 //
 // Under a reporting delivery Out holds one parseable document and nothing else,
 // so a notice there would leave a caller unable to read the answer it asked for.
-// The two outcomes are not equally recoverable from that document, and it is the
+// The outcomes are not equally recoverable from that document, and it is the
 // difference between them — not the delivery alone — that decides this. A pinned
 // policy IS the reported content: it is the trust policy the notice would have
 // described, so a notice about it would be a duplicate, and it is dropped. The
-// not-advertised outcome is not in the content at all — it reports an absence and
-// names the flags that supply a policy by hand, and content that simply carries
-// no identities conveys neither — so it goes to ErrOut, where it is beside the
-// answer instead of inside it.
+// built-in baseline is dropped on the same ground: it too is a pinned policy the
+// reported content carries, and what its notice adds — why no advertised policy
+// was taken — leaves the caller nothing to supply by hand. The not-advertised
+// outcome with no baseline behind it is not in the content at all — it reports an
+// absence and names the flags that supply a policy by hand, and content that
+// simply carries no identities conveys neither — so it goes to ErrOut, where it is
+// beside the answer instead of inside it.
 //
 // A caller that discards ErrOut still loses that advisory. That is the accepted
 // cost of leaving the reported document's shape alone, and the alternative —
@@ -534,7 +539,7 @@ func writeTrustFetchNotice(out, errOut io.Writer, delivery authoredcontent.Deliv
 		return
 	}
 	if delivery.Reports() {
-		if !res.Trust.NotAdvertised {
+		if res.Trust.Pinned || res.Trust.Baseline {
 			return
 		}
 		out = errOut
@@ -545,10 +550,15 @@ func writeTrustFetchNotice(out, errOut io.Writer, delivery authoredcontent.Deliv
 	_, _ = io.WriteString(out, notice)
 }
 
-// trustFetchNotice composes what the advertised-trust fetch did, in the two cases
-// that have something to say. A skipped fetch says nothing: the operator either
-// supplied a policy outright or asked for no fetch, so there is no outcome to
-// report and a line saying so would be noise on every manual add.
+// trustFetchNotice composes what the advertised-trust fetch did, in the three
+// cases that have something to say. A skipped fetch says nothing: the operator
+// either supplied a policy outright or asked for no fetch, so there is no outcome
+// to report and a line saying so would be noise on every manual add.
+//
+// The built-in baseline is stated ahead of the not-advertised case, because both
+// are set where the hub was asked and advertised nothing, and the entry then
+// carries a policy: telling the reader to pin identities by hand would send them
+// to replace trust they already have.
 //
 // It is the one composition of these sentences, and every stream that carries
 // one consumes what it returns. A second phrasing written for another stream
@@ -560,6 +570,8 @@ func trustFetchNotice(host string, t registryops.TrustFetchOutcome) string {
 	switch {
 	case t.Pinned:
 		return fmt.Sprintf("Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
+	case t.Baseline:
+		return fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (%s)\n", host, t.Reason)
 	case t.NotAdvertised:
 		return fmt.Sprintf("Notice: registry %s advertises no trust config (%s); pin identities manually with --identity/--key\n", host, t.Reason)
 	}

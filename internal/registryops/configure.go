@@ -115,15 +115,24 @@ type AddOptions struct {
 // TrustFetchOutcome is what the advertised-trust fetch did, as a value rather
 // than as a line of prose.
 //
-// The three outcomes are distinguished because they mean different things to a
+// The outcomes are distinguished because they mean different things to a
 // caller. Pinned says the registry advertised a policy and it was taken.
-// NotAdvertised says the registry advertised nothing, which is not a failure —
-// the registration proceeds on the flags — and Reason carries what the endpoint
-// did. Skipped says no fetch was attempted, because a manual policy overrode it
-// or the caller asked for none.
+// NotAdvertised says the registry was asked and advertised nothing — a
+// not-found, or an endpoint that could not be reached — which is not a failure:
+// the registration proceeds on the flags, and Reason carries what the endpoint
+// did. Baseline says the entry carries the built-in baseline, which only the
+// official hub has, because no advertised policy was taken, and Reason says why.
+// Skipped says no fetch was attempted, because a manual policy overrode it or
+// the caller asked for none.
+//
+// Baseline and NotAdvertised answer different questions — what the entry now
+// trusts, and whether the registry was asked and had nothing to give — so both
+// are set where the hub was asked and advertised nothing, and Baseline alone
+// where the offline posture refused the fetch and the hub was never asked.
 type TrustFetchOutcome struct {
 	Pinned        bool   `json:"pinned"`
 	NotAdvertised bool   `json:"notAdvertised,omitempty"`
+	Baseline      bool   `json:"baseline,omitempty"`
 	Skipped       bool   `json:"skipped,omitempty"`
 	Identities    int    `json:"identities,omitempty"`
 	Reason        string `json:"reason,omitempty"`
@@ -160,14 +169,16 @@ type AddResult struct {
 //     against this pinned copy, never a live re-fetch.
 //   - Graceful fallback. A registry that advertises nothing — a not-found, or an
 //     unreachable endpoint — is not an error: the registration proceeds on the
-//     flags and the result says the policy was not advertised. A document that
-//     fetched but did not decode IS an error, because the endpoint answered with
-//     content that is not a usable trust policy.
+//     flags, or for the hub on its built-in baseline, and the result says the
+//     policy was not advertised and, for the hub, that the baseline was pinned.
+//     A document that fetched but did not decode IS an error, because the
+//     endpoint answered with content that is not a usable trust policy.
 //   - No first use offline. Where the offline posture refuses the fetch, the
 //     registry was never asked, so there is nothing to fall back from: a
 //     registry other than the official hub is refused with
 //     registrytrust.ErrOfflineRegistrationWithoutTrustPolicy rather than written
-//     with no policy, while the hub proceeds on its built-in baseline.
+//     with no policy, while the hub proceeds on its built-in baseline and the
+//     result says the baseline was pinned, never that the hub advertised nothing.
 //
 // The write target is resolved before any fetch, so a write-target misuse or an
 // unresolvable global path fails before the network is reached.
@@ -178,8 +189,8 @@ type AddResult struct {
 // registry registers under one trust outcome wherever the registration was asked
 // for, and an offline registration refuses in one sentence wherever it was asked
 // for. An offline workspace is refused by that gate, before any dial; the hub then
-// proceeds on its baseline with the refusal as the reason the policy was not
-// advertised, and every other registry is refused. A manual policy skips the
+// proceeds on its baseline, reported as the baseline pinned with the refusal as
+// the reason, and every other registry is refused. A manual policy skips the
 // fetch, so it registers offline exactly as it does online.
 //
 // Under a reporting delivery it composes the same document and returns it on the
@@ -315,12 +326,13 @@ func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client
 }
 
 // pinAdvertisedTrust fetches host's advertised trust document and copies its
-// fields onto reg, reporting which of the three outcomes happened.
+// fields onto reg, reporting which outcome happened.
 //
 // A registry that advertises nothing — a not-found mapped to the no-trust
 // sentinel, or an unreachable endpoint reported as a transport error — is
 // tolerated: it leaves reg's policy for the caller's manual flags, or the
-// empty-or-baseline default, to fill. A MALFORMED advertised document, one that
+// empty-or-baseline default, to fill, and where baseline says that default is the
+// built-in baseline the outcome says so. A MALFORMED advertised document, one that
 // fetched but did not decode, is a hard error: the endpoint answered with
 // content that is not a usable trust policy, which is a real misconfiguration
 // the operator should see rather than a registry that simply advertises none.
@@ -343,6 +355,12 @@ func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client
 // here, because a manual policy skips the fetch. The refusal is recognised by the
 // gate's own condition rather than by reading whether the workspace is offline, so
 // the offline posture is still decided once, by the network-egress gate.
+//
+// 🔴 The hub registered offline is therefore reported as the baseline pinned and
+// NEVER as not-advertised. NotAdvertised states an answer the registry gave, and a
+// registry the offline posture kept from being asked gave none; reporting one would
+// tell a caller the hub publishes no policy on the strength of a request that was
+// never sent.
 func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig, host string, client *http.Client, baseline bool) (TrustFetchOutcome, error) {
 	adv, ferr := registrytrust.Fetch(ctx, client, host)
 	if ferr != nil {
@@ -353,11 +371,12 @@ func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig
 		if errors.Is(ferr, registrytrust.ErrMalformedTrust()) {
 			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %w", ferr)
 		}
-		if !baseline && errors.Is(ferr, egress.ErrOfflineEgress()) {
+		neverAsked := errors.Is(ferr, egress.ErrOfflineEgress())
+		if neverAsked && !baseline {
 			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %s: %w",
 				host, registrytrust.ErrOfflineRegistrationWithoutTrustPolicy())
 		}
-		return TrustFetchOutcome{NotAdvertised: true, Reason: ferr.Error()}, nil
+		return TrustFetchOutcome{NotAdvertised: !neverAsked, Baseline: baseline, Reason: ferr.Error()}, nil
 	}
 
 	reg.Signing.Required = adv.RequiresSignatures

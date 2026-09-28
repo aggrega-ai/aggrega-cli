@@ -346,9 +346,11 @@ predicts the write's: if the dry run refuses, init would have refused. Pass
 --force alongside it to see the merge an overwriting write would produce.
 
 Under --dry-run standard output carries that content and nothing else, so it stays
-parseable. A registry that advertises no trust policy still produces its notice,
-on standard error: read that stream too, or a configuration seeded with no trust
-policy arrives without the advice to pin identities by hand.`,
+parseable. A registry seeded with no trust policy, because it advertises none,
+still produces its notice, on standard error: read that stream too, or that
+configuration arrives without the advice to pin identities by hand. A pinned
+policy, whether advertised or the hub's built-in baseline, is in the content
+itself and produces no notice.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// init writes the global config, so it resolves the workspace WITHOUT
