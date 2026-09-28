@@ -45,8 +45,8 @@ var expectation = testInputExpectation{
 			Importers: []expectedImporter{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/cmd/aggrega", Reach: []string{".", ".aggrega", ".aggrega-config.yaml", ".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
-				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket", Reach: []string{".gitmodules", "aggrega-pdk"}},
-				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket", Reach: []string{".gitmodules", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine", Reach: []string{".gitmodules", "aggrega-pdk"}},
@@ -54,6 +54,7 @@ var expectation = testInputExpectation{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/lintops", Reach: []string{".gitmodules"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/mcp", Reach: []string{".", ".aggrega", ".aggrega-config.yaml", ".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/pullops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/serve", Reach: []string{".gitmodules", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/tools/cbororacle", Reach: []string{"aggrega-abi"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/tools/typegen", Reach: []string{"aggrega-abi"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/validateops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
