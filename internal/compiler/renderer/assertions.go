@@ -8,14 +8,17 @@ import (
 )
 
 // AssertionContext is the template data bound to one assertion-evaluation
-// invocation. The shape matches chapter 08 §The template context.
+// invocation. The shape matches §The template context in
+// language-reference/templates/assertions-block.md.
 //
-// Field availability by phase:
+// Field availability by the stage each assertion kind is evaluated at:
 //
-//   - Step 4b (Component / Feature assertions): Values, Infra, Uses,
-//     Features, Metadata are populated; Provides, Locals, Recipe are nil
-//     (a missingkey=error halt fires on accidental references).
-//   - Step 5b (Recipe / FeatureRecipe assertions): all fields populated.
+//   - Component / Feature assertions, at the graph stage (the finalised
+//     graph): Values, Infra, Uses, Features, Metadata are populated;
+//     Provides, Locals, Recipe are nil (a missingkey=error halt fires on
+//     accidental references).
+//   - Recipe / FeatureRecipe assertions, at the hydrated stage (each node's
+//     locals and provides resolved): all fields populated.
 //
 // Iteration order across nested maps is alphabetical-key-ordered (matches
 // the renderer's TemplateAlphabeticalMapDeep discipline). Author order is
@@ -38,9 +41,10 @@ type AssertionContext struct {
 	Recipe   *AssertionRecipeContext `json:"recipe"`
 }
 
-// AssertionRecipeContext exposes Recipe-specific surface to Step 5b
-// assertions: metadata for identity (name, version, etc.) plus source
-// for the chart or module the Recipe sources. Nil at Step 4b.
+// AssertionRecipeContext exposes Recipe-specific surface to Recipe /
+// FeatureRecipe assertions: metadata for identity (name, version, etc.) plus
+// source for the chart or module the Recipe sources. Nil for Component /
+// Feature assertions.
 //
 // The json tags carry the same reason as AssertionContext's: the delivered key
 // set is what assertion bodies are authored against, so it is declared here.

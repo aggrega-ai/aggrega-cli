@@ -102,7 +102,7 @@ func TestBuildToolRefusesADriftedLockfile(t *testing.T) {
 		t.Fatalf("a drifted lockfile must refuse the build; got a success payload: %s", res.Content[0].Text)
 	}
 	text := res.Content[0].Text
-	if !strings.Contains(text, "no longer matches the current catalog") {
+	if !strings.Contains(text, lockfile.ErrLockfileDrift().Error()) {
 		t.Errorf("the refusal must come from the lockfile-drift verification, whose condition it does not "+
 			"carry:\n%s", text)
 	}

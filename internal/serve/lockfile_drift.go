@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -130,7 +131,7 @@ func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closu
 		return nil
 	}
 	if err := lockfile.Verify(lf, cl); err != nil {
-		message := fmt.Sprintf("Lockfile drifted from current closure. Run `aggrega pull --upgrade --release <release>` to update. Details: %v", err)
+		message := fmt.Sprintf("Lockfile drifted; %s. Details: %v", compilerops.LockfileDriftRemedy("<release>"), err)
 		s.setDiagnostics(lockfilePath, []Diagnostic{
 			{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: message, ConditionCodes: conditionCodesOf(err)},
 		})

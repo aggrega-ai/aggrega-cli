@@ -249,6 +249,21 @@ var errPreviewInputsZeroValue = stderrors.New(
 	"preview inputs were not built by NewPreviewInputs, so no external-input seam was chosen; " +
 		"build them with NewPreviewInputs, naming either a fetch service or NoExternalInputs")
 
+// LockfileDriftRemedy is the advice a lockfile-drift finding carries: the
+// command that re-resolves release and rewrites its lockfile. release is the
+// Release's path, or a placeholder where the reporting surface holds none.
+//
+// It is the one home of that advice for every surface reporting the condition
+// on a lockfile it read from disk — the command line's build and the editor's
+// drift warning among them — so the two cannot come to name different remedies
+// for one condition. It names an act that clears the condition whichever axis
+// drifted — an entity, a library, a plugin or a Release file — which is why it
+// speaks of the Release rather than of a catalog. An entry that needs less, such
+// as an edited Release file, names the lighter command on itself.
+func LockfileDriftRemedy(release string) string {
+	return fmt.Sprintf("run `aggrega pull --upgrade --release %s` to re-resolve the Release and rewrite its lockfile", release)
+}
+
 // errComposedLockfileRefused is the refusal for a composed lockfile (see
 // WithComposedLockfile) that the build's drift verify disagrees with. It names an
 // internal inconsistency rather than a condition of the workspace: the lockfile
@@ -743,8 +758,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 			if in.lockfileComposed {
 				return out, &composedLockfileRefusal{findings: err}
 			}
-			return out, fmt.Errorf("%w; run `aggrega pull --upgrade --release %s` to refresh the lockfile against current catalog state",
-				err, in.releasePath)
+			return out, fmt.Errorf("%w; %s", err, LockfileDriftRemedy(in.releasePath))
 		}
 	}
 

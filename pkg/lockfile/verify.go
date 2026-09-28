@@ -48,7 +48,7 @@ func ErrLockfileDrift() error { return errLockfileDrift }
 
 var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 	ShortCode: "E0130",
-	Message:   "lockfile: out of date; it no longer matches the current catalog",
+	Message:   "lockfile: out of date; it no longer matches what its Release resolves to",
 	RulePlace: cerrors.RuleNoStageReaches("Composing a build's inputs evaluates the rule, as a lockfile that " +
 		"already existed is held to the closure just computed, across every axis it pins. The walk pins " +
 		"what a Release reaches rather than compiling it, so no declared stage of a compilation holds " +
