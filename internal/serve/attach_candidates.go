@@ -353,7 +353,16 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 
 	// The graph comes off the finished payload: the envelope above answered every
 	// refusal, so the run this reads labels from is one that ended.
-	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(),
+	//
+	// The candidates are drawn from the lookup the graph was built from — the one
+	// over this Release's own catalog stack — so a Feature the Release could not
+	// reach is never offered for a node of its graph. The parameter resolved above,
+	// inside the preview, so resolving it again here cannot refuse.
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	if paramErr != nil {
+		return AttachCandidatesResult{}, paramErr
+	}
+	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, s.catalogFor(releasePath), s.overlayDocs(),
 		preview.pipeline.Completed().IRGraph, node)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the

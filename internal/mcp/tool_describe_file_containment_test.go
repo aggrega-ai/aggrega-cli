@@ -87,7 +87,7 @@ spec:
 					"containment verdict below would be taken against the wrong root", tw.root, ws)
 			}
 
-			want, ok := compilerops.ResolveEntity(tw.newView(nil), "probe-module")
+			want, ok := compilerops.ResolveEntity(tw.newView("", nil), "probe-module")
 			if !ok {
 				t.Fatalf("the oracle resolved nothing from %s, so nothing here is observable", catalogDir)
 			}

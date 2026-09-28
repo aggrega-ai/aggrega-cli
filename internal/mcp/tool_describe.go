@@ -259,7 +259,8 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the catalog lookup.", err, "component"))
 	}
-	view := tw.newView(nil)
+	// A name concerns no one Release, so it resolves over the workspace's own stack.
+	view := tw.newView("", nil)
 
 	match, ok := compilerops.ResolveEntity(view, name)
 	if !ok {
@@ -401,7 +402,7 @@ func (s *server) describeRelease(
 		return errorResult(refusal)
 	}
 	lf := loadReleaseLockfile(releasePath)
-	view := tw.newView(lf)
+	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
 		View:            view,

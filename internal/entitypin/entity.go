@@ -225,7 +225,9 @@ func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace) func(capabi
 	return func(capability string) (catalog.ServingProvider, bool, error) {
 		cfg := rw.Config()
 		if view == nil {
-			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs(nil), nil)
+			// Pinning concerns one entity rather than a Release, so the
+			// workspace's own stack is the one read.
+			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs("", nil), nil)
 		}
 		return view.ServingProvider(capability, cfg.Plugins.ProviderTargetURIs())
 	}

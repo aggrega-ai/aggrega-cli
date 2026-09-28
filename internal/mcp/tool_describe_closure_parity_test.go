@@ -292,7 +292,7 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 	}
 	lf := loadReleaseLockfile(releasePath)
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
-		View:            tw.newView(lf),
+		View:            tw.newView(releasePath, lf),
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,

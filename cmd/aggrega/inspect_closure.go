@@ -56,7 +56,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(catalogDirs)
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
 
 	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -93,7 +93,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		// the author has to fix. Where no refusal explains it, the reference may
 		// name an entity that is sitting in a directory this workspace does not
 		// read, so the workspace's own account of where it reads travels too.
-		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote())
+		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
 	}
 
 	renderClosureListing(opts, lf, resolved)

@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Source identifies which configuration layer contributed the
@@ -62,13 +64,17 @@ func (s Source) String() string {
 const EnvConfigOverride = "AGGREGA_CONFIG"
 
 // appendSlices captures the per-layer slices deferred to the post-overlay
-// concatenation pass: the five `_append` companions, plus the CLI base list.
+// concatenation pass: the five `_append` companions, plus the CLI base list,
+// plus the layer's Release catalog entries.
 // The `_append` companions defer concatenation until after the base overlay
 // completes, so the `_append` semantic composes correctly across layers (each
 // layer's `_append` extends the final merged base in precedence order). The CLI
 // base list rides the same pass — captured per layer and stripped from the
 // overlaid base — because the CLI list composes across the cascade rather than
-// whole-replacing, so global and workspace CLI plugins both register.
+// whole-replacing, so global and workspace CLI plugins both register. The
+// Release entries ride it for the same reason: they compose one Release at a
+// time rather than the nearest layer's map replacing every other layer's, and
+// they arrive already anchored to their declaring file by the single-file load.
 type appendSlices struct {
 	CatalogDirs []string
 	Governance  []PluginRef
@@ -76,13 +82,14 @@ type appendSlices struct {
 	Importer    []PluginRef
 	Providers   []PluginRef
 	CLI         []CLIPluginRef
+	Releases    types.OrderedMap[ReleaseCatalogConfig]
 }
 
 // captureAppends extracts the deferred slices from a freshly-loaded layer
-// Config: the five `_append` companions and the CLI base list (which composes
-// rather than whole-replaces). The captured slices share storage with the
-// source Config; callers that subsequently mutate cfg should not also retain the
-// captured value.
+// Config: the five `_append` companions, the CLI base list (which composes
+// rather than whole-replaces), and the Release catalog entries. The captured
+// slices share storage with the source Config; callers that subsequently mutate
+// cfg should not also retain the captured value.
 func captureAppends(cfg Config) appendSlices {
 	return appendSlices{
 		CatalogDirs: cfg.Workspace.CatalogDirsAppend,
@@ -91,15 +98,19 @@ func captureAppends(cfg Config) appendSlices {
 		Importer:    cfg.Plugins.ImporterAppend,
 		Providers:   cfg.Plugins.ProvidersAppend,
 		CLI:         cfg.Plugins.CLI,
+		Releases:    cfg.Workspace.Releases,
 	}
 }
 
 // stripAppends zeroes the deferred fields on cfg: the five `_append`
-// companions and the CLI base list. Called on every layer's Config before
-// promoting it to merged (so the overlay pass does not carry these through) and
-// on the final merged Config. The CLI base is stripped here because its entries
-// are captured per layer and re-composed by applyAppends; leaving the overlaid
-// base in place would let the nearest layer's `cli` whole-replace the rest.
+// companions, the CLI base list and the Release catalog entries. Called on every
+// layer's Config before promoting it to merged (so the overlay pass does not
+// carry these through) and on the final merged Config. The CLI base is stripped
+// here because its entries are captured per layer and re-composed by
+// applyAppends; leaving the overlaid base in place would let the nearest layer's
+// `cli` whole-replace the rest. The Release entries are stripped for the same
+// reason, and for a second one: the overlay decode reads them as the file wrote
+// them, relative to that file, where the captured copy is already anchored.
 func stripAppends(cfg *Config) {
 	cfg.Workspace.CatalogDirsAppend = nil
 	cfg.Plugins.GovernanceAppend = nil
@@ -107,6 +118,7 @@ func stripAppends(cfg *Config) {
 	cfg.Plugins.ImporterAppend = nil
 	cfg.Plugins.ProvidersAppend = nil
 	cfg.Plugins.CLI = nil
+	cfg.Workspace.Releases = types.OrderedMap[ReleaseCatalogConfig]{}
 }
 
 // applyAppends concatenates each layer's deferred slices onto the corresponding
@@ -114,7 +126,8 @@ func stripAppends(cfg *Config) {
 // never contribute (Default() leaves them nil). The empty-base case falls out
 // naturally — append onto a nil slice produces the appended slice. The CLI base
 // list composes here in cascade order (global entries first, then each tree
-// layer's), so a CLI plugin registers everywhere it is pinned.
+// layer's), so a CLI plugin registers everywhere it is pinned. The Release
+// entries compose here too, through foldReleaseCatalogs, in the same order.
 func applyAppends(merged *Config, layers ...appendSlices) {
 	for _, layer := range layers {
 		merged.Workspace.CatalogDirs = append(merged.Workspace.CatalogDirs, layer.CatalogDirs...)
@@ -123,6 +136,7 @@ func applyAppends(merged *Config, layers ...appendSlices) {
 		merged.Plugins.Importer = append(merged.Plugins.Importer, layer.Importer...)
 		merged.Plugins.Providers = append(merged.Plugins.Providers, layer.Providers...)
 		merged.Plugins.CLI = append(merged.Plugins.CLI, layer.CLI...)
+		foldReleaseCatalogs(&merged.Workspace.Releases, layer.Releases)
 	}
 }
 

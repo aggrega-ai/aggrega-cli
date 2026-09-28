@@ -113,7 +113,7 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 		return errorResult(pathRefused)
 	}
 	lf := loadReleaseLockfile(releasePath)
-	view := tw.newView(lf)
+	view := tw.newView(releasePath, lf)
 
 	// The render is skipped. This reads how the node was reached and discards
 	// everything else, and the graph is byte-identical whether or not the render

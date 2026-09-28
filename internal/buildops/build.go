@@ -434,10 +434,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 
-	// Effective first-win catalog search stack: the flag dirs prepended to the
-	// workspace catalog_dirs, with the workspace's conventional catalog
-	// directory appended last when it exists.
-	dirs := rw.ResolveCatalogDirs(cfg.CatalogDirs)
+	// Effective first-win catalog search stack for this Release: the flag dirs
+	// prepended to the directories the workspace configuration gives it, with
+	// the workspace's conventional catalog directory appended last when it
+	// exists.
+	dirs := rw.ResolveCatalogDirs(releasePath, cfg.CatalogDirs)
 
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
 	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity

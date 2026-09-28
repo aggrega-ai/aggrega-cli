@@ -43,8 +43,9 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	// configured list, so a workspace whose entities sit in the conventional
 	// directory is scanned rather than refused, and a workspace that switched the
 	// local catalog off with an empty `catalog_dirs` is refused rather than
-	// silently scanning nothing.
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	// silently scanning nothing. The whole catalog concerns no one Release, so the
+	// workspace's own stack is the one scanned.
+	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
 	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
 			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or validate a specific Release with --release)",
@@ -130,7 +131,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -165,7 +166,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		// through the same renderer. Where no refusal explains it, the reference
 		// may name an entity sitting in a directory this workspace does not read,
 		// so the workspace's own account of where it reads travels too.
-		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities(), rw.LocalCatalogAdviceNote())
+		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
 	}
 
 	// The record loaded above is threaded into the validation, not just into the

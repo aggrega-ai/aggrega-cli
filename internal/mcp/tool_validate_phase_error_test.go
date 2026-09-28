@@ -106,7 +106,7 @@ func TestValidateDiagnosticsPublishesPhaseErrorBesidePerViolationFindings(t *tes
 			// rather than transcribed from it.
 			tw := resolvedToolWorkspace(t, s, root, dirs)
 			lf := loadReleaseLockfile(releasePath)
-			view := tw.newView(lf)
+			view := tw.newView(releasePath, lf)
 			resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 				View:            view,
 				ReleasePath:     releasePath,

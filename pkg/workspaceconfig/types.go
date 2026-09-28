@@ -65,6 +65,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Config carries the workspace's full configuration. Fields map to
@@ -522,9 +523,48 @@ func baselineIdentities(ids []baselineIdentity) []TrustedIdentity {
 // each precedence layer the entries here are concatenated onto the
 // resolved CatalogDirs list. LoadWithGlobal zeroes this field on the
 // returned Config.
+//
+// Releases gives a Release file its own catalog directories, keyed by that
+// file. On a resolved Config each key is the Release file's absolute path, with
+// symbolic links resolved, and each entry's directories are absolute; the
+// cascade composes the entries one Release at a time, the way it composes
+// CatalogDirs and CatalogDirsAppend for the whole workspace. It is read through
+// ResolveCatalogDirs and nowhere else, which is what keeps every surface that
+// resolves a Release reading the same directories for it.
 type WorkspaceConfig struct {
+	CatalogDirs       []string                               `yaml:"catalog_dirs"`
+	CatalogDirsAppend []string                               `yaml:"catalog_dirs_append"`
+	Releases          types.OrderedMap[ReleaseCatalogConfig] `yaml:"releases,omitempty"`
+}
+
+// ReleaseCatalogConfig is one Release's own catalog directories: the same two
+// keys the workspace block carries, scoped to that Release.
+//
+// CatalogDirs, when the entry writes it, replaces the workspace's list for this
+// Release; nil means the entry leaves the workspace's list in place, and a
+// non-nil empty list is the entry's statement that this Release reads no local
+// catalog. CatalogDirsAppend is added after whichever of the two applies.
+type ReleaseCatalogConfig struct {
 	CatalogDirs       []string `yaml:"catalog_dirs"`
 	CatalogDirsAppend []string `yaml:"catalog_dirs_append"`
+}
+
+// MarshalYAML writes an entry the way a configuration file states it: a list the
+// entry does not write is left out, and an empty list it does write is written
+// empty. Without this an entry keeping the workspace's list would print exactly
+// as one that reads no local catalog, which are the two statements the nil-ness
+// of CatalogDirs exists to keep apart.
+func (e ReleaseCatalogConfig) MarshalYAML() (any, error) {
+	type written struct {
+		CatalogDirs       *[]string `yaml:"catalog_dirs,omitempty"`
+		CatalogDirsAppend []string  `yaml:"catalog_dirs_append,omitempty"`
+	}
+	w := written{CatalogDirsAppend: e.CatalogDirsAppend}
+	if e.CatalogDirs != nil {
+		dirs := e.CatalogDirs
+		w.CatalogDirs = &dirs
+	}
+	return w, nil
 }
 
 // ResolvedArtifactCacheDir returns the configured on-disk artifact cache

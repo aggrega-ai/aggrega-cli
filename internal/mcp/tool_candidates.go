@@ -173,7 +173,10 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to report attach candidates.", err, "feature"))
 	}
-	view := tw.newView(nil)
+	// A label set and a workspace entity name no Release, so both are answered
+	// from the workspace's own stack; a graph node is answered from its
+	// Release's, below.
+	view := tw.newView("", nil)
 
 	switch {
 	case a.Labels != nil:
@@ -226,7 +229,7 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 		return errorResult(refusal)
 	}
 	lf := loadReleaseLockfile(releasePath)
-	view := tw.newView(lf)
+	view := tw.newView(releasePath, lf)
 
 	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
 		ctx,

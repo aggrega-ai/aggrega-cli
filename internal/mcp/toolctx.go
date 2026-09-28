@@ -328,7 +328,17 @@ type toolWorkspace struct {
 	root     string
 	cfg      workspaceconfig.Config
 	cacheDir string
-	dirs     []string
+
+	// dirs is the workspace's own catalog search stack, which is what an
+	// operation concerning no one Release reads: a whole-catalog validation, a
+	// by-name description, the workspace's entity listing. A Release-scoped read
+	// asks catalogDirsFor instead, so a Release the configuration gives its own
+	// directories is answered from them.
+	dirs []string
+
+	// flagDirs are the call's own catalog_dirs argument, kept so the stack for a
+	// Release is resolved from the same argument the workspace stack was.
+	flagDirs []string
 
 	// transport is carried here rather than read from the server at each call
 	// site, so the one helper that resolves a path argument has everything its
@@ -344,7 +354,9 @@ type toolWorkspace struct {
 // in turn is followed by the conventional `catalog` directory at the workspace
 // root when that directory exists. A workspace that declares an empty
 // `catalog_dirs` resolves no local catalog at all, and a call against it reads
-// only what the cache and the lockfile already carry.
+// only what the cache and the lockfile already carry. A call about one Release
+// reads that Release's stack through catalogDirsFor, which the workspace
+// configuration may give directories of its own.
 func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*toolWorkspace, error) {
 	start := rootArg
 	flagRoot := rootArg
@@ -362,18 +374,30 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 		root:      root,
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
-		dirs:      rw.ResolveCatalogDirs(catalogDirs),
+		dirs:      rw.ResolveCatalogDirs("", catalogDirs),
+		flagDirs:  catalogDirs,
 		transport: s.transport,
 	}
 	return tw, nil
 }
 
+// catalogDirsFor returns the catalog search stack for release, resolved through
+// the one resolver every command and the daemon read a Release's directories
+// through, from this call's own catalog_dirs argument. An empty release is the
+// workspace's own stack.
+func (tw *toolWorkspace) catalogDirsFor(release string) []string {
+	if release == "" {
+		return tw.dirs
+	}
+	return tw.rw.ResolveCatalogDirs(release, tw.flagDirs)
+}
+
 // newView builds the request-scoped catalog lookup for a tool call: a lazy
-// lookup over the workspace's catalog search stack with a nil puller, so the
-// RENDER never networks — a cache miss is a loud halt rather than a registry
-// fetch. When a lockfile is present its pins are threaded so every resolution
-// is verified-on-read against the pinned digests, matching the non-daemon build
-// front door.
+// lookup over the catalog search stack for release — the workspace's own where
+// release is empty — with a nil puller, so the RENDER never networks — a cache
+// miss is a loud halt rather than a registry fetch. When a lockfile is present
+// its pins are threaded so every resolution is verified-on-read against the
+// pinned digests, matching the non-daemon build front door.
 //
 // The nil puller bounds the render and not the call around it. A build asked to
 // resolve its dependencies first does reach a registry, in a separate step that
@@ -381,8 +405,8 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 // same non-networking one, held to the pins that step wrote. So the render is
 // hermetic given a filled lockfile however the lockfile came to be filled, which
 // is the same posture the command-line build holds after its own fill.
-func (tw *toolWorkspace) newView(lf *lockfile.Lockfile) *catalog.LazyLookup {
-	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.dirs, nil)
+func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog.LazyLookup {
+	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.catalogDirsFor(release), nil)
 	if lf != nil {
 		v.SetPins(catalog.PinsFromLockfile(lf))
 	}

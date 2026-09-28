@@ -218,6 +218,11 @@ func load(path string) (Config, error) {
 	if err := validateArtifactCacheDir(p.ArtifactCacheDir, path); err != nil {
 		return Config{}, err
 	}
+	releases, err := anchorReleaseCatalogs(p.Workspace.Releases, path)
+	if err != nil {
+		return Config{}, err
+	}
+	p.Workspace.Releases = releases
 	if err := validateSigningKinds(p.Signing.Kinds, path); err != nil {
 		return Config{}, err
 	}

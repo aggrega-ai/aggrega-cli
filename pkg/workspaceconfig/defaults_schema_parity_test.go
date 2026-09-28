@@ -52,6 +52,11 @@ const defaultsCoverageLocation = "pkg/workspaceconfig/defaults_schema_parity_tes
 // entry to make sense of the value it is compared against.
 const defaultsListSegment = "[]"
 
+// defaultsMapSegment marks where a setting's dotted path enters a map entry —
+// the value one key of a map setting carries — for the reason
+// defaultsListSegment marks a list entry.
+const defaultsMapSegment = "{}"
+
 // schemaDefault is one default the configuration schema declares, at the path a
 // config file writes the setting at.
 type schemaDefault struct {
@@ -154,10 +159,19 @@ func configSchemaDefaults(schema string) ([]schemaDefault, error) {
 				// rather than descended where they are declared, so a definition
 				// block itself declares no setting.
 			case "additionalProperties":
-				// A closed object states that there is nothing further to find.
-				// A subschema here, or an open object, admits keys the walk
-				// cannot enumerate, so both are refused.
-				if closed, ok := node[keyword].(bool); !ok || closed {
+				// A closed object states that there is nothing further to find,
+				// and a map's entry is descended below. An object left open by
+				// `true`, or one declaring properties beside a subschema for
+				// every other key, admits keys the walk cannot enumerate, so both
+				// are refused.
+				if closed, ok := node[keyword].(bool); ok {
+					if closed {
+						return fmt.Errorf("%s admits additional properties by schema, so the walk "+
+							"cannot enumerate what it declares", describe(path))
+					}
+					continue
+				}
+				if !isSchemaMap(node) {
 					return fmt.Errorf("%s admits additional properties by schema, so the walk "+
 						"cannot enumerate what it declares", describe(path))
 				}
@@ -184,6 +198,12 @@ func configSchemaDefaults(schema string) ([]schemaDefault, error) {
 				return fmt.Errorf("%s declares a list whose entry is not a schema object", describe(path))
 			}
 			return walk(child, path+defaultsListSegment, seen)
+		}
+		if isSchemaMap(node) {
+			// A default declared on a field of a map's entry is a promise to a
+			// reader on the same terms as one on a list entry's field, so the
+			// entry is descended rather than recorded as a unit.
+			return walk(node["additionalProperties"].(map[string]any), path+defaultsMapSegment, seen)
 		}
 		props, ok := node["properties"].(map[string]any)
 		if !ok {
@@ -257,12 +277,18 @@ func defaultsFieldIndex(t reflect.Type, name string) (int, error) {
 // entries, so the value a decoded entry carries for a key its author omitted is
 // its type's zero value. A schema default on such a field is therefore a
 // promise that the zero value is what a reader gets, and comparing against a
-// zero-valued entry is what tests that promise.
+// zero-valued entry is what tests that promise. A path entering a map entry is
+// resolved the same way, against a zero value of the map's value type.
 func codeDefaultAt(path string) (any, error) {
 	v := reflect.ValueOf(Default())
 	for _, segment := range strings.Split(path, ".") {
 		name := strings.TrimSuffix(segment, defaultsListSegment)
-		enters := name != segment
+		entersList := name != segment
+		entersMap := false
+		if !entersList {
+			name = strings.TrimSuffix(segment, defaultsMapSegment)
+			entersMap = name != segment
+		}
 		if v.Kind() != reflect.Struct {
 			return nil, fmt.Errorf("the %q setting resolves through a %s, which declares no fields", path, v.Kind())
 		}
@@ -271,15 +297,35 @@ func codeDefaultAt(path string) (any, error) {
 			return nil, fmt.Errorf("the %q setting does not resolve: %w", path, err)
 		}
 		v = v.Field(i)
-		if enters {
+		switch {
+		case entersList:
 			if v.Kind() != reflect.Slice {
 				return nil, fmt.Errorf("the %q setting is written as a list entry, but the code declares "+
 					"the %q field as a %s rather than a list", path, name, v.Kind())
 			}
 			v = reflect.New(v.Type().Elem()).Elem()
+		case entersMap:
+			entry, err := orderedMapValueType(v.Type())
+			if err != nil {
+				return nil, fmt.Errorf("the %q setting is written as a map entry, but %w", path, err)
+			}
+			v = reflect.New(entry).Elem()
 		}
 	}
 	return v.Interface(), nil
+}
+
+// orderedMapValueType returns the value type of a field the code declares as an
+// ordered map, which is the type every map setting in the configuration is
+// decoded into. The value type is read off the map the ordered map holds, since
+// the ordered map exposes no other statement of it.
+func orderedMapValueType(t reflect.Type) (reflect.Type, error) {
+	if t.Kind() == reflect.Struct {
+		if f, ok := t.FieldByName("values"); ok && f.Type.Kind() == reflect.Map {
+			return f.Type.Elem(), nil
+		}
+	}
+	return nil, fmt.Errorf("the code declares the field as a %s rather than an ordered map", t)
 }
 
 // defaultsJSONShape renders a value into the shape the comparison is made in,

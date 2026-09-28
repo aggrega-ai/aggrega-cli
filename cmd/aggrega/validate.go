@@ -179,7 +179,9 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	}
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	// The single-entity scope names no Release — that is the --release scope's —
+	// so it reads the workspace's own stack.
+	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
 
 	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {

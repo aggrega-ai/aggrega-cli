@@ -113,7 +113,10 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(catalogDirs)
+	// An Aggregate is not a Release — several Releases may deploy one — so it is
+	// inspected over the workspace's own stack; --catalog selects another for one
+	// invocation.
+	dirs := rw.ResolveCatalogDirs("", catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)

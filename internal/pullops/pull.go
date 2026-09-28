@@ -571,11 +571,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// matter which directory the run is invoked from.
 	workspaceRoot := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	// Effective first-win catalog search stack: the flag dirs prepended to the
-	// workspace catalog_dirs. Resolved here (not by the caller) so a direct
-	// invocation and a build's automatic fill derive the identical stack under the
-	// same config.
-	dirs := rw.ResolveCatalogDirs(cfg.CatalogDirs)
+	// Effective first-win catalog search stack for this Release: the flag dirs
+	// prepended to the directories the workspace configuration gives it.
+	// Resolved here (not by the caller) so a direct invocation and a build's
+	// automatic fill derive the identical stack under the same config.
+	dirs := rw.ResolveCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs)
 	puller := cfg.Puller
 	if puller == nil {
 		// The discovery step consults the local registry index so a version recorded

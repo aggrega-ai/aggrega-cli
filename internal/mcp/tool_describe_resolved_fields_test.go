@@ -29,7 +29,7 @@ func describeOracle(t *testing.T, s *server, root, catalogDir, name string) comp
 	if err != nil {
 		t.Fatalf("resolve the oracle workspace: %v", err)
 	}
-	e, ok := compilerops.ResolveEntity(tw.newView(nil), name)
+	e, ok := compilerops.ResolveEntity(tw.newView("", nil), name)
 	if !ok {
 		t.Fatalf("the oracle resolved nothing for %q, so nothing can be asserted about it", name)
 	}

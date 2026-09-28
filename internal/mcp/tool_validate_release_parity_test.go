@@ -355,7 +355,7 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 			// builds internally (resolveToolWorkspace, lockfile load, view, closure).
 			tw := resolvedToolWorkspace(t, s, root, dirs)
 			lf := loadReleaseLockfile(releasePath)
-			view := tw.newView(lf)
+			view := tw.newView(releasePath, lf)
 			resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 				View:            view,
 				ReleasePath:     releasePath,

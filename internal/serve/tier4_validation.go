@@ -91,7 +91,9 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	if lf != nil {
 		pins = catalog.PinsFromLockfile(lf)
 	}
-	view := s.lazyCatalog.ForRequest(pins)
+	// Forked from the lookup over the named Release's own catalog stack, so the
+	// validation reads the directories a build of that Release reads.
+	view := s.catalogFor(releasePath).ForRequest(pins)
 
 	// The deprecation report over the lockfile's recorded markers — the same report
 	// the build reads, so the editor names the same references the build would.

@@ -140,7 +140,7 @@ func TestValidateToolWithAMatchingConfigurationStaysSilent(t *testing.T) {
 	if len(attached) != 1 || attached[0].Ref.URI != mcpTrustGateURI {
 		t.Fatalf("fixture no longer attaches the recorded gate, so the silence would be vacuous; attachments %+v", attached)
 	}
-	entity, ok := tw.newView(nil).PluginByURI(mcpTrustGateURI)
+	entity, ok := tw.newView("", nil).PluginByURI(mcpTrustGateURI)
 	if !ok {
 		t.Fatal("the attached gate's Plugin entity does not resolve, so the comparison would be suppressed rather than satisfied")
 	}

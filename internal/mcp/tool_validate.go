@@ -248,7 +248,7 @@ func validateReleaseScope(
 		return errorResult(refusal)
 	}
 	lf := loadReleaseLockfile(releasePath)
-	view := tw.newView(lf)
+	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
 		View:            view,
@@ -264,7 +264,7 @@ func validateReleaseScope(
 		// and the resolution failure moves beneath it. Without this the answer
 		// names a reference in a document that is correct, and points the caller
 		// at that document's authoring contract.
-		annotated := annotateWithRefusals(cerr, view, tw)
+		annotated := annotateWithRefusals(cerr, view, tw, releasePath)
 		return errorResult(explainToolError(
 			"Validation could not resolve the Release closure; fix the resolution failure before semantic validation runs.",
 			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage))))

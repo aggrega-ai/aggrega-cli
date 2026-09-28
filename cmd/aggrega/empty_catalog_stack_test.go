@@ -103,7 +103,7 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 			run: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) error {
 				t.Helper()
 				var out, diag bytes.Buffer
-				dirs := rw.ResolveCatalogDirs(nil)
+				dirs := rw.ResolveCatalogDirs("", nil)
 				if len(dirs) == 0 {
 					return validateCatalogWideFromWorkspace(rw, nil)
 				}

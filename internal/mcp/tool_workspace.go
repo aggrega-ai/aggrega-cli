@@ -281,7 +281,9 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		return errorResult(explainToolError("Could not resolve the workspace to list its entities.", err, "component"))
 	}
 
-	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView(nil))
+	// The listing is the workspace's, not one Release's, so it reads the
+	// workspace's own stack — the index the editor's Catalog view reads too.
+	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView("", nil))
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(entities))
 	payload := listEntitiesResult{
 		WorkspaceRoot:  tw.root,

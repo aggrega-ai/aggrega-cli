@@ -145,7 +145,7 @@ func TestResolveCatalogDirsAuthoredShapes(t *testing.T) {
 			// never from the temporary directory, so a root discovery that ever
 			// stops somewhere else fails on the stack rather than on a path
 			// spelling.
-			got := rw.ResolveCatalogDirs(tc.flag)
+			got := rw.ResolveCatalogDirs("", tc.flag)
 			want := tc.want(rw.Root())
 			if len(got) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got, want)) {
 				t.Errorf("ResolveCatalogDirs(%v) = %v; want %v", tc.flag, got, want)
@@ -164,7 +164,7 @@ func TestResolveCatalogDirsSkipsAConventionalPathThatIsNotADirectory(t *testing.
 	write(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")
 	write(t, filepath.Join(root, workspaceconfig.ConventionalCatalogDir), "not a directory\n")
 
-	if got := resolveIn(t, root).ResolveCatalogDirs(nil); len(got) != 0 {
+	if got := resolveIn(t, root).ResolveCatalogDirs("", nil); len(got) != 0 {
 		t.Errorf("ResolveCatalogDirs(nil) = %v; want an empty stack (a file is not a catalog directory)", got)
 	}
 }

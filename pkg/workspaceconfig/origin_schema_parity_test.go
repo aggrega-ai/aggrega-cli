@@ -6,6 +6,7 @@ package workspaceconfig
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -22,8 +23,11 @@ const originCoverageLocation = "pkg/workspaceconfig/origin_schema_parity_test.go
 // granularity the origin report attributes.
 //
 // path is the setting's dotted name, spelled as a config file writes it. list
-// reports whether the setting is a sequence, which is the axis the report
-// attributes differently: a scalar is attributed per value, a list as a whole.
+// reports whether the setting is a sequence or a map, which is the axis the
+// report attributes differently: a scalar is attributed per value, a list or a
+// map as a whole. A map is on the list side of that axis because its keys are
+// data the reader writes rather than settings the schema declares, exactly as a
+// list's entries are.
 type originSchemaRow struct {
 	path string
 	list bool
@@ -78,15 +82,20 @@ var originSchemaPropertyFreeKeywords = map[string]bool{
 // a plain recursive descent. A scalar leaf is one setting. An array is one
 // setting too and is never descended, because the report attributes a list as a
 // unit: a property inside an array's entries is carried by the array's own row
-// rather than by a row of its own. A local definition reference is followed,
-// because a definition's properties are as real to a reader asking where a
-// value came from as a property written inline.
+// rather than by a row of its own. A map — an object that declares no properties
+// of its own and describes every key it admits by one subschema — is one
+// setting on the same terms, since its keys are what the reader writes and each
+// value is an entry the map's row carries. A local definition reference is
+// followed, because a definition's properties are as real to a reader asking
+// where a value came from as a property written inline.
 //
 // A keyword the walk neither acts on nor recognizes as property-free is
 // refused. The walk cannot report a setting it never reached, and nothing else
 // would notice that it did not reach one, so the refusal is what keeps a
 // schema that grows a composition keyword from quietly narrowing every check
-// built on this.
+// built on this. An object that declares properties AND admits further keys by
+// a subschema is refused too: its declared properties are settings and its
+// other keys are data, and no single row can stand for both.
 //
 // Rows come back in a deterministic order — lexical by property name within
 // each object, depth first — so a finding built from them reads the same
@@ -165,10 +174,19 @@ func originSchemaRows(schema string) ([]originSchemaRow, error) {
 				// rather than descended where they are declared, so a
 				// definition block itself declares no setting.
 			case "additionalProperties":
-				// A closed object states that there is nothing further to find.
-				// A subschema here, or an open object, admits keys the walk
-				// cannot enumerate, so both are refused.
-				if closed, ok := node[keyword].(bool); !ok || closed {
+				// A closed object states that there is nothing further to find,
+				// and a map is recorded as one setting below. An object left open
+				// by `true`, or one declaring properties beside a subschema for
+				// every other key, admits keys the walk cannot enumerate, so both
+				// are refused.
+				if closed, ok := node[keyword].(bool); ok {
+					if closed {
+						return fmt.Errorf("%s admits additional properties by schema, so the walk "+
+							"cannot enumerate what it declares", describe(path))
+					}
+					continue
+				}
+				if !isSchemaMap(node) {
 					return fmt.Errorf("%s admits additional properties by schema, so the walk "+
 						"cannot enumerate what it declares", describe(path))
 				}
@@ -183,6 +201,10 @@ func originSchemaRows(schema string) ([]originSchemaRow, error) {
 		}
 
 		if _, ok := node["items"]; ok {
+			rows = append(rows, originSchemaRow{path: path, list: true})
+			return nil
+		}
+		if isSchemaMap(node) {
 			rows = append(rows, originSchemaRow{path: path, list: true})
 			return nil
 		}
@@ -224,6 +246,18 @@ func originSchemaRows(schema string) ([]originSchemaRow, error) {
 		}
 	}
 	return rows, nil
+}
+
+// isSchemaMap reports whether a schema node is a map: an object that declares no
+// properties of its own and describes every key it admits by one subschema. The
+// two walks over the configuration schema share it, so what counts as a map is
+// one decision rather than two that agree today.
+func isSchemaMap(node map[string]any) bool {
+	if _, declares := node["properties"]; declares {
+		return false
+	}
+	value, ok := node["additionalProperties"].(map[string]any)
+	return ok && len(value) > 0
 }
 
 // originAppendCompanionReason is the reason every additive-companion exemption
@@ -428,9 +462,9 @@ func originCoverageReach(rows []originSchemaRow, exemptions []originExemption) s
 		}
 	}
 	return fmt.Sprintf("the configuration schema declares %d settings at the granularity the origin report "+
-		"attributes, %d of them lists; %d are excused in %s as carried by another row. This check asserts NOTHING "+
-		"about a property inside a list's entries: each of those %d lists is attributed as a unit, so a property "+
-		"added inside one carries no row of its own and nothing here reports it",
+		"attributes, %d of them lists or maps; %d are excused in %s as carried by another row. This check asserts "+
+		"NOTHING about a property inside a list's or a map's entries: each of those %d is attributed as a unit, so a "+
+		"property added inside one carries no row of its own and nothing here reports it",
 		len(rows), lists, len(exemptions), originCoverageLocation, lists)
 }
 
@@ -495,6 +529,7 @@ func TestTheSchemaWalkReachesTheSettingsTheCoverageGuardRestsOn(t *testing.T) {
 		{"compiled_module_cache.max_bytes", false, "a scalar nested inside a plain object"},
 		{"signing.fulcio_url", false, "a scalar reachable only through a local definition reference"},
 		{"registries", true, "a list, which the walk records without descending"},
+		{"workspace.releases", true, "a map, which the walk records as a unit without descending"},
 		{"workspace.catalog_dirs_append", true, "an additive companion, which the exemptions rest on"},
 	} {
 		got, ok := byPath[want.path]
@@ -717,8 +752,9 @@ func TestTheSchemaWalkRefusesWhatItCannotEnumerate(t *testing.T) {
 			wantSub: `"patternProperties" keyword`,
 		},
 		{
-			name:    "an object left open by schema",
-			schema:  `{"properties":{"build":{"type":"object","additionalProperties":{"type":"string"}}}}`,
+			name: "an object declaring properties beside a subschema for every other key",
+			schema: `{"properties":{"build":{"type":"object","properties":{"yaml_indent":{"type":"integer"}},` +
+				`"additionalProperties":{"type":"string"}}}}`,
 			wantSub: "admits additional properties by schema",
 		},
 		{
@@ -769,5 +805,39 @@ func TestTheSchemaWalkAcceptsAClosedObject(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].path != "build.yaml_indent" || rows[0].list {
 		t.Errorf("walk = %+v; want one scalar setting build.yaml_indent", rows)
+	}
+}
+
+// TestTheSchemaWalkRecordsAMapAsOneSetting is the map's positive control: an
+// object whose every key is described by one subschema is one setting,
+// attributed as a unit, and what the subschema declares is not descended —
+// by value inline and through a definition reference alike.
+func TestTheSchemaWalkRecordsAMapAsOneSetting(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		schema string
+	}{
+		{
+			name:   "an inline value schema",
+			schema: `{"properties":{"build":{"type":"object","additionalProperties":{"type":"object","properties":{"a":{"type":"string"}}}}}}`,
+		},
+		{
+			name: "a value schema reached through a definition",
+			schema: `{"properties":{"build":{"type":"object","additionalProperties":{"$ref":"#/$defs/Entry"}}},` +
+				`"$defs":{"Entry":{"type":"object","properties":{"a":{"type":"string"}}}}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rows, err := originSchemaRows(tc.schema)
+			if err != nil {
+				t.Fatalf("the walk refused a map it should record as one setting: %v", err)
+			}
+			want := []originSchemaRow{{path: "build", list: true}}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("walk = %+v; want %+v", rows, want)
+			}
+		})
 	}
 }

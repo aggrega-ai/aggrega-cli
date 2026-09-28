@@ -1035,14 +1035,26 @@ type Server struct {
 	// workspace's indexes standing.
 	//
 	// A Release-resolving handler does NOT read or pin this lookup directly. It
-	// forks a request-scoped view via ForRequest, seeded with that request's
-	// lockfile pins and snapshotting this workspace's Tier-1 indexes, and threads
+	// asks catalogFor for the lookup over that Release's catalog search stack —
+	// this one, where the stack is the workspace's own list — and forks a
+	// request-scoped view of it via ForRequest, seeded with that request's
+	// lockfile pins and snapshotting the lookup's Tier-1 indexes, and threads
 	// the view through closure compute and the render pipeline (AsCatalogLookup,
 	// RecipeLookupWithManifest, SubAggregateLoader, MappingLibraries, ClosureLookup,
 	// the closure-scoped extends + Pass-2). Each request therefore resolves against
 	// its own immutable pin snapshot, so a concurrent request's pins never perturb
 	// it — the consistency the worker pool depends on.
+	//
+	// What reads this lookup directly is what concerns no one Release: the
+	// workspace's entity index, completion, the feature listings, the candidacy
+	// surfaces addressed by name or label, and the by-name definition.
 	lazyCatalog *catalog.LazyLookup
+
+	// releaseCatalogs holds the lookup over each distinct Release catalog stack
+	// catalogFor has been asked for, seeded with lazyCatalog under the
+	// workspace's own list. It is the one piece of this entry written after the
+	// entry is published, and it carries its own lock for that reason.
+	releaseCatalogs *releaseCatalogs
 
 	parseCache *cache
 
@@ -1320,6 +1332,7 @@ func (s *session) workspaceFor(root string) (*Server, error) {
 func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Server {
 	cfg := resolved.Config()
 	root := resolved.Root()
+	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil)
 	return &Server{
 		session:           s,
 		workspaceRoot:     root,
@@ -1329,7 +1342,8 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 		resolvedWorkspace: resolved,
 		buildOnInspect:    resolveBuildOnInspect(s.buildOnInspectFlag, cfg.Serve.BuildOnInspect),
 		lintOnValidate:    cfg.Serve.LintOnValidate,
-		lazyCatalog:       catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil),
+		lazyCatalog:       sessionCatalog,
+		releaseCatalogs:   newReleaseCatalogs(cfg.Workspace.CatalogDirs, sessionCatalog),
 		parseCache:        newCache(cfg.ParseCache.MaxEntries, cfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		renderDiags:       map[string][]Diagnostic{},

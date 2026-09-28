@@ -186,14 +186,15 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 	var declined []string
 	var err error
 	if preview == nil {
-		// The request-scoped catalog view, seeded with THIS request's pins before any
-		// cached read fires, so every resolution verifies-on-read against this
-		// Release's lockfile and a concurrent request's pins can never perturb it.
+		// The request-scoped catalog view over this Release's own catalog stack,
+		// seeded with THIS request's pins before any cached read fires, so every
+		// resolution verifies-on-read against this Release's lockfile and a
+		// concurrent request's pins can never perturb it.
 		var pins map[string]catalog.Pin
 		if lf != nil {
 			pins = catalog.PinsFromLockfile(lf)
 		}
-		view = s.lazyCatalog.ForRequest(pins)
+		view = s.catalogFor(releasePath).ForRequest(pins)
 
 		fetchSeam := s.irGraphExternalInputs(lf)
 

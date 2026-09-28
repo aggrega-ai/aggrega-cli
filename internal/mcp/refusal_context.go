@@ -36,14 +36,16 @@ import (
 // A nil view annotates nothing. The one path that produces one is a call whose
 // render happened somewhere else, and such a call has no failure of its own to
 // annotate. The workspace is taken rather than a rendered note so a call site
-// names what it holds and cannot hand over the wrong text.
-func annotateWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace) error {
+// names what it holds and cannot hand over the wrong text. release is the
+// Release the view was built for, so the account names the directories that
+// Release reads rather than the workspace's where the two differ.
+func annotateWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace, release string) error {
 	if err == nil || view == nil {
 		return err
 	}
 	note := ""
 	if tw != nil {
-		note = tw.rw.LocalCatalogAdviceNote()
+		note = tw.rw.LocalCatalogAdviceNote(release)
 	}
 	return compilerops.AnnotateSkipContext(err, view.SkippedEntities(), note)
 }
@@ -57,11 +59,11 @@ func annotateWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace
 // of those would invite a caller to go and fix a file that did not cause it. A
 // call whose failure is a closure resolution BY CONSTRUCTION needs no guard and
 // uses annotateWithRefusals directly.
-func annotateResolutionWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace) error {
+func annotateResolutionWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace, release string) error {
 	if !compilerops.IsResolutionFailure(err) {
 		return err
 	}
-	return annotateWithRefusals(err, view, tw)
+	return annotateWithRefusals(err, view, tw, release)
 }
 
 // refusalKindOr names the entity kind whose authoring contract a reader must

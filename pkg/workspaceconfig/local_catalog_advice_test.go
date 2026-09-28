@@ -165,7 +165,7 @@ func TestLocalCatalogAdviceNoteAcrossTheAuthoredAndRootShapes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rw := adviceWorkspace(t, tc.config, tc.docs...)
-			got := rw.LocalCatalogAdviceNote()
+			got := rw.LocalCatalogAdviceNote("")
 
 			if !tc.wantNote {
 				if got != "" {
@@ -223,7 +223,7 @@ func TestLocalCatalogAdviceCountsTheRootOnly(t *testing.T) {
 		t.Fatalf("write workspace config: %v", err)
 	}
 
-	got := resolveIn(t, root).LocalCatalogAdviceNote()
+	got := resolveIn(t, root).LocalCatalogAdviceNote("")
 	if got == "" {
 		t.Fatal("a workspace whose entities sit one directory down is still owed where entities are read from")
 	}
@@ -239,7 +239,7 @@ func TestLocalCatalogAdviceCountsTheRootOnly(t *testing.T) {
 func TestLocalCatalogAdviceNoteIsSafeOnNoWorkspace(t *testing.T) {
 	t.Parallel()
 	var rw *workspaceconfig.ResolvedWorkspace
-	if got := rw.LocalCatalogAdviceNote(); got != "" {
+	if got := rw.LocalCatalogAdviceNote(""); got != "" {
 		t.Errorf("an unresolved workspace said %q; it knows nothing to say", got)
 	}
 }

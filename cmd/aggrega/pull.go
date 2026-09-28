@@ -431,7 +431,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	// account says which directories were read at all, and a reference that
 	// resolved to nothing may be explained by either.
 	opts.AnnotateResolutionFailure = func(err error, skipped []catalog.SkippedEntity) error {
-		return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote())
+		return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote(cfg.ReleasePath))
 	}
 	opts.Puller = cfg.puller
 	opts.SourceResolver = cfg.sourceResolver

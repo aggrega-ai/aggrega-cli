@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -21,29 +22,37 @@ import (
 const CatalogDirsSetting = "workspace.catalog_dirs"
 
 // LocalCatalogAdviceNote returns the note a surface appends to a lookup that
-// found no entity, telling the reader where this workspace reads local entities
-// from and what to change so the one they named is read. It is ready to append:
-// it opens with its own line break and indent, or it is empty.
+// found no entity, telling the reader where local entities are read from for
+// release and what to change so the one they named is read. release is the
+// Release the lookup resolved for, in the form ResolveCatalogDirs takes it, or
+// empty for a lookup that concerns no one Release. It is ready to append: it
+// opens with its own line break and indent, or it is empty.
 //
-// It is EMPTY for a workspace whose reader wrote the catalog-directory list as
-// an empty list. That list is the statement that this workspace has no local
-// catalog, so advice about where local entities are read from contradicts what
-// the reader declared, and a diagnostic that argues with a declaration is worse
-// than one that says nothing.
+// It is EMPTY where the reader wrote the catalog-directory list that applies as
+// an empty list — the workspace's, or the Release's own. That list is the
+// statement that there is no local catalog to read, so advice about where local
+// entities are read from contradicts what the reader declared, and a diagnostic
+// that argues with a declaration is worse than one that says nothing.
 //
-// It is composed here because the two facts it reads live here and nowhere
-// earlier: whether the reader wrote the empty list, which authoredEmpty is the
-// one home of, and the resolved workspace root. The third fact — that a lookup
-// for a named entity came back with nothing — belongs to the surface that
-// performed the lookup, and that surface supplies it by calling. So the note
-// attaches to a failure and is never raised on a run that resolved what it was
-// asked for.
+// For a Release the configuration gives its own directories, the note names that
+// Release's entry, because the workspace's list is not what such a Release reads
+// — or not all of it — and telling the reader to add a directory to the
+// workspace's list would send them to a change that does not reach the build
+// that failed.
+//
+// It is composed here because the facts it reads live here and nowhere
+// earlier: which list applies to release and whether the reader wrote it empty,
+// which configuredCatalogDirs and authoredEmpty are the homes of, and the
+// resolved workspace root. The remaining fact — that a lookup for a named entity
+// came back with nothing — belongs to the surface that performed the lookup, and
+// that surface supplies it by calling. So the note attaches to a failure and is
+// never raised on a run that resolved what it was asked for.
 //
 // The text carries no verdict. Appending it changes what a reader is told and
 // never what the run decided, so a surface that appends it ends with exactly the
 // status it would have ended with.
-func (r *ResolvedWorkspace) LocalCatalogAdviceNote() string {
-	if r == nil || authoredEmpty(r.config.Workspace.CatalogDirs) {
+func (r *ResolvedWorkspace) LocalCatalogAdviceNote(release string) string {
+	if r == nil || authoredEmpty(r.configuredCatalogDirs(release)) {
 		return ""
 	}
 	where := fmt.Sprintf(
@@ -52,6 +61,23 @@ func (r *ResolvedWorkspace) LocalCatalogAdviceNote() string {
 	remedy := fmt.Sprintf(
 		"Put the entity under `%s/`, or list the directory holding it under `%s`.",
 		ConventionalCatalogDir, CatalogDirsSetting)
+	if entry, ok := r.releaseCatalog(release); ok {
+		name := r.reportedReleaseName(release)
+		if entry.CatalogDirs != nil {
+			where = fmt.Sprintf(
+				"local entities for the Release `%s` are read from `%s/` at the workspace root and from every "+
+					"directory its entry under `%s` in %s lists.",
+				name, ConventionalCatalogDir, ReleaseCatalogsSetting, ConfigFilename)
+		} else {
+			where = fmt.Sprintf(
+				"local entities for the Release `%s` are read from `%s/` at the workspace root, from every "+
+					"directory listed under `%s`, and from every directory its entry under `%s` in %s adds.",
+				name, ConventionalCatalogDir, CatalogDirsSetting, ReleaseCatalogsSetting, ConfigFilename)
+		}
+		remedy = fmt.Sprintf(
+			"Put the entity under `%s/`, or list the directory holding it in that Release's entry under `%s`.",
+			ConventionalCatalogDir, ReleaseCatalogsSetting)
+	}
 	if n := rootEntityDocuments(r.root); n > 0 {
 		return fmt.Sprintf("\n  note: %s The workspace root itself holds %s declaring an entity kind, and the root is read only while it is listed there. %s",
 			where, documentCount(n), remedy)
@@ -107,6 +133,20 @@ func rootEntityDocuments(root string) int {
 		}
 	}
 	return count
+}
+
+// reportedReleaseName spells release for a reader: relative to the workspace
+// root when the file sits beneath it, which is how the configuration's own
+// entries are most often written, and as the absolute path otherwise.
+func (r *ResolvedWorkspace) reportedReleaseName(release string) string {
+	abs, err := filepath.Abs(release)
+	if err != nil {
+		return release
+	}
+	if rel, rerr := filepath.Rel(r.root, abs); rerr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(rel)
+	}
+	return abs
 }
 
 // documentCount renders a count of documents with its noun agreeing, so the

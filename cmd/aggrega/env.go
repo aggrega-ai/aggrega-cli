@@ -31,9 +31,10 @@ func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(
 // whole stack, since the part a reader most often needs is the part they did not
 // have to type.
 const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepended to the " +
-	"workspace catalog_dirs search stack (first match wins), which ends with the `catalog` " +
-	"directory at the workspace root when there is one. A workspace whose catalog_dirs is " +
-	"written as an empty list reads no local catalog at all."
+	"catalog search stack (first match wins): the workspace catalog_dirs, or, for a Release the " +
+	"workspace configuration gives directories of its own under workspace.releases, that " +
+	"Release's; the stack ends with the `catalog` directory at the workspace root when there is " +
+	"one. A catalog_dirs list written empty reads no local catalog at all."
 
 // helpReleasePath is the --release flag's help text for the two commands that
 // take a Release as the whole subject of the run, held once for the reason

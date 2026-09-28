@@ -293,7 +293,7 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 		// than the shared function itself so the account comes from the workspace
 		// this command resolved, which is the one the reader is standing in.
 		AnnotateResolutionFailure: func(err error, skipped []catalog.SkippedEntity) error {
-			return compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote())
+			return compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote(releasePath))
 		},
 		DiagOut: diagOut,
 		Out:     out,

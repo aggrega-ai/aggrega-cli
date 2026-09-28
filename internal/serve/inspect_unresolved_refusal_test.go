@@ -108,7 +108,7 @@ spec:
 func TestEntityDefinitionRefusalSaysWhereLocalEntitiesAreReadFrom(t *testing.T) {
 	_, srv := unresolvedRefusalWorkspace(t, "workspace:\n  catalog_dirs:\n    - ./catalog\n")
 
-	account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote())
+	account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote(""))
 	if account == "" {
 		t.Fatal("precondition: this workspace composes no account of where local entities are read from, " +
 			"so every assertion below would hold on a refusal that carried nothing")
@@ -149,7 +149,7 @@ func TestEntityDefinitionRefusalSaysWhereLocalEntitiesAreReadFrom(t *testing.T) 
 func TestEntityDefinitionRefusalArguesWithNoDeclaredAbsenceOfALocalCatalog(t *testing.T) {
 	_, srv := unresolvedRefusalWorkspace(t, "workspace:\n  catalog_dirs: []\n")
 
-	if account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote()); account != "" {
+	if account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote("")); account != "" {
 		t.Fatalf("precondition: this workspace still composes an account despite the empty list, "+
 			"so the assertion below would not be about the empty list: %s", account)
 	}
@@ -219,7 +219,7 @@ spec:
 // fail this one.
 func TestEntityDefinitionStatesARefusedDocumentOnce(t *testing.T) {
 	srv := refusedDocumentWorkspace(t)
-	account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote())
+	account := strings.TrimSpace(srv.resolvedWorkspace.LocalCatalogAdviceNote(""))
 	if account == "" {
 		t.Fatal("precondition: this workspace composes no account, so the rows below would say nothing about it")
 	}

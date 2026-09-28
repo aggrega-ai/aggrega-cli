@@ -115,6 +115,12 @@ func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// bug at the right place (test setup) instead of masking it.
 	if params.Granularity != "file" {
 		s.lazyCatalog.Reset()
+		// Every Release catalog stack the workspace has been asked about is reset
+		// with it, since each reads the same changed tree. The set holds the
+		// session lookup too, which a second reset leaves exactly as the first did.
+		if s.releaseCatalogs != nil {
+			s.releaseCatalogs.reset()
+		}
 	}
 
 	return invalidateResult{Invalidated: true}

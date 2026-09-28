@@ -1159,7 +1159,9 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	} else {
 		pins = catalog.PinsFromLockfile(lf)
 	}
-	view := s.lazyCatalog.ForRequest(pins)
+	// The view is forked from the lookup over this Release's own catalog stack,
+	// which is the one a build of it at a terminal reads.
+	view := s.catalogFor(releasePath).ForRequest(pins)
 
 	fetchSeam := s.irGraphExternalInputs(lf)
 

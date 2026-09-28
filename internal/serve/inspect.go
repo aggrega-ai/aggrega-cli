@@ -402,7 +402,7 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 // are.
 func (s *Server) localCatalogContext(msg string, skipped []catalog.SkippedEntity, name, kindHint string) string {
 	note := strings.TrimSpace(compilerops.LocalCatalogAdvice(
-		s.resolvedWorkspace.LocalCatalogAdviceNote(), skipped, name, kindHint))
+		s.resolvedWorkspace.LocalCatalogAdviceNote(""), skipped, name, kindHint))
 	if note == "" {
 		return msg
 	}

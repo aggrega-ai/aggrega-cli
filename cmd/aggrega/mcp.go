@@ -182,7 +182,9 @@ For the same reason a call arriving over HTTP cannot name a workspace of
 its own. Sending workspace_root or catalog_dirs is refused, naming the
 argument, and the directories searched for catalog entities beside the
 served workspace are the ones that workspace itself resolves: its own
-workspace.catalog_dirs setting, then its catalog directory. Over
+workspace.catalog_dirs setting — or, for a Release it gives directories
+of its own under workspace.releases, that Release's — then its catalog
+directory. Over
 standard input and output both arguments are honoured: the client that
 launched the server is running on this machine.
 

@@ -111,7 +111,7 @@ func sharedPreviewCompositionTexts(t *testing.T, root, catalogDir, releasePath s
 	}
 	preview, err := compilerops.PreviewForArtifact(
 		context.Background(),
-		compilerops.NewPreviewInputs(compilerops.NoExternalInputs(), tw.newView(nil), releasePath, tw.root, tw.cfg, "test"),
+		compilerops.NewPreviewInputs(compilerops.NoExternalInputs(), tw.newView(releasePath, nil), releasePath, tw.root, tw.cfg, "test"),
 		pipeline.Options{},
 	)
 	if err != nil {

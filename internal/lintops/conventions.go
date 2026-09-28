@@ -57,8 +57,9 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	// configured list, so a workspace whose entities sit in the conventional
 	// directory is scanned rather than refused, and a workspace that switched the
 	// local catalog off with an empty `catalog_dirs` is refused rather than
-	// silently scanning nothing.
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	// silently scanning nothing. The whole catalog concerns no one Release, so the
+	// workspace's own stack is the one scanned.
+	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
 	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
 			fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or check a specific Release with --release)",
@@ -79,7 +80,7 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	// as they did before that record existed. The release-scoped pass below is the
 	// lint path that does hold them to it, and it is the same path that already
 	// reads the lockfile beside the Release, so both files are read from one place.
-	if err := lintConventionsFiles(ctx, rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+	if err := lintConventionsFiles(ctx, rw, "", catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
 		return err
 	}
 	// This is the pass whose summary claims a corpus — "every catalog entity under
@@ -145,7 +146,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -234,7 +235,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	lintErr := lintConventionsFiles(ctx, rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
+	lintErr := lintConventionsFiles(ctx, rw, releasePath, catalogFlagDirs, paths, trusted, out, diagOut, collect)
 
 	// A Manifest mapping the catalog contradicts is reported here rather than
 	// halting ahead of the pass, so the conventions report the author came for
@@ -279,6 +280,10 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // resolution receive it, so a recorded digest governs the bytes whichever tier
 // serves them. An empty set is the ordinary case and resolves pin-free.
 //
+// releasePath is the Release the release-scoped pass names, or empty for the
+// whole-catalog pass, and it decides which catalog directories the plugin and
+// Component lookups below read — the same ones the caller walked.
+//
 // ctx is observed once per entity, at the top of the loop, which is the seam
 // that makes a stop reach the work: this loop is where both passes spend their
 // time, one guest dispatch per entity, and an entity not yet reached is an
@@ -288,9 +293,9 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // summary line claims a corpus — "conventions checked: N entities" — and
 // printing it after a stop would report a partial walk in the words of a complete
 // one, which is the one thing a reader cannot recover from the output.
-func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
+func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
-	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))

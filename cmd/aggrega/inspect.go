@@ -559,7 +559,9 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
-	dirs := rw.ResolveCatalogDirs(catalogDirs)
+	// A name concerns no one Release, so it resolves over the workspace's own
+	// stack.
+	dirs := rw.ResolveCatalogDirs("", catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		// A load that stopped on one document reports that document's refusal once:
@@ -592,7 +594,7 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
 	if !found {
 		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier,
-			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(), nil, identifier, ""))
+			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(""), nil, identifier, ""))
 	}
 	// The identity the withdrawal advisory is looked up by is read from the
 	// resolved entity, never from the typed identifier, which may carry a version
@@ -877,8 +879,9 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
-	dirs := rw.ResolveCatalogDirs(catalogDirs)
+	// Strict load over this Release's first-win stack (--catalog dirs prepended to
+	// the directories the workspace configuration gives it).
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)

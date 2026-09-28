@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 	"go.yaml.in/yaml/v3"
 )
@@ -553,6 +554,7 @@ func originFields() []originField {
 		ls("mcp.announce_tools", func(c Config) string { return joinStrings(c.MCP.AnnounceTools) }),
 		ls("signing.kinds", func(c Config) string { return joinStrings(c.Signing.Kinds) }),
 		ls("workspace.catalog_dirs", func(c Config) string { return joinStrings(c.Workspace.CatalogDirs) }),
+		ls(ReleaseCatalogsSetting, func(c Config) string { return joinReleaseCatalogs(c.Workspace.Releases) }),
 		ls("plugins.governance", func(c Config) string { return joinPluginRefs(c.Plugins.Governance) }),
 		ls("plugins.linter", func(c Config) string { return joinPluginRefs(c.Plugins.Linter) }),
 		ls("plugins.importer", func(c Config) string { return joinPluginRefs(c.Plugins.Importer) }),
@@ -568,6 +570,28 @@ func joinStrings(v []string) string {
 		return "[]"
 	}
 	return "[" + strings.Join(v, ", ") + "]"
+}
+
+// joinReleaseCatalogs renders the Release entries in the order the cascade
+// composed them, each as its Release file and the directories the entry
+// states: its own list, or `inherited` where it keeps the workspace's, followed
+// by what it adds.
+func joinReleaseCatalogs(entries types.OrderedMap[ReleaseCatalogConfig]) string {
+	if entries.Len() == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, entries.Len())
+	for file, entry := range entries.All() {
+		dirs := "inherited"
+		if entry.CatalogDirs != nil {
+			dirs = joinStrings(entry.CatalogDirs)
+		}
+		if len(entry.CatalogDirsAppend) > 0 {
+			dirs += "+" + joinStrings(entry.CatalogDirsAppend)
+		}
+		parts = append(parts, file+"="+dirs)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // joinPluginRefs renders a plugin-attachment list by each entry's attachment

@@ -227,7 +227,8 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// linted Recipe realizes. It is constructed unconditionally because it indexes
 	// nothing until it is asked something — the walk happens on the first query,
 	// which for a non-Recipe entity on the --plugin path never comes.
-	dirs := rw.ResolveCatalogDirs(nil)
+	// This pass names no Release, so it reads the workspace's own stack.
+	dirs := rw.ResolveCatalogDirs("", nil)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 
 	// Every configured linter URI is a Plugin entity URI; the entity-front derives
