@@ -2,8 +2,9 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Command testinputcensus identifies the test packages in this workspace that
-// read input files from outside their own module root, and fails when a package
-// joins that set without the set having been recorded.
+// read input files from outside their own module root — importers, as it calls
+// them — and fails when a package joins that set without the set having been
+// recorded.
 //
 // # Why that population is worth watching
 //
@@ -23,7 +24,7 @@
 // alarm without carrying the diagnosis sends its reader back to re-run the whole
 // measurement to learn something the failure could have said, and this
 // measurement is a whole-suite execution. So the recorded expectation is the set
-// of carrying packages, and a failure names the ones that joined it.
+// of importers, and a failure names the ones that joined it.
 //
 // # Why it reads the toolchain's own test log
 //
@@ -117,9 +118,9 @@ import (
 // what makes recording a set admissible at all. A hand-kept list beside a census
 // would be a second copy of what the census measures, and the copy is what goes
 // stale between readings; a set the census itself emits cannot drift from what it
-// measured. The generated form also carries per-carrier detail a hand-kept list
-// would not survive: the tree components each carrier's shared reads resolved
-// into, so a failure can say which corpus a new carrier reached.
+// measured. The generated form also carries per-importer detail a hand-kept list
+// would not survive: the tree components each importer's shared reads resolved
+// into, so a failure can say which corpus a new importer reached.
 //
 // A module absent from the record is expected to carry none, so a newly added
 // module needs no bookkeeping until one of its packages actually reads a shared
@@ -128,21 +129,21 @@ import (
 // The comparison is per module and between SETS of package import paths, which
 // makes its two directions deliberately asymmetric:
 //
-//   - a measured carrier the record does not hold is GROWTH, and the census
+//   - a measured importer the record does not hold is GROWTH, and the census
 //     fails, because growth going unobserved is the thing it exists to prevent;
-//   - a recorded carrier no longer measured means the record is STALE: it is
+//   - a recorded importer no longer measured means the record is STALE: it is
 //     reported and moves no exit code, since a record left wider than the truth
 //     quietly buys room for the next addition but is not itself a new exposure.
 //
 // # What is a measurement here, and what it was measured over
 //
 // Every figure this record or a report carries is a measurement rather than a
-// target, so it carries what it was measured over. Criterion: a test package
-// carries when its test log records at least one open or stat of a path that
+// target, so it carries what it was measured over. Criterion: a test package is
+// an importer when its test log records at least one open or stat of a path that
 // resolves outside its own module root and inside the repository tree. The set's
 // own date is written into the generated file beside it.
 //
-// The denominator — how many test packages exist to be carriers at all — is
+// The denominator — how many test packages exist to be importers at all — is
 // measured under a different and much cheaper criterion: the module set is the
 // same walk this census is driven from, and a package counts toward the
 // denominator when `go list` reports it carrying TestGoFiles or XTestGoFiles.
@@ -152,9 +153,9 @@ import (
 // unchanged. Re-measured 2026-08-18: aggrega-cli carries 101 and the other three
 // are unchanged, for 104 in total. The denominator moves whenever a package gains
 // its first test, so expect it to drift between readings: it is a snapshot for
-// scale, and the gate watches the carrier set alone.
+// scale, and the gate watches the importer set alone.
 //
-// # Where the current carriers reach, and why they reach there
+// # Where the current importers reach, and why they reach there
 //
 // aggrega-abi/go and aggrega-pdk/go each carry one: their shared-payload parity
 // suites, whose input corpus is the golden-vector tree at the repository root
@@ -195,7 +196,7 @@ import (
 //
 // # A package can join the set without any new escaping read being written
 //
-// Every current aggrega-cli carrier's out-of-module reach mechanism was already
+// Every current aggrega-cli importer's out-of-module reach mechanism was already
 // in place before 2026-08-08, the day the earlier whole-module figure was
 // recorded; the most recent of them first appeared 2026-07-24. So a package joins
 // this set without a new escaping read being authored at all: an existing reach
@@ -224,9 +225,9 @@ import (
 //
 // 🔴 aggrega-cli does NOT run with caching defeated. That is why its absence from
 // that enrolment is called out rather than left implicit, and it is what makes
-// its carriers a LIVE stale-pass surface rather than a nominal one: the two
+// its importers a LIVE stale-pass surface rather than a nominal one: the two
 // modules above are enrolled, so their out-of-module inputs cannot serve a stale
-// result, while every aggrega-cli carrier's can. Whether to enrol it is a
+// result, while every aggrega-cli importer's can. Whether to enrol it is a
 // separate decision, and the census reports the condition rather than taking it.
 type testInputExpectation struct {
 	// Measured is the plain YYYY-MM-DD UTC date the set was taken on. Empty means
@@ -234,12 +235,12 @@ type testInputExpectation struct {
 	// empty set and is reported as such: the first says nothing is known, the
 	// second says the tree was measured and found clean.
 	Measured string
-	// Modules holds one entry per module carrying at least one carrier, ordered
+	// Modules holds one entry per module carrying at least one importer, ordered
 	// by Rel. A module carrying none is absent rather than present-and-empty.
 	Modules []expectedModule
 }
 
-// expectedModule is one module's recorded carriers.
+// expectedModule is one module's recorded importers.
 type expectedModule struct {
 	// Rel is the module path relative to the census root — the same string a
 	// report names the module by.
@@ -250,13 +251,13 @@ type expectedModule struct {
 	// caller that supplies it. So a divergence between this and what a later run
 	// is told is reported as a stale record and moves no exit code.
 	CacheDefeated bool
-	// Carriers holds the module's carrying test packages, ordered by ImportPath.
-	Carriers []expectedCarrier
+	// Importers holds the module's importers, ordered by ImportPath.
+	Importers []expectedImporter
 }
 
-// expectedCarrier is one test package that reads at least one shared input from
+// expectedImporter is one test package that reads at least one shared input from
 // elsewhere in the repository tree.
-type expectedCarrier struct {
+type expectedImporter struct {
 	// ImportPath is the package's import path, and it is the identity the set
 	// comparison is made on.
 	ImportPath string
@@ -268,18 +269,18 @@ type expectedCarrier struct {
 	// than aesthetic: the shared reads are sorted absolute paths, so the lowest of
 	// them is whatever sorts first beneath the tree root, and a dotfile at the
 	// root sorts before every submodule directory. Recording the lowest path would
-	// therefore name the same root file for almost any carrier — satisfying the
+	// therefore name the same root file for almost any importer — satisfying the
 	// letter of naming what grew while telling a reader nothing about where it
 	// reached.
 	//
 	// Reach is CONTEXT measured on the recording run and is not part of the gated
-	// comparison. Which packages carry is a property of the tree; how far a given
-	// run's reads happened to spread is not, so comparing it would fail on a
-	// difference that means nothing.
+	// comparison. Which packages are importers is a property of the tree; how far
+	// a given run's reads happened to spread is not, so comparing it would fail on
+	// a difference that means nothing.
 	Reach []string
 }
 
-// expectationSite is where a reader is sent when the carrier set has moved. It is
+// expectationSite is where a reader is sent when the importer set has moved. It is
 // written out rather than derived so the message survives being read in a log far
 // from the source, and it is the one home of that path: the write target is this
 // joined onto the resolved tree root.
@@ -294,13 +295,13 @@ func main() {
 	// that used to multiply into memory belong to the test leg that collects the
 	// logs and are set there.
 	logDir := flag.String("log-dir", "", "directory holding the per-package test logs the caller's test leg collected (required)")
-	reportOnly := flag.Bool("report-only", false, "print the census and exit 0 even when the carrier set has grown")
+	reportOnly := flag.Bool("report-only", false, "print the census and exit 0 even when the importer set has grown")
 	cacheDefeated := flag.String("cache-defeated", "", "comma-separated module paths the caller already runs with caching defeated; when empty, the census says the enrolment was not supplied rather than implying none")
 	// Writing is deliberately NOT gating: it accepts the measurement rather than
 	// judging it, so it reports what moved and exits 0. It refuses when part of the
 	// scope could not be measured, because a set recorded from a partial census
-	// would read every unmeasured module's carriers as dropped.
-	writeExpectation := flag.Bool("write-expectation", false, "rewrite the recorded carrier set from this run's measurement, report what moved, and exit 0")
+	// would read every unmeasured module's importers as dropped.
+	writeExpectation := flag.Bool("write-expectation", false, "rewrite the recorded importer set from this run's measurement, report what moved, and exit 0")
 	var modules stringList
 	flag.Var(&modules, "module", "a Go module directory to census; repeatable, and the census covers exactly what it is given")
 	flag.Parse()
@@ -601,8 +602,8 @@ func listTestPackages(dir string, workspace bool) ([]listedPackage, error) {
 // log holding the toolchain's marker line and no entries, while a package whose
 // log is missing was not measured at all. Reading the second as the first would
 // report a confident zero for a package nobody looked at — and because the gate
-// compares SETS, a carrier silently reporting zero reads as a carrier that
-// stopped carrying, which the report calls a stale record and which moves no
+// compares SETS, an importer silently reporting zero reads as an importer that
+// stopped importing, which the report calls a stale record and which moves no
 // exit code. A false green, in other words, in the exact direction the recorded
 // set is asymmetric.
 //
@@ -682,7 +683,7 @@ func enrolment(cacheDefeated string) (map[string]bool, bool) {
 // It has two callers — the report, which fails on a non-empty result, and the
 // write path, which refuses to record from one — and the derivation lives here so
 // the two cannot come apart. A set recorded from a partial census would hold no
-// carrier for the modules the run failed to read, so every one of them would read
+// importer for the modules the run failed to read, so every one of them would read
 // as newly grown on the next run, and the refusal this run owed would have been
 // converted into a recorded fact.
 func unmeasured(results []modResult) []string {
@@ -706,7 +707,7 @@ func unmeasured(results []modResult) []string {
 //
 // The component answers WHICH CORPUS a package reached — a sibling module, the
 // catalog, the shared schemas — where a file path answers only which file, and
-// the corpus is what a reader needs to judge whether a new carrier is expected.
+// the corpus is what a reader needs to judge whether a new importer is expected.
 //
 // classify guarantees every entry lies inside the tree, so a path that does not
 // is a contradiction of that contract and is kept WHOLE rather than reduced,
@@ -737,15 +738,15 @@ func reachComponents(shared []string, treeRoot string) []string {
 	return out
 }
 
-// measuredCarriers is the module's carrying test packages as this run measured
-// them, ordered by import path.
-func measuredCarriers(m modResult, treeRoot string) []expectedCarrier {
-	var out []expectedCarrier
+// measuredImporters is the module's importers as this run measured them, ordered
+// by import path.
+func measuredImporters(m modResult, treeRoot string) []expectedImporter {
+	var out []expectedImporter
 	for _, p := range m.Packages {
 		if len(p.SharedTree) == 0 {
 			continue
 		}
-		out = append(out, expectedCarrier{
+		out = append(out, expectedImporter{
 			ImportPath: p.ImportPath,
 			Reach:      reachComponents(p.SharedTree, treeRoot),
 		})
@@ -757,7 +758,7 @@ func measuredCarriers(m modResult, treeRoot string) []expectedCarrier {
 // newExpectation is the record this run's measurement would write.
 //
 // It is the ONE place the record's ordering is decided — modules by path,
-// carriers by import path, reach components lexically — and everything
+// importers by import path, reach components lexically — and everything
 // downstream reads that order rather than imposing its own, so there is no second
 // sort to fall out of step with this one.
 //
@@ -769,9 +770,9 @@ func newExpectation(treeRoot string, results []modResult, defeated map[string]bo
 		if m.Err != nil {
 			continue
 		}
-		carriers := measuredCarriers(m, treeRoot)
-		if len(carriers) == 0 {
-			// Only a module that HAS a carrier is recorded. That is what makes a
+		importers := measuredImporters(m, treeRoot)
+		if len(importers) == 0 {
+			// Only a module that HAS an importer is recorded. That is what makes a
 			// module's absence mean "expected to carry none", so a newly added
 			// module needs no bookkeeping until one of its packages reads a shared
 			// input.
@@ -780,20 +781,20 @@ func newExpectation(treeRoot string, results []modResult, defeated map[string]bo
 		out.Modules = append(out.Modules, expectedModule{
 			Rel:           m.Rel,
 			CacheDefeated: defeated[m.Rel],
-			Carriers:      carriers,
+			Importers:     importers,
 		})
 	}
 	sort.Slice(out.Modules, func(i, j int) bool { return out.Modules[i].Rel < out.Modules[j].Rel })
 	return out
 }
 
-// carrierIndex is the record as a per-module set of carrying import paths, for
-// asking whether a given package is held.
-func carrierIndex(e testInputExpectation) map[string]map[string]bool {
+// importerIndex is the record as a per-module set of its importers' import paths,
+// for asking whether a given package is held.
+func importerIndex(e testInputExpectation) map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(e.Modules))
 	for _, m := range e.Modules {
-		held := make(map[string]bool, len(m.Carriers))
-		for _, c := range m.Carriers {
+		held := make(map[string]bool, len(m.Importers))
+		for _, c := range m.Importers {
 			held[c.ImportPath] = true
 		}
 		out[m.Rel] = held
@@ -801,24 +802,23 @@ func carrierIndex(e testInputExpectation) map[string]map[string]bool {
 	return out
 }
 
-// carrierTotal is how many carrying packages the record holds across every
-// module.
-func carrierTotal(e testInputExpectation) int {
+// importerTotal is how many importers the record holds across every module.
+func importerTotal(e testInputExpectation) int {
 	n := 0
 	for _, m := range e.Modules {
-		n += len(m.Carriers)
+		n += len(m.Importers)
 	}
 	return n
 }
 
-// reportStale names the recorded carriers a module no longer measures.
+// reportStale names the recorded importers a module no longer measures.
 //
 // Stale is reported and never fatal: a package that stopped reading out of its
 // module is the exposure SHRINKING, and failing on it would leave no way to keep
 // the record honest. It is still worth saying, because a record left wider than
 // the truth quietly buys room for the next addition.
 //
-// 🔴 A recorded carrier the run could not MEASURE is not stale, and separating
+// 🔴 A recorded importer the run could not MEASURE is not stale, and separating
 // the two is the whole reason unmeasured is a parameter here. Nothing looked at
 // such a package, so calling it stale would report a shrink that was never
 // observed — and it would invite dropping the record entry, which is the one
@@ -827,17 +827,17 @@ func carrierTotal(e testInputExpectation) int {
 // rule at package granularity, where the missing-log failure lands.
 func reportStale(w io.Writer, rec expectedModule, measured, unmeasured map[string]bool) {
 	var held []string
-	for _, c := range rec.Carriers {
+	for _, c := range rec.Importers {
 		if unmeasured[c.ImportPath] {
 			held = append(held, c.ImportPath)
 		}
 	}
 	if len(held) > 0 {
-		fmt.Fprintf(w, "      %d recorded carrier(s) were NOT measured by this run, so nothing here says they stopped carrying: %s\n",
+		fmt.Fprintf(w, "      %d recorded importer(s) were NOT measured by this run, so nothing here says they stopped importing: %s\n",
 			len(held), strings.Join(held, ", "))
 	}
 	var gone []string
-	for _, c := range rec.Carriers {
+	for _, c := range rec.Importers {
 		if unmeasured[c.ImportPath] {
 			continue
 		}
@@ -848,7 +848,7 @@ func reportStale(w io.Writer, rec expectedModule, measured, unmeasured map[strin
 	if len(gone) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "      the recorded set is now stale — %d carrier(s) no longer read a shared input: %s\n",
+	fmt.Fprintf(w, "      the recorded set is now stale — %d importer(s) no longer read a shared input: %s\n",
 		len(gone), strings.Join(gone, ", "))
 	fmt.Fprintf(w, "      re-record it in %s; a record left wider than the truth buys room for the next addition\n",
 		expectationSite)
@@ -869,7 +869,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 	// same one the recording path asks. Rebuilding it inline here would be a second
 	// answer to "does the record hold this package", which is the comparison the
 	// whole gate turns on.
-	held := carrierIndex(expect)
+	held := importerIndex(expect)
 
 	problems := unmeasured(results)
 
@@ -887,7 +887,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 
 	// Which modules the census reached at all, and which of those it actually
 	// read. The two are different: a module it tried and could not measure must
-	// NOT have its recorded carriers called stale, because this run looked at
+	// NOT have its recorded importers called stale, because this run looked at
 	// nothing and calling them stale would invite dropping them.
 	inScope := make(map[string]bool, len(results))
 	for _, m := range results {
@@ -895,10 +895,10 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 	}
 
 	if expect.Measured != "" {
-		fmt.Fprintf(w, "test packages reading inputs from outside their module root — census over %d module(s) under %s, against the carrier set measured %s\n",
+		fmt.Fprintf(w, "test packages reading inputs from outside their module root — census over %d module(s) under %s, against the importer set measured %s\n",
 			len(results), absRoot, expect.Measured)
 	} else {
-		fmt.Fprintf(w, "test packages reading inputs from outside their module root — census over %d module(s) under %s; NO carrier set is recorded, so every carrier below reads as new\n",
+		fmt.Fprintf(w, "test packages reading inputs from outside their module root — census over %d module(s) under %s; NO importer set is recorded, so every importer below reads as new\n",
 			len(results), absRoot)
 	}
 
@@ -908,16 +908,16 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 			continue
 		}
 		rec := recorded[m.Rel]
-		carriers := measuredCarriers(m, absRoot)
-		carries := make(map[string]bool, len(carriers))
-		reach := make(map[string][]string, len(carriers))
-		for _, c := range carriers {
-			carries[c.ImportPath] = true
+		importers := measuredImporters(m, absRoot)
+		importing := make(map[string]bool, len(importers))
+		reach := make(map[string][]string, len(importers))
+		for _, c := range importers {
+			importing[c.ImportPath] = true
 			reach[c.ImportPath] = c.Reach
 		}
 		// The packages this run could not read, kept apart from the ones it read
-		// and found clean. Both contribute zero carriers, and conflating them is
-		// what would let an unmeasured carrier read as one that stopped carrying.
+		// and found clean. Both contribute zero importers, and conflating them is
+		// what would let an unmeasured importer read as one that stopped importing.
 		unread := make(map[string]bool)
 		for _, p := range m.Packages {
 			if p.Err != nil {
@@ -930,16 +930,16 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 			// Measured, and found to carry nothing, so anything recorded for it is
 			// stale. Said rather than skipped: a module that lost its last test
 			// package is exactly the case the one-line shortcut above would hide.
-			reportStale(w, rec, carries, unread)
+			reportStale(w, rec, importing, unread)
 			continue
 		}
 
 		outside := m.outsideTreeCount()
 		totalPkgs += len(m.Packages)
-		totalShared += len(carriers)
+		totalShared += len(importers)
 		totalOutside += outside
 		fmt.Fprintf(w, "  %-24s %d of %d test packages read shared inputs from elsewhere in the tree (%d recorded)\n",
-			m.Rel, len(carriers), len(m.Packages), len(rec.Carriers))
+			m.Rel, len(importers), len(m.Packages), len(rec.Importers))
 		// Immediately under the count, because without it that count reads as a
 		// measurement of every package in the module. A run that could not read
 		// part of its scope refuses below; this is what keeps the line above from
@@ -960,16 +960,16 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 				p.ImportPath, len(p.SharedTree), p.Inputs, strings.Join(reach[p.ImportPath], ", "))
 		}
 
-		for _, c := range carriers {
+		for _, c := range importers {
 			if held[m.Rel][c.ImportPath] {
 				continue
 			}
 			added = append(added, fmt.Sprintf("%s: %s — reaches %s",
 				m.Rel, c.ImportPath, strings.Join(c.Reach, ", ")))
 		}
-		reportStale(w, rec, carries, unread)
+		reportStale(w, rec, importing, unread)
 
-		if len(carriers) > 0 {
+		if len(importers) > 0 {
 			switch {
 			case !enrolmentSupplied:
 				fmt.Fprintf(w, "      whether this module already runs with caching defeated was not supplied to the census\n")
@@ -984,7 +984,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 		// enrolment, which belongs to the caller that supplies it. So a divergence
 		// says the record is stale on that point and moves no exit code — and it is
 		// only comparable at all when a caller supplied an enrolment.
-		if enrolmentSupplied && len(rec.Carriers) > 0 && rec.CacheDefeated != defeated[m.Rel] {
+		if enrolmentSupplied && len(rec.Importers) > 0 && rec.CacheDefeated != defeated[m.Rel] {
 			was := "does NOT"
 			if rec.CacheDefeated {
 				was = "does"
@@ -996,7 +996,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 	}
 
 	// A recorded module this census was not given. Nothing compared it, so its
-	// carriers read as stale — and that must not fail: a module leaving the scope
+	// importers read as stale — and that must not fail: a module leaving the scope
 	// is not new exposure. A module the census was given and could not measure is
 	// deliberately absent from this pass; it is a problem below instead.
 	for _, rm := range expect.Modules {
@@ -1004,11 +1004,11 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 			continue
 		}
 		var names []string
-		for _, c := range rm.Carriers {
+		for _, c := range rm.Importers {
 			names = append(names, c.ImportPath)
 		}
-		fmt.Fprintf(w, "  %-24s recorded but outside this census's scope, so its %d recorded carrier(s) read as stale: %s\n",
-			rm.Rel, len(rm.Carriers), strings.Join(names, ", "))
+		fmt.Fprintf(w, "  %-24s recorded but outside this census's scope, so its %d recorded importer(s) read as stale: %s\n",
+			rm.Rel, len(rm.Importers), strings.Join(names, ", "))
 	}
 
 	if len(empty) > 0 {
@@ -1028,7 +1028,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 		}
 	}
 	if len(added) > 0 {
-		fmt.Fprintf(w, "\nthe carrier set grew — %d test package(s) read a shared input the recorded set does not hold:\n", len(added))
+		fmt.Fprintf(w, "\nthe importer set grew — %d test package(s) read a shared input the recorded set does not hold:\n", len(added))
 		for _, a := range added {
 			fmt.Fprintf(w, "  %s\n", a)
 		}
@@ -1046,7 +1046,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 	}
 	switch {
 	case len(problems) > 0 && len(added) > 0:
-		return errors.New("the census could not measure part of its scope, and the carrier set grew where it could")
+		return errors.New("the census could not measure part of its scope, and the importer set grew where it could")
 	case len(problems) > 0:
 		return errors.New("the census could not measure part of its scope")
 	case len(added) > 0:
@@ -1055,7 +1055,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 	return nil
 }
 
-// writeMeasured rewrites the recorded carrier set from this run's measurement and
+// writeMeasured rewrites the recorded importer set from this run's measurement and
 // says what moved, so an operator reads what they have just accepted.
 //
 // It prints the census UNGATED, because recording accepts the measurement rather
@@ -1095,10 +1095,10 @@ func writeMeasured(w io.Writer, absRoot string, results []modResult, previous te
 		return err
 	}
 
-	before, now := carrierIndex(previous), carrierIndex(measured)
+	before, now := importerIndex(previous), importerIndex(measured)
 	var gained, dropped []string
 	for _, m := range measured.Modules {
-		for _, c := range m.Carriers {
+		for _, c := range m.Importers {
 			if !before[m.Rel][c.ImportPath] {
 				gained = append(gained, fmt.Sprintf("%s: %s — reaches %s",
 					m.Rel, c.ImportPath, strings.Join(c.Reach, ", ")))
@@ -1106,16 +1106,16 @@ func writeMeasured(w io.Writer, absRoot string, results []modResult, previous te
 		}
 	}
 	for _, m := range previous.Modules {
-		for _, c := range m.Carriers {
+		for _, c := range m.Importers {
 			if !now[m.Rel][c.ImportPath] {
 				dropped = append(dropped, fmt.Sprintf("%s: %s", m.Rel, c.ImportPath))
 			}
 		}
 	}
 
-	fmt.Fprintf(w, "\nrecorded the measured carrier set in %s, measured %s\n", expectationSite, measured.Measured)
+	fmt.Fprintf(w, "\nrecorded the measured importer set in %s, measured %s\n", expectationSite, measured.Measured)
 	fmt.Fprintf(w, "  %d module(s) carrying %d test package(s) in total\n",
-		len(measured.Modules), carrierTotal(measured))
+		len(measured.Modules), importerTotal(measured))
 	if len(gained) == 0 && len(dropped) == 0 {
 		fmt.Fprintf(w, "  nothing moved: the recorded set already matched what this run measured\n")
 	}
@@ -1160,16 +1160,16 @@ func writeExpectationFile(path string, e testInputExpectation) error {
 	b.WriteString("// refresh. The command above is the only way in, and it rides the run that already\n")
 	b.WriteString("// measures under exactly these conditions.\n")
 	b.WriteString("//\n")
-	b.WriteString("// What is gated here and what is merely recorded. The carrier PACKAGE SET is the\n")
+	b.WriteString("// What is gated here and what is merely recorded. The importer PACKAGE SET is the\n")
 	b.WriteString("// gated fact: which packages read a shared input is a property of the tree, so a\n")
-	b.WriteString("// package joining the set fails the census. Each carrier's reach components are\n")
+	b.WriteString("// package joining the set fails the census. Each importer's reach components are\n")
 	b.WriteString("// CONTEXT measured on the recording run — how far that run's reads happened to\n")
 	b.WriteString("// spread — and are never compared, because they move with what a run touched\n")
 	b.WriteString("// rather than with the tree.\n")
 	b.WriteString("\n")
 	b.WriteString("package main\n")
 	b.WriteString("\n")
-	b.WriteString("// expectation is the recorded carrier set. What the two directions of the\n")
+	b.WriteString("// expectation is the recorded importer set. What the two directions of the\n")
 	b.WriteString("// comparison mean, and what every figure here was measured over, is on\n")
 	b.WriteString("// testInputExpectation.\n")
 	b.WriteString("var expectation = testInputExpectation{\n")
@@ -1180,8 +1180,8 @@ func writeExpectationFile(path string, e testInputExpectation) error {
 			b.WriteString("\t\t{\n")
 			fmt.Fprintf(&b, "\t\t\tRel:           %q,\n", m.Rel)
 			fmt.Fprintf(&b, "\t\t\tCacheDefeated: %t,\n", m.CacheDefeated)
-			b.WriteString("\t\t\tCarriers: []expectedCarrier{\n")
-			for _, c := range m.Carriers {
+			b.WriteString("\t\t\tImporters: []expectedImporter{\n")
+			for _, c := range m.Importers {
 				fmt.Fprintf(&b, "\t\t\t\t{ImportPath: %q, Reach: []string{", c.ImportPath)
 				for i, r := range c.Reach {
 					if i > 0 {

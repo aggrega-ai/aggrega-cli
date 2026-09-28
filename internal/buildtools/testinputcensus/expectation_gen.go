@@ -17,16 +17,16 @@
 // refresh. The command above is the only way in, and it rides the run that already
 // measures under exactly these conditions.
 //
-// What is gated here and what is merely recorded. The carrier PACKAGE SET is the
+// What is gated here and what is merely recorded. The importer PACKAGE SET is the
 // gated fact: which packages read a shared input is a property of the tree, so a
-// package joining the set fails the census. Each carrier's reach components are
+// package joining the set fails the census. Each importer's reach components are
 // CONTEXT measured on the recording run — how far that run's reads happened to
 // spread — and are never compared, because they move with what a run touched
 // rather than with the tree.
 
 package main
 
-// expectation is the recorded carrier set. What the two directions of the
+// expectation is the recorded importer set. What the two directions of the
 // comparison mean, and what every figure here was measured over, is on
 // testInputExpectation.
 var expectation = testInputExpectation{
@@ -35,14 +35,14 @@ var expectation = testInputExpectation{
 		{
 			Rel:           "aggrega-abi/go",
 			CacheDefeated: true,
-			Carriers: []expectedCarrier{
+			Importers: []expectedImporter{
 				{ImportPath: "github.com/aggrega-ai/aggrega-abi-go/pkg/abi", Reach: []string{"aggrega-abi"}},
 			},
 		},
 		{
 			Rel:           "aggrega-cli",
 			CacheDefeated: false,
-			Carriers: []expectedCarrier{
+			Importers: []expectedImporter{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/cmd/aggrega", Reach: []string{".", ".aggrega", ".aggrega-config.yaml", ".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket", Reach: []string{".gitmodules", "aggrega-pdk"}},
@@ -65,7 +65,7 @@ var expectation = testInputExpectation{
 		{
 			Rel:           "aggrega-pdk/go",
 			CacheDefeated: true,
-			Carriers: []expectedCarrier{
+			Importers: []expectedImporter{
 				{ImportPath: "github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega", Reach: []string{"aggrega-abi", "aggrega-schemas"}},
 			},
 		},

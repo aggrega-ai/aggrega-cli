@@ -352,8 +352,8 @@ func TestTestLogPathMirrorsThePackageDirectory(t *testing.T) {
 // A package that ran and read nothing writes a log with the marker line and no
 // entries, which is a MEASURED zero. A package whose log is absent was not
 // measured at all. Reading the second as the first would report a confident zero
-// for a package nobody looked at — and since the gate compares sets, a carrier
-// reporting zero reads as a carrier that stopped carrying, which moves no exit
+// for a package nobody looked at — and since the gate compares sets, an importer
+// reporting zero reads as an importer that stopped importing, which moves no exit
 // code. A test asserting only the zero case would pass on an implementation that
 // makes exactly that mistake.
 func TestCensusPackageTellsAnUnmeasuredPackageFromAMeasuredZero(t *testing.T) {
@@ -409,12 +409,12 @@ func TestCensusPackageTellsAnUnmeasuredPackageFromAMeasuredZero(t *testing.T) {
 	})
 }
 
-// TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne pins the reporting half of
+// TestReportKeepsAnUnmeasuredImporterApartFromAStaleOne pins the reporting half of
 // the same contract. Both an unmeasured package and a measured-clean one carry
 // zero, and the recorded set's two directions are asymmetric — growth fails,
-// shrinkage is only reported — so calling an unmeasured carrier stale would
+// shrinkage is only reported — so calling an unmeasured importer stale would
 // invite deleting the record entry that this run's refusal was protecting.
-func TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne(t *testing.T) {
+func TestReportKeepsAnUnmeasuredImporterApartFromAStaleOne(t *testing.T) {
 	results := []modResult{{
 		Rel:  "m",
 		Root: "/w/m",
@@ -435,13 +435,13 @@ func TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne(t *testing.T) {
 		t.Fatalf("the report should name the package it could not read:\n%s", out)
 	}
 	if !strings.Contains(out, "were NOT measured by this run") {
-		t.Errorf("the report should say the unread carrier was not measured:\n%s", out)
+		t.Errorf("the report should say the unread importer was not measured:\n%s", out)
 	}
-	// m/clean WAS read and found to carry nothing, so it is legitimately stale;
+	// m/clean WAS read and found to import nothing, so it is legitimately stale;
 	// m/unread must not appear in that same sentence.
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, "no longer read a shared input") && strings.Contains(line, "m/unread") {
-			t.Errorf("an unmeasured carrier was reported as having stopped carrying:\n  %s", line)
+			t.Errorf("an unmeasured importer was reported as having stopped importing:\n  %s", line)
 		}
 	}
 }
@@ -451,7 +451,7 @@ func TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne(t *testing.T) {
 //
 // Every synthetic package gets its OWN import path. Under a set comparison a
 // shared path would collapse several packages into one element, so a case meaning
-// "three carriers against two recorded" would silently mean "one against one".
+// "three importers against two recorded" would silently mean "one against one".
 func mod(rel string, escaping, clean int) modResult {
 	m := modResult{Rel: rel, Root: "/w/" + rel}
 	for i := 0; i < escaping; i++ {
@@ -474,7 +474,7 @@ func mod(rel string, escaping, clean int) modResult {
 func recorded(rel string, defeated bool, imports ...string) expectedModule {
 	m := expectedModule{Rel: rel, CacheDefeated: defeated}
 	for _, ip := range imports {
-		m.Carriers = append(m.Carriers, expectedCarrier{ImportPath: ip, Reach: []string{"outside"}})
+		m.Importers = append(m.Importers, expectedImporter{ImportPath: ip, Reach: []string{"outside"}})
 	}
 	return m
 }
@@ -483,8 +483,8 @@ func set(mods ...expectedModule) testInputExpectation {
 	return testInputExpectation{Measured: "2026-01-01", Modules: mods}
 }
 
-// TestReportFailsOnGrowthOnly pins the gate's verdict: a carrier the record does
-// not hold fails and is NAMED, an exact match passes, a carrier that has gone is
+// TestReportFailsOnGrowthOnly pins the gate's verdict: an importer the record does
+// not hold fails and is NAMED, an exact match passes, an importer that has gone is
 // reported without failing, and anything unmeasured fails because a partial
 // census cannot certify the part it missed.
 func TestReportFailsOnGrowthOnly(t *testing.T) {
@@ -495,27 +495,27 @@ func TestReportFailsOnGrowthOnly(t *testing.T) {
 		wantErr bool
 		wantOut []string
 		// wantInGrowth is asserted against the GROWTH SECTION alone, not the whole
-		// report. Asserting a carrier's name against the whole buffer proves
-		// nothing: the per-module listing above names every carrier it measured, so
+		// report. Asserting an importer's name against the whole buffer proves
+		// nothing: the per-module listing above names every importer it measured, so
 		// a growth message that had dropped the name entirely would still pass.
 		// Established by needle — the unscoped form did exactly that.
 		wantInGrowth []string
 	}{
 		{
-			name:    "a carrier set matching the record passes",
+			name:    "an importer set matching the record passes",
 			results: []modResult{mod("m", 2, 3)},
 			expect:  set(recorded("m", false, "m/esc0", "m/esc1")),
 		},
 		{
-			name:         "an added carrier fails, and the message names it and where it reached",
+			name:         "an added importer fails, and the message names it and where it reached",
 			results:      []modResult{mod("m", 3, 3)},
 			expect:       set(recorded("m", false, "m/esc0", "m/esc1")),
 			wantErr:      true,
-			wantOut:      []string{"the carrier set grew"},
+			wantOut:      []string{"the importer set grew"},
 			wantInGrowth: []string{"m/esc2", "reaches outside"},
 		},
 		{
-			name:         "two added carriers are both named, and the count of additions is stated",
+			name:         "two added importers are both named, and the count of additions is stated",
 			results:      []modResult{mod("m", 4, 0)},
 			expect:       set(recorded("m", false, "m/esc0", "m/esc1")),
 			wantErr:      true,
@@ -523,15 +523,15 @@ func TestReportFailsOnGrowthOnly(t *testing.T) {
 			wantInGrowth: []string{"m/esc2", "m/esc3"},
 		},
 		{
-			name:         "a module with carriers and no record entry fails and names them",
+			name:         "a module with importers and no record entry fails and names them",
 			results:      []modResult{mod("m", 1, 0)},
 			expect:       set(),
 			wantErr:      true,
-			wantOut:      []string{"the carrier set grew"},
+			wantOut:      []string{"the importer set grew"},
 			wantInGrowth: []string{"m/esc0", "reaches outside"},
 		},
 		{
-			name:    "a carrier the record holds and this run did not measure is stale, and does not fail",
+			name:    "an importer the record holds and this run did not measure is stale, and does not fail",
 			results: []modResult{mod("m", 1, 3)},
 			expect:  set(recorded("m", false, "m/esc0", "m/esc1")),
 			wantOut: []string{"now stale", "no longer read a shared input: m/esc1"},
@@ -559,7 +559,7 @@ func TestReportFailsOnGrowthOnly(t *testing.T) {
 			wantOut: []string{"certifies nothing"},
 		},
 		{
-			name:    "a recorded module whose carriers have all gone is stale, and does not fail",
+			name:    "a recorded module whose importers have all gone is stale, and does not fail",
 			results: []modResult{{Rel: "m", Root: "/w/m"}},
 			expect:  set(recorded("m", false, "m/esc0")),
 			wantOut: []string{"now stale", "no longer read a shared input: m/esc0"},
@@ -579,7 +579,7 @@ func TestReportFailsOnGrowthOnly(t *testing.T) {
 				}
 			}
 			if len(tc.wantInGrowth) > 0 {
-				_, growth, found := strings.Cut(buf.String(), "the carrier set grew")
+				_, growth, found := strings.Cut(buf.String(), "the importer set grew")
 				if !found {
 					t.Fatalf("no growth section in:\n%s", buf.String())
 				}
@@ -629,7 +629,7 @@ func TestReportSaysWhetherEnrolmentWasSupplied(t *testing.T) {
 // recorded enrolment is NOT: a second authority on it. The record describes the
 // condition its measurement was taken under, so when it disagrees with what the
 // caller now reports, the record is stale on that point and the exit code stays
-// where the carrier comparison put it.
+// where the importer comparison put it.
 func TestReportNotesEnrolmentDivergenceWithoutFailing(t *testing.T) {
 	res := []modResult{{Rel: "m", Root: "/w/m", Packages: []pkgResult{
 		{ImportPath: "m/esc", SharedTree: []string{"/w/outside/x"}, Inputs: 1},
@@ -648,7 +648,7 @@ func TestReportNotesEnrolmentDivergenceWithoutFailing(t *testing.T) {
 
 // TestNewExpectationRecordsOnlyModulesThatCarry pins the semantic that lets a
 // module's ABSENCE mean "expected to carry none": a module measured with no
-// carrier is left out, so a newly added module needs no bookkeeping until one of
+// importer is left out, so a newly added module needs no bookkeeping until one of
 // its packages actually reads a shared input.
 func TestNewExpectationRecordsOnlyModulesThatCarry(t *testing.T) {
 	e := newExpectation("/w", []modResult{mod("carries", 1, 2), mod("clean", 0, 3)},
@@ -665,7 +665,7 @@ func TestWriteExpectationFileEmitsDeterministicGofmtCleanGo(t *testing.T) {
 	// Given out of order, and with one module that carries nothing, so the
 	// emitted ordering and the omission are both readable from the output.
 	e := newExpectation("/w",
-		[]modResult{mod("z-mod", 1, 0), mod("a-mod", 2, 1), mod("no-carrier", 0, 2)},
+		[]modResult{mod("z-mod", 1, 0), mod("a-mod", 2, 1), mod("no-importer", 0, 2)},
 		map[string]bool{"a-mod": true}, "2026-01-02")
 
 	dir := t.TempDir()
@@ -713,7 +713,7 @@ func TestWriteExpectationFileEmitsDeterministicGofmtCleanGo(t *testing.T) {
 			t.Errorf("the written record does not contain %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "no-carrier") {
+	if strings.Contains(body, "no-importer") {
 		t.Errorf("a module carrying nothing must not be recorded:\n%s", body)
 	}
 	if i, j := strings.Index(body, `"a-mod"`), strings.Index(body, `"z-mod"`); i < 0 || j < 0 || i > j {
@@ -737,7 +737,7 @@ func TestWriteMeasuredWritesAtTheConstantSiteAndSaysWhatMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Measured: m/esc0 and m/esc1. Recorded: m/esc0 and m/gone. So one carrier is
+	// Measured: m/esc0 and m/esc1. Recorded: m/esc0 and m/gone. So one importer is
 	// added and one is dropped, and both must be accounted for.
 	//
 	// The shared reads are built UNDER root rather than borrowed from mod, because
@@ -779,7 +779,7 @@ func TestWriteMeasuredWritesAtTheConstantSiteAndSaysWhatMoved(t *testing.T) {
 
 // TestWriteMeasuredRefusesAPartialCensus pins the refusal that keeps the record
 // honest: a set recorded from a census that could not read part of its scope
-// would hold no carrier for the modules it missed, so the next run would read
+// would hold no importer for the modules it missed, so the next run would read
 // every one of them as newly grown — turning this run's owed refusal into a
 // recorded fact.
 func TestWriteMeasuredRefusesAPartialCensus(t *testing.T) {
