@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"text/template"
 	"text/template/parse"
@@ -22,9 +21,10 @@ import (
 // LoadAggregateParameterContract reads the raw Aggregate YAML at path and
 // extracts the spec.parameters: block into a per-key contract map. Thin
 // wrapper around LoadAggregateParameterContractFromBytes — reads the file,
-// delegates. Callers that already hold raw bytes (the lsp daemon +
-// the pipeline package) call LoadAggregateParameterContractFromBytes
-// directly with the bytes and a source-path string for error provenance.
+// delegates. Callers that already hold raw bytes (the resolve path and the
+// catalog's sub-aggregate parameter resolution) call
+// LoadAggregateParameterContractFromBytes directly with the bytes and a
+// source-path string for error provenance.
 func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -51,6 +51,14 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 // alternatives were rejected; cross-parameter constraints
 // land in the separate assertions: block).
 //
+// The contract is judged in two steps before it is returned, and a contract
+// failing either is refused whether or not any Release supplies the parameter at
+// fault. The envelope validation holds it to the schema's shape — which keys a
+// declaration carries, the type of each, a non-negative minLength and maxLength
+// on each parameter's own declaration. Then [refuseMalformedParameterContract]
+// compiles every pattern the contract declares, at every nesting, and refuses
+// one that does not compile with ErrParameterContractViolation.
+//
 // sourcePath is used only for ResolverError.Field provenance — it identifies
 // where the bytes came from for error display, but the function performs no
 // filesystem operations against it.
@@ -75,6 +83,9 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 	// validation.
 	if envErr := validateParameterContractEnvelope(shell.Spec.Parameters, sourcePath); envErr != nil {
 		return types.OrderedMap[any]{}, envErr
+	}
+	if shapeErr := refuseMalformedParameterContract(shell.Spec.Parameters); shapeErr != nil {
+		return types.OrderedMap[any]{}, shapeErr
 	}
 	return shell.Spec.Parameters, nil
 }
@@ -436,12 +447,15 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 		})
 	}
 	if pc.Pattern != "" {
-		re, perr := regexp.Compile(pc.Pattern)
+		// The contract load compiled this pattern and refused it had it not
+		// compiled, so this is handed the expression compiled there. The error arm
+		// is reached only by a contract that did not come through that load.
+		re, perr := compileParameterPattern(pc.Pattern)
 		if perr != nil {
 			errs = append(errs, &ResolverError{
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
-				Message: fmt.Sprintf("parameter %q pattern compile error: %v", path, perr),
+				Message: patternDoesNotCompile(path, pc.Pattern, perr),
 				Err:     ErrParameterContractViolation(),
 			})
 		} else if !re.MatchString(s) {

@@ -465,6 +465,12 @@ var errParameterMissing = cerrors.Register("parameter-missing", cerrors.Meta{
 // corresponding Aggregate declaration (closed-contract policy).
 // Surfaced by parameter-contract validation, which runs after the Release
 // parameter load and before parameter interpolation.
+//
+// It also wraps a contract that cannot constrain anything as written: a
+// declaration that does not decode, and a pattern: that does not compile. The
+// pattern is refused when the contract loads, before any Release value is read,
+// so a broken one halts the build whether or not a Release supplies the
+// parameter.
 func ErrParameterContractViolation() error { return errParameterContractViolation }
 
 var errParameterContractViolation = cerrors.Register("parameter-contract-violation", cerrors.Meta{
