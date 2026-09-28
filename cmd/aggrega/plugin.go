@@ -58,11 +58,11 @@ catalog entities from a guest's own metadata.`,
   # The same, as structured output
   aggrega plugin list -o json
 
-  # Add a provider plugin from a registry
-  aggrega plugin add --type provider
+  # Add a provider plugin from a registry, bound to the capability it serves
+  aggrega plugin add provider helm --capability helm
 
   # Call one export of a local guest, without publishing it
-  aggrega plugin run-local ./build/my-provider.wasm describe`,
+  aggrega plugin run-local --plugin ./build/my-provider.wasm --export render_node`,
 	}
 	mustAttachGroup(parent, c)
 	mustAttach(c, newPluginListCmd(), "plugin-list")

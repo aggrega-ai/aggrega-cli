@@ -43,8 +43,8 @@ type ValidateOptions struct {
 	//
 	// It is judged after the entity's capability, command-mirror and host-function
 	// cross-checks and immediately ahead of the version cross-check, so a guest
-	// built from an edited tree is told to commit and rebuild rather than to copy
-	// its marked version into the entity.
+	// built from an edited tree is refused as the build no commit holds rather
+	// than as a version disagreement.
 	RefuseUncommittedBuild bool
 }
 

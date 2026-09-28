@@ -128,12 +128,12 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
 	if errors.Is(err, wasm.ErrPluginBuiltFromUncommittedChanges()) {
-		return PushResult{}, fmt.Errorf("Plugin %s: the .wasm at %s was built from a working tree with uncommitted changes — commit the change, rebuild the plugin, and set metadata.version in %s to the version the rebuilt plugin reports before publishing: %w",
-			entityIdentity, cfg.PluginPath, entityPath, err)
+		return PushResult{}, fmt.Errorf("Plugin %s: the .wasm at %s was built from a working tree with uncommitted changes — %s: %w",
+			entityIdentity, cfg.PluginPath, taggedBuildRemedy("metadata.version in "+entityPath), err)
 	}
 	if errors.Is(err, wasm.ErrWasmPluginVersionMismatch()) {
-		return PushResult{}, fmt.Errorf("Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — set metadata.version to the guest's build version (regenerate with `aggrega plugin gen-catalog --plugin`) before publishing: %w",
-			entityIdentity, entityPath, cfg.PluginPath, err)
+		return PushResult{}, fmt.Errorf("Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — %s: %w",
+			entityIdentity, entityPath, cfg.PluginPath, taggedBuildRemedy("metadata.version"), err)
 	}
 	if err != nil {
 		return PushResult{}, fmt.Errorf("Plugin %s: %w", entityIdentity, err)
@@ -287,4 +287,27 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		return PushResult{}, err
 	}
 	return result, nil
+}
+
+// taggedBuildRemedy is the repair publication names when the version a plugin
+// reports about its own build cannot be published under its entity: a build from
+// a working tree with uncommitted changes, and a build whose version differs from
+// the entity's metadata.version. field names the entity field the sentence
+// opens on, qualified by its file where the surrounding message has not already
+// named it.
+//
+// Both refusals are cleared the same way, because a published version names a
+// tagged build: the entity records the release, and the plugin is built from the
+// commit that release's tag names, so it reports that version itself. For a new
+// release the tag has to name a commit already carrying the entity, so the entity
+// and the source it releases are committed and tagged before the build.
+//
+// It never directs writing the version the plugin reports into the entity. A
+// build of any other commit reports a development version, and copying that into
+// the entity would publish a development build under it. Nor does it need to know
+// which tag versions the plugin — the compiler's for a plugin that ships with the
+// compiler, one of its own for a plugin that ships outside it — because "that
+// release's tag" is true of both.
+func taggedBuildRemedy(field string) string {
+	return "set " + field + " to the release you are publishing and build the plugin from a clean checkout of the commit that release's tag names, so it reports that version itself; for a new release, commit the entity with the source it releases and tag that commit first"
 }

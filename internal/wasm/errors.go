@@ -982,12 +982,14 @@ var errProducerConsumptionReentry = cerrors.Register("wasm-nested-producer-consu
 
 // ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
 // metadata.version disagrees with the build-provenance version the plugin's
-// describe() self-report declares. The recorded version is machine-sourced: the
-// entity's metadata.version is derived from the guest's describe() version when
-// the entity is generated, so the two agree by construction. Publish verifies the
-// committed version against the binary before any bytes land; a hand-edit that
-// diverges the recorded version from the guest's build-provenance version is a
-// Loud Guardrail that halts and directs the author to re-record the version.
+// describe() self-report declares. The two name one release: the plugin's build
+// stamps the version its release tag gives it, and the entity records that
+// release — generated from a build of the tagged commit for a plugin that ships
+// with the compiler, written by its author before tagging for one that ships
+// outside it. Publish verifies the committed version against the binary before
+// any bytes land; a divergence is a Loud Guardrail that halts and directs the
+// author to a build of the commit the release's tag names, never to copying the
+// version the plugin reports into the entity.
 //
 // A guest that carries no build-provenance version (an unstamped build) reports
 // an empty version, which the check treats as the value to match: the entity's
@@ -1017,9 +1019,9 @@ var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatc
 // changes (see BuiltFromUncommittedChanges). Such a version is a valid semantic
 // version, but it names a commit that does not hold the bytes that were built,
 // so nobody can rebuild what was published from the version it was published
-// under. Publication refuses it before any bytes land and directs the author to
-// commit the change and rebuild; a clean development version and a prerelease
-// both publish.
+// under. Publication refuses it before any bytes land and directs the author to a
+// build of the commit the release's tag names; a clean development version and a
+// prerelease both publish.
 //
 // It is raised only where the caller asks for it — ValidateOptions'
 // RefuseUncommittedBuild, which publication sets. Validating a local build
@@ -1028,8 +1030,7 @@ var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatc
 //
 // It is checked ahead of the version equality (ErrWasmPluginVersionMismatch), so
 // a guest built from an edited tree under an entity recording the clean version
-// is told to commit and rebuild rather than to copy the marked version into its
-// entity.
+// is refused as the build no commit holds rather than as a version disagreement.
 func ErrPluginBuiltFromUncommittedChanges() error { return errPluginBuiltFromUncommittedChanges }
 
 var errPluginBuiltFromUncommittedChanges = cerrors.Register("plugin-built-from-uncommitted-changes", cerrors.Meta{

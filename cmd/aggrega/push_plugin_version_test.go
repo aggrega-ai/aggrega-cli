@@ -155,17 +155,81 @@ func TestPushPluginReadsTheEntityAgainstItsSchema(t *testing.T) {
 	}
 }
 
+// requireNamesTheTaggedBuild fails the test when a publication refusal over the
+// version a plugin reports about its own build does not direct the author to a
+// build of the commit the release's tag names — the repair every such refusal
+// shares — or when it still directs writing the reported version into the entity,
+// by hand or by regenerating the entity from the build.
+func requireNamesTheTaggedBuild(t *testing.T, label string, err error) {
+	t.Helper()
+	msg := err.Error()
+	for _, want := range []string{"the commit that release's tag names", "tag that commit"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("%s: the refusal should name the tagged build (%q); got %v", label, want, err)
+		}
+	}
+	for _, never := range []string{"the version the rebuilt plugin reports", "the guest's build version", "gen-catalog"} {
+		if strings.Contains(msg, never) {
+			t.Errorf("%s: the refusal must not direct writing the plugin's version into the entity (%q); got %v", label, never, err)
+		}
+	}
+}
+
+// TestPushPluginVersionMismatchNamesTheTaggedBuild proves publication, dry run
+// and real, refuses an entity whose metadata.version differs from the version its
+// guest reports about its own build, in either direction, and that the refusal
+// directs the author to a build of the commit the release's tag names rather than
+// to writing the guest's version into the entity — which, for a guest built from
+// any other commit, would publish a development build under it. The agreeing row
+// is the table's positive control.
+func TestPushPluginVersionMismatchNamesTheTaggedBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		entityVersion string
+		guestVersion  string
+		refused       bool
+	}{
+		{name: "a development build under an entity recording the release", entityVersion: "1.0.0", guestVersion: "1.0.0-3-g1a2b3c4", refused: true},
+		{name: "a release build under an entity recording a development version", entityVersion: "1.0.0-3-g1a2b3c4", guestVersion: "1.0.0", refused: true},
+		{name: "a release build under an entity recording the release", entityVersion: "1.0.0", guestVersion: "1.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			guest := stepGuest(t, tc.guestVersion)
+			dryErr, realErr, store := publishBothWays(t, versionedStepEntity(tc.entityVersion, true), guest)
+			for _, outcome := range []struct {
+				label string
+				err   error
+			}{{"dry run", dryErr}, {"publication", realErr}} {
+				if !tc.refused {
+					if outcome.err != nil {
+						t.Fatalf("%s: an entity recording the version its guest reports must publish; got %v", outcome.label, outcome.err)
+					}
+					continue
+				}
+				if !errors.Is(outcome.err, wasm.ErrWasmPluginVersionMismatch()) {
+					t.Fatalf("%s: want the version-mismatch condition, got %v", outcome.label, outcome.err)
+				}
+				requireNamesTheTaggedBuild(t, outcome.label, outcome.err)
+			}
+			if tc.refused {
+				requireNothingLanded(t, store, tc.entityVersion)
+			} else {
+				requireLanded(t, store, tc.entityVersion)
+			}
+		})
+	}
+}
+
 // TestPushPluginRefusesABuildFromUncommittedChanges proves publication, dry run
 // and real, refuses a .wasm whose self-reported version carries the mark a build
 // from a working tree with uncommitted changes is stamped with, naming the
-// version and saying to commit and rebuild — and that it refuses nothing else: the
-// same guest built from a clean commit, a clean development version and a
-// prerelease all publish.
+// version and directing the author to a build of the commit the release's tag
+// names — and that it refuses nothing else: the same guest built from a clean
+// commit, a clean development version and a prerelease all publish.
 //
 // The row whose entity records the clean version while its guest is marked pins
-// the order: the marker is judged ahead of the version equality, so the author is
-// told to commit and rebuild rather than to copy the marked version into the
-// entity.
+// the order: the marker is judged ahead of the version equality, so the guest is
+// refused as the build no commit holds rather than as a version disagreement.
 func TestPushPluginRefusesABuildFromUncommittedChanges(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -199,11 +263,10 @@ func TestPushPluginRefusesABuildFromUncommittedChanges(t *testing.T) {
 				if errors.Is(outcome.err, wasm.ErrWasmPluginVersionMismatch()) {
 					t.Errorf("%s: the marker must be judged ahead of the version equality; got %v", outcome.label, outcome.err)
 				}
-				for _, want := range []string{tc.guestVersion, "commit the change"} {
-					if !strings.Contains(outcome.err.Error(), want) {
-						t.Errorf("%s: the refusal should carry %q; got %v", outcome.label, want, outcome.err)
-					}
+				if !strings.Contains(outcome.err.Error(), tc.guestVersion) {
+					t.Errorf("%s: the refusal should name the version %q; got %v", outcome.label, tc.guestVersion, outcome.err)
 				}
+				requireNamesTheTaggedBuild(t, outcome.label, outcome.err)
 			}
 			if tc.refused {
 				requireNothingLanded(t, store, tc.entityVersion)

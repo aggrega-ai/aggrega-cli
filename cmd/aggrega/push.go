@@ -69,9 +69,11 @@ A Plugin is read against its kind's schema too, before its .wasm is read, so a
 metadata.version that is not a semantic version is refused. Its .wasm must then
 agree with the entity on what the plugin offers and on its version, and a .wasm
 whose version says it was built from a working tree with uncommitted changes —
-the -dirty mark a build adds — is refused: commit the change and rebuild. A
-development version such as 1.0.0-3-g1a2b3c4, built from a commit, and a
-prerelease such as 1.0.0-rc.1 publish.
+the -dirty mark a build adds — is refused. A version disagreement and a build
+from uncommitted changes are both cleared by building the plugin from a clean
+checkout of the commit its release tag names, never by copying the version it
+reports into the entity. A development version such as 1.0.0-3-g1a2b3c4, built
+from a commit, and a prerelease such as 1.0.0-rc.1 publish.
 
 What is published is the entity document and the files the entity itself names
 beside it — a Recipe's or FeatureRecipe's local source, each file an $import:
