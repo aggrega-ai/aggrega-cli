@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestEntityLookup_TranslatesEntityToArtifact proves the entity-front translates a
@@ -83,6 +85,58 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 	}
 	if cascadeRan {
 		t.Errorf("cascade must not run when the reference is not a Plugin entity")
+	}
+}
+
+// TestEntityLookup_MalformedPin proves the entity-front judges the pin of an
+// entity reference it could not translate, on the entity-only surface and nowhere
+// else. A malformed pin is reported as that malformation; a well-formed pin the
+// catalog does not hold keeps the not-an-entity condition; and a permissive
+// surface keeps the not-an-entity condition for a malformed pin too, because its
+// callers fall back on that condition to resolve artifact references. The
+// translated reference is the positive control.
+func TestEntityLookup_MalformedPin(t *testing.T) {
+	cascade := func(uri string) (ResolvedPlugin, error) {
+		return ResolvedPlugin{Bytes: []byte("\x00asm"), URI: uri}, nil
+	}
+	translate := func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, *[]PluginCommandMirror, bool) {
+		if uri == "mutator/probe:1.0.0" {
+			return "mutator/probe", nil, nil, nil, true
+		}
+		return "", nil, nil, nil, false
+	}
+
+	for _, tc := range []struct {
+		name   string
+		policy SurfacePolicy
+		ref    string
+		want   error
+	}{
+		{"entity-only: a reference the catalog translates", SurfaceEntityOnly, "mutator/probe:1.0.0", nil},
+		{"entity-only: a caret pin whose range does not parse", SurfaceEntityOnly, "mutator/probe:^garbage", types.ErrMalformedVersionPin()},
+		{"entity-only: an exact pin that is not a semantic version", SurfaceEntityOnly, "mutator/probe:1.x", types.ErrMalformedVersionPin()},
+		{"entity-only: a well-formed pin the catalog does not hold", SurfaceEntityOnly, "mutator/probe:9.9.9", ErrPluginEntityNotFound()},
+		{"permissive: a malformed pin keeps the fallback condition", SurfacePermissive, "mutator/probe:^garbage", ErrPluginEntityNotFound()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EntityLookup(translate, cascade, tc.policy)(tc.ref)
+			if tc.want == nil {
+				if err != nil {
+					t.Fatalf("control: %q must translate; got %v", tc.ref, err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("front(%q) = %v; want it to match %v", tc.ref, err, tc.want)
+			}
+			malformed := errors.Is(tc.want, types.ErrMalformedVersionPin())
+			if malformed == errors.Is(err, ErrPluginEntityNotFound()) {
+				t.Errorf("front(%q) = %v; exactly one of the malformed-pin and not-an-entity conditions applies", tc.ref, err)
+			}
+			if malformed && !strings.Contains(err.Error(), `reference "`+tc.ref+`"`) {
+				t.Errorf("front(%q) = %v; the refusal must name the reference", tc.ref, err)
+			}
+		})
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ErrPluginEntityNotFound is the Loud Guardrail for a plugin reference that
@@ -44,7 +45,7 @@ var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerror
 // the entity's authored runtime limits, and the entity's machine-owned command
 // mirror, returning false when no Plugin entity matches the URI. The caller
 // supplies it as a closure over the catalog's Plugin accessor, so this package
-// stays ignorant of pkg/types; resolving the entity once here yields the artifact
+// stays ignorant of the Plugin entity's shape; resolving the entity once here yields the artifact
 // reference, the claim, the limits, and the command mirror together, so the load
 // path never re-resolves the entity. cascade is the artifact-resolving Lookup (a
 // build-configured Resolver's Resolve method); it keys its pins and verification
@@ -70,7 +71,8 @@ var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerror
 //
 // A reference that does not match a Plugin entity halts with
 // ErrPluginEntityNotFound, naming the offending reference and stating that a
-// Plugin entity URI is required. A nil entityToArtifact disables the entity
+// Plugin entity URI is required — except, on the entity-only surface, one whose
+// version pin is malformed, which halts with that malformation instead. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
 func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, commands *[]PluginCommandMirror, ok bool), cascade Lookup, policy SurfacePolicy) Lookup {
@@ -87,6 +89,18 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 			artifactURI, claim, limits, commands, ok = entityToArtifact(entityURI)
 		}
 		if !ok {
+			// On the entity-only surface the form gate above has already refused a
+			// path and an artifact reference, so what reaches here is an entity URI,
+			// and one whose version pin is malformed is reported as that
+			// malformation: the pin names no version, so no Plugin entity could
+			// answer it. A permissive surface is not asked, because its reference
+			// may be an artifact reference whose last colon ends a digest, and its
+			// callers fall back on the not-found condition to resolve exactly those.
+			if policy == SurfaceEntityOnly {
+				if pe, malformed := types.ParseVersionPin(entityURI).Malformed(); malformed {
+					return ResolvedPlugin{}, pe
+				}
+			}
 			return ResolvedPlugin{}, fmt.Errorf(
 				"%w: %q must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`); "+
 					"bare-`.wasm` and artifact references are no longer accepted",

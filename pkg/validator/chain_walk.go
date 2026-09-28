@@ -5,8 +5,10 @@ package validator
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
@@ -318,7 +320,9 @@ func walkExtendsChain[T any](start T, spec ExtendsChainSpec[T]) ([]T, *chainFaul
 // cannot fix their files, so the two sentences that depend on it are supplied
 // by the caller and everything else about the failure — the condition, the
 // field path, the entity it is reported against — stays here. A nil
-// missingParent takes the catalog wording.
+// missingParent takes the catalog wording, and with it the one question only a
+// catalog reference raises: whether the link's version pin is malformed, which
+// is reported as that malformation rather than as an absent entity.
 //
 // It panics on any other fault kind rather than returning a failure carrying no
 // condition, because a kind reaching here without a diagnostic is a defect in the
@@ -332,6 +336,11 @@ func unresolvableParentError(
 	if f.kind != chainFaultMissingParent {
 		panic(fmt.Sprintf("validator: extends-chain fault kind %d carries no diagnostic here", f.kind))
 	}
+	if missingParent == nil {
+		if failure := malformedParentPinError(kind, name, f); failure != nil {
+			return failure
+		}
+	}
 	required := fmt.Sprintf("%s extends %s, which no catalog entity provides", f.from, f.link)
 	suggestion := "Verify the extends reference names an entity present in the catalog"
 	if missingParent != nil {
@@ -342,5 +351,29 @@ func unresolvableParentError(
 		Constraint: required,
 		Suggestion: suggestion,
 		Err:        ErrInheritanceMerge(),
+	})
+}
+
+// malformedParentPinError reports an unresolvable extends link whose version pin
+// is malformed as that malformation, and returns nil when the pin is well formed
+// or absent.
+//
+// It is asked only for a catalog entity's extends, where the link is a catalog
+// reference that may carry a pin; the kinds whose extends names a file beside
+// the document supply their own missing-parent wording and are never asked,
+// because a file path carries no pin. It runs after the lookup missed, so it
+// changes no chain that resolves, only the explanation of one that did not: a
+// malformed pin names no version, so "which no catalog entity provides" would
+// send the author looking for an entity when the fault is the pin's text.
+func malformedParentPinError(kind envelope.Kind, name string, f *chainFault) *ValidationError {
+	pe, malformed := types.ParseVersionPin(f.link).Malformed()
+	if !malformed {
+		return nil
+	}
+	return NewValidationError(kind, name, ValidationDetail{
+		FieldPath:  ".spec.extends",
+		Constraint: fmt.Sprintf("%s extends %s", f.from, strings.Join(pe.Values(), ", ")),
+		Suggestion: types.VersionPinForms,
+		Err:        types.ErrMalformedVersionPin(),
 	})
 }

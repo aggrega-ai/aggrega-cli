@@ -2090,13 +2090,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		if comp.Spec.Extends == "" {
 			continue
 		}
-		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion()) {
-			errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, validator.ValidationDetail{
-				FieldPath:  ".extends",
-				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", comp.Spec.Extends),
-				Err:        ErrUnsatisfiableEntityVersion(),
-			}))
-			continue
+		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok {
+			if detail, refused := extendsParentVersionRefusal(comp.Spec.Extends, verr); refused {
+				errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, detail))
+				continue
+			}
 		}
 		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
 		if len(vErrs) > 0 {
@@ -2120,13 +2118,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		if feat.Spec.Extends == "" {
 			continue
 		}
-		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion()) {
-			errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, validator.ValidationDetail{
-				FieldPath:  ".extends",
-				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", feat.Spec.Extends),
-				Err:        ErrUnsatisfiableEntityVersion(),
-			}))
-			continue
+		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok {
+			if detail, refused := extendsParentVersionRefusal(feat.Spec.Extends, verr); refused {
+				errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, detail))
+				continue
+			}
 		}
 		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
 		if len(vErrs) > 0 {
@@ -2149,6 +2145,35 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 	}
 
 	return errs
+}
+
+// extendsParentVersionRefusal renders the version select's refusal of an extends
+// parent reference as the validation failure the whole-catalog extends pass
+// reports, and reports false when the select refused nothing — a plain miss,
+// which the chain walk reports as the absent parent it is.
+//
+// The two refusals it renders are the two the select can give a pinned
+// reference whose name the catalog holds: a malformed pin, reported as the
+// malformation with the three forms as the advice, and a well-formed pin no
+// version satisfies.
+func extendsParentVersionRefusal(parent string, verr error) (validator.ValidationDetail, bool) {
+	var pe *types.VersionPinError
+	switch {
+	case errors.As(verr, &pe):
+		return validator.ValidationDetail{
+			FieldPath:  ".extends",
+			Constraint: "extends parent " + strings.Join(pe.Values(), ", "),
+			Suggestion: types.VersionPinForms,
+			Err:        types.ErrMalformedVersionPin(),
+		}, true
+	case errors.Is(verr, ErrUnsatisfiableEntityVersion()):
+		return validator.ValidationDetail{
+			FieldPath:  ".extends",
+			Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", parent),
+			Err:        ErrUnsatisfiableEntityVersion(),
+		}, true
+	}
+	return validator.ValidationDetail{}, false
 }
 
 // CatalogLookup returns a resolver.CatalogLookup whose Component and Feature

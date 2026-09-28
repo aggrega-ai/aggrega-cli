@@ -165,6 +165,14 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registr
 			return ra, nil
 		}
 	}
+	// A bare identity the directory and the catalog both missed, and whose version
+	// pin is malformed, is reported as that malformation before the registry is
+	// asked: the pin names no version, so no published Aggregate could answer it,
+	// and a not-found would send the author looking for an entity when the fault
+	// is the pin's text.
+	if pe, malformed := types.ParseVersionPin(ref).Malformed(); malformed {
+		return ResolvedAggregate{}, pe.At("in the Release's spec.aggregate")
+	}
 	if registryFetch != nil { // tier 3 — registry (pull-only; nil at build)
 		ra, found, ferr := registryFetch(ref)
 		if ferr != nil {

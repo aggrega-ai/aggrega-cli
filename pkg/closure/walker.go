@@ -559,12 +559,26 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		}
 		if res.NotFound {
 			return unresolvedEntity(uri, pending.kindHint,
-				fmt.Errorf("%w: entity %q (referenced from %s)",
-					ErrUnresolvableURI(), uri, referencedFromPreview(pending.referencedFrom)))
+				entityNotFound(uri, referencedFromPreview(pending.referencedFrom)))
 		}
 		pending.resolution = &res
 	}
 	return nil
+}
+
+// entityNotFound is the failure the walk reports for a catalog-entity reference
+// no lookup answered, where referencedFrom names the authored sites that reach it.
+//
+// A reference whose version pin is malformed is reported as that malformation
+// rather than as a URI no entity matches: the pin names no version, so no
+// catalog could hold what it asks for, and "no entity matches" would send the
+// author looking for an entity when the fault is the pin's text. It is asked
+// only after the lookup missed, so it changes no reference that resolves.
+func entityNotFound(uri, referencedFrom string) error {
+	if pe, malformed := types.ParseVersionPin(uri).Malformed(); malformed {
+		return pe.At("referenced from " + referencedFrom)
+	}
+	return fmt.Errorf("%w: entity %q (referenced from %s)", ErrUnresolvableURI(), uri, referencedFrom)
 }
 
 // resolveLibraries applies minimum version selection (MVS) across the

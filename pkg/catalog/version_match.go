@@ -9,7 +9,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
@@ -66,26 +66,31 @@ var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-versi
 // metadata.version) is the lone fallback when no parseable-semver candidate
 // exists, so version-less catalogs keep resolving.
 //
+// The split and the caret range come from types.ParseVersionPin, the one home of
+// the pin grammar, so this select parses no pin of its own.
+//
 // Returns:
 //   - (key, true, nil) on a satisfying match;
 //   - ("", false, nil) when the base name is absent — a plain miss the lookups
 //     report as not-found;
 //   - ("", false, ErrUnsatisfiableEntityVersion) when the base exists but no
-//     version satisfies an exact/caret constraint — a loud, recoverable halt.
+//     version satisfies a well-formed exact/caret constraint — a loud,
+//     recoverable halt;
+//   - ("", false, the malformed-pin fault) when the base exists, nothing
+//     satisfies, and the pin is none of the forms a pin takes. The fault is
+//     reported in place of the unsatisfiable condition because a malformed pin
+//     names no version, and it is judged only here, after the scan found no
+//     match, so a reference that resolves today still resolves.
 //
 // Determinism: the winner is the semver-highest satisfying version; ties (and the
 // version-less fallback set) break on the lexically-smallest index key, never on
 // map-iteration order.
 func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
-	base, verSeg, hasVer := resolver.SplitVersionedURI(callerURI)
-	caret := hasVer && strings.HasPrefix(verSeg, "^")
-
-	var constraint *semver.Constraints
-	if caret {
-		if c, err := semver.NewConstraint(verSeg); err == nil {
-			constraint = c
-		}
-	}
+	pin := types.ParseVersionPin(callerURI)
+	base := pin.Base()
+	verSeg, hasVer := pin.Pin()
+	caret := pin.IsCaret()
+	constraint := pin.Range()
 
 	var cands []versionCandidate
 	for k, v := range index {
@@ -136,6 +141,9 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 	// not). For an unversioned reference, fall back to the lone version-less /
 	// best-effort entry so version-less catalogs still resolve.
 	if hasVer {
+		if fault := pin.Fault(); fault != nil {
+			return "", false, fault
+		}
 		return "", false, ErrUnsatisfiableEntityVersion()
 	}
 	fallback := -1

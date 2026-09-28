@@ -220,3 +220,61 @@ func TestResolveAggregate_PlainNotFound(t *testing.T) {
 		t.Errorf("plain not-found must not mention an unparseable file; got %v", err)
 	}
 }
+
+// TestResolveAggregate_MalformedPin — a bare identity the directory and the catalog
+// both miss, whose version pin is malformed, is reported as that malformation
+// before the registry is asked; a well-formed pin both tiers miss keeps the plain
+// not-found; a pin the catalog tier answers resolves. The catalog seam answers the
+// satisfiable pin only, so each refusal is attributable to the pin it names.
+func TestResolveAggregate_MalformedPin(t *testing.T) {
+	t.Parallel()
+	catLookup := func(name string) (ResolvedAggregate, bool) {
+		if name != "cat-app:1.0.0" {
+			return ResolvedAggregate{}, false
+		}
+		return ResolvedAggregate{Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "cat-app", Version: "1.0.0"}}}, true
+	}
+	for _, tc := range []struct {
+		name string
+		ref  string
+		want error
+	}{
+		{"a pin the catalog tier answers", "cat-app:1.0.0", nil},
+		{"a caret pin whose range does not parse", "cat-app:^garbage", types.ErrMalformedVersionPin()},
+		{"an exact pin that is not a semantic version", "cat-app:1.x", types.ErrMalformedVersionPin()},
+		{"a well-formed pin no tier answers", "cat-app:9.9.9", ErrTriadRefUnresolvable()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			registryAsked := false
+			registry := func(ref string) (ResolvedAggregate, bool, error) {
+				registryAsked = true
+				return ResolvedAggregate{}, false, nil
+			}
+			r, err := ResolveAggregate(t.TempDir(), tc.ref, catLookup, registry)
+			if tc.want == nil {
+				if err != nil || r.Aggregate == nil || r.Aggregate.Metadata.Name != "cat-app" {
+					t.Fatalf("control: %q must resolve through the catalog tier; got (%v, %v)", tc.ref, r.Aggregate, err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v; want it to match %v", err, tc.want)
+			}
+			malformed := errors.Is(tc.want, types.ErrMalformedVersionPin())
+			if malformed == errors.Is(err, ErrTriadRefUnresolvable()) {
+				t.Errorf("err = %v; the malformed-pin and not-found conditions must not both or neither apply", err)
+			}
+			if malformed {
+				if registryAsked {
+					t.Errorf("a malformed pin names no version, so the registry must not be asked for %q", tc.ref)
+				}
+				for _, want := range []string{`reference "` + tc.ref + `"`, "spec.aggregate", types.VersionPinForms} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("err %q does not carry %q", err.Error(), want)
+					}
+				}
+			}
+		})
+	}
+}

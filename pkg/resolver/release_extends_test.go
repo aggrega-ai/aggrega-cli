@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -337,6 +338,15 @@ func TestReleaseExtendsChain_MissingParentCarriesDirectoryAdviceAndResolveError(
 			wantUnderlying: "a Release extends reference addresses a file beside the Release, " +
 				"so it is written as a relative path beginning ./ or ../",
 		},
+		// A Release extends names a file, so a colon in it is not a version pin and a
+		// malformed-looking one is not judged as one: the refusal is the file-path
+		// refusal, never the malformed-pin condition a catalog reference reports.
+		{
+			name: "a token whose text after the colon would be a malformed pin",
+			ref:  "prod-release:^garbage",
+			wantUnderlying: "a Release extends reference addresses a file beside the Release, " +
+				"so it is written as a relative path beginning ./ or ../",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -361,6 +371,9 @@ func TestReleaseExtendsChain_MissingParentCarriesDirectoryAdviceAndResolveError(
 			}
 			if errors.Is(err, validator.ErrCyclicExtension()) || errors.Is(err, validator.ErrExtendsChainTooDeep()) {
 				t.Errorf("missing-parent refusal = %v; a parent that is not there is neither a loop nor an over-deep chain", err)
+			}
+			if errors.Is(err, types.ErrMalformedVersionPin()) {
+				t.Errorf("missing-parent refusal = %v; a Release extends names a file and carries no version pin", err)
 			}
 			want := fmt.Sprintf(
 				"%s (Release child-release, at .spec.extends, child-release extends %s, "+

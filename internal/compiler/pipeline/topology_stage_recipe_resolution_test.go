@@ -14,6 +14,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The proofs in this file cover the two rules about whether a component instance
@@ -413,6 +414,69 @@ func TestMappedToAnAbsentRecipeHaltsNamingTheMappingValue(t *testing.T) {
 	// already took.
 	if strings.Contains(rendered, "recipes implementing it") {
 		t.Errorf("a mapped-but-absent finding must offer no pin candidates: %q", rendered)
+	}
+}
+
+// TestMappedToAMalformedPinHaltsAsTheMalformation covers the one mapping value the
+// rule above passes over: a value whose version pin is none of the forms a pin
+// takes. The pin names no version, so "not in the catalog" would send the author
+// looking for a recipe when the fault is the pin's text; the rule passes the node
+// over and the instance reading reports the malformation instead.
+//
+// A well-formed pin no catalog version satisfies is the row beside it, and it keeps
+// the condition the arm above reports — which is what makes the malformed row a
+// proof about the pin's grammar rather than about the pin being unsatisfiable.
+func TestMappedToAMalformedPinHaltsAsTheMalformation(t *testing.T) {
+	t.Parallel()
+
+	const recipeBase = "helm-api-server-synthesized-with-artifacts"
+	for _, tc := range []struct {
+		name          string
+		value         string
+		wantMalformed bool
+	}{
+		{"a caret pin whose range does not parse", recipeBase + ":^garbage", true},
+		{"an exact pin that is not a semantic version", recipeBase + ":1.x", true},
+		{"a well-formed pin no version satisfies", recipeBase + ":9.9.9", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			entries := append(without(fixturePlainNodeType), fixturePlainNodeType+": "+tc.value)
+			_, err := compileWithManifest(t, fixtureAggregate(t), manifestMapping(entries...))
+			if err == nil {
+				t.Fatalf("a mapping to %q compiled without halting", tc.value)
+			}
+			if !tc.wantMalformed {
+				if !errors.Is(err, catalog.ErrNoRecipeResolved()) {
+					t.Fatalf("a well-formed unsatisfiable pin must keep the no-recipe-resolved condition: %v", err)
+				}
+				if errors.Is(err, types.ErrMalformedVersionPin()) {
+					t.Fatalf("a well-formed pin was reported as malformed: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, types.ErrMalformedVersionPin()) {
+				t.Fatalf("the halt does not carry the malformed-version-pin condition: %v", err)
+			}
+			if errors.Is(err, catalog.ErrNoRecipeResolved()) {
+				t.Errorf("a malformed pin must not also report as no-recipe-resolved: %v", err)
+			}
+			// The halt's own frame names the stage and nothing else; the finding
+			// that names the reference, the instance and the three forms is the
+			// cause beneath it. So the text is read with every cause, and each
+			// string below can come only from that finding, never from the frame.
+			rendered := cerrors.CauseChain(err)
+			for _, want := range []string{
+				`reference "` + tc.value + `"`,
+				`"` + fixturePlainNodeID + `"`,
+				types.VersionPinForms,
+			} {
+				if !strings.Contains(rendered, want) {
+					t.Errorf("the halt, with its causes, does not carry %q: %q", want, rendered)
+				}
+			}
+		})
 	}
 }
 

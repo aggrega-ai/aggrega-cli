@@ -442,6 +442,11 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 	}
 	comp, found := lookup.Component(rec.Spec.Implements)
 	if !found {
+		// A malformed pin names no version, so the target is reported as that
+		// malformation rather than as a Component the catalog does not hold.
+		if pe, malformed := types.ParseVersionPin(rec.Spec.Implements).Malformed(); malformed {
+			return fmt.Errorf("render: %w", pe.At("in the recipe's spec.implements"))
+		}
 		return fmt.Errorf("render: implements target %q not found in catalog", rec.Spec.Implements)
 	}
 

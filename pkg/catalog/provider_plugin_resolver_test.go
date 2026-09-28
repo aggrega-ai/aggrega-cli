@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // providerPlugin renders a minimal schema-conforming pluginType: provider Plugin
@@ -253,6 +254,64 @@ func TestProviderPluginVersionPinIsUnsatisfiable(t *testing.T) {
 	// which is what distinguishes the halt above from a plain not-found.
 	if _, ok, rerr := cat.ProviderPluginForTarget("nonesuch", nil); ok || rerr != nil {
 		t.Errorf("an unpinned target no plugin serves is a bare miss; got (ok=%v, err=%v)", ok, rerr)
+	}
+}
+
+// TestProviderPluginMalformedPinIsReportedAsMalformed proves provider selection
+// reads a Recipe's capability pin through the one pin parser: a pin that is none
+// of the forms a pin takes is reported as malformed, both where a plugin serves the
+// capability and where none does, while a well-formed pin no served version
+// satisfies keeps the provider-version condition. The satisfied pin is asserted
+// first, so each refusal is attributable to the pin it names.
+func TestProviderPluginMalformedPinIsReportedAsMalformed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeYAMLToCatalog(t, dir, "plugins/acme-renderer.yaml", providerPlugin("acme-renderer", "1.0.0", "acme"))
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if p, ok, rerr := cat.ProviderPluginForTarget("acme:1.0.0", nil); rerr != nil || !ok || p.Metadata.Version != "1.0.0" {
+		t.Fatalf("control: acme:1.0.0 must resolve; got (ver=%q, ok=%v, err=%v)", p.Metadata.Version, ok, rerr)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		ref           string
+		wantMalformed bool
+	}{
+		{"a served capability with a caret pin whose range does not parse", "acme:^garbage", true},
+		{"a served capability with an exact pin that is not a semantic version", "acme:1.x", true},
+		{"a capability no plugin serves, pinned malformed", "nonesuch:^garbage", true},
+		{"a served capability with a well-formed pin no version satisfies", "acme:2.0.0", false},
+		{"a capability no plugin serves, pinned well formed", "nonesuch:1.0.0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, ok, rerr := cat.ProviderPluginForTarget(tc.ref, nil)
+			if ok {
+				t.Fatalf("%q resolved; want a refusal", tc.ref)
+			}
+			if tc.wantMalformed {
+				if !errors.Is(rerr, types.ErrMalformedVersionPin()) {
+					t.Errorf("%q: want ErrMalformedVersionPin, got %v", tc.ref, rerr)
+				}
+				if errors.Is(rerr, catalog.ErrProviderVersionUnsatisfiable()) {
+					t.Errorf("%q: a malformed pin must not report as an unsatisfiable provider pin: %v", tc.ref, rerr)
+				}
+				if rerr != nil && !strings.Contains(rerr.Error(), `reference "`+tc.ref+`"`) {
+					t.Errorf("%q: the refusal must name the capability reference as written; got %v", tc.ref, rerr)
+				}
+				return
+			}
+			if !errors.Is(rerr, catalog.ErrProviderVersionUnsatisfiable()) {
+				t.Errorf("%q: want ErrProviderVersionUnsatisfiable, got %v", tc.ref, rerr)
+			}
+			if errors.Is(rerr, types.ErrMalformedVersionPin()) {
+				t.Errorf("%q: a well-formed pin was reported as malformed: %v", tc.ref, rerr)
+			}
+		})
 	}
 }
 

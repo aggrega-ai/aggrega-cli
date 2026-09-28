@@ -495,7 +495,8 @@ var errMVSConflict = cerrors.Register("version-selection-conflict", cerrors.Meta
 // The claim is now true in every case it makes: a Manifest mapping value
 // whose shape a recipe reference cannot express is judged before the walk
 // runs, so a mis-shaped reference no longer arrives here to be reported as
-// an entity the catalog does not hold.
+// an entity the catalog does not hold. A reference whose version pin is
+// malformed is reported as that malformation instead, for the same reason.
 func ErrUnresolvableURI() error { return errUnresolvableURI }
 
 var errUnresolvableURI = cerrors.Register("unresolvable-uri", cerrors.Meta{

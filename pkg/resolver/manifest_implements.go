@@ -5,9 +5,6 @@ package resolver
 
 import (
 	"fmt"
-	"strings"
-
-	"github.com/Masterminds/semver/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
@@ -75,24 +72,26 @@ func manifestCategory() cerrors.Category {
 // which depends on this one: the grammar travels with the rule that enforces it,
 // and the search reads it from here rather than carrying a second matcher that
 // agrees today.
+//
+// Both references are split and their pins parsed by types.ParseVersionPin, the
+// one home of the pin grammar, so a caret declaration is matched only against a
+// requested version that is a strict semantic version. A malformed pin on either
+// side satisfies nothing beyond an identical string; which of the two is at
+// fault is the reporting surface's to say, not this predicate's.
 func ImplementsSatisfies(impl, componentType string) bool {
 	if impl == componentType {
 		return true
 	}
-	cBase, cVer, cHasVer := SplitVersionedURI(componentType)
-	if !cHasVer {
+	requested := types.ParseVersionPin(componentType)
+	if _, pinned := requested.Pin(); !pinned {
 		return false
 	}
-	iBase, iVer, iHasVer := SplitVersionedURI(impl)
-	if iHasVer && iBase == cBase && strings.HasPrefix(iVer, "^") {
-		if cv, err := semver.NewVersion(cVer); err == nil {
-			if con, cerr := semver.NewConstraint(iVer); cerr == nil && con.Check(cv) {
-				return true
-			}
-		}
-		return false
+	declared := types.ParseVersionPin(impl)
+	if declared.IsCaret() && declared.Base() == requested.Base() {
+		version, rng := requested.Version(), declared.Range()
+		return version != nil && rng != nil && rng.Check(version)
 	}
-	return impl == cBase
+	return impl == requested.Base()
 }
 
 // manifestMappingConsistent reports whether a Manifest mapping key and the mapped
@@ -305,6 +304,11 @@ func ancestryWalkFaultFrom(
 // contract between the two and is asserted rather than assumed: a rule and the
 // conversion that renders it are two halves of one sentence, and a silent
 // mismatch would produce a message with the values in the wrong slots.
+//
+// An objection whose key or implements carries a malformed version pin is
+// rendered as that malformation instead of as a mismatch, at the same file: the
+// pin names no version, so the two sides could never have matched, and the
+// author's fix is the pin's text rather than either side's version.
 func manifestImplementsFaultFrom(o constraint.Objection) error {
 	detail := o.Detail()
 	if len(detail) != manifestImplementsDetailCount {
@@ -317,6 +321,12 @@ func manifestImplementsFaultFrom(o constraint.Objection) error {
 	key := detail[manifestImplementsDetailKey]
 	reference := detail[manifestImplementsDetailReference]
 	implements := detail[manifestImplementsDetailImplements]
+
+	if values, malformed := mappingPinFault(key, reference, implements, detail[manifestImplementsDetailTier]); malformed {
+		return cerrors.Wrap(types.ErrMalformedVersionPin(), manifestCategory(),
+			cerrors.SourceLocation{File: o.SourceFile()},
+			cerrors.ComposeMessage(types.ErrMalformedVersionPin(), values, types.VersionPinForms))
+	}
 
 	values := []string{
 		fmt.Sprintf("manifest mapping %q -> %q", key, reference),
@@ -338,6 +348,33 @@ func manifestImplementsFaultFrom(o constraint.Objection) error {
 	return cerrors.Wrap(ErrManifestImplementsMismatch(), manifestCategory(),
 		cerrors.SourceLocation{File: o.SourceFile()},
 		cerrors.ComposeMessage(ErrManifestImplementsMismatch(), values, ""))
+}
+
+// mappingPinFault reports the values of the malformed version pin the mapping key
+// or the mapped recipe's spec.implements carries, and true, the key first because
+// it is the value the Manifest being judged authored; false when neither pin is
+// malformed.
+//
+// It is asked only of an entry the rule already objected to, so it never turns a
+// consistent mapping into a failure. What it changes is the explanation: a
+// malformed pin names no version, so no key and no implements could be
+// consistent with it, and "does not match" would send the author comparing two
+// versions when the fault is one pin's text. The grammar is the one
+// types.ParseVersionPin states, read here rather than restated.
+func mappingPinFault(key, reference, implements, tier string) ([]string, bool) {
+	mapping := fmt.Sprintf("manifest mapping %q -> %q", key, reference)
+	recipe := "recipe"
+	if tier == constraint.MappingTierFeatures {
+		mapping = fmt.Sprintf("manifest feature mapping %q -> %q", key, reference)
+		recipe = "featurerecipe"
+	}
+	if pe, malformed := types.ParseVersionPin(key).Malformed(); malformed {
+		return append([]string{mapping, "in the mapping key"}, pe.Values()...), true
+	}
+	if pe, malformed := types.ParseVersionPin(implements).Malformed(); malformed {
+		return append([]string{mapping, "in the " + recipe + "'s spec.implements"}, pe.Values()...), true
+	}
+	return nil, false
 }
 
 // The order the mapping-consistency rule supplies its values in, named so the

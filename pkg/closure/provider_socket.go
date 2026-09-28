@@ -60,8 +60,7 @@ func ResolveProviderSocketEntities(ctx context.Context, cl *Closure, providerRef
 			return fmt.Errorf("resolve: resolve entity %q: %w", ref.URI, err)
 		}
 		if res.NotFound {
-			return fmt.Errorf("%w: entity %q (referenced from %s)",
-				ErrUnresolvableURI(), ref.URI, refPath)
+			return entityNotFound(ref.URI, refPath)
 		}
 		// Registry-only pinning: a provider already present on the machine resolves
 		// at build from where it already is — the local catalog walk, or the binary's

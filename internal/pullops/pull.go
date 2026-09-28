@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
@@ -812,7 +811,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// offers to write the binding; with nobody watching the ambiguity halts loudly.
 	resolvedBindings := map[string]lockfile.ProviderBinding{}
 	providerBindResolver := func(ref string) (types.Plugin, bool, error) {
-		bare, _, _ := strings.Cut(ref, ":")
+		bare := types.BareCapability(ref)
 		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())
 		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin()) && cfg.ResolveProviderAmbiguity != nil {
 			if herr := cfg.ResolveProviderAmbiguity(bare, lazyView.ProviderPluginCandidates(bare), rw, &wsCfg, cfg.DiagOut); herr != nil {

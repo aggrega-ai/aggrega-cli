@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // NodeResolvesToARecipe reports each component instance in the composition that
@@ -58,7 +59,9 @@ import (
 // The Recipe it names may well be in the catalog, so calling it absent would
 // send the author looking for the wrong thing; the shape is reported by the
 // reading that owns it, both over the authored mapping entry and at the instance
-// whose resolution missed.
+// whose resolution missed. A reference whose version pin is malformed is passed
+// over for the same reason and reported by the same instance reading: the pin
+// names no version, so the fault is its text rather than an absent Recipe.
 //
 // A node whose resolution was never performed — a build whose catalog holds no
 // recipe index — reads as an instance nothing maps, which is the same reading
@@ -84,6 +87,9 @@ var NodeResolvesToARecipe = constraint.Check[
 				return nil
 			}
 			if _, malformed := resolver.RecipeReferenceSegments(reference); malformed {
+				return nil
+			}
+			if types.ParseVersionPin(reference).Fault() != nil {
 				return nil
 			}
 			return []constraint.Objection{s.RaiseWithAdvice(

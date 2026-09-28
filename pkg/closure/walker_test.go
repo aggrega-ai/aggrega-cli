@@ -448,6 +448,67 @@ func TestUnresolvableCatalogEntityHaltsWithWrappedError(t *testing.T) {
 	}
 }
 
+// TestUnresolvableEntityWithAMalformedPinHaltsAsTheMalformation covers the walk's
+// one not-found report for a catalog-entity reference. A reference whose version
+// pin is malformed is reported as that malformation, naming where it was
+// referenced from; a well-formed pin nothing answers keeps the unresolvable-URI
+// condition; and a registry host's port is never judged as a pin, however the
+// split reads the reference.
+func TestUnresolvableEntityWithAMalformedPinHaltsAsTheMalformation(t *testing.T) {
+	t.Parallel()
+	const authored = "type: hub.aggrega.ai/component/core/api-server\n"
+	if !strings.Contains(fullFixtureAggregate, authored) {
+		t.Fatalf("fixture no longer authors %q; re-point this test at the component type it carries", authored)
+	}
+	for _, tc := range []struct {
+		name          string
+		ref           string
+		wantMalformed bool
+	}{
+		{"a caret pin whose range does not parse", "hub.aggrega.ai/component/core/api-server:^garbage", true},
+		{"an exact pin that is not a semantic version", "hub.aggrega.ai/component/core/api-server:1.x", true},
+		{"a well-formed pin nothing answers", "hub.aggrega.ai/component/core/api-server:9.9.9", false},
+		{"a registry host with a port and no pin", "localhost:5000/core/api-server", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rel := loadRelease(t, fullFixtureRelease)
+			man := loadManifest(t, fullFixtureManifest)
+			agg := loadAggregate(t, strings.Replace(fullFixtureAggregate, authored, "type: "+tc.ref+"\n", 1))
+			lookup := newBaseLookup()
+
+			_, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), workspaceconfig.Default(), lookup)
+			if err == nil {
+				t.Fatalf("a reference to %q nothing answers must halt", tc.ref)
+			}
+			var unresolved *closure.UnresolvedEntityError
+			if !errors.As(err, &unresolved) || unresolved.URI != tc.ref {
+				t.Errorf("the halt must carry the reference it could not resolve, %q; got %v", tc.ref, err)
+			}
+			if !tc.wantMalformed {
+				if !errors.Is(err, closure.ErrUnresolvableURI()) {
+					t.Errorf("want ErrUnresolvableURI; got %v", err)
+				}
+				if errors.Is(err, types.ErrMalformedVersionPin()) {
+					t.Errorf("a well-formed reference was reported as a malformed pin: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, types.ErrMalformedVersionPin()) {
+				t.Errorf("want ErrMalformedVersionPin; got %v", err)
+			}
+			if errors.Is(err, closure.ErrUnresolvableURI()) {
+				t.Errorf("a malformed pin must not also report as an unresolvable URI: %v", err)
+			}
+			for _, want := range []string{`reference "` + tc.ref + `"`, "referenced from ", types.VersionPinForms} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("halt %q does not carry %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestDeterministicURIOrdering(t *testing.T) {
 	t.Parallel()
 	rel := loadRelease(t, fullFixtureRelease)

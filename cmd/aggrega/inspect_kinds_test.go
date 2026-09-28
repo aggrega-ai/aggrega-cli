@@ -6,10 +6,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // writeKindFixture writes body into a temp file named <kind>.yaml and returns
@@ -527,6 +530,70 @@ func TestInspectRecipe_ShowImplements_AbortsWhenAbsent(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "show-implements") {
 		t.Errorf("abort error should name --show-implements; got: %v", err)
+	}
+}
+
+// TestInspectRecipe_ShowImplements_MalformedPin asserts --show-implements reports
+// an implements target whose version pin is malformed as that malformation rather
+// than as a Component the catalog does not hold, while a well-formed pin the
+// catalog does not hold keeps the plain not-found abort. The catalog holds the
+// Component at 1.0.0, and the unedited fixture resolving against it is the control.
+func TestInspectRecipe_ShowImplements_MalformedPin(t *testing.T) {
+	t.Parallel()
+	const authored = "  implements: core/api-server:1.0.0\n"
+	if !strings.Contains(recipeSynthesizedFixture, authored) {
+		t.Fatalf("fixture no longer authors %q; re-point this test at the implements it carries", authored)
+	}
+	catDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    values: {}
+`), 0o644); err != nil {
+		t.Fatalf("write component: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		implements    string
+		wantMalformed bool
+		wantResolved  bool
+	}{
+		{"a pin the catalog satisfies", "core/api-server:1.0.0", false, true},
+		{"a caret pin whose range does not parse", "core/api-server:^garbage", true, false},
+		{"an exact pin that is not a semantic version", "core/api-server:1.x", true, false},
+		{"a well-formed pin the catalog does not hold", "core/api-server:9.9.9", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := strings.Replace(recipeSynthesizedFixture, authored, "  implements: "+tc.implements+"\n", 1)
+			recipePath := writeKindFixture(t, "recipe_pin", fixture)
+			var buf bytes.Buffer
+			opts := testInspectOptions(&buf)
+			opts.showImplements = true
+			err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), recipePath, []string{catDir}, opts)
+			if tc.wantResolved {
+				if err != nil {
+					t.Fatalf("control: %q must resolve; got %v", tc.implements, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("--show-implements must abort for %q", tc.implements)
+			}
+			if got := errors.Is(err, types.ErrMalformedVersionPin()); got != tc.wantMalformed {
+				t.Errorf("abort %v: malformed-pin condition present = %v, want %v", err, got, tc.wantMalformed)
+			}
+			if tc.wantMalformed == strings.Contains(err.Error(), "not found in catalog") {
+				t.Errorf("abort %q: a malformed pin must not claim the target is absent, and an absent one must", err.Error())
+			}
+		})
 	}
 }
 

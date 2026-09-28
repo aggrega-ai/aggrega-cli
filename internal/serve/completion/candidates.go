@@ -3,7 +3,7 @@
 
 package completion
 
-import "strings"
+import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 // This file holds the per-context candidate generators. Each takes
 // the inputs the dispatcher pre-enumerates (URI lists, path lists,
@@ -170,11 +170,12 @@ func implementsBaseMatch(impl, mappingType string) bool {
 	return baseURI(impl) == baseURI(mappingType)
 }
 
+// baseURI is the reference's base as the one reference split states it, so the
+// ranking hint and resolution agree on where a pin begins — a registry host's port
+// included.
 func baseURI(s string) string {
-	if i := strings.IndexByte(s, ':'); i >= 0 {
-		s = s[:i]
-	}
-	return strings.TrimPrefix(s, "^")
+	base, _, _ := types.SplitVersionedURI(s)
+	return base
 }
 
 // ReleaseAggregatePath returns the candidate list for a Release's

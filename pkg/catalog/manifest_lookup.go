@@ -636,8 +636,9 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // set through the recipeCatalog() *Catalog shell, so its ProviderPluginForTarget
 // delegates here against the same matcher (no per-backing reimplementation).
 func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
-	capability, verSeg, hasVer := resolver.SplitVersionedURI(ref)
-	return c.pluginForCapability("provider", capability, verSeg, hasVer, bindings, providerCapabilityDiag)
+	pin := types.ParseVersionPin(ref)
+	verSeg, hasVer := pin.Pin()
+	return c.pluginForCapability("provider", pin.Base(), verSeg, hasVer, bindings, providerCapabilityDiag)
 }
 
 // capabilityDiag carries a capability-resolving socket's own diagnostic
@@ -739,6 +740,9 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no %s serving %q matches that identity", diag.bindingUnsatisfied, capability, bindBase, diag.noun, capability)
 		}
 		if refHasPin {
+			if pe, malformed := types.ParseVersionPin(capability + ":" + refPin).Malformed(); malformed {
+				return types.Plugin{}, false, pe
+			}
 			return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no %s serves it", diag.versionUnsatisfiable, capability, refPin, diag.noun)
 		}
 		// No serving plugin, no binding, no pin — a bare miss the caller resolves.
@@ -769,8 +773,17 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 		return v.Metadata.Name, v.Metadata.Version
 	})
 	if err != nil {
-		// selectEntityVersion signals an unsatisfiable exact/caret constraint;
-		// translate it to the socket's version halt naming the pin.
+		// A malformed pin names no version, so it is reported as the malformation
+		// against the capability it was written on rather than as a pin no serving
+		// version satisfies. Any other refusal is an unsatisfiable exact/caret
+		// constraint, translated to the socket's version halt naming the pin.
+		pinnedAt := capability + ":" + pin
+		if !refHasPin {
+			pinnedAt = bindings[capability]
+		}
+		if pe, malformed := types.ParseVersionPin(pinnedAt).Malformed(); malformed {
+			return types.Plugin{}, false, pe
+		}
 		return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no serving plugin version satisfies it", diag.versionUnsatisfiable, capability, pin)
 	}
 	if !ok {
@@ -934,10 +947,12 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 //
 // A reference the shape cannot express is reported as a shape fault rather than
 // as an absent recipe, because the recipe it names may well be in the catalog
-// and calling it absent sends the author looking for the wrong thing. The
+// and calling it absent sends the author looking for the wrong thing. A
+// reference of an accepted shape whose version pin is malformed is reported as
+// that malformation for the same reason — the rule above passes over it. The
 // reading runs only after the lookup misses, so it never changes which
-// references resolve. nil means there is no shape fault to report, whether the
-// instance resolved or was reported by the rule above.
+// references resolve. nil means there is no shape or pin fault to report,
+// whether the instance resolved or was reported by the rule above.
 func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
 	uri, ok, err := ComponentRecipeURI(manifest, instanceName, componentType)
 	if err != nil || !ok {
@@ -950,9 +965,23 @@ func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifes
 	}
 	n, tooMany := resolver.RecipeReferenceSegments(uri)
 	if !tooMany {
-		return nil
+		return mappedRecipePinFault(uri, "component", instanceName, componentType)
 	}
 	return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
+}
+
+// mappedRecipePinFault reports a Manifest mapping value that resolved to no
+// recipe and whose version pin is malformed, rooted at the instance whose
+// resolution missed — the second reading beside the shape one above, for the
+// same reason: the recipe the value names may well be in the catalog, and the
+// fault is the pin's text rather than an absent recipe. nil when the pin is well
+// formed or absent, which leaves an absent recipe to the reading that owns it.
+func mappedRecipePinFault(uri, instanceKind, instanceName, instanceType string) error {
+	pe, malformed := types.ParseVersionPin(uri).Malformed()
+	if !malformed {
+		return nil
+	}
+	return pe.At(fmt.Sprintf("the Manifest maps %s %q (type %q) to it", instanceKind, instanceName, instanceType))
 }
 
 // resolveFeatureRecipeForVerify verifies that one feature instance resolves
@@ -982,6 +1011,9 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
 				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, featureType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 			}
+			if fault := mappedRecipePinFault(uri, "feature", instanceName, featureType); fault != nil {
+				return fault
+			}
 			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, featureType, uri)
 		}
 		return nil
@@ -1004,8 +1036,9 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 // diagnostic. The mapping-only cascade matches the renderer's — the catalog
 // never chooses a recipe by spec.implements.
 //
-// The component axis is walked here for one condition only: a mapping value whose
-// SHAPE no recipe reference can express. Whether a component instance resolves to
+// The component axis is walked here for two conditions only: a mapping value whose
+// SHAPE no recipe reference can express, and one whose version pin is malformed —
+// the two the rule over the composition passes over. Whether a component instance resolves to
 // a recipe at all is a rule declared over the flattened composition, asked where
 // the node set is complete — which is earlier than this, and is the only point at
 // which a component a sub-aggregate contributed is in the set being walked. A

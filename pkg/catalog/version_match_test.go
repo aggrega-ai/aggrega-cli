@@ -6,6 +6,8 @@ package catalog
 import (
 	"errors"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // selectEntityVersion resolves a caller CONSTRAINT against a concrete-version
@@ -23,19 +25,26 @@ func TestSelectEntityVersion(t *testing.T) {
 	}
 
 	cases := []struct {
-		name      string
-		ref       string
-		wantKey   string
-		wantOK    bool
-		wantUnsat bool
+		name          string
+		ref           string
+		wantKey       string
+		wantOK        bool
+		wantUnsat     bool
+		wantMalformed bool
 	}{
-		{"unversioned resolves to highest non-prerelease", "core/x", "core/x:1.1.0", true, false},
-		{"exact pins that version", "core/x:1.0.0", "core/x:1.0.0", true, false},
-		{"caret picks highest in range", "core/x:^1.0.0", "core/x:1.1.0", true, false},
-		{"exact matches a prerelease literally", "core/x:2.0.0-rc1", "core/x:2.0.0-rc1", true, false},
-		{"caret matching nothing is unsatisfiable", "core/x:^2.0.0", "", false, true},
-		{"exact absent version is unsatisfiable", "core/x:9.9.9", "", false, true},
-		{"absent base is a plain miss", "core/y", "", false, false},
+		{"unversioned resolves to highest non-prerelease", "core/x", "core/x:1.1.0", true, false, false},
+		{"exact pins that version", "core/x:1.0.0", "core/x:1.0.0", true, false, false},
+		{"caret picks highest in range", "core/x:^1.0.0", "core/x:1.1.0", true, false, false},
+		{"exact matches a prerelease literally", "core/x:2.0.0-rc1", "core/x:2.0.0-rc1", true, false, false},
+		{"caret matching nothing is unsatisfiable", "core/x:^2.0.0", "", false, true, false},
+		{"exact absent version is unsatisfiable", "core/x:9.9.9", "", false, true, false},
+		{"absent base is a plain miss", "core/y", "", false, false, false},
+		// A malformed pin names no version, so the select reports the malformation
+		// in place of the unsatisfiable condition — and only there, after the scan
+		// found nothing, so a pinned base the catalog does not hold stays a plain miss.
+		{"caret whose range does not parse is malformed", "core/x:^garbage", "", false, false, true},
+		{"exact wildcard is malformed", "core/x:1.x", "", false, false, true},
+		{"malformed pin on an absent base is a plain miss", "core/y:^garbage", "", false, false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,12 +55,25 @@ func TestSelectEntityVersion(t *testing.T) {
 			if key != tc.wantKey {
 				t.Errorf("key=%q want %q", key, tc.wantKey)
 			}
-			if tc.wantUnsat {
+			switch {
+			case tc.wantUnsat:
 				if !errors.Is(err, ErrUnsatisfiableEntityVersion()) {
 					t.Errorf("want ErrUnsatisfiableEntityVersion, got %v", err)
 				}
-			} else if err != nil {
-				t.Errorf("unexpected err %v", err)
+				if errors.Is(err, types.ErrMalformedVersionPin()) {
+					t.Errorf("a well-formed unsatisfiable pin was reported as malformed: %v", err)
+				}
+			case tc.wantMalformed:
+				if !errors.Is(err, types.ErrMalformedVersionPin()) {
+					t.Errorf("want ErrMalformedVersionPin, got %v", err)
+				}
+				if errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+					t.Errorf("a malformed pin was reported as unsatisfiable: %v", err)
+				}
+			default:
+				if err != nil {
+					t.Errorf("unexpected err %v", err)
+				}
 			}
 		})
 	}

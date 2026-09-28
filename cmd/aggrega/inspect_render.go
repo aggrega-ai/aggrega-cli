@@ -169,6 +169,9 @@ func resolveImplementsComponent(rw *workspaceconfig.ResolvedWorkspace, catalogDi
 	}
 	comp, found := lookup.Component(implements)
 	if !found {
+		if pe, malformed := types.ParseVersionPin(implements).Malformed(); malformed {
+			return types.Component{}, fmt.Errorf("--show-implements: %w", pe.At("in the recipe's spec.implements"))
+		}
 		return types.Component{}, fmt.Errorf("--show-implements: implements target %q not found in catalog", implements)
 	}
 	return comp, nil
@@ -190,6 +193,9 @@ func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs
 	}
 	feat, found := lookup.Feature(implements)
 	if !found {
+		if pe, malformed := types.ParseVersionPin(implements).Malformed(); malformed {
+			return types.Feature{}, fmt.Errorf("--show-implements: %w", pe.At("in the feature recipe's spec.implements"))
+		}
 		return types.Feature{}, fmt.Errorf("--show-implements: implements target %q not found in catalog", implements)
 	}
 	return feat, nil

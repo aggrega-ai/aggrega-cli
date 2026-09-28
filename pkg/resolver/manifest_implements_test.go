@@ -37,6 +37,12 @@ func TestImplementsSatisfies(t *testing.T) {
 		{"prerelease caller within prerelease caret baseline", "core/api-server:^1.0.0-beta", "core/api-server:1.0.0-rc1", true},
 		{"caret cannot match unparseable request version", "core/api-server:^1.0.0", "core/api-server:not-a-version", false},
 		{"unrelated base is a miss", "core/api-server:1.0.0", "different/component:1.0.0", false},
+		// The requested version is read by the one pin parser, which takes an exact
+		// pin only as a strict semantic version: a two-segment version is a
+		// malformed pin, so it lies in no range.
+		{"caret cannot match a request whose exact pin is not a strict semantic version", "core/api-server:^1.0.0", "core/api-server:1.0", false},
+		{"a caret declaration whose range does not parse matches no version", "core/api-server:^garbage", "core/api-server:1.0.0", false},
+		{"a malformed declaration still matches the identical string", "core/api-server:^garbage", "core/api-server:^garbage", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

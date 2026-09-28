@@ -108,7 +108,10 @@ func TestComposeExtends_NarrowingIsSignalOnly(t *testing.T) {
 // non-nil schemas, erroring only on empty/nil input, which the engine filters.)
 func TestComposeExtends_MissingParentHalts(t *testing.T) {
 	t.Parallel()
-	child := chainEntry(t, "c", "does/not:exist",
+	// The parent reference is well formed on purpose: a reference whose version
+	// pin is malformed reports that malformation instead, which would make this
+	// fixture carry a second fault in front of the one it is about.
+	child := chainEntry(t, "c", "does/not-exist:1.0.0",
 		"values:\n  port: { type: integer }\n")
 	lookup := func(string) (CatalogEntry, bool) { return CatalogEntry{}, false }
 	result := ResolveFeatureSchemaChain(child, lookup)
