@@ -6,7 +6,32 @@ package workspaceconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+)
+
+// placeholderPin returns a pin for a CLI plugin nobody installed: a well-formed
+// content digest, "sha256:" and 64 lowercase hexadecimal digits, the spelling the
+// install writer records and the configuration schema accepts. Every write these
+// tests make is schema-gated and every read validates the file, so a pin spelled
+// any other way is refused before the writer or cascade mechanics under test are
+// reached. The digit it repeats keeps each pin distinct from the others; what a
+// digest is plays no part in what these tests assert.
+func placeholderPin(fill byte) string {
+	return "sha256:" + strings.Repeat(string(fill), 64)
+}
+
+// The pins the writer and cascade tests write, one per pin, each distinct.
+var (
+	digestA       = placeholderPin('a')
+	digestB       = placeholderPin('b')
+	digestC       = placeholderPin('c')
+	digestV1      = placeholderPin('1')
+	digestV2      = placeholderPin('2')
+	digestV2b     = placeholderPin('3')
+	digestBar     = placeholderPin('d')
+	rootDigest    = placeholderPin('e')
+	projectDigest = placeholderPin('f')
 )
 
 // TestUpsertCLIPluginRef_PinReAndCompose proves the plugins.cli writer adds a
@@ -20,7 +45,7 @@ func TestUpsertCLIPluginRef_PinReAndCompose(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0", "digest-a"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0", digestA); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (add): %v", err)
 	}
 
@@ -32,24 +57,24 @@ func TestUpsertCLIPluginRef_PinReAndCompose(t *testing.T) {
 	if cfg.DefaultRegistry != "hub.aggrega.ai" || !cfg.Offline {
 		t.Errorf("existing keys not preserved: default_registry=%q offline=%v", cfg.DefaultRegistry, cfg.Offline)
 	}
-	if len(cfg.Plugins.CLI) != 1 || cfg.Plugins.CLI[0].URI != "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0" || cfg.Plugins.CLI[0].Digest != "digest-a" {
+	if len(cfg.Plugins.CLI) != 1 || cfg.Plugins.CLI[0].URI != "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0" || cfg.Plugins.CLI[0].Digest != digestA {
 		t.Fatalf("pin not written; got %+v", cfg.Plugins.CLI)
 	}
 
 	// Re-pinning the same uri updates the digest in place, not a duplicate.
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0", "digest-b"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/greet:1.0.0", digestB); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (re-pin): %v", err)
 	}
 	rw, err = Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("resolve after re-pin: %v", err)
 	}
-	if got := rw.Config().Plugins.CLI; len(got) != 1 || got[0].Digest != "digest-b" {
+	if got := rw.Config().Plugins.CLI; len(got) != 1 || got[0].Digest != digestB {
 		t.Fatalf("re-pin should update the one entry's digest in place; got %+v", got)
 	}
 
 	// A distinct uri appends a second pin.
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/other:2.0.0", "digest-c"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/other:2.0.0", digestC); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (append distinct): %v", err)
 	}
 	rw, err = Resolve(dir, "")
@@ -86,10 +111,10 @@ func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
 
 	// Upgrade collapses to one entry: a newer version of the same plugin
 	// replaces both fields of the single entry, keeping its list position.
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.1", "digest-v1"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.1", digestV1); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (add v0.2.1): %v", err)
 	}
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", "digest-v2"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", digestV2); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (upgrade to v0.2.2): %v", err)
 	}
 	got := load("upgrade")
@@ -99,12 +124,12 @@ func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
 	if got[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2" {
 		t.Errorf("upgrade should replace the uri in place; got %q", got[0].URI)
 	}
-	if got[0].Digest != "digest-v2" {
+	if got[0].Digest != digestV2 {
 		t.Errorf("upgrade should replace the digest in place; got %q", got[0].Digest)
 	}
 
 	// Idempotent same-version re-add: re-pins the digest of the one entry.
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", "digest-v2b"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", digestV2b); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (re-add v0.2.2): %v", err)
 	}
 	got = load("re-add")
@@ -114,12 +139,12 @@ func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
 	if got[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2" {
 		t.Errorf("same-version re-add should leave the uri unchanged; got %q", got[0].URI)
 	}
-	if got[0].Digest != "digest-v2b" {
+	if got[0].Digest != digestV2b {
 		t.Errorf("same-version re-add should re-pin the digest; got %q", got[0].Digest)
 	}
 
 	// A distinct plugin appends a second entry.
-	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/bar:1.0.0", "digest-bar"); err != nil {
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/bar:1.0.0", digestBar); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (add distinct bar): %v", err)
 	}
 	got = load("append distinct")
@@ -142,10 +167,10 @@ func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
 	if err := os.WriteFile(freshPath, []byte("workspace: {}\n"), 0o644); err != nil {
 		t.Fatalf("seed fresh: %v", err)
 	}
-	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:1.0.0", "digest-a"); err != nil {
+	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:1.0.0", digestA); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (ported add zoo:1.0.0): %v", err)
 	}
-	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:2.0.0", "digest-b"); err != nil {
+	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:2.0.0", digestB); err != nil {
 		t.Fatalf("UpsertCLIPluginRef (ported upgrade zoo:2.0.0): %v", err)
 	}
 	rw, err := Resolve(freshDir, "")
@@ -159,7 +184,7 @@ func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
 	if pg[0].URI != "oci://reg.example.com:5000/plugin/cli/zoo:2.0.0" {
 		t.Errorf("ported upgrade should replace the uri in place; got %q", pg[0].URI)
 	}
-	if pg[0].Digest != "digest-b" {
+	if pg[0].Digest != digestB {
 		t.Errorf("ported upgrade should replace the digest in place; got %q", pg[0].Digest)
 	}
 }
@@ -174,7 +199,7 @@ func TestCLIPluginRefComposesAcrossCascade(t *testing.T) {
 	root := t.TempDir()
 	// Ancestor config anchors the workspace root and pins one CLI plugin.
 	if err := os.WriteFile(filepath.Join(root, ConfigFilename),
-		[]byte("workspace: {}\nplugins:\n  cli:\n    - uri: oci://hub/plugin/cli/root-tool:1.0.0\n      digest: root-digest\n"), 0o644); err != nil {
+		[]byte("workspace: {}\nplugins:\n  cli:\n    - uri: oci://hub/plugin/cli/root-tool:1.0.0\n      digest: "+rootDigest+"\n"), 0o644); err != nil {
 		t.Fatalf("seed root: %v", err)
 	}
 	nested := filepath.Join(root, "project")
@@ -182,7 +207,7 @@ func TestCLIPluginRefComposesAcrossCascade(t *testing.T) {
 		t.Fatalf("mkdir nested: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(nested, ConfigFilename),
-		[]byte("plugins:\n  cli:\n    - uri: oci://hub/plugin/cli/project-tool:2.0.0\n      digest: project-digest\n"), 0o644); err != nil {
+		[]byte("plugins:\n  cli:\n    - uri: oci://hub/plugin/cli/project-tool:2.0.0\n      digest: "+projectDigest+"\n"), 0o644); err != nil {
 		t.Fatalf("seed nested: %v", err)
 	}
 

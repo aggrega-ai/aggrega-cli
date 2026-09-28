@@ -454,13 +454,19 @@ func maximalWorkloadReference() types.Workload {
 // its own position admits, which makes this instance a configuration the product
 // would really load rather than one only the schema tolerates.
 //
-// The MCP block is filled in every field rather than only the two the schema
-// constrains, because the instance is what this direction validates: a field
-// left at its zero value is a field the schema is never asked about, and it
-// passes for want of a constraint rather than for being right. Its values are
-// one coherent deployment — a listener terminating TLS from the certificate
-// and key it names, an origin in the full form a browser sends, and every cap
-// at its documented default.
+// The MCP block fills the transport, the listener's address and certificate,
+// the origins, both trusted-proxy headers and the caps, because the instance is
+// what this direction validates: a field left at its zero value is a field the
+// schema is never asked about, and it passes for want of a constraint rather
+// than for being right. The trusted-proxy block is filled for that reason even
+// though a configuration may leave it out: once present, its principal header
+// must name a header, and an empty one is refused. Its values describe one
+// server that could really run — a listener on loopback terminating TLS from
+// the certificate and key it names, reading its caller from a proxy in front,
+// which is why the address is loopback, an origin in the full form a browser
+// sends, and every cap at its documented default. The authorization server's addresses and key
+// file, the withdrawn reach, the announced tools and the health address are
+// left at their zero values.
 func maximalAggregaConfig() workspaceconfig.Config {
 	signing := workspaceconfig.SigningConfig{
 		FulcioURL:    "https://fulcio.example.com",
@@ -540,7 +546,7 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		Serve:       workspaceconfig.ServeConfig{BuildOnInspect: true, LintOnValidate: true},
 		MCP: workspaceconfig.MCPConfig{
 			Transport: workspaceconfig.MCPTransportHTTP,
-			Listen:    "0.0.0.0:8443",
+			Listen:    "127.0.0.1:8443",
 			TLS: workspaceconfig.MCPTLSConfig{
 				CertFile: "/certs/mcp-chain.pem",
 				KeyFile:  "/certs/mcp-key.pem",
@@ -550,6 +556,12 @@ func maximalAggregaConfig() workspaceconfig.Config {
 				MaxBodyBytes:          4_194_304,
 				MaxConcurrentRequests: 16,
 				RequestsPerMinute:     120,
+			},
+			Authorization: workspaceconfig.MCPAuthorizationConfig{
+				TrustedProxy: workspaceconfig.MCPTrustedProxyConfig{
+					PrincipalHeader: "X-Forwarded-User",
+					ScopesHeader:    "X-Forwarded-Scopes",
+				},
 			},
 		},
 		Signing: signing,

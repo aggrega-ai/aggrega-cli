@@ -281,9 +281,9 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 	return diags, true
 }
 
-// fieldPathSpan draws a key the envelope's field-path spelling names, in the
-// client's negotiated position encoding, and at the head of the file when the
-// path resolves to nothing.
+// fieldPathSpan draws the key, or the array element, the envelope's field-path
+// spelling names, in the client's negotiated position encoding, and at the head
+// of the file when the path resolves to nothing.
 //
 // The path is resolved through the same walk the envelope's own rendered
 // message uses, against the same buffer bytes it just validated, so the two

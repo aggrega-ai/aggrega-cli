@@ -8,9 +8,10 @@ import "testing"
 // A bracketed key spelling is not addressable, and the position it settles for is
 // the same one a path naming nothing at all settles for.
 //
-// The walk splits on "." and matches each segment as a literal mapping key, so
-// `components["web"]` is one segment that no key in any document spells. The
-// descent therefore stops at the enclosing key it last matched — which is exactly
+// The walk splits on "." and matches each segment as a literal mapping key, or as
+// a key followed by bracketed decimal element indices, which `["web"]` is not. So
+// `components["web"]` is one segment that no key in any document spells, and the
+// descent stops at the enclosing key it last matched — which is exactly
 // what a path whose next segment is simply absent does. That collapse is the
 // point of this test rather than an incidental observation: two findings about
 // entirely different things, one naming a real key in a spelling this walk cannot

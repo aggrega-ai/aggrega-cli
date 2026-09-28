@@ -148,6 +148,139 @@ func TestFieldNode_PartialMatchReturnsLastFoundKey(t *testing.T) {
 	}
 }
 
+// fieldPathArrayDoc carries a value inside an array in each shape a validation
+// finding names one: an element of a list of text, a key inside a mapping
+// element (the shape a shared definition reached through a list takes, since
+// the finding's path is the value's own path whatever definition judged it), a
+// key inside a later element, a list inside a list, and a key spelled exactly
+// like an indexed segment beside the list it would otherwise index.
+const fieldPathArrayDoc = `workspace: {}
+mcp:
+  allowed_origins:
+    - https://ok.example.com
+    - https://app.example.com/
+registries:
+  - host: registry.example.com
+    signing:
+      rekor_url: rekor.example.com
+  - host: second.example.com
+    public_key: not-a-pem-block
+plugins:
+  cli:
+    - uri: oci://hub.aggrega.ai/plugin/cli/moo:1.0.0
+      digest: abc
+matrix:
+  - [a, b]
+  - [c, d]
+shadow:
+  - from-the-sequence
+"shadow[0]": from-the-key
+`
+
+// TestFieldNodeReachesAValueInsideAnArray pins that a path naming an array
+// element by a bracketed index resolves to that element, or to a key inside it,
+// rather than stopping at the key that holds the array — which would put a
+// finding about one entry on the line of the whole list, or at the head of the
+// file where the list sits at the top level.
+//
+// Each row writes out the coordinates and the node's text rather than comparing
+// against a second walk, so the row says something the implementation agreeing
+// with itself cannot satisfy. The fallback rows pin what a path the document
+// does not fully carry resolves to: the deepest node reached, as for a key that
+// is absent.
+func TestFieldNodeReachesAValueInsideAnArray(t *testing.T) {
+	t.Parallel()
+	doc := parseFieldDoc(t, fieldPathArrayDoc)
+
+	for _, tc := range []struct {
+		name string
+		path string
+		// wantLine and wantColumn are the 1-based coordinates of the node the walk
+		// settles on; wantText is its text (a key's name, an element's value), and
+		// wantKind its node kind, so a coincidental line match cannot read as a pass.
+		wantLine, wantColumn int
+		wantText             string
+		wantKind             yaml.Kind
+	}{
+		{name: "an element of a list of text", path: "mcp.allowed_origins[1]",
+			wantLine: 5, wantColumn: 7, wantText: "https://app.example.com/", wantKind: yaml.ScalarNode},
+		{name: "a key inside a mapping element, as a shared definition under a list is reached", path: "registries[0].signing.rekor_url",
+			wantLine: 9, wantColumn: 7, wantText: "rekor_url", wantKind: yaml.ScalarNode},
+		{name: "a key inside a later element", path: "registries[1].public_key",
+			wantLine: 11, wantColumn: 5, wantText: "public_key", wantKind: yaml.ScalarNode},
+		{name: "a key inside an element of a nested list", path: "plugins.cli[0].digest",
+			wantLine: 15, wantColumn: 7, wantText: "digest", wantKind: yaml.ScalarNode},
+		{name: "an element of a list inside a list", path: ".matrix[1][0]",
+			wantLine: 18, wantColumn: 6, wantText: "c", wantKind: yaml.ScalarNode},
+		{name: "a key spelled like the whole segment is matched before the list", path: "shadow[0]",
+			wantLine: 21, wantColumn: 1, wantText: "shadow[0]", wantKind: yaml.ScalarNode},
+		{name: "an index past the end stops at the key holding the list", path: "mcp.allowed_origins[7]",
+			wantLine: 3, wantColumn: 3, wantText: "allowed_origins", wantKind: yaml.ScalarNode},
+		{name: "an absent key inside an element stops at that element", path: "registries[1].signing.fulcio_url",
+			wantLine: 10, wantColumn: 5, wantText: "", wantKind: yaml.MappingNode},
+		{name: "an index on a value that is not a list stops at its key", path: "mcp[0].allowed_origins",
+			wantLine: 2, wantColumn: 1, wantText: "mcp", wantKind: yaml.ScalarNode},
+		{name: "a bracketed quoted key is not an index", path: `plugins.cli["0"].digest`,
+			wantLine: 12, wantColumn: 1, wantText: "plugins", wantKind: yaml.ScalarNode},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			node := FieldNode(doc, tc.path)
+			if node == nil {
+				t.Fatalf("FieldNode(%q) resolved to nothing; want %q at %d:%d", tc.path, tc.wantText, tc.wantLine, tc.wantColumn)
+			}
+			if node.Kind != tc.wantKind || node.Value != tc.wantText {
+				t.Errorf("FieldNode(%q) reached a node of kind %v with text %q; want kind %v with text %q",
+					tc.path, node.Kind, node.Value, tc.wantKind, tc.wantText)
+			}
+			if node.Line != tc.wantLine || node.Column != tc.wantColumn {
+				t.Errorf("FieldNode(%q) = %d:%d; want %d:%d", tc.path, node.Line, node.Column, tc.wantLine, tc.wantColumn)
+			}
+		})
+	}
+
+	// A path whose first segment indexes a key the document does not carry has
+	// nothing to fall back to, exactly as an absent first key does.
+	if node := FieldNode(doc, "absent[0].key"); node != nil {
+		t.Errorf("FieldNode(%q) = %d:%d %q; want nil", "absent[0].key", node.Line, node.Column, node.Value)
+	}
+}
+
+// TestFieldRange_SpansAnArrayElement pins how an element is drawn: an element of
+// text spans its value, as a key spans its name, and an element that is itself a
+// mapping has no single line of text to span and is drawn at its start.
+func TestFieldRange_SpansAnArrayElement(t *testing.T) {
+	t.Parallel()
+	doc := parseFieldDoc(t, fieldPathArrayDoc)
+	idx := BuildLineIndexWithEncoding([]byte(fieldPathArrayDoc), PositionEncodingUTF8)
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want FieldSpan
+	}{
+		// "https://app.example.com/" is 24 characters starting at column 7, so the
+		// end sits one past its last character.
+		{name: "an element of text spans its value", path: "mcp.allowed_origins[1]",
+			want: FieldSpan{Line: 5, Column: 7, EndLine: 5, EndColumn: 31}},
+		{name: "a key inside an element spans its name", path: "registries[1].public_key",
+			want: FieldSpan{Line: 11, Column: 5, EndLine: 11, EndColumn: 15}},
+		{name: "a mapping element is drawn at its start", path: "registries[1]",
+			want: FieldSpan{Line: 10, Column: 5}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			span, ok := FieldRange(doc, idx, tc.path)
+			if !ok {
+				t.Fatalf("FieldRange(%q) resolved to nothing; want %+v", tc.path, tc.want)
+			}
+			if span != tc.want {
+				t.Errorf("FieldRange(%q) = %+v; want %+v", tc.path, span, tc.want)
+			}
+		})
+	}
+}
+
 func TestFieldNode_EmptyFieldReturnsNil(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t, "spec:\n  foo: bar\n")

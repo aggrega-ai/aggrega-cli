@@ -138,6 +138,64 @@ func TestEnvelopeDiagnosticsForBuffer_ConfigByFilename(t *testing.T) {
 	}
 }
 
+// TestEnvelopeDiagnosticsForBuffer_ConfigValueInAShapeItsReaderCannotUse pins
+// that the editor reports, on the buffer, the same shape refusals a command makes
+// when it loads the file: one row per setting whose value is held to the shape its
+// reader uses, each drawn on the line of the offending value.
+//
+// The line is the assertion that matters. A diagnostic at the head of the file
+// would say only that something is wrong; one on the value's own line tells the
+// author which one. Every row carries one fault, and the clean-buffer test above is
+// the positive control that a well-formed configuration raises nothing.
+func TestEnvelopeDiagnosticsForBuffer_ConfigValueInAShapeItsReaderCannotUse(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+	for _, tc := range []struct {
+		name    string
+		content string
+		// line is the 1-based line the offending value sits on.
+		line int
+	}{
+		{"an origin with a trailing slash",
+			"workspace: {}\nmcp:\n  allowed_origins:\n    - https://ok.example.com\n    - https://app.example.com/\n", 5},
+		{"a principal header with a space",
+			"workspace: {}\nmcp:\n  authorization:\n    trusted_proxy:\n      principal_header: 'X Forwarded User'\n", 5},
+		{"an empty principal header",
+			"workspace: {}\nmcp:\n  authorization:\n    trusted_proxy:\n      principal_header: ''\n", 5},
+		{"a scopes header with a space",
+			"workspace: {}\nmcp:\n  authorization:\n    trusted_proxy:\n      principal_header: X-Forwarded-User\n" +
+				"      scopes_header: 'X Forwarded Scopes'\n", 6},
+		{"a certificate authority with no scheme",
+			"workspace: {}\nsigning:\n  fulcio_url: fulcio.example.com\n", 3},
+		{"a registry's transparency log with no scheme",
+			"workspace: {}\nregistries:\n  - host: registry.example.com\n    signing:\n      rekor_url: rekor.example.com\n", 5},
+		{"a timestamp authority with no scheme",
+			"workspace: {}\nsigning:\n  timestamp_url: tsa.example.com\n", 3},
+		{"a CLI plugin pin in bare hexadecimal",
+			"workspace: {}\nplugins:\n  cli:\n    - uri: oci://hub.aggrega.ai/plugin/cli/moo:1.0.0\n      digest: " +
+				strings.Repeat("0123456789abcdef", 4) + "\n", 5},
+		{"a public key that is not a PEM block",
+			"workspace: {}\nregistries:\n  - host: registry.example.com\n    public_key: not-a-pem-block\n", 4},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			content := []byte(tc.content)
+			diags, has := srv.envelopeDiagnosticsForBuffer(".aggrega-config.yaml", "", content, parseDoc(t, tc.content))
+			if !has || len(diags) == 0 {
+				t.Fatalf("expected a diagnostic for the buffer; has=%v diags=%d", has, len(diags))
+			}
+			header := envelopeDiagnosticHeader(envelope.KindAggregaConfig) + ": "
+			for _, d := range diags {
+				if d.Line == tc.line && strings.HasPrefix(d.Message, header) && strings.Contains(d.Message, "pattern: ") {
+					return
+				}
+			}
+			t.Errorf("no diagnostic on line %d refusing the value's shape; got %+v", tc.line, diags)
+		})
+	}
+}
+
 // TestEnvelopeDiagnosticsForBuffer_NamedReleaseLockfileByFilename pins
 // that the named Release's lockfile — also envelope-less — is classified
 // by correlation to that Release's path and validated on the buffer.

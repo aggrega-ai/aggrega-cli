@@ -13,6 +13,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
+// placeholderPin returns a pin for a CLI plugin nobody installed: a well-formed
+// content digest, "sha256:" and 64 lowercase hexadecimal digits, the spelling the
+// install writer records and the configuration schema accepts. The removal tests
+// seed a file the command reads and validates before it changes anything, so a
+// pin spelled any other way is refused before the removal under test is reached.
+// The digit it repeats keeps each test's pin distinct; what a digest is plays no
+// part in what these tests assert.
+func placeholderPin(fill byte) string {
+	return "sha256:" + strings.Repeat(string(fill), 64)
+}
+
 // seedWorkspaceConfig writes body into a fresh temp workspace config and returns
 // the resolved workspace and the config path, so a remove writes into that dir.
 func seedWorkspaceConfig(t *testing.T, body string) (*workspaceconfig.ResolvedWorkspace, string) {
@@ -103,7 +114,7 @@ func TestPluginRemoveRun_CLIDefaultsGlobal(t *testing.T) {
 	globalDir := t.TempDir()
 	globalPath := filepath.Join(globalDir, "config.yaml")
 	if err := os.WriteFile(globalPath, []byte("workspace: {}\nplugins:\n  cli:\n"+
-		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: digest-a\n"), 0o644); err != nil {
+		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: "+placeholderPin('b')+"\n"), 0o644); err != nil {
 		t.Fatalf("seed global: %v", err)
 	}
 	lookup := func(k string) string {

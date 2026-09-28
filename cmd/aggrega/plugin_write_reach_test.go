@@ -237,8 +237,8 @@ func TestPluginRemoveCarriesTheWriteReachFromTheSharedResult(t *testing.T) {
 
 	const socketBody = "workspace: {}\nplugins:\n  governance:\n" +
 		"    - uri: governance/tag-injector:1.2.0\n      role: label-transform\n"
-	const cliBody = "workspace: {}\nplugins:\n  cli:\n" +
-		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: digest-a\n"
+	cliBody := "workspace: {}\nplugins:\n  cli:\n" +
+		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: " + placeholderPin('a') + "\n"
 
 	cases := []struct {
 		name            string

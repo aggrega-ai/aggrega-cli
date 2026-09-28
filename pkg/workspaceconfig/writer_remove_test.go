@@ -19,8 +19,8 @@ func TestRemoveCLIPluginRef_ByNameAndURI(t *testing.T) {
 	path := filepath.Join(dir, ConfigFilename)
 	seed := "workspace: {}\noffline: true\ndefault_registry: hub.aggrega.ai\n" +
 		"plugins:\n  cli:\n" +
-		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: digest-a\n" +
-		"    - uri: oci://hub.aggrega.ai/plugin/cli/other:2.0.0\n      digest: digest-b\n"
+		"    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: " + digestA + "\n" +
+		"    - uri: oci://hub.aggrega.ai/plugin/cli/other:2.0.0\n      digest: " + digestB + "\n"
 	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestRemoveCLIPluginRef_ByNameAndURI(t *testing.T) {
 func TestRemoveCLIPluginRef_NoMatchLeavesFileUntouched(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
-	seed := "workspace: {}\nplugins:\n  cli:\n    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: digest-a\n"
+	seed := "workspace: {}\nplugins:\n  cli:\n    - uri: oci://hub.aggrega.ai/plugin/cli/greet:1.0.0\n      digest: " + digestA + "\n"
 	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

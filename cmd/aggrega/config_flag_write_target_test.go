@@ -187,7 +187,7 @@ func TestNamedConfigGovernsPluginAddCLI(t *testing.T) {
 // the same nature.
 func TestNamedConfigGovernsPluginRemoveCLI(t *testing.T) {
 	c := newNamedConfigCase(t, "workspace: {}\nplugins:\n  cli:\n"+
-		"    - uri: oci://hub.aggrega.ai/plugin/cli/moo:1.0.0\n      digest: sha256:abc\n")
+		"    - uri: oci://hub.aggrega.ai/plugin/cli/moo:1.0.0\n      digest: "+placeholderPin('c')+"\n")
 	withCLIRegistrations(t, nil)
 
 	c.runNamed(t, "plugin", "remove", "cli", "moo")
