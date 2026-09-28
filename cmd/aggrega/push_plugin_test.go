@@ -395,7 +395,6 @@ metadata:
   pluginType: provider
   version: %q
 spec:
-  plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
   provider:
     capabilities:
@@ -415,20 +414,23 @@ spec:
 // TestPushPluginLargeGuestDryRunUnderDeclaredCap proves the publish
 // describe()-cross-check loads a large standard-Go guest under the entity's
 // declared memory cap, so a dry-run of a guest whose working set exceeds the
-// platform default succeeds instead of failing to instantiate.
+// platform default loads and is cross-checked instead of failing to instantiate.
 func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 4096\n")
 
 	var out bytes.Buffer
-	if err := pushRun(t.Context(), pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
 		DryRun:     true,
 		Out:        &out,
-	}); err != nil {
-		t.Fatalf("dry-run of a large guest under its declared cap should succeed; got %v", err)
+	})
+	// The guest loading under its declared cap is what every later check needs, so
+	// reaching the build-marker verdict proves the load succeeded.
+	if !requirePublishedUnlessUncommitted(t, embeddedGuestVersion(t, largeGuestURI(t)), err) {
+		return
 	}
 	if !strings.Contains(out.String(), "dry-run") {
 		t.Errorf("dry-run output should report the proposed reference; got:\n%s", out.String())
@@ -438,21 +440,22 @@ func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
 // TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor proves that when the
 // entity declares no runtime memory cap, the cross-check load falls back to the
 // describe-time headroom rather than the platform default, so a large guest with
-// no authored cap still instantiates for the dry-run.
+// no authored cap still instantiates for the dry-run and is cross-checked.
 func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "")
 
 	var out bytes.Buffer
-	if err := pushRun(t.Context(), pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
 		DryRun:     true,
 		Out:        &out,
-	}); err != nil {
-		t.Fatalf("dry-run of a large guest with no declared cap should fall back to the describe floor and succeed; got %v", err)
-	}
+	})
+	// Falling back to the describe floor is what lets the guest load at all, so
+	// reaching the build-marker verdict proves the fallback took effect.
+	requirePublishedUnlessUncommitted(t, embeddedGuestVersion(t, largeGuestURI(t)), err)
 }
 
 // TestPushPluginLargeGuestDefaultCapInsufficient pins the load-bearing half of
@@ -506,7 +509,6 @@ metadata:
   pluginType: provider
   version: %q
 spec:
-  plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
   exports:
     - name: render_node
@@ -544,15 +546,21 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	if err := pushRun(t.Context(), pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
 		DryRun:     true,
 		Out:        &out,
-	}); err != nil {
+	})
+	if errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("a provider authoring reusableInstance: true (matching the guest's describe()) should cross-check clean at publish; got %v", err)
+	}
+	// The capability cross-check runs ahead of the build-marker verdict, so
+	// reaching that verdict proves the claim cross-checked clean.
+	if !requirePublishedUnlessUncommitted(t, embeddedGuestVersion(t, largeGuestURI(t)), err) {
+		return
 	}
 	if !strings.Contains(out.String(), "dry-run") {
 		t.Errorf("dry-run output should report the proposed reference; got:\n%s", out.String())

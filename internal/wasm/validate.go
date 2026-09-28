@@ -30,6 +30,22 @@ type ValidateOptions struct {
 	// capability, command-mirror, and host-function cross-checks and collects the
 	// under-declaration notices.
 	Entity *EntityInputs
+
+	// RefuseUncommittedBuild refuses a binary whose describe() build-provenance
+	// version says it was built from a working tree with uncommitted changes
+	// (BuiltFromUncommittedChanges), with ErrPluginBuiltFromUncommittedChanges.
+	//
+	// Publication sets it: such a version names a commit that does not hold the
+	// bytes, so what is published could not be rebuilt from the version it is
+	// published under. Validating a local build leaves it unset, because a build
+	// under development is routinely made from an edited tree and checking it
+	// against its entity is exactly what that work needs.
+	//
+	// It is judged after the entity's capability, command-mirror and host-function
+	// cross-checks and immediately ahead of the version cross-check, so a guest
+	// built from an edited tree is told to commit and rebuild rather than to copy
+	// its marked version into the entity.
+	RefuseUncommittedBuild bool
 }
 
 // EntityInputs carries the authored entity surface ValidatePlugin cross-checks a
@@ -99,11 +115,15 @@ type ValidateReport struct {
 //     every load-and-dispatch socket.
 //  2. Entity cross-checks, only when opts.Entity is non-nil: the authored
 //     capability claim against describe(), the machine-owned command mirror for
-//     full equality against the described commands, the machine-owned
-//     host-function record for set-equality against the binary's actual imports,
-//     and the recorded metadata.version for exact-string equality against the
-//     binary's describe() build-provenance version; the advisory under-declaration
-//     notices are collected into the report.
+//     full equality against the described commands, and the machine-owned
+//     host-function record for set-equality against the binary's actual imports.
+//  3. The build-provenance version, only when opts.RefuseUncommittedBuild is set:
+//     a describe() version saying the binary was built from a working tree with
+//     uncommitted changes is refused.
+//  4. The recorded metadata.version, only when opts.Entity is non-nil, for
+//     exact-string equality against the binary's describe() build-provenance
+//     version; the advisory under-declaration notices are then collected into the
+//     report.
 //
 // The load binds inert host-function stubs and never invokes an export beyond
 // describe(), so validation grants the guest no real host capability. On any
@@ -121,6 +141,11 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 	}
 
 	report := ValidateReport{Descriptor: desc}
+
+	describeVersion := ""
+	if desc.Metadata != nil {
+		describeVersion = desc.Metadata.Version
+	}
 
 	if opts.Entity != nil {
 		if err := CrossCheckContract(opts.Identity, opts.Entity.Claim, desc); err != nil {
@@ -141,10 +166,14 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 				"plugin %q: recorded host-function record %v does not match the .wasm imports %v: %w",
 				opts.Identity, opts.Entity.HostFunctions, derived, ErrWasmHostFunctionsStampMismatch())
 		}
-		describeVersion := ""
-		if desc.Metadata != nil {
-			describeVersion = desc.Metadata.Version
-		}
+	}
+
+	if opts.RefuseUncommittedBuild && BuiltFromUncommittedChanges(describeVersion) {
+		return ValidateReport{}, fmt.Errorf("%w (plugin %q, describe() version %q, which ends with %q)",
+			ErrPluginBuiltFromUncommittedChanges(), opts.Identity, describeVersion, uncommittedChangesMarker)
+	}
+
+	if opts.Entity != nil {
 		if opts.Entity.Version != describeVersion {
 			return ValidateReport{}, fmt.Errorf(
 				"plugin %q: recorded metadata.version %q does not match the plugin describe() version %q: %w",

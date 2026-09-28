@@ -384,8 +384,9 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // (recipepin.ErrEntityNotPinned) for a Recipe or FeatureRecipe whose lock does
 // not record every pin the pin step would record, where this invocation does not
 // run the step, the catalog parse's own refusal for a document it cannot read —
-// reached for a Recipe or FeatureRecipe through the pin step or the hold, and for
-// a Component or Feature before the bundle — bundle failure (including ErrUnknownEntityKind for
+// reached for a Recipe or FeatureRecipe through the pin step or the hold, for
+// a Component or Feature before the bundle, and for a Plugin before its .wasm is
+// read — bundle failure (including ErrUnknownEntityKind for
 // non-publishable kinds), signer-construction / signing failure (refused before
 // publishing), and publication failure. The directory's name is not judged: an
 // entity alone in its directory publishes wherever that directory sits.

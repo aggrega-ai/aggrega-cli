@@ -92,8 +92,12 @@ spec:
 
 	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if _, err := publishops.PushPlugin(t.Context(), &out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
-		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
+	_, err = publishops.PushPlugin(t.Context(), &out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML)
+	// The generated entity is read against its schema and cross-checked against
+	// the guest before the build-marker verdict, so reaching that verdict proves
+	// the generated entity survived both.
+	if !requirePublishedUnlessUncommitted(t, version, err) {
+		return
 	}
 	if !strings.Contains(out.String(), wantLocation) {
 		t.Errorf("dry-run output does not name the push location %q:\n%s", wantLocation, out.String())
@@ -163,12 +167,13 @@ spec:
 
 	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if _, err := publishops.PushPlugin(t.Context(), &out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
-		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
-			t.Fatalf("push re-derived a different host-function set than the generator stamped: %v", err)
-		}
-		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
+	_, err = publishops.PushPlugin(t.Context(), &out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML)
+	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
+		t.Fatalf("push re-derived a different host-function set than the generator stamped: %v", err)
 	}
+	// The host-function check runs ahead of the build-marker verdict, so reaching
+	// that verdict proves the stamped set agreed.
+	requirePublishedUnlessUncommitted(t, version, err)
 }
 
 // TestGenCatalogCommandMirrorRoundTrips proves the generator's command mapping

@@ -160,6 +160,53 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	return path
 }
 
+// EnsureStampedFixtureBuilt is [EnsureFixtureBuilt] for a PDK fixture built with
+// a build-provenance version of the caller's choosing: the version the guest
+// then reports about its own build through describe(). It returns the absolute
+// path of an artifact distinct per version, so two stamps of one fixture never
+// replace each other, and never replace the unstamped artifact every other test
+// reads.
+//
+// It exists for a test whose subject is the version a guest reports — the
+// publish door holds that version against the entity's and judges its form — and
+// it is the one way a test obtains such a guest, so each such test does not grow
+// a build of its own.
+//
+// Only the PDK example layout is supported, and the example's build script must
+// honour the AGGREGA_PLUGIN_VERSION stamp. A script ignoring it builds the
+// fixture's default version under the stamped name, which nothing here can
+// detect without loading the guest; whatever publishes or validates the result
+// reads the version it actually reports, so a test built on a stamp that did not
+// take fails there rather than passing on the wrong guest. version must not be
+// empty, since the unstamped build is EnsureFixtureBuilt's.
+//
+// Caching, freshness, the cross-process build lock and publishing by rename are
+// the same as EnsureFixtureBuilt's, keyed on the stamped name.
+func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) string {
+	t.Helper()
+	socket, lang, ok := parsePDKFixtureName(artifactName)
+	if !ok {
+		t.Fatalf("stamped fixture %q is not a PDK example artifact (want <socket>-<lang>.wasm)", artifactName)
+	}
+	if version == "" {
+		t.Fatalf("stamped fixture %q needs a version; the unstamped build is EnsureFixtureBuilt's", artifactName)
+	}
+	stamped := strings.TrimSuffix(artifactName, ".wasm") + "@" + version + ".wasm"
+
+	path, skip := buildFixtureOnce(stamped, func() (string, error) {
+		t.Helper()
+		umbrellaRoot, err := resolveUmbrellaRoot()
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+		}
+		return buildPDKFixtureAs(t, umbrellaRoot, artifactName, stamped, socket, lang, version)
+	})
+	if skip != nil {
+		t.Skipf("%v", skip)
+	}
+	return path
+}
+
 // EnsureLocalGuestBuilt builds a self-contained Go guest whose source lives
 // inside this module and returns the built artifact's absolute path.
 //
@@ -267,8 +314,16 @@ func EnsureFixtureBytes(t *testing.T, artifactName string) []byte {
 }
 
 func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang string) (string, error) {
+	return buildPDKFixtureAs(t, umbrellaRoot, artifactName, artifactName, socket, lang, "")
+}
+
+// buildPDKFixtureAs builds the PDK example that produces artifactName and
+// publishes the result under outName. A non-empty version is handed to the
+// example's build script as its version stamp; empty builds the example's own
+// default.
+func buildPDKFixtureAs(t *testing.T, umbrellaRoot, artifactName, outName, socket, lang, version string) (string, error) {
 	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
-	artifactPath := filepath.Join(testdataDir, artifactName)
+	artifactPath := filepath.Join(testdataDir, outName)
 
 	sourceDir := filepath.Join(umbrellaRoot, "aggrega-pdk", lang, "examples", socket)
 	if _, err := os.Stat(sourceDir); err != nil {
@@ -331,6 +386,9 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 	cmd := exec.Command("bash", buildScript)
 	cmd.Dir = sourceDir
 	cmd.Env = append(os.Environ(), "AGGREGA_PDK_WASM_OUT="+stageDir)
+	if version != "" {
+		cmd.Env = append(cmd.Env, "AGGREGA_PLUGIN_VERSION="+version)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// A non-zero exit splits two ways. If a required build tool is

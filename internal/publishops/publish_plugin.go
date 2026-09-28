@@ -10,14 +10,12 @@ import (
 	"io"
 	"os"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // pushPlugin publishes a Plugin entity and its .wasm executable as ONE OCI
@@ -29,11 +27,19 @@ import (
 // identity. The resolved content digest is recorded by the consumer at pull, in
 // the lockfile; it is never embedded in the published entity.
 //
+// The entity is read first, through the parse a catalog load runs
+// (catalog.ParsePluginEntity), so a document that fails its kind's schema — a
+// metadata.version that is not a semantic version among them — is refused as a
+// catalog load would refuse it, before the .wasm is read.
+//
 // Before any bytes land, the .wasm passes the single publication validation door
 // (wasm.ValidatePlugin): its describe() self-report is cross-checked against the
-// entity's authored capability claim, declared plugin type, command mirror, and
-// host-function record. A mismatch halts loudly so a published entity can never
-// promise a capability the binary does not provide.
+// entity's authored capability claim, declared plugin type, command mirror,
+// host-function record and recorded version. A mismatch halts loudly so a
+// published entity can never promise a capability the binary does not provide.
+// Publication also asks the door to refuse a .wasm whose self-reported version
+// says it was built from a working tree with uncommitted changes, since that
+// version names no commit holding the bytes being published.
 //
 // Signing signs the single manifest ONCE, reusing the entity-signing flow: the
 // manifest digest is signed and attached as a referrer of the version tag
@@ -63,9 +69,15 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		return PushResult{}, fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
 
-	var entity types.Plugin
-	if err := yaml.Unmarshal(entityYAML, &entity); err != nil {
-		return PushResult{}, fmt.Errorf("parse Plugin %s: %w", name, err)
+	// The entity is read the way a catalog load reads it, before its .wasm is
+	// read: against its kind's schema, then the per-entity load checks. A
+	// publication that decoded the document for itself would accept one its
+	// consumers' first load refuses — a metadata.version that is not a semantic
+	// version, a required field missing — and the version grammar has its one
+	// statement in the schema, so it is never restated here.
+	entity, err := catalog.ParsePluginEntity(entityYAML, entityPath)
+	if err != nil {
+		return PushResult{}, fmt.Errorf("parse Plugin at %q: %w", entityPath, err)
 	}
 
 	wasmBytes, err := os.ReadFile(cfg.PluginPath)
@@ -95,11 +107,17 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// rewrites the file. A divergence HALTS before any bytes land. The location
 	// context — which file is out of sync and the sync command that re-records it —
 	// is re-wrapped here because the neutral validation layer names neither.
+	//
+	// Publication alone asks the door to refuse a guest built from a working tree
+	// with uncommitted changes: its version names a commit that does not hold what
+	// was built, so nothing could rebuild what this publishes from the version it
+	// is published under.
 	report, err := wasm.ValidatePlugin(ctx, wasmBytes, wasm.ValidateOptions{
-		Identity:       entityIdentity,
-		DeclaredType:   entity.Metadata.PluginType,
-		MaxMemoryPages: crossCheckMaxPages,
-		Entity:         resolver.PluginEntityInputs(entity),
+		Identity:               entityIdentity,
+		DeclaredType:           entity.Metadata.PluginType,
+		MaxMemoryPages:         crossCheckMaxPages,
+		Entity:                 resolver.PluginEntityInputs(entity),
+		RefuseUncommittedBuild: true,
 	})
 	if errors.Is(err, wasm.ErrWasmCommandsMirrorMismatch()) {
 		return PushResult{}, fmt.Errorf("Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
@@ -108,6 +126,10 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 		return PushResult{}, fmt.Errorf("Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
+	}
+	if errors.Is(err, wasm.ErrPluginBuiltFromUncommittedChanges()) {
+		return PushResult{}, fmt.Errorf("Plugin %s: the .wasm at %s was built from a working tree with uncommitted changes — commit the change, rebuild the plugin, and set metadata.version in %s to the version the rebuilt plugin reports before publishing: %w",
+			entityIdentity, cfg.PluginPath, entityPath, err)
 	}
 	if errors.Is(err, wasm.ErrWasmPluginVersionMismatch()) {
 		return PushResult{}, fmt.Errorf("Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — set metadata.version to the guest's build version (regenerate with `aggrega plugin gen-catalog --plugin`) before publishing: %w",

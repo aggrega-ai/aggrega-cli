@@ -13,9 +13,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,43 +25,18 @@ import (
 )
 
 // buildStampedGuest builds the governance fixture guest with its self-reported
-// version stamped to the given value, into a directory private to this test.
+// version stamped to the given value.
 //
 // Two distinctly-stamped builds are what make a two-version plugin repository
 // publishable at all: the publish door cross-checks a Plugin entity's
 // metadata.version against the guest's own self-reported version and halts on a
-// mismatch, so one guest cannot be published twice under two versions. Building
-// into a private directory rather than the shared fixture path is deliberate — the
+// mismatch, so one guest cannot be published twice under two versions. Each stamp
+// lands under a name of its own rather than at the shared fixture path — the
 // shared artifact is read by every other test in the run and must not be replaced
 // with a differently-stamped one.
-func buildStampedGuest(t *testing.T, sharedFixture, version string) string {
+func buildStampedGuest(t *testing.T, version string) string {
 	t.Helper()
-	// The umbrella root is derived from the shared fixture's own resolved path
-	// rather than re-deriving it, so a layout change surfaces here as a missing
-	// script instead of as a silently wrong directory.
-	umbrellaRoot := sharedFixture
-	for range 5 {
-		umbrellaRoot = filepath.Dir(umbrellaRoot)
-	}
-	script := filepath.Join(umbrellaRoot, "aggrega-pdk", "go", "examples", "mutator-proof", "build.sh")
-	if _, err := os.Stat(script); err != nil {
-		t.Fatalf("guest build script not at %s: %v", script, err)
-	}
-
-	out := t.TempDir()
-	cmd := exec.Command("bash", script)
-	cmd.Dir = filepath.Dir(script)
-	cmd.Env = append(os.Environ(), "AGGREGA_PDK_WASM_OUT="+out, "AGGREGA_PLUGIN_VERSION="+version)
-	if combined, err := cmd.CombinedOutput(); err != nil {
-		// The toolchain is known present: the shared fixture resolved above skips the
-		// whole test when it is not. So a failure here is a genuine one.
-		t.Fatalf("build guest stamped %s: %v\n%s", version, err, combined)
-	}
-	built := filepath.Join(out, "mutator-proof-go.wasm")
-	if _, err := os.Stat(built); err != nil {
-		t.Fatalf("guest build stamped %s produced nothing at %s: %v", version, built, err)
-	}
-	return built
+	return wasmtest.EnsureStampedFixtureBuilt(t, "mutator-proof-go.wasm", version)
 }
 
 // pluginRetractionFixture is one prepared registry for the attach arms below: a
@@ -224,13 +196,11 @@ func (f pluginRetractionFixture) addGovernancePlugin(t *testing.T) (string, stri
 // twice — once with the higher version withdrawn and once without — and only the
 // DIFFERENCE between the two outcomes is evidence.
 func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
-	// Resolve the shared fixture first: it is the clean skip when the guest toolchain
-	// is absent, and its resolved path anchors the stamped builds below. The two
-	// stamped guests are built once for the whole test rather than per arm.
-	shared := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
+	// The two stamped guests are built once for the whole test rather than per arm;
+	// the build is the clean skip when the guest toolchain is absent.
 	guests := map[string]string{
-		"1.0.0": buildStampedGuest(t, shared, "1.0.0"),
-		"2.0.0": buildStampedGuest(t, shared, "2.0.0"),
+		"1.0.0": buildStampedGuest(t, "1.0.0"),
+		"2.0.0": buildStampedGuest(t, "2.0.0"),
 	}
 
 	t.Run("withdrawn_higher_version_is_not_pinned_and_the_substitution_is_announced", func(t *testing.T) {
@@ -336,10 +306,9 @@ func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
 // markers, same production commands — only the presence of the index differs, which
 // is what makes the two arms below evidence about the live path specifically.
 func TestIntegration_PluginAddExcludesWithdrawnWithNoLocalIndex(t *testing.T) {
-	shared := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	guests := map[string]string{
-		"1.0.0": buildStampedGuest(t, shared, "1.0.0"),
-		"2.0.0": buildStampedGuest(t, shared, "2.0.0"),
+		"1.0.0": buildStampedGuest(t, "1.0.0"),
+		"2.0.0": buildStampedGuest(t, "2.0.0"),
 	}
 
 	t.Run("withdrawn_higher_version_is_not_pinned_and_the_substitution_is_announced", func(t *testing.T) {

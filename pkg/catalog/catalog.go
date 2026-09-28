@@ -1277,6 +1277,18 @@ func ParseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	return resolveFeatureRecipeDocument(data, path)
 }
 
+// ParsePluginEntity is the Plugin counterpart of [ParseComponentEntity], and
+// exists for the same reason: a surface holding one Plugin entity's bytes —
+// publication, which reads the entity it is about to publish — reads it through
+// the parse a catalog load runs rather than decoding it for itself, so it
+// refuses exactly the documents a catalog load refuses, under the same
+// conditions. A decode of its own would accept a document that fails its kind's
+// schema, and every consumer of what it published would then meet the refusal
+// instead.
+func ParsePluginEntity(data []byte, path string) (types.Plugin, error) {
+	return parsePluginEntity(data, path)
+}
+
 // parseComponentEntity is the single per-entity Component resolution shared by the
 // eager (catalog.Load, per file) and lazy (LazyLookup, per URI on cache miss)
 // catalog-access backings: full unmarshal, kind-check, the static per-entity

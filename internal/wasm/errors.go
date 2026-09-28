@@ -1010,3 +1010,33 @@ var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatc
 		"half that decides the comparison is the output the guest returned rather than anything a " +
 		"compilation carries, so there is no view for the rule dispatch to invoke a rule over."),
 })
+
+// ErrPluginBuiltFromUncommittedChanges indicates that a plugin being published
+// reports, through describe(), a build-provenance version carrying the mark the
+// version recipe appends when the working tree it built from held uncommitted
+// changes (see BuiltFromUncommittedChanges). Such a version is a valid semantic
+// version, but it names a commit that does not hold the bytes that were built,
+// so nobody can rebuild what was published from the version it was published
+// under. Publication refuses it before any bytes land and directs the author to
+// commit the change and rebuild; a clean development version and a prerelease
+// both publish.
+//
+// It is raised only where the caller asks for it — ValidateOptions'
+// RefuseUncommittedBuild, which publication sets. Validating a local build
+// against its entity does not raise it, because a build under development is
+// routinely made from an edited tree.
+//
+// It is checked ahead of the version equality (ErrWasmPluginVersionMismatch), so
+// a guest built from an edited tree under an entity recording the clean version
+// is told to commit and rebuild rather than to copy the marked version into its
+// entity.
+func ErrPluginBuiltFromUncommittedChanges() error { return errPluginBuiltFromUncommittedChanges }
+
+var errPluginBuiltFromUncommittedChanges = cerrors.Register("plugin-built-from-uncommitted-changes", cerrors.Meta{
+	ShortCode: "E0314",
+	Message:   "plugin was built from a working tree with uncommitted changes, so no commit reproduces the version it reports",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule at publication, over the build-provenance version the " +
+		"plugin reported for itself through describe(). The value the rule decides on is output the guest " +
+		"returned rather than anything a compilation carries, so there is no view for the rule dispatch to " +
+		"invoke a rule over."),
+})
