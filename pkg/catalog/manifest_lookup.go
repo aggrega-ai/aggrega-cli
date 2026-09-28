@@ -124,6 +124,13 @@ var errAmbiguousProviderPlugin = cerrors.Register("ambiguous-provider-plugin", c
 // does not (or no longer) serves the target. The explicit selection is a request
 // the catalog cannot honor, so it halts loudly rather than silently falling back
 // to another engine.
+//
+// It is raised on two paths, and they are one condition because they report one
+// fault. A Recipe asking for the capability reaches it through the resolution
+// that selects the rendering plugin. A binding no Recipe asks for reaches it
+// through [Catalog.ProviderBindingFault], which every build and Release-scoped
+// validation asks of each binding in the workspace configuration, so a binding
+// whose capability is misspelt halts even though nothing consults it.
 func ErrProviderBindingUnsatisfied() error { return errProviderBindingUnsatisfied }
 
 var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfied", cerrors.Meta{
@@ -131,12 +138,40 @@ var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfi
 	Message:   "plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches",
 	RulePlace: cerrors.RuleNoStageReaches("A pull's recipe-plugin descent evaluates the rule, as the plugin identity the workspace " +
 		"configuration binds to a capability is matched against the provider-rendering plugins the catalog " +
-		"holds for it; a later build re-runs the same match against the identity that descent recorded. The " +
-		"binding is the whole of what this condition reports — without one the same empty candidate set is " +
-		"a bare miss the caller resolves — and a binding is written in the workspace configuration rather " +
-		"than in any document a compilation reads. The descent walks a closure to decide what to pin, and " +
-		"the build-time re-run reads a recorded identity while a stage's plugin self-reports are being " +
-		"produced, so no declared stage of a compilation holds the binding on either arm."),
+		"holds for it; a later build re-runs the same match against the identity that descent recorded; and " +
+		"every build and Release-scoped validation runs the same match over each binding the workspace " +
+		"configuration composes, before the graph is built, whether or not a Recipe asks for its capability. " +
+		"The binding is the whole of what this condition reports — without one the same empty candidate set " +
+		"is a bare miss the caller resolves — and a binding is written in the workspace configuration rather " +
+		"than in any document a compilation reads. The descent walks a closure to decide what to pin, the " +
+		"build-time re-run reads a recorded identity while a stage's plugin self-reports are being produced, " +
+		"and the per-binding judgement reads the configuration ahead of the first stage, so no declared stage " +
+		"of a compilation holds the binding on any arm."),
+})
+
+// ErrProviderBindingCapabilityUnserved marks an ADVISORY finding, not a halt: a
+// plugins.providers entry that names a capability and no plugin identity, where
+// no provider-rendering plugin the build reads serves that capability — the
+// shape a misspelt capability takes. Such a binding is consulted only when a
+// Recipe asks for its capability, and a binding with no identity selects nothing
+// the resolution would not select without it, so nothing reads it and nothing
+// would otherwise say so.
+//
+// It advises rather than halting because the build cannot be sure. Bindings are
+// workspace-wide while a build is of one Release, and the plugin serving the
+// capability may be one only another Release reaches — a plugin this build does
+// not read — so a halt here would refuse a legal workspace on a guess. It exists
+// so a front end can recognise the advisory class and render it as a warning.
+func ErrProviderBindingCapabilityUnserved() error { return errProviderBindingCapabilityUnserved }
+
+var errProviderBindingCapabilityUnserved = cerrors.Register("provider-binding-capability-unserved", cerrors.Meta{
+	ShortCode: "E0313",
+	Message:   "plugins.providers entry names a capability no provider-rendering plugin the build reads serves",
+	RulePlace: cerrors.RuleNoStageReaches("Every build and Release-scoped validation evaluates the rule over each capability-only " +
+		"binding the workspace configuration composes, before the graph is built, asking the capability " +
+		"resolution whether any provider-rendering plugin the build reads serves the capability. A binding " +
+		"is written in the workspace configuration rather than in any document a compilation reads, and " +
+		"the judgement reads it ahead of the first stage, so no declared stage of a compilation holds it."),
 })
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
@@ -737,7 +772,9 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 	switch len(distinctNames) {
 	case 0:
 		if bound {
-			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no %s serving %q matches that identity", diag.bindingUnsatisfied, capability, bindBase, diag.noun, capability)
+			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no %s serving %q matches that identity%s",
+				diag.bindingUnsatisfied, capability, bindBase, diag.noun, capability,
+				c.boundPluginServes(pluginType, bindBase, capability, diag.noun))
 		}
 		if refHasPin {
 			if pe, malformed := types.ParseVersionPin(capability + ":" + refPin).Malformed(); malformed {
@@ -790,6 +827,132 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 		return types.Plugin{}, false, nil
 	}
 	return matches[key], true, nil
+}
+
+// capabilitiesServed returns the capabilities the plugins of pluginType in the
+// resolution set serve, sorted and without repeats, and whether any plugin of
+// that coordinate is in the set at all. An empty coordinate reads every plugin
+// of the type, which is the vocabulary a near-miss is paired against; a named
+// one reads that plugin alone, across every version the set holds, which is what
+// a binding naming it selects.
+//
+// It reads the same set and the same accessor the resolution core filters on —
+// providerResolutionPlugins and each plugin's DeclaredCapabilities — so a name it
+// reports as served is one the core would match, and no second statement of
+// what a plugin serves exists beside the one on the entity. visible counts a
+// plugin of any type at the coordinate, because a binding naming a plugin of
+// another type still names something the catalog holds.
+func (c *Catalog) capabilitiesServed(pluginType, coordinate string) (served []string, visible bool) {
+	seen := map[string]struct{}{}
+	for _, p := range c.providerResolutionPlugins() {
+		if coordinate != "" && p.Coordinate() != coordinate {
+			continue
+		}
+		visible = true
+		if p.Metadata.PluginType != pluginType {
+			continue
+		}
+		for _, name := range p.DeclaredCapabilities() {
+			seen[name] = struct{}{}
+		}
+	}
+	for name := range seen {
+		served = append(served, name)
+	}
+	sort.Strings(served)
+	return served, visible
+}
+
+// boundPluginServes is the clause the binding-unsatisfied halt appends to say
+// what the plugin a binding names does serve, and which of those names the
+// bound capability sits one edit from. It is empty when no plugin of that
+// coordinate is in the resolution set, because then there is nothing true to
+// add: the message already says no serving plugin matches the identity.
+func (c *Catalog) boundPluginServes(pluginType, coordinate, capability, noun string) string {
+	served, visible := c.capabilitiesServed(pluginType, coordinate)
+	if !visible {
+		return ""
+	}
+	if len(served) == 0 {
+		return fmt.Sprintf("; %q serves no capability as a %s", coordinate, noun)
+	}
+	clause := fmt.Sprintf("; %q serves %s", coordinate, quotedList(served))
+	if near := resolver.NearMissCandidates(capability, served); len(near) > 0 {
+		clause += fmt.Sprintf(", and %q is one edit from %s", capability, quotedList(near))
+	}
+	return clause
+}
+
+// quotedList renders names as a comma-separated list of quoted strings, in the
+// order given.
+func quotedList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = fmt.Sprintf("%q", n)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// ProviderBindingFault judges one plugins.providers binding by its shape,
+// whether or not a Recipe in the build asks for its capability. capability is
+// the binding's capability and uri the plugin identity it names, empty for a
+// binding that names none.
+//
+// A binding is otherwise read only when a Recipe asks for its capability, so a
+// misspelt capability would be read by nothing and reported by nothing. What can
+// be judged of it depends on what the build holds:
+//
+//   - A binding naming a plugin: a pull resolves it whether or not a Recipe
+//     uses it and refuses one it cannot resolve, so the build holds the plugin
+//     and knows what it serves. When the plugin does not serve the binding's
+//     capability the binding is certainly wrong, and the answer is the
+//     binding-unsatisfied halt the resolution raises, naming what the plugin
+//     does serve. When no plugin of that identity is in the set — a binding
+//     written after the last pull, which a build has not adopted either — the
+//     binding is not judged here, and the pull that adopts it resolves it.
+//   - A binding naming no plugin: the plugin serving its capability may be one
+//     only another Release reaches, so the build cannot be sure nothing serves
+//     it, and such a binding selects nothing the resolution would not select
+//     without it. When no provider-rendering plugin in the set serves the
+//     capability, the answer is the unserved-capability advisory, naming a
+//     served capability one edit away when there is one.
+//
+// A binding whose capability a plugin in the set serves is legal and yields
+// nil, including one for a capability no Recipe in this Release asks for:
+// bindings are workspace-wide and a build is of one Release. The version a
+// binding pins is not judged here, because the binding selects a plugin
+// repository and the version it pins is orthogonal to what that plugin serves.
+//
+// Both judgements go through ProviderPluginForTarget, the resolution a Recipe's
+// capability goes through, so what counts as served here is what counts as
+// served when a Recipe asks.
+func (c *Catalog) ProviderBindingFault(capability, uri string) error {
+	if capability == "" {
+		return nil
+	}
+	if uri == "" {
+		// Served by one plugin, or by more than one — the ambiguity is the
+		// resolution's to report where a Recipe asks — is served either way.
+		if _, served, err := c.ProviderPluginForTarget(capability, nil); served || err != nil {
+			return nil
+		}
+		served, _ := c.capabilitiesServed("provider", "")
+		near := ""
+		if candidates := resolver.NearMissCandidates(capability, served); len(candidates) > 0 {
+			near = fmt.Sprintf(", which is one edit from %s", quotedList(candidates))
+		}
+		return fmt.Errorf("%w: capability %q%s; the entry names no plugin, so it selects nothing a Recipe would not resolve without it, and none of the plugins this build reads — in the catalog directories, inside the compiler, or among those the lockfile records — serves the capability: correct its spelling, or keep it where the plugin serving it is one only another Release reads",
+			ErrProviderBindingCapabilityUnserved(), capability, near)
+	}
+	coordinate, _, _ := ociref.SplitVersionTag(uri)
+	if _, visible := c.capabilitiesServed("provider", coordinate); !visible {
+		return nil
+	}
+	_, _, err := c.ProviderPluginForTarget(capability, map[string]string{capability: coordinate})
+	if errors.Is(err, ErrProviderBindingUnsatisfied()) {
+		return err
+	}
+	return nil
 }
 
 // ProviderPluginCandidates returns every provider-rendering Plugin serving the

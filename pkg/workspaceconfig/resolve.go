@@ -403,6 +403,14 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		return nil, err
 	}
 
+	// A binding is consulted under the bare capability a Recipe asks for, and a
+	// Recipe's reference is split at its last colon, so a capability carrying one
+	// is a binding nothing can reach. Refuse it on the composed list, where the
+	// append companions have already joined the base.
+	if err := checkProviderCapabilityNames(merged.Plugins.Providers); err != nil {
+		return nil, err
+	}
+
 	// Each governance attachment's role fixes which pipeline runner (and facet)
 	// dispatches it; the dispatch reads attachments by role, so a missing or
 	// unknown role would silently attach to no runner. Reject it at authoring on
@@ -808,6 +816,26 @@ func checkInertProviderFields(providers []PluginRef) error {
 		}
 		if ref.With != nil {
 			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `with:`, but provider render configuration belongs in the Recipe, not the workspace provider binding; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket())
+		}
+	}
+	return nil
+}
+
+// checkProviderCapabilityNames returns a wrapped
+// ErrColonInProviderBindingCapability when a provider-socket binding names a
+// capability containing a colon. A Recipe's capability reference is read as the
+// capability name up to its last colon and a version pin after it, and a binding
+// is looked up by that name, so a colon-bearing capability is one no Recipe can
+// ever ask for. The composed list is walked in order, so the error names the
+// first offending binding deterministically. The check keys only on the
+// capability's text; it never resolves, loads, or describes the referenced
+// plugin, and the binding's `uri`, which may legitimately end in `:<version>`,
+// is not read.
+func checkProviderCapabilityNames(providers []PluginRef) error {
+	for _, ref := range providers {
+		if strings.Contains(ref.Capability, ":") {
+			return fmt.Errorf("the provider socket binding for capability %q: a Recipe's capability reference is read as the capability up to its last colon and a version pin after it, so the capability a binding names carries no colon; bind the capability name alone and let each Recipe pin the version it needs: %w",
+				ref.Capability, ErrColonInProviderBindingCapability())
 		}
 	}
 	return nil

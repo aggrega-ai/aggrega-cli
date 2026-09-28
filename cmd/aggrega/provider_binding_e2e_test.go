@@ -4,14 +4,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -297,6 +300,116 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 	}
 	if !chainContains(err, "(helm, helm-renderer-alt)") {
 		t.Fatalf("ambiguity halt must name both candidate plugins; got: %v", err)
+	}
+}
+
+// TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt drives the commands a
+// user runs — pull, build and validate over one Release — against a workspace
+// whose provider binding no Recipe in that Release asks for. The fixture's one
+// Recipe asks for helm, so a binding for any other capability is consulted by no
+// resolution, and before this judgement it was reported by nothing.
+//
+// A binding naming a plugin that does not serve its capability (the helm
+// provider bound to a misspelt "hlem") halts the build, asserted against the
+// condition's accessor, and fails validation with the condition's registered
+// sentence on the diagnostic stream. A capability-only binding no plugin serves
+// is displayed as a warning while both commands succeed. The controls are legal
+// bindings: the capability the Recipe asks for bound to its plugin, and a served
+// capability no Recipe in this Release uses — a binding another Release in the
+// workspace would read — which must be reported as nothing.
+//
+// Not parallel: it mutates the process-global terminal seam and redirects the
+// process diagnostic stream.
+func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
+	nonInteractive(t)
+	halt := catalog.ErrProviderBindingUnsatisfied()
+	advisory := catalog.ErrProviderBindingCapabilityUnserved()
+	cases := []struct {
+		name      string
+		providers string
+		halts     bool
+		advises   bool
+	}{
+		{
+			name:      "a uri binding whose plugin does not serve its capability halts build and validate",
+			providers: "    - capability: hlem\n      uri: provider/helm\n",
+			halts:     true,
+		},
+		{
+			name:      "a capability-only binding nothing serves is a warning and both commands succeed",
+			providers: "    - capability: hlem\n",
+			advises:   true,
+		},
+		{
+			name:      "control: the capability the Recipe asks for, bound to its plugin, is silent",
+			providers: "    - capability: helm\n      uri: provider/helm\n",
+		},
+		{
+			name:      "control: a served capability no Recipe in this Release uses is silent",
+			providers: "    - capability: compose\n      uri: provider/compose\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			releasePath, catalogRoot := providerBindingFixture(t, root, false)
+			catDirs := []string{catalogRoot}
+			rw := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\nplugins:\n  providers:\n"+tc.providers)
+
+			if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+				t.Fatalf("pull: %v", err)
+			}
+
+			var buildErr error
+			buildStderr := captureStderr(t, func() {
+				buildErr = dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "out")}, io.Discard, io.Discard)
+			})
+			var validateErr error
+			var diag, out bytes.Buffer
+			validateStderr := captureStderr(t, func() {
+				validateErr = validateRelease(context.Background(), rw, releasePath, catDirs, compilerops.VerbosityDetailed, false, &diag, &out)
+			})
+
+			switch {
+			case tc.halts:
+				if !errors.Is(buildErr, halt) {
+					t.Errorf("build: want ErrProviderBindingUnsatisfied, got %v", buildErr)
+				}
+				if !chainContains(buildErr, `"provider/helm" serves "helm"`) || !chainContains(buildErr, `"hlem" is one edit from "helm"`) {
+					t.Errorf("build: the halt must name what the bound plugin serves and the near miss; got %v", buildErr)
+				}
+				if validateErr == nil {
+					t.Errorf("validate: a binding the build halts on passed validation")
+				}
+				if !strings.Contains(diag.String(), halt.Error()) {
+					t.Errorf("validate: the diagnostic stream must carry the condition's sentence %q; got:\n%s", halt.Error(), diag.String())
+				}
+			case tc.advises:
+				if buildErr != nil {
+					t.Fatalf("build: an advisory must not halt; got %v", buildErr)
+				}
+				if validateErr != nil {
+					t.Fatalf("validate: an advisory must not fail validation; got %v\n%s", validateErr, diag.String())
+				}
+				for surface, stream := range map[string]string{"build": buildStderr, "validate": validateStderr} {
+					if !strings.Contains(stream, "warning: "+advisory.Error()) || !strings.Contains(stream, `"hlem", which is one edit from "helm"`) {
+						t.Errorf("%s: the warning must carry the condition's sentence and the near miss; got:\n%s", surface, stream)
+					}
+				}
+			default:
+				if buildErr != nil {
+					t.Fatalf("build: a legal binding halted the build: %v", buildErr)
+				}
+				if validateErr != nil {
+					t.Fatalf("validate: a legal binding failed validation: %v\n%s", validateErr, diag.String())
+				}
+				for surface, stream := range map[string]string{"build": buildStderr, "validate": validateStderr + diag.String()} {
+					if strings.Contains(stream, advisory.Error()) || strings.Contains(stream, halt.Error()) {
+						t.Errorf("%s: a legal binding was reported:\n%s", surface, stream)
+					}
+				}
+			}
+		})
 	}
 }
 

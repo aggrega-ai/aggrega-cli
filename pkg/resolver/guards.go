@@ -61,6 +61,18 @@ type CatalogLookup struct {
 	// non-nil error so the caller halts loudly. May be nil in catalog-less
 	// paths; a consumer that needs it then resolves nothing.
 	ProviderPlugin func(ref string) (types.Plugin, bool, error)
+	// ProviderBindingFault judges one workspace provider binding — its
+	// capability, and the plugin identity its uri names, empty for a
+	// capability-only binding — whether or not any Recipe consults it, and
+	// answers through the same capability resolution ProviderPlugin reads. It
+	// returns nil when there is nothing to report; an error wrapping the
+	// binding-unsatisfied condition when the binding names a plugin this catalog
+	// holds that does not serve the capability, which halts; and an error
+	// wrapping the unserved-capability advisory when a capability-only binding
+	// names a capability no provider-rendering plugin this catalog holds serves,
+	// which is reported and never halts. May be nil in catalog-less paths, which
+	// judges nothing.
+	ProviderBindingFault func(capability, uri string) error
 	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by
 	// library metadata.name, used to resolve cross-library schema `$ref`s when
 	// compiling a Component's schema (whole-pillar and base+flavor composition).

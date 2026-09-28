@@ -5,6 +5,7 @@ package wasm
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -292,6 +293,14 @@ const (
 //     not cross-check the schema against the plugin type or validate any
 //     settings value here. Settings values are validated at dispatch against
 //     the compiled schema (see [PluginDescriptor.ValidateSettings]).
+//   - a provider's served capability names, and a pipeline step's compatible
+//     provider capabilities, carry no colon. A Recipe's capability reference is
+//     split at its last colon into the name and a version pin, so a provider
+//     serving a colon-bearing name could never be selected, and a step listing
+//     one could never match the provider rendering a scope. A parser's and an
+//     importer's capabilities are not judged: `parse:<format>` and
+//     `import:<format>` carry the colon as part of the name, and they are
+//     resolved by format, never through a Recipe's reference.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -337,7 +346,41 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
+	if err := d.validateCapabilityNames(pluginIdentity); err != nil {
+		return err
+	}
+
 	return d.validateLinkCapability(pluginIdentity)
+}
+
+// validateCapabilityNames refuses a colon in a capability name a Recipe's
+// capability reference has to be able to spell: the capabilities a provider
+// serves, and the provider capabilities a pipeline step is compatible with. The
+// reference is split at its last colon into the capability name and a version
+// pin, so the name it carries never contains one — a provider serving
+// `helm:1` could be asked for by no Recipe, and a step compatible with it
+// matches no provider a scope renders through. A parser's `parse:<format>` and
+// an importer's `import:<format>` are not read here: the colon is part of those
+// names, and they are resolved by format rather than through a Recipe's
+// reference. A returned error wraps [ErrWasmManifestRejected] and names
+// pluginIdentity, the plugin type, and the offending name.
+func (d PluginDescriptor) validateCapabilityNames(pluginIdentity string) error {
+	var what string
+	switch PluginType(d.PluginType) {
+	case PluginTypeProvider:
+		what = "serves the capability"
+	case PluginTypePipelineStep:
+		what = "declares compatibility with the provider capability"
+	default:
+		return nil
+	}
+	for _, capability := range d.Capabilities {
+		if strings.Contains(capability, ":") {
+			return fmt.Errorf("plugin %q (plugin_type %q) %s %q, which contains a colon; a Recipe's capability reference is read as the capability up to its last colon and a version pin after it, so no Recipe can name %q: report the capability name without a colon: %w",
+				pluginIdentity, d.PluginType, what, capability, capability, ErrWasmManifestRejected())
+		}
+	}
+	return nil
 }
 
 // validateCommands shape-checks the descriptor's declared CLI commands: every

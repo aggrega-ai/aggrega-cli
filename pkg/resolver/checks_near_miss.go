@@ -76,7 +76,7 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 			if slices.Contains(declared, socket) {
 				continue
 			}
-			for _, candidate := range nearMissCandidates(socket, declared) {
+			for _, candidate := range NearMissCandidates(socket, declared) {
 				out = append(out, s.RaiseWith(ErrUsesSocketNearMiss(),
 					constraint.Uncaptioned(socket),
 					constraint.Captioned("on component type", componentType),
@@ -127,7 +127,7 @@ var attachmentNameNearADeclaredSlot = constraint.Check[
 			return nil
 		}
 		var out []constraint.Objection
-		for _, candidate := range nearMissCandidates(s.AttachmentName(), declared) {
+		for _, candidate := range NearMissCandidates(s.AttachmentName(), declared) {
 			out = append(out, s.RaiseWith(ErrAttachmentSlotNearMiss(),
 				constraint.Uncaptioned(s.AttachmentName()),
 				constraint.Captioned("on component type", componentType),

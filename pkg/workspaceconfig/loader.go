@@ -98,6 +98,29 @@ var errInertFieldOnProviderSocket = cerrors.Register("inert-field-on-provider-so
 		"bindings it reads."),
 })
 
+// ErrColonInProviderBindingCapability reports that a provider-socket binding
+// names a capability containing a colon. Errors satisfying
+// errors.Is(err, ErrColonInProviderBindingCapability()) carry the offending
+// capability. A Recipe's capability reference is split at its last colon into
+// the capability name and a version pin, so the name a Recipe can ask for never
+// contains one — and a binding is consulted only under the name a Recipe asks
+// for. A binding keyed by a colon-bearing capability is therefore one no Recipe
+// can ever reach, and it is refused at load rather than left to sit unread.
+//
+// Only the provider list is judged. The reference shape it shares also serves
+// the importer list, whose entries attach by uri and whose plugins name their
+// formats `import:<format>`, a spelling where the colon is part of the name.
+func ErrColonInProviderBindingCapability() error { return errColonInProviderBindingCapability }
+
+var errColonInProviderBindingCapability = cerrors.Register("colon-in-provider-binding-capability", cerrors.Meta{
+	ShortCode: "E0312",
+	Message:   "a provider socket binding names a capability containing a colon, which no Recipe can select",
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the provider bindings the " +
+		"cascade composes, refusing a capability no Recipe's capability reference can name. Resolution " +
+		"finishes before a build starts, so no declared stage of a compilation holds the composed " +
+		"bindings it reads."),
+})
+
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
 // role, or a role that is not a known governance role. Errors satisfying
 // errors.Is(err, ErrGovernanceRoleInvalid()) carry the offending attachment

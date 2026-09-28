@@ -182,6 +182,10 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// render dispatch resolves the same provider→Plugin binding from the lazy
 		// backing as the eager one.
 		ProviderPlugin: l.ProviderPluginByName,
+		// ProviderBindingFault judges each workspace provider binding over the
+		// same lazily-walked set, so a binding no Recipe consults is judged by the
+		// resolution a Recipe's capability goes through.
+		ProviderBindingFault: l.ProviderBindingFault,
 		// ParserPlugin resolves a source format to the parser Plugin that
 		// advertises parse:<format> over the lazily-walked set, so a socket that
 		// must parse a foreign artifact (render-policy handing a policy plugin a
@@ -2451,6 +2455,17 @@ func (l *LazyLookup) ProviderPluginForTarget(ref string, bindings map[string]str
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.recipeCatalog().ProviderPluginForTarget(ref, bindings)
+}
+
+// ProviderBindingFault judges one plugins.providers binding by its shape,
+// whether or not a Recipe asks for its capability, over the lazily-enumerated
+// (Tier-1 + pinned Tier-2) Plugin set overlaid with the embedded core providers —
+// the set a build's provider resolution reads. It delegates to the same *Catalog
+// judgement the eager backing uses, which is documented there.
+func (l *LazyLookup) ProviderBindingFault(capability, uri string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().ProviderBindingFault(capability, uri)
 }
 
 // ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-

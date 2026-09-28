@@ -18,15 +18,20 @@ const nearMissMaxDistance = 1
 // every other, so the signal is noise.
 const nearMissMinNameLength = 4
 
-// nearMissCandidates returns the declared names within nearMissMaxDistance
+// NearMissCandidates returns the declared names within nearMissMaxDistance
 // edits of name, in sort.Strings order. An exact match is never a candidate —
 // the caller has already excluded declared names.
 //
 // The candidate set is whatever the calling lint declares as its own
 // vocabulary: a Component's attachment slots, a Component's `usesSchema`
-// sockets, or any other declared-name list. The primitive holds no opinion
-// about which.
-func nearMissCandidates(name string, candidates []string) []string {
+// sockets, the capabilities the provider-rendering plugins in reach serve, or
+// any other declared-name list. The primitive holds no opinion about which.
+//
+// It is exported so that every surface pairing an authored name with the one it
+// probably meant pairs them by one rule — the same distance, the same length
+// floor, the same treatment of a transposition — rather than each reporting a
+// typo by a threshold of its own.
+func NearMissCandidates(name string, candidates []string) []string {
 	if len([]rune(name)) < nearMissMinNameLength {
 		return nil
 	}

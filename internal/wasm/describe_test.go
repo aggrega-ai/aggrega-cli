@@ -606,10 +606,10 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 	}
 }
 
-// TestPluginDescriptorTargetsUnchecked proves capabilities
-// is piped through at load without a registry check: an arbitrary,
-// never-heard-of provider name is accepted here. The runtime — not this
-// load-time validator — enforces compatibility.
+// TestPluginDescriptorTargetsUnchecked proves capabilities are piped through
+// at load without a registry check: an arbitrary, never-heard-of provider name
+// is accepted here. The runtime — not this load-time validator — enforces
+// compatibility; the load judges only a name's shape, which these pass.
 func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 	t.Parallel()
 	d := PluginDescriptor{
@@ -619,7 +619,7 @@ func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 		Exports:      []PluginExport{{Name: "step"}},
 	}
 	if err := d.Validate("acme/frp-step"); err != nil {
-		t.Fatalf("capabilities must be unchecked at load, got %v", err)
+		t.Fatalf("capabilities must not be checked against a registry at load, got %v", err)
 	}
 }
 

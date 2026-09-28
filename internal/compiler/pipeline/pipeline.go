@@ -682,6 +682,16 @@ func runStepsOneToFour(
 			return err
 		}
 
+		// Every workspace provider binding is judged here, whether or not a Recipe
+		// in this Release asks for its capability — a binding nothing consults is
+		// otherwise read by nothing. Here rather than on one entry's path, so a
+		// build and a validation of the same documents report a binding alike; and
+		// below the graph entry's refusal of an absent configuration, which the
+		// judgement reads.
+		if err := judgeProviderBindings(inputs, catalogLookup); err != nil {
+			return err
+		}
+
 		// Step 4: Analyze. Analyser errors surface as structured
 		// AnalysisResult.Errors; the function-level error stays nil for
 		// analyzer-only failures so Tier-4 callers can consume them as

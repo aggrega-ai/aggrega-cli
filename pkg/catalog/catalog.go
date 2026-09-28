@@ -2252,10 +2252,11 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			}
 			return compactform.Schema{}, false
 		},
-		Plugin:              c.PluginByURI,
-		ProviderPlugin:      c.ProviderPluginByName,
-		ParserPlugin:        c.ParserPluginForFormat,
-		PluginColocatedDirs: c.PluginColocatedDirs(),
+		Plugin:               c.PluginByURI,
+		ProviderPlugin:       c.ProviderPluginByName,
+		ProviderBindingFault: c.ProviderBindingFault,
+		ParserPlugin:         c.ParserPluginForFormat,
+		PluginColocatedDirs:  c.PluginColocatedDirs(),
 		// The recipe lookups and the joint instance resolution are served here so
 		// a rule asked at a stage of the compilation reads the same recipe index
 		// the render resolves through. They were absent while nothing but the
