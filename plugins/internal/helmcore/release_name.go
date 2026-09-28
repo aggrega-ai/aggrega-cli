@@ -31,10 +31,10 @@ import (
 // emitted would leave the grammar the name has to satisfy.
 //
 // The two conditions on position and length are properties of the identity
-// rather than of the encoding, and nothing here enforces either: an identity
-// whose first character is escaped begins its name with the hyphen every escape
-// opens with, and an identity carrying escaped characters encodes longer than
-// it was authored.
+// rather than of the encoding, so the encoding does not hold to them and
+// [ReleaseNameVerdict] judges both: an identity whose first character is escaped
+// begins its name with the hyphen every escape opens with, and one carrying
+// escaped characters encodes longer than it was authored.
 var releaseNameEncoding = namesegment.NewEncoding('-', isReleaseNameRune)
 
 // isReleaseNameRune reports whether a character is carried through the encoding
