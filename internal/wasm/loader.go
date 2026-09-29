@@ -660,9 +660,10 @@ type Plugin struct {
 	// not yield into a loud cancellation. Zero disables the ceiling; no load path
 	// produces a zero, since effectiveTimeoutMs substitutes the platform default.
 	callTimeout time.Duration
-	// hostTime accumulates the wall time this instance spends inside host
-	// functions during one export invocation, so callUnderGuestTimeCap can keep
-	// that time off the guest's ceiling. It is reset per invocation.
+	// hostTime accumulates the time this instance spends inside host functions
+	// during one export invocation, on the clock callUnderGuestTimeCap measures
+	// the guest in, so that time stays off the guest's ceiling. It is reset per
+	// invocation.
 	hostTime hostTimeAccount
 }
 
@@ -1437,6 +1438,13 @@ func (l *Loader) guestAttributed(guestDigest string) bool {
 //     rather than hides.
 //   - WithStdout/WithStderr(io.Discard): the guest's stdio is
 //     discarded; nothing the guest writes reaches the host's streams.
+//   - No sleep, yield or stdin: wazero's defaults make a guest's sleep
+//     and yield return at once and its stdin report end of input at once,
+//     so a guest cannot wait anywhere but inside a host function. The
+//     per-call ceiling depends on it — measured in processor time, a guest
+//     able to sleep would stop spending its budget — so configuring a real
+//     sleep, yield or stdin here removes the ceiling's hold on a guest that
+//     will not return.
 //   - No FSConfig, no environment: wazero's defaults deny the filesystem
 //     and present an empty environment, so the guest reads nothing from
 //     the host process. With no preopened directories and no sockets,

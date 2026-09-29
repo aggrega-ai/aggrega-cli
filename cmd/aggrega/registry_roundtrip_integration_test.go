@@ -613,7 +613,7 @@ func publishPluginEntity(t *testing.T, host, name, version, pluginPath string) s
 // spaces under spec (e.g. "  runtime:\n    timeoutMs: 1\n"); an empty string
 // authors no runtime block, which is the bare publishPluginEntity behaviour.
 // Authoring an explicit runtime block is how a test drives an entity-declared
-// execution constraint (a memory or per-call wall-time cap) through the publish
+// execution constraint (a memory or per-call execution cap) through the publish
 // path, so the constraint can be observed flowing to the build-time load.
 func publishPluginEntityWithRuntime(t *testing.T, host, name, version, pluginPath, runtimeBlock string) string {
 	t.Helper()

@@ -52,7 +52,7 @@ var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerror
 // by the ARTIFACT reference, so translating before the cascade leaves the pin
 // model unchanged. The claim is attached to the cascade's ResolvedPlugin so the
 // load gate can cross-check it against the plugin's describe(); the limits are
-// attached so the loader caps the plugin's memory and per-call wall time; the
+// attached so the loader caps the plugin's memory and per-call execution; the
 // command mirror is attached so the load gate verifies it against the plugin's
 // describe() commands. A nil command mirror (an entity carrying no commands
 // field) leaves the mirror unattached, so the load gate's command check is

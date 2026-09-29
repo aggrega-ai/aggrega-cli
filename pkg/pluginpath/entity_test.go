@@ -48,7 +48,7 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 		t.Errorf("resolved Contract = %v; want the entity's claim attached", res.Contract)
 	}
 	// The entity-front attaches the entity's authored runtime limits as a
-	// sibling field so the loader caps the plugin's memory and wall time.
+	// sibling field so the loader caps the plugin's memory and execution time.
 	if res.Limits != limits {
 		t.Errorf("resolved Limits = %v; want the entity's limits attached", res.Limits)
 	}

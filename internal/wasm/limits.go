@@ -30,18 +30,27 @@ const DescribeMaxMemoryPages uint32 = 4096
 //
 // It is a LIVENESS CEILING — it separates a guest that returns from one that
 // will not yield — and it must not be read as a performance budget for an
-// export. Guest execution alone spends it: the time an instance spends inside
-// host functions is measured and subtracted, so a guest that asks the host for a
-// parsed tree is not charged for the host loading and running the parser. That
-// subtraction is what lets one number stand for every export, since the guest's
-// own share of a call is small and stable while the host's share is neither.
+// export. Guest execution alone spends it. On Linux it is measured as the
+// processor time of the thread running the guest, so a guest waiting for a
+// processor on a busy machine spends none of it; on every platform the time an
+// instance spends inside host functions is measured and subtracted, so a guest
+// that asks the host for a parsed tree is not charged for the host loading and
+// running the parser. Those exclusions are what let one number stand for every
+// export, since the guest's own share of a call is small and stable while the
+// host's share and the machine's load are neither.
 //
 // 5000 ms is wide against that measurement rather than against a call's wall
-// time: a guest's own share of an export is milliseconds, so the ceiling sits
-// orders of magnitude above the work it bounds and a loaded machine does not
-// walk into it. A ceiling sized against wall time instead would have to absorb
-// however long the host takes, which is unbounded and load-dependent — the
-// reason the host's share is excluded rather than budgeted for.
+// time. A guest's own share of an export is milliseconds, except on the first
+// call to a freshly loaded instance, which also carries the guest language
+// runtime's one-time initialisation: a few hundred milliseconds of processor
+// time for the largest built-in guests. The ceiling sits an order of magnitude
+// or more above both. On Linux a loaded machine can make the guest execute more
+// slowly but cannot spend its budget by making it wait. A ceiling sized against
+// wall time instead would have to absorb however long the host takes and
+// however long the guest waits for a processor, both unbounded and
+// load-dependent — the reason both are excluded rather than budgeted for. Where
+// the platform measures wall time, a machine loaded heavily enough can still
+// spend the budget, and a plugin that meets that raises its own ceiling.
 const DefaultTimeoutMs uint64 = 5000
 
 // effectiveMaxPages returns the memory cap the loader applies for spec: the

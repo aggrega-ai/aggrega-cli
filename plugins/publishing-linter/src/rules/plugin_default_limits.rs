@@ -46,7 +46,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         severity: "warn".to_string(),
         message: "Plugin declares no explicit runtime cap (spec.runtime.maxMemoryPages \
                   and spec.runtime.timeoutMs are absent or zero); the platform default \
-                  memory and per-call wall-time caps apply. Set spec.runtime.maxMemoryPages \
+                  memory and per-call execution-time caps apply. Set spec.runtime.maxMemoryPages \
                   and spec.runtime.timeoutMs to pin explicit caps."
             .to_string(),
         ..Default::default()

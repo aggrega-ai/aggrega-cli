@@ -44,7 +44,7 @@ const lintExportName = "lint_rules"
 // lint_rules export. A plugin lacking describe() or carrying a bad
 // descriptor halts here with a loud guardrail. A non-nil spec.Contract arms
 // the load gate's describe()-vs-entity cross-check, and spec's caps bound the
-// plugin's memory and per-call wall time. Returns a wrapped error on
+// plugin's memory and per-call execution. Returns a wrapped error on
 // loader/gate failure, plugin call failure, or an output that is not this
 // socket's shape — an export whose output carries a field the linter shape does
 // not declare is refused rather than read as an empty finding list.
@@ -117,7 +117,7 @@ func DispatchPublishingLinter(ctx context.Context, spec wasm.PluginSpec, export 
 // any pin before dispatch. The plugin loads once at batch open: a non-nil
 // spec.Contract arms the load gate's describe()-vs-entity cross-check (fired
 // once in LoadAndDescribe), and spec's caps bound each per-input Call's memory
-// and wall time.
+// and execution time.
 //
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names

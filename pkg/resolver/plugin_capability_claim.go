@@ -127,7 +127,7 @@ func pluginCommandFlagsMirror(flags []types.PluginCommandFlag) []pluginpath.Plug
 
 // PluginRuntimeLimits maps a catalog Plugin entity's authored runtime
 // resource limits into the neutral limits the plugin entity-front attaches to a
-// resolved plugin, so the loader caps the plugin's memory and per-call wall time.
+// resolved plugin, so the loader caps the plugin's memory and per-call execution.
 // It is the single home of the entity → neutral-limits mapping; both plugin
 // sockets that front the cascade with the entity translation call it rather than
 // each re-spelling the field copy.

@@ -54,9 +54,14 @@ type PluginSpec struct {
 
 	// TimeoutMs caps how long the GUEST may execute during one Call, in
 	// milliseconds. Zero or absent applies the platform default cap
-	// (DefaultTimeoutMs), so a Call is never uncancellable. The time the
-	// instance spends inside host functions is measured and excluded, so a
-	// guest is not charged for work the host does on its behalf.
+	// (DefaultTimeoutMs), so a Call is never uncancellable. On Linux execution
+	// is measured as the processor time of the thread running the guest, so
+	// time the guest spends waiting for a processor does not count; on other
+	// platforms it is measured in wall time. On both, the time the instance
+	// spends inside host functions is measured and excluded, so a guest is not
+	// charged for work the host does on its behalf. The first Call to a freshly
+	// loaded instance also counts the guest language runtime's one-time
+	// initialisation, which runs inside that Call.
 	TimeoutMs uint64
 
 	// Contract is the optional authored capability claim the load gate

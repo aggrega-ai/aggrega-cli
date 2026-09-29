@@ -153,11 +153,15 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 // succeeds.
 //
 // The discriminator is structural rather than a timing threshold. The seam's
-// delay is a FLOOR the host is made to spend, not a duration measured — so a
-// build that charged host time to the guest cannot merely be slow here, it must
-// fail the call outright with a cancellation, whatever the machine's speed or
-// load. The two designs therefore differ in RESULT, which is what keeps this
-// assertion out of the wall-clock-threshold class it would otherwise sit in.
+// spend is a FLOOR the host is made to spend on the ceiling's own clock, not a
+// duration measured — so a build that charged host time to the guest cannot
+// merely be slow here, it must fail the call outright with a cancellation,
+// whatever the machine's speed or load. The two designs therefore differ in
+// RESULT, which is what keeps this assertion out of the wall-clock-threshold
+// class it would otherwise sit in. The spend is processor time on the guest's
+// thread where the ceiling reads processor time, and a sleep where it reads wall
+// time (see SpendHostTime): a seam that only slept would spend nothing a
+// processor-time ceiling reads, and could not catch the charging.
 //
 // It is one half of a pair, and neither half stands alone: this half would still
 // pass if the ceiling had simply been removed, and
@@ -165,11 +169,11 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 // that spins WITHOUT calling the host is cancelled. Together they pin the
 // distinction the ceiling exists to draw.
 func TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling(t *testing.T) {
-	// The seam delay sits well above the ceiling so the old charging is
+	// The seam spend sits well above the ceiling so charging it would be
 	// unambiguously over budget, and well below any suite-level bound so a
 	// passing run stays cheap.
 	const ceilingMs = 250
-	const seamDelay = 2 * time.Second
+	const seamSpend = time.Second
 
 	ctx := context.Background()
 	path := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
@@ -186,13 +190,13 @@ func TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling(t *testing.T) {
 
 	const cannedTree = `{"seam":"slow"}`
 	plugin.SetSourceParser(func(context.Context, string, []byte, json.RawMessage) (json.RawMessage, error) {
-		time.Sleep(seamDelay)
+		wasm.SpendHostTime(seamSpend)
 		return json.RawMessage(cannedTree), nil
 	})
 
 	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{"n":1}`))
 	if err != nil {
-		t.Fatalf("a host call lasting %s under a %dms guest ceiling must not cancel the guest: %v", seamDelay, ceilingMs, err)
+		t.Fatalf("a host call spending %s under a %dms guest ceiling must not cancel the guest: %v", seamSpend, ceilingMs, err)
 	}
 	if string(out) != cannedTree {
 		t.Errorf("output = %q; want the seam tree %q", out, cannedTree)

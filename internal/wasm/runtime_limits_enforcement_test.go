@@ -36,7 +36,7 @@ var growLoopWasm = []byte{
 
 // spinLoopWasm is a real wasm32 module built by wat2wasm from a WAT source that
 // imports nothing and exports a "spin" function whose body is an unconditional
-// infinite loop. It is used to prove the loader's per-call wall-time cap is
+// infinite loop. It is used to prove the loader's per-call execution ceiling is
 // actually enforced by the runtime: a capped Call cancels the spinning guest. The
 // WAT source:
 //
@@ -90,7 +90,9 @@ func TestLoaderEnforcesMemoryCapTrapsAtCall(t *testing.T) {
 // generous outer deadline; it does not assert exact timing, only that the
 // cancellation fires before the test's own deadline. A Call that never returned
 // would block the test until the outer deadline turned the hang into a loud
-// failure.
+// failure. The deadline is wall time, while on Linux the ceiling is spent in the
+// thread's processor time, so a thread the host starves reaches its ceiling that
+// much later in wall time; the deadline allows for that, and only a hang meets it.
 //
 // It is one half of a pair. This half would still pass if the ceiling charged
 // every kind of time indiscriminately, and
@@ -99,7 +101,7 @@ func TestLoaderEnforcesMemoryCapTrapsAtCall(t *testing.T) {
 // the distinction the ceiling draws; together they do.
 func TestLoaderEnforcesTimeoutCancelsSpinningCall(t *testing.T) {
 	const callTimeoutMs = 50
-	const outerDeadline = 10 * time.Second
+	const outerDeadline = 2 * time.Minute
 
 	loader := &Loader{}
 	plugin, err := loader.Load(context.Background(), PluginSpec{

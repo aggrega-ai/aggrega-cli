@@ -145,7 +145,7 @@ type ResolvedPlugin struct {
 	Contract *PluginContractClaim
 
 	// Limits is the entity's authored runtime resource limits (memory and
-	// per-call wall time), attached by the entity-fronted Lookup (EntityLookup)
+	// per-call execution), attached by the entity-fronted Lookup (EntityLookup)
 	// from the in-hand Plugin entity. Like Contract it is neutral — a
 	// pluginpath-owned shape carrying no internal/wasm dependency; the loader's
 	// caller maps it onto the load spec. Unlike Contract the limits are not
@@ -192,7 +192,7 @@ type PluginCommandFlagMirror struct {
 
 // PluginRuntimeLimits is the neutral, pluginpath-owned shape of an entity's
 // authored runtime resource limits: the linear-memory cap (in Wasm pages) and
-// the per-call wall-time cap (in milliseconds). It carries no dependency on
+// the per-call execution cap (in milliseconds). It carries no dependency on
 // internal/wasm; the loader's caller maps it onto the load spec. A zero field
 // means the entity declared no limit for that dimension — the loader substitutes
 // the platform default cap, so a zero is "apply default", never "unbounded".
@@ -201,8 +201,8 @@ type PluginRuntimeLimits struct {
 	// page). Zero applies the platform default cap.
 	MaxMemoryPages uint32
 
-	// TimeoutMs caps per-call execution wall time in milliseconds. Zero applies
-	// the platform default cap.
+	// TimeoutMs caps how long the plugin's own code may execute during one call,
+	// in milliseconds. Zero applies the platform default cap.
 	TimeoutMs uint64
 }
 

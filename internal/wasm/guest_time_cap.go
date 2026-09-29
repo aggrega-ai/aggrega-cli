@@ -6,13 +6,44 @@ package wasm
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// hostTimeAccount accumulates the wall time one plugin instance spends inside
-// host functions during a single export invocation.
+// executionClock is the clock one export invocation measures its guest's
+// execution in; startExecutionClock, declared once per platform, decides which
+// clock that is. A reading is the time elapsed on the clock since it was
+// started, so only the difference between two readings of one clock means
+// anything.
+//
+// It is read from two goroutines at once: the guest's own, which brackets every
+// host-function body with a reading, and the ceiling's watchdog, which reads it
+// while the guest is still running. An implementation is safe for concurrent
+// use.
+type executionClock interface {
+	now() time.Duration
+}
+
+// wallClock is the wall time elapsed since it was started. It is the execution
+// clock wherever the loader does not read a thread's processor time.
+type wallClock struct {
+	origin time.Time
+}
+
+// newWallClock starts a wall clock at the current instant.
+func newWallClock() wallClock {
+	return wallClock{origin: time.Now()}
+}
+
+func (c wallClock) now() time.Duration {
+	return time.Since(c.origin)
+}
+
+// hostTimeAccount accumulates the time one plugin instance spends inside host
+// functions during a single export invocation, read on that invocation's
+// execution clock.
 //
 // It exists because the per-call ceiling bounds GUEST execution while a host
 // function body runs HOST code, and the two are not the same measurement. A
@@ -24,25 +55,39 @@ import (
 // name: the cost grows with machine load, and the guest that asked for the
 // service is the one blamed for it.
 //
+// The account reads the clock the ceiling spends, because a subtraction across
+// two clocks measures nothing. Where that clock is the processor time of the
+// guest's thread, a host body that waits — on a file, on a lock, on a slow
+// seam — advances neither side, and what the account removes is the processor
+// time a host body spends on that thread, including a second guest's execution
+// run through the producer-consumption seam, which runs on the same thread.
+//
 // A guest calls host functions synchronously from its own execution, so the
 // account is written from one goroutine at a time. The mutex is what lets the
 // watchdog read a consistent total — and any interval still in flight — from
 // another. depth tolerates a host body that reaches another host function on
 // the same instance: only the outermost interval is counted, so no span of
 // time is counted twice.
+//
+// An invocation with no ceiling starts no clock, and there is nothing to
+// account: with a nil clock every method leaves the account untouched.
 type hostTimeAccount struct {
 	mu    sync.Mutex
+	clock executionClock
 	total time.Duration
 	depth int
-	since time.Time
+	since time.Duration
 }
 
 // enter records that a host function body has begun on this instance.
 func (a *hostTimeAccount) enter() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.clock == nil {
+		return
+	}
 	if a.depth == 0 {
-		a.since = time.Now()
+		a.since = a.clock.now()
 	}
 	a.depth++
 }
@@ -52,9 +97,12 @@ func (a *hostTimeAccount) enter() {
 func (a *hostTimeAccount) leave() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.clock == nil {
+		return
+	}
 	a.depth--
 	if a.depth == 0 {
-		a.total += time.Since(a.since)
+		a.total += a.clock.now() - a.since
 	}
 }
 
@@ -70,19 +118,21 @@ func (a *hostTimeAccount) elapsed() time.Duration {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	d := a.total
-	if a.depth > 0 {
-		d += time.Since(a.since)
+	if a.depth > 0 && a.clock != nil {
+		d += a.clock.now() - a.since
 	}
 	return d
 }
 
-// reset clears the account so a fresh export invocation starts from zero. One
-// plugin instance may serve several invocations in sequence, and the ceiling is
-// per-invocation, so an account carried across them would shrink every later
-// invocation's budget by whatever the earlier ones spent.
-func (a *hostTimeAccount) reset() {
+// reset clears the account so a fresh export invocation starts from zero, on the
+// clock that invocation is measured in. One plugin instance may serve several
+// invocations in sequence, and the ceiling is per-invocation, so an account
+// carried across them would shrink every later invocation's budget by whatever
+// the earlier ones spent.
+func (a *hostTimeAccount) reset(clock executionClock) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.clock = clock
 	a.total = 0
 	a.depth = 0
 }
@@ -92,18 +142,36 @@ func (a *hostTimeAccount) reset() {
 // call returns. A zero or negative ceiling runs call under the caller's context
 // unchanged.
 //
-// The budget is spent by guest execution alone. The watchdog subtracts the time
-// the instance spends inside host functions from the wall clock, so a guest that
-// asks the host for a parsed tree is not charged for the host loading and
-// running the parser that produces it. The ceiling therefore measures the thing
-// it names — a guest that will not yield — rather than the cost of whatever the
-// host does on the guest's behalf.
+// The budget is spent by guest execution alone, read on one clock for the whole
+// invocation (see startExecutionClock). The calling goroutine is locked to its
+// OS thread for the call, and guest code runs on the goroutine that invokes it,
+// so that thread is where the guest executes. On Linux the clock is that
+// thread's processor time; on every other platform it is wall time. On both,
+// the watchdog subtracts the time the instance spends inside host functions, so
+// a guest that asks the host for a parsed tree is not charged for the host
+// loading and running the parser that produces it.
+//
+// Processor time is what keeps a busy machine from spending the budget. A guest
+// waiting for a processor — because other work in the process or on the machine
+// holds it, at whatever scheduling priority — spends no processor time, so the
+// ceiling measures the thing it names, a guest that will not yield, rather than
+// the load it happened to run under. A guest that will not yield still spends
+// the budget without pause: outside a host function it has nowhere to wait,
+// since the runtime's sleep and yield return at once (see
+// deterministicModuleConfig). Where wall time is the measure, the guest is
+// charged for waiting it did not cause, and a machine loaded heavily enough can
+// spend the budget of a guest that executed for a fraction of it.
+//
+// The first call on an instance also runs the guest language runtime's one-time
+// initialisation, which the runtime performs lazily inside that call. That is
+// guest execution, and it is charged to that call's budget.
 //
 // The watchdog re-arms rather than firing once: each time it wakes it recomputes
-// guest time and, when the budget is not yet spent, sleeps for the remainder. It
-// converges because host time only ever grows, so each re-arm is for a shorter
-// interval than the last unless the guest is inside a host call — and while it
-// is, no guest time accrues to spend.
+// guest time and, when the budget is not yet spent, sleeps for the remainder in
+// wall time. That sleep can never outlast the budget: the guest executes on one
+// thread, so its clock advances no faster than wall time does, and it advances
+// more slowly, or not at all, while the guest waits for a processor or runs a
+// host call.
 //
 // Cancelling the context is what stops a runaway guest: the runtime is
 // configured to close a module when its call context is done, so cancellation
@@ -119,13 +187,18 @@ func (p *Plugin) callUnderGuestTimeCap(ctx context.Context, funcName string, cal
 	if p.callTimeout <= 0 {
 		return call(ctx)
 	}
-	p.hostTime.reset()
+	// Locking nests, so a guest call a host function makes on this goroutine
+	// keeps the thread locked for the call that is still running around it.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	clock := startExecutionClock()
+	p.hostTime.reset(clock)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var ceilingSpent atomic.Bool
-	start := time.Now()
+	start := clock.now()
 	returned := make(chan struct{})
 	defer close(returned)
 
@@ -137,7 +210,7 @@ func (p *Plugin) callUnderGuestTimeCap(ctx context.Context, funcName string, cal
 			case <-returned:
 				return
 			case <-timer.C:
-				guest := time.Since(start) - p.hostTime.elapsed()
+				guest := clock.now() - start - p.hostTime.elapsed()
 				if guest >= p.callTimeout {
 					ceilingSpent.Store(true)
 					cancel()

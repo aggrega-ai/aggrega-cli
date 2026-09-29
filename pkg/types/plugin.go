@@ -478,9 +478,9 @@ type PluginRuntime struct {
 	// per page). Zero or absent applies the platform default cap, so a load
 	// is never unbounded; an attachment that needs more raises this value.
 	MaxMemoryPages uint32 `json:"maxMemoryPages,omitempty" yaml:"maxMemoryPages,omitempty"`
-	// TimeoutMs caps per-call execution wall time in milliseconds. Zero or
-	// absent applies the platform default cap, so a call is never
-	// uncancellable; an attachment that runs longer raises this value.
+	// TimeoutMs caps how long the plugin's own code may execute during one
+	// call, in milliseconds, host-function time excluded. Zero or absent applies
+	// the platform default cap; an attachment that runs longer raises this value.
 	TimeoutMs uint64 `json:"timeoutMs,omitempty" yaml:"timeoutMs,omitempty"`
 	// HostFunctions is the machine-owned record of the host functions the
 	// plugin imports, in canonical (sorted, de-duplicated) form. It is derived
