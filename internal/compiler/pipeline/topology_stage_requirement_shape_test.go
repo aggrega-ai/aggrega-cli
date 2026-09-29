@@ -392,10 +392,11 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 	// The walks this site performs, each rooted at the node axis: the
 	// attachment-requirement shape, the component-identity refusal, the
 	// identity-declared-once refusal, the required-socket population, the
-	// recipe-resolution refusal, and the mapping-ambiguity refusal. Each is
-	// handed `ctx.Err` like the ones around it, which is the thing this count
-	// exists to make somebody check when a walk is added.
-	const walks = 6
+	// recipe-resolution refusal, the mapped-recipe pin refusal, and the
+	// mapping-ambiguity refusal. Each is handed `ctx.Err` like the ones around
+	// it, which is the thing this count exists to make somebody check when a
+	// walk is added.
+	const walks = 7
 	expectedReads := nodes * walks
 
 	t.Run("a caller that withdraws stops the walk before its first node", func(t *testing.T) {
@@ -422,7 +423,7 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 			t.Fatalf("err = %v; want the caller's withdrawal, read by a walk after the first", err)
 		}
 		if seen != nodes+2 {
-			t.Errorf("the signal was read %d time(s); want %d — every node of the first walk, then the read that turns on the second walk's first node",
+			t.Errorf("the signal was read %d time(s); want %d — every node of the first walk, the second walk's first node, then the read at its second node that finds the withdrawal",
 				seen, nodes+2)
 		}
 	})

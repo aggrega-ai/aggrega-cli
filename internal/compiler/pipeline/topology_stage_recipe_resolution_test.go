@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// The proofs in this file cover the two rules about whether a component instance
+// The proofs in this file cover the rules about whether a component instance
 // resolves to a Recipe. They compile the fixture workspace for real, varying only
 // the Manifest's mapping table, so what halts is a property of the compiled
 // documents rather than of an assertion.
@@ -134,7 +134,7 @@ func recipeResolutionInputs(t *testing.T, aggregate, manifest string) (Inputs, *
 // compileWithManifest drives the fixture through the entry a surface that EMITS
 // takes, and hands the caller the error rather than failing on it.
 //
-// Both rules under proof refuse a run that emits and are carried by a run that
+// The rules under proof refuse a run that emits and are carried by a run that
 // only describes, so which entry a proof drives is half of what it asserts. This
 // one declares that its run emits, the way every artifact-producing surface does,
 // and then stops short of the render: what the gate does with the findings is
@@ -421,7 +421,7 @@ func TestMappedToAnAbsentRecipeHaltsNamingTheMappingValue(t *testing.T) {
 // rule above passes over: a value whose version pin is none of the forms a pin
 // takes. The pin names no version, so "not in the catalog" would send the author
 // looking for a recipe when the fault is the pin's text; the rule passes the node
-// over and the instance reading reports the malformation instead.
+// over and the rule beside it over the same facts reports the malformation.
 //
 // A well-formed pin no catalog version satisfies is the row beside it, and it keeps
 // the condition the arm above reports — which is what makes the malformed row a

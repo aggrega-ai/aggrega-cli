@@ -1094,10 +1094,10 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 //
 // It is what remains here of the per-component resolution reading. Whether an
 // instance resolves to a Recipe at all — unmapped, mapped at a reference the
-// catalog does not hold, or matching several version-distinct mapping keys — is
-// a rule declared over the flattened composition and asked where the node set is
-// complete, which is before this runs. Asking it again here would report one
-// violation twice.
+// catalog does not hold, mapped at a reference whose version pin is malformed,
+// or matching several version-distinct mapping keys — is a rule declared over the
+// flattened composition and asked where the node set is complete, which is before
+// this runs. Asking it again here would report one violation twice.
 //
 // The shape reading stays because it is a different condition with a different
 // root, and one this function has always been a DELIBERATE second reading of
@@ -1110,12 +1110,11 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 //
 // A reference the shape cannot express is reported as a shape fault rather than
 // as an absent recipe, because the recipe it names may well be in the catalog
-// and calling it absent sends the author looking for the wrong thing. A
-// reference of an accepted shape whose version pin is malformed is reported as
-// that malformation for the same reason — the rule above passes over it. The
+// and calling it absent sends the author looking for the wrong thing. The
 // reading runs only after the lookup misses, so it never changes which
-// references resolve. nil means there is no shape or pin fault to report,
-// whether the instance resolved or was reported by the rule above.
+// references resolve. nil means there is no shape fault to report: the instance
+// resolved, or a rule above reports it — a reference of an accepted shape whose
+// version pin is malformed included.
 func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
 	uri, ok, err := ComponentRecipeURI(manifest, instanceName, componentType)
 	if err != nil || !ok {
@@ -1128,23 +1127,31 @@ func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifes
 	}
 	n, tooMany := resolver.RecipeReferenceSegments(uri)
 	if !tooMany {
-		return mappedRecipePinFault(uri, "component", instanceName, componentType)
+		return nil
 	}
 	return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 }
 
 // mappedRecipePinFault reports a Manifest mapping value that resolved to no
-// recipe and whose version pin is malformed, rooted at the instance whose
-// resolution missed — the second reading beside the shape one above, for the
-// same reason: the recipe the value names may well be in the catalog, and the
-// fault is the pin's text rather than an absent recipe. nil when the pin is well
-// formed or absent, which leaves an absent recipe to the reading that owns it.
-func mappedRecipePinFault(uri, instanceKind, instanceName, instanceType string) error {
+// feature recipe and whose version pin is malformed, rooted at the feature
+// instance whose resolution missed: the pin names no version, so the fault is
+// the pin's text rather than an absent feature recipe. nil when the pin is well
+// formed or absent, which leaves an absent feature recipe to the reading that
+// owns it.
+//
+// It is read on the feature attachment axes only. A component instance mapped
+// to a malformed pin is a rule declared over the flattened composition,
+// NodeMappedRecipePinIsWellFormed, because every fact that rule reads is keyed
+// by a node. No fact carries the feature recipe reference a feature
+// attachment's mapping names, or whether the catalog holds it — the mapping
+// facts over the composition are keyed by node alone — so there is nothing a
+// rule over the attachments could read, and the reading stays here.
+func mappedRecipePinFault(uri, instanceName, featureType string) error {
 	pe, malformed := types.ParseVersionPin(uri).Malformed()
 	if !malformed {
 		return nil
 	}
-	return pe.At(fmt.Sprintf("the Manifest maps %s %q (type %q) to it", instanceKind, instanceName, instanceType))
+	return pe.At(fmt.Sprintf("the Manifest maps feature %q (type %q) to it", instanceName, featureType))
 }
 
 // resolveFeatureRecipeForVerify verifies that one feature instance resolves
@@ -1174,7 +1181,7 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
 				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, featureType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 			}
-			if fault := mappedRecipePinFault(uri, "feature", instanceName, featureType); fault != nil {
+			if fault := mappedRecipePinFault(uri, instanceName, featureType); fault != nil {
 				return fault
 			}
 			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, featureType, uri)
@@ -1199,14 +1206,15 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 // diagnostic. The mapping-only cascade matches the renderer's — the catalog
 // never chooses a recipe by spec.implements.
 //
-// The component axis is walked here for two conditions only: a mapping value whose
-// SHAPE no recipe reference can express, and one whose version pin is malformed —
-// the two the rule over the composition passes over. Whether a component instance resolves to
-// a recipe at all is a rule declared over the flattened composition, asked where
-// the node set is complete — which is earlier than this, and is the only point at
-// which a component a sub-aggregate contributed is in the set being walked. A
-// build carrying such a fault therefore halts before this runs, and asking the
-// same question here would report one violation twice.
+// The component axis is walked here for one condition only: a mapping value whose
+// SHAPE no recipe reference can express, which the rules over the composition pass
+// over. Whether a component instance resolves to a recipe at all — a malformed
+// version pin on the value it is mapped to included — is a rule declared over the
+// flattened composition, asked where the node set is complete — which is earlier
+// than this, and is the only point at which a component a sub-aggregate
+// contributed is in the set being walked. A build carrying such a fault therefore
+// halts before this runs, and asking the same question here would report one
+// violation twice.
 func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
 	if graph == nil {
 		return nil

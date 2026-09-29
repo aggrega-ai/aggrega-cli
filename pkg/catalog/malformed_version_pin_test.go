@@ -14,11 +14,11 @@ import (
 
 // The proofs in this file cover the catalog's own surfaces that turn a reference
 // they could not resolve into a diagnostic: the whole-catalog extends pass, the
-// mapping-consistency reading, and the instance-rooted recipe reading. Each is
-// driven with a malformed pin, a well-formed pin no version satisfies, and a pin
-// that resolves, so the malformed row is attributable to the pin's grammar rather
-// than to the pin merely failing to resolve. Conditions are matched through their
-// accessors, never their codes.
+// mapping-consistency reading, and the instance-rooted feature recipe reading.
+// Each is driven with a malformed pin, a well-formed pin no version satisfies, and
+// a pin that resolves, so the malformed row is attributable to the pin's grammar
+// rather than to the pin merely failing to resolve. Conditions are matched through
+// their accessors, never their codes.
 
 // TestResolveAllExtends_MalformedParentPin covers both places the whole-catalog
 // extends pass reports an extends parent it could not resolve: the version select,
@@ -155,12 +155,78 @@ func TestVerifyManifestImplementsConsistency_MalformedPin(t *testing.T) {
 	}
 }
 
+// TestVerifyManifestImplementsConsistency_FindingsFollowEntryOrder covers a
+// Manifest carrying both refusals the mapping-consistency reading reports: a
+// well-formed entry that does not match its recipe, and an entry whose key carries
+// a malformed pin. The two are reported by two rules, and the findings still
+// arrive in the order the Manifest declares its entries, whichever of the two is
+// written first — the order an author reads the mapping table in. Each entry
+// carries one fault, and a table of the same two types mapped consistently is the
+// control.
+func TestVerifyManifestImplementsConsistency_FindingsFollowEntryOrder(t *testing.T) {
+	t.Parallel()
+
+	c := fakeCatalog(
+		fakeRecipe("core/helm/postgres", "core/datastore/postgres:1.0.0"),
+		fakeRecipe("core/helm/mysql", "core/datastore/mysql:1.0.0"),
+	)
+	type entry struct{ key, reference string }
+	mismatch := entry{"core/datastore/postgres:9.9.9", "core/helm/postgres"}
+	malformed := entry{"core/datastore/mysql:^garbage", "core/helm/mysql"}
+
+	for _, tc := range []struct {
+		name    string
+		entries []entry
+		want    []error
+	}{
+		{"the mismatch declared first", []entry{mismatch, malformed},
+			[]error{ErrManifestImplementsMismatch(), types.ErrMalformedVersionPin()}},
+		{"the malformed pin declared first", []entry{malformed, mismatch},
+			[]error{types.ErrMalformedVersionPin(), ErrManifestImplementsMismatch()}},
+		{"both types mapped consistently", []entry{
+			{"core/datastore/postgres:1.0.0", "core/helm/postgres"},
+			{"core/datastore/mysql:1.0.0", "core/helm/mysql"},
+		}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tier := &types.MappingTier{}
+			for _, e := range tc.entries {
+				tier.Type.Set(e.key, e.reference)
+			}
+			m := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: tier}}}
+
+			errs := c.VerifyManifestImplementsConsistency(m, "manifest.yaml", c.ComponentAncestry)
+			if len(errs) != len(tc.want) {
+				t.Fatalf("want %d finding(s), got %d: %v", len(tc.want), len(errs), errs)
+			}
+			for i, want := range tc.want {
+				other := types.ErrMalformedVersionPin()
+				if want == other {
+					other = ErrManifestImplementsMismatch()
+				}
+				if !errors.Is(errs[i], want) || errors.Is(errs[i], other) {
+					t.Errorf("finding %d = %v; want it to match %v and not %v", i, errs[i], want, other)
+				}
+				entryText := `manifest mapping "` + tc.entries[i].key + `" -> "` + tc.entries[i].reference + `"`
+				if !strings.Contains(errs[i].Error(), entryText) {
+					t.Errorf("finding %d = %q; want it to name the entry declared at that position, %s",
+						i, errs[i].Error(), entryText)
+				}
+			}
+		})
+	}
+}
+
 // TestVerifyRecipeResolution_MalformedPin covers the instance-rooted reading of a
-// Manifest mapping value, through the real catalog loader, on both attachment
-// axes. A value whose pin is malformed is reported as the malformation at the
-// instance whose resolution missed; a well-formed pin no version satisfies keeps
-// the feature arm's no-recipe-resolved condition, and on the component arm is left
-// to the rule over the composition, which reports it before this reading runs.
+// Manifest mapping value, through the real catalog loader, on both the feature and
+// the component axis. On the feature axis a value whose pin is malformed is
+// reported as the malformation at the feature instance whose resolution missed. On
+// the component axis it is reported by nothing here: the rule over the flattened
+// composition reports it before this reading runs, so a component row finding
+// anything would be the same fault reported twice. A well-formed pin no version
+// satisfies keeps the feature arm's no-recipe-resolved condition, and on the
+// component arm is left to the rule over the composition for the same reason.
 func TestVerifyRecipeResolution_MalformedPin(t *testing.T) {
 	t.Parallel()
 	const compType = "app/db"
@@ -194,30 +260,42 @@ func TestVerifyRecipeResolution_MalformedPin(t *testing.T) {
 		t.Fatalf("control: pins the catalog satisfies must resolve cleanly; got %v", err)
 	}
 
+	// One malformed pin per row, on one axis, with the other axis's pin satisfied,
+	// so a row finding nothing is about the axis it names and nothing else.
 	for _, tc := range []struct {
-		name     string
-		compURI  string
-		featURI  string
-		wantInst []string
+		name        string
+		compURI     string
+		featURI     string
+		wantFeature bool
 	}{
-		{"caret pins whose range does not parse", "eval/present:^garbage", "eval/cred:^garbage", []string{`component "db"`, `feature "db-cred"`}},
-		{"exact pins that are not semantic versions", "eval/present:1.x", "eval/cred:1.x", []string{`component "db"`, `feature "db-cred"`}},
+		{"a feature pin whose caret range does not parse", "eval/present:1.0.0", "eval/cred:^garbage", true},
+		{"a feature pin that is not a semantic version", "eval/present:1.0.0", "eval/cred:1.x", true},
+		{"a component pin whose caret range does not parse", "eval/present:^garbage", "eval/cred:1.0.0", false},
+		{"a component pin that is not a semantic version", "eval/present:1.x", "eval/cred:1.0.0", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			findings := c.ResolutionFindings(manifestFor(tc.compURI, tc.featURI), graph)
-			if len(findings) != 2 {
-				t.Fatalf("want one finding per axis, got %d: %v", len(findings), findings)
+			if !tc.wantFeature {
+				if len(findings) != 0 {
+					t.Fatalf("a malformed component pin must be reported by nothing here, "+
+						"since the rule over the composition already reports it; got %d: %v", len(findings), findings)
+				}
+				return
 			}
-			for i, f := range findings {
-				if !errors.Is(f, types.ErrMalformedVersionPin()) {
-					t.Errorf("finding %d = %v; want ErrMalformedVersionPin", i, f)
-				}
-				if errors.Is(f, ErrNoRecipeResolved()) {
-					t.Errorf("finding %d = %v; a malformed pin must not report as no-recipe-resolved", i, f)
-				}
-				if !strings.Contains(f.Error(), tc.wantInst[i]) {
-					t.Errorf("finding %d = %q; want it rooted at %s", i, f.Error(), tc.wantInst[i])
+			if len(findings) != 1 {
+				t.Fatalf("want the feature arm's finding alone, got %d: %v", len(findings), findings)
+			}
+			f := findings[0]
+			if !errors.Is(f, types.ErrMalformedVersionPin()) {
+				t.Errorf("finding = %v; want ErrMalformedVersionPin", f)
+			}
+			if errors.Is(f, ErrNoRecipeResolved()) {
+				t.Errorf("finding = %v; a malformed pin must not report as no-recipe-resolved", f)
+			}
+			for _, want := range []string{`feature "db-cred"`, `reference "` + tc.featURI + `"`, types.VersionPinForms} {
+				if !strings.Contains(f.Error(), want) {
+					t.Errorf("finding = %q; want it to carry %q", f.Error(), want)
 				}
 			}
 		})

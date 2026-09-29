@@ -76,8 +76,11 @@ func manifestCategory() cerrors.Category {
 // Both references are split and their pins parsed by types.ParseVersionPin, the
 // one home of the pin grammar, so a caret declaration is matched only against a
 // requested version that is a strict semantic version. A malformed pin on either
-// side satisfies nothing beyond an identical string; which of the two is at
-// fault is the reporting surface's to say, not this predicate's.
+// side satisfies nothing beyond an identical string, with the one exception the
+// unversioned form carries by definition: an unversioned implements matches any
+// request naming its base, whatever pin that request carries, a malformed one
+// included. Which of the two is at fault is the reporting surface's to say, not
+// this predicate's.
 func ImplementsSatisfies(impl, componentType string) bool {
 	if impl == componentType {
 		return true

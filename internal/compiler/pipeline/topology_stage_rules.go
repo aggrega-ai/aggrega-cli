@@ -44,7 +44,7 @@ const topologyStageIdentityEntity = "Aggregate"
 // The entity a finding about a node's Recipe mapping is reported against, and it
 // is a third kind rather than either of the two above.
 //
-// Every arm of the two mapping rules asks for an entry under the Manifest's own
+// Every arm of the mapping rules below asks for an entry under the Manifest's own
 // mapping table — written, corrected, or pinned at a version — so the remedy is
 // in the Manifest whichever arm fired. The kind decides the fault category a
 // caller routes on, and a category names one document: reporting these against
@@ -296,14 +296,37 @@ func runTopologyStageRules(
 		return nil, err
 	}
 
+	// No component instance is mapped to a Recipe reference whose version pin is
+	// none of the forms a pin takes. It is the sibling of the rule above over one
+	// outcome that rule passes over: such a reference resolves to nothing, and
+	// reporting it as a Recipe the catalog does not hold would send the author
+	// looking for a Recipe when the fault is the pin's text. It reads the same
+	// facts over the same enumeration, so a module-contributed component is judged
+	// as one the Aggregate declares, and it is recorded under the same entity
+	// because the remedy is the same document's: the mapping value in the Manifest.
+	pinObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		catalog.NodeMappedRecipePinIsWellFormed,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := found.record(
+		catalog.NodeMappedRecipePinIsWellFormed.Severity, topologyStageMappingEntity, pinObjections,
+	); err != nil {
+		return nil, err
+	}
+
 	// No component instance's type matches several version-distinct mapping keys
-	// with none matching it exactly. It is the sibling of the rule above over the
-	// one outcome that rule passes over: a refused lookup names no reference, so
-	// it reads there as an instance nothing maps, and the two faults have opposite
-	// remedies. It is asked once per instance rather than once per mapping entry
-	// because a table holding one type at two versions is legal authoring — an
-	// exact key match wins first, so the same table resolves a pinned instance and
-	// refuses an unpinned one.
+	// with none matching it exactly. It is a sibling of the resolution rule above
+	// over another outcome that rule passes over: a refused lookup names no
+	// reference, so it reads there as an instance nothing maps, and the two faults
+	// have opposite remedies. It is asked once per instance rather than once per
+	// mapping entry because a table holding one type at two versions is legal
+	// authoring — an exact key match wins first, so the same table resolves a
+	// pinned instance and refuses an unpinned one.
 	ambiguityObjections, err := constraint.RunOnNodes(
 		ctx.Err,
 		topoResult.StageCoordinates,

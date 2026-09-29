@@ -60,8 +60,13 @@ import (
 // send the author looking for the wrong thing; the shape is reported by the
 // reading that owns it, both over the authored mapping entry and at the instance
 // whose resolution missed. A reference whose version pin is malformed is passed
-// over for the same reason and reported by the same instance reading: the pin
-// names no version, so the fault is its text rather than an absent Recipe.
+// over for the same reason and reported by the rule declared after this one,
+// NodeMappedRecipePinIsWellFormed: the pin names no version, so the fault is its
+// text rather than an absent Recipe.
+//
+// Which of these outcomes an instance comes to is read from nodeRecipeOutcomeOf,
+// which that rule asks too, so each of the two passes over exactly what the
+// other raises on.
 //
 // A node whose resolution was never performed — a build whose catalog holds no
 // recipe index — reads as an instance nothing maps, which is the same reading
@@ -74,24 +79,14 @@ var NodeResolvesToARecipe = constraint.Check[
 	Severity: constraint.SeverityEmissionFatal,
 	Run: func(v constraint.TopologyView, s constraint.NodeSubject) []constraint.Objection {
 		node := s.NodeID()
-		// The refusal is read first, because it answers "not mapped" to the
-		// question below and the two faults have opposite remedies.
-		if len(v.NodeRecipeMappingAmbiguousKeys(node)) > 0 {
+		outcome, reference := nodeRecipeOutcomeOf(node,
+			v.NodeRecipeMappingAmbiguousKeys, v.NodeMappedRecipeReference, v.NodeMappedRecipePresent)
+		if outcome != nodeRecipeUnmapped && outcome != nodeRecipeReferenceAbsent {
 			return nil
 		}
 		componentType, _ := v.FlattenedNodeComponentType(node)
 
-		reference, mapped := v.NodeMappedRecipeReference(node)
-		if mapped {
-			if v.NodeMappedRecipePresent(node) {
-				return nil
-			}
-			if _, malformed := resolver.RecipeReferenceSegments(reference); malformed {
-				return nil
-			}
-			if types.ParseVersionPin(reference).Fault() != nil {
-				return nil
-			}
+		if outcome == nodeRecipeReferenceAbsent {
 			return []constraint.Objection{s.RaiseWithAdvice(
 				ErrNoRecipeResolved(),
 				"correct the mapping value in the Manifest, or publish the recipe it names",
@@ -119,6 +114,72 @@ var NodeResolvesToARecipe = constraint.Check[
 			constraint.Uncaptioned(node),
 			constraint.Captioned("of type", componentType),
 			constraint.Captioned("recipes implementing it", strings.Join(candidates, ", ")),
+		)}
+	},
+}
+
+// NodeMappedRecipePinIsWellFormed reports each component instance in the
+// composition that the Manifest's mapping maps to a Recipe reference whose
+// version pin is none of the forms a pin takes.
+//
+// Such a reference resolves to no Recipe, and it is reported as the malformed
+// pin rather than as a Recipe the catalog does not hold: the pin names no
+// version, so no catalog could hold what it asks for, and "not in the catalog"
+// would send the author looking for a Recipe when the fault is the text they
+// typed.
+//
+// It is the rule beside NodeResolvesToARecipe over one of the mapped outcomes that
+// rule passes over, and it reads the same facts, asked where they are asked for
+// the same reason: the node set is complete only once the composition is
+// flattened, so a component a sub-aggregate contributes is judged here as one the
+// Aggregate declares directly. Both rules take the outcome from
+// nodeRecipeOutcomeOf, so an instance is reported once and as the condition the
+// author has to fix. It passes over a lookup that refused, an instance nothing
+// maps, an instance mapped to a Recipe the catalog holds, and a reference whose
+// shape no Recipe reference can express, which is reported by the reading that
+// owns the shape.
+//
+// It refuses at the same severity as that rule, for the same reason: an instance
+// resolved to no Recipe has nothing to render through, so a run that emits
+// artifacts is refused, while a run that only describes the composition carries
+// the finding.
+//
+// Its detail leads with the reference, captioned although the registered
+// sentence already names it, which the detail convention would leave bare: every
+// other report of this condition is composed from the malformation's own values,
+// which spell it `reference "<value>"`, and an author meets one spelling wherever
+// the pin is written. The pin follows under the form it was read as — a caret pin
+// or an exact pin, told apart by the leading caret alone, as the grammar tells
+// them apart — then the instance and its type, which are where the reference was
+// written. The three forms a pin takes are the advice.
+var NodeMappedRecipePinIsWellFormed = constraint.Check[
+	constraint.TopologyView,
+	constraint.NodeSubject,
+]{
+	Sentinel: types.ErrMalformedVersionPin(),
+	Severity: constraint.SeverityEmissionFatal,
+	Run: func(v constraint.TopologyView, s constraint.NodeSubject) []constraint.Objection {
+		node := s.NodeID()
+		outcome, reference := nodeRecipeOutcomeOf(node,
+			v.NodeRecipeMappingAmbiguousKeys, v.NodeMappedRecipeReference, v.NodeMappedRecipePresent)
+		if outcome != nodeRecipeReferencePinMalformed {
+			return nil
+		}
+		componentType, _ := v.FlattenedNodeComponentType(node)
+
+		pin := types.ParseVersionPin(reference)
+		pinText, _ := pin.Pin()
+		form := "exact pin"
+		if pin.IsCaret() {
+			form = "caret pin"
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			types.ErrMalformedVersionPin(),
+			types.VersionPinForms,
+			constraint.Captioned("reference", reference),
+			constraint.Captioned(form, pinText),
+			constraint.Captioned("for component", node),
+			constraint.Captioned("of type", componentType),
 		)}
 	},
 }
@@ -172,4 +233,81 @@ var NodeTypeMappingIsUnambiguous = constraint.Check[
 			constraint.Captioned("matches version-distinct keys", strings.Join(keys, ", ")),
 		)}
 	},
+}
+
+// nodeRecipeOutcome is what resolving one component instance's Recipe through
+// the Manifest's mapping came to, as the rules over that resolution tell the
+// outcomes apart.
+type nodeRecipeOutcome int
+
+const (
+	// nodeRecipeLookupRefused is a lookup that matched several version-distinct
+	// mapping keys and chose none. It names no reference.
+	nodeRecipeLookupRefused nodeRecipeOutcome = iota
+	// nodeRecipeUnmapped is an instance no mapping entry reached.
+	nodeRecipeUnmapped
+	// nodeRecipeResolved is an instance mapped to a Recipe the catalog holds.
+	nodeRecipeResolved
+	// nodeRecipeReferenceShapeFault is an instance mapped to a reference whose
+	// shape no Recipe reference can express.
+	nodeRecipeReferenceShapeFault
+	// nodeRecipeReferencePinMalformed is an instance mapped to a reference of an
+	// accepted shape whose version pin is none of the forms a pin takes.
+	nodeRecipeReferencePinMalformed
+	// nodeRecipeReferenceAbsent is an instance mapped to a well-formed reference
+	// naming a Recipe the catalog does not hold.
+	nodeRecipeReferenceAbsent
+)
+
+// nodeRecipeOutcomeOf reads which outcome one component instance's Recipe
+// resolution came to, and the reference the mapping names for it where it names
+// one.
+//
+// It is the one statement of the order the outcomes are told apart in, and
+// NodeResolvesToARecipe and NodeMappedRecipePinIsWellFormed both ask it rather
+// than walking the facts themselves. Each raises on its own outcome and passes
+// over the rest, so an instance is reported once and as the condition the author
+// has to fix; a second walk of the same facts would agree on the day it was
+// written and be free to drift the day either moved, and the drift would be an
+// instance reported twice or not at all. NodeTypeMappingIsUnambiguous reads the
+// refusal it reports directly: it is the first outcome told apart here, so it
+// depends on no order, and the keys it reports are a fact this does not return.
+//
+// The order is the remedy's. A refused lookup is read first because it answers
+// "not mapped" to the question after it and the two faults have opposite
+// remedies. A mapped reference is read as resolved before its text is judged, so
+// a reference the catalog holds is never reported for its spelling. Of an
+// unresolved reference, the shape is judged before the pin, so a reference at
+// fault in both is reported once, as its shape, by the reading that owns the
+// shape.
+//
+// It takes the facts it reads as the view's own accessors rather than as the
+// view. A check handing its view to a helper leaves the facts it reads outside
+// its own body, where the reading that holds a check's declared view against the
+// facts its predicate reads cannot follow them; an accessor handed on is still
+// named on the view at the call, so each check calling this states exactly the
+// facts it reads.
+func nodeRecipeOutcomeOf(
+	node string,
+	ambiguousKeys func(node string) []string,
+	mappedReference func(node string) (string, bool),
+	mappedPresent func(node string) bool,
+) (nodeRecipeOutcome, string) {
+	if len(ambiguousKeys(node)) > 0 {
+		return nodeRecipeLookupRefused, ""
+	}
+	reference, mapped := mappedReference(node)
+	if !mapped {
+		return nodeRecipeUnmapped, ""
+	}
+	if mappedPresent(node) {
+		return nodeRecipeResolved, reference
+	}
+	if _, malformed := resolver.RecipeReferenceSegments(reference); malformed {
+		return nodeRecipeReferenceShapeFault, reference
+	}
+	if types.ParseVersionPin(reference).Fault() != nil {
+		return nodeRecipeReferencePinMalformed, reference
+	}
+	return nodeRecipeReferenceAbsent, reference
 }
