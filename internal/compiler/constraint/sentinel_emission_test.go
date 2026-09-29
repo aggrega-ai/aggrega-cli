@@ -91,13 +91,20 @@ import (
 // traversal supplied, and the framework — not the check — builds whatever each
 // caller needs from it. The halting currency at that site is framework-issued by
 // construction, which is exactly what reading the declaring package's path was
-// standing in for. Every other host is still read by its path: a plain declared
-// function, and a package-level value that is not a check, belong to the
-// dispatch when written inside this package and not when written anywhere else.
-// So expressing a rule as a check is what moves it, and no rule is amnestied by
-// where its file sits — least of all by being assembled into a value instead of
-// written inline, which is the same rule at the same address wearing a
-// different shape.
+// standing in for. Every other host — a plain declared function, and a
+// package-level value that is not a check — is read by its path AND by what
+// reaches it. It belongs to the dispatch when written inside this package, or
+// when nothing but checks reaches it: every reference to it in this module sits
+// inside a check's literal, or inside another host only checks reach. A rule a
+// check hands to a shared predicate is then attributed as the check's own, which
+// is what it is — the predicate runs only because a check called it, so what it
+// raises reaches a build through the check. One reference from anywhere else
+// keeps it outside, because that reference is a path by which the rule runs with
+// no check involved. So expressing a rule as a check is what moves it, and no
+// rule is amnestied by where its file sits — least of all by being assembled
+// into a value instead of written inline, which is the same rule at the same
+// address wearing a different shape. How a reference is found without resolving
+// types, and every case read conservatively, is recorded at [indexHostReach].
 //
 // # The blind spot this admission carries
 //
@@ -106,10 +113,13 @@ import (
 // that runs. The within-framework figure therefore answers "is this rule
 // expressed as a check?" and never "does this rule run?" — and the distinction
 // is live rather than theoretical, because a check's declaration and its wiring
-// arrive separately. It is stated here, in the census output and in the failure
-// message because an unstated heuristic that reads as a proof is the failure
-// class this framework exists to remove, and an instrument is the most expensive
-// place to leave one: every count downstream inherits its silence.
+// arrive separately. A host attributed to the dispatch because only checks reach
+// it inherits that blind spot unchanged: the checks reaching it are counted from
+// their declarations, whether or not anything invokes them. It is stated here, in
+// the census output and in the failure message because an unstated heuristic
+// that reads as a proof is the failure class this framework exists to remove, and
+// an instrument is the most expensive place to leave one: every count downstream
+// inherits its silence.
 //
 // # The census criterion, and what it deliberately excludes
 //
@@ -310,27 +320,33 @@ const offFrameworkEmissionBlocks = false
 // matching [sentinelName] and bound by a package-level declaration in a non-test
 // .go file under [scannedRoots], for which the census attributes at least one
 // emission site outside the framework's dispatch — attribution exactly as
-// [checkTypeName] and [frameworkPackageSuffix] decide it, over the host shapes
-// and the inner criterion [sentinelCensus] records — LESS the ones whose
+// [checkTypeName], [frameworkPackageSuffix] and [indexHostReach] decide it, so a
+// package-level function or value outside the framework's package is the
+// dispatch when it has references, every one of them in this module's non-test
+// files sits inside a package-level check or inside a host only such checks
+// reach, and nothing marks that set of references as incomplete, over the host
+// shapes and the inner criterion [sentinelCensus] records — LESS the ones whose
 // registration declares that another evaluator owns the rule, that no declared
 // stage of a compilation reaches it, or that the condition names no rule at
 // all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
-// Measured 2026-09-18, on the tree the revision carrying this edit records: 86,
-// of 280 declared. Re-derive it by running this package verbosely — the census
+// Measured 2026-09-29, on the tree the revision carrying this edit records: 81,
+// of 298 declared. Re-derive it by running this package verbosely — the census
 // prints every term below, so the figure is checkable rather than remembered.
 //
 // Its composition, quoted from that run rather than recomputed, because a bare
-// number cannot carry how the figure is read: 227 of the 280 declared conditions
-// are emitted outside the dispatch, and 141 of those declare that their rule is
-// not one of the framework's own — 32 owned by another evaluator, 36 reached by
-// no declared stage, 73 naming no rule at all — leaving the 86 this ceiling
+// number cannot carry how the figure is read: 235 of the 298 declared conditions
+// are emitted outside the dispatch, and 154 of those declare that their rule is
+// not one of the framework's own — 33 owned by another evaluator, 44 reached by
+// no declared stage, 77 naming no rule at all — leaving the 81 this ceiling
 // bounds. What remains is the candidates, each of which could be expressed as a
-// check, plus the conditions carrying nothing to declare a place ON: the 6
-// forwarding declarations and the 3 conditions no registration binds, which
-// [assertEveryConditionDeclaresItsPlace] names on every run and which together
-// cap that second term at 9. Those are counted here rather than subtracted,
+// check, plus any of the 3 conditions no registration binds that the census
+// places outside the dispatch: they carry nothing to declare a place ON,
+// [assertEveryConditionDeclaresItsPlace] names them on every run, and they cap
+// that second term at 3. A forwarding declaration carries no place either, but it
+// has no emission site of its own and is counted in a bucket of its own, never
+// here. The unregistered ones are counted here rather than subtracted,
 // because a condition with no declaration has an UNKNOWN place rather than a
 // place outside the dispatch, and the safe direction for an unknown is to count
 // it. Subtracting them would let a new unregistered condition raised outside the
@@ -347,15 +363,18 @@ const offFrameworkEmissionBlocks = false
 // expressed as a check or could never be one — and the present one is the
 // conditions whose rules could be, plus the few that have not said.
 //
-// Every recording from 154 onward is taken over the present population under the
-// criterion above, so those ARE comparable with one another. A fall among them is
-// still not rules moving into the dispatch: it is conditions declaring a place
-// the ratchet excludes — another evaluator owns the rule, no declared stage
-// reaches it, or it is no rule at all — plus whatever slack the previous
-// recording was carrying. Which of the two a particular fall was is answered by
-// the census output at that revision, and is deliberately not narrated here: a
-// running account of each fall is a second copy of what the census computes, and
-// it would need an edit every time the number moves.
+// Every recording from 154 onward is taken over the present population, so those
+// ARE comparable with one another, with one qualification: from 81 onward the
+// attribution also credits the dispatch with a function or value only checks
+// reach, so a recording before 81 still counts the conditions such helpers name
+// and one from 81 does not. A fall among them is conditions declaring a place the
+// ratchet excludes — another evaluator owns the rule, no declared stage reaches
+// it, or it is no rule at all — a rule whose last raise outside the dispatch was
+// removed, a helper the attribution now credits to the dispatch, or slack the
+// previous recording was carrying. Which of these a particular fall was is
+// answered by the census output at that revision, and is deliberately not narrated
+// here: a running account of each fall is a second copy of what the census
+// computes, and it would need an edit every time the number moves.
 //
 // The slack the old recording carried is reclaimed by this one rather than left
 // standing, so the ratchet is exact again at the moment it is recorded. The bound
@@ -386,7 +405,7 @@ const offFrameworkEmissionBlocks = false
 // here would be derived rather than quoted and would be wrong in a way no run
 // contradicts. So zero is a state this number can arrive at, and
 // [offFrameworkEmissionBlocks] flips in the edit that takes it there.
-const offFrameworkEmissionCeiling = 86
+const offFrameworkEmissionCeiling = 81
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.
@@ -523,10 +542,11 @@ var scannedRoots = []string{
 // for a scope that silently absorbs whatever tree appears next.
 const moduleRoot = "../../.."
 
-// frameworkPackageSuffix locates the framework's own package, which is how a
-// plain declared function's membership is read: a function declared here is part
-// of the dispatch, and every other function naming a sentinel is not. A check
-// declaration's membership is not read this way — see [checkTypeName].
+// frameworkPackageSuffix locates the framework's own package, which is the first
+// of two ways a plain declared function's membership is read: a function declared
+// here is part of the dispatch. A function declared anywhere else is part of it
+// only when nothing but checks reaches it, which [indexHostReach] reads. A check
+// declaration's membership is read neither way — see [checkTypeName].
 const frameworkPackageSuffix = "internal/compiler/constraint"
 
 // checkTypeName is the type whose package-level values are the framework's
@@ -610,13 +630,15 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 		"%d emitted outside it; %d forwarding to another sentinel; %d with no emission site at all",
 		len(declared), len(withinFramework), len(offFramework), len(forwarding), len(unemitted))
 	t.Logf("the within-framework figure is counted from declarations: a rule expressed as a %s value "+
-		"counts there wherever it is declared, and it counts whether or not anything invokes it yet. "+
-		"It measures how many rules are expressed as checks, never how many run.", checkTypeName)
+		"counts there wherever it is declared, and so does a function or value only such values reach, "+
+		"whether or not anything invokes them yet. It measures how many rules are expressed as checks, "+
+		"never how many run.", checkTypeName)
 	if len(withinFramework) > 0 {
 		t.Logf("emitted only by the framework's dispatch, each named beside the declaration it was "+
 			"attributed from, so the attribution can be checked rather than taken: %s",
 			strings.Join(namedList(namedWithSites(withinFramework, emitters), 12), "; "))
 	}
+	reportReferenceAttribution(t, emitters)
 
 	if len(offFramework) > 0 {
 		reportOffFramework("%d sentinel(s) are emitted outside the framework's dispatch.\n"+
@@ -625,13 +647,20 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"a second emission site, and minting one shows up as a sentinel no registered check emits.\n"+
 			"ATTRIBUTION: a sentinel named in a package-level check declaration belongs to the dispatch "+
 			"wherever that declaration lives, because the halting currency there is framework-issued by "+
-			"construction; a plain declared function and any other package-level value are read by their "+
-			"path instead. A function body is read for what it NAMES and a package-level value for what it "+
+			"construction. A plain declared function and any other package-level value belong to it when "+
+			"written in the framework's own package, or when nothing but checks reaches them: every "+
+			"reference to them in this module's non-test files — by name in their own package or through an "+
+			"import of it, called or taken as a value — sits inside a package-level check declaration, or "+
+			"inside another function or value only such declarations reach. One reference from anywhere "+
+			"else keeps them here, and so does being a method, a reference cycle, a dot import of their "+
+			"package, an export another module can import, or having no reference at all; a test file's "+
+			"reference does not count, because a test calling a helper is not a path by which the product "+
+			"raises it. A function body is read for what it NAMES and a package-level value for what it "+
 			"OBTAINS, so a rule raised from a diagnostic set assembled at package level is counted here "+
 			"rather than reported as raised by nothing. Both are read under either spelling a raise takes: "+
 			"the exported name, and the package-local binding the accessor publishes. That reads "+
 			"declarations and cannot observe invocation, so a check declared and never invoked is "+
-			"attributed to the dispatch too.\n"+
+			"attributed to the dispatch too, and so is a helper only such a check reaches.\n"+
 			"CONSEQUENCE while this population reports rather than blocks: an off-framework check gets no "+
 			"computed placement, no caller-coverage guarantee and no framework-supplied provenance, and "+
 			"nothing halts on its absence. The population is not free to grow, though — see the partition "+
@@ -1019,10 +1048,23 @@ func TestAssertedSentinelPopulationCoversTheModule(t *testing.T) {
 // framework's dispatch. Membership travels with the site rather than being
 // recomputed from its name, because the kinds of site establish it differently:
 // a check declaration by what it constructs, and every other host — a declared
-// function, any other package-level value — by its package.
+// function, any other package-level value — by its package and by what reaches
+// it. Where what reaches it decided the verdict, or would have and was refused,
+// the site says so, so the census can name that attribution rather than assert
+// it.
 type emissionSite struct {
 	name      string
 	framework bool
+
+	// reachedFrom is set when the site belongs to the dispatch because only
+	// checks reach its host, and names the first reference that does.
+	reachedFrom string
+
+	// heldBy is set when a check reaches the site's host and the host stays
+	// outside the dispatch all the same, and names what holds it there: the
+	// first reference from outside a check, or the reason no reference to it can
+	// be read as complete.
+	heldBy string
 }
 
 // sentinelCensus returns the declared sentinel names, sorted, one declaring path
@@ -1117,9 +1159,19 @@ type emissionSite struct {
 //
 // A package-level [Check] declaration belongs to the dispatch wherever it is
 // declared, because its halting currency is framework-issued by construction.
-// Every other value host is read by its declaring package's path, exactly as a
-// plain declared function is — so a diagnostic set assembled in a consuming
-// package is attributed outside the dispatch, which is what it is.
+// Every other host — a plain declared function, and a value host that is not a
+// check — is read two ways: by its declaring package's path, and by what reaches
+// it, which [indexHostReach] reads. It belongs to the dispatch when it is declared
+// in the framework's package, or when only checks reach it. So a diagnostic set
+// assembled in a consuming package and read by a plain function is attributed
+// outside the dispatch, which is what it is, and a shared predicate only checks
+// call is attributed inside it, which is also what it is. A method is read by its
+// path alone: it is never a check, and the rule does not follow what reaches it.
+//
+// A value host is attributed by what reaches it only where its specification
+// gives each name its own initializer. An initializer several names share is
+// recorded against the first of them, and reading that name's references alone
+// would miss every read of the others, so such a host keeps the path reading.
 //
 // The value walk below admits a var declaration and not a const one, which is
 // where this reading is deliberately NARROWER than [declaredSentinels] beside it,
@@ -1133,12 +1185,40 @@ type emissionSite struct {
 func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]string, emitters map[string][]emissionSite, forwards map[string][]string, placements placementDeclarations) {
 	t.Helper()
 
-	files, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
+	files, fset := collectGoFiles(t, scannedRoots, excludeTestFiles)
+	modulePath := readModulePath(t, moduleRoot)
+	var reach hostReach
+	declared, declaredAt, emitters, forwards, placements, reach = censusOver(t, files, fset, moduleRoot, modulePath)
+	// The index resolves a qualified reference only through an import it has
+	// matched against the module path, so an index that matched none — a module
+	// path read wrongly, a root spelled differently from the walk — has read
+	// every cross-package reference as absent. That is silent in the dangerous
+	// direction: an exported helper whose only visible references are its checks
+	// would move into the dispatch while a consuming package still calls it. A
+	// module whose packages import one another cannot legitimately match none.
+	if reach.moduleImports == 0 {
+		t.Fatalf("the reference index matched no import of this module's own packages against module path %q "+
+			"under %s, so every reference made through an import went unread and an attribution by "+
+			"reference would certify nothing. The instrument is not working.", modulePath, moduleRoot)
+	}
+	return declared, declaredAt, emitters, forwards, placements
+}
+
+// censusOver is [sentinelCensus] over a file set it is handed rather than one it
+// reads, and everything [sentinelCensus] records about its criterion is a
+// statement about this function. It is separate so the attribution can be driven
+// over synthetic source by exactly the code the census runs: root is the module
+// root the paths in files are spelled under, and modulePath the path the module's
+// own imports are spelled against.
+func censusOver(t *testing.T, files map[string]*ast.File, fset *token.FileSet, root, modulePath string) (declared []string, declaredAt map[string]string, emitters map[string][]emissionSite, forwards map[string][]string, placements placementDeclarations, reach hostReach) {
+	t.Helper()
+
 	names := declaredSentinels(files)
 	forwards = forwardingDeclarations(files, names)
 	accessorPublished := accessorPublishedSentinels(files, names)
 	handles := accessorHandles(files, names)
 	placements = readPlacementDeclarations(t, files, handles)
+	reach = indexHostReach(files, fset, root, modulePath)
 
 	emitters = map[string][]emissionSite{}
 	for path, file := range files {
@@ -1166,10 +1246,14 @@ func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]stri
 						bodyHandles = nil
 					}
 				}
-				recordNamed(emitters, names, bodyHandles, emissionSite{
+				site := emissionSite{
 					name:      dir + "." + d.Name.Name,
 					framework: inFrameworkPackage,
-				}, d.Body)
+				}
+				if d.Recv == nil && !site.framework {
+					site = reach.attribute(site)
+				}
+				recordNamed(emitters, names, bodyHandles, site, d.Body)
 			case *ast.GenDecl:
 				if d.Tok != token.VAR {
 					continue
@@ -1189,10 +1273,14 @@ func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]stri
 						if i >= len(vs.Names) {
 							continue
 						}
-						recordObtained(emitters, names, accessorPublished, pkgHandles, emissionSite{
+						site := emissionSite{
 							name:      dir + "." + vs.Names[i].Name,
 							framework: inFrameworkPackage || isCheckValue(value),
-						}, value)
+						}
+						if len(vs.Values) == len(vs.Names) && !site.framework {
+							site = reach.attribute(site)
+						}
+						recordObtained(emitters, names, accessorPublished, pkgHandles, site, value)
 					}
 				}
 			}
@@ -1208,7 +1296,537 @@ func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]stri
 		sites := emitters[name]
 		sort.Slice(sites, func(a, b int) bool { return sites[a].name < sites[b].name })
 	}
-	return declared, names, emitters, forwards, placements
+	return declared, names, emitters, forwards, placements, reach
+}
+
+// readModulePath returns the module path the go.mod at root declares, which is
+// what an import of one of this module's own packages is spelled against — and so
+// what the reference index needs to recognise a reference made through one.
+//
+// It reads the directive's own line rather than parsing the file, because the
+// directive is all it needs and the census depends on nothing beyond it. A file
+// that cannot be read, or declares no module, is fatal: without the path no
+// import can be matched, which is the silent failure [sentinelCensus] guards
+// against once the index has run.
+func readModulePath(t *testing.T, root string) string {
+	t.Helper()
+
+	path := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s for the module path the reference index matches imports against: %v", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "module" {
+			continue
+		}
+		if unquoted, uerr := strconv.Unquote(fields[1]); uerr == nil {
+			return unquoted
+		}
+		return fields[1]
+	}
+	t.Fatalf("%s declares no module directive, so the reference index has no path to match this module's "+
+		"imports against", path)
+	return ""
+}
+
+// hostReach is what [indexHostReach] reads out of a file set about the hosts the
+// census attributes sites to: the ones only checks reach, each beside the first
+// reference that does, and — for a host some check reaches that is not among them
+// — what holds it outside. Both are keyed as a site is named, the host's
+// directory and its name joined by a dot, so a site finds its entry by its own
+// name.
+type hostReach struct {
+	reachedFrom map[string]string
+	heldBy      map[string]string
+
+	// moduleImports is how many import specifications the index matched against
+	// the module path. It is carried so [sentinelCensus] can tell an index that
+	// matched none — every reference through an import then unread — from a tree
+	// that makes none, which a module whose packages import one another cannot be.
+	moduleImports int
+}
+
+// attribute returns site with what the reference rule says about its host: the
+// dispatch, with the reference that reaches it, where only checks reach the host;
+// outside, with what holds it, where a check reaches the host and something else
+// holds it; and unchanged where no check reaches the host at all.
+func (r hostReach) attribute(site emissionSite) emissionSite {
+	if from, only := r.reachedFrom[site.name]; only {
+		site.framework = true
+		site.reachedFrom = from
+		return site
+	}
+	site.heldBy = r.heldBy[site.name]
+	return site
+}
+
+// hostReference is one place a host is named: the file and line, and what the
+// reference sits in, which is the whole of what the rule reads.
+type hostReference struct {
+	file string
+	line int
+
+	// inCheck is set when the reference sits inside a package-level check value's
+	// literal. from is the host it sits in otherwise, and is empty where it sits
+	// in a declaration the rule does not follow — a method, a const or type
+	// declaration, an initializer several names share — which makes it a
+	// reference from outside every check.
+	inCheck bool
+	from    string
+
+	// where says what the reference sits in, for a report.
+	where string
+}
+
+func (r hostReference) String() string { return fmt.Sprintf("%s:%d, %s", r.file, r.line, r.where) }
+
+// hostDeclaration is what the index knows of a host before reading any reference
+// to it: the package clauses declaring it — more than one only across files a
+// build constraint separates — and whether its name is exported.
+type hostDeclaration struct {
+	packages map[string]bool
+	exported bool
+}
+
+// indexHostReach reads, over every file it is handed, what reaches each
+// package-level host the census attributes sites to, and answers which of those
+// hosts only checks reach.
+//
+// # The rule
+//
+// A package-level function without a receiver, or a package-level var whose
+// value is not a check, is REACHED ONLY BY CHECKS when it has at least one
+// reference and every reference sits inside a package-level [Check] value's
+// literal — its predicate or any other field — or inside another host already
+// reached only by checks, in the same package or another. Such a host raises only
+// because a check invoked it, so its sites belong to the dispatch. One reference
+// from anywhere else keeps it outside, because that reference is a path by which
+// the rule runs with no check involved. A value host is read by what reads it,
+// because that is where the value it obtains is raised — and so is whatever its
+// initializer calls, which runs once as the package is initialised and whose
+// result reaches a build only where the value is read.
+//
+// "A check" is read exactly as the census reads it for its own verdict, by
+// [isCheckValue] over a package-level var's value. A check literal written inside
+// a function body, or inside a slice of checks, is not a package-level check
+// value, so a reference inside one is read as sitting in whatever declaration
+// holds it.
+//
+// # What a reference is, found without resolving a type
+//
+//   - A bare identifier naming a host declared in the same directory under the
+//     same package clause, read from every file of that directory.
+//   - A qualified selector whose qualifier is an import of the host's package in
+//     that file. The import is recognised by its path — the module path joined
+//     with the host's directory relative to the module root — and an unaliased
+//     import's local name is that directory's package clause. The selected name is
+//     read whatever its case: compiling code cannot hold a selector naming another
+//     package's unexported identifier, so a branch refusing one would change no
+//     answer.
+//   - Called or not. A function taken as a value — a check's predicate field bound
+//     to a declared function, an entry in a table — is a reference, read by where
+//     it sits exactly as a call is. An instantiation of a generic function wraps
+//     the name in an index expression, and the walk reaches the name through it.
+//
+// A name after a dot whose qualifier is not an import is a field or a method,
+// never a host, and is not read. A reference is attributed to the declaration it
+// sits in: a function body to that function, a var value to that var. A method
+// body, a const or type declaration, and an initializer several names share are
+// declarations the rule does not follow, so a reference there is a reference from
+// outside every check.
+//
+// Test files are not read, and neither are fixtures under testdata or nested
+// modules: the file set is the census's own, whose criterion is recorded beside
+// [offFrameworkEmissionBlocks]. A test calling a helper is not a path by which the
+// product raises it. That this file set is the module's whole production source
+// is asserted rather than assumed, by [TestAssertedSentinelPopulationCoversTheModule].
+// A file the census cannot parse is skipped by [collectGoFiles]; such a file is
+// part of no build that succeeds, so no reference in it is one a working product
+// makes. Every file is read whatever build constraint it carries, so a reference
+// made only under one configuration counts under all of them, which is the
+// conservative direction.
+//
+// # Conservative by construction: a phantom may stay, a raise may not hide
+//
+// Every reading below errs toward keeping a host outside, because the two errors
+// differ in kind. A host kept outside that only checks reach is a phantom the
+// meter carries. A host moved inside that something else reaches is a real raise
+// outside the dispatch that the meter no longer shows, which is the one movement
+// it exists to refuse.
+//
+//   - A host with no reference at all stays outside. "Every reference is inside a
+//     check" is true of no references at all, and a declaration nothing reaches
+//     is not the dispatch.
+//   - A method is never a host. It is never a check, and what reaches a method is
+//     a question about the value it is called on, which this answers without
+//     types only by guessing.
+//   - A reference to itself, and any cycle of references, holds a host outside.
+//     Being reached only by checks is the LEAST fixed point over the references,
+//     so no host is ever the reason for its own admission.
+//   - A dot import of a package holds every host of that package outside. The bare
+//     names it lets another file write cannot be told from that file's own
+//     without resolving types, so the references through it cannot be read.
+//   - An exported host of a package another module can import — one with no
+//     internal element in its path and not a main package — stays outside. That
+//     module's references are in no file this reads.
+//   - A local, a parameter, a composite literal's key or any other identifier
+//     spelling a host's name is read as a reference to it, and so is a selector
+//     whose qualifier is a local shadowing an import's name. Outside a check that
+//     holds the host outside. Inside a check it adds a check-side reference, which
+//     cannot hide a raise: a misread reference only ever ADDS to a host's
+//     references and never removes a real one, so a real reference from outside a
+//     check still holds the host. What it can move is a host with no real
+//     reference at all, whose raise runs nowhere.
+//   - A reference from the framework's own package is read like any other: inside
+//     a check or not. That package's own sites are attributed by its address, but
+//     extending the address to what its functions reference would admit a helper a
+//     stage runner reaches, and plain functions everywhere call the stage runners.
+//
+// A function reached by a linker directive names its symbol inside a comment, and
+// this reader parses no comments; such a reference is outside what it can see.
+//
+// # Deterministic
+//
+// Files are read in path order and each host's references in file-then-line
+// order, so "the first reference" names the same place on every run, and nothing
+// here reports from map iteration order.
+func indexHostReach(files map[string]*ast.File, fset *token.FileSet, root, modulePath string) hostReach {
+	root = filepath.ToSlash(root)
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	// The hosts, and the package clauses each directory's files declare, are read
+	// before any reference: a reference is recognised by the host it names, and an
+	// unaliased import by the clause of the package it imports.
+	hosts := map[string]*hostDeclaration{}
+	clauses := map[string]map[string]bool{}
+	declare := func(key, clause string, exported bool) {
+		h, seen := hosts[key]
+		if !seen {
+			h = &hostDeclaration{packages: map[string]bool{}}
+			hosts[key] = h
+		}
+		h.packages[clause] = true
+		h.exported = h.exported || exported
+	}
+	for _, path := range paths {
+		file := files[path]
+		dir := filepath.ToSlash(filepath.Dir(path))
+		clause := file.Name.Name
+		if clauses[dir] == nil {
+			clauses[dir] = map[string]bool{}
+		}
+		clauses[dir][clause] = true
+		for _, decl := range file.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if d.Recv == nil {
+					declare(dir+"."+d.Name.Name, clause, d.Name.IsExported())
+				}
+			case *ast.GenDecl:
+				if d.Tok != token.VAR {
+					continue
+				}
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || len(vs.Values) != len(vs.Names) {
+						continue
+					}
+					for i, name := range vs.Names {
+						if !isCheckValue(vs.Values[i]) {
+							declare(dir+"."+name.Name, clause, name.IsExported())
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// importedDir maps an import path of this module to the directory it names,
+	// and reports false for any other path.
+	importedDir := func(importPath string) (string, bool) {
+		switch {
+		case importPath == modulePath:
+			return root, true
+		case strings.HasPrefix(importPath, modulePath+"/"):
+			return root + "/" + strings.TrimPrefix(importPath, modulePath+"/"), true
+		}
+		return "", false
+	}
+
+	refs := map[string][]hostReference{}
+	dotImported := map[string]string{}
+	moduleImports := 0
+	for _, path := range paths {
+		file := files[path]
+		dir := filepath.ToSlash(filepath.Dir(path))
+		clause := file.Name.Name
+
+		local := map[string]string{}
+		for _, spec := range file.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
+			target, ours := importedDir(importPath)
+			if !ours || clauses[target] == nil {
+				continue
+			}
+			moduleImports++
+			switch {
+			case spec.Name == nil:
+				for name := range clauses[target] {
+					local[name] = target
+				}
+			case spec.Name.Name == "_":
+			case spec.Name.Name == ".":
+				if _, seen := dotImported[target]; !seen {
+					p := fset.Position(spec.Pos())
+					dotImported[target] = fmt.Sprintf("%s:%d", filepath.ToSlash(p.Filename), p.Line)
+				}
+			default:
+				local[spec.Name.Name] = target
+			}
+		}
+
+		walk := func(node ast.Node, inCheck bool, from, where string) {
+			record := func(key string, pos token.Pos) {
+				p := fset.Position(pos)
+				refs[key] = append(refs[key], hostReference{
+					file:    filepath.ToSlash(p.Filename),
+					line:    p.Line,
+					inCheck: inCheck,
+					from:    from,
+					where:   where,
+				})
+			}
+			read := map[*ast.Ident]bool{}
+			ast.Inspect(node, func(n ast.Node) bool {
+				switch x := n.(type) {
+				case *ast.SelectorExpr:
+					read[x.Sel] = true
+					qualifier, ok := x.X.(*ast.Ident)
+					if !ok {
+						return true
+					}
+					target, imported := local[qualifier.Name]
+					if !imported {
+						return true
+					}
+					read[qualifier] = true
+					if _, isHost := hosts[target+"."+x.Sel.Name]; isHost {
+						record(target+"."+x.Sel.Name, x.Sel.Pos())
+					}
+				case *ast.Ident:
+					if read[x] {
+						return true
+					}
+					if h, isHost := hosts[dir+"."+x.Name]; isHost && h.packages[clause] {
+						record(dir+"."+x.Name, x.Pos())
+					}
+				}
+				return true
+			})
+		}
+
+		for _, decl := range file.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if d.Body == nil {
+					continue
+				}
+				if d.Recv != nil {
+					walk(d.Body, false, "", "in the method "+d.Name.Name)
+					continue
+				}
+				walk(d.Body, false, dir+"."+d.Name.Name, "in the body of "+d.Name.Name)
+			case *ast.GenDecl:
+				switch d.Tok {
+				case token.IMPORT:
+				case token.VAR:
+					for _, spec := range d.Specs {
+						vs, ok := spec.(*ast.ValueSpec)
+						if !ok {
+							continue
+						}
+						for i, value := range vs.Values {
+							switch {
+							case len(vs.Values) != len(vs.Names):
+								walk(value, false, "", "in an initializer several package-level names share")
+							case isCheckValue(value):
+								walk(value, true, "", "in the check "+vs.Names[i].Name)
+							default:
+								walk(value, false, dir+"."+vs.Names[i].Name, "in the value of "+vs.Names[i].Name)
+							}
+						}
+					}
+				default:
+					walk(d, false, "", "in a package-level "+d.Tok.String()+" declaration")
+				}
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(hosts))
+	for key := range hosts {
+		keys = append(keys, key)
+		sort.SliceStable(refs[key], func(a, b int) bool {
+			ra, rb := refs[key][a], refs[key][b]
+			if ra.file != rb.file {
+				return ra.file < rb.file
+			}
+			return ra.line < rb.line
+		})
+	}
+	sort.Strings(keys)
+
+	// disqualified names, per host, why no reading of its references can be taken
+	// as complete. A host absent from it is one whose references can be.
+	disqualified := map[string]string{}
+	for _, key := range keys {
+		dir := key[:strings.LastIndex(key, ".")]
+		if at, dot := dotImported[dir]; dot {
+			disqualified[key] = "the dot import of its package at " + at + ", whose bare names cannot be " +
+				"told from the importing file's own without resolving types"
+			continue
+		}
+		h := hosts[key]
+		if h.exported && !strings.Contains("/"+strings.TrimPrefix(dir, root)+"/", "/internal/") &&
+			!(len(h.packages) == 1 && h.packages["main"]) {
+			disqualified[key] = "its export from a package another module can import, whose references are " +
+				"in no file this census reads"
+		}
+	}
+
+	// The least fixed point: a host joins when every reference it has sits in a
+	// check or in a host that has already joined. Starting from none and only
+	// ever adding is what keeps a cycle, a self-reference included, outside.
+	checkOnly := map[string]bool{}
+	byCheck := func(r hostReference) bool { return r.inCheck || checkOnly[r.from] }
+	for changed := true; changed; {
+		changed = false
+		for _, key := range keys {
+			if _, excluded := disqualified[key]; excluded || checkOnly[key] || len(refs[key]) == 0 {
+				continue
+			}
+			all := true
+			for _, r := range refs[key] {
+				if !byCheck(r) {
+					all = false
+					break
+				}
+			}
+			if all {
+				checkOnly[key] = true
+				changed = true
+			}
+		}
+	}
+
+	// A host a check reaches along any chain of references, whether or not it
+	// joined: the set a reader needs named, because it is where the rule either
+	// moved a host or refused to.
+	reached := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, key := range keys {
+			if reached[key] {
+				continue
+			}
+			for _, r := range refs[key] {
+				if r.inCheck || reached[r.from] {
+					reached[key] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+
+	out := hostReach{reachedFrom: map[string]string{}, heldBy: map[string]string{}, moduleImports: moduleImports}
+	for _, key := range keys {
+		switch {
+		case checkOnly[key]:
+			for _, r := range refs[key] {
+				if byCheck(r) {
+					out.reachedFrom[key] = r.String()
+					break
+				}
+			}
+		case reached[key]:
+			if why, held := disqualified[key]; held {
+				out.heldBy[key] = why
+				continue
+			}
+			for _, r := range refs[key] {
+				if byCheck(r) {
+					continue
+				}
+				if r.from == key {
+					out.heldBy[key] = r.String() + ", which is its own: a host reached through itself is " +
+						"never admitted"
+				} else {
+					out.heldBy[key] = r.String()
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+
+// reportReferenceAttribution names every site whose verdict the reference rule
+// decided, and every site a check reaches that the rule held outside, each beside
+// the reference or the reason that decided it.
+//
+// Both lists are uncapped and sorted. An attribution a reader cannot see in full
+// cannot be checked against the tree, and these are the two places the census's
+// verdict rests on a reading of references rather than on a declaration's own
+// shape — the first says which rules moved into the dispatch and why, the second
+// which were reached from a check and stayed out, and by what.
+func reportReferenceAttribution(t *testing.T, emitters map[string][]emissionSite) {
+	t.Helper()
+
+	reachedSites := map[string][]string{}
+	heldSites := map[string][]string{}
+	for sentinel, sites := range emitters {
+		for _, site := range sites {
+			switch {
+			case site.reachedFrom != "":
+				key := site.name + ", reached only from checks, first " + site.reachedFrom
+				reachedSites[key] = append(reachedSites[key], sentinel)
+			case site.heldBy != "":
+				key := site.name + ", reached from a check and held outside by " + site.heldBy
+				heldSites[key] = append(heldSites[key], sentinel)
+			}
+		}
+	}
+	render := func(sites map[string][]string) []string {
+		out := make([]string, 0, len(sites))
+		for key, sentinels := range sites {
+			out = append(out, key+" — naming "+strings.Join(sortedNames(sentinels), " and "))
+		}
+		return sortedNames(out)
+	}
+
+	reached, held := render(reachedSites), render(heldSites)
+	t.Logf("attribution by reference: %d site(s) belong to the dispatch because only checks reach them, and "+
+		"%d site(s) a check reaches are held outside it. Each is named below, uncapped, beside the "+
+		"reference or the reason that decided it, so the rule's effect can be checked against the tree "+
+		"rather than taken.", len(reached), len(held))
+	if len(reached) > 0 {
+		t.Logf("reached only from checks, so attributed to the dispatch: %s", strings.Join(reached, "; "))
+	}
+	if len(held) > 0 {
+		t.Logf("reached from a check and held outside the dispatch, each by the first reference from outside "+
+			"every check or by the reason no reference to it can be read as complete: %s",
+			strings.Join(held, "; "))
+	}
 }
 
 // placementDeclaration is what one registration says about where the rule its
