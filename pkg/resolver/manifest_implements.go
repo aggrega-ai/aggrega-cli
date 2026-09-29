@@ -133,6 +133,98 @@ func manifestMappingSatisfiedByAncestry(impl string, ancestry []string) bool {
 	return false
 }
 
+// refusedMapping is one Manifest mapping entry the mapping-consistency rule
+// refuses, as the values the rule judged it by: the key the entry is declared
+// under, the reference it maps to, what that recipe declares it implements, and
+// the tier it is written under.
+type refusedMapping struct {
+	key        string
+	reference  string
+	implements string
+	tier       string
+}
+
+// manifestMappingRefused reports the mapping entry a subject names when the
+// mapping-consistency rule refuses it, and false when the rule passes the entry
+// over or finds it consistent.
+//
+// It is the rule, stated once, and two checks ask it. The one reporting a mismatch
+// raises on a refusal whose pins are well formed, and the one reporting a
+// malformed pin raises on a refusal whose key or implements carries one; each
+// passes over exactly what the other raises on, so an entry is reported once and
+// as the condition the author has to fix. A second statement of the rule for
+// either check would agree on the day it was written and be free to drift the day
+// either moved, and the drift would be an entry reported twice or not at all.
+//
+// It takes the three facts it reads as the view's own accessors rather than as the
+// view. A check handing its view to a helper leaves the facts it reads outside its
+// own body, where the reading that holds a check's declared view against the facts
+// its predicate reads cannot follow them; an accessor handed on is still named on
+// the view at the call, so each check calling this states exactly the facts it
+// reads.
+func manifestMappingRefused(
+	s constraint.DocumentMappingEntrySubject,
+	mappingReference func(document, tier, axis, key string) (string, bool),
+	mappedImplements func(tier, reference string) (string, bool),
+	mappedAncestry func(componentType string) ([]string, bool),
+) (refusedMapping, bool) {
+	// The name axis is passed over, and that bound is the rule's rather than an
+	// omission. A name-axis entry keys an instance NAME, which the recipe's
+	// implements says nothing about: a Recipe declares the type it implements and
+	// never which instance may use it, so a comparison there would refuse every
+	// instance whose name differs from a type — which is every one of them. The
+	// type axis is where the two values are about the same thing.
+	if s.MappingAxis() != constraint.MappingAxisType {
+		return refusedMapping{}, false
+	}
+	reference, declared := mappingReference(
+		s.SourceFile(), s.MappingTier(), s.MappingAxis(), s.MappingKey())
+	if !declared {
+		return refusedMapping{}, false
+	}
+	// An entry whose reference resolves to nothing is passed over rather than
+	// reported. A missing or unresolvable recipe is a resolution concern owned by
+	// the path that resolves references, which surfaces it with richer context —
+	// including, for an entity skipped at a tolerant load, a replay of WHY it went
+	// missing. Reporting "not found" here too would preempt that better diagnostic,
+	// so this rule is the found-but-mismatched reading only.
+	implements, resolved := mappedImplements(s.MappingTier(), reference)
+	if !resolved {
+		return refusedMapping{}, false
+	}
+	key := s.MappingKey()
+	if manifestMappingConsistent(implements, key) {
+		return refusedMapping{}, false
+	}
+	// Feature mappings are judged on the direct comparison alone. A Feature's
+	// extends composes its pillars rather than inheriting them, so whether a
+	// FeatureRecipe written against a base serves an extending Feature is a
+	// separate question this rule does not answer — and resolving an ancestry in
+	// order to accept a mapping on it would be answering it.
+	if s.MappingTier() != constraint.MappingTierFeatures {
+		// Ancestry is read only after the direct comparison has failed, so a
+		// mapping that matches outright costs no catalog walk at all.
+		bases, walkable := mappedAncestry(key)
+		// A chain that did not walk leaves the mapping unjudged rather than
+		// refused: the entry may be perfectly well authored, and reporting it as
+		// the fault would send the author to the wrong file. The walk's own fault
+		// is reported by whatever holds the resolution, once, so raising here as
+		// well would report one defect twice.
+		if !walkable {
+			return refusedMapping{}, false
+		}
+		if manifestMappingSatisfiedByAncestry(implements, bases) {
+			return refusedMapping{}, false
+		}
+	}
+	return refusedMapping{
+		key:        key,
+		reference:  reference,
+		implements: implements,
+		tier:       s.MappingTier(),
+	}, true
+}
+
 // mappedRecipeImplements resolves a Manifest mapping value against the catalog
 // and returns what the recipe it names declares it implements, plus whether the
 // reference resolved at all.
@@ -190,15 +282,25 @@ func componentAncestryOf(catalog CatalogLookup, componentType string) ([]string,
 
 // ManifestImplementsConsistencyFaults reports every mapping entry in a Manifest
 // whose mapped recipe declares an implements the entry's own key does not match,
-// one fault per entry, in the order the Manifest declares them.
+// one fault per entry, in the order the Manifest declares them. An entry whose key,
+// or whose recipe's implements, carries a malformed version pin is reported as that
+// malformation rather than as a mismatch.
 //
-// It presents the Manifest beside the catalog and names the rule rather than
-// walking the mapping table itself: the rule is declared in this package as a
-// constraint, so where it runs follows from the facts it reads, and the site each
-// fault is positioned at is supplied by the framework rather than assembled here.
-// The entries are read back off the presentation rather than off the Manifest
-// beside it — they are one of the facts the presentation states, so reading them
-// anywhere else would be answering from a second source that happens to agree.
+// It presents the Manifest beside the catalog and names the rules rather than
+// judging the mapping table itself: the mismatch and the malformed pin are two
+// rules declared in this package as constraints, so where they run follows from
+// the facts they read, and the site each fault is positioned at is supplied by the
+// framework rather than assembled here. The entries are read back off the
+// presentation rather than off the Manifest beside it — they are one of the facts
+// the presentation states, so reading them anywhere else would be answering from a
+// second source that happens to agree.
+//
+// Each entry is presented to both rules before the next one is, and that is what
+// keeps the findings in the order the Manifest declares its entries. The two rules
+// ask one predicate and part on its answer — each passes over exactly what the
+// other raises on — so one entry yields at most one finding, and asking both about
+// one entry at a time interleaves them by construction. Walking the whole table
+// once per rule would report every mismatch ahead of every malformed pin.
 //
 // It takes the resolved Manifest path and hands it to the presentation, which is
 // what makes every fault name the file the author has to open. A mapping entry is
@@ -206,13 +308,14 @@ func componentAncestryOf(catalog CatalogLookup, componentType string) ([]string,
 // own coordinates says where it was written; the file travels from whatever
 // resolved the Manifest, and every caller of this holds it.
 //
-// A chain that cannot be walked is reported AHEAD of the mismatches, once per
-// offending type, naming the walk's own fault. The rule reads that outcome and
-// never produces it — the presentation keeps the failure and this reports it —
-// which is the same discipline the annotation-binding resolution applies, and it
-// exists for the same reason: a rule reading a bare absence cannot tell a type
-// with no ancestry from one whose chain did not walk, so the failure is reported
-// where the resolving happened rather than inferred by every reader.
+// A chain that cannot be walked is reported AHEAD of the mismatches and the
+// malformed pins, once per offending type, naming the walk's own fault. The rule
+// reads that outcome and never produces it — the presentation keeps the failure
+// and this reports it — which is the same discipline the annotation-binding
+// resolution applies, and it exists for the same reason: a rule reading a bare
+// absence cannot tell a type with no ancestry from one whose chain did not walk,
+// so the failure is reported where the resolving happened rather than inferred by
+// every reader.
 //
 // It returns findings rather than a joined error because the verdict is a
 // caller's to reach: a surface that produces a deployable artifact halts on a
@@ -229,21 +332,31 @@ func ManifestImplementsConsistencyFaults(
 		return nil
 	}
 	presented := newManifestCatalogView(manifestPath, manifest, catalog)
-	objections := constraint.RunOnDocumentMappingEntries(
-		manifestPath,
-		presented.ManifestRecipeMappingEntries(manifestPath),
-		constraint.CatalogView(presented),
-		manifestMappingRecipeImplementsTheMappedType,
-	)
+	view := constraint.CatalogView(presented)
+	entries := presented.ManifestRecipeMappingEntries(manifestPath)
 
+	var findings []error
+	for i := range entries {
+		entry := entries[i : i+1]
+		for _, o := range constraint.RunOnDocumentMappingEntries(
+			manifestPath, entry, view, manifestMappingRecipeImplementsTheMappedType,
+		) {
+			findings = append(findings, manifestImplementsFaultFrom(o))
+		}
+		for _, o := range constraint.RunOnDocumentMappingEntries(
+			manifestPath, entry, view, manifestMappingPinsAreWellFormed,
+		) {
+			findings = append(findings, mappingPinFaultFrom(o))
+		}
+	}
+
+	// The chain faults are read only once every entry has been judged, because an
+	// ancestry is resolved on the ask and the last entry may be the first to ask.
 	var faults []error
 	for _, f := range presented.unwalkableAncestries() {
 		faults = append(faults, ancestryWalkFaultFrom(presented, manifestPath, f))
 	}
-	for _, o := range objections {
-		faults = append(faults, manifestImplementsFaultFrom(o))
-	}
-	return faults
+	return append(faults, findings...)
 }
 
 // ancestryWalkFaultFrom renders one type whose extends chain did not walk into
@@ -279,8 +392,8 @@ func ancestryWalkFaultFrom(
 				"so the mapping cannot be judged", failure.ComponentType, reference))
 }
 
-// manifestImplementsFaultFrom renders one objection into the failure shape this
-// rule's callers already read.
+// manifestImplementsFaultFrom renders one objection the mismatch rule raised into
+// the failure shape this rule's callers already read.
 //
 // The sentence is composed here rather than taken from the framework's own
 // renderer, and the reason is that this rule's wording is published: the
@@ -304,11 +417,6 @@ func ancestryWalkFaultFrom(
 // contract between the two and is asserted rather than assumed: a rule and the
 // conversion that renders it are two halves of one sentence, and a silent
 // mismatch would produce a message with the values in the wrong slots.
-//
-// An objection whose key or implements carries a malformed version pin is
-// rendered as that malformation instead of as a mismatch, at the same file: the
-// pin names no version, so the two sides could never have matched, and the
-// author's fix is the pin's text rather than either side's version.
 func manifestImplementsFaultFrom(o constraint.Objection) error {
 	detail := o.Detail()
 	if len(detail) != manifestImplementsDetailCount {
@@ -321,12 +429,6 @@ func manifestImplementsFaultFrom(o constraint.Objection) error {
 	key := detail[manifestImplementsDetailKey]
 	reference := detail[manifestImplementsDetailReference]
 	implements := detail[manifestImplementsDetailImplements]
-
-	if values, malformed := mappingPinFault(key, reference, implements, detail[manifestImplementsDetailTier]); malformed {
-		return cerrors.Wrap(types.ErrMalformedVersionPin(), manifestCategory(),
-			cerrors.SourceLocation{File: o.SourceFile()},
-			cerrors.ComposeMessage(types.ErrMalformedVersionPin(), values, types.VersionPinForms))
-	}
 
 	values := []string{
 		fmt.Sprintf("manifest mapping %q -> %q", key, reference),
@@ -350,35 +452,103 @@ func manifestImplementsFaultFrom(o constraint.Objection) error {
 		cerrors.ComposeMessage(ErrManifestImplementsMismatch(), values, ""))
 }
 
-// mappingPinFault reports the values of the malformed version pin the mapping key
-// or the mapped recipe's spec.implements carries, and true, the key first because
-// it is the value the Manifest being judged authored; false when neither pin is
-// malformed.
+// mappingPinAtFault reports which side of a refused mapping entry carries a
+// malformed version pin — the reference carrying it, and the side it sits on — and
+// true; false when neither pin is malformed. The key is judged first, because it is
+// the value the Manifest being judged authored.
 //
-// It is asked only of an entry the rule already objected to, so it never turns a
-// consistent mapping into a failure. What it changes is the explanation: a
-// malformed pin names no version, so no key and no implements could be
-// consistent with it, and "does not match" would send the author comparing two
-// versions when the fault is one pin's text. The grammar is the one
-// types.ParseVersionPin states, read here rather than restated.
-func mappingPinFault(key, reference, implements, tier string) ([]string, bool) {
+// It is the one judgement of whether a refusal is a malformed pin, and both
+// readings of a refused entry ask it: the mismatch rule passes over what it
+// reports, and the malformed-pin rule raises on it. It is asked only of an entry
+// the mapping-consistency rule refuses, so it never turns a consistent mapping into
+// a failure — an identical key and implements are consistent even when both carry
+// the same malformed pin. What it changes is the explanation: a malformed pin names
+// no version, so no key and no implements could be consistent with it, and "does
+// not match" would send the author comparing two versions when the fault is one
+// pin's text. The grammar is the one types.ParseVersionPin states, read here rather
+// than restated.
+func mappingPinAtFault(key, implements string) (pinned, side string, malformed bool) {
+	if types.ParseVersionPin(key).Fault() != nil {
+		return key, mappingPinSideKey, true
+	}
+	if types.ParseVersionPin(implements).Fault() != nil {
+		return implements, mappingPinSideImplements, true
+	}
+	return "", "", false
+}
+
+// The two sides of a mapping entry a malformed pin can sit on, as the
+// malformed-pin rule names them in its detail. They are the author's own words for
+// the two values: the key written in the Manifest, and the field the mapped recipe
+// declares.
+const (
+	mappingPinSideKey        = "mapping key"
+	mappingPinSideImplements = "spec.implements"
+)
+
+// mappingPinFaultFrom renders one objection the malformed-pin rule raised into the
+// failure shape the mapping-consistency rule's callers already read, at the file
+// the framework attributed the entry to.
+//
+// The message is the one the halting-conditions reference describes for a mapping
+// judged against its recipe's implements: the mapping entry and the side of it that
+// carries the pin come ahead of the malformation's own values, and the three forms a
+// pin takes are the advice. The side is named because the two sides are written in
+// two documents — the key in the Manifest, the implements in the recipe it maps to.
+//
+// The malformation's own values are read from the one grammar rather than carried
+// in the detail and reassembled here, so they have one spelling wherever the fault
+// is reported. That the grammar agrees the pin is malformed is asserted rather than
+// assumed, as the detail order is: the rule and this conversion are two halves of
+// one sentence, and a silent disagreement would report a pin as malformed with no
+// malformation to name.
+func mappingPinFaultFrom(o constraint.Objection) error {
+	detail := o.Detail()
+	if len(detail) != mappingPinDetailCount {
+		panic(fmt.Sprintf(
+			"resolver: the malformed-pin rule supplied %d value(s) and this conversion composes its "+
+				"sentence from %d; the rule and its conversion are two halves of one sentence, so "+
+				"change them together",
+			len(detail), mappingPinDetailCount))
+	}
+	pinned := detail[mappingPinDetailPinned]
+	key := detail[mappingPinDetailKey]
+	reference := detail[mappingPinDetailReference]
+
+	pe, malformed := types.ParseVersionPin(pinned).Malformed()
+	if !malformed {
+		panic(fmt.Sprintf(
+			"resolver: the malformed-pin rule raised over %q, whose pin the grammar accepts; the rule "+
+				"and its conversion read one grammar, so they have come to disagree", pinned))
+	}
+
 	mapping := fmt.Sprintf("manifest mapping %q -> %q", key, reference)
 	recipe := "recipe"
-	if tier == constraint.MappingTierFeatures {
+	if detail[mappingPinDetailTier] == constraint.MappingTierFeatures {
 		mapping = fmt.Sprintf("manifest feature mapping %q -> %q", key, reference)
 		recipe = "featurerecipe"
 	}
-	if pe, malformed := types.ParseVersionPin(key).Malformed(); malformed {
-		return append([]string{mapping, "in the mapping key"}, pe.Values()...), true
+	var where string
+	switch side := detail[mappingPinDetailSide]; side {
+	case mappingPinSideKey:
+		where = "in the mapping key"
+	case mappingPinSideImplements:
+		where = "in the " + recipe + "'s spec.implements"
+	default:
+		panic(fmt.Sprintf(
+			"resolver: the malformed-pin rule named the side %q, which this conversion does not "+
+				"compose; the rule and its conversion are two halves of one sentence, so change them "+
+				"together", side))
 	}
-	if pe, malformed := types.ParseVersionPin(implements).Malformed(); malformed {
-		return append([]string{mapping, "in the " + recipe + "'s spec.implements"}, pe.Values()...), true
-	}
-	return nil, false
+
+	values := append([]string{mapping, where}, pe.Values()...)
+	return cerrors.Wrap(types.ErrMalformedVersionPin(), manifestCategory(),
+		cerrors.SourceLocation{File: o.SourceFile()},
+		cerrors.ComposeMessage(types.ErrMalformedVersionPin(), values, types.VersionPinForms))
 }
 
-// The order the mapping-consistency rule supplies its values in, named so the
-// conversion above reads them by name rather than by position at the call site.
+// The order the mismatch rule supplies its values in, named so the conversion
+// above reads them by name rather than by position at the call site.
 //
 // They are positions and not keys because that is what an objection's detail is:
 // an ordered list of values whose meaning belongs to the rule that raised them.
@@ -391,4 +561,16 @@ const (
 	manifestImplementsDetailImplements
 	manifestImplementsDetailTier
 	manifestImplementsDetailCount
+)
+
+// The order the malformed-pin rule supplies its values in, named for the reason
+// the mismatch rule's are: the rule raises in this order, the conversion reads in
+// this order, and the count is what makes a divergence loud.
+const (
+	mappingPinDetailPinned = iota
+	mappingPinDetailSide
+	mappingPinDetailKey
+	mappingPinDetailReference
+	mappingPinDetailTier
+	mappingPinDetailCount
 )

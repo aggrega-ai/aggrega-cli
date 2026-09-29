@@ -17,6 +17,13 @@ import (
 // reader looking for either would find both. The two also differ in what they
 // read — the shape rule needs nothing looked up, this one needs the catalog — so
 // they do not even share a stage.
+//
+// It shares its rule, though not its file, with the reading over a malformed pin
+// declared in checks_manifest_mapping_pin.go. Both ask manifestMappingRefused
+// whether the mapping-consistency rule refuses an entry, and they part on what the
+// refusal is: a refusal whose key and implements are well-formed pins is a
+// mismatch and is reported here, and one whose key or implements carries a
+// malformed pin is reported there.
 var manifestMappingRecipeImplementsTheMappedType = constraint.Check[
 	constraint.CatalogView,
 	constraint.DocumentMappingEntrySubject,
@@ -27,55 +34,17 @@ var manifestMappingRecipeImplementsTheMappedType = constraint.Check[
 		v constraint.CatalogView,
 		s constraint.DocumentMappingEntrySubject,
 	) []constraint.Objection {
-		// The name axis is passed over, and that bound is the rule's rather than
-		// an omission. A name-axis entry keys an instance NAME, which the recipe's
-		// implements says nothing about: a Recipe declares the type it implements
-		// and never which instance may use it, so a comparison there would refuse
-		// every instance whose name differs from a type — which is every one of
-		// them. The type axis is where the two values are about the same thing.
-		if s.MappingAxis() != constraint.MappingAxisType {
+		refused, ok := manifestMappingRefused(s,
+			v.ManifestRecipeMappingReference, v.MappedRecipeImplements, v.MappedTypeExtendsAncestry)
+		if !ok {
 			return nil
 		}
-		reference, declared := v.ManifestRecipeMappingReference(
-			s.SourceFile(), s.MappingTier(), s.MappingAxis(), s.MappingKey())
-		if !declared {
+		// A refusal whose key or implements carries a malformed pin is passed over
+		// here and reported by the reading over the pin: the pin names no version,
+		// so the two sides could never have matched, and "does not match" would
+		// send the author comparing versions when the fix is the pin's text.
+		if _, _, malformed := mappingPinAtFault(refused.key, refused.implements); malformed {
 			return nil
-		}
-		// An entry whose reference resolves to nothing is passed over rather than
-		// reported. A missing or unresolvable recipe is a resolution concern owned
-		// by the path that resolves references, which surfaces it with richer
-		// context — including, for an entity skipped at a tolerant load, a replay
-		// of WHY it went missing. Reporting "not found" here too would preempt
-		// that better diagnostic, so this rule is the found-but-mismatched reading
-		// only.
-		implements, resolved := v.MappedRecipeImplements(s.MappingTier(), reference)
-		if !resolved {
-			return nil
-		}
-		key := s.MappingKey()
-		if manifestMappingConsistent(implements, key) {
-			return nil
-		}
-		// Feature mappings are judged on the direct comparison alone. A Feature's
-		// extends composes its pillars rather than inheriting them, so whether a
-		// FeatureRecipe written against a base serves an extending Feature is a
-		// separate question this rule does not answer — and resolving an ancestry
-		// in order to accept a mapping on it would be answering it.
-		if s.MappingTier() != constraint.MappingTierFeatures {
-			// Ancestry is read only after the direct comparison has failed, so a
-			// mapping that matches outright costs no catalog walk at all.
-			bases, walkable := v.MappedTypeExtendsAncestry(key)
-			// A chain that did not walk leaves the mapping unjudged rather than
-			// refused: the entry may be perfectly well authored, and reporting it
-			// as the fault would send the author to the wrong file. The walk's own
-			// fault is reported by whatever holds the resolution, once, so raising
-			// here as well would report one defect twice.
-			if !walkable {
-				return nil
-			}
-			if manifestMappingSatisfiedByAncestry(implements, bases) {
-				return nil
-			}
 		}
 		// The detail leads with the mapped key, which is what the registered
 		// wording is about and so carries no caption. What the entry maps to, what
@@ -86,10 +55,10 @@ var manifestMappingRecipeImplementsTheMappedType = constraint.Check[
 		// in manifest_implements.go composes from this order, and it is the one
 		// place that grammar lives.
 		return []constraint.Objection{s.RaiseWith(ErrManifestImplementsMismatch(),
-			constraint.Uncaptioned(key),
-			constraint.Captioned("maps to", reference),
-			constraint.Captioned("whose spec.implements is", implements),
-			constraint.Captioned("written under mappings", s.MappingTier()),
+			constraint.Uncaptioned(refused.key),
+			constraint.Captioned("maps to", refused.reference),
+			constraint.Captioned("whose spec.implements is", refused.implements),
+			constraint.Captioned("written under mappings", refused.tier),
 		)}
 	},
 }
