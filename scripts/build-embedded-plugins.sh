@@ -12,12 +12,20 @@
 # The build is reproducible per commit. Go guests use GOWORK=off, -trimpath,
 # -buildid=, -buildvcs=false, and gzip -n to strip build-path, build-id, and
 # ambient VCS stamps; rust guests use --remap-path-prefix, -C strip=symbols,
-# CARGO_INCREMENTAL=0, and gzip -n for the analogous effect. In both cases the
-# compiler version and short commit are injected explicitly (via -ldflags -X for
-# go, via the AGGREGA_VERSION and AGGREGA_COMMIT compile-time environment
-# variables for rust), so the uncompressed guest digest is deterministic for a
-# given commit — identical source at the same commit yields identical bytes, and
-# the digest advances only when the source or the commit does.
+# CARGO_INCREMENTAL=0, and gzip -n for the analogous effect. The rust remap
+# (rust_guest_flags below) covers every directory a rust guest would otherwise
+# name: the directory holding this module and the kits beside it, the cargo
+# home, and the toolchain's standard-library sources, so a guest carries no path
+# of the machine that built it. In both cases the compiler version and short
+# commit are injected explicitly (via -ldflags -X for go, via the
+# AGGREGA_VERSION and AGGREGA_COMMIT compile-time environment variables for
+# rust), so the uncompressed guest digest is deterministic for a given commit —
+# identical source at the same commit yields identical bytes, and the digest
+# advances only when the source or the commit does. For a rust guest this holds
+# for builds in one directory: cargo derives the identity of a path dependency
+# outside the crate's own workspace, such as the kits beside this module, from
+# its absolute location, and that identity reaches the guest's bytes, so the
+# same commit built in another directory yields a different digest.
 #
 # Each embedded guest registers under a digest-free repository reference
 # (oci://hub.aggrega.ai/plugin/{socket}/{name}); the resolution tests derive the
@@ -67,6 +75,67 @@ build_go() {
   compress_and_describe "$name" "$wasm" "$embed"
 }
 
+# rust_guest_flags WORKSPACE — print, encoded for CARGO_ENCODED_RUSTFLAGS (one
+# flag per field, separated by the unit separator), the rustflags a rust guest
+# is compiled with, for the crate in the working directory.
+#
+# A rust guest keeps the source path of every panic location it can report — in
+# its own code, its dependencies and the standard library — as a string in the
+# .wasm. Each directory those paths start in is remapped to a fixed name:
+#
+#   WORKSPACE, the directory holding this module and the     .
+#     kits its crates reference beside it
+#   the cargo home (CARGO_HOME, or ~/.cargo)                  cargo-home
+#   the toolchain's standard-library sources                  /rustc/<commit-hash>
+#
+# The last name is the one the toolchain's prebuilt standard library already
+# carries, so the bytes do not depend on whether the rust-src component is
+# installed. rustup selects the toolchain from the working directory, so the
+# sysroot and commit are read from the rustc that will compile this crate.
+#
+# rustc applies the LAST --remap-path-prefix whose prefix matches a path, so
+# WORKSPACE is given first: a checkout straight under a home directory contains
+# the cargo home and the toolchain, and their names must win.
+#
+# CARGO_ENCODED_RUSTFLAGS is read by cargo in preference to RUSTFLAGS and is not
+# split on spaces, so a directory whose name holds a space is remapped whole. A
+# caller's own flags — CARGO_ENCODED_RUSTFLAGS when it is set, otherwise
+# RUSTFLAGS — are kept and come first, so a caller can still add a flag but can
+# neither bring a path back nor undo the symbol strip. While either variable is
+# set, cargo reads no rustflags from a configuration file.
+#
+# The plugins repository's rust guest builds carry the same remap in their own
+# lib/build-paths.sh. The copy is deliberate: each repository builds from its
+# own checkout alone, so neither sources a file from the other.
+rust_guest_flags() {
+  local workspace="$1"
+  local rustc="${RUSTC:-rustc}" sysroot version line commit=""
+  if ! sysroot="$("$rustc" --print sysroot)" || ! version="$("$rustc" -vV)"; then
+    echo "build-embedded-plugins: $rustc did not report its sysroot and version from $PWD" >&2
+    return 1
+  fi
+  while IFS= read -r line; do
+    case "$line" in "commit-hash: "*) commit="${line#commit-hash: }" ;; esac
+  done <<< "$version"
+
+  local IFS=$'\x1f' flags=()
+  if [ -n "${CARGO_ENCODED_RUSTFLAGS+set}" ]; then
+    if [ -n "$CARGO_ENCODED_RUSTFLAGS" ]; then
+      read -r -a flags <<< "$CARGO_ENCODED_RUSTFLAGS"
+    fi
+  elif [ -n "${RUSTFLAGS:-}" ]; then
+    IFS=' ' read -r -a flags <<< "$RUSTFLAGS"
+  fi
+  flags+=(
+    "--remap-path-prefix=$workspace=."
+    "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=cargo-home"
+    "--remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/${commit:-unknown}"
+    "-Cstrip=symbols"
+  )
+  # "${flags[*]}" joins with the first character of IFS, the unit separator.
+  printf '%s' "${flags[*]}"
+}
+
 # build_rust NAME SOURCEPATH — compile the wasm32-wasip1 crate at SOURCEPATH,
 # gzip it to the embed path, and extract its describe() descriptor. The built
 # artifact name is the crate directory basename with dashes mapped to
@@ -78,18 +147,22 @@ build_go() {
 # never from --manifest-path: run from elsewhere, a crate that pins its own
 # toolchain is silently compiled by whichever toolchain the invoking directory
 # selects, and a crate whose dependencies need the pinned one then fails to
-# resolve. The path-remap prefix stays anchored to the module root so the
-# reproducibility stamping is unchanged by where cargo runs.
+# resolve. The rustflags are computed there too, so the standard-library remap
+# names the toolchain that compiles the crate; the workspace prefix is the
+# physical parent of the module root, where cargo resolves the kits, so it is
+# unchanged by where cargo runs.
 build_rust() {
   local name="$1" crate="$2"
-  local embed="$EMBED_DIR/$name.wasm.gz" root="$PWD"
+  local embed="$EMBED_DIR/$name.wasm.gz" workspace
+  workspace="$(cd .. && pwd -P)"
   local built="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
   echo "=== build $name (rust: cargo --target wasm32-wasip1) ==="
   (
     cd "$crate" || exit 1
+    rustflags="$(rust_guest_flags "$workspace")" || exit 1
     CARGO_INCREMENTAL=0 \
     AGGREGA_VERSION="$_ver" AGGREGA_COMMIT="$_sha" \
-    RUSTFLAGS="--remap-path-prefix=$root=. -C strip=symbols" \
+    CARGO_ENCODED_RUSTFLAGS="$rustflags" \
       cargo build --release --target wasm32-wasip1
   )
   compress_and_describe "$name" "$built" "$embed"
