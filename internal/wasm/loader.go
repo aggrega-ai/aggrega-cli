@@ -123,7 +123,7 @@ type Loader struct {
 	// every Plugin this Loader constructs, so the expensive compilation of
 	// a large guest amortizes over a build's many per-node loads. Nil — the
 	// zero-value Loader — leaves the runtime at its default configuration,
-	// compiling each load independently, exactly as before. The cache
+	// so each load compiles the guest on a runtime of its own. The cache
 	// memoizes only compiled code, a pure function of the guest bytes, so it
 	// cannot alter output and each load still yields a fresh, isolated
 	// Plugin instance. A non-nil cache also lets every load of a guest in the
