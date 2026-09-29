@@ -47,7 +47,7 @@ import (
 // broken. Validation is not, because a validate request is told which
 // Release to act on and never goes looking for one.
 func TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 	write := func(name, content string) {
@@ -92,6 +92,7 @@ spec:
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -191,7 +192,7 @@ func diagnosticPublishedFor(msg map[string]any, file, wantText string) bool {
 }
 
 func TestNegativeCorpusServe_EnvelopeDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -263,6 +264,7 @@ spec:
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -426,6 +428,7 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 	}
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -488,7 +491,7 @@ spec:
 // its own sake — not only when it is the one the client is working against,
 // which is the case a workspace holding two Releases makes concrete.
 func TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	badRelease := `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -543,7 +546,7 @@ spec:
 // envelope diagnostic on its file. Red today (catalog entities are never
 // a per-file validate subject); green with the per-file leg.
 func TestNegativeCorpusServe_CatalogComponentGetsDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	comp := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -570,7 +573,7 @@ spec:
 // produces ZERO envelope diagnostics — the daemon never lint-bombs
 // foreign YAML.
 func TestNegativeCorpusServe_ForeignYAMLNoEnvelopeDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	chartTemplate := `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -600,7 +603,7 @@ spec:
 // parameter must still surface — proving envelope-clean does not
 // short-circuit Tier-4.
 func TestNegativeCorpusServe_CleanAggregateStillTier4(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	t.Parallel()
 	agg := `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -711,7 +714,7 @@ spec:
 // the editor BUFFER. Red before this leg: the classifier skipped it; green
 // now.
 func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	badConfigBuffer := "workspace:\noffline: \"notabool\"\n"
 	// No Release named: the config classifies by its fixed, unique filename,
 	// which no Release participates in.
@@ -732,7 +735,7 @@ func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
 // all and this row would report an absence that says nothing about the
 // filename rule.
 func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	badLockfileBuffer := "version: 1\nrelease: 123\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer, "release.yaml")
 	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
@@ -757,7 +760,7 @@ func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
 // reason — so the Release named here is load-bearing and is not to be
 // dropped as an unused argument.
 func TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	t.Parallel()
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n", "release.yaml")
 	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
 		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (%q) — the foreign-.lock guard failed:\n%s", want, scan)

@@ -20,6 +20,7 @@ import (
 // diverge: for every embedded plugin the statically-read descriptor must equal
 // the one obtained by loading and describing the guest.
 func TestEmbeddedDescriptorFidelity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	loader := wasm.NewCachingLoader(nil)
 

@@ -366,6 +366,7 @@ func assertOfflineRefusal(t *testing.T, err error, wantLayerNamed string) {
 // pair of build rows is the acceptance rather than either one alone. One half
 // passing proves only that something happened.
 func TestTheIncrementalFillDoesNotRefuseUnderTheOfflinePosture(t *testing.T) {
+	// Not parallel: it sets the process environment and drives the command tree, whose pre-run writes the process-global display decision.
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)

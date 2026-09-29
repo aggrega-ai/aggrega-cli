@@ -232,6 +232,7 @@ func TestPluginInstall_NonInteractiveRefuse(t *testing.T) {
 // and asserts the index and describe cache carry the guest's self-reported
 // command and help.
 func TestPluginInstall_RealGuestDescribe(t *testing.T) {
+	// Not parallel: sets the process environment and swaps the process-global registration and install seams.
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	withCLIRegistrations(t, nil)
 	guest := buildInstallGuest(t, "cli-install-guest")

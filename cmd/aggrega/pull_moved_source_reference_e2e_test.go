@@ -258,8 +258,8 @@ func TestPullVerifyRefusesAMovedSourceReference(t *testing.T) {
 // has to be one: a refusal with no remedy would have replaced a silent adoption
 // with a dead end.
 func TestPullUpgradeAdoptsAMovedSourceReference(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeGitRefWorkspace(t, root)
 	lockfilePath := filepath.Join(root, "release.lock")
 
@@ -282,8 +282,8 @@ func TestPullUpgradeAdoptsAMovedSourceReference(t *testing.T) {
 // the whole file. Re-pulling an unchanged workspace is the ordinary case, and a
 // refusal that caught it would have made every reconcile fail.
 func TestPullStillSucceedsWhileTheReferenceHasNotMoved(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeGitRefWorkspace(t, root)
 	lockfilePath := filepath.Join(root, "release.lock")
 

@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
@@ -252,17 +253,23 @@ func primeDryRunLockfile(t *testing.T, root, releasePath, catalogDir string) {
 // report named — so "the flag was accepted and did nothing" fails here, and so
 // does a report whose paths are not the paths a build writes to.
 func TestBuildDryRunWritesNothingThenTheSameBuildWritesTheArtifacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogDir := dryRunFixture(t, root, "")
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	before := treeSnapshot(t, root)
 
+	// Both runs are handed the same output directory, so the paths the dry run
+	// reports and the paths the build writes are spelled against one root.
+	build := rootedBuildOptions(t, root, buildops.RunOptions{})
+	dryRun := build
+	dryRun.DryRun = true
+
 	var out, diag bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out); err != nil {
+		buildDiagOptions{}, dryRun, &diag, &out); err != nil {
 		t.Fatalf("the dry run must complete the render: %v\ndiagnostics:\n%s", err, diag.String())
 	}
 
@@ -287,10 +294,10 @@ func TestBuildDryRunWritesNothingThenTheSameBuildWritesTheArtifacts(t *testing.T
 	// The same build without the flag: the artifacts appear.
 	var buildOut, buildDiag bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{}, &buildDiag, &buildOut); err != nil {
+		buildDiagOptions{}, build, &buildDiag, &buildOut); err != nil {
 		t.Fatalf("the same build without --dry-run must write its artifacts: %v\ndiagnostics:\n%s", err, buildDiag.String())
 	}
-	written := readTree(t, filepath.Join(root, "dist"))
+	written := readTree(t, build.OutDir)
 	if len(written) == 0 {
 		t.Fatal("the build without --dry-run wrote nothing, so the comparison above is not against a build that writes")
 	}
@@ -301,7 +308,7 @@ func TestBuildDryRunWritesNothingThenTheSameBuildWritesTheArtifacts(t *testing.T
 	// the assertion a report computed from its own idea of the output layout
 	// fails.
 	for rel := range written {
-		named := filepath.Join("dist", rel)
+		named := filepath.Join(build.OutDir, rel)
 		if !strings.Contains(report, "==> "+named+" <==") {
 			t.Errorf("the build wrote %s but the dry run's report never named it; report:\n%s", named, report)
 		}
@@ -485,53 +492,59 @@ func TestBuildDryRunDeclinesAnUnpinnedExternalReference(t *testing.T) {
 //
 // The pin is established by the product's own resolution rather than by hand-
 // writing lockfile content, so what the dry run then consumes is exactly what a
-// real workflow leaves behind. The server is closed before the dry run: a render
-// that still succeeds can only have been served from the store, which is what
-// makes "no network call" an observation rather than an assumption.
+// real workflow leaves behind. The endpoint refuses every request before the dry
+// run: a render that still succeeds can only have been served from the store,
+// which is what makes "no network call" an observation rather than an assumption.
+//
+// It refuses rather than closing, so its address stays held for the whole test:
+// a closed address can be handed to a server another test binds, which would
+// answer a stray request this test exists to see and hide it from the count.
 //
 // The real build that follows the resolution is asserted to fetch NOTHING, which
 // is the assertion that says the pin took effect. It replaces a weaker one — that
 // something, somewhere, fetched — which stopped discriminating once the
 // resolution became the run that pins.
 func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 
 	schema := []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object"}`)
-	var served int
+	var served atomic.Int64
+	var refusing atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		served++
+		served.Add(1)
+		if refusing.Load() {
+			http.Error(w, "this endpoint no longer serves", http.StatusServiceUnavailable)
+			return
+		}
 		_, _ = w.Write(schema)
 	}))
+	t.Cleanup(srv.Close)
 	schemaURL := srv.URL + "/values-schema.json"
 
 	releasePath, catalogDir := dryRunFixture(t, root, schemaURL)
 	// The resolution is what pins: it renders the Release to discover the
 	// reference, fetches it, and stores its bytes.
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
-	if served == 0 {
-		srv.Close()
+	if served.Load() == 0 {
 		t.Fatal("the resolution never fetched the reference, so the fixture does not exercise an external input at all")
 	}
-	fetchesAfterResolution := served
+	fetchesAfterResolution := served.Load()
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
 	// A real build over the resolved Release must render the reference from the
 	// store without going back to the endpoint.
 	var acqOut, acqDiag bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{}, &acqDiag, &acqOut); err != nil {
-		srv.Close()
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{}), &acqDiag, &acqOut); err != nil {
 		t.Fatalf("the build over a resolved Release must render: %v\ndiagnostics:\n%s", err, acqDiag.String())
 	}
-	if served != fetchesAfterResolution {
-		srv.Close()
-		t.Errorf("the build refetched a reference the resolution had already pinned: fetch count moved from %d to %d", fetchesAfterResolution, served)
+	if got := served.Load(); got != fetchesAfterResolution {
+		t.Errorf("the build refetched a reference the resolution had already pinned: fetch count moved from %d to %d", fetchesAfterResolution, got)
 	}
 
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if err != nil {
-		srv.Close()
 		t.Fatalf("load lockfile after the priming build: %v", err)
 	}
 	var pinned bool
@@ -541,14 +554,13 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 		}
 	}
 	if !pinned {
-		srv.Close()
 		t.Fatalf("the priming build did not pin %s; external inputs recorded: %+v", schemaURL, lf.ExternalInputs)
 	}
 
-	// From here the endpoint is gone: any fetch fails, so a render that completes
+	// From here the endpoint refuses: any fetch fails, so a render that completes
 	// was served from the store.
-	srv.Close()
-	fetchesBeforeDryRun := served
+	refusing.Store(true)
+	fetchesBeforeDryRun := served.Load()
 
 	storeRoot := externalinputs.StoreRoot(ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 	storeBefore := treeSnapshot(t, storeRoot)
@@ -559,11 +571,11 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 
 	var out, diag bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{DryRun: true}), &diag, &out); err != nil {
 		t.Fatalf("a dry run must render a pinned reference from the store: %v\ndiagnostics:\n%s", err, diag.String())
 	}
-	if served != fetchesBeforeDryRun {
-		t.Errorf("the dry run reached the network: fetch count moved from %d to %d", fetchesBeforeDryRun, served)
+	if got := served.Load(); got != fetchesBeforeDryRun {
+		t.Errorf("the dry run reached the network: fetch count moved from %d to %d", fetchesBeforeDryRun, got)
 	}
 	if d := diffSnapshots(storeBefore, treeSnapshot(t, storeRoot)); d != "" {
 		t.Errorf("the dry run changed the input store; a pinned reference must be served without writing:\n%s", d)

@@ -106,6 +106,7 @@ func TestAStopRequestEndsTheBuildsWork(t *testing.T) {
 		runStopProbeChild(role)
 		return
 	}
+	t.Parallel()
 
 	cmd, lines := stopProbeChild(t, "build")
 	defer func() { _ = cmd.Process.Kill() }()

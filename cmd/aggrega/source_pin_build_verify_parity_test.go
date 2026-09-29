@@ -44,10 +44,11 @@ import (
 // drifted pin would pass the first cell and fail the second; one that refused none
 // would fail the first.
 
-// buildOver drives the command's own build entry over a workspace.
+// buildOver drives the command's own build entry over a workspace, writing the
+// rendered tree under root.
 func buildOver(t *testing.T, root, releasePath, catalogDir string) error {
 	t.Helper()
-	return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+	return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
 }
 
@@ -72,10 +73,10 @@ func plantDriftedSourcePin(t *testing.T, recipePath string) []types.SourceDigest
 // TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence is the cell
 // where both commands compare.
 func TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence(t *testing.T) {
+	t.Parallel()
 	blob := pinChartTgz(t)
 	srv := serveChart(t, blob)
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := sourcedPinFixture(t, root, srv.URL+"/pinchart.tgz")
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
@@ -176,10 +177,10 @@ func localChartRepository(t *testing.T, tag string) (url, commit string) {
 // TestBuildAndVerifyBothStandDownOnAPinRecordedUnderAResolvedReference is the cell
 // where neither command compares.
 func TestBuildAndVerifyBothStandDownOnAPinRecordedUnderAResolvedReference(t *testing.T) {
+	t.Parallel()
 	const tag = "hello-0.1.0"
 	url, commit := localChartRepository(t, tag)
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := sourcedPinFixture(t, root, "unused")
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")

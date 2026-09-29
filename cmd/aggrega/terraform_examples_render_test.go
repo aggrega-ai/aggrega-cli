@@ -189,17 +189,16 @@ func readExampleDistTree(t *testing.T, root string) map[string][]byte {
 
 // buildExampleToDist copies the example (an absolute source directory) into a
 // fresh temp workspace, builds it against the sibling catalog, and returns the
-// rendered dist tree. src and catalogRoot must be absolute so the function is
-// safe to call repeatedly across the working-directory changes each build makes.
+// rendered dist tree. Every path it hands the build is absolute and the build
+// writes into the workspace's own root, so it reads and writes nothing relative
+// to the working directory and may run beside other tests.
 func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[string][]byte {
 	t.Helper()
 	ws := t.TempDir()
 	copyExampleInputs(t, src, ws)
-	t.Chdir(ws)
 
-	releasePath := "release.yaml"
+	releasePath := filepath.Join(ws, "release.yaml")
 	catalogDirs := catalogStack
-	traceEnabled := false
 
 	// Build is read-only: prime the lockfile with an explicit pull (output discarded),
 	// then build reads it. Each call runs in its own fresh workspace, so the two
@@ -208,7 +207,7 @@ func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[str
 		t.Fatalf("prime lockfile via pull for example %q: %v", src, err)
 	}
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, false, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build example %q: %v", src, err)
 	}
 	return readExampleDistTree(t, ws)
@@ -280,6 +279,7 @@ func distFile(t *testing.T, tree map[string][]byte, suffix string) []byte {
 // asserting main.tf alone cannot see that, because the two files are emitted
 // separately and only the root names the other.
 func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-rds")
 
@@ -339,6 +339,7 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 // Release supplies under infra.overrides — no variables file is written beside the
 // module's own files, and the standalone provenance comment file is emitted.
 func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-rds-module")
 
@@ -430,6 +431,7 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 // expectation derived from them would move with a defect planted in them and
 // assert nothing.
 func TestTerraformDeclaredSensitivityExampleRenderDeterminism(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-declared-sensitivity")
 

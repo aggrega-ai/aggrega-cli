@@ -137,6 +137,7 @@ func exampleSrcWithRelease(t *testing.T, src, releaseYAML string) string {
 // content stays equal. assertByteIdenticalTrees compares the file sets and the
 // bytes, so a move on either axis is reported.
 func TestModuleBoundaryPlacementAxesEmitIdenticalArtifacts(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 	routedSrc := workedExampleDir(t, "module-boundary-routing")
 

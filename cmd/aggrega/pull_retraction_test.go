@@ -93,7 +93,7 @@ func buildMarkedScreenIndex(t *testing.T, markers map[string]deprecation.Marker,
 // are identical. A screen that read the index without regard to verification would
 // pass the signed arm and fail the unsigned one.
 func TestRetractionScreenHonorsOnlyVerifiedWithdrawals(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam.
 	t.Run("signed_retracted_marker_excludes_the_version", func(t *testing.T) {
 		rw := buildScreenIndex(t, map[string]deprecation.Severity{"2.0.0": deprecation.SeverityRetracted}, true)
 		var diag bytes.Buffer

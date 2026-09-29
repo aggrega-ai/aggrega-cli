@@ -75,12 +75,10 @@ func fullstackTriad(t *testing.T, fixtureDir, root string) string {
 // that both quietly rendered nothing. So each side is required to carry files
 // from every boundary before the comparison is allowed to mean anything.
 func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
-	// Not parallel: both legs move the process working directory, which is what
-	// anchors each workspace's relative output directories.
-
-	// Resolved before the first chdir: both helpers derive their paths from the
-	// working directory, so reading them afterwards would look for the fixture
-	// under a temporary directory.
+	t.Parallel()
+	// Both helpers derive the fixture's path from the working directory, which no
+	// test running beside this one moves; each leg's build writes into its own
+	// root rather than into that directory.
 	catalogDir := cliFullstackCatalogDir(t)
 	fixtureDir := filepath.Dir(catalogDir)
 	providerOverlay := seedEmbeddedProviderOverlay(t, "provider/helm")
@@ -88,7 +86,6 @@ func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
 
 	// Leg A — the two-command path: resolve, then build against what was resolved.
 	rootA := t.TempDir()
-	t.Chdir(rootA)
 	releaseA := fullstackTriad(t, fixtureDir, rootA)
 	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}),
@@ -99,18 +96,17 @@ func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
 	}
 	var diagA, outA bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), releaseA, catalogDirs, false,
-		buildDiagOptions{}, buildops.RunOptions{}, &diagA, &outA); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, rootA, buildops.RunOptions{}), &diagA, &outA); err != nil {
 		t.Fatalf("leg A build: %v\ndiagnostics:\n%s", err, diagA.String())
 	}
 	treeA := renderedTree(t, filepath.Join(rootA, "dist"))
 
 	// Leg B — the one-command path: the build fills its own lockfile.
 	rootB := t.TempDir()
-	t.Chdir(rootB)
 	releaseB := fullstackTriad(t, fixtureDir, rootB)
 	var diagB, outB bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, catalogDirs, false,
-		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagB, &outB); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, rootB, buildops.RunOptions{AutoPull: true}), &diagB, &outB); err != nil {
 		t.Fatalf("leg B build --auto-pull: %v\ndiagnostics:\n%s", err, diagB.String())
 	}
 	treeB := renderedTree(t, filepath.Join(rootB, "dist"))

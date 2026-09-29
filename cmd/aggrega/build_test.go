@@ -25,7 +25,6 @@ import (
 // Step 5 (Render); this test fails such a regression because the
 // expected sentinel and message stop being present in the chain.
 func TestRunBuild_Step4bAssertionFailureHaltsCLI(t *testing.T) {
-	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
 	root := t.TempDir()
 
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -240,7 +239,7 @@ spec:
 		[]string{catalogRoot},
 		false,
 		buildDiagOptions{},
-		buildops.RunOptions{VerifyDeterminism: true, OutDir: filepath.Join(root, "out")},
+		rootedBuildOptions(t, root, buildops.RunOptions{VerifyDeterminism: true}),
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {
@@ -398,7 +397,6 @@ spec:
 // render step with ErrProvidesContractUnfulfilled naming the missing key rather
 // than silently dropping it at inject/render time.
 func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
-	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
 	root := providesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.svc.local"`)
 
@@ -445,7 +443,7 @@ func TestRunBuild_ProvidesContractSupersetBuildsCLI(t *testing.T) {
 		[]string{filepath.Join(root, "catalog")},
 		false,
 		buildDiagOptions{},
-		buildops.RunOptions{OutDir: filepath.Join(root, "out")},
+		rootedBuildOptions(t, root, buildops.RunOptions{}),
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {
@@ -583,19 +581,18 @@ spec:
 // contract. The build must halt at render with ErrProvidesContractUnfulfilled
 // naming the missing key.
 func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
-	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
+	t.Parallel()
 	root := featureProvidesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.metrics"`)
 
 	releasePath := filepath.Join(root, "release.yaml")
 	catalogDirs := []string{filepath.Join(root, "catalog")}
-	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuildInRoot(t, ws, releasePath, catalogDirs, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected a feature provides-contract shortfall halt")
 	}
@@ -614,6 +611,7 @@ func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 // publishing every key its Feature declares satisfies the contract and the build
 // completes.
 func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
+	t.Parallel()
 	root := featureProvidesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.metrics"
     dsn: "metric://{{ .context.instance_id }}"`)
@@ -628,7 +626,7 @@ func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
 		[]string{filepath.Join(root, "catalog")},
 		false,
 		buildDiagOptions{},
-		buildops.RunOptions{OutDir: filepath.Join(root, "out")},
+		rootedBuildOptions(t, root, buildops.RunOptions{}),
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {

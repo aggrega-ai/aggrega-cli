@@ -133,12 +133,12 @@ func TestBuild_EmptySourceRecipeHalts(t *testing.T) {
 // declaring no source at all has to keep building; a halt that widened to it
 // would have removed the very mode it exists to disambiguate from.
 func TestBuild_SourcelessRecipeStillBuilds(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "")
 	primeLockfile(t, root, releasePath, catalogRoot)
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("a Recipe declaring no source must still build: %v", err)
 	}
 	if len(readTree(t, filepath.Join(root, "dist"))) == 0 {
@@ -150,8 +150,8 @@ func TestBuild_SourcelessRecipeStillBuilds(t *testing.T) {
 // naming a real source renders from it, so the refusal reads the value rather
 // than the presence of the field.
 func TestBuild_RealSourceRecipeStillBuilds(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: ./chart\n")
 	// The chart sits in the Recipe's own directory, which is where content an
 	// entity reads has to live.
@@ -163,7 +163,7 @@ func TestBuild_RealSourceRecipeStillBuilds(t *testing.T) {
 	}
 	primeLockfile(t, root, releasePath, catalogRoot)
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("a Recipe naming a real source must still build: %v", err)
 	}
 	if len(readTree(t, filepath.Join(root, "dist"))) == 0 {

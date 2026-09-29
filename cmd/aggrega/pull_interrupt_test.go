@@ -97,6 +97,7 @@ func TestAStopRequestEndsThePullsWork(t *testing.T) {
 		runPullStopProbeChild(t, role)
 		return
 	}
+	t.Parallel()
 
 	cmd, lines := stopProbeChild(t, "pull")
 	defer func() { _ = cmd.Process.Kill() }()

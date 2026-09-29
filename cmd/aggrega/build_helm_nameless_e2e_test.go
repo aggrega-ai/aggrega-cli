@@ -153,8 +153,8 @@ func distFileList(t *testing.T, dir string) []string {
 // guest (no halt), emits each nameless document under a deterministic
 // path-derived filename carrying provenance labels, and rebuilds byte-identically.
 func TestBuild_HelmNamelessDocsRenderThroughGuest(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := namelessDocChartFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -163,7 +163,7 @@ func TestBuild_HelmNamelessDocsRenderThroughGuest(t *testing.T) {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("nameless-doc build should succeed through the guest: %v", err)
 	}
 
@@ -196,7 +196,7 @@ func TestBuild_HelmNamelessDocsRenderThroughGuest(t *testing.T) {
 	}
 
 	// Deterministic rebuild — byte-identical output.
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
 	second := readTree(t, distMain)

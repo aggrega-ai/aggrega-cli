@@ -117,6 +117,7 @@ func parseRenderedResource(t *testing.T, path string, raw []byte) renderedResour
 // scope whoever emitted it, so a Feature's artifact must not be left to land
 // wherever the applying tool defaults to.
 func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "module-boundary-routing")
 

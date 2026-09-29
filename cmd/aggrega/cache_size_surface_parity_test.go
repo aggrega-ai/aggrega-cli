@@ -72,16 +72,13 @@ func cacheParityWorkspace(t *testing.T) string {
 	return ws
 }
 
-// pinnedCacheEnv returns an environment addressing a temp machine-wide cache
-// root, so a child process reports only what this test seeded and writes
-// nothing outside the test's own directories.
+// pinnedCacheEnv returns an environment addressing an empty machine-wide cache
+// root of this test's own, so a child process reports only what this test
+// seeded. The shared cache every other subprocess is given would not do: it
+// holds whatever guests other tests have compiled.
 func pinnedCacheEnv(t *testing.T) []string {
 	t.Helper()
-	home := t.TempDir()
-	return append(os.Environ(),
-		"HOME="+home,
-		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
-	)
+	return builtBinaryEnvOverCache(t, t.TempDir())
 }
 
 // cacheStatusViaCommandLine runs the reporting command in ws and returns what it
@@ -152,7 +149,7 @@ func cacheResultViaDaemon(t *testing.T, bin, ws, method string, params map[strin
 // spelling, or a parseable spelling only one of them uses — and neither would be
 // the property this exists to hold.
 func TestBothReportingSurfacesSpellACacheSizeTheSameWay(t *testing.T) {
-	// Not parallel: spawns subprocesses, one of them a daemon.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := cacheParityWorkspace(t)
 	env := pinnedCacheEnv(t)

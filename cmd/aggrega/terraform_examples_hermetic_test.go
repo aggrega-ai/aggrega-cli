@@ -26,6 +26,7 @@ import (
 // source artifact, so there is nothing to fetch even under the default
 // auto-pull configuration.
 func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
+	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
 
 	for _, name := range []string{"terraform-rds", "terraform-rds-module"} {
@@ -41,22 +42,20 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 			); err != nil {
 				t.Fatalf("write offline config: %v", err)
 			}
-			t.Chdir(ws)
+
+			releasePath := filepath.Join(ws, "release.yaml")
+			catalogDirs := []string{catalogRoot}
 
 			// Resolve + pin from the local catalog with the puller disabled by
 			// offline — a network dial here would be a hard failure, not a
 			// fallback.
-			if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{catalogRoot}}); err != nil {
+			if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
 				t.Fatalf("offline pull %q (a network dependency would fail here): %v", name, err)
 			}
 
-			releasePath := "release.yaml"
-			catalogDirs := []string{catalogRoot}
-			traceEnabled := false
-
 			// The build refuses to network under offline; success proves the
 			// render path (embedded guest + local/inline source) is hermetic.
-			if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
+			if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, false, io.Discard, io.Discard); err != nil {
 				t.Fatalf("offline build %q (default terraform path must not network): %v", name, err)
 			}
 

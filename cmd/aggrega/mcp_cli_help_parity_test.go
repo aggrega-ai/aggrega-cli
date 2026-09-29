@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -43,11 +42,12 @@ const cliHelpParityCeiling = 5 * time.Minute
 // begins with an underscore, which the resource URI's own token rule rejects — so
 // it is unreachable as a cli:// resource and there is nothing to compare.
 //
-// The spawns are sequential. Concurrent subprocesses in this package multiply
-// peak memory past its budget, and nothing here needs them to overlap.
+// The spawns are sequential, since nothing here needs them to overlap. The
+// in-process tree is built from the registration source as the package leaves
+// it, for the reason TestTheHelpRendererSurvivesConcurrentReads gives.
 func TestCliHelpResourceMatchesTheCommandsOwnHelp(t *testing.T) {
+	t.Parallel()
 	started := time.Now()
-	withCLIRegistrations(t, nil)
 	bin := buildServeBinary(t)
 	// One working directory for both arms, holding no workspace, so each arm
 	// builds the same command tree: the binary registers a command per
@@ -91,9 +91,14 @@ func TestCliHelpResourceMatchesTheCommandsOwnHelp(t *testing.T) {
 // serially first — a renderer that did not serialise would hand one goroutine
 // the bytes the other had not yet collected — and running it under the race
 // detector is what catches the unsynchronised writes themselves.
+//
+// It builds its tree from the registration source as the package leaves it,
+// which contributes no configured command, rather than substituting one: the
+// source is a package-level variable that every tree constructor reads, so a
+// parallel test swapping it would be writing what the other parallel tests are
+// reading at that moment.
 func TestTheHelpRendererSurvivesConcurrentReads(t *testing.T) {
 	t.Parallel()
-	withCLIRegistrations(t, nil)
 	render := commandHelp(executingRootCmd())
 	if render == nil {
 		t.Fatal("the command layer supplied no renderer")
@@ -255,7 +260,7 @@ func commandOwnHelp(t *testing.T, bin, dir string, path []string) string {
 	args := append(append([]string{}, path...), "--help")
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
-	cmd.Env = cliHelpParityEnv()
+	cmd.Env = cliHelpParityEnv(t)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -278,7 +283,7 @@ func readCliHelpOverStdio(t *testing.T, bin, dir string, paths [][]string) map[s
 	t.Helper()
 	cmd := exec.Command(bin, "mcp")
 	cmd.Dir = dir
-	cmd.Env = cliHelpParityEnv()
+	cmd.Env = cliHelpParityEnv(t)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatalf("open the server's input: %v", err)
@@ -365,12 +370,12 @@ func readCliHelpOverStdio(t *testing.T, bin, dir string, paths [][]string) map[s
 }
 
 // cliHelpParityEnv is the environment both arms run under, so each builds the
-// same command tree. It is the test process's own, which a hermetic entry point
-// has already pointed at throwaway per-user homes, with the offline posture
-// added: the server acquires its documentation bundle at startup, and this proof
-// has nothing to do with a registry.
-func cliHelpParityEnv() []string {
-	return append(os.Environ(), "AGGREGA_OFFLINE=1")
+// same command tree. It is the one every subprocess of the built binary is
+// given, with the offline posture added: the server acquires its documentation
+// bundle at startup, and this proof has nothing to do with a registry.
+func cliHelpParityEnv(t *testing.T) []string {
+	t.Helper()
+	return builtBinaryEnv(t, "AGGREGA_OFFLINE=1")
 }
 
 // cliHelpURI is the resource URI addressing one command's help.

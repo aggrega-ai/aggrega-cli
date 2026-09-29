@@ -234,8 +234,9 @@ plugins:
 	}
 
 	// First build under the helm binding.
-	out1 := filepath.Join(root, "out1")
-	if err := dispatchBuildWithDiag(context.Background(), rwHelm, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out1}, io.Discard, io.Discard); err != nil {
+	run1 := rootedBuildOptions(t, filepath.Join(root, "build1"), buildops.RunOptions{})
+	out1 := run1.OutDir
+	if err := dispatchBuildWithDiag(context.Background(), rwHelm, releasePath, catDirs, false, buildDiagOptions{quiet: true}, run1, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
 	snap1 := snapshotDir(t, out1)
@@ -253,8 +254,9 @@ plugins:
     - capability: helm
       uri: provider/helm-renderer-alt
 `)
-	out2 := filepath.Join(root, "out2")
-	if err := dispatchBuildWithDiag(context.Background(), rwCompose, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out2}, io.Discard, io.Discard); err != nil {
+	run2 := rootedBuildOptions(t, filepath.Join(root, "build2"), buildops.RunOptions{})
+	out2 := run2.OutDir
+	if err := dispatchBuildWithDiag(context.Background(), rwCompose, releasePath, catDirs, false, buildDiagOptions{quiet: true}, run2, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build 2 (config changed, no re-pull): %v", err)
 	}
 	snap2 := snapshotDir(t, out2)
@@ -362,7 +364,7 @@ func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
 
 			var buildErr error
 			buildStderr := captureStderr(t, func() {
-				buildErr = dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "out")}, io.Discard, io.Discard)
+				buildErr = dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, rootedBuildOptions(t, root, buildops.RunOptions{}), io.Discard, io.Discard)
 			})
 			var validateErr error
 			var diag, out bytes.Buffer
@@ -445,8 +447,9 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 		t.Fatalf("pull did not record a providers entry for the resolved target; got %+v", lf.Providers)
 	}
 
-	out := filepath.Join(root, "out")
-	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out}, io.Discard, io.Discard); err != nil {
+	run := rootedBuildOptions(t, root, buildops.RunOptions{})
+	out := run.OutDir
+	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, run, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build (zero-config): %v", err)
 	}
 	if len(snapshotDir(t, out)) == 0 {

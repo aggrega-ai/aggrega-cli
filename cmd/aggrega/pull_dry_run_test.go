@@ -104,8 +104,8 @@ func pullWriting(t *testing.T, root, releasePath, catalogDir string) {
 // network. The authored recipe is not one of them: no run writes it, so it is
 // held to being byte-identical across both halves rather than expected to move.
 func TestPullDryRunNamesEveryFileItWouldWriteAndWritesNone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := fullURICollisionFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
@@ -174,8 +174,8 @@ func TestPullDryRunNamesEveryFileItWouldWriteAndWritesNone(t *testing.T) {
 // the "only the files that would move" rule. Without it, a report that always
 // named every candidate file would satisfy every assertion in the test above.
 func TestPullDryRunOverAnUnchangedWorkspaceNamesNothing(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := fullURICollisionFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -204,8 +204,8 @@ func TestPullDryRunOverAnUnchangedWorkspaceNamesNothing(t *testing.T) {
 // silently would hand a reader a lockfile no pull would write, and the reader
 // would have no way to tell.
 func TestPullDryRunSaysWhereItsLockfileIsShort(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := fullURICollisionFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 	importPath := filepath.Join(catalogDir, "recipes", "extra.yaml")

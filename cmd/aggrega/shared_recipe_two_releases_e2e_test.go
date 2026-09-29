@@ -263,10 +263,11 @@ func pullSharedRecipeRelease(t *testing.T, root, catalogDir, releasePath string,
 }
 
 // buildSharedRecipeRelease builds one Release of the shared-recipe fixture the
-// way `aggrega build --release` does, against the lockfile already on disk.
+// way `aggrega build --release` run from root does, against the lockfile already
+// on disk, writing the rendered tree under root/dist.
 func buildSharedRecipeRelease(t *testing.T, root, catalogDir, releasePath string) error {
 	t.Helper()
-	return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+	return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
 }
 
@@ -333,6 +334,7 @@ func lockedChartVersions(t *testing.T, releasePath string) []string {
 // pin step at the workspace default and switched on, because the pin step is the
 // one writer a pull runs beside an entity.
 func TestTwoReleasesShareOneRecipeWithoutRewritingIt(t *testing.T) {
+	t.Parallel()
 	orders := []struct{ name, first, second string }{
 		{"A then B", "a", "b"},
 		{"B then A", "b", "a"},
@@ -349,7 +351,6 @@ func TestTwoReleasesShareOneRecipeWithoutRewritingIt(t *testing.T) {
 			t.Run(order.name+", "+mode.name, func(t *testing.T) {
 				srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 				root := t.TempDir()
-				t.Chdir(root)
 				relA, relB := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 				catalogDir := filepath.Join(root, "catalog")
 				recipePath := filepath.Join(catalogDir, "recipes", "chartuser.yaml")
@@ -394,9 +395,9 @@ func TestTwoReleasesShareOneRecipeWithoutRewritingIt(t *testing.T) {
 // output label, which changes what every rendered object carries and touches no
 // source coordinate — and each Release's next build must halt as out of date.
 func TestSharedRecipeStalenessGuardStillRefuses(t *testing.T) {
+	t.Parallel()
 	srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 	root := t.TempDir()
-	t.Chdir(root)
 	relA, relB := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "chartuser.yaml")
@@ -443,9 +444,9 @@ func TestSharedRecipeStalenessGuardStillRefuses(t *testing.T) {
 // instance then renders the chart version its own infra asked for, read from the
 // object it rendered.
 func TestOneReleaseTwoConsumersOneRecipe(t *testing.T) {
+	t.Parallel()
 	srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 	root := t.TempDir()
-	t.Chdir(root)
 	catalogDir := filepath.Join(root, "catalog")
 	sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	// Two components of the same type, so one Recipe binds to both.

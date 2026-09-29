@@ -157,10 +157,11 @@ func containmentPull(t *testing.T, root string) error {
 	})
 }
 
-// containmentBuild runs a build against the lockfile a pull wrote.
+// containmentBuild runs a build against the lockfile a pull wrote, writing the
+// rendered tree under root.
 func containmentBuild(t *testing.T, root string) error {
 	t.Helper()
-	return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+	return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		filepath.Join(root, "release.yaml"), []string{filepath.Join(root, "catalog")}, false, io.Discard, io.Discard)
 }
 
@@ -205,6 +206,7 @@ func assertContentRefused(t *testing.T, moment string, err error) {
 // clean pull wrote, so it refuses the edited entity as it reads it rather than on
 // a missing lockfile.
 func TestAContentPathOutsideTheEntityDirectoryIsRefusedAtEveryMoment(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		authored func(root string) string
@@ -214,7 +216,6 @@ func TestAContentPathOutsideTheEntityDirectoryIsRefusedAtEveryMoment(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			t.Chdir(root)
 			recipePath := containmentWorkspace(t, root, "./extras/extra.yaml")
 			if err := containmentPull(t, root); err != nil {
 				t.Fatalf("the clean workspace must pull: %v", err)
@@ -248,8 +249,8 @@ func TestAContentPathOutsideTheEntityDirectoryIsRefusedAtEveryMoment(t *testing.
 // entity's own and back is an ordinary path inside it, and the build renders the
 // file beside the Recipe rather than the copy outside.
 func TestAContentPathThatStaysInsideTheEntityDirectoryIsUntouched(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	recipePath := containmentWorkspace(t, root, "./sub/../extras/extra.yaml")
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	catalogDir := filepath.Join(root, "catalog")
@@ -471,6 +472,7 @@ spec:
 // is the build's render that refuses, once the value exists — and the same
 // Recipe producing a path inside its directory builds.
 func TestATemplatedSourceOutsideTheEntityDirectoryIsRefusedAtRender(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		chart   string
@@ -481,7 +483,6 @@ func TestATemplatedSourceOutsideTheEntityDirectoryIsRefusedAtRender(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			t.Chdir(root)
 			recipePath := containmentWorkspace(t, root, "./extras/extra.yaml")
 			for _, dir := range []string{filepath.Join(filepath.Dir(recipePath), "charts", "app"), filepath.Join(root, "outside", "charts", "app")} {
 				writeFixture(t, filepath.Join(dir, "Chart.yaml"), "apiVersion: v2\nname: app\nversion: 0.1.0\n")

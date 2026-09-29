@@ -17,8 +17,8 @@ import (
 // remote-pinned-aggregate fixture so both the top-level triad resolution and the
 // cache-bridged sub-aggregate exercise the shared resolver.
 func TestClosureUnificationByteIdentical(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := remoteAggregateFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
@@ -30,7 +30,7 @@ func TestClosureUnificationByteIdentical(t *testing.T) {
 	relocateAggregateToCache(t, root, cacheDir, "mysub")
 
 	build := func() string {
-		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("dispatchBuild: %v", err)
 		}
 		return readDistTree(t, filepath.Join(root, "dist"))

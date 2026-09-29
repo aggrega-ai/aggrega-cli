@@ -160,8 +160,8 @@ spec:
 // TestPullRecordsASourcePinBesideAnEntityOnlyForAnIdentityItsAuthorWroteOut drives
 // the command's own entry point over the workspace above, twice.
 func TestPullRecordsASourcePinBesideAnEntityOnlyForAnIdentityItsAuthorWroteOut(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogDir, templatedRecipe, authoredRecipe := sourcePinIdentityWorkspace(t, root)
 	templatedBefore := mustReadFile(t, templatedRecipe)
 	authoredBefore := mustReadFile(t, authoredRecipe)

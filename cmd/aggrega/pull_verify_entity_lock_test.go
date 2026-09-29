@@ -170,8 +170,8 @@ func readLockForTest(t *testing.T, entityPath string) recipepin.Lock {
 // same tree under one condition, and named, file by file, by the pull that holds
 // the lock.
 func TestPullVerifyRefusesAnImportedFileThatNoLongerMatchesItsPin(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := fullURICollisionFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")

@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // serveBinaryDir holds the directory containing the shared serve binary so the
@@ -89,6 +91,87 @@ func buildServeBinary(t *testing.T) string {
 		t.Fatalf("build serve binary: %v", err)
 	}
 	return binPath
+}
+
+// builtBinaryCacheHomeName is the directory, inside this test run's own cache
+// root, that every subprocess of the built binary is given as its user cache
+// directory. It is a fixed name rather than a per-process one, so a guest one
+// run's subprocesses compiled is reused by the next rather than compiled again.
+const builtBinaryCacheHomeName = "built-binary"
+
+// builtBinaryEnv returns the environment a subprocess of the built binary runs
+// under: this process's own, with extra appended, and with the user cache
+// directory moved into this test run's cache root, where every such subprocess
+// shares it.
+//
+// The move is what keeps a subprocess off the developer's own caches. The built
+// binary is not a test binary, so it resolves its cache root the way a normal
+// invocation does — the directory a developer's own builds fill — and a
+// subprocess left with the inherited environment compiles its guests there. The
+// configuration and credential homes need no such move: the package's entry point
+// has already pointed both at throwaway directories, and a subprocess inherits
+// them.
+//
+// Where the directory sits is safe from this process's own cache maintenance: a
+// clear, a prune or a size cap acts on the compiled-module and plugin-describe
+// directories beneath the root it resolved, never on another entry beside them.
+// Several subprocesses using it at once is the case the caches are built for,
+// since every test process shares its own root the same way.
+func builtBinaryEnv(t *testing.T, extra ...string) []string {
+	t.Helper()
+	return builtBinaryEnvOverCache(t, builtBinaryCacheHome(t), extra...)
+}
+
+// builtBinaryEnvOverCache is builtBinaryEnv over a user cache directory the
+// caller chose, for a test whose assertion depends on what that cache holds —
+// one that has to start empty. It is the one place a subprocess's environment is
+// composed, and the cache entry is written after extra, so nothing a caller adds
+// can move the cache anywhere else — on macOS, where the cache follows HOME,
+// that includes a HOME the caller passes.
+func builtBinaryEnvOverCache(t *testing.T, cacheHome string, extra ...string) []string {
+	t.Helper()
+	env := append(os.Environ(), extra...)
+	return append(env, userCacheHomeEntry(cacheHome))
+}
+
+// userCacheHomeEntry is the environment entry that places a process's user cache
+// directory inside home. It names the one variable the standard library reads
+// that directory from on this platform: XDG_CACHE_HOME on Linux and the other
+// Unix systems, HOME on macOS (beneath which it appends Library/Caches),
+// LocalAppData on Windows, and home on Plan 9 (beneath which it appends
+// lib/cache).
+func userCacheHomeEntry(home string) string {
+	switch runtime.GOOS {
+	case "windows":
+		return "LocalAppData=" + home
+	case "darwin", "ios":
+		return "HOME=" + home
+	case "plan9":
+		return "home=" + home
+	default:
+		return "XDG_CACHE_HOME=" + home
+	}
+}
+
+// builtBinaryCacheHome returns the user cache directory every subprocess of the
+// built binary shares, creating it if it is absent. Only its owner may write to
+// it, because what a subprocess compiles there is machine code the runtime maps
+// executable.
+//
+// With no cache root resolvable for this process there is no test cache to share,
+// and the test's own temporary directory stands in: the subprocess then compiles
+// its guests cold, and still writes nowhere another run reads.
+func builtBinaryCacheHome(t *testing.T) string {
+	t.Helper()
+	root, ok := wasm.AggregaCacheRoot()
+	if !ok {
+		return t.TempDir()
+	}
+	home := filepath.Join(root, builtBinaryCacheHomeName)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("create the subprocess cache home: %v", err)
+	}
+	return home
 }
 
 // makeWorkspace creates a temp directory containing an
@@ -303,12 +386,13 @@ func responseLivenessCeiling(t *testing.T) time.Duration {
 // invalidate → diagnostics-returns-1001 sequence over the subprocess
 // pipe. Pins the state-holds-across-requests contract.
 func TestServeLifecycle(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := makeWorkspace(t)
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -390,13 +474,14 @@ func TestServeLifecycle(t *testing.T) {
 // exits cleanly when stdin closes (EOF). This pins the unification: a missing
 // workspace no longer makes the daemon stricter than the CLI.
 func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	bin := buildServeBinary(t)
 	// The temp dir is under $TMPDIR (Linux: /tmp) with no workspace marker up
 	// to the filesystem root, so discovery falls through to CWD.
 	dir := t.TempDir()
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = dir
+	cmd.Env = builtBinaryEnv(t)
 	// Empty stdin: the reader hits EOF immediately and the dispatch loop exits
 	// cleanly. A non-zero exit here would mean the daemon refused to start
 	// without a marker — the pre-unification behavior this test guards against.
@@ -421,7 +506,7 @@ func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
 // the round-trip — catalog walk → IR construction → JSON serialisation
 // — is verified end-to-end against a real workspace.
 func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -472,6 +557,7 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -579,7 +665,7 @@ func mapKeys(m map[string]any) []string {
 // full Run-wiring path (workspace-root discovery, parse-cache
 // population, workspace-walk traversal) is now end-to-end pinned.
 func TestServeAggregaResolveEndToEnd(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	// Not parallel: spawns a daemon subprocess.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -603,6 +689,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -750,6 +837,7 @@ func TestServeCmdRejectsInvalidWorkspaceRoot(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-subdir")
 
 	cmd := exec.Command(bin, "serve", "--workspace-root", missing)
+	cmd.Env = builtBinaryEnv(t)
 	stderrBuf := &strings.Builder{}
 	cmd.Stderr = stderrBuf
 

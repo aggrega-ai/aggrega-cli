@@ -160,6 +160,12 @@ func (o RunOptions) irGraph(graph *types.IRGraph) error {
 // report beside it, so there is no second reading to disagree with the first.
 type Pull func(ctx context.Context, upgrade, detail bool, render pipeline.Options, diagOut, out io.Writer) (*compilerops.PreviewResult, error)
 
+// DefaultTraceDir is the directory a traced build writes to when it is told
+// nothing else. Like the default output directory it is relative, so it resolves
+// against the caller's working location, and it sits beside that directory
+// rather than under it so the rendered tree stays purely deployable.
+const DefaultTraceDir = ".trace"
+
 // RunOptions carries the build knobs that are not diagnostics. The zero value is
 // the plain build shape: rendered output to the default output directory.
 //
@@ -222,6 +228,12 @@ type RunOptions struct {
 	// OutDir overrides the rendered-artifact output directory; empty
 	// renders to the default output directory.
 	OutDir string
+	// TraceDir overrides the directory a traced build writes its per-node
+	// intermediate files to; empty writes them to .trace, beside the default
+	// output directory. It says only where a trace goes: whether one is written
+	// at all is the caller's TraceEnabled, and the directory is cleared and
+	// rewritten exactly as .trace is.
+	TraceDir string
 	// IRGraph, when non-nil, is handed the graph this run resolved, once, after
 	// the render succeeded and before anything else the run writes to its status
 	// stream. Nil means the caller did not ask for it — the presence of the
@@ -695,10 +707,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// keeps the two coupled is a test asserting the pairing refuses, so removing
 	// the refusal fails loudly rather than quietly re-opening this write.
 	if cfg.TraceEnabled && len(result.Trace) > 0 {
-		if err := os.RemoveAll(".trace"); err != nil {
-			return Result{}, fmt.Errorf("clean .trace: %w", err)
+		traceDir := run.TraceDir
+		if traceDir == "" {
+			traceDir = DefaultTraceDir
 		}
-		if err := artifactout.WriteAll(".trace", result.Trace); err != nil {
+		if err := os.RemoveAll(traceDir); err != nil {
+			return Result{}, fmt.Errorf("clean %s: %w", traceDir, err)
+		}
+		if err := artifactout.WriteAll(traceDir, result.Trace); err != nil {
 			return Result{}, fmt.Errorf("write trace: %w", err)
 		}
 	}

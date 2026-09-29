@@ -23,6 +23,7 @@ import (
 // asserts the guest reached the correct branch's streamed output — proof the
 // invoked command name flows into CLIRunInput.Command and the guest routes on it.
 func TestPluginMultiCommand_InstallAndRoute(t *testing.T) {
+	// Not parallel: sets the process environment and swaps the process-global registration and install seams.
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	withCLIRegistrations(t, nil)
 	guest := buildInstallGuest(t, "cli-multi-guest")

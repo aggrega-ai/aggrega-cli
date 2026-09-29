@@ -17,8 +17,8 @@ import (
 // runs against a real temp dir, asserts the build succeeds, and
 // inspects dist/ for the expected output files.
 func TestRunBuild_HappyPath(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -110,7 +110,7 @@ spec:
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("runBuild: %v", err)
 	}
 

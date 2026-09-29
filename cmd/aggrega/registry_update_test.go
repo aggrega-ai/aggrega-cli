@@ -270,7 +270,7 @@ func withIndexTargetFunc(t *testing.T, fn func(workspaceconfig.Config, string) (
 // strict-SemVer version per repository, writes a deterministic per-host index,
 // and produces byte-identical records across two runs against the same state.
 func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 
 	componentMeta := oci.SearchableMetadata{
@@ -469,7 +469,7 @@ func indexFileSet(t *testing.T, root, cacheDir, host string) map[string]bool {
 // TestRegistryUpdateSingleRegistryByAlias proves the single-argument form
 // resolves a friendly alias to its host and indexes only that registry.
 func TestRegistryUpdateSingleRegistryByAlias(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
 	src := fakeIndexSource{
@@ -505,7 +505,7 @@ func TestRegistryUpdateSingleRegistryByAlias(t *testing.T) {
 // the exit code stays non-zero. One unreachable registry must not abandon the
 // reachable ones.
 func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const goodHost = "hub.aggrega.ai"
 	const badHost = "broken.aggrega.ai"
 
@@ -566,7 +566,7 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 // explicitly targeted one registry, so its failure is not swallowed into a
 // partial success.
 func TestRegistryUpdateSingleRegistryFailureIsLoud(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	withIndexTargetFunc(t, func(workspaceconfig.Config, string) (registryIndexSource, error) {
 		return nil, fmt.Errorf("unreachable")
@@ -595,7 +595,7 @@ func TestRegistryUpdateSingleRegistryFailureIsLoud(t *testing.T) {
 // preserved, and the record round-trips through the sparse loader byte-for-byte
 // across two builds against the same state.
 func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
 
@@ -687,7 +687,7 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 // baseline: an unchanged repository (same tag set, same headline manifest digest)
 // is reused from the prior index on the next refresh without a manifest-blob read.
 func TestRegistryUpdateConditionalReusesUnchangedRepo(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
@@ -725,7 +725,7 @@ func TestRegistryUpdateConditionalReusesUnchangedRepo(t *testing.T) {
 // refresh produces the same on-disk result as a from-scratch build, and that a
 // dropped repository's file is removed and a new repository's file is created.
 func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
 	repoA := "component/core/api-server"
@@ -793,7 +793,7 @@ func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
 // existing version (no new tag, unchanged manifest digest) is invisible to a
 // conditional refresh and is picked up only by a full --upgrade re-read.
 func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
@@ -849,7 +849,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 // a later refresh presents exactly that validator on the tags/list probe so an
 // unchanged listing revalidates as not-modified and the record is reused.
 func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}

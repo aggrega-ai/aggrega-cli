@@ -522,19 +522,16 @@ func assertFixtureRevision(t *testing.T, r surfaceRender) {
 // difference between the surfaces that legitimately survives, and how the
 // compiler-version value is kept from flaking the comparison.
 func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess, and chdirs for the command line.
+	t.Parallel()
 	root := t.TempDir()
 
-	// The workspace is written BEFORE the chdir, because building the guest walks
-	// up from the working directory to find the umbrella checkout and a temporary
-	// directory has no checkout above it.
+	// Building the guest walks up from the working directory to find the umbrella
+	// checkout, which the package directory the test runs in sits beneath.
 	releasePath := writeFetchingProviderWorkspace(t, root)
 
-	// The command line writes its render under its working directory, and the
-	// daemon subprocess is anchored by its own, so the fixture root is where both
-	// have to be standing for their outputs to be comparable below.
-	t.Chdir(root)
-
+	// The command line's render is placed under the fixture root, and the daemon
+	// subprocess is anchored there by its own working directory, so both outputs
+	// sit where they can be compared below.
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	seedPinnedExternalInput(t, root, releasePath, ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 
@@ -567,7 +564,7 @@ func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
 	tool := surfaceRender{"the tool protocol", renderThroughToolProtocol(t, root, releasePath, compilerVersion)}
 
 	// ---- The command line.
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("the command line's build failed: %v", err)
 	}
 	cli := surfaceRender{"the command line", readRenderedTree(t, filepath.Join(root, "dist"))}
@@ -751,6 +748,7 @@ func renderThroughServeDaemon(t *testing.T, root string) map[string]string {
 	bin := buildServeBinary(t)
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = root
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

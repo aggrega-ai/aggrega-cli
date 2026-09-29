@@ -93,9 +93,9 @@ func requireReleaseDrift(t *testing.T, err error, step, file, condition string) 
 // the build renders the version the Release now names, which is the remediation
 // the diagnostic gives actually working.
 func TestEditedReleaseHaltsAtTheDriftComparison(t *testing.T) {
+	t.Parallel()
 	srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 	root := t.TempDir()
-	t.Chdir(root)
 	relA, _ := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	catalogDir := filepath.Join(root, "catalog")
 	dist := filepath.Join(root, "dist", "a")
@@ -135,9 +135,9 @@ func TestEditedReleaseHaltsAtTheDriftComparison(t *testing.T) {
 // next build exactly as a comment appended to the Aggregate does, and a pull
 // clears it.
 func TestInertReleaseEditIsDrift(t *testing.T) {
+	t.Parallel()
 	srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 	root := t.TempDir()
-	t.Chdir(root)
 	relA, _ := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -206,9 +206,9 @@ spec:
 // the drift condition naming the Release as not recorded and telling them to
 // pull, after which the build passes.
 func TestLockfileWithoutReleaseDocumentsTellsTheUserToPull(t *testing.T) {
+	t.Parallel()
 	srv := serveMultiVersionHelmRepo(t, "0.6.0", "0.7.0")
 	root := t.TempDir()
-	t.Chdir(root)
 	relA, _ := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	catalogDir := filepath.Join(root, "catalog")
 

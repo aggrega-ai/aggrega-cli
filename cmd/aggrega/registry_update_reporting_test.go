@@ -173,7 +173,7 @@ func TestLoadHostIndexReadsGoFieldNameSigner(t *testing.T) {
 // deprecation scan on every path, so recording a marker, recording none, and never
 // looking are three distinguishable outputs rather than two of them being silence.
 func TestRegistryUpdateReportsScanOutcome(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
+	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
 

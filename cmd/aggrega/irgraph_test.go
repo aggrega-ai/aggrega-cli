@@ -286,8 +286,8 @@ func TestInspectIRGraph_WithholdsDeclaredValuesAndTheAffordanceRevealsThem(t *te
 // --- the validation command --------------------------------------------------
 
 // TestValidateIRGraph_IsAdditiveAndLeavesTheVerdictAlone runs one Release
-// through the release scope with and without the flag and asserts the three
-// things the clause asks for at once: the graph appears, this verb's own output
+// through the release scope with and without the flag and asserts three
+// things at once: the graph appears, this verb's own output
 // is byte-identical, and the verdict and the diagnostics are untouched.
 func TestValidateIRGraph_IsAdditiveAndLeavesTheVerdictAlone(t *testing.T) {
 	t.Parallel()
@@ -343,7 +343,7 @@ func TestValidateIRGraph_RefusesOutsideTheReleaseScope(t *testing.T) {
 
 // --- the build command -------------------------------------------------------
 
-// TestBuildIRGraph_IsAdditiveAndStillWritesTheArtifacts is the clause-6
+// TestBuildIRGraph_IsAdditiveAndStillWritesTheArtifacts is the additivity
 // assertion for the build: the graph reaches standard output without corrupting
 // what the build already prints there, and the build still does its job.
 //
@@ -352,16 +352,16 @@ func TestValidateIRGraph_RefusesOutsideTheReleaseScope(t *testing.T) {
 // than skipping, so the second run is a build rather than a no-op over the
 // first's tree.
 func TestBuildIRGraph_IsAdditiveAndStillWritesTheArtifacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogDir := dryRunFixture(t, root, "")
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
-	outDir := filepath.Join(root, "dist")
+	outDir := rootedBuildOptions(t, root, buildops.RunOptions{}).OutDir
 
 	run := func(withGraph bool) string {
 		var out, diag bytes.Buffer
-		opts := buildops.RunOptions{OutDir: outDir}
+		opts := rootedBuildOptions(t, root, buildops.RunOptions{})
 		if withGraph {
 			opts.IRGraph = func(graph *types.IRGraph) error {
 				return writeIRGraph(&out, "build", graph, false)

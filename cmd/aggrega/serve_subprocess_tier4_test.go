@@ -34,7 +34,7 @@ import (
 // That is why the assertions below check both the diagnostic and the
 // absence of the narrower answer's marker.
 func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
-	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -72,6 +72,7 @@ func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

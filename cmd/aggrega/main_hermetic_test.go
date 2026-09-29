@@ -21,8 +21,12 @@ import (
 // once and reused by several tests outlives the test that triggered the build,
 // so it cannot be tied to that test's lifetime and is released here instead,
 // after every test has finished.
+//
+// And it holds the package directory to what it was before the suite ran: a
+// build that wrote its output there, rather than into its own test's root, fails
+// the run (see guardPackageDirectory).
 func TestMain(m *testing.M) {
-	code := hometest.RunHermetic(m)
+	code := guardPackageDirectory(func() int { return hometest.RunHermetic(m) })
 	removeSharedServeBinary()
 	os.Exit(code)
 }

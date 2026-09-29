@@ -17,7 +17,7 @@ import (
 // The shared Workload body, authored once and consumed two ways: as the
 // WorkloadLibrary entry the import recipe pulls in, and as the inline workload
 // the comparison recipe carries verbatim. Byte-identity of the two rendered dist
-// trees is the arc's load-bearing property (a library-imported workload renders
+// trees is the load-bearing property here (a library-imported workload renders
 // identically to the equivalent inline workload, and the remote pin/pull path
 // does not perturb output).
 const proofWorkloadImportRecipe = `apiVersion: aggrega.ai/v1alpha1
@@ -163,16 +163,16 @@ func relocateWorkloadLibraryToCache(t *testing.T, root, cacheDir, version string
 	}
 }
 
-// TestBuildResolvesRemotePinnedWorkloadLibrary is the arc's headline shipped-proof
-// behavior on the workload axis: a build resolves a WorkloadLibrary pinned in the
+// TestBuildResolvesRemotePinnedWorkloadLibrary is the end-to-end proof on the
+// workload axis: a build resolves a WorkloadLibrary pinned in the
 // lockfile + present in the content cache but ABSENT from the local catalog, via
 // the pinned-cache bridge, and the imported workload's EVALUATED output
-// materializes in the rendered manifest. It then proves the load-bearing property
-// (R5/R7): the remote-imported build is byte-identical to the equivalent inline
+// materializes in the rendered manifest. It then proves the load-bearing
+// property: the remote-imported build is byte-identical to the equivalent inline
 // build — the library indirection and the remote pin/pull path do not change output.
 func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := writeWorkloadProofWorkspace(t, root, proofWorkloadImportRecipe, true)
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
@@ -207,7 +207,7 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 
 	relocateWorkloadLibraryToCache(t, root, cacheDir, "1.0.0")
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote workload library: %v", err)
 	}
 	remote := readDistTree(t, filepath.Join(root, "dist"))
@@ -216,14 +216,14 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 	}
 
 	// Deterministic rebuild — byte-identical output.
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second dispatchBuild: %v", err)
 	}
 	if again := readDistTree(t, filepath.Join(root, "dist")); again != remote {
 		t.Errorf("rebuild not byte-identical:\nfirst:\n%s\nsecond:\n%s", remote, again)
 	}
 
-	// R5/R7 byte-identity vs inline: rewrite the recipe to carry the identical
+	// Byte-identity vs inline: rewrite the recipe to carry the identical
 	// workload body inline, re-pull to a fresh lockfile (no workload library in
 	// closure), rebuild, and assert the dist tree is byte-identical to the
 	// remote-imported one.
@@ -234,10 +234,10 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("inline pullRun: %v", err)
 	}
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("inline dispatchBuild: %v", err)
 	}
 	if inline := readDistTree(t, filepath.Join(root, "dist")); inline != remote {
-		t.Errorf("remote-imported workload render is NOT byte-identical to inline (R5/R7 breach):\nremote:\n%s\ninline:\n%s", remote, inline)
+		t.Errorf("remote-imported workload render is NOT byte-identical to inline:\nremote:\n%s\ninline:\n%s", remote, inline)
 	}
 }

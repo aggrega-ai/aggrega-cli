@@ -316,8 +316,8 @@ func TestBuildAutoPullFetchesOncePerFill(t *testing.T) {
 // The endpoint is asked again, which is the observable that separates
 // re-discovery from a pin that merely survived.
 func TestPullUpgradeRediscoversExternalInputs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 
 	schemaURL, fetches, closeSrv := remoteSchemaServer(t)
 	defer closeSrv()

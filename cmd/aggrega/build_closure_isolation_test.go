@@ -175,8 +175,8 @@ func readTree(t *testing.T, dir string) map[string]string {
 // catalog without the broken entities. One unused-broken entity no longer fails an
 // unrelated build.
 func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
 	// Build is read-only: prime the lockfile with an explicit pull (the sole writer
@@ -187,7 +187,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("clean build should succeed: %v", err)
 	}
 	clean := readTree(t, filepath.Join(root, "dist"))
@@ -198,7 +198,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	// Add broken entities OUTSIDE the closure; the closure (and lockfile) are
 	// unchanged, so the pre-existing lockfile still verifies.
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build must succeed despite broken out-of-closure entities (blast-radius isolation): %v", err)
 	}
 	dirty := readTree(t, filepath.Join(root, "dist"))
@@ -235,7 +235,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err == nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("build must fail when an in-closure component's $ref is unresolvable (closure-scoped Pass-2 must still reject)")
 	}
 }
@@ -263,7 +263,7 @@ metadata:
 spec:
   capability: helm
 `)
-	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout)
+	err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build must fail when the in-closure recipe was skipped at load")
 	}
@@ -300,8 +300,8 @@ func lockfileEntityURIs(t *testing.T, releasePath string) []string {
 // lockfile's closure content (entities + libraries) is identical to the clean
 // catalog's — out-of-closure breakage never leaks into the lockfile.
 func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {

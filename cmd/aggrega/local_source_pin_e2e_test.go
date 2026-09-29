@@ -105,8 +105,8 @@ spec:
 // verifying pull under the one condition, naming the file and both digests; and a
 // file edited beside the source, outside what the entity declares, halts nothing.
 func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogDir, recipePath := localSourcePinWorkspace(t, root)
 	pull := func(verify bool) error {
 		return pullRun(context.Background(), pullConfig{
@@ -120,7 +120,7 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 		})
 	}
 	build := func() error {
-		return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
 	}
 
@@ -130,7 +130,7 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 	// writes anything beside the entity.
 	buildFillingItsLockfile := func() error {
 		return dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
-			releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{AutoPull: true},
+			releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, rootedBuildOptions(t, root, buildops.RunOptions{AutoPull: true}),
 			io.Discard, io.Discard)
 	}
 	for _, step := range []struct {
@@ -263,8 +263,8 @@ spec:
 // declares, never whether any file is left, which is why the two halves are one
 // test.
 func TestALockOutlivingItsLocalSourceIsHeldOnlyWhileTheSourceIsDeclared(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath, catalogDir, recipePath := localSourcePinWorkspace(t, root)
 	pull := func(verify bool) error {
 		return pullRun(context.Background(), pullConfig{
@@ -278,7 +278,7 @@ func TestALockOutlivingItsLocalSourceIsHeldOnlyWhileTheSourceIsDeclared(t *testi
 		})
 	}
 	build := func() error {
-		return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			releasePath, []string{catalogDir}, false, io.Discard, io.Discard)
 	}
 	pin := func() error {

@@ -172,6 +172,7 @@ func startMCPServer(t *testing.T, workspace string, args ...string) *exec.Cmd {
 	bin := buildServeBinary(t)
 	cmd := exec.Command(bin, append([]string{"mcp"}, args...)...)
 	cmd.Dir = workspace
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the server: %v", err)

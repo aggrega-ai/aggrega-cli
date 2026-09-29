@@ -21,15 +21,16 @@ import (
 
 // runIsolated runs the binary in dir with a home directory and configuration
 // directories of its own, and returns everything it emitted with the error, so
-// no drive reads or writes a cache or a configuration another run shares.
+// no drive reads or writes a configuration another run shares. Its cache is the
+// one every subprocess of the built binary shares, so a guest one drive compiled
+// is not compiled again by the next.
 func runIsolated(t *testing.T, bin, dir string, args ...string) (string, error) {
 	t.Helper()
 	home := t.TempDir()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	cmd.Env = builtBinaryEnv(t,
 		"HOME="+home,
-		"XDG_CACHE_HOME="+filepath.Join(home, "cache"),
 		"XDG_CONFIG_HOME="+filepath.Join(home, "config"),
 		"XDG_DATA_HOME="+filepath.Join(home, "data"),
 	)
@@ -45,6 +46,7 @@ func draftWith(t *testing.T, bin, dir, kind, name string) string {
 	t.Helper()
 	cmd := exec.Command(bin, "scaffold", kind, name)
 	cmd.Dir = dir
+	cmd.Env = builtBinaryEnv(t)
 	var out, stderr strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
@@ -88,7 +90,7 @@ func fillLine(t *testing.T, doc, old, repl string) string {
 // references still owed, although its schema admits them empty. Filled, both
 // validate.
 func TestTheCommandNamesEveryPlaceholderADraftCarries(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -169,7 +171,7 @@ func TestTheCommandNamesEveryPlaceholderADraftCarries(t *testing.T) {
 // one meeting a FeatureRecipe whose references are empty admits it, as the
 // schema does.
 func TestACatalogLoadReportsAnEmptyValueAsItsSchemaDoes(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 
 	drafted := t.TempDir()
@@ -203,7 +205,7 @@ func TestACatalogLoadReportsAnEmptyValueAsItsSchemaDoes(t *testing.T) {
 // and hands it to the single-entity scope, which does not take one, and reads
 // that the refusal says what does.
 func TestAStandaloneAggregateIsRefusedWithTheScopesThatCheckIt(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 	path := writeInto(t, ws, "aggregate.yaml", draftWith(t, bin, ws, "aggregate", "my-app"))

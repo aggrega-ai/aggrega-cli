@@ -236,6 +236,7 @@ func TestPluginAddRun_AmbiguousQuery(t *testing.T) {
 // shared install path — the describe gate is the real one, the capability prompt
 // is skipped with --yes, and the index gains the guest's declared command.
 func TestPluginAddRun_CLIInstallsViaSearchResolve(t *testing.T) {
+	// Not parallel: sets the process environment and swaps the process-global registration, search, tag-lister and install seams.
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	withCLIRegistrations(t, nil)
 	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/cli/moo"}}, nil)

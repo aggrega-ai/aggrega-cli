@@ -85,7 +85,7 @@ spec:
 // artifact of the fixture. The mismatched-value cases prove the selector still
 // discriminates rather than matching everything.
 func TestSearchSelectorMatchesEveryAuthoredLabel(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget and searchNow seams.
+	// Not parallel: mutates the process-global registryops.IndexTarget and searchNow seams.
 	rw := publishAndIndexLabelledComponent(t)
 	wantURI := "oci://hub.aggrega.ai/" + labelledComponentRepo
 
@@ -128,7 +128,7 @@ func TestSearchSelectorMatchesEveryAuthoredLabel(t *testing.T) {
 // wrote, which is what makes the index bytes identical across two builds of the
 // same registry state.
 func TestPublishedLabelMapIsAuthorOrdered(t *testing.T) {
-	// Not parallel: mutates the process-global registryIndexTarget and searchNow seams.
+	// Not parallel: mutates the process-global registryops.IndexTarget and searchNow seams.
 	rw := publishAndIndexLabelledComponent(t)
 
 	cfg := rw.Config()

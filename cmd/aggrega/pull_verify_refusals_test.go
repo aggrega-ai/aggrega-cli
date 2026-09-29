@@ -42,6 +42,9 @@ type refusalFixture struct {
 	root          string
 	catalogDir    string
 	componentPath string
+	// releasePath is the Release's absolute path, so nothing that reads it
+	// depends on the working directory.
+	releasePath string
 	// recorded is the digest the pull pinned for the Component.
 	recorded string
 }
@@ -115,19 +118,19 @@ spec:
             replicas: 1
 `)
 	writeWorkspaceConfig(t, root, "offline: true\n")
-	t.Chdir(root)
+	releasePath := filepath.Join(root, "release.yaml")
 
 	var out, diag bytes.Buffer
 	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
-		ReleasePath: "release.yaml",
+		ReleasePath: releasePath,
 		CatalogDirs: []string{catalogDir},
 		Out:         &out,
 		DiagOut:     &diag,
 	}); err != nil {
 		t.Fatalf("seed pull: %v\n%s", err, diag.String())
 	}
-	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if err != nil {
 		t.Fatalf("load the lockfile the pull wrote: %v", err)
 	}
@@ -143,7 +146,7 @@ spec:
 	if recorded == "" {
 		t.Fatalf("the pull pinned no digest for %q; entities=%+v", refusalComponentURI, lf.Entities)
 	}
-	return refusalFixture{root: root, catalogDir: catalogDir, componentPath: componentPath, recorded: recorded}
+	return refusalFixture{root: root, catalogDir: catalogDir, componentPath: componentPath, releasePath: releasePath, recorded: recorded}
 }
 
 // verify runs the verifying pull over the fixture and returns what it printed on
@@ -153,7 +156,7 @@ func (f refusalFixture) verify(t *testing.T) (string, error) {
 	var out, diag bytes.Buffer
 	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
-		ReleasePath: "release.yaml",
+		ReleasePath: f.releasePath,
 		CatalogDirs: []string{f.catalogDir},
 		Verify:      true,
 		Out:         &out,
@@ -197,6 +200,7 @@ func replaceOnce(t *testing.T, path, old, replacement string) {
 // The first row is the positive control: without it a fixture that could not be
 // verified at all would pass every refusal below.
 func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
+	t.Parallel()
 	const zeroDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	cases := []struct {
 		name string
@@ -324,6 +328,7 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 // refusal. The first row is the positive control: the same command with the flag
 // absent answers, so a refusal below is the pair's and not the workspace's.
 func TestPullVerifyRefusesPinSourcesWhicheverValueItIsGiven(t *testing.T) {
+	// Not parallel: its rows set the process environment, and the command tree's pre-run writes the process-global display decision.
 	cases := []struct {
 		name    string
 		extra   []string
@@ -352,7 +357,7 @@ func TestPullVerifyRefusesPinSourcesWhicheverValueItIsGiven(t *testing.T) {
 			root.SetOut(io.Discard)
 			root.SetErr(io.Discard)
 			root.SetArgs(append([]string{"--workspace-root", f.root,
-				"pull", "--release", "release.yaml", "--catalog", f.catalogDir, "--verify", "--quiet"}, tc.extra...))
+				"pull", "--release", f.releasePath, "--catalog", f.catalogDir, "--verify", "--quiet"}, tc.extra...))
 			err = root.ExecuteContext(context.Background())
 
 			if !tc.refused {

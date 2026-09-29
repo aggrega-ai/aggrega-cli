@@ -333,6 +333,7 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 	t.Helper()
 	cmd := exec.Command(buildServeBinary(t), "serve")
 	cmd.Dir = root
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -59,6 +59,7 @@ func TestValidateRecipeRendersInIsolation(t *testing.T) {
 // two runs of the same input — the GitOps-diff guarantee the render tier rides
 // on, surfaced through validate's own output.
 func TestValidateRecipeDeterministic(t *testing.T) {
+	t.Parallel()
 	var a, b bytes.Buffer
 	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &a); err != nil {
 		t.Fatalf("run 1: %v", err)

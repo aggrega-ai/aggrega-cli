@@ -56,6 +56,7 @@ func draftViaCommandLine(t *testing.T, bin string, kinds []string) map[string]st
 	for _, kind := range kinds {
 		cmd := exec.Command(bin, "scaffold", kind, scaffoldParityName)
 		cmd.Dir = ws
+		cmd.Env = builtBinaryEnv(t)
 		var stdout, stderr strings.Builder
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -79,6 +80,7 @@ func draftViaDaemon(t *testing.T, bin string, kinds []string) map[string]string 
 	ws := t.TempDir()
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -137,6 +139,7 @@ func draftViaToolProtocol(t *testing.T, bin string, kinds []string) map[string]s
 	ws := t.TempDir()
 	cmd := exec.Command(bin, "mcp")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 
 	var conversation strings.Builder
@@ -259,7 +262,7 @@ func scaffoldToolName(t *testing.T) string {
 // appeared, and it will have appeared agreeing with the first on everything but
 // the case that matters later.
 func TestDraftingIsByteIdenticalAcrossTheSurfacesThatCarryIt(t *testing.T) {
-	// Not parallel: spawns subprocesses, one of them a daemon.
+	t.Parallel()
 	bin := buildServeBinary(t)
 
 	fromCommandLine := draftViaCommandLine(t, bin, scaffoldParityKinds)
@@ -294,12 +297,13 @@ func TestDraftingIsByteIdenticalAcrossTheSurfacesThatCarryIt(t *testing.T) {
 // document as well would satisfy a text comparison while handing the caller an
 // empty entity to redirect into a file.
 func TestTheSurfacesRefuseAnUnknownKindInTheSameWords(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	const typo = "compoent"
 
 	cmd := exec.Command(bin, "scaffold", typo)
 	cmd.Dir = t.TempDir()
+	cmd.Env = builtBinaryEnv(t)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -338,6 +342,7 @@ func refuseViaToolProtocol(t *testing.T, bin, kind string) string {
 
 	cmd := exec.Command(bin, "mcp")
 	cmd.Dir = t.TempDir()
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stdin = strings.NewReader(conversation)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
@@ -407,6 +412,7 @@ func TestTheDaemonDraftsWithoutTouchingTheWorkspace(t *testing.T) {
 
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

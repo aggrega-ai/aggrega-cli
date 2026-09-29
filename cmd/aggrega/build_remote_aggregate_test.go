@@ -154,8 +154,8 @@ func relocateAggregateToCache(t *testing.T, root, cacheDir, name string) {
 // the triad AggregateLookup, the sub via SubAggregateLoader during topology
 // flatten — from the cache, with no network, and renders both components.
 func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := remoteAggregateFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
@@ -191,7 +191,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 
 	// Build is hermetic (auto_pull off, no puller) — it must resolve the
 	// sub-aggregate from the cache via the bridge during topology flatten.
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote sub-aggregate: %v", err)
 	}
 

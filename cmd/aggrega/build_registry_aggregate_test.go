@@ -174,7 +174,7 @@ spec:
 
 	// Build is hermetic (no puller) — it must resolve the top-level from the cache
 	// via the bridge.
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (registry top-level from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -188,8 +188,8 @@ spec:
 // cache. Pull's closure walker Tier-3 fetches + caches + pins it; build folds +
 // flattens it from cache and renders its component, with no network.
 func TestRegistrySubResolvesEndToEnd(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
@@ -244,7 +244,7 @@ spec:
 	}
 	assertPinned(t, lf, "mysub", "1.0.0")
 
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (registry sub from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -299,7 +299,7 @@ spec:
 	assertPinned(t, lf, "myapp", "1.0.0")
 
 	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift).
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (drift) must succeed with no drift, got: %v", err)
 	}
 }

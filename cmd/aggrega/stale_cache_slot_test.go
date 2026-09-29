@@ -113,13 +113,19 @@ type staleSlotOptions struct {
 	shadowed bool
 	// config is the workspace configuration's whole body.
 	config string
+	// leaveStderr runs the fixture's commands without capturing the process's
+	// standard error, for a test that asserts nothing written there. Capturing it
+	// replaces a process-wide stream, which a test running beside others may not do.
+	leaveStderr bool
 }
 
 // staleSlotFixture is a workspace laid down by writeStaleSlotFixture.
 type staleSlotFixture struct {
 	root          string
+	releasePath   string
 	catalogDirs   []string
 	componentPath string
+	leaveStderr   bool
 	// pinned and cached are the row digests a lockfile records for the pinned
 	// body, as the catalog directory authors it, and for the body the stale slot
 	// holds, as a registry published it: both over what the entity carries, so the
@@ -128,9 +134,8 @@ type staleSlotFixture struct {
 	cached string
 }
 
-// writeStaleSlotFixture lays the workspace down and changes into it. It runs no
-// command: each test decides whether the stale slot exists before the first pull
-// or appears after it.
+// writeStaleSlotFixture lays the workspace down. It runs no command: each test
+// decides whether the stale slot exists before the first pull or appears after it.
 func writeStaleSlotFixture(t *testing.T, opts staleSlotOptions) staleSlotFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -205,11 +210,12 @@ spec:
               size: 20Gi
 `)
 	writeWorkspaceConfig(t, root, opts.config)
-	t.Chdir(root)
 	return staleSlotFixture{
 		root:          root,
+		releasePath:   filepath.Join(root, "release.yaml"),
 		catalogDirs:   catalogDirs,
 		componentPath: componentPath,
+		leaveStderr:   opts.leaveStderr,
 		pinned:        rowDigestAt(t, componentPath),
 		cached:        publishedRowDigest(t, []byte(staleSlotCachedBody)),
 	}
@@ -233,7 +239,7 @@ func (f staleSlotFixture) pull(t *testing.T, verify bool, puller *staleSlotRegis
 	var diag, out bytes.Buffer
 	cfg := pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
-		ReleasePath: "release.yaml",
+		ReleasePath: f.releasePath,
 		CatalogDirs: f.catalogDirs,
 		Verify:      verify,
 		DiagOut:     &diag,
@@ -243,22 +249,34 @@ func (f staleSlotFixture) pull(t *testing.T, verify bool, puller *staleSlotRegis
 		cfg.puller = puller
 	}
 	var run staleSlotRun
-	run.stderr = captureStderr(t, func() { run.err = pullRun(context.Background(), cfg) })
+	run.stderr = f.readingStderr(t, func() { run.err = pullRun(context.Background(), cfg) })
 	run.diag, run.out = diag.String(), out.String()
 	return run
 }
 
-// build runs the build over the fixture.
+// build runs the build over the fixture, writing the rendered tree under its root.
 func (f staleSlotFixture) build(t *testing.T) staleSlotRun {
 	t.Helper()
 	var diag, out bytes.Buffer
 	var run staleSlotRun
-	run.stderr = captureStderr(t, func() {
-		run.err = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
-			"release.yaml", f.catalogDirs, false, &diag, &out)
+	run.stderr = f.readingStderr(t, func() {
+		run.err = dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
+			f.releasePath, f.catalogDirs, false, &diag, &out)
 	})
 	run.diag, run.out = diag.String(), out.String()
 	return run
+}
+
+// readingStderr runs fn and returns what it wrote to the process's standard
+// error, or runs it and returns nothing when the fixture leaves that stream
+// alone.
+func (f staleSlotFixture) readingStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	if f.leaveStderr {
+		fn()
+		return ""
+	}
+	return captureStderr(t, fn)
 }
 
 // layStaleSlot writes the older body into the Component's cache slot with the
@@ -322,6 +340,7 @@ var staleSlotMappingKeys = []struct {
 // held it: the pull pins the catalog directory's body, and its own discovery
 // render then meets the slot.
 func TestAStaleCacheSlotIsPassedOverForTheCatalogDirectoryHoldingThePin(t *testing.T) {
+	// Not parallel: the notices it asserts are written to the process stderr, which it reads by replacing that stream.
 	for _, row := range staleSlotMappingKeys {
 		t.Run(row.name, func(t *testing.T) {
 			f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: row.key, shadowed: true, config: "offline: true\n"})
@@ -414,9 +433,10 @@ func (r *staleSlotRegistry) PullEntity(_ context.Context, identity, kind, floorV
 // again, rewrites the slot with it and says so, naming both digests; the pin is
 // unchanged, and the build then reads the pinned body from the refreshed slot.
 func TestAStaleCacheSlotIsFetchedAgainWhenOnlyARegistryHoldsThePin(t *testing.T) {
+	t.Parallel()
 	for _, row := range staleSlotMappingKeys {
 		t.Run(row.name, func(t *testing.T) {
-			f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: row.key, config: "default_registry: hub.aggrega.ai\n" + fakeRegistryTrust})
+			f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: row.key, config: "default_registry: hub.aggrega.ai\n" + fakeRegistryTrust, leaveStderr: true})
 			registry := &staleSlotRegistry{}
 			if seed := f.pull(t, false, registry); seed.err != nil {
 				t.Fatalf("seed pull: %v\n%s", seed.err, seed.diag)
@@ -538,6 +558,7 @@ func TestAPinNoSourceHoldsHaltsNamingEverySourceItRead(t *testing.T) {
 // build and the pull all complete offline, the build renders the pinned body, and
 // no command reports the slot as one it passed over.
 func TestACacheSlotHoldingThePinStillStandsInForARemovedEntity(t *testing.T) {
+	// Not parallel: it asserts what the build writes to the process stderr, which it reads by replacing that stream.
 	f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: staleSlotEntry, config: "offline: true\n"})
 	if seed := f.pull(t, false, nil); seed.err != nil {
 		t.Fatalf("seed pull: %v\n%s", seed.err, seed.diag)

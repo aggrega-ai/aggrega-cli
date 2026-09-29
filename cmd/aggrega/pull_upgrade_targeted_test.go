@@ -119,8 +119,8 @@ func entityByURI(t *testing.T, lockfilePath, uri string) (lockfile.Entity, bool)
 // that the targeted path reads the prior lockfile, so the carry-forward finds the
 // prior external-input pin.
 func TestPullTargetedUpgradePreservesLockfileAndHolds(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	rel, cat := twoEntityFixture(t, root)
 	lockPath := filepath.Join(root, "release.lock")
 

@@ -81,6 +81,7 @@ func launchMCP(t *testing.T, workspace, input string, args ...string) *mcpRun {
 	}
 	r.cmd = exec.Command(bin, append([]string{"mcp"}, args...)...)
 	r.cmd.Dir = workspace
+	r.cmd.Env = builtBinaryEnv(t)
 	r.cmd.Stdin = strings.NewReader(input)
 	r.cmd.Stdout = stdout
 	r.cmd.Stderr = stderr
@@ -313,7 +314,7 @@ func wantListeningAt(t *testing.T, r *mcpRun, want string, others ...string) {
 // the transport itself: nothing typed or configured is standard input and
 // output, mcp.transport chooses HTTP, and a typed --transport wins over it.
 func TestTheTransportIsTheFlagThenTheConfigKeyThenStdio(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	t.Run("nothing typed or configured speaks over standard input and output", func(t *testing.T) {
 		r := launchMCP(t, makeMCPWorkspace(t, ""), mcpPing)
 		wantAnsweredOverTheStreams(t, r)
@@ -339,7 +340,7 @@ func TestTheTransportIsTheFlagThenTheConfigKeyThenStdio(t *testing.T) {
 // listener binds once the HTTP transport is chosen: --listen, else mcp.listen,
 // and with neither a refusal naming both.
 func TestTheHTTPTransportTakesItsAddressFromTheFlagThenTheConfigKey(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	t.Run("--listen wins over mcp.listen", func(t *testing.T) {
 		dir := mcpSocketDir(t)
 		configured := filepath.Join(dir, "config")
@@ -394,7 +395,7 @@ func TestTheHTTPTransportTakesItsAddressFromTheFlagThenTheConfigKey(t *testing.T
 // two, because its refusal says something they do not: nothing chose a
 // transport, and --transport http is what would.
 func TestAListenAddressTypedUnderStdioIsRefused(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		block     string
@@ -434,7 +435,7 @@ func TestAListenAddressTypedUnderStdioIsRefused(t *testing.T) {
 // The row with no configured address, in the precedence test above, is this
 // one's control: it carries no such line.
 func TestAConfiguredAddressUnderStdioIsLeftUnusedAndSaidSo(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		block string
@@ -470,7 +471,7 @@ func TestAConfiguredAddressUnderStdioIsLeftUnusedAndSaidSo(t *testing.T) {
 // no address rather than falling through to mcp.listen, which the rows that
 // configure one would show by binding it, and rather than choosing a transport.
 func TestAnEmptyListenAddressIsRefusedWhateverTheTransport(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		block string
@@ -495,7 +496,7 @@ func TestAnEmptyListenAddressIsRefusedWhateverTheTransport(t *testing.T) {
 // nor http, on the flag and in a configuration file, and reads that each refusal
 // names the two that are accepted.
 func TestATransportOtherThanTheTwoIsRefused(t *testing.T) {
-	// Not parallel: spawns server subprocesses.
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		block     string

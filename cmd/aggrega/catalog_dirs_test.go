@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,8 +53,8 @@ func TestReportCatalogShadows(t *testing.T) {
 // and prefers them over a catalog entity of the same provider name, so a core
 // provider resolves without any catalog directory supplying it.
 func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
 	// Relocate the Recipe into a SECOND catalog directory, so the build can
@@ -91,7 +90,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (a) via two --catalog flags.
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 	reset()
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{dir1, dir2}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{dir1, dir2}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("two-flag build failed (Recipe in dir2 must resolve): %v", err)
 	}
 	if renderedCount() == 0 {
@@ -101,7 +100,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (b) via catalog_dirs config, no flags.
 	reset()
 	writeWorkspaceConfig(t, root, "auto_pull: true\nworkspace:\n  catalog_dirs:\n    - "+dir1+"\n    - "+dir2+"\n")
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("config catalog_dirs build failed: %v", err)
 	}
 	if renderedCount() == 0 {

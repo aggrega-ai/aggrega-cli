@@ -35,8 +35,8 @@ import (
 // is left unmasked — it is the true output-determinism proof and must stay
 // byte-exact.
 func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
+	// Not parallel: each mode sets the process-global fileTerminal seam, which the progress surface of every running build reads.
 	root := t.TempDir()
-	t.Chdir(root)
 	writeProgressBuildFixture(t, root)
 
 	catalogRoot := filepath.Join(root, "catalog")
@@ -74,7 +74,8 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 
 		// Isolate each run's artifacts; the physical outDir does not appear in the
 		// stdout summary path we compare below because we hold it constant.
-		outDir := filepath.Join(root, "dist")
+		run := rootedBuildOptions(t, root, m.run)
+		outDir := run.OutDir
 		// The clean's error is checked here, where sibling sites in this package
 		// discard it, and the divergence is deliberate: every mode renders into this
 		// one directory, so a silently failed clean would leave the previous mode's
@@ -84,8 +85,6 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 		if err := os.RemoveAll(outDir); err != nil {
 			t.Fatalf("%s: clean dist: %v", m.name, err)
 		}
-		run := m.run
-		run.OutDir = outDir
 
 		var stdout, stderr bytes.Buffer
 		if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, m.diag, run, &stderr, &stdout); err != nil {

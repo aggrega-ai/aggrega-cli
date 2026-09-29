@@ -254,17 +254,17 @@ func TestE1PullIsIdempotentAfterFreeze(t *testing.T) {
 // TestE9DeterministicBuildAfterFreeze proves the frozen release builds twice to
 // byte-identical dist output.
 func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
+	t.Parallel()
 	blob := pinChartTgz(t)
 	srv := serveChart(t, blob)
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := sourcedPinFixture(t, root, srv.URL+"/pinchart.tgz")
 	catalogDir := filepath.Join(root, "catalog")
 
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("first build: %v", err)
 	}
 	first := snapshotDist(t, filepath.Join(root, "dist"))
@@ -274,7 +274,7 @@ func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "dist")); err != nil {
 		t.Fatalf("clean dist: %v", err)
 	}
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
 	second := snapshotDist(t, filepath.Join(root, "dist"))

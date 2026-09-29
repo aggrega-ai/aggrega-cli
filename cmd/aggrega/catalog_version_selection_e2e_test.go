@@ -278,10 +278,10 @@ func renderedText(t *testing.T, dir string) string {
 // document's digest; a frozen build and an offline build of the same Release both
 // render, and the rendered values are those of the version the lockfile names.
 func TestPullAndBuildSelectOneVersionFromAMultiVersionCatalog(t *testing.T) {
+	t.Parallel()
 	for _, f := range versionSelectionForms {
 		t.Run(f.id, func(t *testing.T) {
 			root, digests := writeMultiVersionWorkspace(t)
-			t.Chdir(root)
 			releasePath := filepath.Join(root, "release-"+f.id+".yaml")
 
 			var pullDiag, pullOut bytes.Buffer
@@ -334,7 +334,7 @@ func TestPullAndBuildSelectOneVersionFromAMultiVersionCatalog(t *testing.T) {
 				}
 				var diag, out bytes.Buffer
 				if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, nil, false,
-					buildDiagOptions{}, buildops.RunOptions{}, &diag, &out); err != nil {
+					buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{}), &diag, &out); err != nil {
 					t.Fatalf("%s refused the lockfile its own pull wrote: %v\ndiagnostics:\n%s", posture.name, err, diag.String())
 				}
 				rendered := renderedText(t, filepath.Join(root, "dist"))

@@ -57,6 +57,7 @@ func layFetchedSlot(t *testing.T, root, uri, version string, body []byte, withMa
 //
 // The workspace is offline, so a miss is answered by nothing but the cache.
 func TestARemovedCatalogEntityMeetsItsCacheSlotAlikeInPullVerifyAndBuild(t *testing.T) {
+	t.Parallel()
 	rows := []struct {
 		name string
 		// slot lays the row's cache slot; nil lays none.
@@ -99,14 +100,14 @@ func TestARemovedCatalogEntityMeetsItsCacheSlotAlikeInPullVerifyAndBuild(t *test
 				}},
 				{name: "build", run: func() error {
 					var out, diag bytes.Buffer
-					return dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
-						"release.yaml", []string{f.catalogDir}, false, &diag, &out)
+					return dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
+						f.releasePath, []string{f.catalogDir}, false, &diag, &out)
 				}},
 				{name: "pull", run: func() error {
 					var out, diag bytes.Buffer
 					return pullRun(context.Background(), pullConfig{
 						ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}),
-						ReleasePath: "release.yaml",
+						ReleasePath: f.releasePath,
 						CatalogDirs: []string{f.catalogDir},
 						Out:         &out,
 						DiagOut:     &diag,

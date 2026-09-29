@@ -204,8 +204,8 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 }
 
 func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
@@ -217,7 +217,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	// the verification step. The build itself may halt on later steps
 	// (this fixture has no Manifest mapping that the renderer requires);
 	// the test only asserts the lockfile verification gate is cleared.
-	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err := dispatchBuildInRoot(t, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("unexpected drift on unchanged fixture: %v", err)
 	}

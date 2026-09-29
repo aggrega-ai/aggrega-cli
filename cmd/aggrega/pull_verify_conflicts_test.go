@@ -78,7 +78,7 @@ func pullVerifyRoot(root, catalogDir string, extra []string) *cobra.Command {
 	r.SetIn(bytes.NewReader(nil))
 	r.SetOut(io.Discard)
 	r.SetErr(io.Discard)
-	args := []string{"--workspace-root", root, "pull", "--release", "release.yaml", "--verify", "--quiet"}
+	args := []string{"--workspace-root", root, "pull", "--release", filepath.Join(root, "release.yaml"), "--verify", "--quiet"}
 	if catalogDir != "" {
 		args = append(args, "--catalog", catalogDir)
 	}
@@ -97,6 +97,7 @@ func pullVerifyRoot(root, catalogDir string, extra []string) *cobra.Command {
 // workspace with no second request answers — so each refusal below is the pair's
 // and not the workspace's.
 func TestPullVerifyConflictsKeepTheirWordingAndExitCode(t *testing.T) {
+	// Not parallel: its rows set the process environment, and the command tree's pre-run writes the process-global display decision.
 	type row struct {
 		name     string
 		args     []string

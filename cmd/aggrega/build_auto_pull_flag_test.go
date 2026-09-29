@@ -35,8 +35,8 @@ func entityURIs(t *testing.T, lockfilePath string) []string {
 // closure and writes the lockfile (adds the missing pins), and a second flagged
 // build honors and preserves those pins unchanged.
 func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 	// Default posture: workspace auto_pull is off. The flag alone must enable the
 	// pull step.
@@ -50,7 +50,7 @@ func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
 
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{AutoPull: true}), &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull (config off, no lockfile): %v", err)
 	}
 	if _, err := os.Stat(lockfilePath); err != nil {
@@ -72,7 +72,7 @@ func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
 
 	// Second flagged build honors the now-present pins and preserves them.
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{AutoPull: true}), &diagBuf, &outBuf); err != nil {
 		t.Fatalf("second build --auto-pull: %v", err)
 	}
 	preserved := entityURIs(t, lockfilePath)
@@ -156,8 +156,8 @@ func lockfileHasExternalInput(t *testing.T, lockfilePath, url string) bool {
 // without --upgrade is an incremental fill: it honors the existing lockfile
 // and carries forward the render-time external-input pins recorded there.
 func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "")
 	catalogDir := filepath.Join(root, "catalog")
@@ -172,7 +172,7 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{AutoPull: true}), &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull (incremental): %v", err)
 	}
 	if !lockfileHasExternalInput(t, lockfilePath, url) {
@@ -186,8 +186,8 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 // Contrasts with the incremental case above and confirms --upgrade is threaded
 // through to the pull step's full-refresh path.
 func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "")
 	catalogDir := filepath.Join(root, "catalog")
@@ -200,7 +200,7 @@ func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
 
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildops.RunOptions{AutoPull: true, Upgrade: true}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, rootedBuildOptions(t, root, buildops.RunOptions{AutoPull: true, Upgrade: true}), &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull --upgrade: %v", err)
 	}
 	if lockfileHasExternalInput(t, lockfilePath, url) {

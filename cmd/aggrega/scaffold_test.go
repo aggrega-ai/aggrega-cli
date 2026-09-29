@@ -47,7 +47,7 @@ var draftedComponentPlaceholders = []struct {
 // promises: the answer is a document to write, and nothing was written to
 // produce it. A redirect is how it reaches a file, and the caller drives that.
 func TestTheCommandDraftsWithoutTouchingTheWorkspace(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 
 	ws := t.TempDir()
@@ -62,6 +62,7 @@ func TestTheCommandDraftsWithoutTouchingTheWorkspace(t *testing.T) {
 	for _, kind := range scaffoldParityKinds {
 		cmd := exec.Command(bin, "scaffold", kind, scaffoldParityName)
 		cmd.Dir = ws
+		cmd.Env = builtBinaryEnv(t)
 		var stdout, stderr strings.Builder
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -87,12 +88,13 @@ func TestTheCommandDraftsWithoutTouchingTheWorkspace(t *testing.T) {
 // attributable — the document's shape came out of the schema right, and what it
 // was missing was the author.
 func TestADraftedDocumentIsRefusedOnlyForItsPlaceholders(t *testing.T) {
-	// Not parallel: spawns subprocesses.
+	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
 	cmd := exec.Command(bin, "scaffold", "component", "my-service")
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	var drafted, stderr strings.Builder
 	cmd.Stdout = &drafted
 	cmd.Stderr = &stderr
@@ -137,6 +139,7 @@ func validateEntity(t *testing.T, bin, ws, path string) (string, error) {
 	t.Helper()
 	cmd := exec.Command(bin, "validate", path)
 	cmd.Dir = ws
+	cmd.Env = builtBinaryEnv(t)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

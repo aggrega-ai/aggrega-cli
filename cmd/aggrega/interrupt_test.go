@@ -312,6 +312,7 @@ func TestAStopRequestEndsTheWorkRatherThanOnlyTheProcess(t *testing.T) {
 		runStopProbeChild(role)
 		return
 	}
+	t.Parallel()
 
 	cmd, lines := stopProbeChild(t, "frames")
 	defer func() { _ = cmd.Process.Kill() }()
@@ -375,6 +376,7 @@ func TestASecondStopRequestEndsARunThatIgnoredTheFirst(t *testing.T) {
 		runStopProbeChild(role)
 		return
 	}
+	t.Parallel()
 
 	cmd, lines := stopProbeChild(t, "deaf")
 	defer func() { _ = cmd.Process.Kill() }()

@@ -145,8 +145,8 @@ func pinLifecyclePush(t *testing.T, root, recipePath string, pinSources *bool) e
 
 func boolPtr(v bool) *bool { return &v }
 
-// TestTheThreeCallersOfThePinStepWriteTheSameBytes is clause 6's (a), (c), (d) and
-// (e) over one workspace: the author's own step with no Release in reach, then a
+// TestTheThreeCallersOfThePinStepWriteTheSameBytes drives every caller of the pin
+// step over one workspace: the author's own step with no Release in reach, then a
 // pull asked to pin, then a publication asked to pin, each from a removed lock —
 // and the three locks compared byte for byte, with the authored Recipe held
 // byte-identical throughout.
@@ -236,12 +236,12 @@ func TestPullHaltsOnAnUnpinnedEntityAndWritesNothing(t *testing.T) {
 // direction. A precedence that only let the flag turn pinning ON would pass
 // every cell but the ones driving --pin-sources=false against a key that is on.
 func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
+	t.Parallel()
 	srv := serveChart(t, pinChartTgz(t))
 	url := srv.URL + "/pinchart.tgz"
 
 	t.Run("pull, key on, flag silent: pins", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_pull: true\n", true)
 		if err := pinLifecyclePull(t, root, nil); err != nil {
 			t.Fatalf("pull: %v", err)
@@ -252,7 +252,6 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 	})
 	t.Run("pull, key on, --pin-sources=false: halts", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_pull: true\n", true)
 		if err := pinLifecyclePull(t, root, boolPtr(false)); !errors.Is(err, recipepin.ErrEntityNotPinned()) {
 			t.Fatalf("--pin-sources=false must restore the halt over a workspace configured to pin; got %v", err)
@@ -263,7 +262,6 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 	})
 	t.Run("pull, key off, --pin-sources: pins", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_pull: false\n", true)
 		if err := pinLifecyclePull(t, root, boolPtr(true)); err != nil {
 			t.Fatalf("pull --pin-sources: %v", err)
@@ -274,7 +272,6 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 	})
 	t.Run("push, key on, flag silent: pins before publishing", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_push: true\n", false)
 		if err := pinLifecyclePush(t, root, recipePath, nil); err != nil {
 			t.Fatalf("push: %v", err)
@@ -285,7 +282,6 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 	})
 	t.Run("push, key on, --pin-sources=false: skips the step and refuses the unpinned entity", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_push: true\n", false)
 		if err := pinLifecyclePush(t, root, recipePath, boolPtr(false)); !errors.Is(err, recipepin.ErrEntityNotPinned()) {
 			t.Fatalf("--pin-sources=false over an unpinned entity must restore the publication's refusal; got %v", err)
@@ -296,7 +292,6 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 	})
 	t.Run("push, key off, --pin-sources: pins before publishing", func(t *testing.T) {
 		root := t.TempDir()
-		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "", false)
 		if err := pinLifecyclePush(t, root, recipePath, boolPtr(true)); err != nil {
 			t.Fatalf("push --pin-sources: %v", err)

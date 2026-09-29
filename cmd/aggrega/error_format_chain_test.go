@@ -229,7 +229,6 @@ func TestFormatCompilerError_DepthComposition(t *testing.T) {
 // the command's error path writes to stderr, so this asserts over the
 // bytes a user actually reads.
 func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
-	// Not parallel: mutates the process-global releasePath, catalogDirs seams.
 	root := t.TempDir()
 	writeAssertionFailureFixture(t, root)
 
