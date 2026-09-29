@@ -640,9 +640,10 @@ type recipeSourceFieldAxes interface {
 // axis leaves two owners to the refusals beneath them.
 //
 // A caller that assembles a render's input directly and supplies no graph coordinates
-// reaches none of these rules, which is stated where that input field is declared. The
-// refusal at the point the source is read is retained for exactly that reason, and it
-// is unreachable from a build that runs this rule.
+// gets no reading from this rule, which is stated where that input field is declared.
+// Nothing beneath the rule refuses the entry either: the node walk reads an entry left
+// empty as declaring no source, which is the reading the rule exists to refuse ahead
+// of it. Every build supplies the coordinates, so every build asks the rule.
 //
 // The cancellation signal is the caller's own, so a long walk over a large graph stops
 // within one node of the caller asking it to.

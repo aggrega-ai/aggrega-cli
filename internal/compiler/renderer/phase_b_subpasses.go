@@ -60,23 +60,6 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 
 	ctx.Locals = localsForNode
 
-	// A source that is PRESENT and yet declares nothing is the authoring
-	// ambiguity, and it is refused here because this is the first point in the
-	// render sequence that holds the value as the author wrote it: everything
-	// downstream reads the source after its own template has been evaluated, and
-	// everything downstream that treats an empty source as no source at all would
-	// take the reading the author never asked for. The condition is derived from
-	// the same predicate every reader uses, so the refusal and the readings cannot
-	// come apart.
-	if state.Recipe.Spec.Source != nil && !sourceValueDeclared(state.Recipe.Spec.Source) {
-		return cerrors.Wrap(ErrEmptySource(), cerrors.CatalogError,
-			cerrors.SourceLocation{File: state.RecipePath},
-			cerrors.ComposeMessage(ErrEmptySource(), []string{
-				fmt.Sprintf("Recipe %q", state.Recipe.Metadata.Name),
-				fmt.Sprintf("node %q", state.NodeID),
-			}, "omit the source field for sourceless mode, or name a non-empty path or URI for sourced mode"))
-	}
-
 	// Read once, ahead of the evaluation that replaces the Recipe with a local
 	// copy carrying the resolved source. Both the evaluation below and the trace
 	// capture beneath it ask the same question of the same document, and reading

@@ -17,7 +17,7 @@ import (
 // own Recipe writes: that the production site reaches it, that the axis presents a
 // position for a Recipe whether or not the author wrote anything at it, that the
 // two authoring modes the entry selects between are both admitted, that a finding
-// carries the authored position the declaration exists to add, and that every
+// carries the authored position the declaration supplies, and that every
 // offending node is reported rather than the first.
 //
 // Two of them are load-bearing and neither is a formality.
@@ -29,11 +29,11 @@ import (
 // approved reports. The proof therefore measures the subject set over a Recipe that
 // writes nothing at the position, which is the case an axis keyed on content loses.
 //
-// The POSITION proof, because the refusal this rule stands in front of names no
-// document at all: it takes the Recipe's path, which the catalog loader does not
-// retain on a parsed Recipe, with no fallback to the Recipe's name. What the
-// declaration adds is therefore a document AND a key inside it, and an assertion
-// that read only the sentence would report the two as equivalent.
+// The POSITION proof, because this rule is the only refusal of the entry a build
+// makes: the render reads an entry left empty as declaring no source, so a finding
+// that did not name the Recipe AND the key inside it would leave the author a
+// sentence with nowhere to navigate to, and an assertion that read only the
+// sentence would pass it.
 
 // recipeSourceProbe is the authored document the rows below are driven with: one
 // Recipe whose source entry carries whatever the row is about.
@@ -91,17 +91,6 @@ func declaredRecipeSourceHalt(t *testing.T, recipe *types.Recipe) error {
 			"Recipe, so the verdict below would certify nothing", got)
 	}
 	return runRecipeSourceRule(context.Background(), view, axes)
-}
-
-// resolvedRecipeSourceHalt drives the SAME authored Recipe through the render
-// sub-pass the declared rule stands ahead of, and returns its halt.
-//
-// It is the production sub-pass rather than a direct call on the predicate: what
-// the rule has to be compared with is what a build does at the point the source is
-// read as the author wrote it.
-func resolvedRecipeSourceHalt(recipe *types.Recipe) error {
-	state := NewPhaseBState(recipe, "api", "default", "")
-	return phaseB0(minimalCtx(), state, types.OrderedMap[string]{})
 }
 
 // TestRecipeSourceRule_PresentsThePositionWhateverWasWrittenAtIt is the enumeration
@@ -211,40 +200,29 @@ func TestRecipeSourceRule_AdmitsTheTwoDeclaredModes(t *testing.T) {
 	}
 }
 
-// TestRecipeSourceRule_CarryTheAuthoredPosition is the comparison with the refusal
-// the rule stands ahead of, and the position is where the two differ.
+// TestRecipeSourceRule_CarryTheAuthoredPosition is the finding's shape: the Recipe
+// and the key inside it, the two modes the empty entry is ambiguous between, and the
+// condition's identity.
 //
-// The refusal at the point the source is read takes the Recipe's path with no
-// fallback, and the catalog loader does not retain a path on a parsed Recipe — so on
-// the production walk it names no document at all. The declaration names the Recipe
-// and the key inside it, which is the whole of what it adds.
+// The position is the load-bearing half. The rule is the only refusal of the entry a
+// build makes, so the Recipe and the `source:` key it names are the only place an
+// author is told to look.
 func TestRecipeSourceRule_CarryTheAuthoredPosition(t *testing.T) {
 	t.Parallel()
 
-	recipe := recipeSourceProbe("")
-
-	declared := declaredRecipeSourceHalt(t, recipe)
+	declared := declaredRecipeSourceHalt(t, recipeSourceProbe(""))
 	if declared == nil {
 		t.Fatal("the declared rule admitted an entry written and left empty")
 	}
-	resolved := resolvedRecipeSourceHalt(recipe)
-	if resolved == nil {
-		t.Fatal("the refusal at the point the source is read admitted an empty entry")
-	}
 
-	before, after := resolved.Error(), declared.Error()
-	t.Logf("before (the refusal at the point the source is read): %s", before)
-	t.Logf("after  (the declared rule):                           %s", after)
+	after := declared.Error()
+	t.Logf("the declared finding: %s", after)
 
-	if strings.Contains(before, " at .") {
-		t.Errorf("the earlier refusal already carries an authored locator, so the declaration adds "+
-			"none: %s", before)
-	}
 	if !strings.Contains(after, "source-probe at .spec.source") {
 		t.Errorf("the declared finding does not carry the framework-supplied position: %s", after)
 	}
 	// The remedy is what an author acts on and it is a property of the occurrence
-	// rather than of the condition, so it is carried as advice on both sides.
+	// rather than of the condition, so it is carried as the finding's advice.
 	for _, want := range []string{"omit the source field", "sourceless mode", "sourced mode"} {
 		if !strings.Contains(after, want) {
 			t.Errorf("the declared finding does not name %q, so the two modes it is ambiguous between "+

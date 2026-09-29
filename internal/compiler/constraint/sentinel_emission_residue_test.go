@@ -184,10 +184,16 @@ var inlineCheckResidue = []inlineResidueEntry{
 		host:        "RenderAll",
 		file:        "internal/compiler/renderer/orchestrator.go",
 		disposition: dispositionLiftable,
-		reason: "A pure duplicate test over the dispatch grouping, whose own inline comment already calls " +
-			"itself a check. Its inputs are the flattened node set and the boundary paths, a topology-stage " +
-			"read, and the grouping map is fully built at that point in the same scope — so lifting it to a " +
-			"named check over the boundary, provider and node coordinates does not touch the render loop.",
+		reason: "A duplicate test over the identities one dispatch group holds, in three arms: a component " +
+			"whose node identity its group already holds, a component-scope attachment whose dispatch " +
+			"identity is already there, and a boundary-scope attachment whose identity is already there. " +
+			"Each arm asks the group map while the render loop is still inserting into it, under a key whose " +
+			"path the loop evaluates contributor by contributor from the boundary's path templates, the " +
+			"provider and the recipe name — so neither the key nor the group's membership is complete where " +
+			"the question is asked. Lifting it would need a fact recording each identity's claimants at the " +
+			"dispatched stage, and no declared fact carries one: that stage's facts answer which providers " +
+			"and boundaries meet in a group, how it is combined and named, and what its contributors " +
+			"derived, never which contributors claimed one identity inside it.",
 	},
 	{
 		vehicle:     "ErrArtifactOutputCollision",

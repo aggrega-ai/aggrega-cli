@@ -140,13 +140,14 @@ var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfi
 		"configuration binds to a capability is matched against the provider-rendering plugins the catalog " +
 		"holds for it; a later build re-runs the same match against the identity that descent recorded; and " +
 		"every build and Release-scoped validation runs the same match over each binding the workspace " +
-		"configuration composes, before the graph is built, whether or not a Recipe asks for its capability. " +
+		"configuration composes, once the graph is built and before it is analysed, whether or not a Recipe " +
+		"asks for its capability. " +
 		"The binding is the whole of what this condition reports — without one the same empty candidate set " +
 		"is a bare miss the caller resolves — and a binding is written in the workspace configuration rather " +
 		"than in any document a compilation reads. The descent walks a closure to decide what to pin, the " +
 		"build-time re-run reads a recorded identity while a stage's plugin self-reports are being produced, " +
-		"and the per-binding judgement reads the configuration ahead of the first stage, so no declared stage " +
-		"of a compilation holds the binding on any arm."),
+		"and the per-binding judgement reads the binding from that configuration rather than from any stage's " +
+		"facts, so no declared stage of a compilation holds the binding on any arm."),
 })
 
 // ErrProviderBindingCapabilityUnserved marks an ADVISORY finding, not a halt: a
@@ -168,10 +169,11 @@ var errProviderBindingCapabilityUnserved = cerrors.Register("provider-binding-ca
 	ShortCode: "E0313",
 	Message:   "plugins.providers entry names a capability no provider-rendering plugin the build reads serves",
 	RulePlace: cerrors.RuleNoStageReaches("Every build and Release-scoped validation evaluates the rule over each capability-only " +
-		"binding the workspace configuration composes, before the graph is built, asking the capability " +
-		"resolution whether any provider-rendering plugin the build reads serves the capability. A binding " +
-		"is written in the workspace configuration rather than in any document a compilation reads, and " +
-		"the judgement reads it ahead of the first stage, so no declared stage of a compilation holds it."),
+		"binding the workspace configuration composes, once the graph is built and before it is analysed, " +
+		"asking the capability resolution whether any provider-rendering plugin the build reads serves the " +
+		"capability. A binding is written in the workspace configuration rather than in any document a " +
+		"compilation reads, and the judgement reads it from that configuration rather than from any " +
+		"stage's facts, so no declared stage of a compilation holds it."),
 })
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit

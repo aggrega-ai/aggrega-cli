@@ -317,17 +317,16 @@ var errSourceTemplateParse = cerrors.Register("source-template-not-parsable", ce
 // ErrSourceTemplateProvidesRef marks a source-template that references
 // `.provides`. Locals feed `.provides`, never the reverse — a template (or a
 // local) reading `.provides` is an invalid reverse reference at any phase, not a
-// lock-time-only absence, so lock-time local resolution keeps it loud. Errors of
-// this class also wrap ErrSourceTemplateAtLockTime.
+// lock-time-only absence, so the local resolution a source coordinate reads keeps
+// it loud both where a lockfile is acquired and where a build resolves a structured
+// remote source against one. Errors of this class also wrap
+// ErrSourceTemplateAtLockTime.
 func ErrSourceTemplateProvidesRef() error { return errSourceTemplateProvidesRef }
 
 var errSourceTemplateProvidesRef = cerrors.Register("source-template-provides-ref", cerrors.Meta{
 	ShortCode: "E0112",
 	Message:   "resolve: source-template references .provides (invalid reverse reference)",
-	RulePlace: cerrors.RuleNoStageReaches("Lock-time local resolution evaluates the rule, over a source template met while the closure " +
-		"walk pins what a Release reaches. Locals feed provides and never the reverse, and the resolution " +
-		"runs while the closure is being computed rather than while anything is compiled, so no declared " +
-		"stage holds the template it reads."),
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin

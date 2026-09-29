@@ -4,49 +4,16 @@
 package renderer
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestPhaseB0RefusesAnAuthoredEmptySource pins the halt at the site that raises
-// it: the first point in a node's render sequence holding the source as the
-// author wrote it. The assertion is against the condition rather than against
-// "any error", because this site raises several and an unrelated one passing a
-// loose check would leave the ambiguity uncovered.
-func TestPhaseB0RefusesAnAuthoredEmptySource(t *testing.T) {
-	t.Parallel()
-	r := minimalRecipe("empty-source")
-	r.Spec.Source = ""
-	state := NewPhaseBState(r, "api", "default", "recipes/helm/empty.yaml")
-
-	err := phaseB0(minimalCtx(), state, types.OrderedMap[string]{})
-	if err == nil {
-		t.Fatal("an authored empty-string source must be refused")
-	}
-	if !errors.Is(err, ErrEmptySource()) {
-		t.Fatalf("the refusal must carry the empty-source condition; got %v", err)
-	}
-	if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0251" {
-		t.Fatalf("the refusal must carry the condition's short code; got %q (present=%v)", code, ok)
-	}
-	// The diagnostic has to separate the two modes the empty string is ambiguous
-	// between, not merely report that a value is empty — an author told only that
-	// the value is empty still cannot tell which of the two was expected.
-	for _, want := range []string{"sourceless mode", "sourced mode", "omit the source field"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the diagnostic must name %q; got %v", want, err)
-		}
-	}
-}
-
-// TestPhaseB0AdmitsTheTwoDeclaredModes is the halt's boundary at its own raise
-// site: the mode it disambiguates FROM must survive it, and so must a real
-// source. Without both rows the refusal above is satisfied by a check that
-// refuses everything.
+// TestPhaseB0AdmitsTheTwoDeclaredModes holds the source sub-pass to both
+// authoring modes a Recipe's source entry selects between: an absent entry, and
+// one naming a path or a structured source. An entry written and left empty is
+// refused ahead of the node walk by the rule declared over the source entry, so
+// this sub-pass is never the place that ambiguity is decided.
 func TestPhaseB0AdmitsTheTwoDeclaredModes(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -111,9 +78,9 @@ func TestSourceValueDeclaredIsTheOneEmptinessDefinition(t *testing.T) {
 // TestResolveSourceForNodeTreatsAnEmptySourceAsNone is the reader-unification
 // regression: source resolution used to test its subject for a nil source only,
 // while the named predicate reads nil-or-empty, and the two disagreed on exactly
-// the value the halt above now refuses. This pins the agreement so the narrower
-// reading cannot come back — an empty source is no source here, so nothing
-// downstream is handed an empty string to treat as a path.
+// the value the rule declared over the source entry refuses. This pins the
+// agreement so the narrower reading cannot come back — an empty source is no
+// source here, so nothing downstream is handed an empty string to treat as a path.
 func TestResolveSourceForNodeTreatsAnEmptySourceAsNone(t *testing.T) {
 	t.Parallel()
 	nodeCtx := NodeRenderContext{}
