@@ -126,7 +126,10 @@ type Loader struct {
 	// compiling each load independently, exactly as before. The cache
 	// memoizes only compiled code, a pure function of the guest bytes, so it
 	// cannot alter output and each load still yields a fresh, isolated
-	// Plugin instance. Constructed via NewCachingLoader.
+	// Plugin instance. A non-nil cache also lets every load of a guest in the
+	// process instantiate one compiled form, built on its first load, rather
+	// than compiling and wiring a runtime per load. Constructed via
+	// NewCachingLoader.
 	Cache wazero.CompilationCache
 
 	// OnLoad, when non-nil, is invoked with the plugin's name each time this
@@ -221,19 +224,19 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 //     disk-backed default.
 //
 // Sharing one cache changes only compilation cost, never isolation or output;
-// each load still yields a fresh, isolated Plugin. Concurrent compilation of the
-// SAME guest against a shared cache can race, though — two loads that both find
-// the cache cold may compile at once and one can observe a torn, zero-function
-// module — so Load serializes same-guest compilation: an in-process per-guest
-// lock always, plus a cross-process file lock when the cache is a shared
-// on-disk directory. Different guests still compile in parallel. The
-// serialization changes only when compilation happens, never the compiled code
-// or the rendered bytes.
+// each load still yields a fresh, isolated Plugin. The first build of a guest's
+// compiled form in the process runs alone with respect to every other build that
+// could read what it is publishing — see firstLoadGate, which records the
+// runtime behaviour that requires it — and takes a cross-process file lock when
+// the cache is a shared on-disk directory, so processes do not compile the same
+// guest at once. Different guests still compile in parallel, and a load that
+// reuses a built compiled form takes no lock at all. None of this changes the
+// compiled code or the rendered bytes.
 //
 // When the resolved cache is disk-backed, the on-disk directory is recorded in
-// sharedCompilationCacheDir so Load's cross-process lock can place its per-guest
-// lock file there; an in-memory cache leaves it empty and Load takes only the
-// in-process lock.
+// sharedCompilationCacheDir, and every Loader NewCachingLoader constructs carries
+// it, so the cross-process lock can place its per-guest lock file there; an
+// in-memory cache leaves it empty and a build takes no file lock.
 //
 // A disk-backed cache is also held to its size cap here, once, before this
 // process compiles or reads anything. That placement is what keeps the cap off
@@ -276,9 +279,10 @@ var (
 	// sharedCompilationCacheDir is the on-disk directory backing the process-wide
 	// shared compilation cache, or "" when that cache is in-memory. It is written
 	// exactly once, inside sharedCompilationCacheOnce.Do, so every later read
-	// (Load's cross-process compile lock) observes it through the Once's
-	// happens-before. It is the single source of truth for the cache directory:
-	// the same path passed to wazero.NewCompilationCacheWithDir, never recomputed.
+	// (the compile directory each caching Loader carries) observes it through the
+	// Once's happens-before. It is the single source of truth for the cache
+	// directory: the same path passed to wazero.NewCompilationCacheWithDir, never
+	// recomputed.
 	sharedCompilationCacheDir string
 )
 
@@ -601,8 +605,13 @@ func VerifyDeterminismFromContext(ctx context.Context) bool {
 // surfaces guest-side diagnostics the host's build-time validator
 // converts into user-visible warnings.
 type Plugin struct {
-	name       string
-	plugin     *extism.Plugin
+	name   string
+	plugin *extism.Plugin
+	// compiled is the compiled form this instance was made from, set only when the
+	// instance owns it — a load that shares nothing with any other, such as one by
+	// a Loader with no cache. Close releases it with the instance. A compiled form
+	// shared across the loads of a process is never set here and never closed.
+	compiled   *extism.CompiledPlugin
 	warningsMu sync.Mutex
 	warnings   []string
 	// externalInputs serves the aggrega_fetch_external_input host
@@ -768,12 +777,14 @@ func (p *Plugin) appendWarning(formatted string) {
 //     aggrega_emit_warning, aggrega_fetch_external_input, and future
 //     per-socket host functions); the derived set, not an authored
 //     list, is what the plugin's bound surface is built from.
-//  6. Construct the underlying extism.Plugin from the same in-memory
-//     byte slice (via extism.WasmData), with EnableWasi: true and the
-//     deterministic, capability-denied ModuleConfig from
-//     deterministicModuleConfig. The plugin's WASI imports resolve to
-//     the Extism-bundled wazero WASI runtime, whose observable
-//     behaviour the ModuleConfig pins to deterministic values.
+//  6. Instantiate the underlying extism.Plugin from the guest's compiled
+//     form — compiled from the same in-memory byte slice (via
+//     extism.WasmData) with EnableWasi: true, or reused from an earlier
+//     load of the same bytes — under the deterministic,
+//     capability-denied ModuleConfig from deterministicModuleConfig. The
+//     plugin's WASI imports resolve to the Extism-bundled wazero WASI
+//     runtime, whose observable behaviour the ModuleConfig pins to
+//     deterministic values.
 //
 // Reading the bytes once and threading the same slice through load-gate
 // inspection, host-function derivation, and Extism instantiation
@@ -782,7 +793,7 @@ func (p *Plugin) appendWarning(formatted string) {
 // rejects the manifest or any import or a derived host function is
 // outside the allowlist; the Extism SDK's error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
-	return l.loadCore(ctx, spec, validateHostFunctionsSubset, (*Plugin).hostFunctionsForDeclared, nil, nil)
+	return l.loadCore(ctx, spec, buildProfile, nil, nil)
 }
 
 // LoadCLI constructs a Plugin under the runtime CLI instantiation profile,
@@ -813,7 +824,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 // stdout/stderr stay discarded, because a CLI guest streams through the host
 // functions, not through WASI stdio.
 func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io.Writer) (*Plugin, error) {
-	return l.loadCore(ctx, spec, validateHostFunctionsSubsetCLI, (*Plugin).hostFunctionsForDeclaredCLI, stdout, stderr)
+	return l.loadCore(ctx, spec, cliProfile, stdout, stderr)
 }
 
 // loadForDescribe constructs a Plugin under the describe-only introspection
@@ -825,13 +836,13 @@ func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io
 // It is the third profile alongside Load (build) and LoadCLI (runtime CLI),
 // sharing loadCore with them so the manifest check, byte read, import-module
 // allowlist, host-function derivation, Extism instantiation, and compile
-// serialization stay single-sourced. Only the two profile arguments differ:
+// serialization stay single-sourced. Only the profile's two functions differ:
 //
-//   - validateSubset is the union gate (validateHostFunctionsSubsetCLI), so any
+//   - its subset gate is the union gate (validateHostFunctionsSubsetCLI), so any
 //     plugin type's imports pass and any type is describable — the build
 //     profile's strict shared gate, which rejects the streaming emitters, does
 //     not apply to a surface that only needs the self-report.
-//   - buildFunctions is the inert-stub builder (describeOnlyHostFunctions), so a
+//   - its builder is the inert-stub builder (describeOnlyHostFunctions), so a
 //     guest's describe() reaches only no-op stubs and gains no real host
 //     capability during introspection.
 //
@@ -839,31 +850,57 @@ func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io
 // there is no terminal to write to. The deterministic, capability-denied
 // ModuleConfig is unchanged.
 func (l *Loader) loadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin, error) {
-	return l.loadCore(ctx, spec, validateHostFunctionsSubsetCLI, (*Plugin).describeOnlyHostFunctions, nil, nil)
+	return l.loadCore(ctx, spec, describeProfile, nil, nil)
 }
 
-// loadCore is the single shared body Load and LoadCLI both run, so the two
-// entry points single-source the manifest gate, byte read, import-module allowlist,
-// host-function derivation, Extism instantiation, and compile serialization
-// rather than keeping parallel copies. The two profiles differ only in the
-// arguments: validateSubset is the subset gate the derived host-function set is
-// checked against (the shared allowlist for the build profile, the union for
-// the CLI profile); buildFunctions is the builder that constructs the bound
-// closures; stdout and stderr are the streams the CLI streaming closures write
-// to (nil on the build profile, which binds no streaming closure).
+// loadProfile is one instantiation profile: the subset gate a guest's derived
+// host functions are checked against, the builder that binds them, and the name
+// that keeps the compiled forms built under different profiles apart. The three
+// travel as one value so a compiled form can never be filed under one profile's
+// name while carrying another profile's host functions.
+type loadProfile struct {
+	name           string
+	validateSubset func(name, typeLabel string, names []string) error
+	buildFunctions func(declared []string) []extism.HostFunction
+}
+
+// The three profiles Load, LoadCLI and loadForDescribe run under.
+var (
+	buildProfile    = loadProfile{name: "build", validateSubset: validateHostFunctionsSubset, buildFunctions: hostFunctionsForDeclared}
+	cliProfile      = loadProfile{name: "cli", validateSubset: validateHostFunctionsSubsetCLI, buildFunctions: hostFunctionsForDeclaredCLI}
+	describeProfile = loadProfile{name: "describe", validateSubset: validateHostFunctionsSubsetCLI, buildFunctions: describeOnlyHostFunctions}
+)
+
+// loadCore is the single shared body Load, LoadCLI and loadForDescribe run, so
+// the entry points single-source the manifest gate, byte read, import-module
+// allowlist, host-function derivation, compilation, instantiation and compile
+// serialization rather than keeping parallel copies. The profiles differ only in
+// the arguments: profile carries the subset gate the derived host-function set is
+// checked against (the shared allowlist for the build profile, the union for the
+// CLI and describe-only profiles) and the builder that binds the host functions;
+// stdout and stderr are the streams the CLI streaming host functions write to
+// (nil on the other profiles, which bind no streaming host function).
 //
 // The flow mirrors Load's documented sequence: translate + manifest gate, read the
 // bytes once, apply the import-module allowlist, derive the host functions from
-// the bytes and check the derived set against validateSubset, then instantiate
-// the Extism plugin from the same in-memory bytes under the deterministic,
-// capability-denied ModuleConfig. Reading the bytes once and threading the same
-// slice through load-gate inspection, derivation, and instantiation eliminates
-// the TOCTOU window between validation and execution.
+// the bytes and check the derived set against the profile's gate, then obtain
+// the guest's compiled form (see compiledPlugin) and instantiate it from the
+// same in-memory bytes under the deterministic, capability-denied ModuleConfig.
+// Reading the bytes once and threading the same slice through load-gate
+// inspection, derivation, and compilation eliminates the TOCTOU window between
+// validation and execution.
+//
+// Every load returns a fresh instance, with its own linear memory, its own
+// sandbox configuration and its own Plugin state. When the Loader has a cache,
+// the compiled form the instance is made from — the compiled guest and runtime
+// kernel, the WASI and host modules — is built on the first load of the guest
+// under this profile and reused by every later one in the process. The compiled
+// form holds no instance state: the host functions bound into it find the
+// instance they serve through the call's context (see newBoundHostFunction).
 func (l *Loader) loadCore(
 	ctx context.Context,
 	spec PluginSpec,
-	validateSubset func(name, typeLabel string, names []string) error,
-	buildFunctions func(p *Plugin, declared []string) []extism.HostFunction,
+	profile loadProfile,
 	stdout, stderr io.Writer,
 ) (*Plugin, error) {
 	manifest, err := translateToManifest(spec)
@@ -895,7 +932,7 @@ func (l *Loader) loadCore(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSubset(spec.Name, string(spec.PluginType), hostFunctions); err != nil {
+	if err := profile.validateSubset(spec.Name, string(spec.PluginType), hostFunctions); err != nil {
 		return nil, err
 	}
 
@@ -907,13 +944,11 @@ func (l *Loader) loadCore(
 		extism.WasmData{Data: wasmBytes, Name: spec.Name},
 	}
 
-	// Allocate the wrapper before constructing the Extism plugin so
-	// the per-plugin host-function closures can capture *Plugin and
-	// thread guest-emitted warnings into the warnings slice. The
-	// Extism plugin handle is attached to p after NewPlugin returns.
-	// The loader's external-input service rides along so the
-	// aggrega_fetch_external_input closure can serve guest fetches; the
-	// CLI streams ride along so the streaming closures can emit to them.
+	// The per-load state the host functions serve: the loader's external-input
+	// service for guest fetches, the CLI streams for the streaming emitters, and
+	// the warnings, source and parser the caller sets per invocation. A host
+	// function reads it from the calling instance at call time, never from the
+	// compiled form, which every instance of this guest may share.
 	p := &Plugin{
 		name:           spec.Name,
 		externalInputs: l.ExternalInputs,
@@ -922,8 +957,6 @@ func (l *Loader) loadCore(
 		stderr:         stderr,
 		callTimeout:    time.Duration(effectiveTimeoutMs(spec)) * time.Millisecond,
 	}
-
-	functions := buildFunctions(p, hostFunctions)
 
 	// WithCloseOnContextDone is what makes a cancelled call context unwind a
 	// running guest instead of being noticed only once the guest next returns.
@@ -946,43 +979,194 @@ func (l *Loader) loadCore(
 		RuntimeConfig: runtimeConfig,
 	}
 
-	// Serialize concurrent compilation of THIS guest. NewPlugin compiles the
-	// guest on a cold cache; two concurrent cold loads of the same guest against
-	// the shared cache can race and one can observe a torn, zero-function module.
-	// Keying the lock on the guest's content digest lets different guests still
-	// compile in parallel; only same-guest loads take turns (first compiles and
-	// warms the cache, the rest hit the warm cache). This changes only when
-	// compilation happens, never the compiled code or rendered bytes.
+	// The compiled form is built at most once per guest, profile and memory
+	// ceiling in the process, and the locks that build takes are held only while
+	// it runs — see compiledPlugin. Keying it on the guest's content digest lets
+	// different guests compile in parallel. None of this changes the compiled code
+	// or the rendered bytes, only when compilation happens and how often the same
+	// compiled form is rebuilt.
 	guestDigest := digest.ContentDigest(wasmBytes)
-	extismPlugin, err := l.compileGuest(ctx, guestDigest, func() (*extism.Plugin, error) {
-		return extism.NewPlugin(ctx, manifest, config, functions)
+	compiled, owned, err := l.compiledPlugin(guestDigest, profile.name, manifest, func() (*extism.CompiledPlugin, error) {
+		return extism.NewCompiledPlugin(ctx, manifest, config, profile.buildFunctions(hostFunctions))
 	})
+	var extismPlugin *extism.Plugin
+	if err == nil {
+		extismPlugin, err = compiled.Instance(ctx, extism.PluginInstanceConfig{ModuleConfig: config.ModuleConfig})
+		if err != nil && owned {
+			_ = compiled.Close(ctx)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("wasm: load plugin %q: %w", spec.Name, err)
 	}
 
 	p.plugin = extismPlugin
+	if owned {
+		p.compiled = compiled
+	}
 	if l.OnLoad != nil {
 		l.OnLoad(spec.Name)
 	}
 	return p, nil
 }
 
-// compileLocks maps a guest content digest to the *sync.Mutex that serializes
-// in-process compilation of that guest. Distinct guests get distinct mutexes, so
-// they compile in parallel; concurrent loads of one guest contend on its single
-// mutex.
+// compiledKey names one compiled form within one compilation cache: the guest's
+// content digest plus everything the compiled form fixes for every instance made
+// from it — the load profile, which decides which host functions are bound, and
+// the memory ceiling, which the runtime enforces for all of its instances.
+type compiledKey struct {
+	cache    wazero.CompilationCache
+	digest   string
+	profile  string
+	maxPages uint32
+}
+
+// compiledSlot holds the compiled form for one compiledKey once its first load
+// has built it. The mutex makes that build happen once; the pointer lets every
+// later load read it without taking any lock.
+type compiledSlot struct {
+	mu       sync.Mutex
+	compiled atomic.Pointer[extism.CompiledPlugin]
+}
+
+// compiledPlugins maps each compiledKey to its compiledSlot for the life of the
+// process. It gains an entry per distinct guest, profile and memory ceiling
+// loaded, never per load or per call, and it is never pruned: the compiled code
+// an entry refers to stays in the cache's engine for the life of the process
+// whether or not the entry exists.
+var compiledPlugins sync.Map
+
+// compiledPlugin returns the compiled form a load of the guest identified by
+// guestDigest instantiates, calling build to make it on the guest's first load
+// under this profile and memory ceiling and reusing it on every later one. owned
+// reports that the caller must close the form together with the one instance made
+// from it; a shared form is never closed.
+//
+// Only that first build takes a lock — the slot's own, then the first-load gate
+// and the compile locks (see firstLoadGate and compileGuest). A load that finds
+// the form built takes none.
+//
+// Two kinds of load build a form of their own and own it. A Loader with no cache
+// shares nothing, since each of its loads runs on its own runtime and engine, so
+// it takes no lock either. A load whose manifest carries a plugin configuration
+// has that configuration fixed into its compiled form, and keeping a form per
+// distinct configuration would let the process-wide table grow with whatever a
+// caller put there; it still passes the first-load gate, because it compiles
+// against the shared engine.
+func (l *Loader) compiledPlugin(guestDigest, profile string, manifest extism.Manifest, build func() (*extism.CompiledPlugin, error)) (*extism.CompiledPlugin, bool, error) {
+	if l.Cache == nil {
+		cp, err := build()
+		return cp, true, err
+	}
+	gated := func() (*extism.CompiledPlugin, error) {
+		return l.firstLoadGate(guestDigest, func() (*extism.CompiledPlugin, error) {
+			return l.compileGuest(guestDigest, build)
+		})
+	}
+	if len(manifest.Config) > 0 {
+		cp, err := gated()
+		return cp, true, err
+	}
+
+	key := compiledKey{cache: l.Cache, digest: guestDigest, profile: profile}
+	if manifest.Memory != nil {
+		key.maxPages = manifest.Memory.MaxPages
+	}
+	v, ok := compiledPlugins.Load(key)
+	if !ok {
+		v, _ = compiledPlugins.LoadOrStore(key, &compiledSlot{})
+	}
+	slot := v.(*compiledSlot)
+	if cp := slot.compiled.Load(); cp != nil {
+		return cp, false, nil
+	}
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if cp := slot.compiled.Load(); cp != nil {
+		return cp, false, nil
+	}
+	cp, err := gated()
+	if err != nil {
+		return nil, false, err
+	}
+	slot.compiled.Store(cp)
+	return cp, false, nil
+}
+
+// firstLoadGate runs build — a build of a guest's compiled form against l.Cache —
+// excluding every other build that could read a module this one is still
+// publishing. It is the one exclusion a cache hit needs, and it is reached only
+// by the first load of a guest's compiled form in the process: a later load
+// reuses the form and never reaches it.
+//
+// 🔴 It exists for one behaviour of the WebAssembly runtime
+// (github.com/tetratelabs/wazero), and that behaviour must be re-verified at
+// every upgrade of the runtime: a compiled module read from the on-disk
+// compilation cache is put into the engine's shared in-memory table BEFORE its
+// entry preambles are compiled. Until that compile step returns, a second compile
+// of the same module finds the entry in the table and returns at once, and an
+// instance made from it reads preambles that may not exist yet. A compile that
+// misses the cache builds the whole entry before publishing it, so only a disk
+// hit has the window — and the loader cannot see which of the two the runtime
+// will do, so every build takes the gate.
+//
+// The gate closes the window twice over:
+//
+//   - per guest: builds of one guest's compiled form, under any profile or
+//     memory ceiling, take turns, so each after the first finds the guest's entry
+//     complete;
+//   - for the runtime kernel every guest's compiled form includes: until one
+//     build against the cache has completed, builds of different guests take
+//     turns as well, because each of them compiles that kernel. Once one has
+//     completed the kernel's entry is complete, and the engine never removes a
+//     module it holds (TestSharedEngineKeepsEveryModuleItCompiled pins that), so
+//     later builds of different guests run in parallel.
+func (l *Loader) firstLoadGate(guestDigest string, build func() (*extism.CompiledPlugin, error)) (*extism.CompiledPlugin, error) {
+	guest := compileMutex(guestDigest)
+	guest.Lock()
+	defer guest.Unlock()
+
+	if _, done := firstLoadDone.Load(l.Cache); done {
+		return build()
+	}
+	firstLoadMu.Lock()
+	if _, done := firstLoadDone.Load(l.Cache); !done {
+		defer firstLoadMu.Unlock()
+		cp, err := build()
+		if err == nil {
+			firstLoadDone.Store(l.Cache, struct{}{})
+		}
+		return cp, err
+	}
+	firstLoadMu.Unlock()
+	return build()
+}
+
+var (
+	// firstLoadMu makes the first build against a compilation cache run alone
+	// (see firstLoadGate).
+	firstLoadMu sync.Mutex
+
+	// firstLoadDone records each compilation cache a build has completed against.
+	// A cache recorded here holds a complete runtime kernel.
+	firstLoadDone sync.Map
+)
+
+// compileLocks maps a guest content digest to the *sync.Mutex that makes builds
+// of that guest's compiled form take turns (see firstLoadGate). Distinct guests
+// get distinct mutexes, so they build in parallel.
 var compileLocks sync.Map
 
 var (
 	// attribObserveMu serializes in-process cold compile observations so two
 	// concurrent cold compiles in THIS process cannot interleave their
 	// snapshot-before / snapshot-after windows and cross-attribute each other's
-	// leaves. It is taken OUTERMOST — strictly outside the per-guest compile lock,
-	// never inside it — so the lock order (attribution ⊃ per-guest) is consistent
-	// and deadlock-free. Cross-PROCESS concurrent cold compiles are not serialized
-	// by this mutex; their confounded diffs degrade to unattributed (recorded as
-	// nothing), never to a wrong attribution.
+	// leaves. The locks a first build takes are always taken in one order — the
+	// compiled form's slot, the per-guest turn, the first-load gate, this mutex,
+	// then the cross-process file lock — so concurrent builds cannot deadlock.
+	// Cross-PROCESS concurrent cold compiles are not serialized by this mutex;
+	// their confounded diffs degrade to unattributed (recorded as nothing), never
+	// to a wrong attribution.
 	attribObserveMu sync.Mutex
 
 	// attribObserved memoizes the guest content digests already observed once in
@@ -996,34 +1180,40 @@ var (
 	attribSnapshotCount int64
 )
 
-// compileGuest runs the guest's compile-and-instantiate under the per-guest
-// compile lock, and on a cold, not-yet-observed first compile additionally
-// records which compiled-module cache leaves that compile emitted, so a later
-// reference-based reclamation can attribute each leaf to the guests that depend
-// on it.
+// compileGuest runs the build of the guest's compiled form under the
+// cross-process compile lock, and on a cold, not-yet-observed first compile
+// additionally records which compiled-module cache leaves that compile emitted,
+// so a later reference-based reclamation can attribute each leaf to the guests
+// that depend on it. It runs inside firstLoadGate, whose per-guest turn puts at
+// most one build of this guest here at a time.
 //
 // Every attribution outcome is SAFE because compiled leaves are re-derivable:
 // the worst case of any misattribution is an unnecessary recompile, never a
 // broken build. The attribution mutex serializes only in-process cold
 // observations; cross-process cold-compile races confound the leaf diff and
 // degrade to unattributed (recorded as nothing, so the leaf is retained). The
-// per-process memo keeps snapshotting and the attribution lock entirely off warm
-// and hot loads — the steady state of a render is a warm reload that takes only
-// the cheap per-guest lock and compiles nothing.
-func (l *Loader) compileGuest(ctx context.Context, guestDigest string, compile func() (*extism.Plugin, error)) (*extism.Plugin, error) {
-	_ = ctx
-	// Zero-steady-state fast path: nothing to observe (no cache or no observable
-	// compile dir), or this guest was already observed once in this process.
-	if l.Cache == nil || l.compileDir == "" {
+// per-process memo keeps snapshotting and the attribution lock off every build
+// after a guest's first, and a guest the attribution index already records as
+// present on disk is not observed at all, since a disk hit emits nothing to
+// attribute; a wrong prediction leaves the compile's leaves unattributed, which
+// retains them.
+func (l *Loader) compileGuest(guestDigest string, compile func() (*extism.CompiledPlugin, error)) (*extism.CompiledPlugin, error) {
+	// Nothing to observe without an observable compile directory, or once this
+	// guest was observed in this process.
+	if l.compileDir == "" {
 		return lockedCompile(l, guestDigest, compile)
 	}
 	if _, seen := attribObserved.Load(guestDigest); seen {
 		return lockedCompile(l, guestDigest, compile)
 	}
+	if l.predictDiskHit(guestDigest) {
+		attribObserved.Store(guestDigest, struct{}{})
+		return lockedCompile(l, guestDigest, compile)
+	}
 
 	attribObserveMu.Lock()
 	before := listCompileLeaves(l.compileDir)
-	plugin, err := lockedCompile(l, guestDigest, compile)
+	compiled, err := lockedCompile(l, guestDigest, compile)
 	after := listCompileLeaves(l.compileDir)
 	// Warm forever regardless of outcome — a failed compile is not retried into
 	// observation, and a successful one is observed exactly once.
@@ -1032,14 +1222,14 @@ func (l *Loader) compileGuest(ctx context.Context, guestDigest string, compile f
 	attribObserveMu.Unlock()
 
 	l.attributeCompileLeaves(guestDigest, before, after)
-	return plugin, err
+	return compiled, err
 }
 
-// lockedCompile takes the per-guest compile lock, runs compile, and releases the
-// lock. It is the sole path that invokes the compile so the lock discipline is
-// identical on the observed and unobserved branches.
-func lockedCompile(l *Loader, guestDigest string, compile func() (*extism.Plugin, error)) (*extism.Plugin, error) {
-	release := l.lockGuestCompile(guestDigest)
+// lockedCompile takes the guest's cross-process compile lock, runs compile, and
+// releases the lock. It is the sole path that invokes the compile so the lock
+// discipline is identical on the observed and unobserved branches.
+func lockedCompile(l *Loader, guestDigest string, compile func() (*extism.CompiledPlugin, error)) (*extism.CompiledPlugin, error) {
+	release := l.lockGuestFile(guestDigest)
 	defer release()
 	return compile()
 }
@@ -1141,35 +1331,78 @@ func compileMutex(key string) *sync.Mutex {
 	return m.(*sync.Mutex)
 }
 
-// lockGuestCompile serializes compilation of the guest identified by key (its
-// content digest) and returns a release function the caller invokes once
-// compilation/instantiation has returned. It always takes an in-process
-// per-guest mutex; when this Loader is backed by a shared on-disk compilation
-// cache it also takes an exclusive cross-process file lock over a per-guest lock
-// file in that cache directory, so parallel processes sharing the directory do
-// not compile the same guest into a torn cache entry at once.
+// lockGuestFile takes the cross-process compile lock for the guest identified by
+// key (its content digest) when this Loader compiles into an on-disk directory
+// other processes may share, and returns the function that releases it. With no
+// such directory it takes nothing: an in-memory cache is private to the process.
+// The in-process turn a build takes is firstLoadGate's, not this lock's.
 //
-// The two locks are taken in a fixed order — in-process mutex first, then the
-// file lock — and released in reverse, so concurrent callers cannot deadlock.
-// The file lock is best-effort: if the lock file cannot be opened or locked the
-// in-process mutex still serializes same-guest compilation within this process.
-func (l *Loader) lockGuestCompile(key string) func() {
-	mu := compileMutex(key)
-	mu.Lock()
-
-	// A cross-process lock is only meaningful when this Loader shares a real
-	// on-disk cache directory with other processes; an in-memory cache is
-	// process-private and the in-process mutex alone suffices.
-	dir := sharedCompilationCacheDir
-	if l.Cache == nil || dir == "" {
-		return mu.Unlock
+// The lock keeps processes sharing the directory from compiling the same guest at
+// the same time, and that is an efficiency measure, not a safety one. The entry is
+// safe either way, because the runtime publishes it by writing a temporary file
+// in the same directory and renaming it onto the entry's name, so a reader opens
+// a whole entry or finds none. For the same reason a load the attribution index
+// predicts will be served from disk skips the lock (see predictDiskHit): holding
+// it would only make processes queue to read one file, and a wrong prediction
+// costs at most a compile another process is also running. The lock is
+// best-effort: if its file cannot be opened or locked, the build proceeds
+// without it.
+func (l *Loader) lockGuestFile(key string) func() {
+	if l.compileDir == "" || l.predictDiskHit(key) {
+		return func() {}
 	}
+	return flockGuestCompile(l.compileDir, key)
+}
 
-	releaseFile := flockGuestCompile(dir, key)
-	return func() {
-		releaseFile()
-		mu.Unlock()
+// predictedHits memoizes, per compile directory and guest digest, whether this
+// process predicted that guest's compiled form is on disk, so the attribution
+// index is read once per guest rather than once per build.
+var predictedHits sync.Map
+
+// predictDiskHit reports whether the attribution index predicts the runtime will
+// serve this guest from the on-disk cache. The loader cannot ask the runtime
+// itself — the runtime decides hit or miss inside its compile and does not report
+// it, and the entry's file name hashes processor features the runtime does not
+// expose — so the index, which records each leaf a guest's cold compile emitted,
+// is the one predictor available. A false answer is always safe: it only means
+// the build is observed and takes the cross-process lock.
+func (l *Loader) predictDiskHit(guestDigest string) bool {
+	if l.compileDir == "" {
+		return false
 	}
+	key := l.compileDir + "\x00" + guestDigest
+	if v, ok := predictedHits.Load(key); ok {
+		return v.(bool)
+	}
+	hit := l.guestAttributed(guestDigest)
+	predictedHits.Store(key, hit)
+	return hit
+}
+
+// guestAttributed reports whether the attribution index records a leaf, other
+// than the shared runtime kernel, that names guestDigest as a referrer and is
+// still present on disk at its recorded size.
+func (l *Loader) guestAttributed(guestDigest string) bool {
+	ix, err := attribindex.Load(attribindex.PathForCompileDir(l.compileDir))
+	if err != nil {
+		return false
+	}
+	want := digest.BareHex(guestDigest)
+	for _, e := range ix.Entries() {
+		if e.Kernel {
+			continue
+		}
+		for _, r := range e.Referrers {
+			if r != want {
+				continue
+			}
+			info, statErr := os.Stat(filepath.Join(l.compileDir, filepath.FromSlash(e.Leaf)))
+			if statErr == nil && info.Size() == e.Size {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // deterministicModuleConfig returns the wazero ModuleConfig the loader
@@ -1275,6 +1508,9 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 // core keeps the trap wrap and the panic-recovery net single-sourced; the two
 // callers differ only in how they treat a clean non-zero exit.
 func (p *Plugin) callRaw(ctx context.Context, funcName string, input []byte) (exitCode uint32, output []byte, err error) {
+	// This is the one site that runs guest code, so it is where the host functions
+	// bound into the compiled form learn which instance they are serving.
+	ctx = contextWithCallingPlugin(ctx, p)
 	err = p.callUnderGuestTimeCap(ctx, funcName, func(ctx context.Context) error {
 		var callErr error
 		output, callErr = callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
@@ -1314,13 +1550,21 @@ func callWithPanicRecovery(pluginName, funcName string, f func() ([]byte, error)
 	return f()
 }
 
-// Close releases the resources held by the underlying Extism plugin.
-// Safe to call once; subsequent calls return the SDK's error if any.
-// Callers SHOULD invoke Close when the plugin is no longer needed —
-// typically deferred immediately after Load.
+// Close releases the resources held by the underlying Extism plugin
+// instance, and the compiled form it was made from when the instance owns it.
+// A compiled form shared across the loads of the process outlives every
+// instance made from it. Safe to call once; subsequent calls return the SDK's
+// error if any. Callers SHOULD invoke Close when the plugin is no longer
+// needed — typically deferred immediately after Load.
 func (p *Plugin) Close(ctx context.Context) error {
 	if p == nil || p.plugin == nil {
 		return nil
 	}
-	return p.plugin.CloseWithContext(ctx)
+	err := p.plugin.CloseWithContext(ctx)
+	if p.compiled != nil {
+		if cerr := p.compiled.Close(ctx); err == nil {
+			err = cerr
+		}
+	}
+	return err
 }

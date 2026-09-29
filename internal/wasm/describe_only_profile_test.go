@@ -127,10 +127,9 @@ func TestBuildProfileStillRejectsStreamingImport(t *testing.T) {
 // set, so a guest of any type instantiates under the describe-only profile.
 func TestHostFunctionSignaturesSingleSourced(t *testing.T) {
 	names := cliAllowlistedHostFunctionNames()
-	p := &Plugin{}
 
-	realFns := p.hostFunctionsForDeclaredCLI(names)
-	inertFns := p.describeOnlyHostFunctions(names)
+	realFns := hostFunctionsForDeclaredCLI(names)
+	inertFns := describeOnlyHostFunctions(names)
 	if len(realFns) != len(names) || len(inertFns) != len(names) {
 		t.Fatalf("builder output counts real=%d inert=%d; want %d", len(realFns), len(inertFns), len(names))
 	}

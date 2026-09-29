@@ -28,10 +28,10 @@ import (
 // outside the set triggers ErrWasmManifestRejected.
 //
 // The map's role is closed-set membership for the allowlist check;
-// it does not own HostFunction values. Per-plugin closures are built
-// by the (*Plugin).hostFunctionsForDeclared method so the closure
-// bodies can capture the receiver and accumulate guest-emitted
-// warnings into Plugin.warnings.
+// it does not own HostFunction values. The bound host functions are
+// built by hostFunctionsForDeclared, and each body is handed the
+// calling Plugin at call time so it can accumulate guest-emitted
+// warnings into that instance's Plugin.warnings.
 //
 // The baseline set is the two diagnostic emitters every Aggrega
 // plugin is expected to need — a logging surface and a structured-
@@ -152,17 +152,51 @@ func hostFunctionSignatureFor(name string) (hostFunctionSignature, bool) {
 // work off that ceiling — see hostTimeAccount. Binding a real body
 // anywhere else would leave its cost charged to whichever guest happened to
 // call it.
-func (p *Plugin) newBoundHostFunction(name string, body extism.HostFunctionStackCallback) extism.HostFunction {
+//
+// A bound host function is part of a guest's compiled form, and one compiled
+// form serves every instance a process makes of that guest, so the function
+// captures no instance. It reads the instance whose guest code is calling from
+// the call's context, where Plugin.callRaw — the only site that runs guest code —
+// places it, and hands that instance to body. Reached with no instance on the
+// context it panics: that would be guest code running outside a Plugin call,
+// which the Extism SDK refuses in the same way, and a host function silently
+// serving the wrong instance is the failure the panic exists to rule out.
+func newBoundHostFunction(name string, body boundHostBody) extism.HostFunction {
 	sig, ok := hostFunctionSignatureFor(name)
 	if !ok {
 		panic("wasm: no registered signature for host function " + name)
 	}
 	accounted := func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		p := callingPluginFromContext(ctx)
+		if p == nil {
+			panic("wasm: host function " + name + " was called outside a plugin call")
+		}
 		p.hostTime.enter()
 		defer p.hostTime.leave()
-		body(ctx, cp, stack)
+		body(ctx, p, cp, stack)
 	}
 	return extism.NewHostFunctionWithStack(name, accounted, sig.params, sig.results)
+}
+
+// boundHostBody is the body of a real host function: it is handed the calling
+// instance alongside the runtime's own arguments.
+type boundHostBody func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64)
+
+// callingPluginContextKey keys, on a call's context, the Plugin whose guest code
+// is running.
+type callingPluginContextKey struct{}
+
+// contextWithCallingPlugin returns a context carrying p as the instance whose
+// guest code the call runs.
+func contextWithCallingPlugin(ctx context.Context, p *Plugin) context.Context {
+	return context.WithValue(ctx, callingPluginContextKey{}, p)
+}
+
+// callingPluginFromContext returns the instance contextWithCallingPlugin placed
+// on ctx, or nil when there is none.
+func callingPluginFromContext(ctx context.Context) *Plugin {
+	p, _ := ctx.Value(callingPluginContextKey{}).(*Plugin)
+	return p
 }
 
 // describeOnlyHostFunctions is the describe-only introspection profile's builder:
@@ -175,10 +209,9 @@ func (p *Plugin) newBoundHostFunction(name string, body extism.HostFunctionStack
 // introspected through describe() without granting it any real host capability,
 // so a describe() that calls a host function reaches only a no-op.
 //
-// The receiver is unused — an inert stub captures no plugin state — but the
-// method shape matches the real builders so loadCore dispatches to it through the
-// same buildFunctions seam.
-func (p *Plugin) describeOnlyHostFunctions(declared []string) []extism.HostFunction {
+// Its shape matches the real builders so loadCore dispatches to it through the
+// same loadProfile seam.
+func describeOnlyHostFunctions(declared []string) []extism.HostFunction {
 	out := make([]extism.HostFunction, 0, len(declared))
 	for _, name := range declared {
 		out = append(out, inertHostFunction(name))
@@ -212,32 +245,32 @@ func inertHostFunction(name string) extism.HostFunction {
 	)
 }
 
-// hostFunctionsForDeclared returns the per-Plugin HostFunction
-// closures the caller's derived host-function slice asks for. Each
-// returned closure captures *Plugin so the host-side body can
-// accumulate warnings into Plugin.warnings or format log lines
-// keyed by the plugin's identifier.
+// hostFunctionsForDeclared returns the bound HostFunction values the
+// caller's derived host-function slice asks for. Each body is handed the
+// calling *Plugin (see newBoundHostFunction), so it can accumulate
+// warnings into that instance's Plugin.warnings or format log lines keyed
+// by the plugin's identifier.
 //
 // The caller is responsible for validating that every name in
-// `declared` is in the allowlist first; this method assumes that
+// `declared` is in the allowlist first; this function assumes that
 // check has already passed (validateHostFunctionsSubset enforces the
 // subset check before Load's flow reaches here).
-func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFunction {
+func hostFunctionsForDeclared(declared []string) []extism.HostFunction {
 	out := make([]extism.HostFunction, 0, len(declared))
 	for _, name := range declared {
 		switch name {
 		case "aggrega_log":
-			out = append(out, p.hostFunctionAggregaLog())
+			out = append(out, hostFunctionAggregaLog())
 		case "aggrega_emit_warning":
-			out = append(out, p.hostFunctionAggregaEmitWarning())
+			out = append(out, hostFunctionAggregaEmitWarning())
 		case "aggrega_fetch_external_input":
-			out = append(out, p.hostFunctionAggregaFetchExternalInput())
+			out = append(out, hostFunctionAggregaFetchExternalInput())
 		case "aggrega_pack_source":
-			out = append(out, p.hostFunctionAggregaPackSource())
+			out = append(out, hostFunctionAggregaPackSource())
 		case "aggrega_read_source_file":
-			out = append(out, p.hostFunctionAggregaReadSourceFile())
+			out = append(out, hostFunctionAggregaReadSourceFile())
 		case "aggrega_parse_source":
-			out = append(out, p.hostFunctionAggregaParseSource())
+			out = append(out, hostFunctionAggregaParseSource())
 		default:
 			// Invariant violation: validateHostFunctionsSubset
 			// admitted a name the builder switch doesn't handle.
@@ -255,7 +288,7 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 }
 
 // hostFunctionsForDeclaredCLI is the runtime CLI profile's builder: it returns
-// the per-Plugin HostFunction closures for a guest loaded through
+// the bound HostFunction values for a guest loaded through
 // Loader.LoadCLI. It handles the two streaming emitters directly and delegates
 // every other name to hostFunctionsForDeclared, so the shared diagnostic
 // emitters are built by the single shared builder and never re-implemented
@@ -271,18 +304,18 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 // than as a silently-unbound guest import.
 //
 // The caller (LoadCLI) is responsible for validating that every name in
-// `declared` is in the union allowlist first; this method assumes that check
+// `declared` is in the union allowlist first; this function assumes that check
 // has already passed.
-func (p *Plugin) hostFunctionsForDeclaredCLI(declared []string) []extism.HostFunction {
+func hostFunctionsForDeclaredCLI(declared []string) []extism.HostFunction {
 	out := make([]extism.HostFunction, 0, len(declared))
 	for _, name := range declared {
 		switch name {
 		case "aggrega_cli_write_stdout":
-			out = append(out, p.hostFunctionCLIWriteStdout())
+			out = append(out, hostFunctionCLIWriteStdout())
 		case "aggrega_cli_write_stderr":
-			out = append(out, p.hostFunctionCLIWriteStderr())
+			out = append(out, hostFunctionCLIWriteStderr())
 		default:
-			out = append(out, p.hostFunctionsForDeclared([]string{name})...)
+			out = append(out, hostFunctionsForDeclared([]string{name})...)
 		}
 	}
 	return out
@@ -322,10 +355,10 @@ type pluginMemoryReader interface {
 // Body extracted into handleAggregaLog so the test suite can
 // exercise the read-and-format path against a fake
 // pluginMemoryReader without fabricating an *extism.CurrentPlugin.
-func (p *Plugin) hostFunctionAggregaLog() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaLog() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_log",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaLog(cp, stack)
 		},
 	)
@@ -386,10 +419,10 @@ type pluginRawMemoryReader interface {
 // Body extracted into handleCLIWrite so the test suite can exercise the
 // read-and-write path against a fake memory reader and an in-memory writer
 // without fabricating an *extism.CurrentPlugin.
-func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionCLIWriteStdout() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_cli_write_stdout",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stdout, "aggrega_cli_write_stdout", stack)
 		},
 	)
@@ -399,10 +432,10 @@ func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
 // binding aggrega_cli_write_stderr(ptr i64, len i64) to the stderr writer
 // injected at LoadCLI. It carries the same runtime-only grant: the compile-time
 // build profile never binds it.
-func (p *Plugin) hostFunctionCLIWriteStderr() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionCLIWriteStderr() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_cli_write_stderr",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stderr, "aggrega_cli_write_stderr", stack)
 		},
 	)
@@ -440,10 +473,10 @@ func (p *Plugin) handleCLIWrite(mem pluginRawMemoryReader, w io.Writer, funcName
 //
 // Body extracted into handleAggregaEmitWarning so the test suite
 // can exercise the read-format-append path against a fake reader.
-func (p *Plugin) hostFunctionAggregaEmitWarning() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaEmitWarning() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_emit_warning",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaEmitWarning(cp, stack)
 		},
 	)
@@ -514,10 +547,10 @@ type pluginMemoryWriter interface {
 // Body extracted into handleAggregaFetchExternalInput so the test
 // suite can exercise the read-fetch-write path against fake memory
 // interfaces without fabricating an *extism.CurrentPlugin.
-func (p *Plugin) hostFunctionAggregaFetchExternalInput() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaFetchExternalInput() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_fetch_external_input",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaFetchExternalInput(ctx, cp, cp, stack)
 		},
 	)
@@ -613,10 +646,10 @@ func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env abi.FetchExte
 // Body extracted into handleAggregaPackSource so the test suite can exercise the
 // read-pack-write path against fake memory interfaces without fabricating an
 // *extism.CurrentPlugin.
-func (p *Plugin) hostFunctionAggregaPackSource() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaPackSource() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_pack_source",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaPackSource(cp, cp, stack)
 		},
 	)
@@ -679,10 +712,10 @@ func (p *Plugin) handleAggregaPackSource(reader pluginMemoryReader, writer plugi
 //
 // Body extracted into handleAggregaReadSourceFile so the test suite can exercise
 // the read-read-write path against fake memory interfaces.
-func (p *Plugin) hostFunctionAggregaReadSourceFile() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaReadSourceFile() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_read_source_file",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaReadSourceFile(cp, cp, stack)
 		},
 	)
@@ -761,10 +794,10 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 // Body extracted into handleAggregaParseSource so the test suite can exercise the
 // read-guard-run-write path against fake memory interfaces without fabricating an
 // *extism.CurrentPlugin.
-func (p *Plugin) hostFunctionAggregaParseSource() extism.HostFunction {
-	return p.newBoundHostFunction(
+func hostFunctionAggregaParseSource() extism.HostFunction {
+	return newBoundHostFunction(
 		"aggrega_parse_source",
-		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		func(ctx context.Context, p *Plugin, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaParseSource(ctx, cp, cp, stack)
 		},
 	)

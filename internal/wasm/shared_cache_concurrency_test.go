@@ -18,8 +18,9 @@ import (
 // constructs its own Loader via NewCachingLoader (the exact call every render
 // path makes, all backed by the one shared cache), loads a real guest, and
 // calls it. All eight goroutines load the SAME guest against a cold cache — the
-// exact concurrent-cold-compile case the loader serializes so it cannot observe
-// a torn, zero-function module. Run under `go test -race`, the test asserts
+// concurrent first-load case the loader's first-load gate orders, so no load
+// reads a module the runtime has published but not finished. Run under
+// `go test -race`, the test asserts
 //
 //	(a) no data race across the concurrently-shared cache and its Runtimes, and
 //	(b) byte-identical output across every concurrent run — the cache memoizes

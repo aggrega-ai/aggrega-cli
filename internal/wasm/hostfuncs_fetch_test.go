@@ -223,8 +223,7 @@ func TestHandleFetchExternalInputMemoryWriteFailure(t *testing.T) {
 // missing from the builder switch would panic here.
 func TestHostFunctionsForDeclaredIncludesFetch(t *testing.T) {
 	t.Parallel()
-	p := &Plugin{name: "switch-plugin"}
-	functions := p.hostFunctionsForDeclared([]string{"aggrega_fetch_external_input"})
+	functions := hostFunctionsForDeclared([]string{"aggrega_fetch_external_input"})
 	if len(functions) != 1 {
 		t.Fatalf("expected one bound host function, got %d", len(functions))
 	}

@@ -15,18 +15,18 @@ import (
 )
 
 // flockGuestCompile takes an exclusive advisory lock on a per-guest lock file
-// under dir and returns a release function the caller invokes once
-// compilation/instantiation has returned. It backs the cross-process layer of
-// Loader.lockGuestCompile: when several processes share one on-disk compilation
-// cache directory, the file lock keeps them from compiling the same guest into a
-// torn cache entry at once, while distinct guests (distinct lock files) still
-// proceed in parallel.
+// under dir and returns a release function the caller invokes once the guest's
+// compile has returned. It backs Loader.lockGuestFile: when several processes
+// share one on-disk compilation cache directory, the file lock keeps them from
+// compiling the same guest at the same time, while distinct guests (distinct
+// lock files) still proceed in parallel. The cache entry is whole either way —
+// the runtime publishes it by rename — so what the lock saves is the duplicated
+// compile.
 //
 // It is best-effort: on any failure to open or lock the file it returns a no-op
-// release, degrading to the in-process-only serialization the in-process mutex
-// already provides rather than failing the load. The lock file name is derived
-// from the guest content digest with the algorithm prefix stripped so it is a
-// plain filesystem-safe token.
+// release, and the compile proceeds without it rather than failing the load. The
+// lock file name is derived from the guest content digest with the algorithm
+// prefix stripped so it is a plain filesystem-safe token.
 func flockGuestCompile(dir, key string) func() {
 	lockPath := filepath.Join(dir, ".compile-"+digest.BareHex(key)+".lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)

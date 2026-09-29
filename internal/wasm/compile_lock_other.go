@@ -9,8 +9,8 @@ package wasm
 // advisory file locking. The compiler's host builds run on unix; this variant
 // exists so the package still compiles for the wasip1 guest toolchain, which
 // pulls this package into its dependency graph but never constructs a Plugin.
-// Same-guest compilation is still serialized in-process by Loader.lockGuestCompile's
-// per-guest mutex; only the cross-process layer is absent here.
+// Builds of one guest still take turns in-process (see Loader.firstLoadGate);
+// only the cross-process layer is absent here.
 func flockGuestCompile(dir, key string) func() {
 	return func() {}
 }
