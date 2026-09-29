@@ -25,13 +25,28 @@ name: Publish and sign core plugins
 # cutting the tag is a human action; this workflow publishes the OCI artifacts and
 # attaches the built binaries to the GitHub release for the already-pushed tag.
 #
-# NOT YET LIVE. The destination registry, its pull/push credentials, the
-# self-hosted runner, and the authored per-plugin overlays that catalog
-# generation consumes are all operator-configured and are not wired here.
-# Until they exist this workflow is authored but unexercised — it has never run
-# against a real registry. The manual-dispatch entry defaults to a dry run, so an
-# unconfigured or accidental invocation prints what it would do without building
-# an image push, publishing, signing, or creating a release.
+# Before anything is built, the job checks that the registry accepts the stored
+# credential: one authenticated GET /v2/, which pushes nothing and opens no
+# upload session. The check runs on every run, a dry run included, so a manual
+# dry run is also how to prove that the stored credential matches the registry.
+#
+# The manual-dispatch entry defaults to a dry run. After the credential check it
+# builds, generates the entities, and prints what it would push, publish, sign
+# and release, doing none of it.
+#
+# Settings, by name:
+#   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
+#              REGISTRY_USERNAME         the registry username
+#              AGGREGA_RUNNER            the runner label (optional, a hosted
+#                                        runner by default)
+#              CLI_PUBLISH_OVERLAY_DIR   the per-plugin overlay directory
+#                                        (optional, aggrega-hub/plugin-overlays
+#                                        by default)
+#              CLI_PUBLISH_HUB_REF       the aggrega-hub ref the overlays are
+#                                        read at (optional, main by default)
+#   secrets    REGISTRY_PASSWORD         the registry password
+#              SUBMODULE_APP_CLIENT_ID   the organization App that reads the
+#              SUBMODULE_APP_PRIVATE_KEY private sibling repositories
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -45,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build, generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
+        description: "Check the stored registry credential, build, generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
         required: false
         default: true
         type: boolean
@@ -79,9 +94,10 @@ jobs:
     runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
 
     env:
-      # Destination registry host:port. A repository variable the operator sets
-      # once; the placeholder default cannot publish anywhere real.
-      REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid:0' }}
+      # Destination registry host. A repository variable the operator sets once;
+      # the placeholder default names a host that never resolves, so an unset
+      # variable fails the credential check, which names the variable.
+      REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid' }}
       # Registry credentials — needed on EVERY job because the registry is
       # authenticated on push AND pull. Read via the environment (not
       # interpolated into a run script) to avoid expression injection. The
@@ -95,13 +111,13 @@ jobs:
       FULCIO_URL: https://fulcio.sigstore.dev
       REKOR_URL: https://rekor.sigstore.dev
       # Authored per-plugin overlay directory that catalog generation merges with
-      # each guest's machine-derived contract fields. This is a REQUIRED input and
-      # is currently pending: the overlays supply the OCI identity, runtime limits,
-      # and provider block that the guests deliberately do not carry. The path is
-      # referenced here, not invented — until the overlays exist the generate step
-      # halts loudly. Each overlay's plugin identity must name a guest present in
-      # the decompressed guest set below (the publish pairs them by that identity).
-      # The overlays live in the aggrega-hub sibling checkout.
+      # each guest's machine-derived contract fields. This is a REQUIRED input: the
+      # overlays supply the OCI identity, runtime limits, and provider block that
+      # the guests deliberately do not carry, and the generate step halts, naming
+      # the guest, when one has no overlay. Each overlay's plugin identity must
+      # name a guest present in the decompressed guest set below (the publish
+      # pairs them by that identity). The overlays live in the aggrega-hub sibling
+      # checkout.
       OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'aggrega-hub/plugin-overlays' }}
       # aggrega-hub carries no CLI-side version pin, so it is always checked out at
       # HUB_REF (operator-overridable via a repository variable). The schemas, abi,
@@ -153,6 +169,24 @@ jobs:
           path: aggrega-cli
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Check the stored registry credential
+        # One GET /v2/ with the stored credential, before anything is built;
+        # anything but 200 fails, naming the settings to check and reporting only
+        # the HTTP status. An empty password or username is refused before any
+        # request. It runs on a dry run too, which makes a manual dry run the
+        # check that the stored credential matches the registry. It stays ahead
+        # of the step that moves the tree onto the release tag, so a dispatch
+        # naming an earlier tag still runs this script from the launched ref.
+        env:
+          REGISTRY_USERNAME: ${{ vars.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          aggrega-cli/.github/scripts/registry-gate.sh credential \
+            --registry-url "https://$REGISTRY" \
+            --registry-setting CLI_PUBLISH_REGISTRY \
+            --username-setting REGISTRY_USERNAME \
+            --password-setting REGISTRY_PASSWORD
 
       - name: Require a tag for a real manual publish
         # A real manual publish (a dispatch that is not a dry run) targets a past
@@ -379,8 +413,8 @@ jobs:
         # Emits one Plugin entity per embedded guest by merging each guest's
         # machine-derived contract fields with its authored overlay; the entity
         # version is the binary's own build version. The overlay directory is the
-        # REQUIRED authored input surfaced above and is currently pending — until
-        # it exists this step halts loudly rather than inventing entity content.
+        # REQUIRED authored input surfaced above; a guest with no overlay halts
+        # this step rather than getting invented entity content.
         # A prep-phase step: pure computation from the built guests, with no
         # external side effect, so it runs before anything is pushed.
         run: |
@@ -400,11 +434,12 @@ jobs:
       # =====================================================================
 
       - name: Authenticate to the registry
-        # Only a real publish contacts the registry. A dry run does no network, so
-        # it skips login and stays runnable without live credentials. Both the
-        # tooling-image push (docker) and the plugin publish (aggrega) authenticate
-        # with the same registry credentials; the password is read from the
-        # environment, never placed on a command line or interpolated.
+        # Only a real publish logs in. A dry run's one contact with the registry
+        # is the credential check at the start of the job, which needs no stored
+        # login. Both the tooling-image push (docker) and the plugin publish
+        # (aggrega) authenticate with the same registry credentials; the password
+        # is read from the environment, never placed on a command line or
+        # interpolated.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
