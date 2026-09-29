@@ -6,13 +6,18 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/scaffoldops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // getSchemaParams is the request shape for `aggrega/getSchema`.
@@ -45,9 +50,45 @@ type getSchemaParams struct {
 // it would be the one surface left to correct if a kind's token ever stopped
 // being its name lowercased. Carrying both leaves the client no mapping to keep,
 // which is the whole reason this answer exists.
+//
+// AcceptedBy says which operations accept a document of this kind named on its
+// own, so a client offering those operations on a document offers only the ones
+// that do not refuse it for its kind. It travels on the same entry for the same
+// reason the two registers do: a client deciding it for itself would be keeping
+// a list of each operation's kinds, and that list agrees with the operation
+// until the day the operation changes.
 type entityKindDescriptor struct {
-	Kind         string `json:"kind"`
-	DocumentKind string `json:"documentKind"`
+	Kind         string               `json:"kind"`
+	DocumentKind string               `json:"documentKind"`
+	AcceptedBy   entityKindAcceptance `json:"acceptedBy"`
+}
+
+// entityKindAcceptance says, for one kind an author writes, which operations
+// accept a document of that kind named on its own — by its path, or by its name
+// for inspection — with nothing else sent beside it. A member is true when that
+// operation does not refuse a document for being of this kind; a document it
+// accepts may still be refused for what the document says.
+//
+// SingleEntityValidation is whether the single-entity scope of `aggrega
+// validate` checks a document of this kind. A kind that scope refuses is checked
+// by the whole-catalog scope or by the Release scope instead.
+//
+// Publication is whether `aggrega/publishEntity` naming the document alone
+// publishes a document of this kind. A kind whose publication also binds an
+// executable named beside the document — a Plugin — is false, because a request
+// naming the document alone is refused for it; a kind no registry publishes — a
+// Manifest or a Release — is false too.
+//
+// InspectionByName is whether `aggrega/entityDefinition` resolves a name to an
+// entity of this kind, the name sent as it is written where one entity
+// references another.
+//
+// All three are true or false on every entry, so a client reads a false as a
+// statement rather than as a member it was not sent.
+type entityKindAcceptance struct {
+	SingleEntityValidation bool `json:"singleEntityValidation"`
+	Publication            bool `json:"publication"`
+	InspectionByName       bool `json:"inspectionByName"`
 }
 
 // getSchemaResult is the aggrega/getSchema response, and it answers one of the
@@ -57,7 +98,8 @@ type entityKindDescriptor struct {
 // and that kind's schema as a JSON document. Kinds and EntityKinds carry the
 // answer to a request that named none, and they answer it at two widths: Kinds is
 // every token this binary can be asked for, in the enumeration's own order, and
-// EntityKinds is the narrower set an author may write a document of.
+// EntityKinds is the narrower set an author may write a document of, each entry
+// also saying which operations accept a document of that kind named on its own.
 //
 // Both widths travel on that answer because a client needs a different one for a
 // different job, and picking the wrong one is not a cosmetic mistake. A client
@@ -105,13 +147,31 @@ type getSchemaResult struct {
 // which is a narrower set than the kinds that exist: a kind whose content lives
 // inside another kind's document is one an author never writes a file of, so
 // offering it here would offer a document there is nowhere to put.
+//
+// Each entry's acceptance is read from the home of each operation's own
+// acceptance, by the same reasoning: the kinds the single-entity validation
+// scope validates, the kinds the publication transport publishes less the kinds
+// whose publication binds an executable named beside the document, and the kinds
+// a by-name resolution reaches. Each of those is the set the operation itself
+// consults when it accepts or refuses a document, so no list of kinds is written
+// here and an operation that starts accepting a kind is reported as accepting it
+// from that moment.
 func authorableEntityKinds() []entityKindDescriptor {
 	declared := standalonekind.Kinds()
+	validated := validateops.SingleEntityKinds()
+	inspected := compilerops.EntityKinds()
 	out := make([]entityKindDescriptor, 0, len(declared))
 	for _, k := range declared {
+		documentKind := string(k)
 		out = append(out, entityKindDescriptor{
 			Kind:         entitykind.Segment(k),
-			DocumentKind: string(k),
+			DocumentKind: documentKind,
+			AcceptedBy: entityKindAcceptance{
+				SingleEntityValidation: slices.Contains(validated, documentKind),
+				Publication: oci.IsPublishableKind(documentKind) &&
+					!publishops.PublicationBindsExecutable(documentKind),
+				InspectionByName: slices.Contains(inspected, documentKind),
+			},
 		})
 	}
 	return out
@@ -119,7 +179,8 @@ func authorableEntityKinds() []entityKindDescriptor {
 
 // dispatchGetSchema answers with the JSON Schema for the entity or contract kind
 // the request names, or — when it names none — with every kind that can be named
-// and, alongside it, the narrower set an author may write a document of.
+// and, alongside it, the narrower set an author may write a document of, each
+// entry saying which operations accept a document of that kind named on its own.
 //
 // Both widths are answered together because a client cannot narrow the wide one
 // for itself: which tokens name a document somebody writes, and which name a

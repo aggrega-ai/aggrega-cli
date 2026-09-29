@@ -72,8 +72,9 @@ type EntityResult struct {
 // schema. See placeholderRefusal for why that reading sits beside the envelope
 // gate rather than inside it.
 //
-// A kind this scope does not accept is refused naming the kinds it does
-// accept, and the scope that checks the refused kind instead.
+// A kind this scope does not accept is refused with an [UnacceptedKindError],
+// naming the kinds it does accept and the scope that checks the refused kind
+// instead.
 //
 // The catalog directories are the already-resolved first-win search stack; the
 // workspace root and cache directory are resolved likewise by the caller.
@@ -102,7 +103,7 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string,
 	}
 	kind, ok := knownEntityKind(preamble.Kind)
 	if !ok {
-		return res, unacceptedKindError(preamble.Kind, path)
+		return res, &UnacceptedKindError{kind: preamble.Kind, path: path}
 	}
 
 	res.Kind = string(kind)
@@ -176,18 +177,30 @@ func knownEntityKind(kind string) (envelope.Kind, bool) {
 	return "", false
 }
 
-// unacceptedKindError refuses a document whose kind this scope does not
-// validate. It names the kinds the scope does accept, read from the one list
-// knownEntityKind reads, and — for an entity kind — the scope that checks a
-// document of that kind instead, so the reader is told where to go rather than
-// only where not to.
-func unacceptedKindError(kind, path string) error {
+// UnacceptedKindError refuses a document whose kind the single-entity scope
+// does not validate. Its message names the kinds the scope does accept, read
+// from the one list the scope's membership check reads, and — for an entity
+// kind — the scope that checks a document of that kind instead, so the reader
+// is told where to go rather than only where not to.
+//
+// It is a type rather than a plain error so a caller can tell this refusal,
+// which is about the document's kind, from a refusal of the document itself,
+// without reading the message: recognise it with errors.As. The message is
+// prose for the person who ran the check and may be reworded.
+type UnacceptedKindError struct {
+	kind string
+	path string
+}
+
+// Error renders the refusal: the kind and document refused, the kinds this
+// scope accepts, and where a document of the refused kind is checked instead.
+func (e *UnacceptedKindError) Error() string {
 	msg := fmt.Sprintf("kind %q in %q is not a single-entity validation target; the kinds this scope accepts are %s",
-		kind, path, joinKinds(SingleEntityKinds()))
-	if route := unacceptedKindRoute(entitykind.Kind(kind)); route != "" {
+		e.kind, e.path, joinKinds(SingleEntityKinds()))
+	if route := unacceptedKindRoute(entitykind.Kind(e.kind)); route != "" {
 		msg += ". " + route
 	}
-	return errors.New(msg)
+	return msg
 }
 
 // unacceptedKindRoute names the validation scope that checks a document of an

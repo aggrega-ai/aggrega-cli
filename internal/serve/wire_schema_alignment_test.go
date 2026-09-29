@@ -190,6 +190,7 @@ func wireSubjects() []wireSubject {
 		{name: "effectiveConfigurationSetting", typ: reflect.TypeOf(effectiveConfigurationSetting{}), def: "#/$defs/EffectiveConfigurationSetting"},
 		{name: "entityDefinitionParams", typ: reflect.TypeOf(entityDefinitionParams{}), def: "#/$defs/EntityDefinitionParams"},
 		{name: "entityDefinitionResult", typ: reflect.TypeOf(entityDefinitionResult{}), def: "#/$defs/EntityDefinitionResult"},
+		{name: "entityKindAcceptance", typ: reflect.TypeOf(entityKindAcceptance{}), def: "#/$defs/EntityKindAcceptance"},
 		{name: "entityKindDescriptor", typ: reflect.TypeOf(entityKindDescriptor{}), def: "#/$defs/EntityKindDescriptor"},
 		{name: "errorData", typ: reflect.TypeOf(errorData{}), def: "#/$defs/ErrorData"},
 		{name: "explainErrorEntry", typ: reflect.TypeOf(explainErrorEntry{}), def: "#/$defs/ExplainErrorEntry"},

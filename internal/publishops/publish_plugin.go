@@ -66,7 +66,7 @@ import (
 // between import inspection, derivation, and instantiation.
 func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registryhost.Location, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
 	if cfg.PluginPath == "" {
-		return PushResult{}, fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
+		return PushResult{}, &ExecutableRequiredError{name: name}
 	}
 
 	// The entity is read the way a catalog load reads it, before its .wasm is

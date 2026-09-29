@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -221,6 +222,38 @@ type pushEntityHeader struct {
 		// two providers may ship a recipe of the same name.
 		Capability string `yaml:"capability"`
 	} `yaml:"spec"`
+}
+
+// PublicationBindsExecutable reports whether publishing an entity of kind also
+// binds an executable the caller names beside the entity's document: a Plugin,
+// whose .wasm is published inside the entity's own manifest.
+//
+// It is the declaration Push routes on, so the route and every surface that
+// reports it are one fact rather than two. A publication of such a kind that
+// names no executable is refused with an [ExecutableRequiredError], because the
+// publication binds that executable into the entity's manifest. A surface
+// answering which kinds a publication naming the document alone accepts reads
+// this rather than keeping a kind of its own.
+//
+// kind is the value a document carries in its top-level `kind:` field.
+func PublicationBindsExecutable(kind string) bool {
+	return kind == string(entitykind.Plugin)
+}
+
+// ExecutableRequiredError refuses the publication of an entity whose kind binds
+// an executable — see [PublicationBindsExecutable] — when the caller named none.
+//
+// It is a type rather than a plain error so a caller can recognise the refusal
+// without reading its text. The text names the command line's flag even where
+// another surface raised it, so it is prose that may be reworded rather than a
+// contract to match against: recognise the refusal with errors.As.
+type ExecutableRequiredError struct {
+	name string
+}
+
+// Error renders the refusal naming the entity whose executable is missing.
+func (e *ExecutableRequiredError) Error() string {
+	return fmt.Sprintf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", e.name)
 }
 
 // ListPublishableKinds writes each publishable entity kind on its own line, in
@@ -531,7 +564,11 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// single-artifact catalog-kind path that it has its own helper; signing,
 	// the immutability guard, and the content-digest spelling are reused, not
 	// re-spelled.
-	if header.Kind == "Plugin" {
+	//
+	// The route reads the one declaration of which kinds take it, so a surface
+	// reporting which kinds a publication naming the document alone accepts reads
+	// the same fact this route acts on.
+	if PublicationBindsExecutable(header.Kind) {
 		res, perr := pushPlugin(ctx, out, cfg, dest, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
 		if perr == nil {
 			res.Pin = pinned
