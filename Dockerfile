@@ -15,15 +15,20 @@
 # aggrega-cli-only build context without duplicating the guest-build logic
 # (which would let the two copies drift). Instead, the build scripts produce
 # the embedded, version-stamped binary first; this Dockerfile packages that
-# exact artifact. scripts/build-tooling-image.sh runs the build and verifies
-# the binary is embedded and stamped before invoking docker.
+# artifact, stripped of its debug information (see the build context below).
+# scripts/build-tooling-image.sh runs the build and verifies the binary is
+# embedded and stamped before invoking docker.
 #
 # The binary MUST be the embedded build (guests compiled in, resolves with no
 # network) and MUST carry the git-describe version stamp. The build script
 # enforces both by running `aggrega plugin list` (embedded guests present) and
 # `aggrega version -o json` (version + abiVersion present) before the image is
-# built. The build context is the aggrega-cli directory, where the build
-# scripts leave the `aggrega` binary.
+# built. The build context is a temporary directory the build script creates,
+# holding only a copy of that binary, named `aggrega`, with its debug
+# information stripped: the registry refuses a single upload request above
+# 100,000,000 bytes, and the layer carrying the binary is sent in one request.
+# The script refuses when the copy does not report the same version and
+# abiVersion as the binary, and removes the directory when it exits.
 
 # Version string reported by the binary (git-describe, v-less), stamped as a
 # label so a consumer can gate at the registry/manifest level without running
@@ -45,10 +50,13 @@ ARG ABI_VERSION=unknown
 # in the base by default; git, awk (gawk), and ca-certificates are installed
 # below.
 #
-# The aggrega binary itself is a static, cgo-free Go binary (its Wasm runtime is
-# pure Go) and needs none of these tools — it would run on any base. The base is
-# sized for the CI tooling that runs alongside the binary, not for the binary's
-# own linkage.
+# The aggrega binary itself needs none of these tools (its Wasm runtime is pure
+# Go), but it is not static: the build scripts leave cgo at Go's default, which
+# enables it wherever a C compiler is on the PATH, so the binary is linked
+# dynamically against the GNU C library and needs the base's C library and its
+# dynamic loader. Any glibc-based base carrying a recent enough C library would
+# do; the tools added below are sized for the CI tooling that runs alongside
+# the binary.
 #
 # The image runs as root. Where the CI runner mounts and owns the checked-out
 # workspace as root, running git and the checkout step as a non-root user
@@ -84,7 +92,8 @@ LABEL org.opencontainers.image.title="aggrega" \
       ai.aggrega.version="${VERSION}" \
       ai.aggrega.abi-version="${ABI_VERSION}"
 
-# The embedded, version-stamped binary produced by the build scripts.
+# The embedded, version-stamped binary produced by the build scripts, as the
+# stripped copy the build context holds.
 COPY aggrega /usr/local/bin/aggrega
 
 ENTRYPOINT ["/usr/local/bin/aggrega"]

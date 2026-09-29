@@ -21,7 +21,24 @@
 # the embedded Wasm guests and stamps the git-describe version. Run that first;
 # this script verifies the resulting binary is embedded and stamped, then builds
 # and (optionally) pushes the image. Keeping the build in one place means the
-# image always packages the exact artifact the build scripts produce.
+# image always packages the artifact the build scripts produce, stripped of its
+# debug information as described next.
+#
+# WHY the image carries a stripped copy of the binary: the hub registry, the
+# default --registry, refuses a single upload request above 100,000,000 bytes.
+# It runs as a Cloudflare Worker, whose request body is capped by the hosting
+# account's plan, and it advertises the same figure as the largest upload chunk
+# it accepts. docker buildx sends each layer in one request, and the binary is
+# one file, so its layer cannot be split; with its debug information that layer
+# comes close to the ceiling, and it grows with every release. So this script
+# writes a copy of the binary with its debug information removed
+# (`strip --strip-debug`; the symbol table stays) into a build context of its
+# own, a temporary directory holding only that copy under the name `aggrega`,
+# and builds the image from it. The binary given by --binary is never modified.
+# The copy must report the same `version` and `abiVersion` in
+# `aggrega version -o json` as the original, or the script refuses. It strips on
+# every run, a dry run included: stripping is local, and a dry run exists to
+# show that the real run would work. `strip` (GNU binutils) must be on PATH.
 #
 # After a push, sign the image by reference:
 #   aggrega sign <registry>/tools/aggrega:<tag>
@@ -39,12 +56,20 @@
 #                       aggrega binary beside this script's parent, i.e. the
 #                       build output at <aggrega-cli>/aggrega).
 #   --platform <p>      Target platform (default: linux/amd64).
+#   --keep-stripped <path>
+#                       Also keep the stripped copy of the binary at <path>. It
+#                       is the same file the image carries, byte for byte, so a
+#                       caller can publish exactly what the image holds. Without
+#                       it the stripped copy exists only in the temporary build
+#                       context, which is removed when the script exits. <path>
+#                       must not name the --binary file itself.
 #   --push              Push the image after building (default: build only,
 #                       loaded into the local docker image store).
 #   --allow-dirty       Permit building/pushing a -dirty tag (refused by
 #                       default when --push is set, so a work-in-progress tree
 #                       is never published).
-#   --dry-run           Print the planned commands without running docker.
+#   --dry-run           Strip and check the copy as a real run does, then print
+#                       the planned commands without running docker.
 #   -h, --help          Show this help.
 #
 # Exit non-zero on the first failing step.
@@ -58,6 +83,7 @@ IMAGE_NAME="tools/aggrega"
 PLATFORM="linux/amd64"
 BINARY="$CLI_DIR/aggrega"
 TAG=""
+KEEP_STRIPPED=""
 PUSH=0
 ALLOW_DIRTY=0
 DRY_RUN=0
@@ -70,6 +96,9 @@ while [ "$#" -gt 0 ]; do
     --registry)   REGISTRY="${2:-}"; shift 2 ;;
     --binary)     BINARY="${2:-}"; shift 2 ;;
     --platform)   PLATFORM="${2:-}"; shift 2 ;;
+    --keep-stripped)
+      [ -n "${2:-}" ] || die "--keep-stripped needs a path"
+      KEEP_STRIPPED="$2"; shift 2 ;;
     --push)       PUSH=1; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
@@ -108,22 +137,60 @@ fi
 # Whitespace is stripped before the match so the extraction is insensitive to
 # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
 # only where the extracted value contains no whitespace, which holds for the
-# version and ABI version strings read here.
+# version and ABI version strings read here. The stripped copy below is read
+# through the same function, so the two identities are compared field for field.
+# An absent field yields an empty value rather than a failed pipeline, so the
+# refusals below name what is missing instead of the script exiting silently.
+json_field() { printf '%s' "$1" | tr -d '[:space:]' | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4 || true; }
+
 VERSION_JSON="$("$BINARY" version -o json 2>/dev/null)" || die "could not read version from $BINARY"
-BIN_VERSION="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
-BIN_ABI="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
+BIN_VERSION="$(json_field "$VERSION_JSON" version)"
+BIN_ABI="$(json_field "$VERSION_JSON" abiVersion)"
 
 [ -n "$BIN_VERSION" ] || die "binary reported no version — is it stamped? rebuild via scripts/build.sh"
 [ -n "$BIN_ABI" ] || die "binary reported no abiVersion — is it up to date? rebuild via scripts/build.sh"
 
 case "$TAG" in
-  *dirty*|*-dirty)
+  *dirty*)
     if [ "$PUSH" = 1 ] && [ "$ALLOW_DIRTY" != 1 ]; then
       die "refusing to push a -dirty tag ($TAG); commit the tree or pass --allow-dirty"
     fi
     printf 'warning: building a -dirty tag (%s) from an uncommitted tree\n' "$TAG" >&2
     ;;
 esac
+
+# Strip a copy of the binary into a build context of its own (see the header
+# for why). `strip -o` writes the copy and leaves the input untouched; the mode
+# is set explicitly because `strip -o` creates the copy under the umask.
+command -v strip >/dev/null 2>&1 || die "strip not found on PATH.
+the tooling image carries a copy of the binary stripped of its debug information
+(see --help for why); install GNU binutils, which provides strip, and re-run."
+if [ -n "$KEEP_STRIPPED" ] && [ -e "$KEEP_STRIPPED" ] && [ "$KEEP_STRIPPED" -ef "$BINARY" ]; then
+  die "--keep-stripped names the --binary file itself ($KEEP_STRIPPED); the binary must stay as built"
+fi
+if [ -n "$KEEP_STRIPPED" ] && [ -d "$KEEP_STRIPPED" ]; then
+  die "--keep-stripped names a directory ($KEEP_STRIPPED); give the path of the file to write"
+fi
+
+CONTEXT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aggrega-tooling-image.XXXXXX")" || die "could not create a temporary build context"
+trap 'rm -rf "$CONTEXT_DIR"' EXIT
+STRIPPED="$CONTEXT_DIR/aggrega"
+strip --strip-debug -o "$STRIPPED" "$BINARY" || die "strip --strip-debug failed on $BINARY"
+chmod 0755 "$STRIPPED"
+
+STRIPPED_JSON="$("$STRIPPED" version -o json 2>/dev/null)" || die "the stripped copy of $BINARY does not run: could not read its version"
+STRIPPED_VERSION="$(json_field "$STRIPPED_JSON" version)"
+STRIPPED_ABI="$(json_field "$STRIPPED_JSON" abiVersion)"
+if [ "$STRIPPED_VERSION" != "$BIN_VERSION" ] || [ "$STRIPPED_ABI" != "$BIN_ABI" ]; then
+  die "the stripped copy reports version '$STRIPPED_VERSION' and abiVersion '$STRIPPED_ABI',
+but $BINARY reports version '$BIN_VERSION' and abiVersion '$BIN_ABI';
+refusing to build an image whose binary does not report the original's identity"
+fi
+
+if [ -n "$KEEP_STRIPPED" ]; then
+  cp "$STRIPPED" "$KEEP_STRIPPED" || die "could not keep the stripped copy at $KEEP_STRIPPED"
+  chmod 0755 "$KEEP_STRIPPED"
+fi
 
 IMAGE_REF="$REGISTRY/$IMAGE_NAME:$TAG"
 STABLE_REF="$REGISTRY/$IMAGE_NAME:stable"
@@ -147,7 +214,7 @@ if [ "$PUSH" = 1 ]; then
 else
   BUILD_CMD+=(--load)
 fi
-BUILD_CMD+=("$CLI_DIR")
+BUILD_CMD+=("$CONTEXT_DIR")
 
 printf 'image:     %s\n' "$IMAGE_REF"
 if [ "$PUSH" = 1 ]; then
@@ -157,6 +224,12 @@ printf 'version:   %s\n' "$BIN_VERSION"
 printf 'abi:       %s\n' "$BIN_ABI"
 printf 'platform:  %s\n' "$PLATFORM"
 printf 'push:      %s\n' "$([ "$PUSH" = 1 ] && echo yes || echo 'no (local load)')"
+printf 'binary:    %s (%s bytes, left as built)\n' "$BINARY" "$(wc -c < "$BINARY" | tr -d '[:space:]')"
+printf 'stripped:  %s bytes, debug information removed; same version and abiVersion\n' "$(wc -c < "$STRIPPED" | tr -d '[:space:]')"
+printf 'context:   %s (the stripped copy only; removed on exit)\n' "$CONTEXT_DIR"
+if [ -n "$KEEP_STRIPPED" ]; then
+  printf 'kept:      %s (the same file the image carries)\n' "$KEEP_STRIPPED"
+fi
 
 if [ "$DRY_RUN" = 1 ]; then
   printf 'dry-run — would run:\n  %s\n' "${BUILD_CMD[*]}"

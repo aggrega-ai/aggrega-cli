@@ -486,6 +486,16 @@ jobs:
         # real run pushes and then signs the image by reference keyless against
         # public Sigstore. The image tag is derived from the same version the
         # binary reports, so the pushed reference and the binary stay in lockstep.
+        #
+        # The image carries a copy of the binary stripped of its debug
+        # information, because of the registry's per-request ceiling: the
+        # registry refuses a single upload request above 100,000,000 bytes, and
+        # buildx sends each layer in one request, the binary's layer included.
+        # The build script strips the copy on a dry run too, and keeps
+        # it at the path this step outputs as stripped_binary; the release step
+        # attaches that same file, so the image and the release asset cannot
+        # differ. aggrega-cli/aggrega itself stays as built.
+        id: tooling-image
         run: |
           set -euo pipefail
 
@@ -495,12 +505,17 @@ jobs:
             DRY="false"
           fi
 
+          STRIPPED_BINARY="$RUNNER_TEMP/aggrega-stripped"
+          echo "stripped_binary=$STRIPPED_BINARY" >> "$GITHUB_OUTPUT"
+
           if [ "$DRY" = "true" ]; then
-            aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" --dry-run
+            aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" \
+              --keep-stripped "$STRIPPED_BINARY" --dry-run
             exit 0
           fi
 
-          aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" --push
+          aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" \
+            --keep-stripped "$STRIPPED_BINARY" --push
 
           # Sign the pushed image by its resolved reference, keyless against
           # public Sigstore. The identity token is read from SIGSTORE_ID_TOKEN
@@ -576,19 +591,24 @@ jobs:
           aggrega-cli/scripts/publish-plugins.sh "${args[@]}"
 
       - name: Create the GitHub release and upload the binaries
-        # The publish phase's final side effect: attach the full and light binaries
-        # to the GitHub release for this tag so they are downloadable from the
-        # release page. The embedded guests are NOT uploaded here — they publish to
-        # the registry with their Plugin entities; the release carries only the two
-        # runnable binaries, and GitHub attaches the source archives on its own. A
-        # dry run prints the planned release and asset names and creates nothing.
-        # The release lands on this repository — GH_REPO pins it explicitly — for
-        # the tag the human already pushed; contents:write authorizes it. Asset
-        # names carry the binary's reported version and the build's linux/amd64
-        # target.
+        # The publish phase's final side effect: attach the full, light and
+        # stripped binaries to the GitHub release for this tag so they are
+        # downloadable from the release page. The stripped binary is the full
+        # binary without its debug information: the very file the tooling image
+        # carries, which the image step kept at its stripped_binary output. This
+        # step copies that file and never strips, so the asset and the image
+        # cannot differ. The embedded guests are NOT uploaded here — they publish
+        # to the registry with their Plugin entities; the release carries only the
+        # three runnable binaries, and GitHub attaches the source archives on its
+        # own. A dry run prints the planned release and asset names and creates
+        # nothing. The release lands on this repository — GH_REPO pins it
+        # explicitly — for the tag the human already pushed; contents:write
+        # authorizes it. Asset names carry the binary's reported version and the
+        # build's linux/amd64 target.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          STRIPPED_BINARY: ${{ steps.tooling-image.outputs.stripped_binary }}
         run: |
           set -euo pipefail
 
@@ -607,17 +627,27 @@ jobs:
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
 
+          # The stripped binary is the file the tooling image step kept; refuse
+          # rather than release two binaries when it is missing.
+          if [ -z "$STRIPPED_BINARY" ] || [ ! -f "$STRIPPED_BINARY" ]; then
+            echo "the tooling image step kept no stripped binary (expected at '${STRIPPED_BINARY:-<unset>}')" >&2
+            exit 1
+          fi
+
           RELEASE_DIR="$RUNNER_TEMP/release"
           mkdir -p "$RELEASE_DIR"
           FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
           LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
+          STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-linux-amd64"
           cp aggrega-cli/aggrega "$FULL_ASSET"
           cp aggrega-cli/aggrega-light "$LIGHT_ASSET"
+          cp "$STRIPPED_BINARY" "$STRIPPED_ASSET"
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
             echo "  $(basename "$FULL_ASSET")"
             echo "  $(basename "$LIGHT_ASSET")"
+            echo "  $(basename "$STRIPPED_ASSET")"
             exit 0
           fi
 
@@ -625,11 +655,12 @@ jobs:
           # already exists): create the release the first time, otherwise
           # re-upload the assets over the existing ones.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" --clobber
+            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET" --clobber
           else
             gh release create "$TAG" \
               "$FULL_ASSET" \
               "$LIGHT_ASSET" \
+              "$STRIPPED_ASSET" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests) and aggrega-light (no-embed, resolves plugins through the cascade)."
+              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information: the same bytes the tooling image carries)."
           fi
