@@ -25,9 +25,9 @@
 # packages it imports, discovered through `go list` against the guest's wasip1
 # build — so a change to the shared render core is detected, not only a change to
 # the thin provider entrypoint. The immutable module cache and the standard
-# library are excluded (they cannot go stale relative to a rebuild). The Rust
-# publishing-linter guest is checked against its crate source and the local
-# plugin SDK crate it depends on, excluding the cargo build directory.
+# library are excluded (they cannot go stale relative to a rebuild). Each Rust
+# guest is checked against its crate source and the extra source roots its
+# manifest row names, excluding the cargo build directory.
 #
 # Exit 0 when every guest is fresh; exit 1 (naming each stale or missing guest
 # and the rebuild command) otherwise. Deterministic and offline.
