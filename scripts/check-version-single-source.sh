@@ -14,15 +14,21 @@
 # asserts that arrangement holds:
 #   1. each of the three scripts sources the shared helper, and
 #   2. none of the three re-introduces an inline `git describe` or
-#      `git rev-parse --short` version derivation, and
+#      `git rev-parse --short` version derivation — spelled plainly or with
+#      git's own options ahead of the subcommand (`git -C <dir> describe`,
+#      `git rev-parse --verify --short`), and
 #   3. the working-tree-marked (--dirty) provenance recipe appears in no other
-#      script under this module's scripts/ — only in the shared helper.
+#      script under this module's scripts/ — only in the shared helper, and in
+#      the one script exempted by name below.
 #
 # Out of scope by design: the committed hub-catalog generator and the
 # overlay-consistency check derive a deliberately SEPARATE version without the
-# --dirty marker, and the container-image builder derives an image tag. Those
-# are distinct recipes for distinct outputs, keyed differently from the --dirty
-# binary-provenance recipe guarded here, and this check does not fold them in.
+# --dirty marker — distinct recipes for distinct outputs, keyed differently from
+# the --dirty binary-provenance recipe guarded here. The container-image builder
+# runs the --dirty recipe itself, for the default tag of the image it builds: an
+# output none of the three guarded scripts stamps. It is exempted from the third
+# check by name, so the exemption is read where the check is. This check folds
+# none of them in.
 #
 # Note what that separation does NOT buy, because the obvious reading is wrong:
 # it confers no immunity from an edited tree. The generator's version stamps
@@ -41,6 +47,9 @@ cd "$(dirname "$0")/.."          # aggrega-cli module root
 
 HELPER="scripts/lib/build-version.sh"
 SELF="scripts/check-version-single-source.sh"
+# The one script the third check exempts, for the reason the header gives: it
+# derives the default tag of the container image, not a stamped version.
+IMAGE_TAG_SCRIPT="scripts/build-tooling-image.sh"
 GUARDED=(
   scripts/build.sh
   scripts/build-embedded-plugins.sh
@@ -54,12 +63,17 @@ declare -a violations=()
 # inline_recipe_hits FILE — prints "LINE: text" for each non-comment line that
 # invokes git to derive a version (a `git describe` or `git rev-parse --short`),
 # ignoring the line that sources the shared helper. Prose mentions of the recipe
-# in header comments are skipped.
+# in header comments are skipped. Any words may stand between `git` and the
+# subcommand, and between `rev-parse` and `--short`, so a derivation that names
+# a directory with -C, sets a configuration value with -c, or puts another
+# option first is still found: each of those is a second derivation whose
+# abbreviation length, dirty marker or tag match can differ from the helper's.
 inline_recipe_hits() {
   awk '
     /^[[:space:]]*#/                 { next }   # comment line
     /lib\/build-version\.sh/         { next }   # the source line
-    /git[[:space:]]+describe/ || /git[[:space:]]+rev-parse[[:space:]]+--short/ {
+    /git([[:space:]]+[^[:space:]]+)*[[:space:]]+describe/ ||
+    /git([[:space:]]+[^[:space:]]+)*[[:space:]]+rev-parse([[:space:]]+[^[:space:]]+)*[[:space:]]+--short/ {
       printf "%d: %s\n", NR, $0
     }
   ' "$1"
@@ -82,11 +96,13 @@ for f in "${GUARDED[@]}"; do
 done
 
 # The --dirty binary-provenance recipe must appear in no other build script.
-# Scan every script under scripts/ except the helper (its home) and this guard,
-# skipping comment lines. The clean-tree catalog recipe (no --dirty) and the
-# container-image tag do not match this pattern and are intentionally excluded.
+# Scan every script under scripts/ except the helper (its home), this guard and
+# the image builder exempted above, skipping comment lines. A line is the recipe
+# when it runs `git … describe` with --dirty anywhere among its options, whatever
+# git's own options or the other describe options around it. The clean-tree
+# catalog recipe carries no --dirty and does not match.
 while IFS= read -r script; do
-  case "$script" in "$HELPER"|"$SELF") continue;; esac
+  case "$script" in "$HELPER"|"$SELF"|"$IMAGE_TAG_SCRIPT") continue;; esac
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     echo "VIOLATION  $script:$hit — stray binary-provenance recipe; source $HELPER instead"
@@ -94,7 +110,7 @@ while IFS= read -r script; do
   done < <(
     awk '
       /^[[:space:]]*#/ { next }
-      /git[[:space:]]+describe[[:space:]]+--tags[[:space:]]+--always[[:space:]]+--dirty/ {
+      /git([[:space:]]+[^[:space:]]+)*[[:space:]]+describe([[:space:]]+[^[:space:]]+)*[[:space:]]+--dirty/ {
         printf "%d: %s\n", NR, $0
       }
     ' "$script"
