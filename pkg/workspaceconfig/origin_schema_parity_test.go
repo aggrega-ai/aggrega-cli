@@ -73,6 +73,12 @@ var originSchemaPropertyFreeKeywords = map[string]bool{
 	"type":             true,
 	"uniqueItems":      true,
 	"writeOnly":        true,
+
+	// An annotation declaring the value at its position sensitive. It constrains
+	// nothing and nothing reads its value as a schema — only the boolean true
+	// declares anything — so it carries no subschema and cannot hide a declared
+	// setting.
+	"x-aggrega-sensitive": true,
 }
 
 // originSchemaRows walks a configuration schema and returns every setting it
@@ -729,12 +735,34 @@ func TestOriginCoverageRefusesAKindDisagreement(t *testing.T) {
 	}
 }
 
-// TestTheSchemaWalkRefusesWhatItCannotEnumerate pins the walk's own guard. A
-// keyword that can carry a subschema, and an object left open, each hide
-// settings the walk would otherwise pass over in silence — leaving every check
-// built on it green over a narrower surface than it claims.
+// TestTheSchemaWalkRefusesWhatItCannotEnumerate pins the guard the two walks
+// over the configuration schema share. A keyword that can carry a subschema, a
+// keyword nobody has classified, and an object left open each hide settings a
+// walk would otherwise pass over in silence — leaving every check built on it
+// green over a narrower surface than it claims.
+//
+// Every row is driven through the origin walk and the defaults walk alike. The
+// two read one classification of property-free keywords, and each refuses on
+// its own path, so a row reaching only one of them would leave the other's
+// refusal unproven. The row carrying an unclassified annotation is what shows
+// that admitting a keyword to that classification is a decision about that one
+// keyword, and relaxes the refusal for no other.
 func TestTheSchemaWalkRefusesWhatItCannotEnumerate(t *testing.T) {
 	t.Parallel()
+
+	walks := []struct {
+		name string
+		walk func(schema string) (int, error)
+	}{
+		{"the origin walk", func(schema string) (int, error) {
+			rows, err := originSchemaRows(schema)
+			return len(rows), err
+		}},
+		{"the defaults walk", func(schema string) (int, error) {
+			defaults, err := configSchemaDefaults(schema)
+			return len(defaults), err
+		}},
+	}
 
 	for _, tc := range []struct {
 		name    string
@@ -750,6 +778,11 @@ func TestTheSchemaWalkRefusesWhatItCannotEnumerate(t *testing.T) {
 			name:    "a pattern-keyed property map",
 			schema:  `{"properties":{"build":{"type":"object","patternProperties":{"^x":{"type":"string"}}}}}`,
 			wantSub: `"patternProperties" keyword`,
+		},
+		{
+			name:    "an annotation nobody has classified",
+			schema:  `{"properties":{"build":{"type":"string","x-aggrega-unclassified":true}}}`,
+			wantSub: `"x-aggrega-unclassified" keyword`,
 		},
 		{
 			name: "an object declaring properties beside a subschema for every other key",
@@ -780,12 +813,17 @@ func TestTheSchemaWalkRefusesWhatItCannotEnumerate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rows, err := originSchemaRows(tc.schema)
-			if err == nil {
-				t.Fatalf("the walk accepted a schema it cannot enumerate and returned %d rows", len(rows))
-			}
-			if !strings.Contains(err.Error(), tc.wantSub) {
-				t.Errorf("the refusal does not report %q: %v", tc.wantSub, err)
+			for _, w := range walks {
+				t.Run(w.name, func(t *testing.T) {
+					t.Parallel()
+					n, err := w.walk(tc.schema)
+					if err == nil {
+						t.Fatalf("%s accepted a schema it cannot enumerate and returned %d entries", w.name, n)
+					}
+					if !strings.Contains(err.Error(), tc.wantSub) {
+						t.Errorf("%s's refusal does not report %q: %v", w.name, tc.wantSub, err)
+					}
+				})
 			}
 		})
 	}
