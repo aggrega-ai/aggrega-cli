@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 )
 
 // cacheInventoryFixture is the shared inventory this surface's projection is
@@ -236,7 +237,7 @@ func TestTheCacheInventoryCarriesEveryFactTheSharedInventoryComputed(t *testing.
 		t.Fatalf("the fixture inventory is missing a half this reading covers, so it would hold vacuously: %+v", report)
 	}
 
-	encoded, err := json.Marshal(cacheStatusPayload("/seeded/workspace", report))
+	encoded, err := json.Marshal(cacheStatusPayload("/seeded/workspace", report, false))
 	if err != nil {
 		t.Fatalf("marshal the projected inventory: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestTheCacheInventoryReadingRejectsADroppedFact(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			payload := cacheStatusPayload("/seeded/workspace", report)
+			payload := cacheStatusPayload("/seeded/workspace", report, false)
 			undamaged, err := json.Marshal(payload)
 			if err != nil {
 				t.Fatalf("marshal: %v", err)
@@ -323,6 +324,165 @@ func TestTheCacheInventoryReadingRejectsADroppedFact(t *testing.T) {
 			}
 			t.Logf("dropping %s produced: %v", tc.name, complaints)
 		})
+	}
+}
+
+// TestTheCacheInventoryKeepsBackOnlyWhatNamesAPluginLoadedFromAFile drives the
+// projection over an inventory that records a plugin of every reference form, for
+// a caller that launched this process and for one reaching a listener.
+//
+// The first is told everything as the inventory composed it. The second is told
+// every identity that names a registry reference or a Plugin entity whole, and
+// nothing that names a plugin by a path on this host: such an identity is null in
+// its place with its entry marked, and a compiled module's note naming one is kept
+// back whole and marked. Each row states one reference form, so a projection that
+// judged the composed text instead of the record, or kept back too much, fails on
+// the row that names it.
+func TestTheCacheInventoryKeepsBackOnlyWhatNamesAPluginLoadedFromAFile(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fromFile     = "/seeded/plugins/importer.wasm@sha256:aa11"
+		fromRegistry = "oci://hub.example.test/plugins/core/helm@1.0.0"
+		byEntity     = "importer/langflow@1.2.0"
+	)
+	recordedFromFile := provindex.Identity{URI: "/seeded/plugins/importer.wasm", Version: "sha256:aa11"}
+	recordedFromRegistry := provindex.Identity{URI: "oci://hub.example.test/plugins/core/helm", Version: "1.0.0"}
+	recordedByEntity := provindex.Identity{URI: "importer/langflow", Version: "1.2.0"}
+
+	elements := []struct {
+		scenario string
+		element  cacheops.Element
+		// keptBack says the listener is told nothing of the note.
+		keptBack bool
+	}{
+		{"a module built for a plugin loaded from a file",
+			cacheops.Element{Label: "wazero-1.0/leaf-file", Size: 10, DigestHex: "aa11", Note: fromFile,
+				Recorded: []provindex.Identity{recordedFromFile}}, true},
+		{"a module built for a registry reference",
+			cacheops.Element{Label: "wazero-1.0/leaf-registry", Size: 10, DigestHex: "bb22", Note: fromRegistry,
+				Recorded: []provindex.Identity{recordedFromRegistry}}, false},
+		{"a module built for bytes a file and a registry reference share",
+			cacheops.Element{Label: "wazero-1.0/leaf-shared", Size: 10, DigestHex: "cc33", Note: fromFile + ", " + fromRegistry,
+				Recorded: []provindex.Identity{recordedFromFile, recordedFromRegistry}}, true},
+		{"the shared runtime kernel",
+			cacheops.Element{Label: "wazero-1.0/kernel", Size: 10, Note: "shared runtime kernel, shared by 2"}, false},
+		{"a module nothing is recorded for",
+			cacheops.Element{Label: "wazero-1.0/orphan", Size: 10, Note: "unattributed"}, false},
+	}
+	provenance := []struct {
+		scenario string
+		entry    cacheops.ProvenanceEntry
+		// keptBack says which identities the listener is told nothing of.
+		keptBack []bool
+	}{
+		{"a plugin loaded from a file",
+			cacheops.ProvenanceEntry{Identities: []string{fromFile}, Recorded: []provindex.Identity{recordedFromFile}},
+			[]bool{true}},
+		{"a registry reference",
+			cacheops.ProvenanceEntry{Identities: []string{fromRegistry}, Recorded: []provindex.Identity{recordedFromRegistry}},
+			[]bool{false}},
+		{"a Plugin entity",
+			cacheops.ProvenanceEntry{Identities: []string{byEntity}, Recorded: []provindex.Identity{recordedByEntity}},
+			[]bool{false}},
+		{"bytes a file and a registry reference share",
+			cacheops.ProvenanceEntry{Identities: []string{fromFile, fromRegistry}, SharedBy: 2,
+				Recorded: []provindex.Identity{recordedFromFile, recordedFromRegistry}},
+			[]bool{true, false}},
+		{"identities whose records did not arrive",
+			cacheops.ProvenanceEntry{Identities: []string{fromRegistry}},
+			[]bool{true}},
+	}
+
+	report := cacheops.Report{Classes: []cacheops.Class{{Name: cacheops.CompiledModuleClassName,
+		Reach: cacheops.ReachMachine, Prunable: true}}}
+	for _, row := range elements {
+		report.Classes[0].Elements = append(report.Classes[0].Elements, row.element)
+	}
+	for _, row := range provenance {
+		report.Provenance = append(report.Provenance, row.entry)
+	}
+
+	atTheKeyboard := cacheStatusPayload("/seeded/workspace", report, false)
+	overAListener := cacheStatusPayload("/seeded/workspace", report, true)
+
+	for i, row := range elements {
+		keyboard, listener := atTheKeyboard.Classes[0].Elements[i], overAListener.Classes[0].Elements[i]
+		if keyboard.Note != row.element.Note || keyboard.NoteWithheld {
+			t.Errorf("%s: at the keyboard the note is %q (withheld=%v), want %q as composed", row.scenario,
+				keyboard.Note, keyboard.NoteWithheld, row.element.Note)
+		}
+		switch {
+		case row.keptBack && (listener.Note != "" || !listener.NoteWithheld):
+			t.Errorf("%s: over a listener the note is %q (withheld=%v), want it kept back whole and marked",
+				row.scenario, listener.Note, listener.NoteWithheld)
+		case !row.keptBack && (listener.Note != row.element.Note || listener.NoteWithheld):
+			t.Errorf("%s: over a listener the note is %q (withheld=%v), want %q whole", row.scenario,
+				listener.Note, listener.NoteWithheld, row.element.Note)
+		}
+		if listener.Digest != row.element.DigestHex {
+			t.Errorf("%s: over a listener the digest is %q, want %q: it names no place, so it is answered whole",
+				row.scenario, listener.Digest, row.element.DigestHex)
+		}
+	}
+	for i, row := range provenance {
+		keyboard, listener := atTheKeyboard.Provenance[i], overAListener.Provenance[i]
+		if keyboard.IdentitiesWithheld || len(keyboard.Identities) != len(row.entry.Identities) {
+			t.Errorf("%s: at the keyboard the entry is %v (withheld=%v), want every identity as composed",
+				row.scenario, keyboard.Identities, keyboard.IdentitiesWithheld)
+			continue
+		}
+		if len(listener.Identities) != len(row.entry.Identities) {
+			t.Errorf("%s: over a listener the entry names %d identities, want %d, each in its place", row.scenario,
+				len(listener.Identities), len(row.entry.Identities))
+			continue
+		}
+		anyKeptBack := false
+		for j, name := range row.entry.Identities {
+			if told(keyboard.Identities[j]) != name {
+				t.Errorf("%s: at the keyboard identity %d is %q, want %q", row.scenario, j, told(keyboard.Identities[j]), name)
+			}
+			switch got := listener.Identities[j]; {
+			case row.keptBack[j] && got != nil:
+				t.Errorf("%s: over a listener identity %d is %q, want it kept back as null in its place", row.scenario,
+					j, *got)
+			case !row.keptBack[j] && told(got) != name:
+				t.Errorf("%s: over a listener identity %d is %q, want %q whole", row.scenario, j, told(got), name)
+			}
+			anyKeptBack = anyKeptBack || row.keptBack[j]
+		}
+		if listener.IdentitiesWithheld != anyKeptBack {
+			t.Errorf("%s: over a listener the entry is marked withheld=%v, want %v", row.scenario,
+				listener.IdentitiesWithheld, anyKeptBack)
+		}
+		if listener.SharedBy != row.entry.SharedBy {
+			t.Errorf("%s: over a listener the entry is shared by %d, want %d", row.scenario, listener.SharedBy,
+				row.entry.SharedBy)
+		}
+	}
+
+	// What a caller that launched this process reads carries no mark at all: the
+	// rule for a caller reaching a listener leaves no trace in its bytes.
+	encoded, err := json.Marshal(atTheKeyboard)
+	if err != nil {
+		t.Fatalf("marshal the keyboard's payload: %v", err)
+	}
+	if strings.Contains(string(encoded), "_withheld") {
+		t.Errorf("the keyboard's payload carries a mark: %s", encoded)
+	}
+
+	keyboardText, listenerText := renderCacheStatusText(atTheKeyboard), renderCacheStatusText(overAListener)
+	if !strings.Contains(keyboardText, fromFile) {
+		t.Errorf("the keyboard's text does not name the plugin loaded from a file:\n%s", keyboardText)
+	}
+	if strings.Contains(listenerText, "/seeded/plugins") {
+		t.Errorf("the listener's text names the plugin loaded from a file:\n%s", listenerText)
+	}
+	for _, want := range []string{keptBackLocationWords + ", " + fromRegistry, "leaf-registry  10 B  " + fromRegistry,
+		"leaf-file  10 B  " + keptBackLocationWords} {
+		if !strings.Contains(listenerText, want) {
+			t.Errorf("the listener's text does not read %q:\n%s", want, listenerText)
+		}
 	}
 }
 

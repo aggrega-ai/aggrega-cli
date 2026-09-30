@@ -14,6 +14,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
@@ -225,6 +226,14 @@ type server struct {
 	// answering with an empty listing — there is no fallback, because an
 	// enumeration built here would be a second one.
 	listPlugins pluginops.PluginLister
+
+	// cacheLocations resolves the caches the cache inventory reads, from the
+	// workspace root and cache directory the call resolved. Nil resolves them as
+	// every surface does, the machine-wide caches included. A test points the
+	// machine-wide ones at a directory of its own and seeds it: where they sit is
+	// fixed when the process starts, so nothing a running test sets in its
+	// environment moves them.
+	cacheLocations func(workspaceRoot, cacheDir string) cacheops.Locations
 
 	// runLint runs the lint helper for the deferred lint tool. Nil runs the
 	// shared lint core in-process on the server's resolved workspace. A test

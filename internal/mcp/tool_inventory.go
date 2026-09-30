@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 )
 
 // The two inventories below answer the question a caller asks first in an
@@ -40,12 +41,20 @@ type cacheStatusArgs struct {
 // that text itself would mean reproducing the rounding rule the formatter owns.
 // The vocabulary it is written in is the one the size-taking operations parse,
 // so a quantity read out of this answer can be sent back unrewritten.
+//
+// NoteWithheld marks a note kept back from a caller that is not told where things
+// sit on this host: a compiled module's note names the plugin identities it was
+// built for, and one of them was loaded from a file on this host. The note is one
+// composed sentence, so it is kept back whole rather than in part. The element's
+// digest, the content digest of the guest the module was compiled for, names no
+// place and is answered either way.
 type cacheStatusElement struct {
-	Label    string `json:"label"`
-	Size     int64  `json:"size"`
-	SizeText string `json:"size_text"`
-	Digest   string `json:"digest,omitempty"`
-	Note     string `json:"note,omitempty"`
+	Label        string `json:"label"`
+	Size         int64  `json:"size"`
+	SizeText     string `json:"size_text"`
+	Digest       string `json:"digest,omitempty"`
+	Note         string `json:"note,omitempty"`
+	NoteWithheld bool   `json:"note_withheld,omitempty"`
 }
 
 // cacheStatusProvenance is one recorded content digest's resolved plugin
@@ -58,9 +67,16 @@ type cacheStatusElement struct {
 // about a compiled module rather than a reclaimable element, so counting it
 // would report a size nothing can reclaim. It is what gives a compiled module a
 // name an assistant can reason about instead of the runtime's opaque leaf key.
+//
+// An identity whose reference is a path on this host's filesystem is kept back
+// from a caller that is not told where things sit on this host: it is null in its
+// place, so every other identity keeps its position, and IdentitiesWithheld marks
+// the entry. An identity naming a registry reference or a Plugin entity is
+// answered whole.
 type cacheStatusProvenance struct {
-	Identities []string `json:"identities"`
-	SharedBy   int      `json:"shared_by,omitempty"`
+	Identities         []*string `json:"identities"`
+	IdentitiesWithheld bool      `json:"identities_withheld,omitempty"`
+	SharedBy           int       `json:"shared_by,omitempty"`
 }
 
 // cacheStatusClass is one cache class, carrying how far its contents are shared.
@@ -113,6 +129,10 @@ var cacheStatusToolSpec = toolSpec{
 		"module a name rather than an opaque key, and it is metadata rather than reclaimable content, so it is " +
 		"excluded from the totals. Without a resolvable workspace only the machine-wide classes are reported.",
 	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
+	listenerNote: "You did not start this server, so you are not told where a plugin it loaded from a file sits on " +
+		"its host: that identity is null in its place in `provenance`, and its entry is marked " +
+		"`identities_withheld`. A compiled module's `note` naming one is absent and marked `note_withheld`, and its " +
+		"`digest` is still answered. An identity naming a registry reference or a Plugin entity is answered whole.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -151,11 +171,15 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// so what this surface takes from it stops being readable at this site — and
 	// a projection nobody can read is indistinguishable from one that drops
 	// everything.
-	report, err := cacheops.Status(ctx, cacheops.ResolveLocations(root, cacheDir))
+	locate := s.cacheLocations
+	if locate == nil {
+		locate = cacheops.ResolveLocations
+	}
+	report, err := cacheops.Status(ctx, locate(root, cacheDir))
 	if err != nil {
 		return tw.answer(errorResult(err.Error()))
 	}
-	payload := cacheStatusPayload(root, report)
+	payload := cacheStatusPayload(root, report, tw.withholdsHostLocations())
 	// The root is told the way every location here is. An empty one names no
 	// workspace, which is not a place to keep back.
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(root)
@@ -172,18 +196,26 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 //
 // Every collection is materialised as an empty slice rather than left nil, so a
 // caller iterates unconditionally instead of special-casing an empty cache.
-func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
+//
+// withholdHostLocations keeps back what names a plugin loaded from a file on
+// this host, judged from the identities the inventory carries beside its
+// composed text rather than from that text.
+func cacheStatusPayload(root string, report cacheops.Report, withholdHostLocations bool) cacheStatusResult {
 	classes := make([]cacheStatusClass, 0, len(report.Classes))
 	for _, cl := range report.Classes {
 		elements := make([]cacheStatusElement, 0, len(cl.Elements))
 		for _, el := range cl.Elements {
-			elements = append(elements, cacheStatusElement{
+			element := cacheStatusElement{
 				Label:    el.Label,
 				Size:     el.Size,
 				SizeText: cacheops.HumanSize(el.Size),
 				Digest:   el.DigestHex,
 				Note:     el.Note,
-			})
+			}
+			if withholdHostLocations && anyIdentityNamesAHostLocation(el.Recorded) {
+				element.Note, element.NoteWithheld = "", true
+			}
+			elements = append(elements, element)
 		}
 		classes = append(classes, cacheStatusClass{
 			Name:     cl.Name,
@@ -194,7 +226,7 @@ func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
 	}
 	provenance := make([]cacheStatusProvenance, 0, len(report.Provenance))
 	for _, p := range report.Provenance {
-		provenance = append(provenance, cacheStatusProvenance{Identities: p.Identities, SharedBy: p.SharedBy})
+		provenance = append(provenance, cacheStatusProvenanceEntry(p, withholdHostLocations))
 	}
 	machineWide := cacheops.MachineWideClasses(report.Classes)
 	if machineWide == nil {
@@ -212,13 +244,52 @@ func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
 	}
 }
 
+// cacheStatusProvenanceEntry projects one provenance entry, keeping back each
+// identity whose reference is a path on this host where withholdHostLocations
+// says to.
+//
+// Each identity is judged from the record it was composed from, paired by
+// position. An identity whose record did not arrive beside it cannot be judged,
+// and it is kept back rather than guessed at: the direction a missing record errs
+// in is the one that tells the caller less.
+func cacheStatusProvenanceEntry(p cacheops.ProvenanceEntry, withholdHostLocations bool) cacheStatusProvenance {
+	entry := cacheStatusProvenance{SharedBy: p.SharedBy}
+	if p.Identities == nil {
+		return entry
+	}
+	entry.Identities = make([]*string, 0, len(p.Identities))
+	for i, name := range p.Identities {
+		if withholdHostLocations && (i >= len(p.Recorded) || referenceNamesAHostLocation(p.Recorded[i].URI)) {
+			entry.Identities = append(entry.Identities, nil)
+			entry.IdentitiesWithheld = true
+			continue
+		}
+		entry.Identities = append(entry.Identities, stringPointer(name))
+	}
+	return entry
+}
+
+// anyIdentityNamesAHostLocation reports whether any of the recorded identities
+// names a plugin by a path on this host, asked of each reference by the plugin
+// reading's own test of one.
+func anyIdentityNamesAHostLocation(recorded []provindex.Identity) bool {
+	for _, id := range recorded {
+		if referenceNamesAHostLocation(id.URI) {
+			return true
+		}
+	}
+	return false
+}
+
 // renderCacheStatusText renders the readable listing: one heading per class,
 // marked where the class is machine-wide, then its elements, then the recorded
 // plugin identities and the totals.
 //
 // Every size it prints is the payload's own rendered field rather than a fresh
 // call to the formatter, so the text and the structured half of this answer
-// cannot spell one quantity two ways.
+// cannot spell one quantity two ways. What the payload keeps back, the text
+// keeps back too: it is rendered from the payload's values, and a note or an
+// identity kept back reads as the kept-back phrase in its place.
 func renderCacheStatusText(p cacheStatusResult) string {
 	var b strings.Builder
 	if p.WorkspaceRoot == nil || *p.WorkspaceRoot != "" {
@@ -238,7 +309,10 @@ func renderCacheStatusText(p cacheStatusResult) string {
 		}
 		for _, el := range cl.Elements {
 			fmt.Fprintf(&b, "    %s  %s", el.Label, el.SizeText)
-			if el.Note != "" {
+			switch {
+			case el.NoteWithheld:
+				fmt.Fprintf(&b, "  %s", keptBackLocationWords)
+			case el.Note != "":
 				fmt.Fprintf(&b, "  %s", el.Note)
 			}
 			b.WriteByte('\n')
@@ -249,7 +323,11 @@ func renderCacheStatusText(p cacheStatusResult) string {
 		b.WriteString("    (empty)\n")
 	}
 	for _, entry := range p.Provenance {
-		b.WriteString("    " + strings.Join(entry.Identities, ", "))
+		names := make([]string, 0, len(entry.Identities))
+		for _, identity := range entry.Identities {
+			names = append(names, reportedLocationWords(identity))
+		}
+		b.WriteString("    " + strings.Join(names, ", "))
 		if entry.SharedBy > 0 {
 			fmt.Fprintf(&b, "  shared by %d", entry.SharedBy)
 		}

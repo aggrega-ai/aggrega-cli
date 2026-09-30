@@ -83,12 +83,21 @@ const (
 // internal hashing. Note is an optional trailing annotation: a compiled module
 // reports its attributed identity, the shared runtime kernel, or that it is
 // unattributed, and the classes carrying no annotation leave it empty.
+//
+// Recorded is the identities Note was composed from, as the provenance index
+// records them and in the order Note names them, and it is empty wherever Note
+// names no recorded identity. It is carried beside the composed text rather than
+// instead of it, and it is never encoded, so no encoding of an element carries
+// it; it is there so that a reader judging what an identity's reference names
+// reads the reference itself rather than parsing it back out of a display string.
 type Element struct {
 	Label     string `json:"label"`
 	Path      string `json:"path"`
 	Size      int64  `json:"size"`
 	DigestHex string `json:"digest,omitempty"`
 	Note      string `json:"note,omitempty"`
+
+	Recorded []provindex.Identity `json:"-"`
 }
 
 // Class is one named cache subtree with its enumerated elements.
@@ -520,8 +529,9 @@ func enumCompileModules(ctx context.Context, root, attribIndexPath, provIndexPat
 			case len(e.Referrers) > 0:
 				dg := e.Referrers[0]
 				el.DigestHex = dg
-				if name, known := identities[dg]; known && name != "" {
-					el.Note = name
+				if recorded := identities[dg]; len(recorded) > 0 {
+					el.Note = strings.Join(identityNames(recorded), ", ")
+					el.Recorded = append([]provindex.Identity(nil), recorded...)
 				} else {
 					el.Note = dg
 				}
@@ -542,13 +552,12 @@ func enumCompileModules(ctx context.Context, root, attribIndexPath, provIndexPat
 }
 
 // provenanceIdentities builds a lookup from a normalized guest content digest to
-// its display identity — the comma-joined URI@version sources the provenance
-// index recorded for those guest bytes. An empty path or an unreadable index
-// yields an empty map, so a compiled leaf with no known identity falls back to
-// its bare digest. The digest keys are already normalized on both sides, so they
-// join directly.
-func provenanceIdentities(provIndexPath string) map[string]string {
-	m := map[string]string{}
+// the identities the provenance index recorded for those guest bytes, in the
+// index's own order. An empty path or an unreadable index yields an empty map,
+// so a compiled leaf with no known identity falls back to its bare digest. The
+// digest keys are already normalized on both sides, so they join directly.
+func provenanceIdentities(provIndexPath string) map[string][]provindex.Identity {
+	m := map[string][]provindex.Identity{}
 	if provIndexPath == "" {
 		return m
 	}
@@ -557,13 +566,24 @@ func provenanceIdentities(provIndexPath string) map[string]string {
 		return m
 	}
 	for _, e := range ix.Entries() {
-		names := make([]string, 0, len(e.Identities))
-		for _, id := range e.Identities {
-			names = append(names, id.URI+"@"+id.Version)
-		}
-		m[e.Digest] = strings.Join(names, ", ")
+		m[e.Digest] = e.Identities
 	}
 	return m
+}
+
+// identityNames spells each recorded identity for display, as URI@version, in
+// the order given.
+//
+// It is the one place that spelling is composed. A compiled module's note and the
+// provenance listing both name identities, and two compositions of the same
+// spelling would agree until either was edited, with nothing failing when they
+// stopped.
+func identityNames(ids []provindex.Identity) []string {
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		names = append(names, id.URI+"@"+id.Version)
+	}
+	return names
 }
 
 // enumDescribe enumerates the plugin-describe cache. Each entry is a
@@ -606,9 +626,15 @@ func enumDescribe(ctx context.Context, root string) ([]Element, error) {
 // Identities are metadata about compiled modules rather than reclaimable cache
 // elements, which is why they are carried apart from the classes and excluded
 // from every count and size total.
+//
+// Recorded is the identity each entry of Identities was composed from, as the
+// provenance index records it, in the same order. It is carried and never
+// encoded, for the reason [Element] carries its own.
 type ProvenanceEntry struct {
 	Identities []string `json:"identities"`
 	SharedBy   int      `json:"sharedBy,omitempty"`
+
+	Recorded []provindex.Identity `json:"-"`
 }
 
 // Provenance lists the resolved-plugin identities the provenance index holds, in
@@ -625,11 +651,7 @@ func Provenance(indexPath string) []ProvenanceEntry {
 	entries := ix.Entries()
 	out := make([]ProvenanceEntry, 0, len(entries))
 	for _, e := range entries {
-		names := make([]string, 0, len(e.Identities))
-		for _, id := range e.Identities {
-			names = append(names, id.URI+"@"+id.Version)
-		}
-		pe := ProvenanceEntry{Identities: names}
+		pe := ProvenanceEntry{Identities: identityNames(e.Identities), Recorded: e.Identities}
 		if len(e.Identities) > 1 {
 			pe.SharedBy = len(e.Identities)
 		}

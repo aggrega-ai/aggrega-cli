@@ -401,11 +401,22 @@ func servedWorkspaceRoot(s *server) string {
 // stopped resolving since, and the directory it was pointed at is what a reader
 // can act on. The workspace returned then holds that directory as its root, as
 // the process was given it, and nothing else.
+//
+// A process given no directory began its resolution in its working directory,
+// so that directory is the one held. Left empty, the fallback would hold nothing,
+// and an answer read against it would pass on any mention of the working
+// directory exactly as it was composed.
 func (s *server) resolveServedWorkspace() *toolWorkspace {
 	if tw, err := s.resolveToolWorkspace("", nil); err == nil {
 		return tw
 	}
-	return &toolWorkspace{root: s.startDir, transport: s.transport}
+	root := s.startDir
+	if root == "" {
+		if wd, err := os.Getwd(); err == nil {
+			root = wd
+		}
+	}
+	return &toolWorkspace{root: root, transport: s.transport}
 }
 
 // resolveAuthenticator settles which credential this deployment reads, and

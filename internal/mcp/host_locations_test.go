@@ -323,7 +323,9 @@ func TestTheOnePointEveryResultLeavesThroughRewritesTextAndNotThePayload(t *test
 
 // TestAServedWorkspaceIsResolvedOnlyForAListener pins that the answer a tool
 // carried no workspace for is read against nothing resolved over the process's
-// own streams, and against the served workspace over a listener.
+// own streams, and against the served workspace over a listener — and, where that
+// workspace has stopped resolving, against the directory its resolution begins
+// in.
 func TestAServedWorkspaceIsResolvedOnlyForAListener(t *testing.T) {
 	root := listenerRootNaming(t, "")
 
@@ -339,4 +341,70 @@ func TestAServedWorkspaceIsResolvedOnlyForAListener(t *testing.T) {
 	if _, told := listener.reportedLocation(listener.root); told {
 		t.Errorf("the served workspace's root %q is told to a listener caller", listener.root)
 	}
+
+	sep := string(filepath.Separator)
+	for _, tc := range []struct {
+		scenario string
+		// givenNoDirectory is a process launched naming no workspace, which runs
+		// in the workspace's own directory; otherwise the process was given the
+		// workspace's directory and runs somewhere else, so the fallback holding
+		// its working directory instead would fail the row.
+		givenNoDirectory bool
+	}{
+		{scenario: "a listener whose workspace stopped resolving holds the directory it was started over"},
+		{
+			scenario:         "a listener given no directory holds its working directory once its workspace stops resolving",
+			givenNoDirectory: true,
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			stopped := aWorkspaceThatStoppedResolving(t)
+			s := &server{startDir: stopped, transport: transportHTTP}
+			if tc.givenNoDirectory {
+				t.Chdir(stopped)
+				s.startDir = ""
+				if wd, err := os.Getwd(); err != nil || wd != stopped {
+					t.Fatalf("precondition: the working directory reads %q (%v), and this row runs in %q", wd, err, stopped)
+				}
+			} else {
+				t.Chdir(t.TempDir())
+			}
+			if _, err := s.resolveToolWorkspace("", nil); err == nil {
+				t.Fatal("precondition: the workspace still resolves, so this row cannot show what its fallback holds")
+			}
+
+			held := s.servedWorkspace()
+			if held.root != stopped || held.rw != nil {
+				t.Errorf("the fallback holds root %q (resolved=%v), want %q and nothing resolved",
+					held.root, held.rw != nil, stopped)
+			}
+			text := "load release " + stopped + sep + "release.yaml: the configuration no longer loads"
+			if got, want := held.reportedText(text), "load release release.yaml: the configuration no longer loads"; got != want {
+				t.Errorf("over a listener\n  %q\nis told as\n  %q\nwant\n  %q", text, got, want)
+			}
+		})
+	}
+}
+
+// aWorkspaceThatStoppedResolving writes a workspace whose own configuration the
+// loader refuses, so resolving it fails the way a workspace edited after its
+// server started fails.
+//
+// The refusal is the loader's for an absolute artifact cache directory, which it
+// only ever accepts relative to the workspace root. The machine-wide layer is
+// redirected at a file of this test's own, so the refusal is the workspace's and
+// not whatever the person running the tests has configured.
+func aWorkspaceThatStoppedResolving(t *testing.T) string {
+	t.Helper()
+	globalPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(globalPath, []byte("registries: []\n"), 0o644); err != nil {
+		t.Fatalf("write the machine-wide layer: %v", err)
+	}
+	t.Setenv(workspaceconfig.EnvConfigOverride, globalPath)
+	root := t.TempDir()
+	document := "workspace: {}\noffline: true\nartifact_cache_dir: /held/cache-5e2\n"
+	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(document), 0o644); err != nil {
+		t.Fatalf("write the workspace's own configuration: %v", err)
+	}
+	return root
 }
