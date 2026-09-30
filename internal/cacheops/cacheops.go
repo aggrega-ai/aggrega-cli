@@ -90,6 +90,14 @@ const (
 // instead of it, and it is never encoded, so no encoding of an element carries
 // it; it is there so that a reader judging what an identity's reference names
 // reads the reference itself rather than parsing it back out of a display string.
+//
+// SourceURL is the source URL a source-artifact slot records it was resolved
+// from, as the slot's metadata records it: the URL whose host and path its
+// location, and so its Label, were composed from. It is nil for an element of
+// every other class, whose label no source URL composes, and it points at an empty
+// URL for a slot whose metadata cannot be read, so a reader can tell a slot whose
+// source is unknown from an element that has none. It is carried and never
+// encoded, for the reason Recorded is.
 type Element struct {
 	Label     string `json:"label"`
 	Path      string `json:"path"`
@@ -97,7 +105,8 @@ type Element struct {
 	DigestHex string `json:"digest,omitempty"`
 	Note      string `json:"note,omitempty"`
 
-	Recorded []provindex.Identity `json:"-"`
+	Recorded  []provindex.Identity `json:"-"`
+	SourceURL *string              `json:"-"`
 }
 
 // Class is one named cache subtree with its enumerated elements.
@@ -334,8 +343,9 @@ func enumEntities(ctx context.Context, root string) ([]Element, error) {
 // enumSourceArtifacts enumerates the source-artifact-cache slots. A slot is any
 // directory that directly holds a metadata.yaml; the recorded digest there is
 // the authoritative content digest a lockfile source-artifact entry pins (the
-// leaf directory name is only a 12-character prefix). A slot whose metadata
-// cannot be read carries an empty digest and is retained by a prune.
+// leaf directory name is only a 12-character prefix), and the recorded URL is the
+// one the slot's location was composed from. A slot whose metadata cannot be read
+// carries an empty digest and an empty source URL, and is retained by a prune.
 //
 // The stop is returned as the caller's own reason rather than as fs.SkipAll,
 // which would end the walk and hand back a short element list wearing a
@@ -358,12 +368,14 @@ func enumSourceArtifacts(ctx context.Context, root string) ([]Element, error) {
 			rel = p
 		}
 		el := Element{
-			Label: filepath.ToSlash(rel),
-			Path:  p,
-			Size:  dirSize(p),
+			Label:     filepath.ToSlash(rel),
+			Path:      p,
+			Size:      dirSize(p),
+			SourceURL: new(string),
 		}
 		if meta, merr := metadata.Read(metaPath); merr == nil {
 			el.DigestHex = NormalizeDigestHex(meta.Digest)
+			*el.SourceURL = meta.URL
 		}
 		out = append(out, el)
 		return nil

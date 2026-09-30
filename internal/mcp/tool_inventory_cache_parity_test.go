@@ -486,6 +486,115 @@ func TestTheCacheInventoryKeepsBackOnlyWhatNamesAPluginLoadedFromAFile(t *testin
 	}
 }
 
+// TestTheCacheInventoryKeepsBackOnlyTheLabelOfASourceReadFromThisHost drives the
+// projection over an inventory holding a source-artifact slot of every URL form
+// its source can be resolved from, for a caller that launched this process and
+// for one reaching a listener.
+//
+// A slot's label is its location under the cache, composed from the host and path
+// of the URL the slot records. The first caller is told every label. The second is
+// told the label of a slot fetched over the network whole, and nothing of the
+// label of a slot read from a repository on this host, whether its URL is a file
+// URL or a path written with no scheme; nor of one whose recorded URL could not
+// be read. Such a label is absent and marked, and the slot's size and digest are
+// answered. Each row states one form, and every row's label spells the same
+// kind of text, so a projection that judged the label instead of the recorded URL
+// fails on the rows that tell them apart.
+func TestTheCacheInventoryKeepsBackOnlyTheLabelOfASourceReadFromThisHost(t *testing.T) {
+	t.Parallel()
+
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	recorded := func(url string) *string { return &url }
+	rows := []struct {
+		scenario string
+		element  cacheops.Element
+		// keptBack says the listener is told nothing of the label.
+		keptBack bool
+	}{
+		{"a repository read through a file URL",
+			cacheops.Element{Label: "git-repository/seeded/repos/chart.git/" + commit + "/aa11aa11aa11", Size: 10,
+				DigestHex: "aa11", SourceURL: recorded("file:///seeded/repos/chart.git")}, true},
+		{"a repository read from a path written with no scheme",
+			cacheops.Element{Label: "git-repository/seeded/repos/plain.git/" + commit + "/bb22bb22bb22", Size: 11,
+				DigestHex: "bb22", SourceURL: recorded("/seeded/repos/plain.git")}, true},
+		{"a repository cloned over HTTPS",
+			cacheops.Element{Label: "git-repository/git.example.test/team/chart.git/" + commit + "/cc33cc33cc33", Size: 12,
+				DigestHex: "cc33", SourceURL: recorded("https://git.example.test/team/chart.git")}, false},
+		{"a repository cloned over SSH, written with a scheme",
+			cacheops.Element{Label: "git-repository/git.example.test/team/ssh.git/" + commit + "/dd44dd44dd44", Size: 13,
+				DigestHex: "dd44", SourceURL: recorded("ssh://git@git.example.test/team/ssh.git")}, false},
+		{"a repository cloned over SSH, written as host and path",
+			cacheops.Element{Label: "git-repository/git.example.test:team/scp.git/" + commit + "/ee55ee55ee55", Size: 14,
+				DigestHex: "ee55", SourceURL: recorded("git@git.example.test:team/scp.git")}, false},
+		{"a chart pulled from a registry",
+			cacheops.Element{Label: "helm-oci-chart/hub.example.test/charts/web/1.0.0/ff66ff66ff66", Size: 15,
+				DigestHex: "ff66", SourceURL: recorded("oci://hub.example.test/charts/web")}, false},
+		{"a slot whose recorded URL could not be read",
+			cacheops.Element{Label: "git-repository/seeded/repos/unread.git/" + commit + "/aa77aa77aa77", Size: 16,
+				SourceURL: recorded("")}, true},
+		{"an element of a class that records no source",
+			cacheops.Element{Label: "hub.example.test/component/core/api@1.0.0", Size: 17, DigestHex: "bb88"}, false},
+	}
+
+	report := cacheops.Report{Classes: []cacheops.Class{{Name: "workspace source-artifact cache",
+		Reach: cacheops.ReachWorkspace, Prunable: true}}}
+	for _, row := range rows {
+		report.Classes[0].Elements = append(report.Classes[0].Elements, row.element)
+	}
+
+	atTheKeyboard := cacheStatusPayload("/seeded/workspace", report, false)
+	overAListener := cacheStatusPayload("/seeded/workspace", report, true)
+
+	for i, row := range rows {
+		keyboard, listener := atTheKeyboard.Classes[0].Elements[i], overAListener.Classes[0].Elements[i]
+		if told(keyboard.Label) != row.element.Label || keyboard.LabelWithheld {
+			t.Errorf("%s: at the keyboard the label is %q (withheld=%v), want %q", row.scenario, told(keyboard.Label),
+				keyboard.LabelWithheld, row.element.Label)
+		}
+		switch {
+		case row.keptBack && (listener.Label != nil || !listener.LabelWithheld):
+			t.Errorf("%s: over a listener the label is %q (withheld=%v), want it kept back and marked", row.scenario,
+				told(listener.Label), listener.LabelWithheld)
+		case !row.keptBack && (told(listener.Label) != row.element.Label || listener.LabelWithheld):
+			t.Errorf("%s: over a listener the label is %q (withheld=%v), want %q whole", row.scenario,
+				told(listener.Label), listener.LabelWithheld, row.element.Label)
+		}
+		if listener.Size != row.element.Size || listener.Digest != row.element.DigestHex {
+			t.Errorf("%s: over a listener the size is %d and the digest %q, want %d and %q: neither names a place",
+				row.scenario, listener.Size, listener.Digest, row.element.Size, row.element.DigestHex)
+		}
+	}
+
+	// What a caller that launched this process reads carries no mark, and every
+	// element's label is text in its place, exactly as before any rule applied.
+	encoded, err := json.Marshal(atTheKeyboard)
+	if err != nil {
+		t.Fatalf("marshal the keyboard's payload: %v", err)
+	}
+	if strings.Contains(string(encoded), "_withheld") {
+		t.Errorf("the keyboard's payload carries a mark: %s", encoded)
+	}
+	for _, complaint := range cacheInventoryComplaints(report, encoded) {
+		t.Errorf("at the keyboard: %s", complaint)
+	}
+
+	keyboardText, listenerText := renderCacheStatusText(atTheKeyboard), renderCacheStatusText(overAListener)
+	for _, row := range rows {
+		if !strings.Contains(keyboardText, row.element.Label+"  ") {
+			t.Errorf("the keyboard's text does not list %q:\n%s", row.element.Label, keyboardText)
+		}
+	}
+	if strings.Contains(listenerText, "seeded/repos") {
+		t.Errorf("the listener's text spells a repository on this host:\n%s", listenerText)
+	}
+	for _, want := range []string{keptBackLocationWords + "  10 B", keptBackLocationWords + "  11 B",
+		keptBackLocationWords + "  16 B", "git-repository/git.example.test/team/chart.git/" + commit + "/cc33cc33cc33  12 B"} {
+		if !strings.Contains(listenerText, want) {
+			t.Errorf("the listener's text does not read %q:\n%s", want, listenerText)
+		}
+	}
+}
+
 // TestTheWiredCacheInventoryReportsItsRenderedSizes drives the real tool rather
 // than the projection alone, so the repair is proved on the path a caller
 // actually reaches rather than only on the function under it.

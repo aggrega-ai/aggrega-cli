@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 )
 
 // The two inventories below answer the question a caller asks first in an
@@ -48,13 +49,21 @@ type cacheStatusArgs struct {
 // composed sentence, so it is kept back whole rather than in part. The element's
 // digest, the content digest of the guest the module was compiled for, names no
 // place and is answered either way.
+//
+// LabelWithheld marks a label kept back from such a caller: a source-artifact
+// slot's label is its location under the cache, composed from the host and path
+// of the URL its source was resolved from, so the label of a slot whose repository
+// was read from a path on this host spells that path. The label is absent rather
+// than empty, so the mark is what a caller reads, and the element's size and
+// digest, which name no place, are answered either way.
 type cacheStatusElement struct {
-	Label        string `json:"label"`
-	Size         int64  `json:"size"`
-	SizeText     string `json:"size_text"`
-	Digest       string `json:"digest,omitempty"`
-	Note         string `json:"note,omitempty"`
-	NoteWithheld bool   `json:"note_withheld,omitempty"`
+	Label         *string `json:"label,omitempty"`
+	LabelWithheld bool    `json:"label_withheld,omitempty"`
+	Size          int64   `json:"size"`
+	SizeText      string  `json:"size_text"`
+	Digest        string  `json:"digest,omitempty"`
+	Note          string  `json:"note,omitempty"`
+	NoteWithheld  bool    `json:"note_withheld,omitempty"`
 }
 
 // cacheStatusProvenance is one recorded content digest's resolved plugin
@@ -132,7 +141,9 @@ var cacheStatusToolSpec = toolSpec{
 	listenerNote: "You did not start this server, so you are not told where a plugin it loaded from a file sits on " +
 		"its host: that identity is null in its place in `provenance`, and its entry is marked " +
 		"`identities_withheld`. A compiled module's `note` naming one is absent and marked `note_withheld`, and its " +
-		"`digest` is still answered. An identity naming a registry reference or a Plugin entity is answered whole.",
+		"`digest` is still answered. An identity naming a registry reference or a Plugin entity is answered whole. " +
+		"A source artifact read from a repository on the server's host is listed without its `label`, marked " +
+		"`label_withheld`, with its `size` and `digest` still answered.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -199,18 +210,23 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 //
 // withholdHostLocations keeps back what names a plugin loaded from a file on
 // this host, judged from the identities the inventory carries beside its
-// composed text rather than from that text.
+// composed text rather than from that text, and the label of a source artifact
+// read from a repository on this host, judged from the source URL its slot
+// records rather than from the label composed out of it.
 func cacheStatusPayload(root string, report cacheops.Report, withholdHostLocations bool) cacheStatusResult {
 	classes := make([]cacheStatusClass, 0, len(report.Classes))
 	for _, cl := range report.Classes {
 		elements := make([]cacheStatusElement, 0, len(cl.Elements))
 		for _, el := range cl.Elements {
 			element := cacheStatusElement{
-				Label:    el.Label,
+				Label:    stringPointer(el.Label),
 				Size:     el.Size,
 				SizeText: cacheops.HumanSize(el.Size),
 				Digest:   el.DigestHex,
 				Note:     el.Note,
+			}
+			if withholdHostLocations && slotNamesAHostLocation(el.SourceURL) {
+				element.Label, element.LabelWithheld = nil, true
 			}
 			if withholdHostLocations && anyIdentityNamesAHostLocation(el.Recorded) {
 				element.Note, element.NoteWithheld = "", true
@@ -281,6 +297,30 @@ func anyIdentityNamesAHostLocation(recorded []provindex.Identity) bool {
 	return false
 }
 
+// slotNamesAHostLocation reports whether a cache element's label names a place on
+// this host, judged from the source URL the element's slot records rather than
+// from the label composed out of it.
+//
+// A source-artifact slot's label is its location under the cache, built from the
+// host and path of the URL its source was resolved from, so a slot whose source
+// was read from a path on this host spells that path. Only a repository source
+// can be read from one — every other source kind is fetched over HTTP(S) or from
+// a registry — and whether a repository was is the repository adapter's own
+// reading of the URL, the one its clone selects a transport by. That reading
+// answers a network transport for every other kind's URL too, so it is asked of
+// every slot rather than of repository slots alone.
+//
+// An element of any other class records no source URL, and its label names no
+// place. A slot whose metadata could not be read recorded none to judge, and its
+// label is kept back: the direction a missing record errs in is the one that
+// tells the caller less.
+func slotNamesAHostLocation(sourceURL *string) bool {
+	if sourceURL == nil {
+		return false
+	}
+	return *sourceURL == "" || gitrepo.ReadsFromThisHost(*sourceURL)
+}
+
 // renderCacheStatusText renders the readable listing: one heading per class,
 // marked where the class is machine-wide, then its elements, then the recorded
 // plugin identities and the totals.
@@ -308,7 +348,7 @@ func renderCacheStatusText(p cacheStatusResult) string {
 			continue
 		}
 		for _, el := range cl.Elements {
-			fmt.Fprintf(&b, "    %s  %s", el.Label, el.SizeText)
+			fmt.Fprintf(&b, "    %s  %s", reportedLocationWords(el.Label), el.SizeText)
 			switch {
 			case el.NoteWithheld:
 				fmt.Fprintf(&b, "  %s", keptBackLocationWords)

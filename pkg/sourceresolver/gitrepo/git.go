@@ -100,6 +100,25 @@ func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Cli
 	})
 }
 
+// ReadsFromThisHost reports whether a repository URL names a repository this
+// adapter reads from the filesystem of the host it runs on, rather than one it
+// reaches over the network. Two spellings do: a `file://` URL, and a path written
+// with no scheme at all, which the clone reads as a local repository just the same.
+//
+// It asks the clone's own reading of the URL — the endpoint go-git selects the
+// clone's transport by — rather than reading the URL's text a second way, so the
+// answer is the transport the clone used and cannot come to disagree with it. A
+// URL that reading refuses is one no clone reached, so a record carrying one
+// cannot be placed; it reports true, the answer that tells a reader less about
+// where things sit on this host.
+func ReadsFromThisHost(url string) bool {
+	endpoint, err := transport.NewEndpoint(url)
+	if err != nil {
+		return true
+	}
+	return endpoint.Protocol == "file"
+}
+
 // Kind returns the git-repository kind string.
 func (a *adapter) Kind() string { return Kind }
 

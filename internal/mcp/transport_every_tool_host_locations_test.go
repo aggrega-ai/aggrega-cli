@@ -6,6 +6,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +28,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -74,7 +77,9 @@ import (
 //     sit where the process found them when it started, whatever the
 //     environment says afterwards, and they hold whatever the tests before this
 //     one left there — so a comparison over them would judge a different cache
-//     on every machine, and none at all on a fresh one.
+//     on every machine, and none at all on a fresh one. The workspace's own
+//     source-artifact cache is seeded the same way, with slots whose labels spell
+//     a repository on this host and one whose label names only a network host.
 
 // Spellings the fixture's calls send, each distinctive enough that finding one
 // in an answer cannot be a coincidence.
@@ -121,6 +126,10 @@ type hostLocationFixture struct {
 	// reads in place of the ones this process owns.
 	machineCaches string
 
+	// localRepos is the directory outside the root holding the repositories the
+	// workspace's source-artifact cache records slots read from.
+	localRepos string
+
 	// pristine is the workspace as every call finds it. It is copied back before
 	// each call on each transport, so the two transports answer the same bytes at
 	// the same path and a call that writes leaves nothing behind for the next.
@@ -142,7 +151,8 @@ type hostLocationFixture struct {
 // can pin, a document an edit can address, a source an import can read, an
 // artifact a publication can bundle, and a module file inside the root that is
 // not a module at all. And it holds machine-wide caches of its own, seeded as
-// seedMachineWideCaches says, which every session it equips reads.
+// seedMachineWideCaches says, which every session it equips reads, and a
+// source-artifact cache seeded as seedSourceArtifactSlots says.
 func newHostLocationFixture(t *testing.T) *hostLocationFixture {
 	t.Helper()
 	base := t.TempDir()
@@ -154,6 +164,7 @@ func newHostLocationFixture(t *testing.T) *hostLocationFixture {
 		pluginPath:     filepath.Join(base, "outside-plugins-p5t1", "importer-p5t1.wasm"),
 		machineWide:    filepath.Join(base, "machine-wide-b6d9", "config.yaml"),
 		machineCaches:  filepath.Join(base, "machine-caches-c3m8"),
+		localRepos:     filepath.Join(base, "outside-repos-w3r5"),
 		pristine:       t.TempDir(),
 	}
 	fx.outsideEntity = filepath.Join(fx.outsideCatalog, "components", "outside-widget-k9m2.yaml")
@@ -199,6 +210,7 @@ func newHostLocationFixture(t *testing.T) *hostLocationFixture {
 	if pulled.IsError {
 		t.Fatalf("the fixture's Release did not resolve, so no call below reads a lockfile: %s", pulled.Content[0].Text)
 	}
+	fx.seedSourceArtifactSlots(t)
 	if err := os.CopyFS(fx.pristine, os.DirFS(fx.root)); err != nil {
 		t.Fatalf("keep the workspace every call starts from: %v", err)
 	}
@@ -305,6 +317,92 @@ func (fx *hostLocationFixture) seedMachineWideCaches(t *testing.T) {
 	}
 }
 
+// hostLocationSourceSlot is one slot the workspace's source-artifact cache holds:
+// the URL its repository was resolved from, the commit and archive it holds, and
+// whether that URL names a repository read from this host's filesystem.
+type hostLocationSourceSlot struct {
+	url     string
+	version string
+	archive []byte
+	onHost  bool
+}
+
+// digest is the content digest the slot records for its archive.
+func (s hostLocationSourceSlot) digest() string {
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(s.archive))
+}
+
+// digestHex is that digest as the inventory answers it.
+func (s hostLocationSourceSlot) digestHex() string {
+	return strings.TrimPrefix(s.digest(), "sha256:")
+}
+
+// sourceSlots are the slots the workspace's source-artifact cache holds: a
+// repository read through a file URL, one read from a path written with no
+// scheme, and one cloned over the network. The labels of the first two spell a
+// place on this host, which a caller reaching a listener must not be told, and the
+// third names only the host it was cloned from, which it must be told whole.
+func (fx *hostLocationFixture) sourceSlots() []hostLocationSourceSlot {
+	slot := func(url, commitPair string, onHost bool) hostLocationSourceSlot {
+		return hostLocationSourceSlot{url: url, version: strings.Repeat(commitPair, 20),
+			archive: []byte("archive of " + url + "\n"), onHost: onHost}
+	}
+	return []hostLocationSourceSlot{
+		slot("file://"+filepath.Join(fx.localRepos, "chart-q7x3.git"), "5e", true),
+		slot(filepath.Join(fx.localRepos, "plain-q7x3.git"), "6f", true),
+		slot("https://git-z3q9.invalid/team/chart-q7x3.git", "7a", false),
+	}
+}
+
+// sourceSlotDir is where the slot writer places a slot in the workspace's cache.
+func (fx *hostLocationFixture) sourceSlotDir(t *testing.T, slot hostLocationSourceSlot) string {
+	t.Helper()
+	dir, err := cacheslot.Slot(fx.root, workspaceconfig.Config{}.ResolvedArtifactCacheDir(), gitrepo.Kind, slot.url,
+		"", "", slot.version, slot.digest())
+	if err != nil {
+		t.Fatalf("place the slot for %s: %v", slot.url, err)
+	}
+	return dir
+}
+
+// sourceSlotLabel is the label the inventory lists a slot under: its location
+// beneath the source-artifact cache.
+func (fx *hostLocationFixture) sourceSlotLabel(t *testing.T, slot hostLocationSourceSlot) string {
+	t.Helper()
+	rel, err := filepath.Rel(cacheslot.SourceArtifactsRoot(fx.root, workspaceconfig.Config{}.ResolvedArtifactCacheDir()),
+		fx.sourceSlotDir(t, slot))
+	if err != nil {
+		t.Fatalf("relate the slot for %s to its cache: %v", slot.url, err)
+	}
+	return filepath.ToSlash(rel)
+}
+
+// seedSourceArtifactSlots writes each source slot where a resolution writes one,
+// through the slot writer's own path builder and writer, so the inventory reads
+// each slot's label and recorded URL as it reads what a real pull leaves.
+func (fx *hostLocationFixture) seedSourceArtifactSlots(t *testing.T) {
+	t.Helper()
+	for _, slot := range fx.sourceSlots() {
+		if err := cacheslot.WriteBlobAndMetadata(fx.sourceSlotDir(t, slot), slot.archive, gitrepo.Kind, slot.url,
+			slot.version, slot.digest(), gitrepo.MediatypeTarGz, "", nil); err != nil {
+			t.Fatalf("write the slot for %s: %v", slot.url, err)
+		}
+	}
+}
+
+// sourceSlotWhere is the first seeded slot whose repository was read from this
+// host, or the first that was not, as asked.
+func (fx *hostLocationFixture) sourceSlotWhere(t *testing.T, onHost bool) hostLocationSourceSlot {
+	t.Helper()
+	for _, slot := range fx.sourceSlots() {
+		if slot.onHost == onHost {
+			return slot
+		}
+	}
+	t.Fatalf("precondition: the fixture seeds no source slot with onHost=%v", onHost)
+	return hostLocationSourceSlot{}
+}
+
 // reset puts the workspace back as every call finds it.
 func (fx *hostLocationFixture) reset(t *testing.T) {
 	t.Helper()
@@ -322,11 +420,12 @@ func (fx *hostLocationFixture) bounds() hostLocationBounds {
 }
 
 // searched is every location the listener's frames are searched for as bytes:
-// the root, each location the workspace is configured with, and the directory
+// the root, each location the workspace is configured with, the directory holding
+// the repositories its source-artifact cache was read from, and the directory
 // holding them all, which is also where a climb out of the root lands.
 func (fx *hostLocationFixture) searched() []string {
 	return []string{fx.root, fx.outsideCatalog, fx.outsideEntity, fx.keyPath, fx.pluginPath, fx.machineWide,
-		fx.authoringRelease, fx.base + string(filepath.Separator)}
+		fx.authoringRelease, fx.localRepos, fx.base + string(filepath.Separator)}
 }
 
 // pluginListing is the enumeration the plugin reading is handed: a built-in, and
@@ -1390,7 +1489,7 @@ func TestTheCacheInventoryKeepsBackAPluginLoadedFromAFileAndAnswersARegistryRefe
 				continue
 			}
 			for _, el := range class.Elements {
-				out[el.Label] = el
+				out[told(el.Label)] = el
 			}
 		}
 		if len(out) != len(modules) {
@@ -1490,6 +1589,115 @@ func TestTheCacheInventoryKeepsBackAPluginLoadedFromAFileAndAnswersARegistryRefe
 	}
 }
 
+// TestTheCacheInventoryKeepsBackTheLabelOfASourceReadFromThisHostAndAnswersARemoteOneWhole
+// reads the cache inventory over the fixture's seeded source-artifact slots on
+// both transports, slot by slot.
+//
+// A source-artifact slot's label is its location under the cache, composed from
+// the URL its repository was resolved from. A caller that launched this process
+// is told every label. A caller reaching a listener is told the label of a slot
+// cloned over the network whole, and nothing of the label of a slot read from a
+// repository on this host, whether through a file URL or a plain path: that label
+// is absent and marked, while the slot's size and digest, which name no place,
+// are answered.
+func TestTheCacheInventoryKeepsBackTheLabelOfASourceReadFromThisHostAndAnswersARemoteOneWhole(t *testing.T) {
+	fx := newHostLocationFixture(t)
+	streams := fx.overTheProcessStreams(t)
+	listener, credential := fx.overAListener(t)
+
+	fx.reset(t)
+	keyboardAnswer := answerOverTheProcessStreams(t, streams, "cache-status", map[string]any{})
+	fx.reset(t)
+	listenerAnswer := answerOverTheListener(t, listener, credential, "cache-status", map[string]any{})
+	var keyboard, overListener cacheStatusResult
+	decodeAnswerPayload(t, keyboardAnswer, &keyboard)
+	decodeAnswerPayload(t, listenerAnswer, &overListener)
+
+	// Each slot is looked up by its digest, which both transports answer, since the
+	// listener's label may be absent. The class holding them must hold exactly the
+	// seeded slots, which is what says the inventory read the fixture's cache.
+	slots := fx.sourceSlots()
+	seeded := map[string]bool{}
+	for _, slot := range slots {
+		seeded[slot.digestHex()] = true
+	}
+	sourceSlots := func(transport string, p cacheStatusResult) map[string]cacheStatusElement {
+		t.Helper()
+		out := map[string]cacheStatusElement{}
+		for _, class := range p.Classes {
+			holdsASeededSlot := false
+			for _, el := range class.Elements {
+				holdsASeededSlot = holdsASeededSlot || seeded[el.Digest]
+			}
+			if !holdsASeededSlot {
+				continue
+			}
+			if len(class.Elements) != len(slots) {
+				t.Fatalf("%s the class %q holds %d element(s), want the %d seeded slots", transport, class.Name,
+					len(class.Elements), len(slots))
+			}
+			for _, el := range class.Elements {
+				out[el.Digest] = el
+			}
+		}
+		if len(out) != len(slots) {
+			t.Fatalf("%s the inventory lists %d of the %d seeded slots: %v", transport, len(out), len(slots), out)
+		}
+		return out
+	}
+	keyboardSlots := sourceSlots("at the keyboard", keyboard)
+	listenerSlots := sourceSlots("over the listener", overListener)
+
+	keptBack, whole := 0, 0
+	for _, slot := range slots {
+		label := fx.sourceSlotLabel(t, slot)
+		atKeyboard, overIt := keyboardSlots[slot.digestHex()], listenerSlots[slot.digestHex()]
+		if told(atKeyboard.Label) != label || atKeyboard.LabelWithheld {
+			t.Errorf("at the keyboard the slot for %s is labelled %q (withheld=%v), want %q", slot.url,
+				told(atKeyboard.Label), atKeyboard.LabelWithheld, label)
+		}
+		switch {
+		case slot.onHost && (overIt.Label != nil || !overIt.LabelWithheld):
+			t.Errorf("over the listener the slot for %s is labelled %q (withheld=%v), want its label kept back and "+
+				"marked: it spells a repository on this host", slot.url, told(overIt.Label), overIt.LabelWithheld)
+		case slot.onHost:
+			keptBack++
+		case told(overIt.Label) != label || overIt.LabelWithheld:
+			t.Errorf("over the listener the slot for %s is labelled %q (withheld=%v), want %q whole", slot.url,
+				told(overIt.Label), overIt.LabelWithheld, label)
+		default:
+			whole++
+		}
+		if overIt.Size != atKeyboard.Size || overIt.SizeText != atKeyboard.SizeText || overIt.Digest != atKeyboard.Digest {
+			t.Errorf("over the listener the slot for %s carries size %d (%q) and digest %q, want %d (%q) and %q: "+
+				"neither names a place, so both are answered whole", slot.url, overIt.Size, overIt.SizeText,
+				overIt.Digest, atKeyboard.Size, atKeyboard.SizeText, atKeyboard.Digest)
+		}
+	}
+	if keptBack == 0 || whole == 0 {
+		t.Errorf("the listener kept back %d slot label(s) and answered %d whole, and the seeded cache holds both "+
+			"kinds, so one half of the rule went unread", keptBack, whole)
+	}
+
+	keyboardText, listenerText := strings.Join(keyboardAnswer.texts, "\n"), strings.Join(listenerAnswer.texts, "\n")
+	for _, slot := range slots {
+		label := fx.sourceSlotLabel(t, slot)
+		if !strings.Contains(keyboardText, label) {
+			t.Errorf("at the keyboard the text does not list %q:\n%s", label, keyboardText)
+		}
+		want := label + "  " + listenerSlots[slot.digestHex()].SizeText
+		if slot.onHost {
+			want = hostLocationKeptBackWords + "  " + listenerSlots[slot.digestHex()].SizeText
+		}
+		if !strings.Contains(listenerText, want) {
+			t.Errorf("over the listener the text does not read %q:\n%s", want, listenerText)
+		}
+	}
+	for _, complaint := range hostLocationsInBytes(listenerAnswer.raw, fx.searched()) {
+		t.Error(complaint)
+	}
+}
+
 // decodeAnswerPayload decodes an answer's structured payload into a typed value,
 // failing where the call was refused or carried none.
 func decodeAnswerPayload(t *testing.T, a hostLocationAnswer, into any) {
@@ -1541,6 +1749,16 @@ func TestTheEveryToolComparisonRejectsADamagedListenerAnswer(t *testing.T) {
 	wholeEntry, wholeAt := cacheProvenanceIdentityWhere(t, cacheOverTheListener.structured, false)
 	unmarkedEntry := cacheProvenanceEntryKeepingNothingBack(t, cacheOverTheListener.structured)
 	keptName := cacheProvenanceIdentitiesOf(cacheAtTheKeyboard.structured, keptEntry)[keptAt]
+	onHostSlot, remoteSlot := fx.sourceSlotWhere(t, true), fx.sourceSlotWhere(t, false)
+	keptLabel, _ := cacheElementWithDigest(cacheAtTheKeyboard.structured, onHostSlot.digestHex())["label"].(string)
+	onHostElement := cacheElementWithDigest(cacheOverTheListener.structured, onHostSlot.digestHex())
+	remoteElement := cacheElementWithDigest(cacheOverTheListener.structured, remoteSlot.digestHex())
+	if keptLabel == "" || onHostElement == nil || onHostElement["label_withheld"] != true ||
+		remoteElement == nil || remoteElement["label"] == nil {
+		t.Fatalf("precondition: the cache inventory lists the slot for %s labelled %q at the keyboard and %v over "+
+			"the listener, and the slot for %s as %v over the listener, so the rows damaging them would damage "+
+			"nothing", onHostSlot.url, keptLabel, onHostElement, remoteSlot.url, remoteElement)
+	}
 
 	for _, tc := range []struct {
 		// scenario says what a wrong implementation would have done.
@@ -1637,6 +1855,26 @@ func TestTheEveryToolComparisonRejectsADamagedListenerAnswer(t *testing.T) {
 			damage: func(s map[string]any) { cacheProvenanceEntryOf(s, unmarkedEntry)["identities_withheld"] = true },
 			names:  "still carries every entry",
 		},
+		{
+			scenario: "a source slot's label spelling a repository on this host carried through",
+			keyboard: cacheAtTheKeyboard, listener: cacheOverTheListener,
+			damage: func(s map[string]any) {
+				element := cacheElementWithDigest(s, onHostSlot.digestHex())
+				element["label"] = keptLabel
+				delete(element, "label_withheld")
+			},
+			names: "unchanged",
+		},
+		{
+			scenario: "a source slot's label naming only a network host kept back",
+			keyboard: cacheAtTheKeyboard, listener: cacheOverTheListener,
+			damage: func(s map[string]any) {
+				element := cacheElementWithDigest(s, remoteSlot.digestHex())
+				delete(element, "label")
+				element["label_withheld"] = true
+			},
+			names: "names no place",
+		},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			damaged := tc.listener
@@ -1672,6 +1910,24 @@ func TestTheEveryToolComparisonRejectsADamagedListenerAnswer(t *testing.T) {
 			t.Logf("%s produced: %v", tc.scenario, complaints)
 		})
 	}
+}
+
+// cacheElementWithDigest is the element of a decoded cache-status answer whose
+// digest is the one given, whichever class holds it, or nil where there is none.
+// It shares its keys with the answer, so a row damaging it damages the answer.
+func cacheElementWithDigest(structured any, digestHex string) map[string]any {
+	s, _ := structured.(map[string]any)
+	classes, _ := s["classes"].([]any)
+	for _, rawClass := range classes {
+		class, _ := rawClass.(map[string]any)
+		elements, _ := class["elements"].([]any)
+		for _, rawElement := range elements {
+			if element, _ := rawElement.(map[string]any); element["digest"] == digestHex {
+				return element
+			}
+		}
+	}
+	return nil
 }
 
 // cacheProvenanceEntryOf is entry i of a decoded cache-status answer's
