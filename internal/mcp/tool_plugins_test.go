@@ -895,3 +895,54 @@ func TestTheCascadeAnchorsABareSocketReferenceIntoAnAbsolutePath(t *testing.T) {
 			"configuration names no path at all would have one published", linter[0].URI)
 	}
 }
+
+// TestThePluginReadingSaysAReasonWasWithheldOnlyWhereItWas pins the readable
+// line for a plugin that did not resolve: it says a reason was kept back only
+// where the answer marks the failure as kept back.
+//
+// The row with no failure at all is the one a caller over the process's own
+// streams meets, where nothing is ever kept back — so a line saying a reason was
+// withheld there would be telling that caller something untrue about the answer.
+func TestThePluginReadingSaysAReasonWasWithheldOnlyWhereItWas(t *testing.T) {
+	for _, tc := range []struct {
+		scenario string
+		entry    pluginEntryResult
+		want     string
+		absent   string
+	}{
+		{
+			scenario: "a plugin that raised no failure names no reason",
+			entry:    pluginEntryResult{Group: pluginGroupEmbedded, URI: stringPointer(theEmbeddedReference)},
+			want:     "[embedded] " + theEmbeddedReference + "; did not resolve",
+			absent:   "withheld",
+		},
+		{
+			scenario: "a failure kept back is said to be kept back",
+			entry:    pluginEntryResult{Group: pluginGroupConfigured, URIWithheld: true, ErrorWithheld: true},
+			want:     "[configured] (reference withheld); did not resolve: (reason withheld)",
+		},
+		{
+			scenario: "a failure told is told",
+			entry: pluginEntryResult{Group: pluginGroupConfigured, URI: stringPointer(thePublishedSocket),
+				Error: stringPointer("the guest did not describe itself")},
+			want:   "[configured] " + thePublishedSocket + "; did not resolve: the guest did not describe itself",
+			absent: "withheld",
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			text := renderPluginListText(pluginListResult{
+				WorkspaceRoot: stringPointer("/workspace"),
+				Count:         1,
+				Returned:      1,
+				Groups:        []pluginGroupCount{{Group: tc.entry.Group, Count: 1}},
+				Plugins:       []pluginEntryResult{tc.entry},
+			})
+			if !strings.HasSuffix(text, tc.want) {
+				t.Errorf("the readable line does not end %q:\n%s", tc.want, text)
+			}
+			if tc.absent != "" && strings.Contains(text, tc.absent) {
+				t.Errorf("the readable reading says %q where the answer keeps nothing back:\n%s", tc.absent, text)
+			}
+		})
+	}
+}

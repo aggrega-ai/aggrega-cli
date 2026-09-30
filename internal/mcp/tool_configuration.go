@@ -60,6 +60,7 @@ var settingsNamingAHostLocation = map[string]string{
 	"mcp.health.listen":           "an address, in the two forms the serving address takes",
 	"signing.key_path":            "a held private-key file",
 	"workspace.catalog_dirs":      "the directories a workspace's catalog is searched in",
+	"workspace.releases":          "each entry's key, the Release file it gives directories of its own, and those directories, all resolved to absolute paths on this disk",
 	"plugins.governance":          "each entry's reference, which the configuration schema declares may be a file on this disk",
 	"plugins.linter":              "each entry's reference, which the configuration schema declares may be a file on this disk",
 	"plugins.importer":            "each entry's reference, which the configuration schema declares may be a file on this disk",
@@ -224,8 +225,8 @@ func configShowInvoke(s *server, _ context.Context, args json.RawMessage) (*call
 			"Could not read which layer decided each setting of the configuration in force.", err, "component"))
 	}
 
-	payload := configShowPayload(tw.root, tw.rw.ContributingLayers(), origins, tw.withholdsHostLocations())
-	return textResult(renderConfigShowText(payload), payload)
+	payload := configShowPayload(tw, tw.rw.ContributingLayers(), origins)
+	return tw.answer(textResult(renderConfigShowText(payload), payload))
 }
 
 // withholdsHostLocations reports whether this call's answer keeps back the values
@@ -253,29 +254,26 @@ func (tw *toolWorkspace) withholdsHostLocations() bool {
 // workspace it resolves, so the projection — which is where the whole of the
 // keeping-back rule lives — can be driven over a supplied cascade and checked
 // exactly. A projection that had to resolve a workspace in order to be read
-// could only ever be compared against whatever the machine happened to hold.
+// could only ever be compared against whatever the machine happened to hold. tw
+// supplies only the root and the transport, which is all the projection reads of
+// it.
 //
 // Every collection is materialised as an empty slice rather than left nil, so a
 // caller iterates unconditionally.
-func configShowPayload(root string, layers []string, origins []workspaceconfig.ValueOrigin,
-	withholdHostLocations bool) configShowResult {
-
+func configShowPayload(tw *toolWorkspace, layers []string, origins []workspaceconfig.ValueOrigin) configShowResult {
+	withholdHostLocations := tw.withholdsHostLocations()
 	out := configShowResult{
 		HostLocationsWithheld: withholdHostLocations,
 		Layers:                make([]configLayerResult, 0, len(layers)),
 		Settings:              make([]configSettingResult, 0, len(origins)),
 	}
 
-	// The workspace root is a directory on this host, so it answers to the same
-	// rule every value below does. It is the answer's scope marker, and over a
-	// listener there is exactly one workspace to be in scope — the one the
-	// process was started over — so what the marker would say is a location the
-	// caller cannot act on and does not need.
-	if withholdHostLocations {
-		out.WorkspaceRootWithheld = true
-	} else {
-		out.WorkspaceRoot = &root
-	}
+	// The workspace root is a directory on this host, so it answers to the rule
+	// every location in every answer here answers to: over a listener the root
+	// itself is kept back, because there is exactly one workspace to be in scope —
+	// the one the process was started over — and what the marker would say is a
+	// location the caller cannot act on and does not need.
+	out.WorkspaceRoot, out.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 
 	for _, layer := range layers {
 		if withholdHostLocations && sourceNamesAHostLocation(layer) {
@@ -366,11 +364,7 @@ func stringPointer(s string) *string { return &s }
 func renderConfigShowText(p configShowResult) string {
 	var b strings.Builder
 
-	if p.WorkspaceRoot != nil {
-		fmt.Fprintf(&b, "Configuration in force for %s.\n", *p.WorkspaceRoot)
-	} else {
-		b.WriteString("Configuration in force for the workspace this server serves.\n")
-	}
+	fmt.Fprintf(&b, "Configuration in force for %s.\n", workspaceRootWords(p.WorkspaceRoot))
 
 	if len(p.Layers) == 0 {
 		b.WriteString("\nLoaded from: the built-in defaults alone — no config file, environment override or " +

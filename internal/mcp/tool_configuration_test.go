@@ -145,12 +145,18 @@ func theAbsoluteValueEachDeclaredSettingTakes() map[string]string {
 		"mcp.health.listen":           "mcp:\n  health:\n    listen: unix:/abs/held/health.sock\n",
 		"signing.key_path":            "signing:\n  key_path: /abs/held/key.pem\n",
 		"workspace.catalog_dirs":      "workspace:\n  catalog_dirs: [/abs/held/catalog]\n",
+		"workspace.releases":          "workspace:\n  releases:\n    " + theReleaseAPerReleaseEntryNames + ":\n      catalog_dirs_append: [/abs/held/catalog]\n",
 		"plugins.governance":          "plugins:\n  governance:\n    - uri: /abs/held/redact.wasm\n      role: ir-verdict\n",
 		"plugins.linter":              "plugins:\n  linter:\n    - uri: /abs/held/lint.wasm\n",
 		"plugins.importer":            "plugins:\n  importer:\n    - uri: /abs/held/import.wasm\n",
 		"plugins.providers":           "plugins:\n  providers:\n    - capability: helm\n      uri: /abs/held/helm.wasm\n",
 	}
 }
+
+// theReleaseAPerReleaseEntryNames is the Release file the per-Release catalog row
+// keys its entry by. The loader refuses an entry naming no file, so the workspace
+// every row resolves carries one at this path.
+const theReleaseAPerReleaseEntryNames = "release.yaml"
 
 // resolvedOver resolves one workspace whose own document is the given body, with
 // the machine-wide layer redirected at a file of this test's own.
@@ -160,6 +166,10 @@ func theAbsoluteValueEachDeclaredSettingTakes() map[string]string {
 // the configuration of whoever is running these tests — and a row asserting that
 // a setting is NOT configured would then fail on a machine whose owner happens to
 // configure it.
+//
+// The workspace also carries the Release file a per-Release catalog entry names,
+// because the loader refuses an entry keyed by a file that is not there. No other
+// row reads it.
 func resolvedOver(t *testing.T, body string) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	globalPath := filepath.Join(t.TempDir(), "config.yaml")
@@ -172,6 +182,10 @@ func resolvedOver(t *testing.T, body string) *workspaceconfig.ResolvedWorkspace 
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(body), 0o644); err != nil {
 		t.Fatalf("write the workspace's own configuration: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, theReleaseAPerReleaseEntryNames),
+		[]byte("kind: Release\nmetadata:\n  name: keyed-by-a-per-release-entry\n"), 0o644); err != nil {
+		t.Fatalf("write the Release a per-Release entry names: %v", err)
 	}
 	rw, err := workspaceconfig.Resolve(root, root)
 	if err != nil {
@@ -858,7 +872,7 @@ func TestTheParityReadingRejectsADroppedFact(t *testing.T) {
 	}
 	layers := rw.ContributingLayers()
 
-	undamaged := configShowPayload(root, layers, origins, false)
+	undamaged := configShowPayload(&toolWorkspace{root: root, transport: transportStdio}, layers, origins)
 	encoded, err := json.Marshal(undamaged)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

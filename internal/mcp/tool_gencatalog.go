@@ -40,6 +40,10 @@ type genCatalogArgs struct {
 
 // genCatalogResultPayload is the gen-catalog tool's structured payload: the
 // generation subcommand's stdout, which lists the entities it wrote.
+//
+// That listing is prose the generation composed and it names the files it wrote,
+// so it is told the way every answer here tells a location: over a listener each
+// file is named relative to the workspace root.
 type genCatalogResultPayload struct {
 	Output string `json:"output"`
 }
@@ -146,8 +150,8 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 	}
 	var stdout bytes.Buffer
 	if err := run(ctx, opts, &stdout); err != nil {
-		return errorResult(explainToolError("Catalog generation failed.", fmt.Errorf("%s", err.Error()), "plugin"))
+		return tw.answer(errorResult(explainToolError("Catalog generation failed.", fmt.Errorf("%s", err.Error()), "plugin")))
 	}
-	out := stdout.String()
-	return textResult(strings.TrimRight(out, "\n"), genCatalogResultPayload{Output: out})
+	out := tw.reportedText(stdout.String())
+	return tw.answer(textResult(strings.TrimRight(out, "\n"), genCatalogResultPayload{Output: out}))
 }

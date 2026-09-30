@@ -196,8 +196,14 @@ type listEntitiesArgs struct {
 //
 // Entities is always an array, empty when the workspace declares none and empty in
 // the summary shape, so a client iterates without a null check.
+//
+// WorkspaceRoot is absent, and WorkspaceRootWithheld set, where the caller is not
+// told where the workspace sits on this host; the mark is omitted otherwise, so an
+// answer that keeps nothing back carries no trace of the rule.
 type listEntitiesResult struct {
-	WorkspaceRoot  string                `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	ResponseFormat string                `json:"response_format"`
 	Count          int                   `json:"count"`
 	Kinds          []entityKindCount     `json:"kinds"`
@@ -286,7 +292,6 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView("", nil))
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(entities))
 	payload := listEntitiesResult{
-		WorkspaceRoot:  tw.root,
 		ResponseFormat: format,
 		Count:          len(entities),
 		Kinds:          entityKindCounts(entities),
@@ -295,7 +300,8 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		MoreRemaining:  more,
 		Entities:       entities[from:to],
 	}
-	return textResult(renderListEntitiesText(payload), payload)
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderListEntitiesText(payload), payload))
 }
 
 // renderListEntitiesText renders the human-readable entity listing: a heading
@@ -309,7 +315,7 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 // the fifty.
 func renderListEntitiesText(p listEntitiesResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Entities in %s (%d):\n", p.WorkspaceRoot, p.Count)
+	fmt.Fprintf(&b, "Entities in %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), p.Count)
 	for _, k := range p.Kinds {
 		fmt.Fprintf(&b, "  %s: %d\n", k.Kind, k.Count)
 	}
@@ -421,8 +427,13 @@ type listReleasesArgs struct {
 // It covers the page rather than the whole listing: it describes the records
 // this answer carries, so the summary shape carries an empty object and a
 // page's map grows with the page and not with the workspace.
+//
+// WorkspaceRoot and its mark carry what they carry on the entity listing, for
+// the same reason.
 type listReleasesResult struct {
-	WorkspaceRoot  string                  `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	ResponseFormat string                  `json:"response_format"`
 	Count          int                     `json:"count"`
 	Directories    []releaseDirectoryCount `json:"directories"`
@@ -501,7 +512,6 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(releases))
 	page := releases[from:to]
 	payload := listReleasesResult{
-		WorkspaceRoot:  tw.root,
 		ResponseFormat: format,
 		Count:          len(releases),
 		Directories:    releaseDirectoryCounts(releases),
@@ -511,7 +521,8 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		Releases:       page,
 		Lockfiles:      serve.LockfilesFor(page),
 	}
-	return textResult(renderListReleasesText(payload), payload)
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderListReleasesText(payload), payload))
 }
 
 // renderListReleasesText renders the human-readable Release listing, and says
@@ -520,7 +531,7 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 // answer's own map, so the text and the structured result name the same file.
 func renderListReleasesText(p listReleasesResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Releases in %s (%d):\n", p.WorkspaceRoot, p.Count)
+	fmt.Fprintf(&b, "Releases in %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), p.Count)
 	if p.Count == 0 {
 		b.WriteString("  none — no document under this root declares kind: Release")
 		return b.String()

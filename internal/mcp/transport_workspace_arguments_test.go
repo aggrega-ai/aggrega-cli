@@ -231,7 +231,7 @@ func TestANamedWorkspaceIsHonouredOverStdio(t *testing.T) {
 
 	var got listReleasesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{"workspace_root": named}), &got)
-	if got.WorkspaceRoot != named {
-		t.Errorf("the call was answered in %q, want the workspace it named, %q", got.WorkspaceRoot, named)
+	if told(got.WorkspaceRoot) != named {
+		t.Errorf("the call was answered in %q, want the workspace it named, %q", told(got.WorkspaceRoot), named)
 	}
 }

@@ -49,9 +49,9 @@ func TestBuildToolRefusalCarriesItsFindingsStructurally(t *testing.T) {
 	}
 
 	payload := unmarshalBuildPayload(t, res)
-	if payload.Release != releasePath {
+	if told(payload.Release) != releasePath {
 		t.Errorf("the refusal names release %q; want %q — a caller holding several calls in flight "+
-			"identifies the answer by what it was about", payload.Release, releasePath)
+			"identifies the answer by what it was about", told(payload.Release), releasePath)
 	}
 	if len(payload.Deprecations) == 0 {
 		t.Fatalf("the refusal carries no recorded marker, and the marker is the finding the run made "+

@@ -82,9 +82,17 @@ func TestAWriteScopedCredentialDraftsIntoTheServedWorkspace(t *testing.T) {
 	if !slices.Equal(p.Written, []string{"langflow.yaml"}) {
 		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml]", p.Written)
 	}
-	if p.WorkspaceRoot != f.root {
-		t.Errorf("the answer names %q as the root the drafts are relative to, want the served workspace %q",
-			p.WorkspaceRoot, f.root)
+	// The root the drafts are relative to is the served workspace's, which is a
+	// directory on the host a caller reaching a listener is not told about: both
+	// the root and the directory the drafts are relative to are kept back, and
+	// each says so.
+	if p.WorkspaceRoot != nil || !p.WorkspaceRootWithheld {
+		t.Errorf("the answer names the workspace root as %q (withheld=%v); over a listener it is kept back "+
+			"and marked", told(p.WorkspaceRoot), p.WorkspaceRootWithheld)
+	}
+	if p.OutputDir != nil || !p.OutputDirWithheld {
+		t.Errorf("the answer names the output directory as %q (withheld=%v); over a listener it is the "+
+			"served root, kept back and marked", told(p.OutputDir), p.OutputDirWithheld)
 	}
 
 	body, err := os.ReadFile(filepath.Join(f.root, "langflow.yaml"))
@@ -185,8 +193,14 @@ func TestTheImportToolResolvesItsSourceInsideTheServedWorkspace(t *testing.T) {
 			if !strings.Contains(text, "'source'") {
 				t.Errorf("the refusal does not name the argument to correct: %q", text)
 			}
-			if !strings.Contains(text, f.root) {
-				t.Errorf("the refusal does not name the workspace this server serves, which is the bound: %q", text)
+			// The bound is named in words: the served workspace's location is a
+			// place on the host, and a refusal tells a listener caller no more
+			// about it than any other answer does.
+			if !strings.Contains(text, "inside the workspace this server serves") {
+				t.Errorf("the refusal does not name the bound, the workspace this server serves: %q", text)
+			}
+			if strings.Contains(text, f.root) {
+				t.Errorf("the refusal names the served root %q, a location on the host: %q", f.root, text)
 			}
 		})
 	}
@@ -258,8 +272,13 @@ func TestADraftedPathClimbingOutOfTheServedWorkspaceIsRefused(t *testing.T) {
 		t.Errorf("the refusal does not name the path the importer returned, so a reader cannot tell which of "+
 			"the two to correct: %q", text)
 	}
-	if !strings.Contains(text, f.root) {
-		t.Errorf("the refusal does not name the root the path was required to stay inside: %q", text)
+	// The root the path was required to stay inside is the served root, so a
+	// caller reaching a listener reads it as kept back rather than by its location.
+	if strings.Contains(text, f.root) {
+		t.Errorf("the refusal names the served root %q, a location on the host: %q", f.root, text)
+	}
+	if !strings.Contains(text, keptBackLocationWords) {
+		t.Errorf("the refusal does not say where the root it names was kept back: %q", text)
 	}
 	// Logged so the refusal this case turns on is readable from a run rather
 	// than only reconstructable from the assertions above it.

@@ -102,6 +102,14 @@ type importDiagnostic struct {
 // surface calling the layer hands it on: a caller reading it learns where the
 // drafts are, and no argument here lets it choose.
 //
+// Both are the workspace root, a directory on this host, so both are told the
+// way every location here is: for a caller reaching a listener each is absent and
+// marked by the withheld flag beside it, which is omitted where nothing was kept
+// back. That caller already has the coordinate the drafts are in, because every
+// drafted path is relative to the root it names its own arguments against.
+//
+// A diagnostic's message is prose the importer composed, and is told the same way.
+//
 // Drafts carries each drafted file's content under a reporting delivery and is
 // absent otherwise. Under a write the files are on disk and Written names them,
 // so handing their whole text back as well would spend a caller's budget on
@@ -114,14 +122,17 @@ type importDiagnostic struct {
 // what it could, and a caller deciding whether to keep that needs the fact
 // rather than only the refusal.
 type importPayload struct {
-	WorkspaceRoot string             `json:"workspace_root"`
-	OutputDir     string             `json:"output_dir"`
-	Source        string             `json:"source"`
-	Format        string             `json:"format"`
-	Written       []string           `json:"written"`
-	Drafts        []importedDraft    `json:"drafts,omitempty"`
-	Diagnostics   []importDiagnostic `json:"diagnostics"`
-	Halted        bool               `json:"halted"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+	OutputDir             *string `json:"output_dir"`
+	OutputDirWithheld     bool    `json:"output_dir_withheld,omitempty"`
+
+	Source      string             `json:"source"`
+	Format      string             `json:"format"`
+	Written     []string           `json:"written"`
+	Drafts      []importedDraft    `json:"drafts,omitempty"`
+	Diagnostics []importDiagnostic `json:"diagnostics"`
+	Halted      bool               `json:"halted"`
 }
 
 var importToolSpec = toolSpec{
@@ -146,6 +157,9 @@ var importToolSpec = toolSpec{
 		"`halted` for that outcome and the diagnostics beside it for what stopped it. The drafts are a " +
 		"starting point an author owns and goes on editing; whether what they say is admissible is what " +
 		"validate answers, not this.",
+	listenerNote: "You did not start this server, so you are not told where its workspace sits on its host: " +
+		"`output_dir` is absent and marked `output_dir_withheld`, and so is the answer's workspace root. Every " +
+		"drafted path is still relative to that root, the one your own paths are named against.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -221,7 +235,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		// The resolved location is named rather than the value as sent: a relative
 		// source resolves against the workspace root, and a reader looking for the
 		// file needs the place that was actually opened.
-		return errorResult(explainToolError("Could not read the source at "+path+".", err, ""))
+		return tw.answer(errorResult(explainToolError("Could not read the source at "+path+".", err, "")))
 	}
 
 	// The format is selected before the attachment inputs because the with-config
@@ -256,14 +270,14 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	}
 
 	payload := importPayload{
-		WorkspaceRoot: tw.root,
-		OutputDir:     res.OutputDir,
-		Source:        source,
-		Format:        res.Format,
-		Written:       importWritten(res, delivery),
-		Diagnostics:   importDiagnosticsFor(res.Diagnostics),
-		Halted:        res.Halted(),
+		Source:      source,
+		Format:      res.Format,
+		Written:     importWritten(res, delivery),
+		Diagnostics: importDiagnosticsFor(tw, res.Diagnostics),
+		Halted:      res.Halted(),
 	}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	payload.OutputDir, payload.OutputDirWithheld = tw.reportedLocationField(res.OutputDir)
 	if delivery.Reports() {
 		payload.Drafts = importDrafts(res.Files)
 	}
@@ -277,9 +291,9 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	// reached disk, the drafts, and every diagnostic are in the payload beside
 	// the sentence.
 	if halt := res.Refusal(); halt != nil {
-		return structuredErrorResult(explainDiagnostic(importHaltedText(payload, delivery, halt), ""), payload)
+		return tw.answer(structuredErrorResult(explainDiagnostic(importHaltedText(payload, delivery, halt), ""), payload))
 	}
-	return textResult(renderImportText(payload, delivery), payload)
+	return tw.answer(textResult(renderImportText(payload, delivery), payload))
 }
 
 // importFormatRefusal composes this surface's sentence for a source whose format
@@ -371,7 +385,11 @@ func renderImportText(p importPayload, delivery authoredcontent.Delivery) string
 	case len(p.Written) == 0:
 		b.WriteString("  the importer drafted no files, so nothing was written\n")
 	default:
-		b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " + p.OutputDir + "\n")
+		// On this tool the directory the paths are relative to is always the
+		// workspace root, so where it is kept back it is named as the served
+		// workspace — the root the caller names its own paths against.
+		b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " +
+			workspaceRootWords(p.OutputDir) + "\n")
 	}
 	for _, d := range p.Diagnostics {
 		b.WriteString("  " + d.Severity + ": " + d.Message + "\n")
@@ -401,10 +419,10 @@ func importDrafts(files []abi.ScaffoldFile) []importedDraft {
 // importDiagnosticsFor projects what the importer reported onto this surface's
 // shape, always as an array so an import that reported nothing arrives as an
 // empty list rather than a missing field.
-func importDiagnosticsFor(diags []abi.Diagnostic) []importDiagnostic {
+func importDiagnosticsFor(tw *toolWorkspace, diags []abi.Diagnostic) []importDiagnostic {
 	out := make([]importDiagnostic, 0, len(diags))
 	for _, d := range diags {
-		out = append(out, importDiagnostic{Severity: d.Severity, Message: d.Message, Code: d.Code})
+		out = append(out, importDiagnostic{Severity: d.Severity, Message: tw.reportedText(d.Message), Code: d.Code})
 	}
 	return out
 }

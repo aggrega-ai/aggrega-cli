@@ -17,8 +17,8 @@ import (
 func TestRenderValidateText_VerdictInvariantAcrossVerbosity(t *testing.T) {
 	p := validateResultPayload{
 		Scope:       validateScopeRelease,
-		Target:      "release.yaml",
-		Release:     "release.yaml",
+		Target:      stringPointer("release.yaml"),
+		Release:     stringPointer("release.yaml"),
 		Valid:       false,
 		Diagnostics: []string{"first diagnostic", "second diagnostic"},
 		Notices:     []string{"schema-pillar overlap advisory", "narrowing-on-extend advisory"},

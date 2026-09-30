@@ -44,8 +44,8 @@ func TestValidateToolEntityScope(t *testing.T) {
 	if payload.Scope != validateScopeEntity {
 		t.Fatalf("scope = %q, want %q", payload.Scope, validateScopeEntity)
 	}
-	if payload.Target != entityPath {
-		t.Fatalf("target = %q, want %q", payload.Target, entityPath)
+	if told(payload.Target) != entityPath {
+		t.Fatalf("target = %q, want %q", told(payload.Target), entityPath)
 	}
 	if !payload.Valid || len(payload.Diagnostics) != 0 {
 		t.Fatalf("entity scope = %+v, want valid with no diagnostics", payload)
@@ -99,8 +99,8 @@ func TestValidateToolPluginScope(t *testing.T) {
 	if payload.Scope != validateScopePlugin {
 		t.Fatalf("scope = %q, want %q", payload.Scope, validateScopePlugin)
 	}
-	if payload.Target != pluginPath {
-		t.Fatalf("target = %q, want %q", payload.Target, pluginPath)
+	if told(payload.Target) != pluginPath {
+		t.Fatalf("target = %q, want %q", told(payload.Target), pluginPath)
 	}
 	if !payload.Valid || len(payload.Diagnostics) != 0 {
 		t.Fatalf("plugin scope = %+v, want valid with no diagnostics", payload)
@@ -146,8 +146,8 @@ func TestValidateToolCatalogScope(t *testing.T) {
 	if payload.Scope != validateScopeCatalog {
 		t.Fatalf("scope = %q, want %q", payload.Scope, validateScopeCatalog)
 	}
-	if payload.Target != root {
-		t.Fatalf("target = %q, want %q", payload.Target, root)
+	if told(payload.Target) != root {
+		t.Fatalf("target = %q, want %q", told(payload.Target), root)
 	}
 	if payload.Valid != (len(payload.Diagnostics) == 0) {
 		t.Fatalf("valid/diagnostics inconsistent: %+v", payload)
@@ -173,8 +173,9 @@ func TestValidateToolReleaseScopeCarriesScopeAndTarget(t *testing.T) {
 	if payload.Scope != validateScopeRelease {
 		t.Fatalf("scope = %q, want %q", payload.Scope, validateScopeRelease)
 	}
-	if payload.Target != releasePath || payload.Release != releasePath {
-		t.Fatalf("release scope target/release = %q/%q, want %q for both", payload.Target, payload.Release, releasePath)
+	if told(payload.Target) != releasePath || told(payload.Release) != releasePath {
+		t.Fatalf("release scope target/release = %q/%q, want %q for both",
+			told(payload.Target), told(payload.Release), releasePath)
 	}
 	if !payload.Valid || len(payload.Diagnostics) != 0 {
 		t.Fatalf("release scope = %+v, want valid with no diagnostics", payload)

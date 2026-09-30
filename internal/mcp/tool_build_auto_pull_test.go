@@ -311,8 +311,8 @@ func TestBuildFillReportsWhatTheResolutionToolReports(t *testing.T) {
 	}
 	report := payload.DependencyResolution
 
-	if report.Lockfile != lockfile.PathFor(releasePath) {
-		t.Errorf("the report names lockfile %q, want %q", report.Lockfile, lockfile.PathFor(releasePath))
+	if told(report.Lockfile) != lockfile.PathFor(releasePath) {
+		t.Errorf("the report names lockfile %q, want %q", told(report.Lockfile), lockfile.PathFor(releasePath))
 	}
 	if len(report.Resolved) == 0 {
 		t.Fatal("the report names nothing the resolution reached, so every comparison below would hold two " +
@@ -335,9 +335,9 @@ func TestBuildFillReportsWhatTheResolutionToolReports(t *testing.T) {
 		t.Errorf("the build's fill and the pull tool carry different lines for the same resolution.\n fill: %q\n pull: %q",
 			report.Diagnostics, fromPullTool.Diagnostics)
 	}
-	if report.Lockfile != fromPullTool.Lockfile {
+	if told(report.Lockfile) != told(fromPullTool.Lockfile) {
 		t.Errorf("the two name different lockfiles for one Release: fill %q, pull %q",
-			report.Lockfile, fromPullTool.Lockfile)
+			told(report.Lockfile), told(fromPullTool.Lockfile))
 	}
 	if report.SourceArtifacts != fromPullTool.SourceArtifacts ||
 		report.ExternalInputs != fromPullTool.ExternalInputs ||
@@ -350,7 +350,7 @@ func TestBuildFillReportsWhatTheResolutionToolReports(t *testing.T) {
 	// The text form carries the same account, so a caller choosing it is not told
 	// less than one reading the structured answer.
 	text := res.Content[0].Text
-	if !strings.Contains(text, report.Lockfile) {
+	if !strings.Contains(text, told(report.Lockfile)) {
 		t.Errorf("the text answer does not name the lockfile the fill wrote, so a caller reading it is not "+
 			"told the call wrote one:\n%s", text)
 	}

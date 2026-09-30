@@ -95,11 +95,11 @@ func TestDescribeCarriesEveryFactTheResolutionDecided(t *testing.T) {
 				t.Errorf("the payload scopes %q by %q; the resolution decided %q",
 					name, got.PublishScope, want.Scope)
 			}
-			if got.File != want.Source {
+			if told(got.File) != want.Source {
 				t.Errorf("the payload declares %q in %q; the resolution resolved it in %q",
-					name, got.File, want.Source)
+					name, told(got.File), want.Source)
 			}
-			if got.File == "" {
+			if told(got.File) == "" {
 				t.Errorf("%q was declared in a document under the workspace root and is reported with "+
 					"no file at all", name)
 			}
@@ -113,7 +113,7 @@ func TestDescribeCarriesEveryFactTheResolutionDecided(t *testing.T) {
 				!strings.Contains(res.Content[0].Text, want.Description) {
 				t.Errorf("the summary line drops the description; got: %s", res.Content[0].Text)
 			}
-			files[name] = got.File
+			files[name] = told(got.File)
 		})
 	}
 
@@ -167,14 +167,15 @@ func TestDescribeCarriesAnAuthoredDocumentByReferenceNotByValue(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
-	if got.File != want.Source {
-		t.Errorf("the payload names document %q; the resolution resolved it in %q", got.File, want.Source)
+	file := told(got.File)
+	if file != want.Source {
+		t.Errorf("the payload names document %q; the resolution resolved it in %q", file, want.Source)
 	}
 	if got.AuthoredLength != len(want.Bytes) {
 		t.Errorf("the payload reports %d byte(s); the resolution retained %d", got.AuthoredLength, len(want.Bytes))
 	}
-	if !filepath.IsAbs(got.File) && !strings.HasSuffix(got.File, ".yaml") {
-		t.Errorf("the reported document %q is not a document path", got.File)
+	if !filepath.IsAbs(file) && !strings.HasSuffix(file, ".yaml") {
+		t.Errorf("the reported document %q is not a document path", file)
 	}
 	if strings.Contains(string(res.StructuredContent), "public_db: main-db") {
 		t.Error("the payload carries the authored document's own text, so it spends the caller's " +

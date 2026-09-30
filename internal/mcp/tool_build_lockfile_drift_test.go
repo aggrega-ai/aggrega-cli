@@ -65,7 +65,7 @@ func resolveTheWorkspace(t *testing.T, s *server, root string, dirs []string, re
 		t.Fatalf("the preparing resolution refused, so no case here has a current lockfile to start from: %s",
 			res.Content[0].Text)
 	}
-	return unmarshalPullPayload(t, res).Lockfile
+	return told(unmarshalPullPayload(t, res).Lockfile)
 }
 
 // callBuild drives the build tool through the real tools/call dispatch.

@@ -82,8 +82,14 @@ type cacheStatusClass struct {
 // unconditionally instead of special-casing an empty cache. TotalSizeText
 // carries the total in the shared spelling, on the same terms as every other
 // rendered size here.
+//
+// WorkspaceRoot is empty where no workspace resolved, and absent — marked by
+// WorkspaceRootWithheld — where one did and the caller is not told where it sits
+// on this host.
 type cacheStatusResult struct {
-	WorkspaceRoot      string                  `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	Classes            []cacheStatusClass      `json:"classes"`
 	Provenance         []cacheStatusProvenance `json:"provenance"`
 	TotalCount         int                     `json:"total_count"`
@@ -132,9 +138,12 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// refusing the whole answer because one half of it is unavailable would be
 	// less useful than saying which half was read.
 	var root, cacheDir string
-	if tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil); err == nil {
+	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
+	if err == nil {
 		root = tw.root
 		cacheDir = tw.cacheDir
+	} else {
+		tw = s.servedWorkspace()
 	}
 
 	// The inventory is bound to a name before it is projected rather than passed
@@ -144,10 +153,13 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// everything.
 	report, err := cacheops.Status(ctx, cacheops.ResolveLocations(root, cacheDir))
 	if err != nil {
-		return errorResult(err.Error())
+		return tw.answer(errorResult(err.Error()))
 	}
 	payload := cacheStatusPayload(root, report)
-	return textResult(renderCacheStatusText(payload), payload)
+	// The root is told the way every location here is. An empty one names no
+	// workspace, which is not a place to keep back.
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(root)
+	return tw.answer(textResult(renderCacheStatusText(payload), payload))
 }
 
 // cacheStatusPayload projects the shared inventory onto this surface's shape.
@@ -190,7 +202,7 @@ func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
 	}
 
 	return cacheStatusResult{
-		WorkspaceRoot:      root,
+		WorkspaceRoot:      &root,
 		Classes:            classes,
 		Provenance:         provenance,
 		TotalCount:         report.TotalCount,
@@ -209,8 +221,8 @@ func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
 // cannot spell one quantity two ways.
 func renderCacheStatusText(p cacheStatusResult) string {
 	var b strings.Builder
-	if p.WorkspaceRoot != "" {
-		fmt.Fprintf(&b, "Caches for %s:\n", p.WorkspaceRoot)
+	if p.WorkspaceRoot == nil || *p.WorkspaceRoot != "" {
+		fmt.Fprintf(&b, "Caches for %s:\n", workspaceRootWords(p.WorkspaceRoot))
 	} else {
 		b.WriteString("Caches (no workspace resolved; machine-wide classes only):\n")
 	}
@@ -264,8 +276,13 @@ type registryListArgs struct {
 // of the workspace's own configuration and the credential state is not: it is
 // read from the machine-wide credential store, so the same host reads the same
 // way from every workspace on this machine.
+//
+// WorkspaceRoot is absent, and marked by WorkspaceRootWithheld, where the caller is
+// not told where the workspace sits on this host.
 type registryListResult struct {
-	WorkspaceRoot                string                 `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	Registries                   []registryops.Registry `json:"registries"`
 	CredentialStateIsMachineWide bool                   `json:"credential_state_is_machine_wide"`
 }
@@ -309,11 +326,11 @@ func registryListInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		entries = []registryops.Registry{}
 	}
 	payload := registryListResult{
-		WorkspaceRoot:                tw.root,
 		Registries:                   entries,
 		CredentialStateIsMachineWide: true,
 	}
-	return textResult(renderRegistryListText(payload), payload)
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderRegistryListText(payload), payload))
 }
 
 // renderRegistryListText renders one line per registry: the host, its alias, the
@@ -321,9 +338,9 @@ func registryListInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 func renderRegistryListText(p registryListResult) string {
 	var b strings.Builder
 	if len(p.Registries) == 0 {
-		return "No registries are configured for " + p.WorkspaceRoot + "."
+		return "No registries are configured for " + workspaceRootWords(p.WorkspaceRoot) + "."
 	}
-	fmt.Fprintf(&b, "Registries for %s (%d):\n", p.WorkspaceRoot, len(p.Registries))
+	fmt.Fprintf(&b, "Registries for %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), len(p.Registries))
 	for _, r := range p.Registries {
 		fmt.Fprintf(&b, "  %s", r.Host)
 		if r.Name != "" {
@@ -397,8 +414,13 @@ type searchIndexResult struct {
 // a caller acting on the result needs to know which registries were consulted,
 // how old each snapshot is, and which configured registries had no index to
 // consult — otherwise a partial answer reads as a complete one.
+//
+// WorkspaceRoot is absent, and marked by WorkspaceRootWithheld, where the caller is
+// not told where the workspace sits on this host.
 type searchResult struct {
-	WorkspaceRoot        string               `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	Records              []searchRecordResult `json:"records"`
 	Indexes              []searchIndexResult  `json:"indexes"`
 	MissingIndexHosts    []string             `json:"missing_index_hosts"`
@@ -507,14 +529,14 @@ func searchInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	}
 
 	payload := searchResult{
-		WorkspaceRoot:        tw.root,
 		Records:              records,
 		Indexes:              indexes,
 		MissingIndexHosts:    missing,
 		Stale:                res.Stale,
 		RegistriesConfigured: !res.NoRegistriesConfigured,
 	}
-	return textResult(renderSearchText(payload), payload)
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderSearchText(payload), payload))
 }
 
 // renderSearchText renders the readable result: the matches, then what the answer
@@ -522,7 +544,7 @@ func searchInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 func renderSearchText(p searchResult) string {
 	var b strings.Builder
 	if !p.RegistriesConfigured {
-		return "No registries are configured for " + p.WorkspaceRoot + ", so there is no index to search."
+		return "No registries are configured for " + workspaceRootWords(p.WorkspaceRoot) + ", so there is no index to search."
 	}
 	if len(p.Records) == 0 {
 		b.WriteString("No entities matched.\n")

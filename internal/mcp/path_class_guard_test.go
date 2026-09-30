@@ -63,17 +63,41 @@ var workspacePathArguments = map[string]string{
 	"pin: entity": "the Recipe or FeatureRecipe document pinned, beside which the entity.lock is WRITTEN",
 }
 
-// resolversReachedOnlyByTheHelper are the path-resolving calls that may appear
-// only inside the helper. Each composes a location to open out of a value a caller
-// sent, which is the act this surface has exactly one home for.
+// resolversReachedOnlyAtABoundary are the path-resolving calls that may appear
+// only inside the functions boundaryFunctions names. Each composes a location to
+// open out of a value a caller sent, which is the act this surface has exactly one
+// home for.
 //
 // pathscope.ReportedName and pathscope.IsLocalSlash are deliberately absent. The
 // first spells a path already resolved into the name an answer reports it under,
 // and the second judges a slash-separated logical name that is not a filesystem
 // path; neither turns a caller's value into somewhere to open.
-var resolversReachedOnlyByTheHelper = map[string][]string{
+var resolversReachedOnlyAtABoundary = map[string][]string{
 	"pathscope": {"Resolve", "ResolveSelected", "Relative"},
 	"filepath":  {"Join", "Abs", "IsAbs", "Clean", "Rel", "EvalSymlinks"},
+}
+
+// boundaryFunctions are the functions that may reach those resolvers directly,
+// keyed by name, each valued by what it is. There are two boundaries: the one a
+// path a caller named comes in through, and the one a location this server holds
+// goes out through.
+//
+// workspacePath is the incoming one, and the only function here that turns a
+// caller's value into somewhere to open. reportedLocation and heldLocations are
+// the outgoing one, and are exempt for the reason pathscope.ReportedName is
+// absent above. The first spells a location this server already holds in the
+// name a caller may be told it by, through the same containment judgement that
+// confines every path a caller sends; the second filters the server's own
+// locations to absolute, cleaned ones, so that a relative string is never matched
+// in prose. Neither composes a place to open from anything a caller sent.
+//
+// Each must be FOUND reaching a resolver, as each sanctioned argument must be
+// found resolved, so a rename cannot leave an exemption standing that nothing
+// exercises.
+var boundaryFunctions = map[string]string{
+	"workspacePath":    "resolves a path a caller named, and writes the refusal where it may not reach",
+	"reportedLocation": "spells a location this server holds as a caller may be told it",
+	"heldLocations":    "lists the server's own locations, absolute and cleaned, for prose to be matched against",
 }
 
 // TestEveryPathArgumentIsResolvedByTheOneHelper keeps the resolution of a path a
@@ -142,6 +166,7 @@ func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {
 	constants := stringConstants(parsed)
 
 	seen := map[string]bool{}
+	exercised := map[string]bool{}
 	visited := 0
 	for _, file := range parsedInFixedOrder(parsed) {
 		node := parsed[file]
@@ -163,10 +188,11 @@ func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {
 				continue
 			}
 			// The enclosing function is read from the declaration rather than
-			// tracked during the walk, so the one legitimate direct use of the
-			// resolvers — inside the helper that IS this surface's boundary — is
-			// exempt by what it is rather than by which file it happens to sit in.
-			inHelper := fn.Name.Name == "workspacePath"
+			// tracked during the walk, so the legitimate direct uses of the
+			// resolvers — inside the functions that ARE this surface's boundaries —
+			// are exempt by what they are rather than by which file they happen to
+			// sit in.
+			_, atABoundary := boundaryFunctions[fn.Name.Name]
 
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				sel, isSel := n.(*ast.SelectorExpr)
@@ -175,10 +201,14 @@ func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {
 				}
 				pkg, isPkg := sel.X.(*ast.Ident)
 
-				if isPkg && !inHelper {
-					for _, name := range resolversReachedOnlyByTheHelper[pkg.Name] {
+				if isPkg {
+					for _, name := range resolversReachedOnlyAtABoundary[pkg.Name] {
 						if sel.Sel.Name != name {
 							continue
+						}
+						if atABoundary {
+							exercised[fn.Name.Name] = true
+							break
 						}
 						t.Errorf("%s: %s.%s reached directly in %s — resolve the path through "+
 							"toolWorkspace.workspacePath, which is the one place this surface decides how far a "+
@@ -261,6 +291,24 @@ func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {
 			"change; or the helper itself was renamed, which drops EVERY entry at once; or the argument no "+
 			"longer names a path, in which case drop its entry — a permission nothing exercises reads as one "+
 			"something does.", missing)
+	}
+
+	// Each boundary function must have been FOUND reaching a resolver, by the same
+	// set difference and for the same reason: an exemption keyed by a name that no
+	// longer declares anything would pass over an empty walk of it, and would then
+	// quietly cover whatever a later function of that name came to resolve.
+	var idle []string
+	for name := range boundaryFunctions {
+		if !exercised[name] {
+			idle = append(idle, name)
+		}
+	}
+	sort.Strings(idle)
+	if len(idle) > 0 {
+		t.Errorf("boundary functions the walk did not find reaching a resolver: %v\n"+
+			"Either the function was renamed, in which case update its name in boundaryFunctions in the same "+
+			"change; or it no longer reaches a resolver directly, in which case drop its entry — an exemption "+
+			"nothing exercises reads as one something does.", idle)
 	}
 }
 

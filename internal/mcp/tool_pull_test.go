@@ -169,10 +169,10 @@ func TestPullToolWritesTheLockfileItReports(t *testing.T) {
 	if payload.Verified {
 		t.Error("a resolution that wrote the lockfile reported itself as a comparison that wrote nothing")
 	}
-	if payload.Lockfile != lockPath {
-		t.Errorf("the answer names the lockfile %q; the resolution writes %q", payload.Lockfile, lockPath)
+	if told(payload.Lockfile) != lockPath {
+		t.Errorf("the answer names the lockfile %q; the resolution writes %q", told(payload.Lockfile), lockPath)
 	}
-	if _, err := os.Stat(payload.Lockfile); err != nil {
+	if _, err := os.Stat(told(payload.Lockfile)); err != nil {
 		t.Fatalf("the answer names a lockfile that is not on disk: %v", err)
 	}
 	if len(payload.Resolved) == 0 {
@@ -206,7 +206,7 @@ func TestPullToolThreadsTheToolchainStampIntoTheLockfile(t *testing.T) {
 	}
 	payload := unmarshalPullPayload(t, res)
 
-	lf, _, err := lockfile.LoadLockfile(payload.Lockfile)
+	lf, _, err := lockfile.LoadLockfile(told(payload.Lockfile))
 	if err != nil {
 		t.Fatalf("load the lockfile the resolution wrote: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestPullToolReconcilingAnUnchangedDependencySetRewritesNothing(t *testing.T
 	if first.IsError {
 		t.Fatalf("the first pull refused: %s", first.Content[0].Text)
 	}
-	lockPath := unmarshalPullPayload(t, first).Lockfile
+	lockPath := told(unmarshalPullPayload(t, first).Lockfile)
 	before, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read the lockfile the first pull wrote: %v", err)
@@ -316,7 +316,7 @@ func TestPullToolVerifyComparesAndWritesNothing(t *testing.T) {
 	if written.IsError {
 		t.Fatalf("the preparing pull refused: %s", written.Content[0].Text)
 	}
-	lockPath := unmarshalPullPayload(t, written).Lockfile
+	lockPath := told(unmarshalPullPayload(t, written).Lockfile)
 	before, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read the prepared lockfile: %v", err)
@@ -364,7 +364,7 @@ func TestPullToolVerifyRefusesADriftedLockfileAndKeepsTheResolution(t *testing.T
 	if written.IsError {
 		t.Fatalf("the preparing pull refused: %s", written.Content[0].Text)
 	}
-	lockPath := unmarshalPullPayload(t, written).Lockfile
+	lockPath := told(unmarshalPullPayload(t, written).Lockfile)
 
 	recorded, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -401,8 +401,8 @@ func TestPullToolVerifyRefusesADriftedLockfileAndKeepsTheResolution(t *testing.T
 		t.Error("the refusal discarded the resolution the run had already computed, so a caller holding a " +
 			"drift verdict cannot read what the Release resolves to today")
 	}
-	if payload.Lockfile != lockPath {
-		t.Errorf("the refusal names the lockfile %q; the drifted file is %q", payload.Lockfile, lockPath)
+	if told(payload.Lockfile) != lockPath {
+		t.Errorf("the refusal names the lockfile %q; the drifted file is %q", told(payload.Lockfile), lockPath)
 	}
 }
 
@@ -410,9 +410,9 @@ func TestPullToolVerifyRefusesADriftedLockfileAndKeepsTheResolution(t *testing.T
 // through the real dispatch and holds its guidance to naming both arguments, so a
 // caller is told which pair it may not send rather than that something was wrong.
 //
-// The schema declares the same rule, and the cross-check that the two agree is
-// driven from the argument-schema proofs. What this adds is the guidance text,
-// which no schema can carry.
+// The schema deliberately does not state this rule: written as a combinator it
+// reads to a client as the tool requiring `verify`. So this refusal is the whole
+// of the rule a caller meets, and it is held to naming both arguments.
 func TestPullToolRefusesComparingAndUpgradingTogether(t *testing.T) {
 	s := newTestServer(t)
 	res := callPull(t, s, pullArgs{

@@ -23,6 +23,11 @@ const docEntityDir = "aggrega-docs/language-reference/entities/"
 // docIndex is the fallback pointer when no kind-specific page applies.
 const docIndex = "aggrega-docs/language-reference/"
 
+// docServerReference is the page teaching this server itself: the workspace it
+// serves, and the credentials a call spends. A refusal about either points here,
+// because no entity kind's page is about them.
+const docServerReference = docIndex + "cli/aggrega-mcp.md"
+
 // docPointerFor returns the language-reference page documenting an entity kind, or
 // the index when the kind is empty, unrecognized, or has no page of its own.
 //
@@ -54,13 +59,28 @@ func docPointerFor(kind string) string {
 // registers rather than composed here — so nothing in the guidance is text this
 // package made up about a failure.
 func explainDiagnostic(message, kind string) string {
+	return explainDiagnosticAt(message, docPointerFor(kind))
+}
+
+// explainDiagnosticAt is explainDiagnostic for a failure whose fix is taught on a
+// page no entity kind selects, named outright. The expansion is the same one, so
+// a refusal pointing at a page and one pointing at a kind differ in the page they
+// name and in nothing else.
+func explainDiagnosticAt(message, page string) string {
 	message = strings.TrimSpace(message)
 	var b strings.Builder
 	b.WriteString(message)
 	b.WriteString(conditionNote(message))
-	b.WriteString("\n\nSee: ")
-	b.WriteString(docPointerFor(kind))
+	b.WriteString("\n\n")
+	b.WriteString(docPointerLine(page))
 	return b.String()
+}
+
+// docPointerLine is the line that closes a piece of guidance by naming the page
+// to read. It is the one place that line is written, so every refusal and every
+// expansion here spells its pointer the same way whichever page it names.
+func docPointerLine(page string) string {
+	return "See: " + page
 }
 
 // conditionNote returns what the compiler declares about the condition a
@@ -99,10 +119,16 @@ func conditionNote(message string) string {
 // missing search plugin all reach the caller as guidance rather than an opaque
 // code.
 func explainToolError(action string, err error, kind string) string {
+	return explainToolErrorAt(action, err, docPointerFor(kind))
+}
+
+// explainToolErrorAt is explainToolError for a failure whose fix is taught on a
+// page no entity kind selects, named outright.
+func explainToolErrorAt(action string, err error, page string) string {
 	var b strings.Builder
 	b.WriteString(action)
 	b.WriteString("\n\n")
-	b.WriteString(explainDiagnostic(err.Error(), kind))
+	b.WriteString(explainDiagnosticAt(err.Error(), page))
 	return b.String()
 }
 
@@ -395,5 +421,5 @@ func explainGuidance(message string, expansion *conditionExpansion, docPointer s
 			blocks = append(blocks, block)
 		}
 	}
-	return strings.Join(append(blocks, "See: "+docPointer), "\n\n")
+	return strings.Join(append(blocks, docPointerLine(docPointer)), "\n\n")
 }

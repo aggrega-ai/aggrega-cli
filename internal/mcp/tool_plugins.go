@@ -224,9 +224,8 @@ func pluginListInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 			"Could not resolve the workspace to report the plugins resolvable in it.", err, "plugin"))
 	}
 
-	payload := pluginListPayload(tw.root, s.listPlugins(ctx, tw.rw), format, asked,
-		tw.withholdsHostLocations())
-	return textResult(renderPluginListText(payload), payload)
+	payload := pluginListPayload(tw, s.listPlugins(ctx, tw.rw), format, asked)
+	return tw.answer(textResult(renderPluginListText(payload), payload))
 }
 
 // pluginListPayload projects one enumeration onto this surface's shape, keeping
@@ -237,10 +236,12 @@ func pluginListInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 // enumerates, so the projection — which is where the whole of the keeping-back
 // rule lives — can be driven over a supplied listing and checked exactly. A
 // projection that had to enumerate in order to be read could only ever be
-// compared against whatever plugins the machine happened to hold.
-func pluginListPayload(root string, listing pluginops.PluginListing, format string,
-	asked listingWindow, withholdHostLocations bool) pluginListResult {
+// compared against whatever plugins the machine happened to hold. tw supplies
+// only the root and the transport, which is all the projection reads of it.
+func pluginListPayload(tw *toolWorkspace, listing pluginops.PluginListing, format string,
+	asked listingWindow) pluginListResult {
 
+	withholdHostLocations := tw.withholdsHostLocations()
 	out := pluginListResult{
 		HostLocationsWithheld: withholdHostLocations,
 		ResponseFormat:        format,
@@ -248,15 +249,12 @@ func pluginListPayload(root string, listing pluginops.PluginListing, format stri
 		Plugins:               []pluginEntryResult{},
 	}
 
-	// The workspace root is a directory on this host, so it answers to the same
-	// rule every value below does, and for the reason its counterpart on the
-	// configuration reading does: over a listener there is exactly one workspace
-	// in scope and the marker names a place the caller cannot act on.
-	if withholdHostLocations {
-		out.WorkspaceRootWithheld = true
-	} else {
-		out.WorkspaceRoot = &root
-	}
+	// The workspace root is a directory on this host, so it answers to the rule
+	// every location in every answer here answers to, and for the reason its
+	// counterpart on the configuration reading does: over a listener there is
+	// exactly one workspace in scope and the marker names a place the caller
+	// cannot act on.
+	out.WorkspaceRoot, out.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 
 	// One flat record list with the group on each record, and the breakdown
 	// derived beside it. Two windowed lists would make a caller continue two
@@ -399,11 +397,7 @@ func pluginInputKinds(k wasm.InputKinds) []string {
 func renderPluginListText(p pluginListResult) string {
 	var b strings.Builder
 
-	if p.WorkspaceRoot != nil {
-		fmt.Fprintf(&b, "Plugins resolvable in %s (%d):\n", *p.WorkspaceRoot, p.Count)
-	} else {
-		fmt.Fprintf(&b, "Plugins resolvable in the workspace this server serves (%d):\n", p.Count)
-	}
+	fmt.Fprintf(&b, "Plugins resolvable in %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), p.Count)
 	for _, g := range p.Groups {
 		fmt.Fprintf(&b, "  %s: %d\n", g.Group, g.Count)
 	}
@@ -431,7 +425,10 @@ func renderPluginListText(p pluginListResult) string {
 			fmt.Fprintf(&b, "; %s", e.Readiness)
 		}
 		if !e.Resolved {
-			fmt.Fprintf(&b, "; did not resolve: %s", pluginFailureWords(e))
+			b.WriteString("; did not resolve")
+			if reason := pluginFailureWords(e); reason != "" {
+				fmt.Fprintf(&b, ": %s", reason)
+			}
 		} else if e.Error != nil || e.ErrorWithheld {
 			fmt.Fprintf(&b, "; resolved but did not describe: %s", pluginFailureWords(e))
 		}
@@ -457,10 +454,21 @@ func pluginReferenceWords(e pluginEntryResult) string {
 	return *e.URI
 }
 
-// pluginFailureWords renders one plugin's failure for the readable listing.
+// pluginFailureWords renders one plugin's failure for the readable listing: its
+// text, the word saying that text was kept back, or nothing where the plugin
+// raised no failure at all.
+//
+// "Withheld" is written only where the answer marks the failure as kept back. A
+// record carrying no failure and no mark has nothing to keep back, and telling a
+// reader a reason was withheld there would be a claim about this answer that is
+// not true of it.
 func pluginFailureWords(e pluginEntryResult) string {
-	if e.Error == nil {
+	switch {
+	case e.Error != nil:
+		return *e.Error
+	case e.ErrorWithheld:
 		return "(reason withheld)"
+	default:
+		return ""
 	}
-	return *e.Error
 }

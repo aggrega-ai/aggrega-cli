@@ -108,6 +108,13 @@ import (
 // [toolSpec.notesWithheldFromAListener], which enumerates the transport-scoped
 // pair and only those.
 //
+// listenerNote holds the part that is true only where a caller reached a
+// listener, and is left empty by a tool whose description is true as it stands
+// for every caller. It is the mirror of the two notes above: where an answer
+// keeps back a location its description says it reports, the sentence saying so
+// is advertised to the caller it is true of and to no other, so the description
+// read over the process's own streams is exactly what it was.
+//
 // signingKeyArguments names the arguments through which a call selects an offline
 // held signing key, and is empty for a tool that signs nothing. Such a key lives
 // on the machine this server runs on, so a caller that did not launch this process
@@ -124,6 +131,7 @@ type toolSpec struct {
 	workspaceSelectionNote string
 	signingKeyNote         string
 	commandSurfaceNote     string
+	listenerNote           string
 	inputSchema            string
 	signingKeyArguments    []string
 	kinds                  []string
@@ -215,11 +223,19 @@ type toolTextContent struct {
 // It carries the per-request revision's envelope and no freshness hint. That
 // revision declares a tool result an ordinary result rather than a cacheable
 // one, so there is no window for it to state.
+//
+// workspace is the workspace the call resolved, where the tool carried it out,
+// and it never reaches the wire. It is what the point every result leaves
+// dispatch through reads the result's text against, so that point spells the
+// locations of the workspace the call itself read rather than resolving one a
+// second time.
 type callToolResult struct {
 	perRequestEnvelope
 	Content           []toolTextContent `json:"content"`
 	StructuredContent json.RawMessage   `json:"structuredContent,omitempty"`
 	IsError           bool              `json:"isError,omitempty"`
+
+	workspace *toolWorkspace
 }
 
 // response format tokens select a verbose or terse rendering where a tool has a
@@ -559,6 +575,11 @@ func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 // ctx is the run's own, handed to the resolved tool. Every tool that publishes,
 // pulls, builds, lints or searches carries it into the work it drives, so ending
 // the run ends that work rather than only its report.
+//
+// The tool's result is handed on through [server.withoutHostLocations], which
+// over a listener spells each location in its text the way a caller there may be
+// told it. It is here rather than in each tool because this is the one line every
+// result crosses.
 func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -590,7 +611,12 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		if refusal := s.admissionRefusal(ctx, spec, p.Arguments); refusal != nil {
 			return nil, refusal
 		}
-		return spec.invoke(s, ctx, p.Arguments)
+		// Every result a tool composes leaves through here, so a caller that did not
+		// launch this process is answered without a place on this host in the text of
+		// any tool's answer, a tool added later included. The refusals above name no
+		// location and are not read.
+		res, rpcErr := spec.invoke(s, ctx, p.Arguments)
+		return s.withoutHostLocations(res), rpcErr
 	}
 	// One class of name is answered with more than "no such tool", and it is the
 	// class a caller is most likely to have read about somewhere else: a tool

@@ -34,9 +34,19 @@ type attachmentContainerArgs struct {
 // attachmentContainerPayload is the attachment-container tool's structured
 // payload: the workspace the answer was computed over, and the answer itself,
 // embedded so the keys are the ones every surface reports it under.
+//
+// Both locations in it are told as the caller may be told them. The workspace
+// root is absent, and marked by WorkspaceRootWithheld, where the caller is not
+// told where the workspace sits on this host. The answer's file is spelled
+// relative to that root where it lies inside the workspace; one outside it is
+// left empty in the embedded answer and marked by FileWithheld, which follows the
+// answer rather than sitting beside the field, because the answer's keys are the
+// shared shape's and stay in that shape's order.
 type attachmentContainerPayload struct {
-	WorkspaceRoot string `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 	serve.AttachmentContainerResult
+	FileWithheld bool `json:"file_withheld,omitempty"`
 }
 
 var attachmentContainerToolSpec = toolSpec{
@@ -147,8 +157,14 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 			a.GraphNode, a.Release, refusal.Reason()), "release"))
 	}
 
-	payload := attachmentContainerPayload{WorkspaceRoot: tw.root, AttachmentContainerResult: result}
-	return textResult(renderAttachmentContainerText(payload), payload)
+	payload := attachmentContainerPayload{AttachmentContainerResult: result}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	if file, told := tw.reportedLocation(result.File); told {
+		payload.File = file
+	} else {
+		payload.File, payload.FileWithheld = "", true
+	}
+	return tw.answer(textResult(renderAttachmentContainerText(payload), payload))
 }
 
 // renderAttachmentContainerText renders the human-readable answer: the document,
@@ -160,8 +176,12 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 // something to act on by itself.
 func renderAttachmentContainerText(p attachmentContainerPayload) string {
 	var b strings.Builder
+	file := p.File
+	if p.FileWithheld {
+		file = keptBackLocationWords
+	}
 	fmt.Fprintf(&b, "An attachment for %s belongs in %s, under %s.\n",
-		p.Node, p.File, renderContainerPath(p.Container))
+		p.Node, file, renderContainerPath(p.Container))
 	b.WriteString("  the container path is a list of segments; pass it and the file to insertion-point to learn " +
 		"where in that document the text goes\n")
 	b.WriteString("  this reports a location and creates nothing: no attachment was made and no file was written")

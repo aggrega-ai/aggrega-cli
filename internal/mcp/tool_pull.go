@@ -86,13 +86,19 @@ type pullToolchain struct {
 // zero therefore cannot distinguish a run that refused from one that completed and
 // pinned none. What distinguishes them is the failure flag on the envelope, which
 // is the protocol's own discriminator and not something this shape restates.
+//
+// Release and Lockfile are locations on this host, spelled as the caller may be
+// told them: one the caller is not told is absent and marked by the withheld flag
+// beside it, which is omitted where nothing was kept back.
 type pullResultPayload struct {
-	Release string `json:"release"`
+	Release         *string `json:"release"`
+	ReleaseWithheld bool    `json:"release_withheld,omitempty"`
 
 	// Lockfile is the per-Release lockfile this call wrote, or compared against.
 	// It is derived before the run and so is reported on a refusal as well, since a
 	// verify that refuses on drift is a caller asking which file drifted.
-	Lockfile string `json:"lockfile"`
+	Lockfile         *string `json:"lockfile"`
+	LockfileWithheld bool    `json:"lockfile_withheld,omitempty"`
 
 	// Verified reports that the run only compared, writing no lockfile, trust
 	// record or entity.lock.
@@ -180,11 +186,7 @@ var pullToolSpec = toolSpec{
       "description": "Run the entity author's pin step over the Recipes and FeatureRecipes the Release builds from a catalog directory, writing the entity.lock beside each, instead of refusing on one whose lock does not record its pins. Absent follows the workspace's pin_sources_at_pull setting; either value overrides it. Cannot be combined with verify, whichever value it carries."
     }
   },
-  "required": ["release"],
-  "anyOf": [
-    {"not":{"anyOf":[{"required":["upgrade_targets"]},{"required":["pin_sources"]}]}},
-    {"properties":{"verify":{"const":false}}}
-  ]
+  "required": ["release"]
 }`,
 	invoke: pullInvoke,
 }
@@ -276,10 +278,10 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	// render is not that. The build tool beside it is the caller that needs one.
 	payload, _, runErr := runDependencyResolution(ctx, s, tw, releasePath, a, targets)
 	if runErr != nil {
-		return structuredErrorResult(
-			explainToolError(pullFailureSummary(a.Verify, len(targets)), runErr, "release"), payload)
+		return tw.answer(structuredErrorResult(
+			explainToolError(pullFailureSummary(a.Verify, len(targets)), runErr, "release"), payload))
 	}
-	return textResult(renderPullText(payload), payload)
+	return tw.answer(textResult(renderPullText(payload), payload))
 }
 
 // runDependencyResolution performs one dependency resolution and projects what
@@ -324,11 +326,9 @@ type dependencyResolver func(ctx context.Context, cfg pullops.Config) (pullops.R
 
 func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, releasePath string,
 	a pullArgs, targets []string) (pullResultPayload, *compilerops.PreviewResult, error) {
-	payload := pullResultPayload{
-		Release:  releasePath,
-		Lockfile: lockfile.PathFor(releasePath),
-		Resolved: []closureRef{},
-	}
+	payload := pullResultPayload{Resolved: []closureRef{}}
+	payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
+	payload.Lockfile, payload.LockfileWithheld = tw.reportedLocationField(lockfile.PathFor(releasePath))
 
 	// The diagnostics are captured rather than written through: stdout on this
 	// server carries framed protocol messages only, so a notice reaching a process
@@ -355,7 +355,9 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 			Resolved: func(cl closure.Closure) { resolved = cl },
 		}))
 	payload.Resolved = closureRefsAcrossAxes(resolved)
-	payload.Diagnostics = diagnosticLines(diagnostics.String())
+	// The resolution's own account of itself is prose it composed, so a line may
+	// name a place on this host; each is told the way the rest of this answer is.
+	payload.Diagnostics = tw.reportedTexts(diagnosticLines(diagnostics.String()))
 
 	if runErr != nil {
 		return payload, nil, runErr
@@ -366,7 +368,7 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 	payload.ExternalInputs = res.ExternalInputs
 	payload.TrustedPlugins = res.TrustedPlugins
 	if res.LockfilePath != "" {
-		payload.Lockfile = res.LockfilePath
+		payload.Lockfile, payload.LockfileWithheld = tw.reportedLocationField(res.LockfilePath)
 	}
 	if res.Toolchain != nil {
 		payload.Toolchain = &pullToolchain{CompilerVersion: res.Toolchain.CompilerVersion}
@@ -376,7 +378,7 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 		}
 	}
 	if res.ExternalInputDiscovery != nil {
-		payload.IncompleteExternalInputs = res.ExternalInputDiscovery.Error()
+		payload.IncompleteExternalInputs = tw.reportedText(res.ExternalInputDiscovery.Error())
 	}
 	// The conserved render, asked of its own verdict — see this function's notes
 	// for why only a finished one travels.
@@ -514,9 +516,10 @@ func diagnosticLines(stream string) []string {
 // specific reference, and a count of findings is not a finding.
 func renderPullText(p pullResultPayload) string {
 	var b strings.Builder
+	lock := reportedLocationWords(p.Lockfile)
 	if p.Verified {
 		fmt.Fprintf(&b, "The lockfile %s matches the Release's current dependency resolution (%d reference(s) "+
-			"resolved); it was not rewritten.\n", p.Lockfile, len(p.Resolved))
+			"resolved); it was not rewritten.\n", lock, len(p.Resolved))
 		if p.Toolchain != nil {
 			fmt.Fprintf(&b, "It records compiler version %s", p.Toolchain.CompilerVersion)
 			if n := len(p.Toolchain.CorePlugins); n > 0 {
@@ -527,7 +530,7 @@ func renderPullText(p pullResultPayload) string {
 	} else {
 		fmt.Fprintf(&b, "Resolved %d reference(s) and wrote the lockfile %s (source_artifacts=%d, "+
 			"external_inputs=%d, trusted_plugins=%d).\n",
-			len(p.Resolved), p.Lockfile, p.SourceArtifacts, p.ExternalInputs, p.TrustedPlugins)
+			len(p.Resolved), lock, p.SourceArtifacts, p.ExternalInputs, p.TrustedPlugins)
 	}
 	if p.IncompleteExternalInputs != "" {
 		fmt.Fprintf(&b, "\nExternal inputs were not fully discovered, so the dependency pins are complete and "+

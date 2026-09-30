@@ -109,9 +109,14 @@ type buildFile struct {
 // flag on the envelope, which is the protocol's own discriminator and not
 // something this shape restates. Read this field for what was written, and read
 // the flag for whether anything was going to be.
+//
+// Release is the Release's location on this host, spelled as the caller may be
+// told it; one the caller is not told is absent and marked by ReleaseWithheld,
+// which is omitted where nothing was kept back.
 type buildResultPayload struct {
-	Release string      `json:"release"`
-	Files   []buildFile `json:"files"`
+	Release         *string     `json:"release"`
+	ReleaseWithheld bool        `json:"release_withheld,omitempty"`
+	Files           []buildFile `json:"files"`
 	// Deprecations names each pinned reference carrying a recorded deprecation
 	// marker, from the shared report every surface reads. It is present whatever
 	// the outcome, for the same reason the command line prints the notices on a
@@ -374,11 +379,13 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			// report on. What the caller is handed is the resolution's own payload,
 			// which carries the diagnostics that say where it stopped — the same
 			// detail the pull tool hands back for the same refusal.
-			return structuredErrorResult(
+			refused := buildResultPayload{Files: []buildFile{}, DependencyResolution: &report}
+			refused.Release, refused.ReleaseWithheld = tw.reportedLocationField(releasePath)
+			return tw.answer(structuredErrorResult(
 				explainToolError("The build refused before rendering: it was asked to resolve this Release's "+
 					"dependencies first, and the resolution did not complete. Nothing was rendered.",
 					fillErr, "release"),
-				buildResultPayload{Release: releasePath, Files: []buildFile{}, DependencyResolution: &report})
+				refused))
 		}
 		fillReport = &report
 		filled = render
@@ -504,9 +511,10 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// what to change, and reporting them as prose there while reporting them
 	// structurally on success would be one capability answering at two fidelities
 	// depending on its verdict.
-	payload := buildResultPayload{Release: releasePath}
+	payload := buildResultPayload{}
+	payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
 	if len(deprecationNotices) > 0 {
-		payload.Deprecations = deprecationNotices
+		payload.Deprecations = tw.reportedTexts(deprecationNotices)
 	}
 	// What the fill resolved travels on every outcome for the same reason the
 	// findings below do: a caller that asked for a fill is owed what the fill did
@@ -521,7 +529,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// caller cannot tell that from an accurate render unless it is told. A decline
 	// also HALTS the render in the ordinary case, so the refusal is where this field
 	// earns its keep and the success is the incidental path for it.
-	payload.DeclinedExternalInputs = declined
+	payload.DeclinedExternalInputs = tw.reportedTexts(declined)
 	// The advisories the build raised travel in the answer, so a caller driving the
 	// compiler through this surface receives every finding a command-line build
 	// prints rather than only the ones that stopped it. They come from the two
@@ -531,6 +539,11 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// halted raised whatever the phases ahead of it found, and those are exactly
 	// the findings a caller has to act on to get past the halt.
 	payload.Advisories = append(buildAdvisories(preview.PipelineOutcome().Advisories()), previewAdvisories(preview)...)
+	// An advisory's message is prose the compiler composed, so it may name a place
+	// on this host; it is told the way the rest of this answer is.
+	for i := range payload.Advisories {
+		payload.Advisories[i].Message = tw.reportedText(payload.Advisories[i].Message)
+	}
 
 	if err != nil {
 		// A catalog file the load refused never enters the catalog, so a Release
@@ -539,10 +552,10 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// that into the constraint the author has to fix, and it is the annotation
 		// the command line has always applied, through the one home both read.
 		annotated := annotateResolutionWithRefusals(err, rendered, tw, releasePath)
-		return structuredErrorResult(
+		return tw.answer(structuredErrorResult(
 			explainToolError(previewFailureSummary(preview, deprecationNotices), annotated,
 				refusalKindOr(annotated, previewFailureKind(preview, err))),
-			payload)
+			payload))
 	}
 
 	// The rendered set comes off the finished payload. A render performed here has
@@ -556,16 +569,16 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// keeping it.
 	completed := preview.PipelineOutcome().Completed()
 	if completed == nil {
-		return structuredErrorResult(
+		return tw.answer(structuredErrorResult(
 			"The build resolved this Release's dependencies first, and the render that resolution "+
 				"performed did not finish — so there is no complete set of files to report and none is "+
 				"reported. Call pull with this same 'release' path to see where the resolution stopped, "+
 				"then build again.",
-			payload)
+			payload))
 	}
 	payload.Files = renderedFiles(completed, format == responseFormatDetailed)
 	text := renderBuildText(payload)
-	return textResult(text, payload)
+	return tw.answer(textResult(text, payload))
 }
 
 // previewWarningTexts returns the text of each of a preview's warnings of one
@@ -709,15 +722,16 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 // prints nothing.
 func renderBuildText(p buildResultPayload) string {
 	var b strings.Builder
+	release := reportedLocationWords(p.Release)
 	if p.DependencyResolution != nil {
 		fmt.Fprintf(&b, "Resolved this Release's dependencies into %s first, then rendered.\n",
-			p.DependencyResolution.Lockfile)
+			reportedLocationWords(p.DependencyResolution.Lockfile))
 		for _, line := range p.DependencyResolution.Diagnostics {
 			fmt.Fprintf(&b, "  %s\n", line)
 		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (no artifact written to disk):\n", p.Release, len(p.Files))
+	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (no artifact written to disk):\n", release, len(p.Files))
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "  %s\n", f.Path)
 	}
@@ -732,7 +746,7 @@ func renderBuildText(p buildResultPayload) string {
 			"The files above stop short of what a build would emit; run `aggrega pull --release %s` to pin them. "+
 			"Through this protocol that is the pull tool, called with this same 'release' path — one operation "+
 			"at two invocation sites:\n",
-			len(p.DeclinedExternalInputs), p.Release)
+			len(p.DeclinedExternalInputs), release)
 		for _, url := range p.DeclinedExternalInputs {
 			fmt.Fprintf(&b, "  %s\n", url)
 		}

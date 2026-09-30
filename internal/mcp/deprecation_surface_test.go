@@ -97,7 +97,7 @@ func deprecatedPinWorkspace(t *testing.T, haltSeverity string) (root string, dir
 		t.Fatalf("the preparing resolution refused, so this fixture has no lockfile to record a marker on: %s",
 			res.Content[0].Text)
 	}
-	lockPath := unmarshalPullPayload(t, res).Lockfile
+	lockPath := told(unmarshalPullPayload(t, res).Lockfile)
 
 	lf, _, err := lockfile.LoadLockfile(lockPath)
 	if err != nil {

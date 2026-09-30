@@ -116,13 +116,14 @@ spec:
 					got.AuthoredLength, len(want.Bytes))
 			}
 
-			if got.File == "" {
+			file := told(got.File)
+			if file == "" {
 				t.Fatalf("the payload reported no path at all; the resolution recorded %q", want.Source)
 			}
-			if strings.Contains(got.File, "..") {
+			if strings.Contains(file, "..") {
 				t.Errorf("the reported path climbs above the workspace root: %q. A climb resolves "+
 					"differently depending on where it is read from, which is what the absolute "+
-					"spelling exists to avoid", got.File)
+					"spelling exists to avoid", file)
 			}
 			// The document this fixture wrote, named independently of the
 			// resolution, so the assertions below are not the answer compared
@@ -130,22 +131,22 @@ spec:
 			document := filepath.Join(catalogDir, "aggregates", "probe-module.yaml")
 			switch {
 			case tc.wantInside:
-				if filepath.IsAbs(got.File) {
+				if filepath.IsAbs(file) {
 					t.Errorf("a document inside the workspace root was reported at %q; inside the root "+
-						"the answer is in the coordinate the caller supplied", got.File)
+						"the answer is in the coordinate the caller supplied", file)
 				}
-				if anchored := filepath.Join(ws, got.File); anchored != filepath.Clean(document) {
+				if anchored := filepath.Join(ws, file); anchored != filepath.Clean(document) {
 					t.Errorf("the reported path %q anchors to %q against the root the call named; the "+
-						"document is at %q", got.File, anchored, document)
+						"document is at %q", file, anchored, document)
 				}
 			default:
-				if !filepath.IsAbs(got.File) {
+				if !filepath.IsAbs(file) {
 					t.Errorf("a document outside the workspace root was reported at %q; outside the root "+
-						"the absolute path is the one spelling the caller can open", got.File)
+						"the absolute path is the one spelling the caller can open", file)
 				}
-				if got.File != filepath.Clean(document) {
+				if file != filepath.Clean(document) {
 					t.Errorf("the payload names document %q; the fixture wrote it at %q",
-						got.File, document)
+						file, document)
 				}
 			}
 		})

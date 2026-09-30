@@ -105,13 +105,13 @@ func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 	// differ while everything compared above does not. Asserting they differ is
 	// what keeps the comparison honest — two halves that happened to write into
 	// one directory would agree trivially.
-	if p.WorkspaceRoot != toolRoot {
+	if told(p.WorkspaceRoot) != toolRoot {
 		t.Errorf("the tool drafted relative to %q rather than to the workspace it resolved, %q",
-			p.WorkspaceRoot, toolRoot)
+			told(p.WorkspaceRoot), toolRoot)
 	}
-	if p.WorkspaceRoot == shared.OutputDir {
+	if told(p.WorkspaceRoot) == shared.OutputDir {
 		t.Errorf("both halves named %q as their destination, so the comparison above did not span the "+
-			"divergence it was written for", p.WorkspaceRoot)
+			"divergence it was written for", told(p.WorkspaceRoot))
 	}
 }
 

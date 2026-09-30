@@ -235,8 +235,8 @@ func TestTheToolProtocolsAnswerIsTheSharedLayers(t *testing.T) {
 		t.Fatalf("the tool's answer and the shared layer's differ:\n  tool:   %s\n  shared: %s",
 			toolJSON, sharedJSON)
 	}
-	if payload.WorkspaceRoot != root {
-		t.Errorf("workspace_root = %q, want %q", payload.WorkspaceRoot, root)
+	if told(payload.WorkspaceRoot) != root {
+		t.Errorf("workspace_root = %q, want %q", told(payload.WorkspaceRoot), root)
 	}
 }
 

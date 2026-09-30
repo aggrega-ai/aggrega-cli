@@ -38,9 +38,13 @@ type insertionPointArgs struct {
 
 // insertionPointPayload is the insertion-point tool's structured payload: the
 // workspace the answer was computed over, and the answer itself, embedded so the
-// keys are the ones every surface reports it under.
+// keys are the ones every surface reports it under. The workspace root is absent,
+// and marked by WorkspaceRootWithheld, where the caller is not told where the
+// workspace sits on this host; the answer's own file is already named relative to
+// that root.
 type insertionPointPayload struct {
-	WorkspaceRoot string `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 	serve.InsertionPointResult
 }
 
@@ -138,8 +142,9 @@ func insertionPointInvoke(s *server, ctx context.Context, args json.RawMessage) 
 			"No insertion point can be reported for %s in %q: %s", renderContainerPath(a.Container), a.File,
 			err.Error()), ""))
 	}
-	payload := insertionPointPayload{WorkspaceRoot: tw.root, InsertionPointResult: result}
-	return textResult(renderInsertionPointText(payload), payload)
+	payload := insertionPointPayload{InsertionPointResult: result}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderInsertionPointText(payload), payload))
 }
 
 // insertionPositionEncoding reads the encoding a call named, and reports whether

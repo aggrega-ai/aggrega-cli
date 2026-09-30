@@ -184,8 +184,14 @@ func TestTheEditToolResolvesItsDocumentInsideTheServedWorkspace(t *testing.T) {
 			if !strings.Contains(text, "'file'") {
 				t.Errorf("the refusal does not name the argument to correct: %q", text)
 			}
-			if !strings.Contains(text, f.root) {
-				t.Errorf("the refusal does not name the workspace this server serves, which is the bound: %q", text)
+			// The bound is named in words, and the served root is not named at all:
+			// it is a place on the host a caller reaching a listener is not told by
+			// any answer, a refusal included.
+			if !strings.Contains(text, "inside the workspace this server serves") {
+				t.Errorf("the refusal does not name the bound, the workspace this server serves: %q", text)
+			}
+			if strings.Contains(text, f.root) {
+				t.Errorf("the refusal names the served root %q, a location on the host: %q", f.root, text)
 			}
 		})
 	}

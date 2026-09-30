@@ -398,11 +398,12 @@ func publishEntityInvoke(s *server, ctx context.Context, args json.RawMessage) (
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	payload, err := runPublishEntity(ctx, cfg)
+	tw := s.servedWorkspace()
+	payload, err := runPublishEntity(ctx, tw, cfg)
 	if err != nil {
-		return errorResult(explainToolError("The publication did not happen.", err, ""))
+		return tw.answer(errorResult(explainToolError("The publication did not happen.", err, "")))
 	}
-	return textResult(renderPublishEntityText(payload), payload)
+	return tw.answer(textResult(renderPublishEntityText(payload), payload))
 }
 
 // publishEntityConfig projects the arguments onto the publication's input
@@ -464,7 +465,11 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 // They are prose written for a person watching a terminal, and this surface
 // answers with the facts themselves — which is the whole difference between this
 // tool and the one that runs the command in a separate process.
-func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEntityPayload, error) {
+//
+// tw is the workspace the answer is told against: the pin step's entity and lock
+// are locations on this host, and the caller is told them the way every answer
+// here tells one.
+func runPublishEntity(ctx context.Context, tw *toolWorkspace, cfg publishops.PushConfig) (publishEntityPayload, error) {
 	res, err := publishops.Push(ctx, cfg)
 	if err != nil {
 		return publishEntityPayload{}, err
@@ -484,7 +489,7 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		WholeDirectorySource: res.WholeDirectory,
 	}
 	if res.Pin != nil {
-		pin := pinPayloadOf(*res.Pin, res.DryRun)
+		pin := pinPayloadOf(tw, *res.Pin, res.DryRun)
 		payload.Pin = &pin
 	}
 	return payload, nil
@@ -784,7 +789,10 @@ func signArtifactsInvoke(s *server, ctx context.Context, args json.RawMessage) (
 	}
 	payload, err := runSignArtifacts(ctx, cfg)
 	if err != nil {
-		return errorResult(explainToolError("The signing did not happen.", err, ""))
+		// Signing is about credentials, which no entity kind's page teaches, so the
+		// pointer names the page that does: which credential a call spends, and
+		// what to send when none resolved.
+		return errorResult(explainToolErrorAt("The signing did not happen.", err, docServerReference))
 	}
 	return textResult(renderSignArtifactsText(payload), payload)
 }
@@ -805,7 +813,8 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
 	if err != nil {
-		return publishops.SignConfig{}, explainToolError("Could not resolve the workspace to sign against.", err, "")
+		return publishops.SignConfig{}, explainToolErrorAt("Could not resolve the workspace to sign against.", err,
+			docServerReference)
 	}
 	credentials := s.signingCredentials()
 	return publishops.SignConfig{

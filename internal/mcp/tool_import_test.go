@@ -218,9 +218,9 @@ func TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved(t *testing.T) {
 	if len(p.Written) != 1 || p.Written[0] != "langflow.yaml" {
 		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml]", p.Written)
 	}
-	if p.WorkspaceRoot != root {
+	if told(p.WorkspaceRoot) != root {
 		t.Errorf("the answer names %q as the root the drafts are relative to, want the resolved workspace %q",
-			p.WorkspaceRoot, root)
+			told(p.WorkspaceRoot), root)
 	}
 	if p.Halted {
 		t.Errorf("the import reported itself halted: %+v", p.Diagnostics)
@@ -413,9 +413,9 @@ func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
 	p := importToolPayload(t, callTool(t, importToolServer(t, root), importToolName,
 		map[string]any{"source": rel, "output_dir": elsewhere}))
 
-	if p.WorkspaceRoot != root {
+	if told(p.WorkspaceRoot) != root {
 		t.Errorf("a value nothing declares moved the destination to %q; it is the resolved workspace %q",
-			p.WorkspaceRoot, root)
+			told(p.WorkspaceRoot), root)
 	}
 	if _, err := os.Stat(filepath.Join(root, "langflow.yaml")); err != nil {
 		t.Errorf("the draft did not land under the resolved workspace: %v", err)
@@ -438,10 +438,13 @@ func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
 // dry run nothing reaches disk and the directory is still reported, because each
 // path handed back is still relative to it.
 //
-// The value is also required to equal the workspace root the same answer names.
-// That is this tool's destination rule read off its own answer — the drafts go
-// into the workspace the call resolved — and it is what keeps the key from
-// telling a caller reaching a listener anything the answer did not already say.
+// Over the process's own streams the value is also required to equal the
+// workspace root the same answer names. That is this tool's destination rule read
+// off its own answer — the drafts go into the workspace the call resolved. Over a
+// listener both are that root, a directory on the host such a caller is not told
+// about, so both are required to be absent and marked as kept back; the written
+// paths are then held against the served root, which is the coordinate that
+// caller's own paths are named in.
 func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 	// Not parallel: points the shared import seam, a package-level variable.
 	pointImportSeamAtTheDemoGuest(t)
@@ -455,6 +458,9 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 	transports := []struct {
 		name string
 		open func(t *testing.T) importSession
+		// keepsTheRootBack is whether this transport's caller is told where the
+		// served workspace sits on the host.
+		keepsTheRootBack bool
 	}{
 		{"over the process's own streams", func(t *testing.T) importSession {
 			root, _ := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
@@ -462,7 +468,7 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 			return importSession{root: root, call: func(t *testing.T, args map[string]any) callToolResult {
 				return *callTool(t, s, importToolName, args)
 			}}
-		}},
+		}, false},
 		{"over a listener", func(t *testing.T) importSession {
 			f := newScopeGridFixture(t, false)
 			importOverTheListener(t, f, "flow.json", readImportFixture(t, langflowFixture))
@@ -470,7 +476,7 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 			return importSession{root: f.root, call: func(t *testing.T, args map[string]any) callToolResult {
 				return toolResultOf(t, importToolName, f.callTool(t, credential, importToolName, args))
 			}}
-		}},
+		}, true},
 	}
 	deliveries := []struct {
 		name   string
@@ -491,10 +497,12 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 					t.Fatalf("the import was refused: %s", res.Content[0].Text)
 				}
 				var answer struct {
-					WorkspaceRoot string   `json:"workspace_root"`
-					OutputDir     *string  `json:"output_dir"`
-					Written       []string `json:"written"`
-					Drafts        []struct {
+					WorkspaceRoot         *string  `json:"workspace_root"`
+					WorkspaceRootWithheld bool     `json:"workspace_root_withheld"`
+					OutputDir             *string  `json:"output_dir"`
+					OutputDirWithheld     bool     `json:"output_dir_withheld"`
+					Written               []string `json:"written"`
+					Drafts                []struct {
 						Path    string `json:"path"`
 						Content string `json:"content"`
 					} `json:"drafts"`
@@ -502,19 +510,41 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 				if err := json.Unmarshal(res.StructuredContent, &answer); err != nil {
 					t.Fatalf("decode the structured answer: %v (body %s)", err, res.StructuredContent)
 				}
-				if answer.OutputDir == nil {
-					t.Fatalf("the answer carries no output_dir, so a caller is not told the directory its drafted "+
-						"paths are relative to, which the shared operation reports to every other surface: %s",
-						res.StructuredContent)
-				}
-				outputDir := *answer.OutputDir
-				if outputDir != session.root {
-					t.Errorf("the answer names %q as the directory the drafts are relative to, want the resolved "+
-						"workspace %q", outputDir, session.root)
-				}
-				if outputDir != answer.WorkspaceRoot {
-					t.Errorf("output_dir %q differs from the workspace_root %q the same answer names; this tool "+
-						"drafts into the workspace the call resolved", outputDir, answer.WorkspaceRoot)
+
+				// The directory the written paths below are resolved against: the one
+				// the answer names where it names one, and the served root — the
+				// coordinate the caller's own paths are in — where it keeps it back.
+				outputDir := session.root
+				if transport.keepsTheRootBack {
+					if answer.OutputDir != nil || !answer.OutputDirWithheld {
+						t.Errorf("over a listener the answer names output_dir %q (withheld=%v); it is the served "+
+							"root, a directory on the host, and is kept back and marked: %s",
+							told(answer.OutputDir), answer.OutputDirWithheld, res.StructuredContent)
+					}
+					if answer.WorkspaceRoot != nil || !answer.WorkspaceRootWithheld {
+						t.Errorf("over a listener the answer names workspace_root %q (withheld=%v); it is kept "+
+							"back and marked: %s", told(answer.WorkspaceRoot), answer.WorkspaceRootWithheld,
+							res.StructuredContent)
+					}
+				} else {
+					if answer.OutputDir == nil {
+						t.Fatalf("the answer carries no output_dir, so a caller is not told the directory its drafted "+
+							"paths are relative to, which the shared operation reports to every other surface: %s",
+							res.StructuredContent)
+					}
+					outputDir = *answer.OutputDir
+					if outputDir != session.root {
+						t.Errorf("the answer names %q as the directory the drafts are relative to, want the resolved "+
+							"workspace %q", outputDir, session.root)
+					}
+					if outputDir != told(answer.WorkspaceRoot) {
+						t.Errorf("output_dir %q differs from the workspace_root %q the same answer names; this tool "+
+							"drafts into the workspace the call resolved", outputDir, told(answer.WorkspaceRoot))
+					}
+					if answer.OutputDirWithheld || answer.WorkspaceRootWithheld {
+						t.Errorf("over the process's own streams the answer marks a location as kept back: %s",
+							res.StructuredContent)
+					}
 				}
 
 				added := treeAdditions(before, treeUnder(t, session.root))

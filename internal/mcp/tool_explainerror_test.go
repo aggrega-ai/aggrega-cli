@@ -15,6 +15,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -383,5 +384,53 @@ func TestExplainErrorReadsTheSessionsOwnBundle(t *testing.T) {
 	if !strings.Contains(cold.Note, s.docsBundleVersion) {
 		t.Errorf("the note does not name the bundle version the session is pinned to (%s): %s",
 			s.docsBundleVersion, cold.Note)
+	}
+}
+
+// TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine pins the two ways a
+// refusal selects the page it closes with, and that both close with the same
+// line.
+//
+// The kind rows are the control on every refusal that did not change: a kind with
+// a page is sent to it, and no kind is sent to the index, byte for byte as before.
+// The page row is the refusal whose fix no kind's page teaches.
+func TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine(t *testing.T) {
+	const diagnostic = "the operation did not complete"
+	for _, tc := range []struct {
+		scenario string
+		got      string
+		want     string
+	}{
+		{
+			scenario: "a kind with a page of its own",
+			got:      explainDiagnostic(diagnostic, "recipe"),
+			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/entities/recipe.md",
+		},
+		{
+			scenario: "no kind at all",
+			got:      explainDiagnostic(diagnostic, ""),
+			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/",
+		},
+		{
+			scenario: "a page named outright",
+			got:      explainDiagnosticAt(diagnostic, docServerReference),
+			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/cli/aggrega-mcp.md",
+		},
+		{
+			scenario: "a tool failure selecting by kind",
+			got:      explainToolError("It stopped.", errors.New(diagnostic), ""),
+			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: aggrega-docs/language-reference/",
+		},
+		{
+			scenario: "a tool failure naming its page outright",
+			got:      explainToolErrorAt("It stopped.", errors.New(diagnostic), docServerReference),
+			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: aggrega-docs/language-reference/cli/aggrega-mcp.md",
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("the guidance reads\n  %q\nwant\n  %q", tc.got, tc.want)
+			}
+		})
 	}
 }

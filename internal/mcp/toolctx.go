@@ -188,8 +188,18 @@ func (spec toolSpec) notesWithheldFromAListener() []string {
 // A sentence is withheld rather than rewritten. What a caller reaching a listener
 // reads is what every caller reads, minus the parts that are not true of it, so
 // there is no second text to keep in step with the first.
+//
+// The one sentence added rather than withheld is the listener's own note, where a
+// tool declares one: an answer over a listener keeps back locations a tool's
+// description says it reports, and a caller reading that description would
+// otherwise look for a value the answer marks as kept back. It is appended over a
+// listener and nowhere else, so what a caller over the process's own streams
+// reads is unchanged by it.
 func (s *server) advertisedDescription(spec toolSpec) string {
 	if s.transport == transportHTTP {
+		if spec.listenerNote != "" {
+			return spec.description + " " + spec.listenerNote
+		}
 		return spec.description
 	}
 	description := spec.description
@@ -463,19 +473,33 @@ func (tw *toolWorkspace) workspacePath(tool, argument, raw string) (string, stri
 	if resolved, ok := pathscope.Resolve(tw.root, rel); ok {
 		return resolved, ""
 	}
+	// Neither refusal names the workspace root or any location the value resolves
+	// to. Both are places on this host, and a caller reaching a listener is told
+	// none of those by any answer here — a refusal included.
+	//
 	// A value that lands inside the root but was not written relative to it is a
 	// caller spelling a location on this machine for a file it may perfectly well
 	// read. It is answered with the spelling to use instead, because the
 	// correction is one edit and withholding it would make a usable call read as
-	// an out-of-bounds one.
-	if inside, ok := pathscope.Relative(tw.root, raw); ok {
-		return "", fmt.Sprintf("%s's '%s' names a location on the machine this server runs on. It serves one "+
-			"workspace, fixed when it was started (%s), and a call names its subject by a path relative to that "+
-			"root: send %q instead.", tool, argument, tw.root, inside)
+	// an out-of-bounds one. That spelling is the one this caller is told for the
+	// location, so it is asked of the one function deciding what that is.
+	if filepath.IsAbs(raw) {
+		if inside, told := tw.reportedLocation(raw); told {
+			return "", fmt.Sprintf("%s's '%s' names a location on the machine this server runs on. It serves one "+
+				"workspace, fixed when it was started, and a call names its subject by a path relative to that "+
+				"workspace's root: send %q instead.", tool, argument, inside)
+		}
+		return "", fmt.Sprintf("%s's '%s' must name a path inside the workspace this server serves, written "+
+			"relative to that workspace's root; the value sent names a location on the machine this server runs "+
+			"on, and not one inside that workspace. This server serves one workspace, fixed when it was started, "+
+			"and reads nothing beyond it.", tool, argument)
 	}
-	return "", fmt.Sprintf("%s's '%s' must name a path inside the workspace this server serves (%s), written "+
-		"relative to that root; %s lies outside it. This server serves one workspace, fixed when it was started, "+
-		"and reads nothing beyond it.", tool, argument, tw.root, pathscope.ReportedName(tw.root, raw))
+	// A relative value is refused only for climbing above the root, and it is the
+	// caller's own spelling, so it is quoted back as sent: it names nothing on this
+	// host that the caller did not write itself.
+	return "", fmt.Sprintf("%s's '%s' must name a path inside the workspace this server serves, written "+
+		"relative to that workspace's root; %q climbs above that root. This server serves one workspace, fixed "+
+		"when it was started, and reads nothing beyond it.", tool, argument, raw)
 }
 
 // pathRefusal carries a path refusal out of an operation that reports failures as

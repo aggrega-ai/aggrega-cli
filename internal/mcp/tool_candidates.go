@@ -75,9 +75,11 @@ func (a attachCandidatesArgs) coordinates() []string {
 // caller reads here are the keys every surface reports the same answer under,
 // by construction rather than by agreement. What this surface adds is the
 // workspace coordinate, which the caller supplied and the other surface does
-// not have to.
+// not have to — absent, and marked by WorkspaceRootWithheld, where the caller is
+// not told where the workspace sits on this host.
 type attachCandidatesPayload struct {
-	WorkspaceRoot string `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 	serve.AttachCandidatesResult
 }
 
@@ -185,7 +187,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 			return errorResult("attach-candidates: the workspace read was interrupted before it completed, so there " +
 				"is no answer to report. Call it again.")
 		}
-		return attachCandidatesResultFor(tw.root, result)
+		return attachCandidatesResultFor(tw, result)
 	case a.GraphNode != "":
 		return s.attachCandidatesForGraphNode(ctx, tw, a)
 	default:
@@ -196,7 +198,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 					"list-entities with response_format detailed to see the names this workspace declares.",
 				a.Node), "component"))
 		}
-		return attachCandidatesResultFor(tw.root, result)
+		return attachCandidatesResultFor(tw, result)
 	}
 }
 
@@ -262,12 +264,13 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 				"the graph a build or an inspect returns, and note that a node contributed by a sub-aggregate "+
 				"carries a qualified id.", a.Release, a.GraphNode), "release"))
 	}
-	return attachCandidatesResultFor(tw.root, result)
+	return attachCandidatesResultFor(tw, result)
 }
 
-func attachCandidatesResultFor(root string, result serve.AttachCandidatesResult) (*callToolResult, *rpcError) {
-	payload := attachCandidatesPayload{WorkspaceRoot: root, AttachCandidatesResult: result}
-	return textResult(renderAttachCandidatesText(payload), payload)
+func attachCandidatesResultFor(tw *toolWorkspace, result serve.AttachCandidatesResult) (*callToolResult, *rpcError) {
+	payload := attachCandidatesPayload{AttachCandidatesResult: result}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderAttachCandidatesText(payload), payload))
 }
 
 // renderAttachCandidatesText renders the human-readable candidacy answer: what
@@ -336,9 +339,11 @@ type connectionCandidatesArgs struct {
 
 // connectionCandidatesPayload is the connection-candidates tool's structured
 // payload: the workspace the answer was computed over, and the candidacy answer
-// itself, embedded so the keys are the ones every surface reports it under.
+// itself, embedded so the keys are the ones every surface reports it under. The
+// workspace root and its mark carry what they carry on the attach answer.
 type connectionCandidatesPayload struct {
-	WorkspaceRoot string `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 	serve.ConnectionCandidatesResult
 }
 
@@ -407,8 +412,9 @@ func connectionCandidatesInvoke(s *server, ctx context.Context, args json.RawMes
 				"list-entities with response_format detailed to see the names this workspace declares.",
 			a.Node), "component"))
 	}
-	payload := connectionCandidatesPayload{WorkspaceRoot: tw.root, ConnectionCandidatesResult: result}
-	return textResult(renderConnectionCandidatesText(payload), payload)
+	payload := connectionCandidatesPayload{ConnectionCandidatesResult: result}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderConnectionCandidatesText(payload), payload))
 }
 
 // renderConnectionCandidatesText renders the human-readable connection answer:

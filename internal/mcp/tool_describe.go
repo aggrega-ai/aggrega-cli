@@ -63,6 +63,11 @@ type describeArgs struct {
 // that file. See [pathscope.ReportedName], which is where that rule lives — so one
 // resolution reports one document the same way whichever surface is asked.
 //
+// A caller reaching a listener is the exception, because it can open neither
+// spelling of a document outside the workspace this server serves: such a file
+// is absent for it and marked by FileWithheld, which is omitted where nothing was
+// kept back. A document inside the workspace reaches it by the same relative name.
+//
 // It is empty in one case, and that case is a statement about the entity rather
 // than a gap in the answer: an entity resolved from a registry lives in a
 // cache slot, which is not a document anybody authored, so there is none to
@@ -85,7 +90,8 @@ type describeEntityPayload struct {
 	Version        string          `json:"version"`
 	Description    string          `json:"description,omitempty"`
 	PublishScope   string          `json:"publish_scope,omitempty"`
-	File           string          `json:"file"`
+	File           *string         `json:"file"`
+	FileWithheld   bool            `json:"file_withheld,omitempty"`
 	AuthoredLength int             `json:"authored_length"`
 	Definition     json.RawMessage `json:"definition"`
 }
@@ -102,14 +108,19 @@ type describeEntityPayload struct {
 // Each listing carries a count as well as its members, because the concise format
 // answers with counts and no members: the count is the only thing that reports
 // what a listing reached there, so a listing added here owes one too.
+//
+// Release is the Release's location on this host, spelled as the caller may be
+// told it; one the caller is not told is absent and marked by ReleaseWithheld,
+// which is omitted where nothing was kept back.
 type describeReleasePayload struct {
-	Release      string       `json:"release"`
-	Aggregate    string       `json:"aggregate"`
-	Manifest     string       `json:"manifest"`
-	Environment  string       `json:"environment"`
-	EntityCount  int          `json:"entity_count"`
-	LibraryCount int          `json:"library_count"`
-	Entities     []closureRef `json:"entities"`
+	Release         *string      `json:"release"`
+	ReleaseWithheld bool         `json:"release_withheld,omitempty"`
+	Aggregate       string       `json:"aggregate"`
+	Manifest        string       `json:"manifest"`
+	Environment     string       `json:"environment"`
+	EntityCount     int          `json:"entity_count"`
+	LibraryCount    int          `json:"library_count"`
+	Entities        []closureRef `json:"entities"`
 	// Libraries names the shared documents the closure reaches, each entry carrying
 	// the kind of library it is. They are joined across the axes rather than
 	// reported one field per axis: the kind is on the entry, so nothing is lost by
@@ -274,14 +285,17 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		return nil, &rpcError{Code: codeInternalError,
 			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
 	}
-	file := pathscope.ReportedName(tw.root, match.Source)
 	payload := describeEntityPayload{
 		Kind: match.Kind, Name: match.Name, Version: match.Version,
 		Description: match.Description, PublishScope: match.Scope,
-		File: file, AuthoredLength: len(match.Bytes),
-		Definition: def,
+		AuthoredLength: len(match.Bytes),
+		Definition:     def,
 	}
-	return textResult(renderDescribeEntityText(payload), payload)
+	// Spelled first the way every surface spells a reported document, then told
+	// the way this call's caller may be told it: over a listener a document
+	// outside the workspace is kept back rather than named absolutely.
+	payload.File, payload.FileWithheld = tw.reportedLocationField(pathscope.ReportedName(tw.root, match.Source))
+	return tw.answer(textResult(renderDescribeEntityText(payload), payload))
 }
 
 // describePublishedEntity reads the entity a registry reference publishes, through
@@ -413,8 +427,8 @@ func (s *server) describeRelease(
 		Augment:         true,
 	})
 	if cerr != nil {
-		return errorResult(explainToolError(
-			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage)))
+		return tw.answer(errorResult(explainToolError(
+			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage))))
 	}
 
 	detail := format == responseFormatDetailed
@@ -423,18 +437,20 @@ func (s *server) describeRelease(
 	// cannot come to disagree about how many references were reached.
 	libraries := describeLibraryRefs(resolved.Closure)
 	payload := describeReleasePayload{
-		Release:      releasePath,
 		Aggregate:    resolved.Aggregate.Metadata.Name,
 		Manifest:     resolved.Manifest.Metadata.Name,
 		Environment:  resolved.Release.Metadata.Environment,
 		EntityCount:  len(resolved.Closure.Entities),
 		LibraryCount: len(libraries),
 	}
+	payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
+	// Both finding sets are prose the compiler composed, so an entry may name a
+	// place on this host; each is told the way the rest of this answer is.
 	for _, f := range resolved.ManifestConsistencyFindings {
-		payload.MappingDiagnostics = append(payload.MappingDiagnostics, f.Error())
+		payload.MappingDiagnostics = append(payload.MappingDiagnostics, tw.reportedText(f.Error()))
 	}
 	for _, f := range lf.DeprecationFindings() {
-		payload.Deprecations = append(payload.Deprecations, f.Notice())
+		payload.Deprecations = append(payload.Deprecations, tw.reportedText(f.Notice()))
 	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {
@@ -447,7 +463,7 @@ func (s *server) describeRelease(
 		}
 		payload.Libraries = libraries
 	}
-	return textResult(renderDescribeReleaseText(payload), payload)
+	return tw.answer(textResult(renderDescribeReleaseText(payload), payload))
 }
 
 // describeLibraryRefs renders every shared document the closure reaches into the
@@ -491,7 +507,7 @@ func renderDescribeEntityText(p describeEntityPayload) string {
 // renderDescribeReleaseText renders the human-readable Release closure summary.
 func renderDescribeReleaseText(p describeReleasePayload) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Release %s\n", p.Release)
+	fmt.Fprintf(&b, "Release %s\n", reportedLocationWords(p.Release))
 	fmt.Fprintf(&b, "  aggregate: %s\n", p.Aggregate)
 	fmt.Fprintf(&b, "  manifest: %s\n", p.Manifest)
 	if p.Environment != "" {

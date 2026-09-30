@@ -118,12 +118,12 @@ func TestEveryRemotePathArgumentStaysInsideTheWorkspace(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Run("a relative path climbing out is refused", func(t *testing.T) {
 				res := callOverHTTP(t, served, tc.tool, tc.argumentsIn(theRelativeClimb))
-				assertRefusedNamingTheBound(t, res, served)
+				assertRefusedNamingTheBound(t, res, served, theRelativeClimb)
 			})
 
 			t.Run("an absolute path elsewhere on the machine is refused", func(t *testing.T) {
 				res := callOverHTTP(t, served, tc.tool, tc.argumentsIn(elsewhere))
-				assertRefusedNamingTheBound(t, res, served)
+				assertRefusedNamingTheBound(t, res, served, elsewhere)
 			})
 
 			t.Run("a path inside the workspace resolves", func(t *testing.T) {
@@ -142,9 +142,15 @@ func TestEveryRemotePathArgumentStaysInsideTheWorkspace(t *testing.T) {
 }
 
 // assertRefusedNamingTheBound reads the answer a caller gets: a result flagged as
-// a failure, carrying the workspace the server serves, so the caller learns what
-// the bound IS rather than only that it was crossed.
-func assertRefusedNamingTheBound(t *testing.T, res *callToolResult, served string) {
+// a failure, naming the bound in words — the workspace this server serves — so
+// the caller learns what the bound IS rather than only that it was crossed.
+//
+// It names no place on the host while it does so. The served root is a location
+// a caller reaching a listener is not told by any answer, a refusal included, and
+// an absolute value the caller sent is not echoed back either. A relative value is
+// the caller's own spelling and names nothing on the host, so it is quoted back as
+// sent, which is what tells the caller which value to correct.
+func assertRefusedNamingTheBound(t *testing.T, res *callToolResult, served, sent string) {
 	t.Helper()
 	text := res.Content[0].Text
 	if !res.IsError {
@@ -154,9 +160,15 @@ func assertRefusedNamingTheBound(t *testing.T, res *callToolResult, served strin
 		t.Fatalf("the call failed, but not because the path left the workspace, so this row proves nothing "+
 			"about containment: %q", text)
 	}
-	if !strings.Contains(text, served) {
-		t.Errorf("the refusal does not name the workspace the server serves (%s), so a caller cannot tell what "+
-			"the bound is: %q", served, text)
+	if strings.Contains(text, served) {
+		t.Errorf("the refusal names the served root %q, a location on the host: %q", served, text)
+	}
+	switch {
+	case filepath.IsAbs(sent) && strings.Contains(text, sent):
+		t.Errorf("the refusal echoes the absolute location %q back to the caller: %q", sent, text)
+	case !filepath.IsAbs(sent) && !strings.Contains(text, sent):
+		t.Errorf("the refusal does not quote the relative value %q the caller sent, so the caller cannot tell "+
+			"which value to correct: %q", sent, text)
 	}
 }
 
@@ -205,10 +217,10 @@ func TestAnAbsolutePathOutsideTheRootIsAcceptedOverStdio(t *testing.T) {
 
 	var got validateResultPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "validate", map[string]any{"entity": outside}), &got)
-	if got.Target != outside {
+	if told(got.Target) != outside {
 		t.Errorf("validate checked %q, want the file outside the root it was pointed at, %q.\n"+
 			"A caller that launched this process names a path anywhere on its own machine, and this surface "+
-			"still answers from wherever it was pointed.", got.Target, outside)
+			"still answers from wherever it was pointed.", told(got.Target), outside)
 	}
 }
 
@@ -229,8 +241,8 @@ func TestTheSamePathIsRefusedOverHTTPAndAcceptedOverStdio(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: served, transport: transportStdio}
 	var got validateResultPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "validate", arguments), &got)
-	if got.Target != outside {
+	if told(got.Target) != outside {
 		t.Errorf("over this process's own streams the same path was not honoured: target = %q, want %q",
-			got.Target, outside)
+			told(got.Target), outside)
 	}
 }

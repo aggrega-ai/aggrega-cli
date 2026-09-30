@@ -193,6 +193,16 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		// deliberately no argument that re-resolves every pin at once, so the
 		// wholesale form cannot be composed here at all rather than being accepted
 		// and then refused.
+		//
+		// 🔴 The comparison's two exclusions are the one rule here the declared
+		// schema deliberately does NOT state, so the three rows combining them are
+		// admitted by the schema below. Stated as a combinator, the exclusion is a
+		// branch requiring nothing but a constant on an optional argument, which a
+		// client renders as the tool requiring that argument — and a caller that
+		// believed it would turn every resolution into a comparison that writes
+		// nothing. The tool refuses each combination itself, in a sentence naming
+		// both arguments, before anything is resolved; that refusal is asserted
+		// where the pull tool's own conflicts are.
 		{"pull", "a Release", `{"release":"r.yaml"}`, true},
 		{"pull", "compare only", `{"release":"r.yaml","verify":true}`, true},
 		{"pull", "named upgrade targets", `{"release":"r.yaml","upgrade_targets":["core/database"]}`, true},
@@ -205,9 +215,9 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"pull", "no Release", `{}`, false},
 		{"pull", "a blank Release", `{"release":""}`, false},
 		{"pull", "a Release of the wrong type", `{"release":5}`, false},
-		{"pull", "comparing and upgrading together", `{"release":"r.yaml","verify":true,"upgrade_targets":["core/database"]}`, false},
-		{"pull", "comparing and asking for the pin step", `{"release":"r.yaml","verify":true,"pin_sources":true}`, false},
-		{"pull", "comparing and declining the pin step", `{"release":"r.yaml","verify":true,"pin_sources":false}`, false},
+		{"pull", "comparing and upgrading together, refused by the tool itself", `{"release":"r.yaml","verify":true,"upgrade_targets":["core/database"]}`, true},
+		{"pull", "comparing and asking for the pin step, refused by the tool itself", `{"release":"r.yaml","verify":true,"pin_sources":true}`, true},
+		{"pull", "comparing and declining the pin step, refused by the tool itself", `{"release":"r.yaml","verify":true,"pin_sources":false}`, true},
 		{"pull", "an upgrade naming no target", `{"release":"r.yaml","upgrade_targets":[]}`, false},
 		{"pull", "a blank upgrade target", `{"release":"r.yaml","upgrade_targets":[""]}`, false},
 		{"pull", "upgrade targets sent as a bare string", `{"release":"r.yaml","upgrade_targets":"core/database"}`, false},
@@ -402,10 +412,14 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 // meaning, which nothing in the spec records. What the assertion buys is that
 // the list cannot silently stop matching the schemas — a named tool whose schema
 // declares no combination is a failure.
+//
+// The pull tool is absent from the list, deliberately: its one combination rule
+// is the exclusion its schema does not state, for the reason given beside its
+// rows above, and the tool refuses each combination itself.
 func TestDeclaredSchemasCoverEveryToolWithACombinationRule(t *testing.T) {
 	withCombinationRules := []string{
 		"validate", "describe", "lint", "get-schema", "gen-catalog", "attach-candidates",
-		"pull", deprecateArtifactToolName,
+		deprecateArtifactToolName,
 	}
 	s := newGuidanceServer(t)
 	for _, name := range withCombinationRules {

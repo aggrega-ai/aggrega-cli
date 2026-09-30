@@ -58,8 +58,8 @@ type lintArgs struct {
 // lintStructuredResult returns the run's findings as this tool's structured
 // payload, or an untyped nil when the run never reached the point of reporting.
 //
-// The payload is the lint core's own report type, which is the shape the command
-// line's structured output already emits, so a finding's severity, rule identity,
+// The payload is the lint core's own report, in the shape the command line's
+// structured output already emits, so a finding's severity, rule identity,
 // message and position have one field vocabulary across both surfaces rather than
 // one per surface.
 //
@@ -72,11 +72,62 @@ type lintArgs struct {
 // in an interface is not equal to nil, so returning one would defeat the
 // omit-when-absent check at the construction sites and put a null on the wire in
 // place of an omitted key.
-func lintStructuredResult(collect *lintops.FindingCollector) any {
+//
+// The report is told the way every answer here is: each finding's file is a
+// location on this host, and a finding's message and remedy are prose a rule
+// composed, so both pass through what the caller may be told of them. The
+// report's fields are read here, in one body, so every fact the lint core
+// produced is visibly carried onto the wire.
+func lintStructuredResult(tw *toolWorkspace, collect *lintops.FindingCollector) any {
 	if !collect.Reached() {
 		return nil
 	}
-	return collect.Report()
+	report := collect.Report()
+	out := lintReportPayload{Findings: make([]lintFindingPayload, 0, len(report.Findings)), Summary: report.Summary}
+	for _, f := range report.Findings {
+		entry := lintFindingPayload{Finding: f}
+		entry.Message = tw.reportedText(f.Message)
+		entry.Suggest = tw.reportedText(f.Suggest)
+		if f.Location != nil {
+			at := &lintLocationPayload{FindingLocation: *f.Location}
+			at.File, at.FileWithheld = tw.reportedLocationField(f.Location.File)
+			entry.Location = at
+		}
+		out.Findings = append(out.Findings, entry)
+	}
+	return out
+}
+
+// lintReportPayload is the lint core's report as this surface answers with it.
+//
+// It carries the report's own findings and summary under the report's own keys,
+// in the report's own order, and differs from it in one place: a finding's file
+// is told as the caller may be told it, so one the caller is not told is absent
+// and marked by the location's file_withheld, which is omitted where nothing was
+// kept back. Over the process's own streams nothing is kept back, so what is
+// encoded is the report's own bytes.
+//
+// The finding and its location are embedded rather than restated, and the one
+// field this surface spells differently is declared ahead of the embedded
+// location, so it takes that field's place in the encoding: the vocabulary is the
+// lint core's, which is the one home a finding's field names have.
+type lintReportPayload struct {
+	Findings []lintFindingPayload  `json:"findings"`
+	Summary  lintops.ReportSummary `json:"summary"`
+}
+
+// lintFindingPayload is one finding, with its location as this surface tells it.
+type lintFindingPayload struct {
+	lintops.Finding
+	Location *lintLocationPayload `json:"location,omitempty"`
+}
+
+// lintLocationPayload is where a finding points, with its file as this surface
+// tells it.
+type lintLocationPayload struct {
+	File         *string `json:"file"`
+	FileWithheld bool    `json:"file_withheld,omitempty"`
+	lintops.FindingLocation
 }
 
 var lintToolSpec = toolSpec{
@@ -96,6 +147,9 @@ var lintToolSpec = toolSpec{
 		"--output json` emits. A finding carries a line and column only when the rule that produced it located the issue " +
 		"that precisely; otherwise the file alone locates it. Use it before publishing an " +
 		"entity, or to check a whole Release's dependencies in one pass.",
+	listenerNote: "You did not start this server, so a finding's file is named relative to the workspace root, " +
+		"and one outside the workspace carries no file and is marked `file_withheld`; a place on the server's " +
+		"host named inside a message is named the same way, or reads " + keptBackLocationWords + ".",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -169,14 +223,19 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		run = s.lintInProcess
 	}
 	var stdout, stderr bytes.Buffer
-	if err := run(ctx, req, &stdout, &stderr); err != nil {
+	err := run(ctx, req, &stdout, &stderr)
+	// The run resolves its own workspace behind the runner seam, so the answer is
+	// read against the served one — which, over a listener, is the only one a call
+	// can reach — and nothing is resolved over the process's own streams.
+	tw := s.servedWorkspace()
+	if err != nil {
 		// A path this session may not name is answered with the refusal's own
 		// sentence. The label below says the run reported findings, which is what
 		// every other failure here means and is not what this one means: nothing
 		// was linted, so there is nothing for a caller to go and fix in a document.
 		var refused *pathRefusal
 		if errors.As(err, &refused) {
-			return errorResult(refused.text)
+			return tw.answer(errorResult(refused.text))
 		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
@@ -186,9 +245,9 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		// findings a caller most needs to read field by field, and reporting them as
 		// prose here while reporting them structurally on success would be the same
 		// capability answering at two fidelities depending on its verdict.
-		return structuredErrorResult(
+		return tw.answer(structuredErrorResult(
 			explainToolError("Lint reported findings that halt publication.", fmt.Errorf("%s", detail), kind),
-			lintStructuredResult(collect))
+			lintStructuredResult(tw, collect)))
 	}
 
 	// The success summary lands on stdout; advisory findings (warnings) land on
@@ -200,7 +259,7 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		}
 		out += "Advisories:\n" + advisories
 	}
-	return textResult(out, lintStructuredResult(collect))
+	return tw.answer(textResult(out, lintStructuredResult(tw, collect)))
 }
 
 // lintInProcess runs the lint operation in-process over the shared lint core,

@@ -388,18 +388,24 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 
 // servedWorkspaceRoot is the workspace this process serves, for the record it
 // writes about each request.
+func servedWorkspaceRoot(s *server) string {
+	return s.resolveServedWorkspace().root
+}
+
+// resolveServedWorkspace resolves the workspace this process serves, exactly as
+// a tool call naming no workspace resolves it.
 //
 // A resolution that fails falls back to where resolution would have begun, which
 // is the honest answer rather than an empty one: the launch already refuses a
 // listener with no workspace to serve, so a failure here is a workspace that has
 // stopped resolving since, and the directory it was pointed at is what a reader
-// can act on.
-func servedWorkspaceRoot(s *server) string {
-	tw, err := s.resolveToolWorkspace("", nil)
-	if err != nil {
-		return s.startDir
+// can act on. The workspace returned then holds that directory as its root, as
+// the process was given it, and nothing else.
+func (s *server) resolveServedWorkspace() *toolWorkspace {
+	if tw, err := s.resolveToolWorkspace("", nil); err == nil {
+		return tw
 	}
-	return tw.root
+	return &toolWorkspace{root: s.startDir, transport: s.transport}
 }
 
 // resolveAuthenticator settles which credential this deployment reads, and

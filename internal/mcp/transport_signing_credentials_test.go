@@ -419,6 +419,55 @@ func TestTheDeprecationToolAnswersAListenerWithACredentialRefusal(t *testing.T) 
 	})
 }
 
+// TestTheSigningRefusalPointsAtThePageTeachingItsCredentials drives the signing
+// tool's credential refusal through the real dispatch, and reads the page its
+// guidance closes with.
+//
+// The refusal is about which credential a call spends and what to send, which no
+// entity kind's page teaches, so it names the page that does. The deprecation
+// tool's refusal is the control: it reaches the same missing credential through a
+// different tool whose pointer did not change, so a composition that re-pointed
+// every refusal would fail there.
+func TestTheSigningRefusalPointsAtThePageTeachingItsCredentials(t *testing.T) {
+	exportEveryEnvironmentCredential(t)
+
+	for _, tc := range []struct {
+		scenario string
+		tool     string
+		args     any
+		page     string
+	}{
+		{
+			scenario: "the signing tool names the page teaching its credentials",
+			tool:     signArtifactsToolName,
+			args:     signArtifactsArgs{References: []string{publishTestRegistry + "/component/core/api-server:1.0.0"}},
+			page:     docServerReference,
+		},
+		{
+			scenario: "the deprecation tool keeps the pointer it had",
+			tool:     deprecateArtifactToolName,
+			args: deprecateArtifactArgs{
+				Reference: publishTestRegistry + "/component/core/api-server:1.0.0",
+				Severity:  "warning",
+				Reason:    "superseded",
+			},
+			page: docIndex,
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			s, _, _ := signingSession(t, transportHTTP)
+			res := callToolOn(t, s, listenerRequest(), tc.tool, tc.args)
+			if !res.IsError {
+				t.Fatalf("a call with no token of its own must be refused; got %s", res.Content[0].Text)
+			}
+			assertRefusalNamesOnlyWhatThisCallerHas(t, res.Content[0].Text)
+			if want := "\n\n" + docPointerLine(tc.page); !strings.HasSuffix(res.Content[0].Text, want) {
+				t.Errorf("the refusal does not close with %q:\n%s", want, res.Content[0].Text)
+			}
+		})
+	}
+}
+
 // TestTheAmbientIdentityEndpointIsNeverReachedOverAListener pins the third rung,
 // which is the one no argument and no variable name appears in: the ladder
 // discovers it by reading two environment variables and then fetches from

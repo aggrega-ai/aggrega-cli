@@ -39,34 +39,44 @@ type pinClassCount struct {
 // other field is then empty: nothing beside the entity was touched. changed
 // separates a write from a lock that already recorded every pin. content is the
 // lock a dry run would have written, and is absent on every other answer.
+//
+// entity and lock are locations on this host, spelled as the caller may be told
+// them: one the caller is not told is absent and marked by the withheld flag
+// beside it, which is omitted where nothing was kept back.
 type pinPayload struct {
-	Entity   string          `json:"entity"`
-	Kind     string          `json:"kind"`
-	Name     string          `json:"name"`
-	Pinnable bool            `json:"pinnable"`
-	Lock     string          `json:"lock,omitempty"`
-	Changed  bool            `json:"changed"`
-	Removed  bool            `json:"removed,omitempty"`
-	DryRun   bool            `json:"dry_run,omitempty"`
-	Pins     []pinClassCount `json:"pins,omitempty"`
-	Content  string          `json:"content,omitempty"`
+	Entity         *string         `json:"entity"`
+	EntityWithheld bool            `json:"entity_withheld,omitempty"`
+	Kind           string          `json:"kind"`
+	Name           string          `json:"name"`
+	Pinnable       bool            `json:"pinnable"`
+	Lock           *string         `json:"lock,omitempty"`
+	LockWithheld   bool            `json:"lock_withheld,omitempty"`
+	Changed        bool            `json:"changed"`
+	Removed        bool            `json:"removed,omitempty"`
+	DryRun         bool            `json:"dry_run,omitempty"`
+	Pins           []pinClassCount `json:"pins,omitempty"`
+	Content        string          `json:"content,omitempty"`
 }
 
 // pinPayloadOf projects one run of the pin step onto this surface's result
 // shape. It is the one projection here, so the pin tool and a publication that
 // pinned report the step in one shape.
-func pinPayloadOf(res entitypin.Result, dryRun bool) pinPayload {
+func pinPayloadOf(tw *toolWorkspace, res entitypin.Result, dryRun bool) pinPayload {
 	out := pinPayload{
-		Entity:   res.EntityPath,
 		Kind:     res.Kind,
 		Name:     res.Name,
 		Pinnable: res.Pinnable,
 		DryRun:   dryRun,
 	}
+	out.Entity, out.EntityWithheld = tw.reportedLocationField(res.EntityPath)
 	if !res.Pinnable {
 		return out
 	}
-	out.Lock = res.Outcome.LockPath
+	// The lock is omitted where the step names none, as it always was; a lock it
+	// names is told the way the entity is.
+	if res.Outcome.LockPath != "" {
+		out.Lock, out.LockWithheld = tw.reportedLocationField(res.Outcome.LockPath)
+	}
 	out.Changed = res.Outcome.Changed
 	out.Removed = res.Outcome.Removed
 	for _, c := range res.Outcome.Pins {
@@ -148,8 +158,8 @@ func pinInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolR
 	if err != nil {
 		return errorResult(explainToolError("The pin step did not complete, so the lock beside the entity is unchanged.", err, ""))
 	}
-	payload := pinPayloadOf(res, a.DryRun)
-	return textResult(res.Summary(a.DryRun)+".", payload)
+	payload := pinPayloadOf(tw, res, a.DryRun)
+	return tw.answer(textResult(res.Summary(a.DryRun)+".", payload))
 }
 
 // publishReach reports how far a publication would reach: the registry, which
@@ -188,12 +198,27 @@ func renderPinOutcome(p *pinPayload) string {
 	if !p.Pinnable {
 		return fmt.Sprintf(" Nothing to pin: a %s reads no input a lock records.", p.Kind)
 	}
+	lock := pinLockWords(p)
 	switch {
 	case !p.Changed:
-		return fmt.Sprintf(" The pin step found %s already current.", p.Lock)
+		return fmt.Sprintf(" The pin step found %s already current.", lock)
 	case p.DryRun:
-		return fmt.Sprintf(" The pin step would write %s; nothing was written.", p.Lock)
+		return fmt.Sprintf(" The pin step would write %s; nothing was written.", lock)
 	default:
-		return fmt.Sprintf(" The pin step wrote %s before the bundle was built.", p.Lock)
+		return fmt.Sprintf(" The pin step wrote %s before the bundle was built.", lock)
+	}
+}
+
+// pinLockWords renders the lock a pin outcome names, for the sentence above. A
+// lock the step named none for reads as the empty string it always did; one kept
+// back from the caller reads as kept back.
+func pinLockWords(p *pinPayload) string {
+	switch {
+	case p.Lock != nil:
+		return *p.Lock
+	case p.LockWithheld:
+		return keptBackLocationWords
+	default:
+		return ""
 	}
 }

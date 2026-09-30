@@ -231,8 +231,8 @@ func TestTheAttachmentContainerToolNamesTheSiteForEveryAuthoringShape(t *testing
 				"release":        tc.release,
 			}), &got)
 
-			if got.WorkspaceRoot != root {
-				t.Errorf("workspace_root = %q, want %q", got.WorkspaceRoot, root)
+			if told(got.WorkspaceRoot) != root {
+				t.Errorf("workspace_root = %q, want %q", told(got.WorkspaceRoot), root)
 			}
 			if got.Node != tc.node {
 				t.Errorf("node = %q, want %q", got.Node, tc.node)

@@ -77,8 +77,15 @@ type documentEditArgs struct {
 // asked to have written rather than handed back; under a dry run the content is
 // the entire answer, and withholding it would leave the delivery answering
 // nothing.
+//
+// WorkspaceRoot is absent, and marked by WorkspaceRootWithheld, where the caller is
+// not told where the workspace sits on this host. File is the document as the
+// caller itself named it, and Written is in the workspace-relative coordinate a
+// caller names a document by.
 type documentEditPayload struct {
-	WorkspaceRoot     string   `json:"workspace_root"`
+	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
+
 	File              string   `json:"file"`
 	Edit              string   `json:"edit"`
 	Container         []string `json:"container"`
@@ -219,17 +226,17 @@ func editDocumentInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 	}
 
 	payload := documentEditPayload{
-		WorkspaceRoot:     tw.root,
 		File:              a.File,
 		Edit:              a.Edit,
 		Container:         editDocumentList(res.Container),
 		CreatedContainers: editDocumentList(res.CreatedContainers),
 		Written:           editDocumentList(res.Written),
 	}
+	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	if delivery.Reports() && len(res.Documents) != 0 {
 		payload.Content = res.Documents[0].Content
 	}
-	return textResult(renderDocumentEditText(payload, delivery), payload)
+	return tw.answer(textResult(renderDocumentEditText(payload, delivery), payload))
 }
 
 // editDocumentRefusal composes this surface's sentence for an edit the shared

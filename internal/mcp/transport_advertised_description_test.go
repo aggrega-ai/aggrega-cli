@@ -215,6 +215,11 @@ func TestATransportThatAcceptsAWithheldArgumentStillSaysSo(t *testing.T) {
 // transport, and the comparison still reads them off the session it was handed:
 // the two coincide for the pair of sessions compared here, and writing the
 // predicate out would make this assertion a second derivation of it.
+//
+// One part is added rather than withheld: the note a tool declares for a caller
+// reaching a listener, which says what that caller's answers keep back. It is
+// trimmed off the listener's side, and required to be there, so the listener's
+// description is still the stdio one less what it withholds, plus that note.
 func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 	s := newCommandToolServer(t, nil)
 	overHTTP := advertisedOverHTTP(t, newHTTPFixture(t, defaultTransportConfig(), nil))
@@ -235,6 +240,7 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 	}
 
 	compared, withheldWorkspace, withheldSigningKey, withheldPairing, withheldCommandSurface := 0, 0, 0, 0, 0
+	addedForTheListener := 0
 	for _, a := range overStdio {
 		got, ok := remote[a.surface+"/"+a.tool]
 		if !ok {
@@ -242,6 +248,18 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		}
 		compared++
 		spec := specs[a.tool]
+		// The one sentence a listener adds rather than withholds is trimmed off its
+		// own side, and required to be there: a note declared and not advertised
+		// would leave a caller reading a description the answer contradicts.
+		if spec.listenerNote != "" {
+			trimmed := strings.TrimSuffix(got, " "+spec.listenerNote)
+			if trimmed == got {
+				t.Errorf("%s declares a note for a caller reaching a listener and does not advertise it there:\n%s",
+					a.tool, got)
+			}
+			got = trimmed
+			addedForTheListener++
+		}
 		want := a.description
 		// Trimmed in the reverse of the order they were appended: each note is a
 		// suffix only once the notes after it are off, so a fixed order here would
@@ -289,10 +307,15 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 			"withhold, so the comparison would pass against a surface that states that bound to a " +
 			"caller holding none of it")
 	}
+	if addedForTheListener == 0 {
+		t.Fatal("no compared description carried a note for a caller reaching a listener, so the comparison " +
+			"would pass against a surface that never tells that caller what its answers keep back")
+	}
 	t.Logf("compared %d description(s) across the two transports, %d carrying a withheld workspace "+
-		"sentence, %d a withheld signing-key sentence, %d a withheld pairing sentence and %d a "+
-		"withheld command-surface sentence",
-		compared, withheldWorkspace, withheldSigningKey, withheldPairing, withheldCommandSurface)
+		"sentence, %d a withheld signing-key sentence, %d a withheld pairing sentence, %d a "+
+		"withheld command-surface sentence and %d a note added for the listener",
+		compared, withheldWorkspace, withheldSigningKey, withheldPairing, withheldCommandSurface,
+		addedForTheListener)
 }
 
 // TestAdvertisedDescriptionWithholdsOnlyOnTheListener measures the composition
@@ -364,6 +387,28 @@ func TestAdvertisedDescriptionWithholdsOnlyOnTheListener(t *testing.T) {
 			transport: transportHTTP,
 			spec:      toolSpec{description: "Does a thing."},
 			want:      "Does a thing.",
+		},
+		{
+			scenario:  "a note for a caller reaching a listener is not advertised where it is not true",
+			transport: transportStdio,
+			spec:      toolSpec{description: "Does a thing.", listenerNote: "Its location is kept back."},
+			want:      "Does a thing.",
+		},
+		{
+			scenario:  "and is advertised to the caller it is true of",
+			transport: transportHTTP,
+			spec:      toolSpec{description: "Does a thing.", listenerNote: "Its location is kept back."},
+			want:      "Does a thing. Its location is kept back.",
+		},
+		{
+			scenario:  "a tool declaring every note carries each where it is true",
+			transport: transportHTTP,
+			spec: toolSpec{
+				description:            "Does a thing.",
+				workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
+				listenerNote:           "Its location is kept back.",
+			},
+			want: "Does a thing. Its location is kept back.",
 		},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {

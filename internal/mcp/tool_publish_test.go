@@ -390,7 +390,7 @@ func TestPublicationToolsRefuseLoudlyWithNoCredentialAndDoNotHang(t *testing.T) 
 		}
 		done := make(chan outcome, 1)
 		go func() {
-			payload, err := runPublishEntity(t.Context(), cfg)
+			payload, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg)
 			done <- outcome{payload, err}
 		}()
 
@@ -479,7 +479,7 @@ func TestPublishEntityToolRefusesUnsignedWhereASignatureIsRequired(t *testing.T)
 	}
 	store := memory.New()
 	cfg.PushTarget = store
-	if _, err := runPublishEntity(t.Context(), cfg); err == nil {
+	if _, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg); err == nil {
 		t.Fatal("the operation answered an unsigned publication that must be refused")
 	} else if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Errorf("the refusal must carry the unsigned-publication condition; got %v", err)
@@ -519,7 +519,7 @@ func TestPublishEntityToolRefusesAnUnpinnedRecipeInItsOwnWords(t *testing.T) {
 	if refusal != "" {
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
-	_, err := runPublishEntity(t.Context(), cfg)
+	_, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg)
 	if err == nil {
 		t.Fatal("a publication of an entity whose lock is missing a pin must be refused")
 	}
@@ -537,7 +537,7 @@ func TestPublishEntityToolRefusesAnUnpinnedRecipeInItsOwnWords(t *testing.T) {
 	if refusal != "" {
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
-	if _, err := runPublishEntity(t.Context(), cfg); err != nil {
+	if _, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg); err != nil {
 		t.Fatalf("the same dry run asking for the pin step must be answered: %v", err)
 	}
 }
@@ -583,7 +583,7 @@ func TestSignatureTheToolProtocolAttachedDoesNotVerifyAgainstAnotherKey(t *testi
 			}
 			store := memory.New()
 			cfg.PushTarget = store
-			got, err := runPublishEntity(t.Context(), cfg)
+			got, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg)
 			if err != nil {
 				t.Fatalf("publish: %v", err)
 			}
@@ -702,7 +702,7 @@ func TestSignArtifactsToolSignsWhatIsPublishedAndRefusesWhatIsNot(t *testing.T) 
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
 	cfg.PushTarget = store
-	published, err := runPublishEntity(t.Context(), cfg)
+	published, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg)
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
@@ -877,7 +877,7 @@ func publishThroughTool(t *testing.T, s *server, root string, store oras.Target)
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
 	cfg.PushTarget = store
-	got, err := runPublishEntity(t.Context(), cfg)
+	got, err := runPublishEntity(t.Context(), s.servedWorkspace(), cfg)
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}

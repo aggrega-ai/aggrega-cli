@@ -65,10 +65,19 @@ const pluginValidateMaxMemoryPages uint32 = 4096
 // a summary — the artifact bytes stay the province of the build / describe /
 // inspect tools and never travel in this payload. Notices carries advisory lines
 // that never fail the verdict.
+//
+// Target and Release are locations on this host, spelled as the caller may be
+// told them: a location the caller is not told is absent and marked by the
+// withheld flag beside it, which is omitted where nothing was kept back. The
+// catalog scope's target is the workspace root itself, which is such a location
+// for a caller reaching a listener.
 type validateResultPayload struct {
-	Scope       string   `json:"scope"`
-	Target      string   `json:"target"`
-	Release     string   `json:"release,omitempty"`
+	Scope           string  `json:"scope"`
+	Target          *string `json:"target"`
+	TargetWithheld  bool    `json:"target_withheld,omitempty"`
+	Release         *string `json:"release,omitempty"`
+	ReleaseWithheld bool    `json:"release_withheld,omitempty"`
+
 	Valid       bool     `json:"valid"`
 	Diagnostics []string `json:"diagnostics"`
 	Artifacts   []string `json:"artifacts,omitempty"`
@@ -97,6 +106,10 @@ var validateToolSpec = toolSpec{
 		"not understand, pass its text to explain-error. `response_format` chooses detailed or concise " +
 		"(release scope).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
+	listenerNote: "You did not start this server, so a diagnostic naming a place on its host names it relative to " +
+		"the workspace root where it lies inside the workspace, and reads " + keptBackLocationWords + " where it " +
+		"does not; the catalog scope's `target` is the workspace root itself, and is absent and marked " +
+		"`target_withheld`.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -265,9 +278,9 @@ func validateReleaseScope(
 		// names a reference in a document that is correct, and points the caller
 		// at that document's authoring contract.
 		annotated := annotateWithRefusals(cerr, view, tw, releasePath)
-		return errorResult(explainToolError(
+		return tw.answer(errorResult(explainToolError(
 			"Validation could not resolve the Release closure; fix the resolution failure before semantic validation runs.",
-			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage))))
+			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage)))))
 	}
 
 	// The record loaded at this tool's front door is threaded into the validation
@@ -293,14 +306,14 @@ func validateReleaseScope(
 	diags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
 	payload := validateResultPayload{
 		Scope:       validateScopeRelease,
-		Target:      releasePath,
-		Release:     releasePath,
 		Valid:       len(diags) == 0,
-		Diagnostics: diags,
-		Notices:     releaseAdvisories(vr, lf),
+		Diagnostics: tw.reportedTexts(diags),
+		Notices:     tw.reportedTexts(releaseAdvisories(vr, lf)),
 	}
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(releasePath)
+	payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
 	text := renderValidateText(payload, format)
-	return textResult(text, payload)
+	return tw.answer(textResult(text, payload))
 }
 
 // validateEntityScope runs the single-entity scope core over one catalog entity
@@ -331,13 +344,13 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity 
 	}
 	payload := validateResultPayload{
 		Scope:       validateScopeEntity,
-		Target:      entityPath,
 		Valid:       len(diags) == 0,
-		Diagnostics: diags,
+		Diagnostics: tw.reportedTexts(diags),
 		Artifacts:   artifactKeys,
-		Notices:     res.Notes,
+		Notices:     tw.reportedTexts(res.Notes),
 	}
-	return textResult(renderEntityText(res, verr, artifactKeys), payload)
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(entityPath)
+	return tw.answer(textResult(renderEntityText(res, verr, artifactKeys), payload))
 }
 
 // validatePluginScope runs the plugin-binary scope core: a raw .wasm checked
@@ -376,12 +389,12 @@ func validatePluginScope(ctx context.Context, s *server, a validateArgs, plugin,
 	}
 	payload := validateResultPayload{
 		Scope:       validateScopePlugin,
-		Target:      target,
 		Valid:       len(diags) == 0,
-		Diagnostics: diags,
-		Notices:     res.Notices,
+		Diagnostics: tw.reportedTexts(diags),
+		Notices:     tw.reportedTexts(res.Notices),
 	}
-	return textResult(renderPluginText(res, verr), payload)
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(target)
+	return tw.answer(textResult(renderPluginText(res, verr), payload))
 }
 
 // validateCatalogScope runs the whole-catalog correctness pass core. Diagnostics
@@ -397,7 +410,7 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	}
 	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs)
 	if cerr != nil {
-		return errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component"))
+		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component")))
 	}
 
 	var diags []string
@@ -412,12 +425,12 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	}
 	payload := validateResultPayload{
 		Scope:       validateScopeCatalog,
-		Target:      tw.root,
 		Valid:       len(diags) == 0,
-		Diagnostics: diags,
-		Notices:     res.Notices,
+		Diagnostics: tw.reportedTexts(diags),
+		Notices:     tw.reportedTexts(res.Notices),
 	}
-	return textResult(renderCatalogText(payload), payload)
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderCatalogText(payload), payload))
 }
 
 // validateDiagnostics flattens a ValidateResult into the ordered list of
@@ -567,8 +580,9 @@ func runErrPublishedPerViolation(runErr error, published []*resolver.ResolverErr
 // notices. Verbosity governs output volume only — the payload's verdict (Valid)
 // is identical across both forms.
 func renderValidateText(p validateResultPayload, format string) string {
+	release := reportedLocationWords(p.Release)
 	if p.Valid {
-		clean := fmt.Sprintf("Release %s validated clean: no diagnostics.", p.Release)
+		clean := fmt.Sprintf("Release %s validated clean: no diagnostics.", release)
 		if format == responseFormatConcise || len(p.Notices) == 0 {
 			return clean
 		}
@@ -581,10 +595,10 @@ func renderValidateText(p validateResultPayload, format string) string {
 	}
 	if format == responseFormatConcise {
 		return fmt.Sprintf("Release %s has %d validation diagnostic(s). First: %s",
-			p.Release, len(p.Diagnostics), p.Diagnostics[0])
+			release, len(p.Diagnostics), p.Diagnostics[0])
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Release %s has %d validation diagnostic(s):\n", p.Release, len(p.Diagnostics))
+	fmt.Fprintf(&b, "Release %s has %d validation diagnostic(s):\n", release, len(p.Diagnostics))
 	for i, d := range p.Diagnostics {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, d)
 	}
@@ -645,14 +659,24 @@ func renderPluginText(res validateops.PluginBinaryResult, verr error) string {
 // each category error as its own diagnostic entry.
 func renderCatalogText(p validateResultPayload) string {
 	if p.Valid {
-		return fmt.Sprintf("Catalog %s validated clean: no diagnostics.", p.Target)
+		return fmt.Sprintf("%s validated clean: no diagnostics.", catalogSubject(p.Target))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Catalog %s has %d validation diagnostic(s):\n", p.Target, len(p.Diagnostics))
+	fmt.Fprintf(&b, "%s has %d validation diagnostic(s):\n", catalogSubject(p.Target), len(p.Diagnostics))
 	for i, d := range p.Diagnostics {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, d)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// catalogSubject names the catalog a whole-catalog result is about. Its target is
+// the workspace root, and where the caller is not told where that sits the
+// catalog is named as the served workspace's rather than by a location.
+func catalogSubject(target *string) string {
+	if target == nil {
+		return "The catalog of " + servedWorkspaceWords
+	}
+	return "Catalog " + *target
 }
 
 // closureStageKind maps a closure-resolution stage to the entity kind whose

@@ -81,15 +81,16 @@ func listReleasesRequest(t *testing.T) string {
 	})
 }
 
-// releasesFromAnswer reads a list-releases answer down to the workspace root it
-// was taken in and the paths it reported.
+// releasesFromAnswer reads a list-releases answer down to the listing it
+// carries: the workspace root it was taken in, as the caller was told it, and the
+// paths it reported.
 //
 // It checks the shape before it hands the paths back, because an answer carrying
 // no paths is what every one of these rows reads as "the wrong directory was
 // listed". The two are indistinguishable from the caller's side, so the shape is
 // asserted where it can still be named rather than inferred later from an empty
 // slice.
-func releasesFromAnswer(t *testing.T, raw string) (root string, releases []string) {
+func releasesFromAnswer(t *testing.T, raw string) listReleasesResult {
 	t.Helper()
 	var frame rpcResponse
 	if err := json.Unmarshal([]byte(raw), &frame); err != nil {
@@ -113,7 +114,7 @@ func releasesFromAnswer(t *testing.T, raw string) (root string, releases []strin
 		t.Fatalf("the answer came back in the %q shape, which carries no paths at all; the rows below read the "+
 			"paths as their evidence, so the call has to ask for them", listed.ResponseFormat)
 	}
-	return listed.WorkspaceRoot, listed.Releases
+	return listed
 }
 
 // listReleasesOverHTTP starts the transport the way the command layer starts it
@@ -185,24 +186,36 @@ func listReleasesOverStdio(t *testing.T, workspaceRoot string) string {
 
 // A process launched over a workspace answers from that workspace on either
 // transport, and the two transports answer alike.
+//
+// The listing's paths are the evidence on both. The root the answer echoes is a
+// second piece of evidence only where the caller is told it: a caller reaching a
+// listener is not told where the served workspace sits on the host, so over HTTP
+// the root is required to be kept back and marked instead.
 func TestTheLaunchedWorkspaceIsHonouredOnBothTransports(t *testing.T) {
 	root := rootedWorkspace(t)
 
 	for _, tc := range []struct {
-		name string
-		call func(*testing.T, string) string
+		name             string
+		call             func(*testing.T, string) string
+		keepsTheRootBack bool
 	}{
-		{"over HTTP", listReleasesOverHTTP},
-		{"over standard input and output", listReleasesOverStdio},
+		{"over HTTP", listReleasesOverHTTP, true},
+		{"over standard input and output", listReleasesOverStdio, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			answeredIn, releases := releasesFromAnswer(t, tc.call(t, root))
-			if answeredIn != root {
-				t.Errorf("the call was answered in %q, want the launched workspace %q", answeredIn, root)
+			listed := releasesFromAnswer(t, tc.call(t, root))
+			switch {
+			case tc.keepsTheRootBack:
+				if listed.WorkspaceRoot != nil || !listed.WorkspaceRootWithheld {
+					t.Errorf("the answer names the workspace root %q (withheld=%v); a caller reaching a listener "+
+						"is not told where it sits", told(listed.WorkspaceRoot), listed.WorkspaceRootWithheld)
+				}
+			case told(listed.WorkspaceRoot) != root:
+				t.Errorf("the call was answered in %q, want the launched workspace %q", told(listed.WorkspaceRoot), root)
 			}
-			if !slices.Contains(releases, theLaunchedWorkspacesRelease) {
+			if !slices.Contains(listed.Releases, theLaunchedWorkspacesRelease) {
 				t.Errorf("the listing is %v and does not hold %q, so it was not taken in the launched workspace",
-					releases, theLaunchedWorkspacesRelease)
+					listed.Releases, theLaunchedWorkspacesRelease)
 			}
 		})
 	}
@@ -216,25 +229,19 @@ func TestTheLaunchedWorkspaceIsHonouredOnBothTransports(t *testing.T) {
 // the process is started IN the fixture and told nothing, and answers there. So
 // a field that was silently ignored would fail the rows above, and a field that
 // overrode the working directory rather than defaulting to it would fail this
-// one.
+// one. The listing's paths are what says so: the root the answer would echo is
+// a place on the host a caller reaching a listener is not told.
 func TestAProcessLaunchedWithoutAWorkspaceResolvesFromItsWorkingDirectory(t *testing.T) {
 	root := rootedWorkspace(t)
 	t.Chdir(root)
 
-	answeredIn, releases := releasesFromAnswer(t, listReleasesOverHTTP(t, ""))
-	// The working directory a temporary path resolves to can carry a symbolic
-	// link on some systems, so the root is read back from the process rather than
-	// compared against the path the fixture was written to.
-	started, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("read the working directory: %v", err)
+	listed := releasesFromAnswer(t, listReleasesOverHTTP(t, ""))
+	if listed.WorkspaceRoot != nil || !listed.WorkspaceRootWithheld {
+		t.Errorf("a process launched with no workspace names its root %q (withheld=%v) to a caller reaching a "+
+			"listener, which is not told where it sits", told(listed.WorkspaceRoot), listed.WorkspaceRootWithheld)
 	}
-	if answeredIn != started {
-		t.Errorf("a process launched with no workspace answered in %q, want the directory it was started in, %q",
-			answeredIn, started)
-	}
-	if !slices.Contains(releases, theLaunchedWorkspacesRelease) {
+	if !slices.Contains(listed.Releases, theLaunchedWorkspacesRelease) {
 		t.Errorf("the listing is %v and does not hold %q, so it was not taken in the directory the process "+
-			"was started in", releases, theLaunchedWorkspacesRelease)
+			"was started in", listed.Releases, theLaunchedWorkspacesRelease)
 	}
 }
