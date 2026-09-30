@@ -92,7 +92,7 @@ func TestClosureLibraryProjectionCoversEveryDeclaredAxis(t *testing.T) {
 	t.Parallel()
 	cl := closureWithAMemberOnEveryDeclaredAxis(t)
 
-	got := closureLibraries(cl)
+	got := closureLibraries(cl, stateRows)
 	want := declaredLibraryListing(cl)
 
 	t.Logf("declared axes hold %d member(s); the projection carried %d: %+v", len(want), len(got), got)

@@ -51,9 +51,11 @@ type resolveDependenciesParams struct {
 //
 // It reports what was written rather than only that something was: Lockfile is
 // the file the run wrote or verified, and the three axes name every reference it
-// pinned with the version each resolved to. A caller that asked for a resolution
-// is asking exactly that question, and answering with a bare acknowledgement
-// would leave it to re-read the file to find out.
+// pinned with the version each resolved to and where the run took it from. A
+// caller that asked for a resolution is asking exactly that question, and
+// answering with a bare acknowledgement would leave it to re-read the file to find
+// out — which would still not tell it the source, since the lockfile does not
+// record one.
 //
 // Verified reports that the run only compared, writing no lockfile, and Toolchain
 // then carries what the recorded file says produced it — reported for audit and
@@ -96,6 +98,12 @@ type dependencyResolutionReport struct {
 // The lockfile is rendered as the caller's own coordinate, relative to the
 // workspace root the request named, on the same contract every path here carries.
 //
+// Each entry names where this run took its reference from, read from the source
+// the resolution recorded for it in memory and worded by the composition the
+// command line's pull detail prints through. It is this answer's to carry because
+// nothing else can: the fact describes this run and is never written to the
+// lockfile, so it is gone once the answer is.
+//
 // It takes the workspace root rather than the server because the root is the only
 // server state a projection of a resolution needs, and naming it is what keeps
 // this a mapping from a result to a wire shape rather than a method with the whole
@@ -104,9 +112,9 @@ func dependencyResolutionReportOf(res pullops.Result, workspaceRoot string) depe
 	out := dependencyResolutionReport{
 		Lockfile:        workspaceRelative(workspaceRoot, res.LockfilePath),
 		Verified:        res.Verified,
-		Entities:        closureEntities(res.Closure),
-		Libraries:       closureLibraries(res.Closure),
-		Plugins:         closurePlugins(res.Closure),
+		Entities:        closureEntities(res.Closure, resolutionRows),
+		Libraries:       closureLibraries(res.Closure, resolutionRows),
+		Plugins:         closurePlugins(res.Closure, resolutionRows),
 		SourceArtifacts: len(res.Closure.SourceArtifacts),
 		TrustedPlugins:  res.TrustedPlugins,
 		ExternalInputs:  res.ExternalInputs,

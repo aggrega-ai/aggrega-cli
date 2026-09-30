@@ -478,10 +478,52 @@ type releaseClosureParams struct {
 // collected from a position in a document, and some positions say what kind
 // they point at while others do not, so the field is reported where it is known
 // and omitted where it is not — rather than guessed from the shape of the name.
+//
+// Source is where the run that produced this entry took the reference from —
+// fetched from a registry, reused from a cache slot, found on the local
+// filesystem, served from inside the compiler binary, or external: the Release's
+// own Aggregate and Manifest, taken as the Release names them — in the words the
+// command line's pull detail prints for the same resolution. It is present only
+// on an answer reporting one run's dependency resolution, because it describes what
+// that run did on this machine rather than what the Release depends on: a
+// listing of a Release's resolved state carries none, and neither does the
+// lockfile, which is byte-identical across machines that resolved the same
+// pins from different local state. Within a resolution's answer it is omitted
+// for a reference whose lookup recorded no source.
 type ClosureEntity struct {
 	URI     string `json:"uri"`
 	Version string `json:"version"`
 	Kind    string `json:"kind,omitempty"`
+	Source  string `json:"source,omitempty"`
+}
+
+// closureRows says what each entry a closure projection produces reports, which
+// depends on what the answer carrying the projection is about.
+//
+// A listing of a Release's resolved state reports what was reached and at which
+// version. An answer reporting one run's dependency resolution reports those and,
+// beside them, where that run took each reference from. The two share one
+// projection per axis, so the identity, version and kind of an entry are mapped in
+// one place whichever answer carries it; this says only whether the source rides
+// along.
+type closureRows bool
+
+const (
+	// stateRows project a Release's resolved state, which names no source.
+	stateRows closureRows = false
+	// resolutionRows project what one run's resolution did, naming the source of
+	// every reference it reached.
+	resolutionRows closureRows = true
+)
+
+// sourceOf is the Source an entry of this projection carries for a reference the
+// lookup stamped with resolutionPath: empty for a state listing, and the shared
+// composition's text for a resolution's answer.
+func (rows closureRows) sourceOf(resolutionPath string) string {
+	if rows != resolutionRows {
+		return ""
+	}
+	return closure.ReportedResolutionSource(resolutionPath)
 }
 
 // releaseClosureResult is the `aggrega/releaseClosure` response: what the
@@ -606,9 +648,9 @@ func (s *Server) handleReleaseClosure(ctx context.Context, params releaseClosure
 		Aggregate:          preview.resolved.Aggregate.Metadata.Name,
 		Manifest:           preview.resolved.Manifest.Metadata.Name,
 		Environment:        preview.resolved.Release.Metadata.Environment,
-		Entities:           closureEntities(preview.resolved.Closure),
-		Libraries:          closureLibraries(preview.resolved.Closure),
-		Plugins:            closurePlugins(preview.resolved.Closure),
+		Entities:           closureEntities(preview.resolved.Closure, stateRows),
+		Libraries:          closureLibraries(preview.resolved.Closure, stateRows),
+		Plugins:            closurePlugins(preview.resolved.Closure, stateRows),
 		MappingDiagnostics: closureMappingDiagnostics(preview.resolved.ManifestConsistencyFindings),
 		Deprecations:       closureDeprecations(preview.lockfile),
 	}, nil
@@ -652,17 +694,22 @@ func closureDeprecations(lf *lockfile.Lockfile) []string {
 }
 
 // closureEntities projects the catalog-entity axis onto the wire shape, in the
-// order the closure holds it.
+// order the closure holds it, with the entries rows asks for.
 //
 // The order is the resolution's own and is not re-sorted here. It is already a
 // function of the Release's content rather than of anything ambient — the same
 // property that lets the same resolution be written to a lockfile and compared
 // against one — so imposing a second order here would be a second statement of
 // the same thing, free to disagree with the first.
-func closureEntities(cl closure.Closure) []ClosureEntity {
+func closureEntities(cl closure.Closure, rows closureRows) []ClosureEntity {
 	out := make([]ClosureEntity, 0, len(cl.Entities))
 	for _, e := range cl.Entities {
-		out = append(out, ClosureEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: compilerops.EntityKindForHint(e.KindHint)})
+		out = append(out, ClosureEntity{
+			URI:     e.URI,
+			Version: e.ResolvedVersion,
+			Kind:    compilerops.EntityKindForHint(e.KindHint),
+			Source:  rows.sourceOf(e.ResolutionPath),
+		})
 	}
 	return out
 }
@@ -683,7 +730,7 @@ func closureEntities(cl closure.Closure) []ClosureEntity {
 //
 // The axes are appended in the declared order, which is what makes that order one
 // statement rather than one per projection.
-func closureLibraries(cl closure.Closure) []ClosureEntity {
+func closureLibraries(cl closure.Closure, rows closureRows) []ClosureEntity {
 	axes := closure.LibraryAxes()
 	total := 0
 	for _, axis := range axes {
@@ -692,19 +739,29 @@ func closureLibraries(cl closure.Closure) []ClosureEntity {
 	out := make([]ClosureEntity, 0, total)
 	for _, axis := range axes {
 		for _, l := range axis.Libraries(&cl) {
-			out = append(out, ClosureEntity{URI: l.URI, Version: l.ResolvedVersion, Kind: axis.Kind})
+			out = append(out, ClosureEntity{
+				URI:     l.URI,
+				Version: l.ResolvedVersion,
+				Kind:    axis.Kind,
+				Source:  rows.sourceOf(l.ResolutionPath),
+			})
 		}
 	}
 	return out
 }
 
-// closurePlugins projects the guest axis onto the wire shape. Every entry is a
-// Plugin, so the kind is stated rather than derived from a hint the axis does
-// not carry.
-func closurePlugins(cl closure.Closure) []ClosureEntity {
+// closurePlugins projects the guest axis onto the wire shape, with the entries
+// rows asks for. Every entry is a Plugin, so the kind is stated rather than
+// derived from a hint the axis does not carry.
+func closurePlugins(cl closure.Closure, rows closureRows) []ClosureEntity {
 	out := make([]ClosureEntity, 0, len(cl.Plugins))
 	for _, p := range cl.Plugins {
-		out = append(out, ClosureEntity{URI: p.URI, Version: p.ResolvedVersion, Kind: "Plugin"})
+		out = append(out, ClosureEntity{
+			URI:     p.URI,
+			Version: p.ResolvedVersion,
+			Kind:    "Plugin",
+			Source:  rows.sourceOf(p.ResolutionPath),
+		})
 	}
 	return out
 }

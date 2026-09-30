@@ -131,18 +131,17 @@ func printLockfileToolchain(out io.Writer, stamp *lockfile.ToolchainStamp) {
 	tw.Flush()
 }
 
-// pullEventTier maps the in-memory resolution tag to the word this column
-// prints for the source that served the entity. The words come from the shared
-// provenance vocabulary, so this column and the plugin-resolution diagnostics
-// name the same source identically and cannot drift apart.
+// pullEventTier is the text this column prints for the source that served the
+// entity, read from the in-memory resolution tag.
 //
-// An unrecognised tag passes through verbatim rather than being silently
-// dropped: a tag with no word yet is a gap worth seeing in the output.
+// It is the shared composition and nothing of its own: the structured answers
+// reporting the same resolution read that composition too, and its words are the
+// shared provenance vocabulary the plugin-resolution diagnostics also read, so none
+// of them can name a source differently. That includes the fallback: an
+// unrecognised tag passes through verbatim rather than being silently dropped,
+// because a tag with no word yet is a gap worth seeing.
 func pullEventTier(resolutionPath string) string {
-	if source, ok := closure.ResolutionSourceFor(resolutionPath); ok {
-		return string(source)
-	}
-	return resolutionPath
+	return closure.ReportedResolutionSource(resolutionPath)
 }
 
 // entityKindForDetail derives the display kind for a resolved entity. The

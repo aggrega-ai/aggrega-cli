@@ -67,9 +67,10 @@ type pullToolchain struct {
 //
 // It reports what was resolved rather than only that something was: Lockfile is
 // the file the run wrote or compared against, and Resolved names every reference
-// it reached with the version each resolved to. A caller that asked for a
-// resolution is asking exactly that, and a bare acknowledgement would leave it to
-// read the file back to find out.
+// it reached with the version each resolved to and where the run took it from. A
+// caller that asked for a resolution is asking exactly that, and a bare
+// acknowledgement would leave it to read the file back to find out — which would
+// still not say where anything came from, since the lockfile records no source.
 //
 // # It is returned on a refusal too
 //
@@ -106,8 +107,8 @@ type pullResultPayload struct {
 
 	// Resolved names every reference the resolution reached, across the catalog
 	// entities, the shared documents and the guests, in the order the resolution
-	// produced them. It is always an array, empty rather than absent, so a client
-	// iterates it without a null check.
+	// produced them, each with the source this run took it from. It is always an
+	// array, empty rather than absent, so a client iterates it without a null check.
 	Resolved []closureRef `json:"resolved"`
 
 	SourceArtifacts int `json:"source_artifacts"`

@@ -38,10 +38,15 @@ const ResolutionPathCache = "tier-2-cache"
 // callers testing the value themselves.
 const ResolutionPathRegistry = "tier-3-pull"
 
-// ResolutionPathExternal is the ResolutionPath a Lookup reports for an external
-// input — content addressed by URL rather than resolved through the catalog
-// sources, and recorded with its own provenance instead of falling through to a
-// registry fetch.
+// ResolutionPathExternal is the ResolutionPath a Lookup reports for the Release's
+// own Aggregate and Manifest. The caller resolves each from the Release's own
+// reference before the walk — a file beside the Release or at the relative path
+// the Release writes, or, for an Aggregate named by identity, an entry of the
+// workspace's catalog view, pinned cache entries included — and registers it with
+// the Lookup by the bytes it read, so the walk takes it as given instead of
+// resolving it through the catalog sources. The one exception is a top-level
+// Aggregate a pull fetched from a registry during the run, which is seeded as
+// ResolutionPathRegistry instead.
 const ResolutionPathExternal = "external"
 
 // ResolutionPathEmbedded is the ResolutionPath a Lookup reports for a core plugin
@@ -77,8 +82,9 @@ const (
 	// SourceInBinary reports that the bytes came from the copy inside the
 	// compiler binary, so no registry, cache or catalog was consulted for them.
 	SourceInBinary ResolutionSource = "in-binary"
-	// SourceExternal reports that the bytes came from an external input addressed
-	// by URL rather than through the catalog sources.
+	// SourceExternal reports that the entry is the Release's own Aggregate or
+	// Manifest, read from the file or entry the Release names rather than resolved
+	// as a dependency through the catalog sources.
 	SourceExternal ResolutionSource = "external"
 )
 
@@ -100,6 +106,26 @@ func ResolutionSourceFor(resolutionPath string) (ResolutionSource, bool) {
 		return SourceExternal, true
 	}
 	return "", false
+}
+
+// ReportedResolutionSource is the text a user-facing surface reports for where
+// one run's resolution took a reference from, given the ResolutionPath tag the
+// lookup stamped on it.
+//
+// It is the word ResolutionSourceFor maps the tag to where there is one, and the
+// tag itself where there is none: a tag with no word yet is a gap worth seeing,
+// so it is shown rather than dropped. An empty tag — a reference whose lookup
+// recorded no source — yields the empty string, which a surface omits rather
+// than reporting as a source.
+//
+// The pull detail column and the structured answers reporting one resolution
+// both read this rather than composing the fallback themselves, so they name each
+// source in one spelling.
+func ReportedResolutionSource(resolutionPath string) string {
+	if source, ok := ResolutionSourceFor(resolutionPath); ok {
+		return string(source)
+	}
+	return resolutionPath
 }
 
 // ResolvedFromRegistry reports whether a resolution fetched from a registry

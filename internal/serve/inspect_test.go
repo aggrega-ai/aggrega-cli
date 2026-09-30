@@ -395,7 +395,7 @@ func TestReleaseClosureReportsWhatTheReleaseReaches(t *testing.T) {
 	t.Logf("closure listing: entities=%+v libraries=%+v plugins=%+v",
 		got.Entities, got.Libraries, got.Plugins)
 
-	wantEntities := closureEntities(preview.resolved.Closure)
+	wantEntities := closureEntities(preview.resolved.Closure, stateRows)
 	if len(wantEntities) == 0 {
 		t.Fatal("precondition: the resolution reached no entity, so an equal listing would assert nothing")
 	}
@@ -415,9 +415,9 @@ func TestReleaseClosureReportsWhatTheReleaseReaches(t *testing.T) {
 		t.Errorf("the library listing is not what the declared axes hold.\n got: %+v\nwant: %+v",
 			got.Libraries, wantLibraries)
 	}
-	if !sameClosureListing(got.Plugins, closurePlugins(preview.resolved.Closure)) {
+	if !sameClosureListing(got.Plugins, closurePlugins(preview.resolved.Closure, stateRows)) {
 		t.Errorf("the guest listing is not what the resolution reached.\n got: %+v\nwant: %+v",
-			got.Plugins, closurePlugins(preview.resolved.Closure))
+			got.Plugins, closurePlugins(preview.resolved.Closure, stateRows))
 	}
 
 	// The listing's stated job is which entities were reached AND at which

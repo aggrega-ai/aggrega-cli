@@ -13,9 +13,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
-// This file is the one-source proof for resolution provenance. Two surfaces name
-// the source that served something — the pull detail column, and the plugin
-// resolver's diagnostics — and they used to spell the same sources differently
+// This file is the one-source proof for resolution provenance. The pull detail
+// column and the plugin resolver's diagnostics both name the source that served
+// something, and they used to spell the same sources differently
 // because each carried its own word list. The tests below fail if either surface
 // stops reading the shared vocabulary, which is the only thing keeping them in
 // step.

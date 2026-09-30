@@ -16,10 +16,17 @@ import (
 // agree. The version and the kind are omitted when unknown rather than reported
 // blank, because a reference that resolved to no version and one that resolved to
 // an empty string are different statements and only one of them is true.
+//
+// Source is where the run that produced the entry took the reference from, in the
+// words the command line's pull detail prints for the same resolution. Only an
+// answer reporting one run's dependency resolution carries it: it describes what
+// that run did on this machine, so a description of a Release's resolved state
+// names none. It is omitted for a reference whose lookup recorded no source.
 type closureRef struct {
 	URI     string `json:"uri"`
 	Version string `json:"version,omitempty"`
 	Kind    string `json:"kind,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 // closureRefOf renders one resolved reference into the reported shape, settling
@@ -40,7 +47,16 @@ func closureRefOf(uri, version, axisKind, kindHint string) closureRef {
 }
 
 // closureRefsAcrossAxes renders every reference a resolution reached, across all
-// of the closure's sections, in the order the closure declares them.
+// of the closure's sections, in the order the closure declares them, each naming
+// where this run took it from.
+//
+// The source is read from what the resolution recorded for the reference in
+// memory, never from how the reference is spelled, and worded by the composition
+// the command line's pull detail prints through — so a caller reading this answer
+// and a person reading that column are told one source in one spelling. The
+// identity, version and kind are rendered by the one projection every tool here
+// shares; only the source is added here, because only a resolution's answer
+// carries it.
 //
 // It ranges over the closure's own declared axis set rather than naming the
 // sections here. That set is the single enumeration of them, and a section added
@@ -58,7 +74,9 @@ func closureRefsAcrossAxes(cl closure.Closure) []closureRef {
 	out := make([]closureRef, 0, len(axes))
 	for _, axis := range axes {
 		for _, ref := range axis.Refs {
-			out = append(out, closureRefOf(ref.URI, ref.ResolvedVersion, axis.Kind, ref.KindHint))
+			reported := closureRefOf(ref.URI, ref.ResolvedVersion, axis.Kind, ref.KindHint)
+			reported.Source = closure.ReportedResolutionSource(ref.ResolutionPath)
+			out = append(out, reported)
 		}
 	}
 	return out
