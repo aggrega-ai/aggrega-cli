@@ -82,15 +82,18 @@
 // WithholdSensitiveValues composes, for every finding at a position whose
 // schema declares its value sensitive and at every position inside one, a
 // sentence of its own from the schema: the keyword that refused the value, its
-// constraint as the schema states it, and the placeholder `<redacted>` where
-// the value would have been. So a private key written where a pattern admits
-// only a public one is refused as
+// constraint as the schema states it, and, where the value would have been, the
+// redaction placeholder — the one fixed text every human-readable surface prints
+// in place of a withheld value, carrying no length, no type and no hash of what
+// it replaces. So a private key written where a pattern admits only a public one
+// is refused with a sentence of the form
 //
-//	pattern: <redacted> does not satisfy pattern "-----BEGIN [A-Z ]*PUBLIC KEY-----" (the value is withheld because the schema declares it sensitive)
+//	pattern: PLACEHOLDER does not satisfy pattern "-----BEGIN [A-Z ]*PUBLIC KEY-----" (the value is withheld because the schema declares it sensitive)
 //
-// with the finding's path naming the key it was written under. Where the
-// finding names no keyword the position declares, the sentence says only that
-// the value does not satisfy the schema declared there.
+// where PLACEHOLDER stands for the redaction placeholder, and with the
+// finding's path naming the key it was written under. Where the finding names
+// no keyword the position declares, the sentence says only that the value does
+// not satisfy the schema declared there.
 //
 // A declaration is inherited by every position beneath the one carrying it,
 // whether the walk reaches that position itself or the library checks it as
