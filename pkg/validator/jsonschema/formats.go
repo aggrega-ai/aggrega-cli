@@ -300,11 +300,15 @@ func schemaAtPointer(root *jsonschema.Schema, pointer string) *jsonschema.Schema
 }
 
 // sweepKey identifies one visit of the format sweep: a schema node applied at an
-// instance position. A reference cycle that reaches the same node at the same
-// position again would never end, so a second visit is skipped.
+// instance position, reached from beneath a declaration of sensitivity or not. A
+// reference cycle that reaches the same node at the same position again would
+// never end, so a second visit is skipped. The two readings of sensitivity are
+// two visits, so a node reached first along a route that declares nothing is
+// still reached along one that does.
 type sweepKey struct {
-	schema *jsonschema.Schema
-	path   string
+	schema    *jsonschema.Schema
+	path      string
+	sensitive bool
 }
 
 // sweepFormats checks format across a region of the schema the library
@@ -320,17 +324,27 @@ type sweepKey struct {
 // the library performs, and applying a branch that does not apply would refuse a
 // value nothing constrains. So within such a region the sweep can under-report,
 // and it never invents a failure.
-func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, definition string, rpt *Report, seen map[sweepKey]bool) {
+//
+// sensitive reports that a node the sweep has passed through on the way to s
+// declares its value sensitive. A region is checked whole, so no position inside
+// it was built to carry that declaration, and the sweep carries it down itself:
+// a format failure beneath such a node is composed from the schema rather than
+// from the value wherever the validator withholds sensitive values.
+func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, definition string, rpt *Report, seen map[sweepKey]bool, sensitive bool) {
 	if s == nil || carriesWhenPredicate(s) {
 		return
 	}
-	key := sweepKey{schema: s, path: path}
+	sensitive = sensitive || DeclaresSensitive(s.Extra)
+	key := sweepKey{schema: s, path: path, sensitive: sensitive}
 	if seen[key] {
 		return
 	}
 	seen[key] = true
 
 	if f, failed := formatFinding(s.Format, instance, path, definition); failed {
+		if sensitive && a.withholdSensitive {
+			f = withheldFinding(f, s, definition)
+		}
 		appendUniqueFinding(rpt, f)
 	}
 	if s.Ref != "" {
@@ -339,10 +353,10 @@ func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, d
 		if name, ok := strings.CutPrefix(s.Ref, localDefsPrefix); ok && !strings.Contains(name, "/") {
 			inside = name
 		}
-		a.sweepFormats(target, instance, path, inside, rpt, seen)
+		a.sweepFormats(target, instance, path, inside, rpt, seen, sensitive)
 	}
 	for _, branch := range s.AllOf {
-		a.sweepFormats(branch, instance, path, definition, rpt, seen)
+		a.sweepFormats(branch, instance, path, definition, rpt, seen, sensitive)
 	}
 
 	switch value := instance.(type) {
@@ -356,7 +370,7 @@ func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, d
 			sub := childPath(path, k)
 			declared, isDeclared := s.Properties[k]
 			if isDeclared {
-				a.sweepFormats(declared, value[k], sub, definition, rpt, seen)
+				a.sweepFormats(declared, value[k], sub, definition, rpt, seen, sensitive)
 			}
 			matched := false
 			for _, p := range patterns {
@@ -365,11 +379,11 @@ func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, d
 				// arm only keeps an unreadable one from being read as a match.
 				if re, err := regexp.Compile(p); err == nil && re.MatchString(k) {
 					matched = true
-					a.sweepFormats(s.PatternProperties[p], value[k], sub, definition, rpt, seen)
+					a.sweepFormats(s.PatternProperties[p], value[k], sub, definition, rpt, seen, sensitive)
 				}
 			}
 			if !isDeclared && !matched && s.AdditionalProperties != nil && !isClosedForm(s.AdditionalProperties) {
-				a.sweepFormats(s.AdditionalProperties, value[k], sub, definition, rpt, seen)
+				a.sweepFormats(s.AdditionalProperties, value[k], sub, definition, rpt, seen, sensitive)
 			}
 		}
 	case []any:
@@ -377,21 +391,27 @@ func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, d
 			at := elementPath(path, index)
 			switch {
 			case index < len(s.PrefixItems):
-				a.sweepFormats(s.PrefixItems[index], element, at, definition, rpt, seen)
+				a.sweepFormats(s.PrefixItems[index], element, at, definition, rpt, seen, sensitive)
 			case s.Items != nil:
-				a.sweepFormats(s.Items, element, at, definition, rpt, seen)
+				a.sweepFormats(s.Items, element, at, definition, rpt, seen, sensitive)
 			case index < len(s.ItemsArray):
-				a.sweepFormats(s.ItemsArray[index], element, at, definition, rpt, seen)
+				a.sweepFormats(s.ItemsArray[index], element, at, definition, rpt, seen, sensitive)
 			case len(s.ItemsArray) > 0 && s.AdditionalItems != nil:
-				a.sweepFormats(s.AdditionalItems, element, at, definition, rpt, seen)
+				a.sweepFormats(s.AdditionalItems, element, at, definition, rpt, seen, sensitive)
 			}
 		}
 	}
 }
 
 // sweepSchema sweeps one region the library evaluates whole.
+//
+// The region starts out not sensitive: whether the position it is swept at holds
+// a sensitive value is that position's to decide, and it does so over everything
+// the position reports, the sweep's findings included.
 func (a *googleAdapter) sweepSchema(s *jsonschema.Schema, instance any, path, definition string, rpt *Report) {
-	a.sweepFormats(s, instance, path, definition, rpt, map[sweepKey]bool{})
+	start := len(rpt.Findings)
+	a.sweepFormats(s, instance, path, definition, rpt, map[sweepKey]bool{}, false)
+	withholdBesideWithheld(rpt.Findings[start:])
 }
 
 // sweepRegions sweeps every region the library evaluates whole at one position.
@@ -399,10 +419,12 @@ func (a *googleAdapter) sweepRegions(regions []*jsonschema.Schema, instance any,
 	if len(regions) == 0 {
 		return
 	}
+	start := len(rpt.Findings)
 	seen := map[sweepKey]bool{}
 	for _, region := range regions {
-		a.sweepFormats(region, instance, path, definition, rpt, seen)
+		a.sweepFormats(region, instance, path, definition, rpt, seen, false)
 	}
+	withholdBesideWithheld(rpt.Findings[start:])
 }
 
 // appendUniqueFinding adds f unless the report already carries the same finding.

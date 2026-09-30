@@ -50,6 +50,11 @@ type Finding struct {
 	// by EnrichFinding so error formatters can name both the originating
 	// library and the consumer site in one message.
 	ConsumerFile string
+
+	// withheld records that Message was composed for a value the schema
+	// declares sensitive, so a sensitive position enclosing this one does not
+	// replace the sentence its own schema composed; see WithholdSensitiveValues.
+	withheld bool
 }
 
 // sort orders the report's findings deterministically per the

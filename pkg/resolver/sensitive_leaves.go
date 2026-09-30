@@ -9,11 +9,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
-
-// sensitiveExtensionKeyword is the compiled-schema spelling a schema leaf
-// declared `sensitive: true` carries.
-const sensitiveExtensionKeyword = "x-aggrega-sensitive"
 
 // SensitiveLeaves records which leaves an entity's schema declares sensitive,
 // one set per pillar, keyed by the flat-dotted property path from the pillar
@@ -366,16 +363,13 @@ func nodeDeclaresSensitive(node map[string]any, scopes []map[string]any, refs []
 }
 
 // declaresSensitive reports whether one compiled schema node carries the
-// sensitivity marker. Only the boolean true counts — the shape compact-form
-// `sensitive: true` emits. Presence of the key alone is deliberately not enough:
-// a composed schema records, in a sibling map, which entity in an `extends` chain
-// declared each keyword, so the same keyword spelling also appears there mapped
-// to an entity name rather than to a boolean.
+// sensitivity marker — the shape compact-form `sensitive: true` emits.
+//
+// The decision is the validator's own predicate, not a reading of it made here:
+// this reader decides which authored data every display withholds, and the
+// validator decides which refused values its findings withhold, and one answer
+// to "does this node declare it" is what keeps the two from disagreeing about
+// the same schema.
 func declaresSensitive(node map[string]any) bool {
-	v, has := node[sensitiveExtensionKeyword]
-	if !has {
-		return false
-	}
-	b, ok := v.(bool)
-	return ok && b
+	return jsonvalidator.DeclaresSensitive(node)
 }

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/jsonschema-go/jsonschema"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
 )
 
@@ -61,7 +63,10 @@ import (
 //     - On falsy: append a Finding carrying the x-aggrega-validateMessage:
 //     content.
 //
-//  4. Sort the findings (FieldPath -> Keyword -> Message) per the
+//  4. Where the validator withholds sensitive values, compose every finding
+//     at or inside a position whose value the schema declares sensitive from
+//     the schema rather than from the value (see WithholdSensitiveValues).
+//     Then sort the findings (FieldPath -> Keyword -> Message) per the
 //     deterministic-output invariant.
 func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 	rpt := &Report{}
@@ -114,11 +119,7 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 	// behind a reference to them. Those two documents say the same thing, so
 	// they must fail the same way.
 	if err := a.validateOwnKeywords("", instance); err != nil {
-		rpt.append(Finding{
-			FieldPath: "",
-			Keyword:   "validation",
-			Message:   findingMessage(err, instance, ""),
-		})
+		rpt.append(a.libraryFinding(err, a.ownResolved(""), instance, "", ""))
 	}
 	a.checkFormatAt("", instance, rpt, "")
 
@@ -147,6 +148,7 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 		for _, wn := range a.whenNodes {
 			rpt.Findings = filterOutPath(rpt.Findings, joinPath(wn.instancePath))
 		}
+		a.withholdIndexed(rpt)
 		rpt.sort()
 		return rpt, nil
 	}
@@ -212,7 +214,18 @@ nextWhen:
 		// If else: was authored, validate against it.
 		if wn.elseResolved != nil {
 			if err := wn.elseResolved.Validate(subInstance); err != nil {
+				start := len(rpt.Findings)
 				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr, subInstance)
+				// The branch is checked whole, so no position inside it was built
+				// to carry a declaration; the failure's own location chain is read
+				// for one instead.
+				if a.withholdSensitive {
+					if node, sensitive := chainDeclaresSensitive(wn.elseResolved.Schema(), schemaLocations(err)); sensitive {
+						for i := start; i < len(rpt.Findings); i++ {
+							rpt.Findings[i] = withheldFinding(rpt.Findings[i], node, "")
+						}
+					}
+				}
 			}
 			a.sweepSchema(wn.elseSchema, subInstance, whenPathStr, "", rpt)
 		}
@@ -260,7 +273,9 @@ nextValidate:
 		}
 	}
 
-	// Step 4: deterministic sort.
+	// Step 4: a value the schema declares sensitive is withheld from every
+	// finding at or inside its position, then the deterministic sort.
+	a.withholdIndexed(rpt)
 	rpt.sort()
 	return rpt, nil
 }
@@ -335,11 +350,7 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 			// iteration happened to reach first.
 			if _, hasSub := a.subResolved[subPath]; hasSub {
 				if err := a.validateOwnKeywords(subPath, m[k]); err != nil {
-					rpt.append(Finding{
-						FieldPath: subPath,
-						Keyword:   "validation",
-						Message:   findingMessage(err, m[k], a.subDefinition[subPath]),
-					})
+					rpt.append(a.libraryFinding(err, a.ownResolved(subPath), m[k], subPath, a.subDefinition[subPath]))
 				}
 				a.checkFormatAt(subPath, m[k], rpt, a.subDefinition[subPath])
 				a.deterministicWalk(m[k], subPath, rpt)
@@ -416,11 +427,10 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 				}
 				branchRpt := a.walkBranch(dep.branch, instance, path)
 				for _, f := range branchRpt.Findings {
-					rpt.append(Finding{
-						FieldPath: f.FieldPath,
-						Keyword:   "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword,
-						Message:   f.Message,
-					})
+					// Re-keyed rather than rebuilt, so what the branch recorded about
+					// the finding travels with it.
+					f.Keyword = "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword
+					rpt.append(f)
 				}
 			}
 		}
@@ -439,17 +449,68 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 // TestEveryIndexedPathHasAPrunedSchema pins the fallback unreached for
 // the shipped schemas.
 func (a *googleAdapter) validateOwnKeywords(path string, instance any) error {
-	if pruned, ok := a.subPruned[path]; ok {
-		return pruned.Validate(instance)
-	}
-	if resolved, ok := a.subResolved[path]; ok {
-		return resolved.Validate(instance)
+	if own := a.ownResolved(path); own != nil {
+		return own.Validate(instance)
 	}
 	return nil
 }
 
-// walkBranch validates an instance against a pre-indexed branch using
-// the same deterministic property-walk discipline as the top-level
+// ownResolved is the schema a position's own keywords are checked against — its
+// reduced copy, or its full schema where no reduced one was built — or nil for a
+// path the index holds neither for. It is the one statement of that choice, read
+// by the check itself and by what reads a failure of the check back against the
+// schema the check was made with.
+func (a *googleAdapter) ownResolved(path string) *jsonschema.Resolved {
+	if pruned, ok := a.subPruned[path]; ok {
+		return pruned
+	}
+	if resolved, ok := a.subResolved[path]; ok {
+		return resolved
+	}
+	return nil
+}
+
+// libraryFinding is the finding a schema library's failure produces at path,
+// shaped as findingMessage shapes every library sentence.
+//
+// called is the schema the failing call was made with. Where the validator
+// withholds sensitive values and the failure's location chain passes through a
+// position called declares sensitive, the sentence is composed from the schema
+// instead. The chain is read rather than the position the finding lands on
+// because a call can check more than the position: the schema a reference names
+// where the reference could not stand in for the position is checked whole, and a
+// value it declares sensitive is reported at the position holding the reference.
+func (a *googleAdapter) libraryFinding(err error, called *jsonschema.Resolved, instance any, path, definition string) Finding {
+	f := Finding{
+		FieldPath: path,
+		Keyword:   "validation",
+		Message:   findingMessage(err, instance, definition),
+	}
+	if a.withholdSensitive && called != nil {
+		if node, sensitive := chainDeclaresSensitive(called.Schema(), schemaLocations(err)); sensitive {
+			f = withheldFinding(f, node, definition)
+		}
+	}
+	return f
+}
+
+// walkBranch validates an instance against a pre-indexed branch, as
+// walkBranchPosition describes, and then — where the validator withholds
+// sensitive values and the branch's position holds one — composes every
+// finding at or inside the position from the schema instead of from the
+// value. Every position a branch stands for is reached through here, the
+// element of an array and a combinator's branch alike, so none of them can
+// report a sensitive value by being reached some other way.
+func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *Report {
+	rpt := a.walkBranchPosition(bi, instance, path)
+	if a.withholdSensitive && bi != nil && bi.sensitive != nil {
+		withhold(rpt.Findings, path, bi.sensitive, bi.definition)
+	}
+	return rpt
+}
+
+// walkBranchPosition validates an instance against a pre-indexed branch
+// using the same deterministic property-walk discipline as the top-level
 // walker. Reads from the branchIndex rather than googleAdapter's
 // top-level maps. Recursion through nested combinators is bounded by
 // schema depth.
@@ -462,7 +523,7 @@ func (a *googleAdapter) validateOwnKeywords(path string, instance any) error {
 // pruned away — and each property is then walked, so a branch with
 // several equally-failing children reports all of them in sorted key
 // order rather than one chosen by map-iteration order.
-func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *Report {
+func (a *googleAdapter) walkBranchPosition(bi *branchIndex, instance any, path string) *Report {
 	rpt := &Report{}
 	if bi == nil {
 		return rpt
@@ -470,11 +531,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 
 	if bi.resolved != nil {
 		if err := bi.resolved.Validate(instance); err != nil {
-			rpt.append(Finding{
-				FieldPath: path,
-				Keyword:   "validation",
-				Message:   findingMessage(err, instance, bi.definition),
-			})
+			rpt.append(a.libraryFinding(err, bi.resolved, instance, path, bi.definition))
 		}
 		a.checkBranchFormat(bi, instance, path, rpt)
 		return rpt
@@ -511,11 +568,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 	// dispatch below covers.
 	if bi.ownPruned != nil {
 		if err := bi.ownPruned.Validate(instance); err != nil {
-			rpt.append(Finding{
-				FieldPath: path,
-				Keyword:   "validation",
-				Message:   findingMessage(err, instance, bi.definition),
-			})
+			rpt.append(a.libraryFinding(err, bi.ownPruned, instance, path, bi.definition))
 		}
 	}
 	a.checkBranchFormat(bi, instance, path, rpt)
@@ -603,11 +656,8 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 				}
 				branchRpt := a.walkBranch(dep.branch, instance, path)
 				for _, f := range branchRpt.Findings {
-					rpt.append(Finding{
-						FieldPath: f.FieldPath,
-						Keyword:   "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword,
-						Message:   f.Message,
-					})
+					f.Keyword = "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword
+					rpt.append(f)
 				}
 			}
 		}
@@ -649,11 +699,8 @@ func evaluateAllOf(a *googleAdapter, branches []*branchIndex, instance any, path
 			continue
 		}
 		for _, f := range branchRpt.Findings {
-			rpt.append(Finding{
-				FieldPath: f.FieldPath,
-				Keyword:   fmt.Sprintf("allOf/branch[%d]/%s", i, f.Keyword),
-				Message:   f.Message,
-			})
+			f.Keyword = fmt.Sprintf("allOf/branch[%d]/%s", i, f.Keyword)
+			rpt.append(f)
 		}
 	}
 }

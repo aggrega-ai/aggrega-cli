@@ -171,7 +171,12 @@ func validatorFor(kind Kind) (jsonvalidator.Validator, error) {
 	if err := json.Unmarshal([]byte(raw), s); err != nil {
 		return nil, fmt.Errorf("envelope: decode embedded %s schema: %w", kind, err)
 	}
-	v, err := jsonvalidator.New(s)
+	// A published document schema that declares a value sensitive means the value
+	// is secret — a private key picked by mistake where a public key belongs, say —
+	// so a finding here never quotes it. Every caller of this gate renders the
+	// findings it returns, the terminal, the editor and the tool protocol alike, so
+	// deciding it once here is what keeps each of them from printing the value.
+	v, err := jsonvalidator.New(s, jsonvalidator.WithholdSensitiveValues())
 	if err != nil {
 		return nil, fmt.Errorf("envelope: compile embedded %s schema: %w", kind, err)
 	}

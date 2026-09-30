@@ -203,11 +203,10 @@ func (a *googleAdapter) checkUnresolvedPositions(instance any, rpt *Report) {
 		if deepest == "" {
 			continue
 		}
-		rpt.append(Finding{
-			FieldPath: instancePathFromPointer(deepest),
-			Keyword:   "validation",
-			Message:   findingMessage(err, instance, a.subDefinition[position.instancePath]),
-		})
+		// Nothing inside such a position was built, so a declaration of
+		// sensitivity there is read off the failure's own location chain.
+		rpt.append(a.libraryFinding(err, document, instance,
+			instancePathFromPointer(deepest), a.subDefinition[position.instancePath]))
 		return
 	}
 }

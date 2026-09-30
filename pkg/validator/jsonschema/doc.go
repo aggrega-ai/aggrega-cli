@@ -9,7 +9,7 @@
 // Wasm-validator socket extraction supplies an alternative implementation
 // honoring the same Validator contract.
 //
-// The adapter recognises four extension keywords and overrides the
+// The adapter recognises five extension keywords and overrides the
 // library's default semantics for the first two:
 //
 //   - x-aggrega-when:  template predicate gating a JSON Schema subtree.
@@ -24,6 +24,10 @@
 //     (the catalog selector resolution machinery).
 //   - x-aggrega-inject:    pass-through metadata consumed elsewhere
 //     (the inject-mechanism resolution machinery).
+//   - x-aggrega-sensitive: declares the value at a position sensitive. It
+//     constrains nothing; a Validator built with WithholdSensitiveValues
+//     reads it to decide what a finding may say (see below), and one built
+//     without passes it through.
 //
 // The wrapper that the compact-form compiler emits for non-trivial when:
 // cases (if: true + then: + optional else: + x-aggrega-when:) is
@@ -69,6 +73,31 @@
 // enough to reach ten places reports element 10 before element 2; and a
 // property name containing a character below the path separator sorts ahead
 // of a deeper path under a shorter name.
+//
+// # A value declared sensitive
+//
+// A schema library's sentence for a failed constraint quotes the value that
+// failed it, which is what makes the sentence useful to an author — and what
+// makes it unacceptable where the value is secret. A Validator built with
+// WithholdSensitiveValues composes, for every finding at a position whose
+// schema declares its value sensitive and at every position inside one, a
+// sentence of its own from the schema: the keyword that refused the value, its
+// constraint as the schema states it, and the placeholder `<redacted>` where
+// the value would have been. So a private key written where a pattern admits
+// only a public one is refused as
+//
+//	pattern: <redacted> does not satisfy pattern "-----BEGIN [A-Z ]*PUBLIC KEY-----" (the value is withheld because the schema declares it sensitive)
+//
+// with the finding's path naming the key it was written under. Where the
+// finding names no keyword the position declares, the sentence says only that
+// the value does not satisfy the schema declared there.
+//
+// A declaration is inherited by every position beneath the one carrying it,
+// whether the walk reaches that position itself or the library checks it as
+// part of a subtree evaluated whole; in the second case the declaration is
+// read off the failure's own location chain, or carried down by the format
+// sweep. A declaration written beside a reference and one written inside the
+// schema the reference names are both honoured.
 //
 // # What this adapter is the authority for
 //

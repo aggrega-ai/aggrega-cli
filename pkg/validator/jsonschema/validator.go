@@ -69,12 +69,19 @@ type Context struct {
 //
 // The schema must not be mutated after New returns; the adapter holds
 // references into it.
-func New(schema *jsonschema.Schema) (Validator, error) {
+//
+// Each Option adjusts how the Validator reports what it finds; with none it
+// reports as it always has.
+func New(schema *jsonschema.Schema, opts ...Option) (Validator, error) {
 	if schema == nil {
 		return nil, &AdapterError{
 			Message: "schema is nil",
 			Err:     ErrSchemaResolve(),
 		}
+	}
+	var chosen options
+	for _, opt := range opts {
+		opt(&chosen)
 	}
 
 	// A format name outside the supported set is refused before anything is
@@ -104,6 +111,8 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 		dependentSchemas:      map[string][]*dependentEntry{},
 		keywords:              map[string]*positionKeywords{},
 		expanding:             map[string]bool{},
+		withholdSensitive:     chosen.withholdSensitive,
+		sensitive:             map[string]*jsonschema.Schema{},
 	}
 
 	// First pass: walk the schema to find x-aggrega-when: and
@@ -307,6 +316,21 @@ type googleAdapter struct {
 	// stood up on its own to its schema, so the format sweep reaches the subtree
 	// the whole-document check covers for everything else.
 	unresolvedNodes map[string]*jsonschema.Schema
+
+	// withholdSensitive reports that a finding at a position whose value is
+	// sensitive carries no part of that value; see WithholdSensitiveValues.
+	withholdSensitive bool
+
+	// sensitive maps the instance path of each position the index built whose
+	// value is sensitive — declared there, or inside a position that declares it
+	// — to that position's schema. Recorded whether or not withholdSensitive is
+	// set, and read only where it is.
+	sensitive map[string]*jsonschema.Schema
+
+	// sensitiveDepth counts the positions being built, from the root down to the
+	// one in hand, whose schemas declare their value sensitive, so a position
+	// inside one inherits the declaration. Construction only; see enterSensitive.
+	sensitiveDepth int
 }
 
 // branchIndex carries a single combinator branch's (or
@@ -377,6 +401,11 @@ type branchIndex struct {
 	// in deciding whether the branch matches, as every other constraint does.
 	format  string
 	regions []*jsonschema.Schema
+
+	// sensitive is this branch's schema when the value at its position is
+	// sensitive — declared on the branch, or on a position enclosing it — and
+	// nil otherwise.
+	sensitive *jsonschema.Schema
 }
 
 // patternEntry pairs a compiled regex with its sub-schema's

@@ -375,6 +375,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	// the permissive direction, which is the direction no positive test can
 	// see — a schema in this shape reads as stricter than one that inlines
 	// the same constraints while enforcing none of them.
+	declaredSensitive := DeclaresSensitive(s.Extra)
 	definition := ""
 	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
 		s = substituted
@@ -385,6 +386,14 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		definition = name
 		a.expanding[name] = true
 		defer delete(a.expanding, name)
+	}
+
+	// Recorded before the position is resolved, so a position that cannot be
+	// stood up on its own is recorded too, and noted before anything beneath it
+	// is built, so every position inside it inherits the declaration.
+	defer a.enterSensitive(declaredSensitive, s)()
+	if a.sensitiveDepth > 0 {
+		a.sensitive[path] = s
 	}
 
 	// The name a diagnostic at this position cites.
@@ -650,6 +659,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	// indexSubSchemas, and overridden where this branch names a definition
 	// of its own: the nearest name is the one that describes the shape the
 	// value was checked against.
+	declaredSensitive := DeclaresSensitive(s.Extra)
 	definition := enclosing
 	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
 		s = substituted
@@ -657,6 +667,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		a.expanding[name] = true
 		defer delete(a.expanding, name)
 	}
+	defer a.enterSensitive(declaredSensitive, s)()
 
 	resolved, err := s.Resolve(nil)
 	if err != nil {
@@ -664,6 +675,9 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	}
 
 	bi := &branchIndex{definition: definition, format: s.Format, regions: a.libraryRegions(s)}
+	if a.sensitiveDepth > 0 {
+		bi.sensitive = s
+	}
 
 	// Uses the same ambient-defs threading as indexSubSchemas;
 	// nextAmbient = s.Defs post-graft.
