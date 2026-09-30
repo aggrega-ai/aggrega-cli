@@ -141,8 +141,7 @@ func TestATokenIssuedForThisDeploymentReachesTheProtocolSurface(t *testing.T) {
 //
 // The list is read back because a 200 carrying an error envelope would satisfy a
 // status check while nothing had been served — which is exactly what an admitted
-// credential has to disprove. How many tools came back is left to the caller,
-// because that is the separate question of what the credential's grant admits.
+// credential has to disprove. How many tools came back is left to the caller.
 func wantReachedTheProtocolSurface(t *testing.T, got answer) []string {
 	t.Helper()
 	if got.status != http.StatusOK {

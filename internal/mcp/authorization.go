@@ -342,14 +342,6 @@ func plaintextOffLoopback(address *url.URL) bool {
 	return strings.EqualFold(address.Scheme, "http") && !hostIsLoopback(address.Hostname())
 }
 
-// The two reasons this deployment gives a caller for not accepting what it
-// presented, spelled as the bearer scheme spells them.
-//
-// They are the whole vocabulary a refused caller receives: one says the
-// credential was not a usable one, the other that it was not accepted. Neither
-// says why in any finer detail, deliberately — a caller learns whether to
-// obtain a new token, and an attacker learns nothing about which check refused
-// it.
 // The three reasons this deployment gives a caller for not accepting what it
 // presented, spelled as the bearer scheme spells them.
 //
