@@ -21,6 +21,9 @@ import (
 // bounds: a token missing a scope would be refused by the scope check whatever
 // the deny setting said, and a proof written against one would pass against a
 // build in which the setting did nothing at all.
+//
+// That is a statement about a call. A listing reads no scope, so the withdrawal
+// is held there under every credential, by the scope grid.
 
 // deniedReachCredential is the grant that makes the deny setting the only thing
 // left that can refuse a call.

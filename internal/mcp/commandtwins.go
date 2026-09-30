@@ -236,9 +236,10 @@ func (s *server) withSessionNotes(specs []toolSpec) []toolSpec {
 
 // curatedTools returns the curated, always-advertised set as this session serves
 // it to this request, in registry order: each tool carrying whatever this session
-// makes true of it, and only the tools this request's credential admits.
+// makes true of it, and only the tools a listing answered to this request names,
+// which the request's own credential does not narrow.
 func (s *server) curatedTools(ctx context.Context) []toolSpec {
-	return s.admittedReach(ctx).admitted(s.withSessionNotes(toolRegistry))
+	return s.admittedReach(ctx).listed(s.withSessionNotes(toolRegistry))
 }
 
 // firstSentence returns the leading sentence of a tool description, for the

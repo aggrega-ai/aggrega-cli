@@ -107,31 +107,32 @@ func TestAWriteScopedCredentialDraftsIntoTheServedWorkspace(t *testing.T) {
 	}
 }
 
-// TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheImport is the refused
-// half, and it is asserted on both channels a caller meets.
+// TestAReadScopedCredentialIsOfferedTheImportAndRefusedIt is the refused half,
+// and it is asserted on both channels a caller meets.
 //
-// A refusal at the call alone would leave a tool listed that the same credential
-// cannot use, which is the shape that sends a client after a call it will always
-// be refused. An absence from the listing alone would leave the tool callable by
-// name, which is what a client that read about it elsewhere actually does.
+// The tool is listed to a credential carrying only the read scope, on each
+// listing surface, because the list is what this server carries: a tool
+// withheld for want of a scope would be one no client acting for a user ever
+// calls, so the refusal that sends it after the write scope would never arrive.
+// The call is refused naming that scope and nothing is drafted, because a
+// listing that offered the tool and a call that then ran it would be a
+// credential bounding nothing.
 //
-// 🔴 PLANTED DEFECT, DEMONSTRATED: change the declared class of the import
-// operation in the operation set and this case reddens — the tool leaves the
-// write-scoped listing and the admitted call above is refused — with no edit to
-// the tool, because the tool declares no class of its own and the one it is
-// admitted under is read from that set where it is registered.
-func TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheImport(t *testing.T) {
+// 🔴 PLANTED DEFECT: change the declared class of the import operation in the
+// operation set and this case reddens — the refusal names the scope admitting
+// the new class rather than the write scope, or, where the new class is the
+// machine, the tool leaves both listings — and the admitted call above is
+// refused, with no edit to the tool, because the tool declares no class of its
+// own and the one it is admitted under is read from that set where it is
+// registered.
+func TestAReadScopedCredentialIsOfferedTheImportAndRefusedIt(t *testing.T) {
 	pointImportSeamAtTheDemoGuest(t)
 	f := newScopeGridFixture(t, false)
 	importOverTheListener(t, f, "flow.json", readImportFixture(t, langflowFixture))
 	before := treeUnder(t, f.root)
 
 	readOnly := f.grantOf(t, scopeRead)
-	offered := append(f.listed(t, readOnly), f.surfaced(t, readOnly)...)
-	if slices.Contains(offered, importToolName) {
-		t.Errorf("%s was offered to a credential carrying only the read scope; it was offered %v",
-			importToolName, sortedNames(offered))
-	}
+	wantListedOnBothSurfaces(t, f, readOnly, "a credential carrying only the read scope", importToolName)
 
 	got := f.callTool(t, readOnly, importToolName, importCallArguments("flow.json"))
 	wantRefusedForWantOfScope(t, importToolName, got, scopeAdmittingInThisTest(opsurface.ReachWorkspace))
@@ -140,16 +141,10 @@ func TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheImport(t *testing.T) 
 			before, after)
 	}
 
-	// The control: the same two listings under the credential that does admit
-	// it. Without this the case above would pass over a tool no listing carries
-	// at all, which is a different defect reading as this one being held.
-	writeScoped := f.grantOf(t, scopeWorkspaceWrite)
-	admitted := append(f.listed(t, writeScoped), f.surfaced(t, writeScoped)...)
-	if !slices.Contains(admitted, importToolName) {
-		t.Errorf("%s was offered to no credential at all, so the absence above measures the registry rather "+
-			"than the admission; the write-scoped credential was offered %v",
-			importToolName, sortedNames(admitted))
-	}
+	// The same two listings under the credential that does admit the call name
+	// it too, because the list does not move with the credential.
+	wantListedOnBothSurfaces(t, f, f.grantOf(t, scopeWorkspaceWrite), "the write-scoped credential",
+		importToolName)
 }
 
 // TestTheImportToolResolvesItsSourceInsideTheServedWorkspace is the containment

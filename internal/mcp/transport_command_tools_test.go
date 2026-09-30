@@ -177,10 +177,10 @@ func plantedCommandSurface() []CommandSurface {
 // plantedReach is the class it declares with it.
 //
 // A plant has to declare both to reach the surface the walk is about. A session
-// reached over HTTP advertises only the reach classes the request's credential
+// reached over HTTP advertises only the reach classes some scope it publishes
 // admits, and a spec carrying no class is taken to reach the machine — which no
-// credential admits — so a plant declaring nothing would be advertised nowhere
-// and the walk would have nothing to look at. Declaring the narrowest class is
+// scope admits — so a plant declaring nothing would be advertised nowhere and
+// the walk would have nothing to look at. Declaring the narrowest class is
 // what puts the plant in front of the walk, and says nothing about what the plant
 // does, which is the row's whole subject: the walk reads where a tool came from
 // rather than what it says about itself, so a plant claiming to reach nothing is

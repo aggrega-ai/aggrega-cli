@@ -167,14 +167,14 @@ func wantReachedTheProtocolSurface(t *testing.T, got answer) []string {
 }
 
 // wantReachedTheToolSurface is that plus the list being non-empty, which is what
-// a credential carrying at least the read scope is owed.
+// every credential this server admits is owed where it announces its tools.
 //
 // The two are separate because the empty list is a real answer rather than a
-// failure: a credential this deployment admitted and granted nothing reaches the
-// protocol surface and is offered no tool, and a caller asserting that is
-// asserting something different from a caller asserting the surface answered at
-// all. Folding them would make one helper mean two things and leave whichever
-// proof used it unable to say which.
+// failure: a server announcing an empty set of tools answers every credential it
+// admits with an empty list, and a caller asserting that is asserting something
+// different from a caller asserting the surface answered at all.
+// Folding them would make one helper mean two things and leave whichever proof
+// used it unable to say which.
 func wantReachedTheToolSurface(t *testing.T, got answer) {
 	t.Helper()
 	if len(wantReachedTheProtocolSurface(t, got)) == 0 {
@@ -483,11 +483,11 @@ const aTypeThisServerDoesNotAccept = "application/example-private+jwt"
 // nothing. The set is fixed in the source and there is no setting that widens
 // it, which is why no row here configures anything.
 //
-// Every row's token carries the read scope, which is what makes reading the list
-// back the signal it is meant to be: what a caller is offered is narrowed to what
-// its credential admits, so a token carrying no scope would be admitted and then
-// offered nothing — and this file is about whether a token is admitted, not about
-// what a grant reaches.
+// Every row's token carries the read scope, the grant a well-formed token for
+// this server ordinarily carries. The list read back is the signal that the
+// token was admitted: the list names what this server carries whatever a grant
+// reaches, and this file is about whether a token is admitted, not about what a
+// grant reaches.
 //
 // Planted defect, demonstrated: drop JWT from acceptedTokenTypes and the JWT row
 // reads back 401.

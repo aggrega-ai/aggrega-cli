@@ -94,7 +94,7 @@ func toolNotAnnounced(tool string) *rpcError {
 		Message: tool + " is a tool this server has and does not announce: its mcp.announce_tools setting " +
 			"names the tools it offers, and this is not one of them. No credential changes that, because the " +
 			"bound is on what this server offers rather than on how far you may reach. Whoever runs this " +
-			"server can change that setting; until they do, the tool list this server answers you with is " +
-			"what you can call from here.",
+			"server can change that setting; until they do, the tool list this server answers you with " +
+			"leaves this tool out.",
 	}
 }

@@ -484,9 +484,9 @@ func articled(jsonType string) string {
 // It is a concatenation of the two readers that already compose those halves
 // rather than a third walk over the registries. Each of them applies this
 // session's own composition — the disclosure a tool carries about its generated
-// twin — and each narrows what it composed by what this request admits, so a
-// walk written here would be a second derivation of both and would agree with
-// them only until one of the three was edited.
+// twin — and each narrows what it composed by what a listing answered to this
+// request names, so a walk written here would be a second derivation of both and
+// would agree with them only until one of the three was edited.
 //
 // The order is fixed twice over: each registry is in its own declared order and
 // the halves are joined in one, so the answer and its wire bytes are stable
@@ -523,12 +523,14 @@ func (s *server) servedTools(ctx context.Context) []toolSpec {
 // arguments a caller may send depends on how it reached the server, and the
 // listing is where it reads them.
 //
-// ctx is the request's own, and it is what the listing is narrowed by: a tool
-// the credential this request carried does not admit is absent from the answer,
-// so a client learns the bound from the list rather than from a failed call.
-// That is why the listing is composed per request rather than once per session —
-// this server holds nothing between requests, and two requests on one connection
-// may present different credentials.
+// ctx is the request's own, and the listing reads from it the admission every
+// listing and the call check pass through — and from that admission only what
+// this server announces and carries on this transport, never what the request's
+// credential admits. A tool the credential does not
+// admit is in this answer and refused at the call with a challenge naming the
+// scope that would admit it, because a client acting for a user offers a model
+// only what it listed: a tool withheld for want of a scope is one no call names,
+// so the refusal that sends the client after that scope would never arrive.
 func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 	served := s.servedTools(ctx)
 	tools := make([]tool, 0, len(served))
@@ -568,9 +570,9 @@ func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 // which does not: it is a refusal of the request rather than an outcome of the
 // tool, the tool never ran, and the transport carries it under its own status with
 // the challenge naming the scope that would admit it. A tool the credential does
-// not admit is also absent from that request's tool list, so this answer is what a
-// caller reaches by naming a tool directly rather than by reading what it was
-// offered.
+// not admit is still in that request's tool list, so this answer is what a caller
+// reaches by calling what it was offered, and it is what a client acting for a
+// user answers by signing in again for the scope the challenge names.
 //
 // ctx is the run's own, handed to the resolved tool. Every tool that publishes,
 // pulls, builds, lints or searches carries it into the work it drives, so ending

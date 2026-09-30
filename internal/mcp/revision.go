@@ -240,11 +240,12 @@ type cacheHint struct {
 //
 // Two different things earn the other hint, and they earn it for reasons that
 // are separate all the way down: content read out of the caller's own workspace
-// changes under their editor between one request and the next, and content the
-// request's own credential shaped belongs to the caller that presented it. Both
-// are private and both are stale on arrival — the second because this server
-// holds nothing between requests, so the very next request on the same
-// connection may present a different credential and be owed a different answer.
+// changes under their editor between one request and the next, and content
+// answered only to a caller who presented a credential belongs behind that
+// credential. Both are private and both are stale on arrival — the second
+// because this server holds nothing between requests and checks the credential
+// on every one of them, so a copy kept past its request would be served without
+// the check that admitted it.
 //
 // compiledInCacheHint is the first of the two.
 func compiledInCacheHint() cacheHint {
@@ -264,12 +265,13 @@ func privateCacheHint() cacheHint {
 // answer here whose hint depends on HOW THE CALLER REACHED THIS SERVER rather
 // than on what it asked for.
 //
-// A client that launched this process is served a list narrowed by nothing, so
-// the list is the same for every caller of that process and keeps as long as the
-// process does: public. A caller reaching a listener is served the tools its own
-// credential admits, so the answer is that caller's alone and is owed again the
-// moment the credential changes — which, on a transport that holds nothing
-// between requests, is any request at all.
+// A client that launched this process is served a list that is the same for
+// every caller of that process and keeps as long as the process does: public. A
+// caller reaching a listener is served the list only once the credential it
+// presented has been accepted, so the answer belongs behind that credential:
+// private, and owed again on the next request, which presents its credential
+// again — on a transport that holds nothing between requests, a copy kept past
+// the request would be an answer served without the check that admits it.
 func (s *server) toolListCacheHint() cacheHint {
 	if s.transport == transportHTTP {
 		return privateCacheHint()
@@ -301,8 +303,8 @@ func cacheHintFor(era protocolEra, hint cacheHint) cacheHint {
 // compiled-in hint. resources/read is the first exception: its content comes
 // from whichever family the URI named, so its hint is chosen where the family is
 // resolved and this site leaves it as it found it. The tool list is the second:
-// it is narrowed by what the request's own credential admits, so its hint is
-// chosen by the transport the session speaks rather than fixed here.
+// over a listener it is answered only to a caller who presented a credential, so
+// its hint is chosen by the transport the session speaks rather than fixed here.
 //
 // Two answers deliberately reach the end untouched. The per-request revision
 // defines neither ping nor initialize — its client-request set names ten

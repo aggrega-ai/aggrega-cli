@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // Every proof here drives the reader the handler SHIPS with for a deployment
@@ -133,6 +135,19 @@ func (f *proxyFixture) callWith(t *testing.T, headers map[string]string) answer 
 		sent[name] = value
 	}
 	return f.send(t, http.MethodPost, endpointPath, sent, modernRequest(t, 1, "tools/list", nil))
+}
+
+// callToolWith posts one tools/call in the per-request revision carrying the
+// given headers, for the proofs that read what a caller may run rather than what
+// it is listed.
+func (f *proxyFixture) callToolWith(t *testing.T, headers map[string]string, tool string, args map[string]any) answer {
+	t.Helper()
+	sent := modernHeaders("tools/call", tool)
+	for name, value := range headers {
+		sent[name] = value
+	}
+	return f.send(t, http.MethodPost, endpointPath, sent,
+		modernRequest(t, 1, "tools/call", map[string]any{"name": tool, "arguments": args}))
 }
 
 // A deployment reading its caller from a proxy is refused on an address the
@@ -286,28 +301,28 @@ func TestAProxyDeploymentRefusesARequestCarryingNoPrincipalHeader(t *testing.T) 
 // Only the two configured headers are read. A deployment naming no scopes
 // header asserts no scopes, whatever else the request carries.
 //
-// What the caller is then offered is the second half of the same assertion, and
-// it is the half a reader can check from outside: the header this deployment did
-// not name asked for the registry-write scope, so had it been read the four
-// publication tools would be on the list that came back. An empty list is what
+// What the caller may then run is the second half of the same assertion, and it
+// is the half a reader can check from outside: the header this server was not
+// told to read asked for the registry-write scope, so had it been read a
+// publication would be admitted. A publication refused naming that scope is what
 // says it was not — a stronger statement than the recorded principal alone,
-// because it reads the consequence rather than the reader's own output.
+// because it reads the consequence rather than the reader's own output. The tool
+// list cannot say it either way: it names what this server carries whatever a
+// caller was granted, so it is read here only as the surface having answered at
+// all.
 func TestAProxyDeploymentReadsOnlyTheHeadersItNamed(t *testing.T) {
 	f := newProxyFixture(t, proxyTransport(
 		TrustedProxyConfig{PrincipalHeader: testPrincipalHeader}, nil))
 
-	got := f.callWith(t, map[string]string{
+	headers := map[string]string{
 		testPrincipalHeader: testAssertedPrincipal,
 		// Named by no setting in this deployment. A reader consulting a header
 		// the deployment did not name would make a second thing trustable that
 		// the confinement does not cover.
 		testScopesHeader:  scopeRegistryWrite,
 		"X-Forwarded-For": "203.0.113.7",
-	})
-	if offered := wantReachedTheProtocolSurface(t, got); len(offered) != 0 {
-		t.Errorf("the caller was offered %v; this deployment named no scopes header, so it asserted no "+
-			"scope and a caller holding none is offered nothing", offered)
 	}
+	wantReachedTheToolSurface(t, f.callWith(t, headers))
 
 	arrived := f.seen.last()
 	if arrived == nil {
@@ -316,6 +331,10 @@ func TestAProxyDeploymentReadsOnlyTheHeadersItNamed(t *testing.T) {
 	if len(arrived.Scopes) != 0 {
 		t.Errorf("scopes = %+v, want none: this deployment named no scopes header", arrived.Scopes)
 	}
+
+	published := f.callToolWith(t, headers, "publish-entity",
+		map[string]any{"entity": "component.yaml", "dry_run": true})
+	wantRefusedForWantOfScope(t, "publish-entity", published, scopeAdmittingInThisTest(opsurface.ReachRegistry))
 }
 
 // No token is processed in proxy mode, and the pair of rows below is what shows
@@ -353,10 +372,10 @@ func TestNoTokenIsProcessedWhereAProxyAssertsTheCaller(t *testing.T) {
 	served := f.callWith(t, map[string]string{
 		headerAuthorization: bearer(issuedForSomebodyElse),
 		testPrincipalHeader: testAssertedPrincipal,
-		// The proxy asserts the read scope alongside the caller, so the list
-		// read back is non-empty and the row's signal is that the surface was
-		// served rather than that a grant was narrow. What this row is about is
-		// the token in the authorization header being ignored.
+		// The proxy asserts the read scope alongside the caller, as a proxy in
+		// front of a server read this way does; the list read back is the row's
+		// signal that the surface was served. What this row is about is the
+		// token in the authorization header being ignored.
 		testScopesHeader: scopeRead,
 	})
 	wantReachedTheToolSurface(t, served)
@@ -390,9 +409,9 @@ func TestAProxyDeploymentNeverReachesForVerificationKeys(t *testing.T) {
 	f := newProxyFixture(t, proxyTransport(testTrustedProxy(), gate.gate()))
 	got := f.callWith(t, map[string]string{
 		testPrincipalHeader: testAssertedPrincipal,
-		// The read scope, so the list read back is non-empty and this row's
-		// signal is that the deployment served at all rather than that a grant
-		// was narrow.
+		// The read scope, as a proxy in front of a server read this way
+		// asserts; the list read back is this row's signal that the server
+		// answered at all.
 		testScopesHeader: scopeRead,
 	})
 	wantReachedTheToolSurface(t, got)

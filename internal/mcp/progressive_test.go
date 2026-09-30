@@ -668,9 +668,9 @@ func TestEveryToolServedIsAnnounced(t *testing.T) {
 		bytesTotal += len(s.advertisedDescription(served[i]))
 		bytesTotal += len(served[i].inputSchema)
 		// Compared by NAME against what the registry declares, never by position:
-		// the served order spans three registries and is narrowed per request, so a
-		// positional comparison would read one tool's text against another's the
-		// moment anything moved.
+		// the served order spans three registries and is narrowed by what this
+		// server lists, so a positional comparison would read one tool's text
+		// against another's the moment anything moved.
 		if base, known := declared[served[i].name]; known && len(served[i].description) > len(base) {
 			disclosed++
 		}

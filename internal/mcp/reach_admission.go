@@ -29,6 +29,12 @@ import (
 // generated command tools, which a session reached over HTTP is composed
 // without. The floor is therefore structural and this mapping restates it
 // rather than enforcing it.
+//
+// It names the scope a refusal asks for. Which classes some scope admits at all
+// — the question a listing over a listener asks — is read from the implications
+// below rather than from here, because that question is the call check's own
+// one asked of every published scope at once, and a second route to its answer
+// would agree with the call check only until one of the two was edited.
 func scopeAdmitting(class opsurface.Reach) string {
 	switch class {
 	case opsurface.ReachNone:
@@ -60,7 +66,8 @@ var scopeImplications = map[string][]opsurface.Reach{
 	scopeRegistryWrite:  {opsurface.ReachNone, opsurface.ReachRegistry},
 }
 
-// reachAdmission is which reach classes one request may run.
+// reachAdmission is which reach classes one request may run, and which tools a
+// listing answered to that request names.
 //
 // It is a property of the request rather than of the session: this server holds
 // nothing between requests, a caller reaching a listener presents its credential
@@ -68,20 +75,39 @@ var scopeImplications = map[string][]opsurface.Reach{
 // different ones. So it is computed where a request is answered and never stored
 // beside the server.
 //
-// The zero value admits nothing, which is the value a request that asserted
-// nothing gets. That direction is deliberate: a credential check that admitted a
-// request while attaching nothing to it would otherwise hand that request the
-// whole surface, and a mapping whose zero value is "everything" fails open on
-// exactly the path nobody is looking at.
+// The zero value admits nothing and lists nothing, which is the value a request
+// that asserted nothing gets. That direction is deliberate: a credential check
+// that admitted a request while attaching nothing to it would otherwise hand that
+// request the whole surface, and a mapping whose zero value is "everything" fails
+// open on exactly the path nobody is looking at.
 type reachAdmission struct {
+	// classes is what the request's own credential admits, and it is read by
+	// the call check alone.
 	classes map[opsurface.Reach]bool
+
+	// reachable is every class some credential on this transport could be
+	// admitted to, whatever this request's own credential holds: every class
+	// for a caller at this machine's keyboard, and over a listener exactly the
+	// classes some scope this server publishes admits, for a request that
+	// presented a credential at all. A request over a listener that presented
+	// none is given no class here, as it is given none above.
+	//
+	// It is what a listing reads where the call check reads the credential. A
+	// client acting for a user offers a model only the tools it listed, so a
+	// tool withheld from the list for want of a scope is one no call ever
+	// names, and the refusal that would tell the client which scope to obtain
+	// never arrives. A class no scope admits is a different matter: no
+	// credential changes it, so a tool of that class stays out of the list as a
+	// tool of a withdrawn class does.
+	reachable map[opsurface.Reach]bool
 
 	// denied is what this deployment does not carry, whatever the request's
 	// credential asserted. It is kept beside the scope answer rather than
 	// subtracted from it, because the two produce different refusals: a class
 	// a scope would admit and the deployment withdrew is not reachable with a
 	// better token, and telling its caller to obtain one would send it round a
-	// loop it cannot finish.
+	// loop it cannot finish. A listing reads it where it reads no scope answer,
+	// which is the second reason the two are kept apart.
 	denied map[opsurface.Reach]bool
 
 	// announced names the tools this server announces, and nil announces every
@@ -92,11 +118,12 @@ type reachAdmission struct {
 	// second place a tool can be hidden is a second answer that can come to
 	// disagree with the first about one request.
 	//
-	// It is asked apart from the two bounds above because a caller can act on
-	// none of the three in the same way: a scope is obtained, a withdrawn class
-	// is not reachable at all, and a tool this server does not announce is one
-	// the person running it chose not to offer. A refusal that conflated them
-	// would tell a caller to do something that would change nothing.
+	// It is asked apart from the scope answer and the withdrawal because a
+	// caller can act on none of the three in the same way: a scope is obtained,
+	// a withdrawn class is not reachable at all, and a tool this server does not
+	// announce is one the person running it chose not to offer. A refusal that
+	// conflated them would tell a caller to do something that would change
+	// nothing.
 	announced map[string]bool
 }
 
@@ -149,16 +176,19 @@ func admitEveryClass() reachAdmission {
 	for _, class := range opsurface.Classes() {
 		classes[class] = true
 	}
-	return reachAdmission{classes: classes}
+	return reachAdmission{classes: classes, reachable: classes}
 }
 
 // admissionFromScopes is what the scopes a credential asserted admit.
 //
-// A credential asserting no scope at all admits nothing. There is no anonymous
+// A credential asserting no scope at all admits no call. There is no anonymous
 // read of any surface here, and a token carrying no scope is a token whose
 // authorization server granted its bearer none of what this deployment
-// publishes — which is a different thing from a token nobody presented, and is
-// answered the same way a call outside the admitted set is.
+// publishes — which is a different thing from a token nobody presented, and each
+// call it makes is answered the way a call outside the admitted set is. What it
+// is listed is not narrowed by that, because no listing reads a credential's
+// scopes: it is told what this server carries and refused at each call, naming
+// the scope that would admit it.
 //
 // A scope this deployment does not publish is ignored rather than refused. An
 // authorization server may issue a token carrying scopes for several resource
@@ -173,8 +203,19 @@ func admissionFromScopes(scopes []string) reachAdmission {
 	return reachAdmission{classes: classes}
 }
 
-// admittedReach is what this request may run, on the transport that composed
-// this session.
+// reachableOverAListener is every class some scope this server publishes admits:
+// what a credential carrying all of them would be admitted to.
+//
+// It is the call check's own mapping asked once for every published scope, so a
+// class a scope is taught to admit reaches the listing with no edit here, and a
+// class no scope admits stays out of it for the same reason a call to it is
+// refused with no challenge.
+func reachableOverAListener() map[opsurface.Reach]bool {
+	return admissionFromScopes(publishedScopes()).classes
+}
+
+// admittedReach is what this request may run, and what a listing answered to it
+// names, on the transport that composed this session.
 //
 // The deployment's own withdrawal is applied here rather than beside any reader,
 // because this is the one predicate every listing and the call check already
@@ -203,8 +244,17 @@ func (s *server) admittedReach(ctx context.Context) reachAdmission {
 // server announces is read.
 //
 // It is separated from the composition above so that the announcement is
-// attached at one point rather than at each of the three the class answer takes.
-// Three attachments would be three places to forget one.
+// attached at one point rather than at each path the class answer takes. An
+// attachment per path would be a place per path to forget one.
+//
+// A listing is answered only to a caller who presented a credential, and that
+// holds here as well as at the authenticator. What a listing over a listener may
+// carry is attached to a request carrying a principal, whatever scopes that
+// principal holds and none included, and to no other request. A path that
+// reached a listing without passing the credential check is therefore answered
+// with nothing rather than with the whole surface: the zero value is what it
+// gets, with what mcp.deny_reach withdraws still attached, because that bound
+// holds whatever a request asserted.
 func (s *server) classAdmission(ctx context.Context) reachAdmission {
 	if s.transport != transportHTTP {
 		return admitEveryClass()
@@ -214,6 +264,7 @@ func (s *server) classAdmission(ctx context.Context) reachAdmission {
 		return reachAdmission{denied: s.deniedReach}
 	}
 	a := admissionFromScopes(p.Scopes)
+	a.reachable = reachableOverAListener()
 	a.denied = s.deniedReach
 	return a
 }
@@ -229,14 +280,25 @@ func (a reachAdmission) announces(tool string) bool {
 	return a.announced == nil || a.announced[tool]
 }
 
-// admitsTool reports whether a tool is offered to this request at all: one this
-// server announces, of a class this request may run.
+// lists reports whether a listing answered to this request names the tool: one
+// this server announces, of a class it carries and some credential on this
+// transport could be admitted to.
 //
-// It is the conjunction the listings read, written once rather than at each of
-// them, so the two bounds are applied in one order everywhere and a tool cannot
-// be offered by one surface and withheld by another.
-func (a reachAdmission) admitsTool(spec toolSpec) bool {
-	return a.announces(spec.name) && a.admits(declaredReach(spec))
+// It reads nothing the request's credential asserted, which is what separates it
+// from the call check. The two answer different questions — what this server
+// carries, and whether this call may run — so a tool the
+// credential does not admit is listed and refused at the call, naming the scope
+// that would admit it, which is the refusal a client acting for a user answers
+// by signing in again for that scope. Past whether a credential was presented at
+// all, what it reads is only what no credential can change, so a tool it leaves
+// out of a credentialed caller's list is one no better token would put back.
+//
+// It is read at one site, the filter below, so every listing applies the same
+// bounds in the same order and a tool cannot be offered by one surface and
+// withheld by another.
+func (a reachAdmission) lists(spec toolSpec) bool {
+	class := declaredReach(spec)
+	return a.announces(spec.name) && !a.denied[class] && a.reachable[class]
 }
 
 // deniedByDeployment reports whether this deployment withdrew the class,
@@ -264,8 +326,8 @@ func (a reachAdmission) boundsAnything() bool {
 	return false
 }
 
-// admitted reports the specs from the given set this request may run, in the
-// order they were given.
+// listed reports the specs from the given set a listing answered to this request
+// names, in the order they were given.
 //
 // It is the one filter every listing on this server passes through, which is
 // what makes the tool list and the capability tool's answer agree for one
@@ -274,14 +336,13 @@ func (a reachAdmission) boundsAnything() bool {
 //
 // A listing reads the class each tool's operation DECLARES and never a widening
 // the tool's own arguments would produce, because a listing is composed before
-// any arguments exist. So a tool that widens is listed to a caller that may run
-// its declared class and refused at the call that widens it — which is the
-// honest pair: the tool is genuinely available to that caller, for the calls
-// that stay inside what the credential admits.
-func (a reachAdmission) admitted(specs []toolSpec) []toolSpec {
+// any arguments exist. So a tool that widens is listed under the class it
+// declares, and a call whose widening the credential does not admit is refused
+// naming the scope that admits the widening.
+func (a reachAdmission) listed(specs []toolSpec) []toolSpec {
 	out := make([]toolSpec, 0, len(specs))
 	for i := range specs {
-		if a.admitsTool(specs[i]) {
+		if a.lists(specs[i]) {
 			out = append(out, specs[i])
 		}
 	}
@@ -310,12 +371,14 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 // admissionRefusal reports what a call is answered with when this request may
 // not run it, and nil when it may.
 //
-// It reads the same admission every listing is composed from, and in the order
-// the listings apply it: what this server announces, then what the credential
-// admits. Reading the announcement first is what keeps the two answers agreeing
-// about one request — a tool this server does not announce is absent from that
-// request's listing whatever its class, so a refusal naming a scope would send a
-// caller after a credential that would not put the tool back.
+// It reads the same admission every listing is composed from, and asks what this
+// server announces first, as a listing does. Reading the announcement first is
+// what keeps the two answers agreeing about one request — a tool this server does
+// not announce is absent from every listing whatever its class, so a refusal
+// naming a scope would send a caller after a credential that would not put the
+// tool back. Past the announcement it asks what the credential admits, which no
+// listing asks: a tool listed to a caller whose credential does not admit it is
+// refused here, naming the one scope that would.
 //
 // The class is read twice and in one order: the class the operation declares,
 // then the widening the tool's own arguments produce where that tool has one.
@@ -386,7 +449,7 @@ func reachWithdrawnByDeployment(tool string, class opsurface.Reach) *rpcError {
 		Message: tool + " " + reachInCallerWords(class) + ", and this deployment does not carry that: " +
 			"its mcp.deny_reach setting names " + string(class) + ". No credential lifts it, because the bound " +
 			"is the deployment's rather than yours. Whoever runs this server can change that setting; until " +
-			"they do, the tool list this server answers you with is what you can reach from here.",
+			"they do, the tool list this server answers you with leaves this tool out.",
 	}
 }
 
@@ -426,7 +489,7 @@ func insufficientScope(tool string, class opsurface.Reach) *rpcError {
 			httpStatus: statusInsufficientScope,
 			Message: tool + " " + reachInCallerWords(class) + ", which no credential admits to a caller " +
 				"reaching this server over HTTP. An operation of that reach is run at a terminal on the host " +
-				"instead. The tool list this server answers you with is what you can reach from here.",
+				"instead, which is why the tool list this server answers you with carries none.",
 		}
 	}
 	return &rpcError{
@@ -435,7 +498,7 @@ func insufficientScope(tool string, class opsurface.Reach) *rpcError {
 		insufficientScope: scope,
 		Message: tool + " " + reachInCallerWords(class) + ", and the credential this call presented does " +
 			"not carry a scope that admits it. Obtain a token carrying " + scope + " and call again. The tool " +
-			"list this server answers you with names what the credential you hold can reach, so a tool absent " +
-			"from it is one this credential does not admit rather than one this server does not have.",
+			"list this server answers you with names every tool it carries whatever your credential holds; " +
+			"the credential decides which of them a call may run.",
 	}
 }

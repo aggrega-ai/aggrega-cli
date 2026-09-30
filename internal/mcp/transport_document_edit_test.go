@@ -97,30 +97,29 @@ func TestAWriteScopedCredentialEditsADocumentUnderTheServedRoot(t *testing.T) {
 	}
 }
 
-// TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheEdit is the refused
-// half, and it is asserted on both channels a caller meets.
+// TestAReadScopedCredentialIsOfferedTheEditAndRefusedIt is the refused half,
+// and it is asserted on both channels a caller meets.
 //
-// A refusal at the call alone would leave a tool listed that the same credential
-// cannot use, which is the shape that sends a client after a call it will always
-// be refused. An absence from the listing alone would leave the tool callable by
-// name, which is what a client that read about it elsewhere actually does.
+// The tool is listed to a credential carrying only the read scope, on each
+// listing surface, because the list is what this server carries: a client
+// acting for a user offers a model only what it listed, so a tool withheld for
+// want of a scope would be one no call names, and the refusal that sends the
+// client after the write scope would never arrive. The call is refused naming
+// that scope and nothing reaches the document, because a listing that offered
+// the tool and a call that then ran it would be a credential bounding nothing.
 //
 // 🔴 PLANTED DEFECT, DEMONSTRATED: change the declared class of the document-edit
 // operation in the operation set to machine and this case reddens — the tool
 // leaves the write-scoped listing and the admitted call above is refused — with
 // no edit to the tool, because the tool declares no class of its own and the one
 // it is admitted under is read from that set where it is registered.
-func TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheEdit(t *testing.T) {
+func TestAReadScopedCredentialIsOfferedTheEditAndRefusedIt(t *testing.T) {
 	f := newScopeGridFixture(t, false)
 	rel, abs := editOverTheListener(t, f)
 	before := readEditedDocument(t, abs)
 
 	readOnly := f.grantOf(t, scopeRead)
-	offered := append(f.listed(t, readOnly), f.surfaced(t, readOnly)...)
-	if slices.Contains(offered, editDocumentToolName) {
-		t.Errorf("%s was offered to a credential carrying only the read scope; it was offered %v",
-			editDocumentToolName, sortedNames(offered))
-	}
+	wantListedOnBothSurfaces(t, f, readOnly, "a credential carrying only the read scope", editDocumentToolName)
 
 	got := f.callTool(t, readOnly, editDocumentToolName, editCallArguments(rel))
 	wantRefusedForWantOfScope(t, editDocumentToolName, got,
@@ -130,15 +129,29 @@ func TestAReadScopedCredentialIsNeitherOfferedNorAllowedTheEdit(t *testing.T) {
 			before, after)
 	}
 
-	// The control: the same two listings under the credential that does admit
-	// it. Without this the case above would pass over a tool no listing carries
-	// at all, which is a different defect reading as this one being held.
-	writeScoped := f.grantOf(t, scopeWorkspaceWrite)
-	admitted := append(f.listed(t, writeScoped), f.surfaced(t, writeScoped)...)
-	if !slices.Contains(admitted, editDocumentToolName) {
-		t.Errorf("%s was offered to no credential at all, so the absence above measures the registry rather "+
-			"than the admission; the write-scoped credential was offered %v",
-			editDocumentToolName, sortedNames(admitted))
+	// The same two listings under the credential that does admit the call name
+	// it too, because the list does not move with the credential.
+	wantListedOnBothSurfaces(t, f, f.grantOf(t, scopeWorkspaceWrite), "the write-scoped credential",
+		editDocumentToolName)
+}
+
+// wantListedOnBothSurfaces asserts that each of the two listings a listener
+// serves — tools/list and the capability tool's unscoped index — names the tool
+// to this credential, on its own rather than as a union, so a surface that
+// dropped the tool fails even where the other one carried it.
+func wantListedOnBothSurfaces(t *testing.T, f *scopeGridFixture, credential, who, tool string) {
+	t.Helper()
+	for _, surface := range []struct {
+		name  string
+		names []string
+	}{
+		{"tools/list", f.listed(t, credential)},
+		{describeCapabilitiesName, f.surfaced(t, credential)},
+	} {
+		if !slices.Contains(surface.names, tool) {
+			t.Errorf("%s did not list %s to %s; the list is what this server carries whatever the "+
+				"credential holds, and it listed %v", surface.name, tool, who, sortedNames(surface.names))
+		}
 	}
 }
 
@@ -249,7 +262,10 @@ func withPlantedMachineReachTool(t *testing.T, spec toolSpec) {
 //
 // A tool of that class is absent from every listing a listener serves, whatever
 // scopes the token carries — so the assertion runs over every grant an
-// authorization server can issue here, including the one carrying all three.
+// authorization server can issue here, including the one carrying all three and
+// the one carrying none. The listing is what the server carries rather than what
+// a credential holds, and a class no scope admits is one no credential changes,
+// so a listener leaves it out as it leaves out a withdrawn kind.
 //
 // The stdio session listing the same planted tool is the CONTROL, and it is what
 // makes this measure the admission rather than the registry. Without it, a
@@ -269,10 +285,23 @@ func TestNoListenerOffersAToolThatReachesTheMachine(t *testing.T) {
 	for _, row := range gridGrants() {
 		t.Run(row.name, func(t *testing.T) {
 			credential := f.grantOf(t, row.grant...)
-			offered := append(f.listed(t, credential), f.surfaced(t, credential)...)
-			if slices.Contains(offered, planted.name) {
-				t.Errorf("a tool reaching the machine was offered to %s; it was offered %v",
-					row.name, sortedNames(offered))
+			surfaces := []struct {
+				name  string
+				names []string
+			}{{"tools/list", f.listed(t, credential)}}
+			// A credential admitting no read is refused the capability tool's own
+			// call, which indexedFor asserts; it then has one listing to read.
+			if index, answered := f.indexedFor(t, credential, row.grant, map[string]any{}); answered {
+				surfaces = append(surfaces, struct {
+					name  string
+					names []string
+				}{describeCapabilitiesName, index})
+			}
+			for _, s := range surfaces {
+				if slices.Contains(s.names, planted.name) {
+					t.Errorf("%s listed a tool reaching the machine to %s; it listed %v",
+						s.name, row.name, sortedNames(s.names))
+				}
 			}
 
 			// Naming it directly is the other half: a tool absent from a listing

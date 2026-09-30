@@ -12,23 +12,31 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// What a credential's scopes admit, over a real listener, with the tokens minted
-// by an authorization server running in this process.
+// What a credential's scopes admit, and what the server lists whatever they
+// admit, over a real listener, with the tokens minted by an authorization server
+// running in this process.
 //
 // The grid is driven rather than reasoned about: every cell issues a real
-// request and reads a real answer. Its margins are the four grants an
+// request and reads a real answer. Its margins are the five grants an
 // authorization server can issue for this deployment crossed with one tool per
-// reach class; its interior is the build, which declares no reach and widens to
-// the workspace when the composition that decides a dependency fill says it
-// fills. A grid specified by its margins alone would discharge every clause it
-// was written for and leave that interior untested, which is the one cell the
-// whole escalation exists for.
+// reach class a scope admits; its interior is the build, which declares no reach
+// and widens to the workspace when the composition that decides a dependency
+// fill says it fills. A grid specified by its margins alone would discharge every
+// clause it was written for and leave that interior untested, which is the one
+// cell the whole escalation exists for. The class no scope admits is measured
+// with a planted tool beside the edit tool's proofs, over the same grants.
+//
+// Every cell is read twice, because the two answers are to different
+// questions: whether the tool is LISTED, which is what the server carries and
+// never what the credential holds, and what a CALL to it is answered with,
+// which is where the credential's scopes bound it.
 
 // scopeGridFixture is one listener over a workspace whose fill setting the case
 // chose, with a real authorization server behind it.
@@ -113,7 +121,9 @@ func newScopeGridFixtureWith(t *testing.T, fills bool, deny []string, announce m
 	return &scopeGridFixture{httpFixture: &httpFixture{ts: ts, h: h}, issuer: issuer, root: root, srv: s}
 }
 
-// grantOf mints a token carrying exactly the named scopes.
+// grantOf mints a token carrying exactly the named scopes. Naming none mints a
+// token whose authorization server granted nothing this server publishes, which
+// this server still accepts as a credential.
 func (f *scopeGridFixture) grantOf(t *testing.T, scopes ...string) string {
 	t.Helper()
 	return bearer(f.issuer.mint(t, tokenClaimSet{scopeList: scopes}))
@@ -132,7 +142,15 @@ func (f *scopeGridFixture) listed(t *testing.T, credential string) []string {
 // unscoped, which is the tail behind the set a caller meets first.
 func (f *scopeGridFixture) surfaced(t *testing.T, credential string) []string {
 	t.Helper()
-	got := f.callTool(t, credential, describeCapabilitiesName, map[string]any{})
+	return f.surfacedWith(t, credential, map[string]any{})
+}
+
+// surfacedWith is the tool names the capability tool answers this credential
+// with for the given arguments: the index for none or for a kind, and the
+// definitions for named tools.
+func (f *scopeGridFixture) surfacedWith(t *testing.T, credential string, args map[string]any) []string {
+	t.Helper()
+	got := f.callTool(t, credential, describeCapabilitiesName, args)
 	if got.status != http.StatusOK {
 		t.Fatalf("the capability tool was answered %d (body %q)", got.status, got.raw)
 	}
@@ -140,12 +158,37 @@ func (f *scopeGridFixture) surfaced(t *testing.T, credential string) []string {
 		t.Fatalf("the capability tool was answered with an error envelope: %+v", got.frame.Error)
 	}
 	var result struct {
+		IsError           bool                       `json:"isError"`
+		Content           []toolTextContent          `json:"content"`
 		StructuredContent describeCapabilitiesResult `json:"structuredContent"`
 	}
 	if err := json.Unmarshal(got.frame.Result, &result); err != nil {
 		t.Fatalf("the capability tool's result does not carry a capability listing: %v (body %q)", err, got.raw)
 	}
+	if result.IsError {
+		t.Fatalf("the capability tool reported a failure for %v, so no listing came back: %q", args, got.raw)
+	}
 	return capabilityNames(result.StructuredContent)
+}
+
+// indexedFor is what the capability tool lists this credential for the given
+// arguments, and whether it answered at all.
+//
+// The capability tool is a tool like any other, and it reaches nothing. So a
+// credential admitting no read is refused the call itself — which is an answer
+// about a call rather than about a listing — and what this asserts for it is
+// that refusal, naming the scope that would admit the call, rather than an empty
+// index a caller could mistake for a server carrying nothing.
+func (f *scopeGridFixture) indexedFor(t *testing.T, credential string, grant []string,
+	args map[string]any) ([]string, bool) {
+	t.Helper()
+	class := declaredReachOfTool(t, describeCapabilitiesName)
+	if !admittedByGrant(grant, class) {
+		wantRefusedForWantOfScope(t, describeCapabilitiesName,
+			f.callTool(t, credential, describeCapabilitiesName, args), scopeAdmittingInThisTest(class))
+		return nil, false
+	}
+	return f.surfacedWith(t, credential, args), true
 }
 
 // callTool posts one tools/call carrying this credential.
@@ -184,6 +227,14 @@ func admittedByGrant(grant []string, class opsurface.Reach) bool {
 	return false
 }
 
+// everyPublishedScope is the grant carrying every scope this server publishes,
+// restated here for the reason the mapping above is.
+//
+// It is what separates a listing from a call in this file: a tool is listed
+// where this grant would admit its class — some credential could run it — and
+// called where the credential actually presented admits it.
+var everyPublishedScope = []string{scopeRead, scopeWorkspaceWrite, scopeRegistryWrite}
+
 // gridColumn is one call the grid drives, with the class it reaches and the one
 // scope that admits that class.
 type gridColumn struct {
@@ -196,7 +247,7 @@ type gridColumn struct {
 	class opsurface.Reach
 }
 
-// gridColumns is one tool per reach class, and the build twice.
+// gridColumns is one tool per reach class a scope admits, and the build twice.
 //
 // The arguments name subjects the fixture workspace does not hold, deliberately:
 // what each cell separates is a call that was REFUSED from one that RAN, and a
@@ -242,7 +293,9 @@ func gridColumns() []gridColumn {
 	}
 }
 
-// gridGrants is the four credentials an authorization server can issue here.
+// gridGrants is the five credentials an authorization server can issue here:
+// one carrying none of the scopes this server publishes, each of them alone, and
+// all three.
 func gridGrants() []struct {
 	name  string
 	grant []string
@@ -251,11 +304,42 @@ func gridGrants() []struct {
 		name  string
 		grant []string
 	}{
+		{"a credential carrying none of the three", nil},
 		{"a credential carrying the read scope alone", []string{scopeRead}},
 		{"a credential carrying the workspace-write scope alone", []string{scopeWorkspaceWrite}},
 		{"a credential carrying the registry-write scope alone", []string{scopeRegistryWrite}},
-		{"a credential carrying all three", []string{scopeRead, scopeWorkspaceWrite, scopeRegistryWrite}},
+		{"a credential carrying all three", everyPublishedScope},
 	}
+}
+
+// aKindServedBy is an entity kind the named tool serves, for the kind-scoped
+// listing cell: the first it declares, or any kind at all where it declares
+// none, because a tool declaring no kind serves every one.
+func aKindServedBy(t *testing.T, name string) string {
+	t.Helper()
+	spec, found := lookupTool(name)
+	if !found {
+		t.Fatalf("no tool is registered as %q, so the kind-scoped cell naming it measures nothing", name)
+	}
+	if len(spec.kinds) == 0 {
+		return "release"
+	}
+	return spec.kinds[0]
+}
+
+// scopeARefusalNames is the scope a refused call's challenge names: the one
+// admitting the class the tool declares where the credential does not admit even
+// that, and otherwise the one admitting the class the call reaches.
+//
+// That order is the refusal's documented one — a call refused for its declared
+// class is told the scope that admits the tool at all, rather than the scope
+// that admits a widening it also happened to ask for — and it is restated here
+// for the reason the mapping above is.
+func scopeARefusalNames(grant []string, declared, reached opsurface.Reach) string {
+	if !admittedByGrant(grant, declared) {
+		return scopeAdmittingInThisTest(declared)
+	}
+	return scopeAdmittingInThisTest(reached)
 }
 
 // TestWhatEachCredentialIsOfferedAndMayCall is the grid, every cell asserted.
@@ -266,42 +350,70 @@ func gridGrants() []struct {
 // list and still callable by name — which is the shape a caller that read about
 // a tool elsewhere actually produces.
 //
+// The listing half is asserted on each surface on its own — tools/list, the
+// capability tool's unscoped index, and its index narrowed to a kind the tool
+// serves — never on their union. A union would pass a surface that dropped a
+// tool the other one carried, which is exactly the disagreement the two are
+// composed on one predicate to rule out.
+//
 // Planted defects, demonstrated: drop ReachNone from scopeImplications's
 // workspace-write entry and the describe cell under that credential reddens;
 // make buildReach return ReachWorkspace unconditionally, or delete its entry from
 // the spec, and the interaction cell reddens.
+//
+// Planted defect, routing the listings back through the call check: in
+// reachAdmission.listed, replace the condition `a.lists(specs[i])` with
+// `a.announces(specs[i].name) && a.admits(declaredReach(specs[i]))`. Every listing
+// cell of a tool whose declared class the credential does not admit reddens —
+// under the read-scoped credential, pull's and publish-entity's on all three
+// surfaces — and every call cell stays green, because the call check reads the
+// same admission it read before and nothing about it moved.
 func TestWhatEachCredentialIsOfferedAndMayCall(t *testing.T) {
 	f := newScopeGridFixture(t, false)
 
 	for _, row := range gridGrants() {
 		t.Run(row.name, func(t *testing.T) {
 			credential := f.grantOf(t, row.grant...)
-			offered := append(f.listed(t, credential), f.surfaced(t, credential)...)
+			listedHere := f.listed(t, credential)
+			index, indexAnswered := f.indexedFor(t, credential, row.grant, map[string]any{})
 
 			for _, column := range gridColumns() {
 				t.Run(column.scenario, func(t *testing.T) {
-					admitted := admittedByGrant(row.grant, column.class)
+					declared := declaredReachOfTool(t, column.tool)
 
-					// What a caller is offered is per tool rather than per cell:
-					// the two build columns are one tool, listed under the class
-					// its operation declares, and refused at the call that widens
-					// past what the credential admits. Which registry a tool sits
-					// in decides the order it is listed in and nothing else, so
-					// the union is what the credential decides.
-					listedFor := admittedByGrant(row.grant, declaredReachOfTool(t, column.tool))
-					if got := slices.Contains(offered, column.tool); got != listedFor {
-						t.Errorf("%s is offered = %v, want %v: this credential %s what its operation "+
-							"declares. It was offered %v", column.tool, got, listedFor,
-							map[bool]string{true: "admits", false: "does not admit"}[listedFor],
-							offered)
+					// Listed is per tool and per server rather than per cell or per
+					// credential: every tool of a class some credential could run
+					// is listed to every credential this server accepts, and the
+					// two build columns are one tool listed under the class its
+					// operation declares.
+					listedFor := admittedByGrant(everyPublishedScope, declared)
+					if got := slices.Contains(listedHere, column.tool); got != listedFor {
+						t.Errorf("tools/list names %s = %v, want %v: the list is what this server carries, "+
+							"whatever this credential holds. It named %v", column.tool, got, listedFor,
+							sortedNames(listedHere))
+					}
+					if indexAnswered {
+						if got := slices.Contains(index, column.tool); got != listedFor {
+							t.Errorf("the capability index names %s = %v, want %v, the same answer tools/list "+
+								"owes. It named %v", column.tool, got, listedFor, sortedNames(index))
+						}
+					}
+					kind := aKindServedBy(t, column.tool)
+					if scoped, answered := f.indexedFor(t, credential, row.grant,
+						map[string]any{"kind": kind}); answered {
+						if got := slices.Contains(scoped, column.tool); got != listedFor {
+							t.Errorf("the capability index narrowed to %s names %s = %v, want %v. It named %v",
+								kind, column.tool, got, listedFor, sortedNames(scoped))
+						}
 					}
 
 					got := f.callTool(t, credential, column.tool, column.args)
-					if admitted {
+					if admittedByGrant(row.grant, declared) && admittedByGrant(row.grant, column.class) {
 						wantTheCallRan(t, column.tool, got)
 						return
 					}
-					wantRefusedForWantOfScope(t, column.tool, got, scopeAdmittingInThisTest(column.class))
+					wantRefusedForWantOfScope(t, column.tool, got,
+						scopeARefusalNames(row.grant, declared, column.class))
 				})
 			}
 		})
@@ -452,51 +564,269 @@ func TestABuildWidensOnTheCompositionAndNotOnItsArgument(t *testing.T) {
 	})
 }
 
+// carriedOverAListener is every statically declared tool a listener lists: the
+// ones whose operation declares a class some credential could be admitted to.
+//
+// It is derived from the registries rather than written out, so a tool added
+// tomorrow is covered without an edit here; what is NOT derived is the mapping
+// from a grant to the classes it admits, which is restated above for the reason
+// stated there.
+func carriedOverAListener(t *testing.T) []string {
+	t.Helper()
+	var want []string
+	for _, registry := range [][]toolSpec{toolRegistry, deferredToolRegistry} {
+		for i := range registry {
+			op, known := opsurface.Lookup(registry[i].operation)
+			if !known {
+				t.Fatalf("%s records the operation %q, which the operation set does not declare",
+					registry[i].name, registry[i].operation)
+			}
+			if admittedByGrant(everyPublishedScope, op.Reach) {
+				want = append(want, registry[i].name)
+			}
+		}
+	}
+	return want
+}
+
 // TestTheTwoListingSurfacesAgreeForOneCredential is the agreement, asserted by
-// set difference in both directions.
+// set difference in both directions on each surface separately.
 //
 // A count would prove nothing: two sets both short by the same tool agree on
 // length and disagree about everything that matters. So each direction names what
-// it found — a tool the credential admits that neither surface offered, and a tool
-// some surface offered that the credential does not admit — and the second
-// direction is the one that would catch a filter applied to one surface and not
-// the other.
+// it found — a tool this server carries that the surface did not list, and a
+// tool the surface listed that this server does not carry — and each surface is
+// held to the expected set on its own, which is what catches a filter applied to
+// one surface and not the other.
 //
-// The expected set is derived from the registries rather than written out, so a
-// tool added tomorrow is covered without an edit here; what is NOT derived is the
-// mapping from a grant to the classes it admits, which is restated above for the
-// reason stated there.
+// The expected set is the same for every credential, because the list is what
+// the server carries: a credential carrying none of the three is listed the
+// same tools as one carrying all of them, and is refused the capability tool's
+// own call rather than handed a shorter index.
 func TestTheTwoListingSurfacesAgreeForOneCredential(t *testing.T) {
 	f := newScopeGridFixture(t, false)
+	want := carriedOverAListener(t)
 
 	for _, row := range gridGrants() {
 		t.Run(row.name, func(t *testing.T) {
 			credential := f.grantOf(t, row.grant...)
-			offered := append(f.listed(t, credential), f.surfaced(t, credential)...)
+			surfaces := []struct {
+				surface string
+				names   []string
+			}{{"tools/list", f.listed(t, credential)}}
+			if index, answered := f.indexedFor(t, credential, row.grant, map[string]any{}); answered {
+				surfaces = append(surfaces, struct {
+					surface string
+					names   []string
+				}{describeCapabilitiesName, index})
+			}
 
-			var want []string
-			for _, registry := range [][]toolSpec{toolRegistry, deferredToolRegistry} {
-				for i := range registry {
-					op, known := opsurface.Lookup(registry[i].operation)
-					if !known {
-						t.Fatalf("%s records the operation %q, which the operation set does not declare",
-							registry[i].name, registry[i].operation)
-					}
-					if admittedByGrant(row.grant, op.Reach) {
-						want = append(want, registry[i].name)
-					}
+			for _, s := range surfaces {
+				if missing := namesMissingFrom(want, s.names); len(missing) > 0 {
+					t.Errorf("this server carries %v, and %s did not list them to this credential; it "+
+						"listed %v", missing, s.surface, sortedNames(s.names))
+				}
+				if extra := namesMissingFrom(s.names, want); len(extra) > 0 {
+					t.Errorf("%s listed %v to this credential, and this server carries none of them over "+
+						"a listener; it carries %v", s.surface, extra, sortedNames(want))
 				}
 			}
+		})
+	}
+}
 
-			if missing := namesMissingFrom(want, offered); len(missing) > 0 {
-				t.Errorf("this credential admits %v, and neither surface offered them; it was offered %v",
-					missing, sortedNames(offered))
-			}
-			if extra := namesMissingFrom(offered, want); len(extra) > 0 {
-				t.Errorf("%v were offered to this credential, which admits none of them; it admits %v",
-					extra, sortedNames(want))
+// TestAListingReachedWithoutACredentialListsNothing is the row beneath the
+// grid's credential carrying none of the three: a request that presented no
+// credential at all.
+//
+// No request reaches that row over a real listener, because the authenticator
+// answers a request carrying no credential before any listing is composed. So it
+// is driven here, in process, on the very session the listener above serves. What
+// it pins is that the admission every listing reads holds the same line on its
+// own: a listing is answered only to a caller who presented a credential, so a
+// request carrying no principal is listed nothing and admitted no class, while a
+// principal carrying no scope is listed what this server carries. The second
+// cell is the control: without it the first would pass against an admission that
+// listed nothing to anyone.
+//
+// Planted defect: in classAdmission, drop the guard — attach reachable to the
+// admission whether or not principalFrom returned a principal — and the first
+// cell reddens, listing every carried tool to a request that presented nothing,
+// while the second stays green.
+func TestAListingReachedWithoutACredentialListsNothing(t *testing.T) {
+	s := newScopeGridFixture(t, false).srv
+
+	anonymous := context.Background()
+	if listed := toolSpecNames(s.servedTools(anonymous)); len(listed) != 0 {
+		t.Errorf("a request over a listener carrying no principal was listed %v; a listing is answered only to "+
+			"a caller who presented a credential", sortedNames(listed))
+	}
+	admission := s.admittedReach(anonymous)
+	for _, class := range opsurface.Classes() {
+		if admission.admits(class) {
+			t.Errorf("a request over a listener carrying no principal is admitted %q", string(class))
+		}
+	}
+
+	scopeless := context.WithValue(context.Background(), principalKey{},
+		&principal{Subject: "a-caller-granted-no-scope"})
+	if listed := s.servedTools(scopeless); len(listed) == 0 {
+		t.Error("a request over a listener whose principal carries no scope was listed nothing; the list is " +
+			"what this server carries, whatever the credential holds")
+	}
+}
+
+// TestAToolTheServerDoesNotCarryIsListedToNoCredential is the grid's two
+// remaining rows: a kind withdrawn under mcp.deny_reach, and a tool this server
+// does not announce. Each is absent from both listings under every credential,
+// because no credential changes either bound, and a call naming it is refused
+// with no challenge and the setting named, because no scope would admit it.
+//
+// A tool each bound leaves alone is asserted alongside under every credential,
+// and it is not decoration: a listing that dropped everything would satisfy the
+// absence while serving nobody, and only naming what is still listed separates a
+// bound from an outage.
+func TestAToolTheServerDoesNotCarryIsListedToNoCredential(t *testing.T) {
+	for _, bound := range []struct {
+		scenario string
+		deny     []string
+		announce map[string]bool
+		// absent is the tool the bound takes out of the list, called with args.
+		absent string
+		args   map[string]any
+		// kept is a tool the bound leaves in the list.
+		kept string
+		// setting is what the refusal of a call to absent names.
+		setting string
+	}{
+		{
+			scenario: "a kind withdrawn under mcp.deny_reach",
+			deny:     []string{string(opsurface.ReachRegistry)},
+			absent:   "publish-entity",
+			args:     map[string]any{"entity": "component.yaml", "dry_run": true},
+			kept:     "describe",
+			setting:  "mcp.deny_reach",
+		},
+		{
+			// The capability tool is announced beside the two under test, because
+			// the announcement narrows exactly what it names and a set leaving it
+			// out would refuse the index call the listing half makes.
+			scenario: "a tool this server does not announce",
+			announce: announcing("describe", describeCapabilitiesName, "build"),
+			absent:   "pull",
+			args:     map[string]any{"release": "release.yaml"},
+			kept:     "describe",
+			setting:  "mcp.announce_tools",
+		},
+	} {
+		t.Run(bound.scenario, func(t *testing.T) {
+			f := newScopeGridFixtureWith(t, false, bound.deny, bound.announce)
+			for _, row := range gridGrants() {
+				t.Run(row.name, func(t *testing.T) {
+					credential := f.grantOf(t, row.grant...)
+
+					surfaces := []struct {
+						surface string
+						names   []string
+					}{{"tools/list", f.listed(t, credential)}}
+					if index, answered := f.indexedFor(t, credential, row.grant, map[string]any{}); answered {
+						surfaces = append(surfaces, struct {
+							surface string
+							names   []string
+						}{describeCapabilitiesName, index})
+					}
+					for _, s := range surfaces {
+						if slices.Contains(s.names, bound.absent) {
+							t.Errorf("%s listed %s to %s, which %s takes out of every listing; it listed %v",
+								s.surface, bound.absent, row.name, bound.setting, sortedNames(s.names))
+						}
+						if !slices.Contains(s.names, bound.kept) {
+							t.Errorf("%s did not list %s to %s, which %s leaves alone, so the absence above "+
+								"measures an outage rather than the bound; it listed %v",
+								s.surface, bound.kept, row.name, bound.setting, sortedNames(s.names))
+						}
+					}
+
+					got := f.callTool(t, credential, bound.absent, bound.args)
+					if got.frame.Error == nil {
+						t.Fatalf("a call naming %s was answered with a result rather than refused: %q",
+							bound.absent, got.raw)
+					}
+					if challenge := got.header.Get(headerAuthenticate); challenge != "" {
+						t.Errorf("the refusal carries the challenge %q, inviting a caller to obtain a credential "+
+							"that cannot lift a bound the server's own configuration set", challenge)
+					}
+					if !strings.Contains(got.frame.Error.Message, bound.setting) {
+						t.Errorf("the refusal does not name %s, so nobody reading it learns what to change: %q",
+							bound.setting, got.frame.Error.Message)
+					}
+				})
 			}
 		})
+	}
+}
+
+// TestTheCapabilityToolDefinesAWriteToolForAReadScopedCaller is the definitions
+// half of the listing rule: a caller holding only the read scope that names a
+// write tool it was listed receives that tool's full definition, and it is the
+// definition tools/list gave the same caller.
+//
+// The comparison with tools/list is what makes this more than a presence check.
+// A definition composed differently for a caller its credential does not admit
+// — a schema emptied, a description cut short — would pass a check that only
+// found the name, and would hand that caller a call it cannot compose.
+func TestTheCapabilityToolDefinesAWriteToolForAReadScopedCaller(t *testing.T) {
+	f := newScopeGridFixture(t, false)
+	credential := f.grantOf(t, scopeRead)
+	named := []string{"pull", "publish-entity"}
+	for _, name := range named {
+		if admittedByGrant([]string{scopeRead}, declaredReachOfTool(t, name)) {
+			t.Fatalf("%s is admitted by the read scope, so this case would not measure a tool the credential "+
+				"does not admit", name)
+		}
+	}
+
+	headers := modernHeaders("tools/list", "")
+	headers[headerAuthorization] = credential
+	listedAnswer := f.send(t, http.MethodPost, endpointPath, headers, modernRequest(t, 1, "tools/list", nil))
+	if listedAnswer.frame.Error != nil {
+		t.Fatalf("tools/list was answered with an error envelope: %+v", listedAnswer.frame.Error)
+	}
+	var listing listToolsResult
+	if err := json.Unmarshal(listedAnswer.frame.Result, &listing); err != nil {
+		t.Fatalf("the tools/list result is not a listing: %v", err)
+	}
+	listedAs := map[string]tool{}
+	for _, entry := range listing.Tools {
+		listedAs[entry.Name] = entry
+	}
+
+	res := toolResultOf(t, describeCapabilitiesName,
+		f.callTool(t, credential, describeCapabilitiesName, map[string]any{"tools": named}))
+	if res.IsError {
+		t.Fatalf("the capability tool refused to define %v for a read-scoped caller: %s", named, res.Content[0].Text)
+	}
+	var payload describeCapabilitiesResult
+	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
+		t.Fatalf("the capability payload does not decode: %v", err)
+	}
+	if got := capabilityNames(payload); !slices.Equal(got, named) {
+		t.Fatalf("the capability tool defined %v, want exactly %v in the order named", got, named)
+	}
+	for _, c := range payload.Capabilities {
+		entry, ok := listedAs[c.Name]
+		if !ok {
+			t.Errorf("%s was defined to a read-scoped caller and not listed to it by tools/list", c.Name)
+			continue
+		}
+		if c.Description != entry.Description {
+			t.Errorf("%s is defined with a different description than tools/list gave the same caller:\n"+
+				"  defined: %s\n  listed:  %s", c.Name, c.Description, entry.Description)
+		}
+		if onTheWire(t, c.InputSchema) != onTheWire(t, entry.InputSchema) {
+			t.Errorf("%s is defined with a different schema than tools/list gave the same caller:\n"+
+				"  defined: %s\n  listed:  %s", c.Name, c.InputSchema, entry.InputSchema)
+		}
 	}
 }
 
@@ -524,15 +854,16 @@ func sortedNames(names []string) []string {
 	return out
 }
 
-// TestTheToolListSaysWhoMayReuseIt is the caching half: a listing shaped by the
-// caller's own credential belongs to that caller alone.
+// TestTheToolListSaysWhoMayReuseIt is the caching half: a listing answered only
+// behind a credential belongs behind it.
 //
 // The two transports are one assertion read in both directions. Over a listener
-// the answer is narrowed by what the request's credential admits, so it is
-// private and owed again on the next request — this server holds nothing between
-// requests, and the very next one on the same connection may present a different
-// credential. Over the process's own streams nothing narrows it, so it is the
-// same answer for the whole life of the process and any cache may keep it.
+// the answer is served only once the request's credential has been accepted, so
+// it is private and owed again on the next request — this server holds nothing
+// between requests and checks the credential on every one of them, so a copy kept
+// past its request would be served without that check. Over the process's own
+// streams no credential is asked for, so it is the same answer for the whole life
+// of the process and any cache may keep it.
 //
 // The stdio half is not decoration: without it the listener assertion would pass
 // against a build that marked every listing private, which would tell every

@@ -181,7 +181,7 @@ var describeCapabilitiesToolSpec = toolSpec{
 		"writes, and no argument schemas, so the whole surface arrives in one readable " +
 		"answer. Pass `tools` naming one or more of them for those tools' full definitions, argument schemas " +
 		"included, and nothing else. It answers about this server's own tools and no others. Every tool the " +
-		"index names is one this server will answer a call to; this tool reads definitions, it does not run them.",
+		"index names is one this server has; this tool reads definitions, it does not run them.",
 	commandSurfaceNote: kindScopeCommandToolNote,
 	inputSchema: `{
   "type": "object",
@@ -215,24 +215,25 @@ var describeCapabilitiesToolSpec = toolSpec{
 // those tools already carries its curated sibling's name, derived when the tool
 // was.
 //
-// Both halves are then narrowed to what this request's credential admits, in one
-// pass over the concatenation rather than one per half: the generated half is
-// empty on the transport where a credential bounds anything, so filtering it
-// separately would be a second call to the same predicate that could only ever
-// agree with the first.
+// Both halves are then narrowed to what a listing answered to this request
+// names, in one pass over the concatenation rather than one per half, so a tool
+// in the long tail meets one predicate whichever of the two it came from.
 func (s *server) deferredTools(ctx context.Context) []toolSpec {
 	out := make([]toolSpec, 0, len(deferredToolRegistry)+len(s.commandTools))
 	out = append(out, s.withSessionNotes(deferredToolRegistry)...)
 	out = append(out, s.commandTools...)
-	return s.admittedReach(ctx).admitted(out)
+	return s.admittedReach(ctx).listed(out)
 }
 
 // describeCapabilitiesInvoke answers the capability tool.
 //
-// ctx is the request's own and is consulted for one thing: which tools this
-// request's credential admits. The answer is therefore composed per request, on
-// the same predicate the tool listing is composed on, so the two surfaces agree
-// about one request rather than agreeing because nothing narrowed either.
+// ctx is the request's own and is consulted for one thing: the admission every
+// listing is composed from, of which a listing reads what this server announces
+// and carries on this transport — never what the request's credential admits,
+// which bounds a call rather than a listing. The answer is
+// composed on the same predicate the tool listing is composed on, so the two
+// surfaces agree about one request rather than agreeing because nothing narrowed
+// either.
 func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a describeCapabilitiesArgs
 	if len(args) > 0 {
@@ -298,11 +299,14 @@ func namedTools(raw []string) []string {
 // definitionsFor answers a call that named tools: those tools' full definitions,
 // in the order they were named, and nothing else.
 //
-// It resolves each name against what this session serves this request rather
-// than against the registries directly, so a name the request's credential does
-// not admit is answered exactly as a name that does not exist — the index that
-// request reads does not carry it either, and a definition handed back for a
-// tool the same credential would be refused at the call is worse than no answer.
+// It resolves each name against what this session lists to this request rather
+// than against the registries directly, so a name this server does not announce,
+// of a kind its configuration withdrew or no credential on this transport could
+// be admitted to, is answered exactly as a name that does not exist — the index
+// does not carry it either. A tool the caller's own credential does not admit is
+// defined like any other, because it is listed like any other: the credential
+// bounds the call, and a caller holding the definition is the one able to make
+// the call whose refusal names the scope to obtain.
 //
 // The set it resolves against is the one the index was projected from, so a name
 // read out of an index resolves here by construction rather than by the two
@@ -370,9 +374,9 @@ func projectTools(specs []toolSpec) []capabilityProjection {
 // Both sets are taken as this session advertises them to this request, which is
 // the same definition tools/list and the unscoped index carry: a narrowed
 // listing that dropped a tool's disclosure of its generated twin, or that
-// surfaced a tool the request's credential does not admit, would hand an
-// assistant asking about one entity kind a different answer from the one it
-// would have read on either other surface.
+// applied a bound the other two do not, would hand an assistant asking about one
+// entity kind a different answer from the one it would have read on either other
+// surface.
 //
 // The generated command tools are deliberately absent from a kind-scoped
 // result, and reachable through the unscoped index instead. A command's
@@ -401,7 +405,7 @@ func (s *server) indexForKind(ctx context.Context, kind string) []capabilityProj
 		out = append(out, projectTools(serving)...)
 	}
 	collect(s.curatedTools(ctx))
-	collect(admission.admitted(s.withSessionNotes(deferredToolRegistry)))
+	collect(admission.listed(s.withSessionNotes(deferredToolRegistry)))
 	return out
 }
 

@@ -41,6 +41,19 @@ const (
 	scopeRegistryWrite  = "aggrega:registry-write"
 )
 
+// publishedScopes is the scopes above as the document below lists them, in that
+// order.
+//
+// It is one list because two readers ask it the same question — which scopes
+// exist here — and must not answer it differently: the document a client reads
+// before it holds a token, and the listing, which carries every tool some one of
+// these scopes admits. A scope added to one and not the other would publish a
+// scope whose tools no listing names, or list tools behind a scope no client is
+// told to ask for.
+func publishedScopes() []string {
+	return []string{scopeRead, scopeWorkspaceWrite, scopeRegistryWrite}
+}
+
 // bearerMethodHeader is the one way this deployment accepts a token: on the
 // request's authorization header. A token in a query string is written into
 // proxy logs and browser history by everything it passes through, so no other
@@ -109,11 +122,11 @@ type NetworkEgress func() (*http.Client, error)
 //
 // The scopes are the one field an answer turns on, and what they decide is not
 // who the caller is but how far a call may reach: each maps to a fixed set of
-// reach classes, and a tool whose operation declares a class outside that set is
-// absent from this request's tool list and refused when the request names it
-// directly. The mapping is fixed rather than interpreted, which is the same rule
-// the subject is held to — this server evaluates nothing about a principal as
-// meaning.
+// reach classes, and a call to a tool whose operation declares a class outside
+// that set is refused, naming the scope that would admit it. They bound calls
+// and never the tool list, which names that tool all the same. The mapping is
+// fixed rather than interpreted, which is the same rule the subject is held to —
+// this server evaluates nothing about a principal as meaning.
 type principal struct {
 	// Subject is the token's subject claim, which is required: a credential
 	// asserting nothing about who presented it identifies nobody.
@@ -273,7 +286,7 @@ func resolveProtectedResource(cfg AuthorizationConfig) (protectedResource, error
 		// against, so a normalisation here would publish something nobody typed.
 		Resource:               cfg.Resource,
 		AuthorizationServers:   []string{cfg.Issuer},
-		ScopesSupported:        []string{scopeRead, scopeWorkspaceWrite, scopeRegistryWrite},
+		ScopesSupported:        publishedScopes(),
 		BearerMethodsSupported: []string{bearerMethodHeader},
 	})
 	if err != nil {
