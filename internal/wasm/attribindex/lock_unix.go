@@ -37,3 +37,12 @@ func flockIndex(dir string) func() {
 		_ = f.Close()
 	}
 }
+
+// readLockIndex is the reader's half of the index lock, and on unix it takes
+// nothing. A rename replaces the index's name while a reader holds the old file
+// open, and that reader goes on reading the bytes it opened, so a reader can
+// never make a writer's rename fail nor be refused by one. The writers' own
+// exclusive lock is what keeps the file whole.
+func readLockIndex(dir string) func() {
+	return func() {}
+}

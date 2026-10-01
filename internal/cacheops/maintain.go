@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
 )
 
 // errPruneNeedsWorkspace is returned when a prune runs with no resolvable
@@ -26,8 +27,9 @@ import (
 // identity instead of by its message text.
 var errPruneNeedsWorkspace = errors.New("cache prune needs a workspace, but none could be resolved")
 
-// Removal is one element an operation removed, named by the class it belonged to
-// and carrying that class's reach.
+// Removal is one element an operation removed — or, in a result's HeldOpen, one
+// it would have removed and had to leave — named by the class it belonged to and
+// carrying that class's reach.
 //
 // Reach travels with the removal rather than being looked up again by the
 // reader, so a caller reporting what was removed cannot describe a machine-wide
@@ -62,6 +64,12 @@ type Shortfall struct {
 // MachineWide names the classes among those it acted on whose contents are
 // shared across every project on the machine. It is computed from the classes
 // rather than asserted, so it cannot understate the reach of what was removed.
+//
+// HeldOpen is the elements the prune would have removed but left in place because
+// another process held them open, which only Windows refuses; it is empty
+// everywhere else. Such an element is counted as neither removed nor retained,
+// and a later prune reclaims it. One that is a directory may have lost the files
+// in it that were not open; none of its bytes count as reclaimed.
 type PruneResult struct {
 	Removed           []Removal   `json:"removed"`
 	RetainedCount     int         `json:"retainedCount"`
@@ -70,6 +78,7 @@ type PruneResult struct {
 	UnattributedSize  int64       `json:"unattributedSize"`
 	NotPruneEligible  []Shortfall `json:"notPruneEligible"`
 	MachineWide       []string    `json:"machineWide"`
+	HeldOpen          []Removal   `json:"heldOpen,omitempty"`
 }
 
 // Prune removes every prunable element whose content digest is absent from the
@@ -142,6 +151,10 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 					continue
 				}
 				if rmErr := os.Remove(el.Path); rmErr != nil {
+					if filelock.HeldOpen(rmErr) {
+						res.HeldOpen = append(res.HeldOpen, Removal{Class: cl.Name, Label: el.Label, Reach: cl.Reach, Size: el.Size})
+						continue
+					}
 					return res, fmt.Errorf("cache prune: remove %s: %w", el.Path, rmErr)
 				}
 				removeEmptyParents(el.Path, cl.Root)
@@ -163,8 +176,13 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 				res.RetainedCount++
 				continue
 			}
-			if rmErr := os.RemoveAll(el.Path); rmErr != nil {
+			held, rmErr := removeAllLeavingHeldOpen(el.Path)
+			if rmErr != nil {
 				return res, fmt.Errorf("cache prune: remove %s: %w", el.Path, rmErr)
+			}
+			if held.Files > 0 {
+				res.HeldOpen = append(res.HeldOpen, Removal{Class: cl.Name, Label: el.Label, Reach: cl.Reach, Size: el.Size})
+				continue
 			}
 			removeEmptyParents(el.Path, cl.Root)
 			res.Removed = append(res.Removed, Removal{Class: cl.Name, Label: el.Label, Reach: cl.Reach, Size: el.Size})
@@ -217,6 +235,10 @@ func anyReferrerInSet(referrers []string, refset map[string]bool) bool {
 // nothing was removed. Reach is stated outright because eviction addresses one
 // class and that class is machine-wide — there is no set of classes to derive a
 // union from.
+//
+// HeldOpen is the leaves the trim would have removed but left in place because
+// another process held them open, which only Windows refuses; they still count
+// toward RemainingBytes, and the trim went on to the next-oldest leaf instead.
 type EvictResult struct {
 	WithinCapBefore bool      `json:"withinCapBefore"`
 	Removed         []Removal `json:"removed"`
@@ -225,6 +247,7 @@ type EvictResult struct {
 	RemainingBytes  int64     `json:"remainingBytes"`
 	CapBytes        int64     `json:"capBytes"`
 	MachineWide     []string  `json:"machineWide"`
+	HeldOpen        []Removal `json:"heldOpen,omitempty"`
 }
 
 // Evict trims the compiled-module cache to capBytes and reports what it did.
@@ -257,14 +280,8 @@ func Evict(ctx context.Context, loc Locations, capBytes int64) (EvictResult, err
 	res, err := wasm.ReclaimCompileCache(loc.CompileDir, capBytes)
 	out.TotalBefore = res.Total
 	out.WithinCapBefore = res.WithinCapBefore()
-	for _, l := range res.Removed {
-		out.Removed = append(out.Removed, Removal{
-			Class: CompiledModuleClassName,
-			Label: l.Label,
-			Reach: ReachMachine,
-			Size:  l.Size,
-		})
-	}
+	out.Removed = compiledModuleRemovals(res.Removed)
+	out.HeldOpen = compiledModuleRemovals(res.HeldOpen)
 	out.ReclaimedBytes = res.Reclaimed
 	out.RemainingBytes = res.Remaining
 	if err != nil {
@@ -273,12 +290,34 @@ func Evict(ctx context.Context, loc Locations, capBytes int64) (EvictResult, err
 	return out, nil
 }
 
+// compiledModuleRemovals names compiled-module cache leaves as elements of their
+// class, each carrying the class's machine-wide reach.
+func compiledModuleRemovals(leaves []wasm.CompileCacheLeaf) []Removal {
+	var out []Removal
+	for _, l := range leaves {
+		out = append(out, Removal{
+			Class: CompiledModuleClassName,
+			Label: l.Label,
+			Reach: ReachMachine,
+			Size:  l.Size,
+		})
+	}
+	return out
+}
+
 // ClearedClass is one whole cache subtree a clear removed, with its reach and the
-// bytes it held.
+// bytes the clear reclaimed from it.
+//
+// HeldOpenFiles and HeldOpenBytes count the files the clear had to leave in the
+// subtree because another process held them open, which only Windows refuses —
+// a compile's lock file or staging file, or a module being read. They are zero
+// everywhere else, and a later clear removes what they count.
 type ClearedClass struct {
-	Class string `json:"class"`
-	Reach Reach  `json:"reach"`
-	Size  int64  `json:"size"`
+	Class         string `json:"class"`
+	Reach         Reach  `json:"reach"`
+	Size          int64  `json:"size"`
+	HeldOpenFiles int    `json:"heldOpenFiles,omitempty"`
+	HeldOpenBytes int64  `json:"heldOpenBytes,omitempty"`
 }
 
 // ClearResult is what a total wipe did: every subtree it removed and the bytes it
@@ -294,6 +333,11 @@ type ClearResult struct {
 
 // Clear removes every cache subtree. Each subtree is sized before removal so the
 // result states what was reclaimed. Absent subtrees are no-ops.
+//
+// A file another process holds open is left in its subtree and counted rather
+// than failing the clear, so every subtree is still cleared of everything else.
+// Only Windows refuses that removal; elsewhere the open file is removed like any
+// other.
 //
 // A removal failure returns both the error and the subtrees cleared before it,
 // and a stop is reported the same way: the subtrees already removed cannot be
@@ -316,14 +360,22 @@ func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 			continue
 		}
 		size := dirSize(cl.Root)
-		if rmErr := os.RemoveAll(cl.Root); rmErr != nil {
+		held, rmErr := removeAllLeavingHeldOpen(cl.Root)
+		if rmErr != nil {
 			return res, fmt.Errorf("cache clear: remove %s: %w", cl.Root, rmErr)
 		}
-		res.Cleared = append(res.Cleared, ClearedClass{Class: cl.Name, Reach: cl.Reach, Size: size})
+		reclaimed := size - held.Bytes
+		res.Cleared = append(res.Cleared, ClearedClass{
+			Class:         cl.Name,
+			Reach:         cl.Reach,
+			Size:          reclaimed,
+			HeldOpenFiles: held.Files,
+			HeldOpenBytes: held.Bytes,
+		})
 		if cl.Reach == ReachMachine {
 			res.MachineWide = append(res.MachineWide, cl.Name)
 		}
-		res.ReclaimedBytes += size
+		res.ReclaimedBytes += reclaimed
 	}
 	return res, nil
 }

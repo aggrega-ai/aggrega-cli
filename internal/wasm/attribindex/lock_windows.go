@@ -23,3 +23,18 @@ import (
 func flockIndex(dir string) func() {
 	return filelock.Lock(filepath.Join(dir, lockFileName))
 }
+
+// readLockIndex takes the same index lock SHARED for a reader and returns the
+// release the reader invokes once it has closed the index file. Windows refuses
+// to replace a file another handle holds open, so a reader holding the index
+// across a writer's write-temp-rename would make the writer's rename fail, and a
+// reader opening the index while that rename holds it would itself be refused.
+// Holding the lock shared keeps every reader out of that window: the writer holds
+// it exclusively from before it writes until after it renames, and readers still
+// read side by side.
+//
+// Like flockIndex it blocks, creates no directory, and degrades to no lock on any
+// failure, in which case the reader reads unlocked.
+func readLockIndex(dir string) func() {
+	return filelock.LockShared(filepath.Join(dir, lockFileName))
+}

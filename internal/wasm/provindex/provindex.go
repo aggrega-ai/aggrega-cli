@@ -16,7 +16,8 @@
 // deterministic — entries sorted by digest, identities sorted within each entry —
 // so the file is byte-stable across writes of identical state. Persistence is an
 // atomic write-temp-rename under a cross-process file lock, since parallel CLI
-// invocations share one user cache directory.
+// invocations share one user cache directory. On Windows a reader takes that lock
+// shared, because there a file another handle holds open cannot be replaced.
 package provindex
 
 import (
@@ -94,7 +95,23 @@ func DefaultIndexPath() (string, bool) {
 // yields an empty index — so a first-ever run starts clean. A present but
 // unparsable file returns the error alongside an empty index, letting the caller
 // decide whether to rebuild (the best-effort write path) or report (inspection).
+//
+// On Windows it reads under the index lock taken shared, so it never holds the
+// file open while a writer replaces it; see readLockIndex. An empty path names no
+// index and so no lock, and reads as a missing file.
 func Load(path string) (Index, error) {
+	if path != "" {
+		release := readLockIndex(filepath.Dir(path))
+		defer release()
+	}
+	return load(path)
+}
+
+// load is Load without the reader's lock, for a caller that already holds the
+// index lock exclusively. Taking the shared lock there as well would wait on the
+// caller's own exclusive hold, because the lock belongs to the open handle and
+// the second open is a second handle.
+func load(path string) (Index, error) {
 	ix := Index{byDigest: map[string]Entry{}}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -150,7 +167,7 @@ func Upsert(path, rawDigest string, id Identity, sizeGuestBytes int64, now time.
 	release := flockIndex(dir)
 	defer release()
 
-	ix, err := Load(path)
+	ix, err := load(path)
 	if err != nil {
 		ix = Index{byDigest: map[string]Entry{}}
 	}

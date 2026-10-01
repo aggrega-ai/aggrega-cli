@@ -8,6 +8,7 @@ package filelock
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -99,4 +100,65 @@ func TestTryLockRefusesWhileHeld(t *testing.T) {
 		t.Fatal("the lock was not available again after its release")
 	}
 	after()
+}
+
+// TestLockSharedAdmitsReadersTogetherAndExcludesAWriter pins the two halves of
+// a shared lock: two shared holders hold it at once, an exclusive holder cannot
+// while either does, and a shared holder waits for an exclusive one to release.
+//
+// The last half is decided by ORDER, not by time. The exclusive holder sets a
+// witness immediately before it releases, and the shared taker reports whether
+// the witness was set when its lock was granted: a shared lock that waits always
+// reports true, and one that did not wait reports false however fast the machine
+// is. The short pause before the release only widens the window in which a lock
+// that does not wait is caught; it is not an assertion.
+func TestLockSharedAdmitsReadersTogetherAndExcludesAWriter(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "guard.lock")
+
+	first := LockShared(lockPath)
+	secondDone := make(chan func(), 1)
+	go func() { secondDone <- LockShared(lockPath) }()
+	var second func()
+	select {
+	case second = <-secondDone:
+	case <-time.After(5 * time.Second):
+		// A liveness ceiling: a shared lock granted beside another returns at
+		// once, so only a lock that excludes its own kind reaches it.
+		first()
+		t.Fatal("a second shared holder waited for the first; shared holders must hold the lock together")
+	}
+
+	if release, got := TryLock(lockPath); got {
+		release()
+		t.Fatal("an exclusive lock was granted while two shared holders held the lock")
+	}
+	first()
+	if release, got := TryLock(lockPath); got {
+		release()
+		t.Fatal("an exclusive lock was granted while one shared holder still held the lock")
+	}
+	second()
+
+	exclusive, ok := TryLock(lockPath)
+	if !ok {
+		t.Fatal("the exclusive lock was not available after every shared holder released")
+	}
+	var released atomic.Bool
+	granted := make(chan bool, 1)
+	go func() {
+		release := LockShared(lockPath)
+		granted <- released.Load()
+		release()
+	}()
+	time.Sleep(300 * time.Millisecond)
+	released.Store(true)
+	exclusive()
+	select {
+	case afterRelease := <-granted:
+		if !afterRelease {
+			t.Fatal("a shared lock was granted while an exclusive holder still held the lock")
+		}
+	case <-time.After(2 * time.Minute):
+		t.Fatal("a shared lock was never granted after the exclusive holder released (liveness ceiling)")
+	}
 }

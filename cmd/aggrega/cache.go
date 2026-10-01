@@ -142,6 +142,16 @@ func printMachineWideReach(w io.Writer, machineWide []string) {
 		strings.Join(machineWide, ", "))
 }
 
+// printHeldOpen names each element a reclamation left in place because another
+// process has it open, with its reach, so a removal the platform refused reads as
+// what it is rather than as a failure or as nothing at all. Only Windows refuses
+// to remove an open file, so elsewhere the list is empty and this prints nothing.
+func printHeldOpen(w io.Writer, held []cacheops.Removal) {
+	for _, r := range held {
+		fmt.Fprintf(w, "left in place %s: %s%s, open in another process\n", r.Class, r.Label, reachMarker(r.Reach))
+	}
+}
+
 // printProvenance lists the resolved-plugin identities the provenance index
 // holds — one line per recorded content digest, naming every {URI@version} the
 // resolver loaded those exact guest bytes for. When a digest carries more than
@@ -204,6 +214,7 @@ func runCachePrune(ctx context.Context, w io.Writer, loc cacheops.Locations) err
 	for _, r := range res.Removed {
 		fmt.Fprintf(w, "removed %s: %s%s\n", r.Class, r.Label, reachMarker(r.Reach))
 	}
+	printHeldOpen(w, res.HeldOpen)
 	printMachineWideReach(w, res.MachineWide)
 	if err != nil {
 		return err
@@ -211,6 +222,10 @@ func runCachePrune(ctx context.Context, w io.Writer, loc cacheops.Locations) err
 
 	fmt.Fprintf(w, "\npruned %d element(s), %s reclaimed; %d retained\n",
 		len(res.Removed), cacheops.HumanSize(res.ReclaimedBytes), res.RetainedCount)
+	if len(res.HeldOpen) > 0 {
+		fmt.Fprintf(w, "%d element(s) left in place because another process has them open; prune again once it has finished\n",
+			len(res.HeldOpen))
+	}
 
 	// Report the compiled leaves retained for lack of attribution: a prune cannot
 	// map them to a lockfile, so they are reclaimable only by the size-bounded
@@ -297,6 +312,7 @@ func runCacheEvict(ctx context.Context, w io.Writer, loc cacheops.Locations, cap
 	for _, l := range res.Removed {
 		fmt.Fprintf(w, "evicted %s (%s)%s\n", l.Label, cacheops.HumanSize(l.Size), reachMarker(l.Reach))
 	}
+	printHeldOpen(w, res.HeldOpen)
 	if err != nil {
 		// A trim that removed leaves before it failed reached what it reached, so
 		// the reach statement travels with the partial answer. A refusal that
@@ -389,6 +405,10 @@ func runCacheClear(ctx context.Context, w io.Writer, loc cacheops.Locations) err
 	res, err := cacheops.Clear(ctx, loc)
 	for _, c := range res.Cleared {
 		fmt.Fprintf(w, "cleared %s (%s)%s\n", c.Class, cacheops.HumanSize(c.Size), reachMarker(c.Reach))
+		if c.HeldOpenFiles > 0 {
+			fmt.Fprintf(w, "  left in place: %d file(s) (%s) another process has open; clear again once it has finished\n",
+				c.HeldOpenFiles, cacheops.HumanSize(c.HeldOpenBytes))
+		}
 	}
 	printMachineWideReach(w, res.MachineWide)
 	if err != nil {

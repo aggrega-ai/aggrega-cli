@@ -49,6 +49,26 @@ func Lock(lockPath string) func() {
 	return release
 }
 
+// LockShared takes a SHARED lock on lockPath and returns the release function.
+// Any number of shared holders hold the lock at once; none of them can while an
+// exclusive holder (Acquire, Lock or TryLock) has it, and an exclusive holder
+// waits until every shared holder has released. It blocks until it holds the
+// lock, and like Lock it creates the lock file but never a directory.
+//
+// It is for a reader of a file whose writers hold the exclusive lock across
+// replacing that file. Windows refuses to replace or remove a file another
+// handle holds open, so a reader that kept the file open across a writer's
+// replacement would make the writer fail, and a reader opening it during the
+// replacement would itself be refused. Taking the lock shared keeps every reader
+// out of that window without serializing the readers among themselves.
+//
+// It is best-effort in the same way as Lock: any failure to open the file or take
+// the lock returns a release that does nothing, and the reader proceeds unlocked.
+func LockShared(lockPath string) func() {
+	release, _ := lock(lockPath, 0)
+	return release
+}
+
 // TryLock takes an exclusive lock on lockPath WITHOUT waiting for it and
 // reports whether it did. When another holder has the lock it returns at once,
 // reporting false, so a caller guarding work that only one participant needs to
@@ -64,8 +84,9 @@ func TryLock(lockPath string) (func(), bool) {
 
 // lock is the one place a lock is taken on Windows. It opens lockPath, creating
 // the file if needed, and locks the file's whole byte range with flags, which
-// choose between waiting for the lock and failing at once when it is held. On
-// any failure it returns a release that does nothing and false.
+// choose between an exclusive and a shared lock and between waiting for the lock
+// and failing at once when it is held. On any failure it returns a release that
+// does nothing and false.
 //
 // The release unlocks the range before closing the file rather than leaving the
 // close to drop the lock, because the operating system frees a lock left on a

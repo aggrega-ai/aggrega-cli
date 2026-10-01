@@ -13,3 +13,9 @@ package provindex
 func flockIndex(dir string) func() {
 	return func() {}
 }
+
+// readLockIndex is the reader's half of the index lock, a no-op here for the
+// same reason flockIndex is.
+func readLockIndex(dir string) func() {
+	return func() {}
+}

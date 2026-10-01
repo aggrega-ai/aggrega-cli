@@ -14,8 +14,15 @@
 //
 // On unix the lock is a POSIX advisory lock. On Windows it is a lock over the
 // lock file's whole byte range, and the package also offers Lock, which takes
-// the lock without creating the file's directory, and TryLock, which never
-// waits and reports whether it got the lock.
+// the lock without creating the file's directory, TryLock, which never waits and
+// reports whether it got the lock, and LockShared, which a reader takes so that
+// it never holds a file open while a writer replaces it.
+//
+// Sharing a directory has a second difference between the platforms, and
+// HeldOpen is how a caller recognises it: Windows refuses to remove a file
+// another process holds open, where unix removes it and lets the open handle
+// keep reading. HeldOpen reports that refusal on Windows and nothing anywhere
+// else.
 //
 // Acquire is best-effort and never fails its caller. Where the platform has no
 // file locking, or the lock file cannot be opened or locked, it returns a

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
 )
 
 // DefaultCompileCacheCapBytes is the size the compiled-module cache is held to
@@ -90,9 +92,10 @@ type CompileCacheLeaf struct {
 }
 
 // CompileCacheReclaim reports one reclamation pass: the entry total before it
-// ran, the cap it was held to, the entries removed in removal order, and the
-// resulting accounting. A pass that found the cache already within its cap
-// removes nothing and reports Removed empty.
+// ran, the cap it was held to, the entries removed in removal order, the entries
+// it had to leave because another process held them open, and the resulting
+// accounting. A pass that found the cache already within its cap removes nothing
+// and reports Removed empty.
 type CompileCacheReclaim struct {
 	// Total is the byte total of the cache entries before the pass.
 	Total int64
@@ -100,6 +103,11 @@ type CompileCacheReclaim struct {
 	Cap int64
 	// Removed is the entries removed, in removal order (oldest-compiled first).
 	Removed []CompileCacheLeaf
+	// HeldOpen is the entries the pass would have removed but left in place,
+	// in the order it reached them, because another process held them open and
+	// the platform refuses to remove an open file. Only Windows refuses, so this
+	// is empty everywhere else. Each one still counts toward Remaining.
+	HeldOpen []CompileCacheLeaf
 	// Reclaimed is the bytes the removals freed.
 	Reclaimed int64
 	// Remaining is the byte total left after the pass.
@@ -208,9 +216,17 @@ func CollectCompileCacheLeaves(dir string) ([]CompileCacheLeaf, error) {
 // compiles are untouched on top of that: the staging files and lock sidecars a
 // compile in progress writes are not cache content and are never removed.
 //
-// A removal failure is returned loudly rather than swallowed, together with the
-// partial accounting of what had already been removed, so a caller can report
-// the work that did happen.
+// Windows keeps the same guarantee by a different route: it refuses to remove a
+// file another process has open, so an entry being read cannot be removed at all.
+// The pass leaves such an entry in place, reports it in HeldOpen, and goes on to
+// the next-oldest entry, so the cap is still held wherever the rest of the cache
+// allows. Leaving it is not a failure: the entry is in use, which is the one
+// thing that makes it worth keeping, and a later pass reclaims it once nothing
+// holds it.
+//
+// Any other removal failure is returned loudly rather than swallowed, together
+// with the partial accounting of what had already been removed, so a caller can
+// report the work that did happen.
 func ReclaimCompileCache(dir string, capBytes int64) (CompileCacheReclaim, error) {
 	if dir == "" {
 		return CompileCacheReclaim{}, fmt.Errorf("reclaim compiled-module cache: no cache directory")
@@ -238,6 +254,10 @@ func ReclaimCompileCache(dir string, capBytes int64) (CompileCacheReclaim, error
 			break
 		}
 		if rmErr := os.Remove(l.Path); rmErr != nil {
+			if filelock.HeldOpen(rmErr) {
+				res.HeldOpen = append(res.HeldOpen, l)
+				continue
+			}
 			return res, fmt.Errorf("reclaim compiled-module cache: remove %s: %w", l.Path, rmErr)
 		}
 		res.Removed = append(res.Removed, l)
