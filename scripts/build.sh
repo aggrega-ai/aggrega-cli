@@ -40,12 +40,12 @@
 #   plugin cascade, so it needs no guest regeneration and no overlay check.
 #
 # --target <goos>/<goarch> builds either variant for another system — any pair
-# `go tool dist list` names, as in windows/amd64 — through the same steps: the
-# guests, the overlay check and the entity generation stay host-side (the guests
-# are WebAssembly, the same for every system), and only the final go build is
-# given the target, with cgo off. Its outputs are named for the target, so they
-# never overwrite the host binaries: ./aggrega-<goos>-<goarch> and
-# ./aggrega-light-<goos>-<goarch>, with .exe appended for windows. Without
+# `go tool dist list` names, as in windows/amd64 or darwin/arm64 — through the
+# same steps: the guests, the overlay check and the entity generation stay
+# host-side (the guests are WebAssembly, the same for every system), and only the
+# final go build is given the target, with cgo off. Its outputs are named for the
+# target, so they never overwrite the host binaries: ./aggrega-<goos>-<goarch>
+# and ./aggrega-light-<goos>-<goarch>, with .exe appended for windows. Without
 # --target the build is for this machine, under the names above.
 #
 # --stripped also writes the stripped binary beside the full one: the full binary
@@ -55,15 +55,19 @@
 # which the tooling image's build uses too, and the script refuses a copy whose
 # stamped version differs from the full binary's. It does not combine with
 # --light, because the stripped binary is the full one, debug information
-# removed. `strip` (GNU binutils) must be on PATH.
+# removed. `strip` (GNU binutils) must be on PATH. With a darwin target it is
+# refused before anything is built: GNU strip cannot read a macOS (Mach-O)
+# binary, so the stripped macOS binary is not produced.
 #
 # --expect-version <version> refuses, after building, unless every binary the run
 # wrote carries <version> as its stamped version. The stamp is read from each
 # binary's own symbol table and data rather than by running it, so a binary built
 # for another system is checked on this one: `go version -m` cannot show it,
 # because Go leaves the linker flags out of the build information of a -trimpath
-# build. That read needs `go tool nm`, and objdump and od from GNU binutils and
-# coreutils.
+# build. The read is one build tool, internal/buildtools/stampedversion, run with
+# `go run`; it reads Linux (ELF), Windows (PE) and macOS (Mach-O) binaries through
+# the Go standard library, so it needs nothing beyond the toolchain the build
+# already uses.
 #
 # The binary is stamped from git: -X main.version=<git-describe, v-stripped> and
 # -X main.commit=<short-sha>. `git describe` yields the tag, the bare commit
@@ -82,6 +86,10 @@
 #                               # aggrega-stripped-windows-amd64.exe
 #   scripts/build.sh --light --target windows/amd64
 #                               # aggrega-light-windows-amd64.exe
+#   scripts/build.sh --target darwin/arm64
+#                               # aggrega-darwin-arm64
+#   scripts/build.sh --light --target darwin/arm64
+#                               # aggrega-light-darwin-arm64
 #   scripts/build.sh … --expect-version <version>
 #                               # refuse unless what was built stamps <version>
 #   scripts/build.sh --help
@@ -179,6 +187,15 @@ if [ "$STRIPPED" = 1 ] && [ "$MODE" = "light" ]; then
   exit 2
 fi
 
+# The stripped copy comes from GNU strip, which reads Linux and Windows binaries
+# and not macOS (Mach-O) ones, so for a darwin target it is refused here, before
+# anything is built, rather than by strip after the full build.
+if [ "$STRIPPED" = 1 ] && [ "${TARGET%%/*}" = "darwin" ]; then
+  fail "--stripped --target $TARGET: the stripped binary is not produced for macOS yet;"
+  fail "  GNU strip, which writes it for Linux and Windows, cannot read a macOS (Mach-O) binary"
+  exit 2
+fi
+
 # The output names, and the go build environment for a --target build. A target
 # is checked against the toolchain's own list of the systems it builds for, so a
 # misspelt pair is refused by name before anything is built rather than by the
@@ -224,44 +241,15 @@ go_build() {
   env ${TARGET_ENV[@]+"${TARGET_ENV[@]}"} go build "$@" -trimpath -ldflags "$(stamp_ldflags)" -o "$out" "$BINPATH"
 }
 
-# file_offset <binary> <hex address> — print the file offset holding the byte at
-# <hex address>, from the section table objdump reads for the binary's format
-# (ELF or PE). Only sections whose bytes are in the file and loaded into memory
-# are considered. Fails when no such section holds the address.
-file_offset() {
-  local bin="$1" addr=$((16#$2)) idx size vma off flags sections
-  sections="$(objdump -h "$bin")" || return 1
-  # Each section is a line `Idx Name Size VMA LMA File-off Algn`, then a line of
-  # its flags; the name, load address and alignment are not needed.
-  while read -r idx _ size vma _ off _; do
-    case "$idx" in ''|*[!0-9]*) continue ;; esac
-    read -r flags || return 1
-    case "$flags" in *CONTENTS*ALLOC*) ;; *) continue ;; esac
-    if [ "$addr" -ge $((16#$vma)) ] && [ "$addr" -lt $((16#$vma + 16#$size)) ]; then
-      printf '%d\n' $((addr - 16#$vma + 16#$off))
-      return 0
-    fi
-  done <<<"$sections"
-  return 1
-}
-
 # stamped_version <binary> — print the version the linker stamped into
 # <binary>'s main.version, read from the binary itself rather than by running it,
-# so it reads a binary built for another system: the variable's address from the
-# symbol table, the string header there (a pointer and a length, little-endian),
-# then the bytes it points at. Fails, printing nothing, when the binary has no
-# main.version symbol or its format is not one objdump reads.
+# so it reads a binary built for another system. The reading lives in one place,
+# the build tool internal/buildtools/stampedversion, for ELF, PE and Mach-O alike;
+# it fails, saying why on standard error, when the binary carries no stamp. The
+# tool itself runs here, so a GOOS or GOARCH in the caller's environment is not
+# handed to it.
 stamped_version() {
-  local bin="$1" symbols addr off header ptr len str_off
-  symbols="$(go tool nm "$bin")" || return 1
-  addr="$(awk '$2 == "D" && $3 == "main.version" { print $1 }' <<<"$symbols")"
-  [ -n "$addr" ] || return 1
-  off="$(file_offset "$bin" "$addr")" || return 1
-  header="$(od -An -t u8 --endian=little -j "$off" -N 16 "$bin")" || return 1
-  read -r ptr len <<<"$header"
-  [ -n "${len:-}" ] || return 1
-  str_off="$(file_offset "$bin" "$(printf '%x' "$ptr")")" || return 1
-  dd if="$bin" iflag=skip_bytes,count_bytes skip="$str_off" count="$len" status=none
+  env -u GOOS -u GOARCH go run ./internal/buildtools/stampedversion -binary "$1"
 }
 
 # check_stamp <binary> <expected> <what> — refuse unless <binary>'s stamped
@@ -289,7 +277,7 @@ if [ "$MODE" = "light" ]; then
   if [ -n "$EXPECT_VERSION" ]; then
     check_stamp "$LIGHT_OUT" "$EXPECT_VERSION" "--expect-version"
   fi
-  printf "${GREEN}${BOLD}build complete${RESET}\n"
+  printf '%b\n' "${GREEN}${BOLD}build complete${RESET}"
   exit 0
 fi
 
@@ -372,4 +360,4 @@ if [ "$STRIPPED" = 1 ]; then
   ok "wrote ./$STRIPPED_OUT ($(wc -c < "$STRIPPED_OUT" | tr -d '[:space:]') bytes; ./$FULL_OUT is $(wc -c < "$FULL_OUT" | tr -d '[:space:]') bytes)"
 fi
 
-printf "${GREEN}${BOLD}build complete${RESET}\n"
+printf '%b\n' "${GREEN}${BOLD}build complete${RESET}"

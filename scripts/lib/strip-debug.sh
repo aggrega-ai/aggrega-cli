@@ -5,8 +5,8 @@
 # script that writes a copy of a built aggrega binary without its debug
 # information: the tooling image's build (scripts/build-tooling-image.sh), whose
 # copy a release also attaches as the Linux stripped binary, and
-# `scripts/build.sh --stripped`, which writes the stripped binary for any target,
-# Windows included. Sourcing one recipe means a stripped binary is made the same
+# `scripts/build.sh --stripped`, which writes the stripped binary for a Linux or
+# Windows target. Sourcing one recipe means a stripped binary is made the same
 # way whichever script made it.
 #
 # Sourcing defines one function and sets no variables:
@@ -25,7 +25,7 @@
 # or without the variable.
 #
 # strip comes from GNU binutils; its support for the PE format is what strips a
-# Windows binary on a Linux machine.
+# Windows binary on a Linux machine. It does not read the macOS (Mach-O) format.
 strip_debug_copy() {
   local binary="$1" copy="$2"
   if ! command -v strip >/dev/null 2>&1; then
