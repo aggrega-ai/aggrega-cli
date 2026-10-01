@@ -38,8 +38,8 @@ func refusedRecipeSkip() catalog.SkippedEntity {
 	}
 }
 
-// TestWithSkipContext_SentinelSurvivesToTheReader is acceptance clause 3 read
-// against the code path that formats the final message. The decorated failure's
+// TestWithSkipContext_SentinelSurvivesToTheReader checks the decoration against
+// the code path that formats the final message. The decorated failure's
 // registered condition has to stay matchable at the command boundary — both by
 // errors.Is, and by the short-code lookup the formatter's head uses — because a
 // chain rendered into text loses both while still reading correctly.
@@ -104,8 +104,8 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 	}
 }
 
-// TestWithSkipContext_RefusedFileCarriesItsShortCode is acceptance clause 1 at the
-// unit boundary: what the reader sees for the refused file names the condition by
+// TestWithSkipContext_RefusedFileCarriesItsShortCode proves, at the unit
+// boundary, that what the reader sees for the refused file names the condition by
 // its registered short code, in the bracketed head beside the category — the one
 // position the error reference teaches a code appears in.
 //
@@ -146,8 +146,8 @@ func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 	}
 }
 
-// TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction is acceptance
-// clause 4: the reporting site, not only the loader, says which class of refusal
+// TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction proves the
+// reporting site, not only the loader, says which class of refusal
 // can explain the failure the note is attached to. The note is attached to every
 // refusal the load recorded rather than only to the one that mattered, so a
 // reader who is not told which class is which cannot tell a cause from a

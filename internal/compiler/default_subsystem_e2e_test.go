@@ -11,12 +11,12 @@ import (
 )
 
 // TestDefaultSubsystem_NodeIdentityPreserved is the load-bearing proof for the
-// Aggregate default-subsystem normalization (acceptance #6): folding a
+// Aggregate default-subsystem normalization: folding a
 // root-authored component into the synthesized `default` subsystem must NOT
 // change its node identity. The node ID is `qualifiedID(prefix, name)` — not
 // subsystem-scoped — so the root component "api" keeps node ID "api" (never
 // "default.api"); only SubsystemPath gains "default" and the
-// synthesized-provenance marker flips on. A 46-package-green suite proves
+// synthesized-provenance marker flips on. A green suite proves only
 // non-regression; this test deliberately pins identity-preservation + the
 // honest-IR marker.
 func TestDefaultSubsystem_NodeIdentityPreserved(t *testing.T) {

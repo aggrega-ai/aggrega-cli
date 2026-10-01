@@ -63,7 +63,7 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 // TestCacheClassReachIsDeclared pins which classes are shared across every
 // project on the machine and which belong to the workspace the caller named.
 //
-// It is the assertion clause 3 of this capability's contract rests on: a surface
+// It is the assertion every report of a mutation's scope rests on: a surface
 // reporting what a mutation changed derives its scope from these values, so a
 // class silently changing side would make every such report wrong at once while
 // nothing else failed.

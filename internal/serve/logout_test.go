@@ -68,8 +68,8 @@ func storedHosts(t *testing.T, storeDir string) []string {
 	return out
 }
 
-// TestLogoutOnTheDaemonRemovesTheCredentialAndReportsItsReach is the clause-3
-// proof: the method is invoked, the credential leaves the store, and the answer
+// TestLogoutOnTheDaemonRemovesTheCredentialAndReportsItsReach proves the reach
+// is reported: the method is invoked, the credential leaves the store, and the answer
 // says the change reached past this workspace.
 //
 // The neighbouring host is the assertion that discriminates. A handler that

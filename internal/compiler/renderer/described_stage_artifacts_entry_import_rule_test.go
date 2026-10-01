@@ -314,8 +314,8 @@ func TestArtifactsEntryImportRules_CarryTheAuthoredPositionAndTheCaptionedEntry(
 	}
 }
 
-// TestArtifactsEntryImportRules_EnumerateEveryAuthoredEntry is clause 3's
-// refutation driven rather than argued: the traversal reaches a non-zero subject
+// TestArtifactsEntryImportRules_EnumerateEveryAuthoredEntry proves the rule is
+// invoked, driven rather than argued: the traversal reaches a non-zero subject
 // set on a LEGAL input, so a rule that found nothing is distinguishable from a rule
 // nothing invoked.
 //

@@ -156,8 +156,8 @@ func aListingBindingALocalPath() pluginops.PluginListing {
 
 // aListingNamingNoLocalPath is the same shape with every reference published,
 // so the two listener answers over the two listings differ only where the
-// keeping-back rule fired. It is what turns clause four from a claim about one
-// answer into a comparison.
+// keeping-back rule fired. It is what turns the kept-back assertion from a claim
+// about one answer into a comparison.
 func aListingNamingNoLocalPath() pluginops.PluginListing {
 	listing := aListingBindingALocalPath()
 	listing.Configured[1].URI = thePublishedGovernor
@@ -273,8 +273,8 @@ func everyRecord() map[string]any {
 	return map[string]any{"response_format": "detailed", "limit": 500}
 }
 
-// TestThePluginReadingAnswersAListenersReadCredential is clause one for this
-// half: a token carrying the read scope is offered the tool and receives the
+// TestThePluginReadingAnswersAListenersReadCredential proves that a token
+// carrying the read scope is offered the tool and receives the
 // structured answer, asserted over a real listener rather than read out of the
 // registry.
 func TestThePluginReadingAnswersAListenersReadCredential(t *testing.T) {
@@ -298,8 +298,8 @@ func TestThePluginReadingAnswersAListenersReadCredential(t *testing.T) {
 		t.Errorf("the group breakdown is %+v, want %+v", got.Groups, wantGroups)
 	}
 
-	// The declared metadata, and whether each resolved, which is what clause one
-	// asks the reading to carry.
+	// The declared metadata, and whether each resolved, which is what the reading
+	// is required to carry.
 	embedded := recordFor(t, got, theEmbeddedReference)
 	if embedded.Type != "provider" || embedded.Version != "0.4.0" || embedded.Commit != "abc1234" {
 		t.Errorf("the built-in's declared metadata did not survive: %+v", embedded)
@@ -367,8 +367,8 @@ func recordSummary(p pluginListResult) string {
 	return strings.TrimSpace(b.String())
 }
 
-// TestThePluginReadingTakesItsReachClassFromTheOperationSet is clause two for
-// this half.
+// TestThePluginReadingTakesItsReachClassFromTheOperationSet proves the tool's
+// reach class is read from the operation set, not declared beside the tool.
 //
 // 🔴 PLANTED DEFECT, DEMONSTRATED: change the plugin-list row in the operation
 // set to ReachMachine and this reading disappears from the listing a read
@@ -405,7 +405,7 @@ func TestThePluginReadingTakesItsReachClassFromTheOperationSet(t *testing.T) {
 }
 
 // TestTheTwoTransportsDifferOnlyByThePluginLocationsTheListenerWithholds is
-// clause three for this half: both transports are driven over one workspace and
+// proven with both transports driven over one workspace and
 // one enumeration, and the two answers are compared field by field.
 func TestTheTwoTransportsDifferOnlyByThePluginLocationsTheListenerWithholds(t *testing.T) {
 	t.Parallel()
@@ -663,8 +663,8 @@ func clonePluginListResult(p pluginListResult) pluginListResult {
 	return out
 }
 
-// TestAKeptBackReferenceReadsAsKeptBackRatherThanAsNotThere is clause four for
-// this half: two workspaces, one binding a plugin by a path on this host and one
+// TestAKeptBackReferenceReadsAsKeptBackRatherThanAsNotThere proves that
+// two workspaces, one binding a plugin by a path on this host and one
 // binding everything by published reference, are required to answer DIFFERENTLY
 // over the listener.
 //
@@ -725,7 +725,7 @@ func TestAKeptBackReferenceReadsAsKeptBackRatherThanAsNotThere(t *testing.T) {
 	}
 }
 
-// TestThePluginReadingIsBounded is clause six for this half. The answer grows
+// TestThePluginReadingIsBounded proves the answer is bounded. The answer grows
 // with what an operator binds, so it takes the bound its neighbours take rather
 // than a second one invented here.
 func TestThePluginReadingIsBounded(t *testing.T) {

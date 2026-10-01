@@ -424,7 +424,7 @@ func finalResponse(t *testing.T, frames []sseFrame) rpcResponse {
 	return resp
 }
 
-// TestATokenBearingCallIsAnsweredWithAnEventStream is clause 1: the headers, the
+// TestATokenBearingCallIsAnsweredWithAnEventStream proves the headers, the
 // notifications, the strictly increasing count, the response as the last event,
 // and the close.
 //
@@ -469,7 +469,7 @@ func TestATokenBearingCallIsAnsweredWithAnEventStream(t *testing.T) {
 	}
 }
 
-// TestACallWithNoTokenIsAnsweredWithOneObject is clause 2.
+// TestACallWithNoTokenIsAnsweredWithOneObject proves a tokenless call is not streamed.
 //
 // The content type is the discriminator rather than the absence of
 // notifications: a stream that opened and carried nothing would satisfy
@@ -489,7 +489,7 @@ func TestACallWithNoTokenIsAnsweredWithOneObject(t *testing.T) {
 	}
 }
 
-// TestTheFillingBuildStreamsAndTheRenderingOneDoesNot is clause 3, both rows.
+// TestTheFillingBuildStreamsAndTheRenderingOneDoesNot proves a token streams a build only where it fills a lockfile.
 //
 // The two rows are one proof because what separates them is the whole point: a
 // design that streamed whenever a token was present would pass the first row and
@@ -535,7 +535,7 @@ func TestTheFillingBuildStreamsAndTheRenderingOneDoesNot(t *testing.T) {
 	})
 }
 
-// TestAnIdleStreamIsKeptAlive is clause 4.
+// TestAnIdleStreamIsKeptAlive proves an idle stream writes a comment line before its next event.
 //
 // The only clock here is the liveness ceiling. The proof does not measure how
 // long the comment took to arrive; it reads frames until one arrives, and fails
@@ -567,7 +567,7 @@ func TestAnIdleStreamIsKeptAlive(t *testing.T) {
 	stream.drain(t)
 }
 
-// TestAMidStreamDisconnectStopsTheWorkAndTheWriting is clause 6.
+// TestAMidStreamDisconnectStopsTheWorkAndTheWriting proves a disconnect ends the work and every write after it.
 //
 // Two things are asserted and they fail independently. The seam reports what its
 // context held when it left, which is where "the resolution's context ended"
@@ -715,8 +715,8 @@ func TestNothingIsReportedOnceTheRequestIsOver(t *testing.T) {
 }
 
 // TestTheProgressCountRisesAcrossEveryReport is the unit-level statement of the
-// property clause 1 reads off the wire, and it is what the planted defect is
-// driven against: it fails on a count that repeats as well as on one that falls.
+// property TestATokenBearingCallIsAnsweredWithAnEventStream reads off the wire:
+// it fails on a count that repeats as well as on one that falls.
 func TestTheProgressCountRisesAcrossEveryReport(t *testing.T) {
 	var sent []uint64
 	reporter := &progressReporter{

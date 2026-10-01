@@ -276,11 +276,11 @@ func TestEveryDeclaredHostLocationSettingCanActuallyCarryOne(t *testing.T) {
 	})
 }
 
-// TestTheConfigurationReadingAnswersAListenersReadCredential is clause one: a
+// TestTheConfigurationReadingAnswersAListenersReadCredential proves that a
 // credential carrying the read scope is offered the tool and gets a structured
 // answer from it, both read off a real listener rather than out of a registry.
 //
-// The listing assertion is what the planted class defect reddens. The tool
+// The listing assertion is what a wrongly declared class reddens. The tool
 // declares no class of its own — the row below asserts that too — so its class
 // is the one the operation set declares, and declaring that operation to reach
 // the machine takes the tool out of this listing with no edit to the tool at all.
@@ -316,7 +316,7 @@ func TestTheConfigurationReadingAnswersAListenersReadCredential(t *testing.T) {
 }
 
 // TestTheTwoTransportsDifferOnlyByTheHostLocationsTheListenerWithholds is
-// clause three, driven over one workspace and compared field by field.
+// driven over one workspace and compared field by field.
 //
 // The workspace names two locations through two different settings, so a rule
 // written for one field would fail here rather than pass on the other. Every
@@ -669,7 +669,7 @@ func cloneConfigShowResult(p configShowResult) configShowResult {
 	return out
 }
 
-// TestAKeptBackValueReadsAsKeptBackRatherThanAsNothingConfigured is clause four:
+// TestAKeptBackValueReadsAsKeptBackRatherThanAsNothingConfigured drives
 // two workspaces, one naming a signing key and one naming none, read over a
 // listener, with the two answers required to differ.
 //
@@ -725,8 +725,8 @@ func TestAKeptBackValueReadsAsKeptBackRatherThanAsNothingConfigured(t *testing.T
 	})
 }
 
-// TestTheConfigurationReadingCarriesEveryFactTheProvenanceCallProduced is clause
-// five: the values the tool carries are the values its command renders.
+// TestTheConfigurationReadingCarriesEveryFactTheProvenanceCallProduced proves
+// the values the tool carries are the values its command renders.
 //
 // It is driven over the process's own streams, where nothing is kept back, and
 // it is driven the way the cache inventory's parity assertion is driven — the
@@ -734,7 +734,7 @@ func TestAKeptBackValueReadsAsKeptBackRatherThanAsNothingConfigured(t *testing.T
 // on the wire, rather than an answer being read off whatever the machine
 // happens to hold.
 //
-// 🔴 The bound on what it proves, stated because the clause it discharges is
+// 🔴 The bound on what it proves, stated because the property it proves is
 // about the command: the expectation is the per-value provenance call, which is
 // the ONE call both surfaces read. The command's provenance view prints that
 // call's three fields — the setting, its value and its originating layer —

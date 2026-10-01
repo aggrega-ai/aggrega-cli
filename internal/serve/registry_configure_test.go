@@ -83,8 +83,8 @@ func decodeDaemonResult(t *testing.T, resp jsonRPCResponse, v any) {
 	}
 }
 
-// TestRegistryAddOnTheDaemonReportsItsMachineWideScope is the clause-3 proof for
-// the registration: it drives the method with NO scope flag — the shape a caller
+// TestRegistryAddOnTheDaemonReportsItsMachineWideScope proves the scope reported
+// for the registration: it drives the method with NO scope flag — the shape a caller
 // that has not thought about scope sends — and asserts the answer names the
 // global file and says the change is machine-wide.
 //
@@ -223,8 +223,8 @@ func TestRegistryRemoveOnTheDaemonReportsScopeAndRefusesAnAbsentEntry(t *testing
 	}
 }
 
-// TestRegistryUpdateOnTheDaemonRefusesLoudlyWhenACredentialIsMissing is the
-// clause-6 proof, driven rather than asserted.
+// TestRegistryUpdateOnTheDaemonRefusesLoudlyWhenACredentialIsMissing proves the
+// refusal by driving it rather than asserting it.
 //
 // A registry answering 401 with a Basic challenge is exactly the case where a
 // terminal would have prompted. The daemon has nobody to prompt, so the only two

@@ -120,8 +120,8 @@ func TestATwoVerbTrustWrapRendersEachConditionOnItsOwn(t *testing.T) {
 }
 
 // TestAFailureWithNoTrustConditionKeepsTheBareFallback is the negative control
-// that makes every assertion above attributable, and it is also the guard on
-// clause 4's rule that the fallback stays. Over an error of the same shape
+// that makes every assertion above attributable, and it is also the guard that
+// the bare fallback stays. Over an error of the same shape
 // carrying no registered trust condition, the formatter prints the message alone
 // with no brackets — so the heads above came from the match rather than from the
 // branch firing on everything that reaches it.

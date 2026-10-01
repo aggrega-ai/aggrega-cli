@@ -2717,12 +2717,12 @@ func cachedLibraryRemedy(names []string) string {
 // ClosureLintWarnings returns the schema-pillar-overlap advisories for every
 // Component and Feature the closure reaches — the non-fatal, warning-level
 // sibling of ValidateClosureScopedPillars's pillar validation, over the same
-// closure-entity set. Whole-catalog pillar validation ran the overlap lint beside the
-// pillar validation in one loop; when build resolution moved to a closure-scoped
-// view the validation came across but the overlap lint did not, so the build
-// surfaced no overlap advisories. This restores them, closure-scoped: a
-// registry-pinned closure Component now gets the same overlap advisory a local
-// one does.
+// closure-entity set. Whole-catalog pillar validation runs the overlap lint beside
+// the pillar validation in one loop; build resolution works over a closure-scoped
+// view, where ValidateClosureScopedPillars carries the validation and this method
+// carries the overlap lint, so a build surfaces overlap advisories and a
+// registry-pinned closure Component gets the same overlap advisory a local one
+// does.
 //
 // Entities are walked in sorted-URI order (deterministic; the warnings never
 // enter the lockfile or rendered output, but their emission order must be

@@ -308,7 +308,7 @@ func TestValuesMappingImportRules_CarryTheAuthoredPosition(t *testing.T) {
 	}
 }
 
-// TestValuesMappingImportRules_EnumerateEveryImportedField is clause 3's refutation
+// TestValuesMappingImportRules_EnumerateEveryImportedField proves the rule is invoked,
 // driven rather than argued: the traversal reaches a non-zero subject set on a
 // LEGAL input, so a rule that found nothing is distinguishable from a rule nothing
 // invoked.

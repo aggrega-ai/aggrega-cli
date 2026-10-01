@@ -89,7 +89,7 @@ func TestResolveSigningPrecedence(t *testing.T) {
 // TestSigningPolicyRequiredComposesMonotonicOR proves the org signing
 // requirement is un-removable by an ordinary config edit: a CI-owned overlay
 // setting required:true wins over a base config setting required:false, so a
-// lower-precedence layer cannot shadow a higher one. (Acceptance (a).)
+// lower-precedence layer cannot shadow a higher one.
 func TestSigningPolicyRequiredComposesMonotonicOR(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -111,7 +111,7 @@ func TestSigningPolicyRequiredComposesMonotonicOR(t *testing.T) {
 // TestSigningPolicyKindsComposeUnion proves signing.kinds unions across layers:
 // a base config scoping the policy to one kind and a CI overlay scoping it to
 // another resolve to both, in first-appearance order. A layer widens the scope;
-// it cannot shrink it. (Acceptance (b).)
+// it cannot shrink it.
 func TestSigningPolicyKindsComposeUnion(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -137,7 +137,7 @@ func TestSigningPolicyKindsComposeUnion(t *testing.T) {
 }
 
 // TestSigningRequiredForKindDefaultAllKinds proves that required:true with an
-// empty kinds list scopes the policy to every kind. (Acceptance (c).)
+// empty kinds list scopes the policy to every kind.
 func TestSigningRequiredForKindDefaultAllKinds(t *testing.T) {
 	t.Parallel()
 	c := Config{Signing: SigningConfig{Required: true}}
@@ -154,7 +154,7 @@ func TestSigningRequiredForKindDefaultAllKinds(t *testing.T) {
 }
 
 // TestSigningRequiredForKindDefaultsOffWhenAbsent proves the non-regression
-// case: with no signing policy present, no kind requires signing. (Acceptance (d).)
+// case: with no signing policy present, no kind requires signing.
 func TestSigningRequiredForKindDefaultsOffWhenAbsent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -173,7 +173,7 @@ func TestSigningRequiredForKindDefaultsOffWhenAbsent(t *testing.T) {
 
 // TestSigningRequiredForKindMembership pins the per-kind decision: the required
 // gate short-circuits false, an explicit kind list is exact membership, and the
-// "all" wildcard matches every kind. (Acceptance (e).)
+// "all" wildcard matches every kind.
 func TestSigningRequiredForKindMembership(t *testing.T) {
 	t.Parallel()
 	scoped := Config{Signing: SigningConfig{Required: true, Kinds: []string{"Component", "Plugin"}}}
@@ -196,7 +196,6 @@ func TestSigningRequiredForKindMembership(t *testing.T) {
 
 // TestSigningKindsUnknownFailsLoudly proves an unknown kind in signing.kinds
 // fails config load with a wrapped ErrConfigInvalid naming the offending value.
-// (Acceptance (f).)
 func TestSigningKindsUnknownFailsLoudly(t *testing.T) {
 	t.Parallel()
 	_, err := load(writeFixture(t, "workspace: {}\nsigning:\n  required: true\n  kinds:\n    - Bogus\n"))

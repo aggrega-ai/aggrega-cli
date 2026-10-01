@@ -397,11 +397,10 @@ func TestANodesOwnTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 // TestAnAttachmentsTwoBlocksMeetingOnOneNameHalts drives the owner the
 // FeatureRecipe one attachment binds on a node is.
 //
-// 🔴 This is one of the two owners the reading this replaced covered and the fact
-// clause 2 originally scoped did NOT: an attachment's rendered files never joined the
-// per-node emission the earlier fact was keyed by, so a rule declared over that fact
-// alone would have left this build to succeed. The halt asserted here is what makes
-// the migration a migration rather than a coverage loss.
+// 🔴 This is the owner a rule over per-node emission alone would miss: an
+// attachment's rendered files never join the per-node emission, so a rule declared
+// over that fact alone would let this build succeed. The halt asserted here is what
+// proves an attachment's files are judged as an owner of their names too.
 func TestAnAttachmentsTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 	t.Parallel()
 

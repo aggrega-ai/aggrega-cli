@@ -50,8 +50,8 @@ func renderedPullFailure(t *testing.T, root, releasePath, catalogRoot string) (e
 	return err, formatCompilerError(err)
 }
 
-// TestPull_SoleRefusalLeadsTheDiagnostic is acceptance clause 1 read as the
-// ruling states it: cause before consequence. A refused catalog file never
+// TestPull_SoleRefusalLeadsTheDiagnostic proves the diagnostic puts cause
+// before consequence. A refused catalog file never
 // enters the catalog, so what fails is the attempt to resolve a reference to
 // what it declared — and the reader has to meet the refusal, with its own
 // category and its own short code, before meeting that consequence.

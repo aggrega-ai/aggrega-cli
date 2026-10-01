@@ -85,7 +85,7 @@ func stdioLines(t *testing.T, written string) []map[string]json.RawMessage {
 	return out
 }
 
-// TestStdioReportsProgressAheadOfTheResponse is clause 5.
+// TestStdioReportsProgressAheadOfTheResponse proves progress reaches stdio before the response.
 //
 // Three things are asserted and they fail independently: that the notifications
 // are there at all, that each is well formed and names the token the request
@@ -134,8 +134,8 @@ func TestStdioReportsProgressAheadOfTheResponse(t *testing.T) {
 	}
 }
 
-// TestStdioWritesNoNotificationWithoutAToken is clause 5's negative row, and it
-// is what makes the row above a measurement: a transport that reported to
+// TestStdioWritesNoNotificationWithoutAToken is the negative row of the test above,
+// and it is what makes that row a measurement: a transport that reported to
 // everybody would satisfy the assertions above unchanged.
 func TestStdioWritesNoNotificationWithoutAToken(t *testing.T) {
 	written := driveStdioPull(t, 3, nil)

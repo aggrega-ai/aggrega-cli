@@ -150,7 +150,7 @@ func TestSeedingAConfigurationReportsContentAndWritesNothing(t *testing.T) {
 		t.Fatalf("seeding under the reporting delivery: %v", err)
 	}
 
-	// Clause: no file was created or modified. The instrument is the
+	// No file was created or modified. The instrument is the
 	// content-digest fingerprint above, taken over the whole temporary tree.
 	if diffs := fingerprintDifferences(before, treeFingerprint(t, root)); len(diffs) != 0 {
 		t.Fatalf("the reporting delivery touched the filesystem:\n  %s", strings.Join(diffs, "\n  "))
@@ -168,7 +168,7 @@ func TestSeedingAConfigurationReportsContentAndWritesNothing(t *testing.T) {
 		t.Errorf("reported content does not register %s:\n%s", workspaceconfig.HubBaselineHost, docs[0].Content)
 	}
 
-	// Clause: the writing delivery puts exactly the reported bytes on disk.
+	// The writing delivery puts exactly the reported bytes on disk.
 	if err := seed(false, &bytes.Buffer{}); err != nil {
 		t.Fatalf("seeding under the writing delivery: %v", err)
 	}
@@ -692,12 +692,12 @@ func TestAttachingAPluginReportsContentAndWritesNothing(t *testing.T) {
 				t.Fatalf("attaching under the reporting delivery: %v", err)
 			}
 
-			// Clause: nothing was created or modified, measured by content digest over
+			// Nothing was created or modified, measured by content digest over
 			// the whole temporary tree rather than by size or timestamp.
 			if diffs := fingerprintDifferences(before, treeFingerprint(t, root)); len(diffs) != 0 {
 				t.Fatalf("the reporting delivery touched the filesystem:\n  %s", strings.Join(diffs, "\n  "))
 			}
-			// Clause: no parent directory was created. The fingerprint above already
+			// No parent directory was created. The fingerprint above already
 			// records directories, so this is the same claim said in the words the
 			// failure would be read in — and it is the assertion that fails loudest if
 			// the composition were ever routed through the write scaffold, which
@@ -718,7 +718,7 @@ func TestAttachingAPluginReportsContentAndWritesNothing(t *testing.T) {
 			if !strings.Contains(docs[0].Content, "governance/tag-injector:1.2.0") {
 				t.Errorf("reported content does not carry the pinned attachment a write would have made:\n%s", docs[0].Content)
 			}
-			// Clause: the MERGED WHOLE document, not a minimal one. On the workspace
+			// The report is the MERGED WHOLE document, not a minimal one. On the workspace
 			// target the file already carries settings, and a composition against an
 			// empty base would drop them — which, written to the reported path, would
 			// erase them. On the machine-wide target no file exists yet, so the honest
@@ -727,7 +727,7 @@ func TestAttachingAPluginReportsContentAndWritesNothing(t *testing.T) {
 				t.Errorf("the reported document dropped a setting the file already carried, so writing it back would erase it:\n%s", docs[0].Content)
 			}
 
-			// Clause: the writing delivery puts exactly the reported bytes on disk, at
+			// The writing delivery puts exactly the reported bytes on disk, at
 			// the reported path. Each delivery is the other's control — a reporting
 			// delivery that quietly wrote would pass a stream-only assertion, and a
 			// writing delivery that quietly stopped writing would pass an
@@ -743,7 +743,7 @@ func TestAttachingAPluginReportsContentAndWritesNothing(t *testing.T) {
 			if string(onDisk) != docs[0].Content {
 				t.Errorf("the written bytes differ from the reported content\nreported:\n%s\nwritten:\n%s", docs[0].Content, onDisk)
 			}
-			// Clause: the writing delivery reports no document. It answers with the
+			// The writing delivery reports no document. It answers with the
 			// confirmation sentence a terminal expects, and that stream must not parse
 			// as a report — the file is on disk at the path the sentence already names,
 			// so carrying it again would duplicate what was just persisted.
@@ -775,7 +775,7 @@ func decodedDocuments(answer string) []authoredcontent.Document {
 // TestTheCommandExtensionTypeRefusesToReport pins the one type this delivery is
 // refused on, and pins that the refusal is LOUD.
 //
-// It is the half of Clause 0's principle that a silent ignore would breach: a
+// A silent ignore here is the failure the loud refusal exists to prevent: a
 // caller that asked for a report, was written for instead, and told success would
 // read the answer as the report it asked for. The refusal is asserted to name what
 // to do instead, and the tree is read back afterwards.
