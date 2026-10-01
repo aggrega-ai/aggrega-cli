@@ -15,6 +15,18 @@ name: Publish and sign core plugins
 # signed keyless via the GitHub Actions OIDC identity against the public
 # Sigstore instance (Fulcio + Rekor).
 #
+# A second job, windows-smoke, runs after that one on a GitHub-hosted Windows
+# runner and proves the Windows binaries there: it runs each binary's version
+# report, the protocol handshake over standard input and output, a validate,
+# pull and build of a worked example whose result it compares byte for byte with
+# the result this workflow's build machine produced, and the tests that prove
+# each platform split behaves on Windows. It needs nothing the build needs — no
+# sibling repository, no toolchain, no secret — because the prep phase stages
+# everything it runs as one workflow artifact. It publishes nothing, so a dry run
+# is how Windows is proved before a real release; on a release tag it runs after
+# the release step, so a failure there marks the run failed but does not stop
+# that release.
+#
 # The prep-then-publish split is load-bearing. Nothing with an external side
 # effect runs until every validation has passed, so a failure in the ABI check or
 # in catalog generation can never strand an already-pushed tooling image or a
@@ -35,7 +47,8 @@ name: Publish and sign core plugins
 #
 # The manual-dispatch entry defaults to a dry run. After the credential check it
 # builds, packs the extension package, generates the entities, and prints what
-# it would push, publish, sign and release, doing none of it.
+# it would push, publish, sign and release, doing none of it; the Windows smoke
+# job then runs in full.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -95,6 +108,12 @@ jobs:
     # splitting the build across jobs (the guests, the image, and the publish all
     # need the one build's outputs on the same workspace).
     runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
+
+    # The commit the Windows smoke inputs were staged from, which the
+    # windows-smoke job checks out: on a dispatch naming a tag the tree here is
+    # moved onto that tag, so the commit the run was launched at may not be it.
+    outputs:
+      smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
 
     env:
       # Destination registry host. A repository variable the operator sets once;
@@ -471,6 +490,46 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target windows/amd64 --expect-version "$BIN_VERSION"
 
+      - name: Stage the Windows smoke run's inputs
+        # Everything the windows-smoke job runs, staged by one script into one
+        # directory: the three Windows binaries above; a Windows test executable
+        # for each package whose tests prove a platform split, cross-compiled
+        # here because the Windows runner has no toolchain and no sibling
+        # repositories; and the worked example, with the workspace this
+        # machine's validate, pull and build of it leave — the bytes the Windows
+        # run must reproduce. The example builds from a catalog in this
+        # repository and the guests the full binary embeds, offline and with no
+        # configuration of this machine read, so the Windows run needs no
+        # registry either. The script builds that reference twice, in two
+        # directories, and refuses when the two differ. A prep-phase step with
+        # no external side effect; a dry run stages too. It needs no credential,
+        # so the registry password is blanked for it.
+        id: windows-smoke-inputs
+        env:
+          AGGREGA_REGISTRY_PASSWORD: ''
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/stage-windows-smoke.sh --output-dir "$RUNNER_TEMP/windows-smoke"
+          # The commit the windows-smoke job checks out is the one the staged
+          # inputs record, so the job and the inputs cannot name different ones.
+          while IFS='=' read -r key value; do
+            if [ "$key" = commit ]; then
+              printf 'commit=%s\n' "$value" >> "$GITHUB_OUTPUT"
+            fi
+          done < "$RUNNER_TEMP/windows-smoke/smoke.env"
+
+      - name: Upload the Windows smoke run's inputs
+        # One workflow artifact, read only by the windows-smoke job of this same
+        # run and kept for a day. Hidden files are included so the example
+        # reaches the Windows run exactly as it was built here.
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-inputs
+          path: ${{ runner.temp }}/windows-smoke
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: true
+
       - name: Set up Node for the extension packer
         # The desktop extension package is packed by the bundle format's own
         # packer, an npm package, so the job needs Node. A self-hosted runner need
@@ -805,3 +864,54 @@ jobs:
               --title "$TAG" \
               --notes "Release $TAG. Downloadable binaries for linux/amd64 and for windows/amd64 (the Windows files end in .exe and are not code-signed): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
           fi
+
+  windows-smoke:
+    # Runs the Windows binaries the job above built, on Windows. Cross-compiling
+    # proves only that the code compiles for Windows; this job proves that the
+    # binaries start, answer, and build what the Linux build builds, byte for
+    # byte, and that the platform splits — file locks, files another process
+    # holds open, forward-slash paths, a Unix-socket listen address — behave
+    # there. Everything it runs comes from the artifact the job above staged; it
+    # checks out this repository only so that each test executable runs from its
+    # package directory, at the commit the artifact records. It holds no secret
+    # and reads only this repository, and its one script stops at the first
+    # failure, saying what failed.
+    needs: publish-sign
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        # The shell Git for Windows installs on the runner; the script it runs
+        # is bash.
+        shell: bash
+    steps:
+      - name: Keep line endings exactly as committed
+        # The comparison and the tests read checked-out files, so the checkout
+        # must hold the committed bytes; a Git configured to convert line
+        # endings on checkout would hand them different ones.
+        run: git config --global core.autocrlf false
+
+      - name: Check out the CLI at the commit the inputs were staged from
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.publish-sign.outputs.smoke_commit }}
+          persist-credentials: false
+
+      - name: Download the Windows smoke run's inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-smoke-inputs
+          path: ${{ runner.temp }}/windows-smoke
+
+      - name: Run the Windows binaries and tests
+        # The versions, the handshake, the example and its byte comparison —
+        # with a planted one-byte difference shown turning the comparison red —
+        # then the named tests, any of which skipping or not running fails the
+        # step. aggrega-cli/scripts/windows-smoke.sh --help says what each
+        # check asserts.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/windows-smoke.sh --inputs "$RUNNER_TEMP/windows-smoke"
