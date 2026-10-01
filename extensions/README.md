@@ -12,16 +12,25 @@ macOS, Windows and Linux.
 
 ## Building the bundle
 
-The bundle format publishes its own packer, `@anthropic-ai/mcpb`. Run it from this directory:
+One script builds it. From the repository root:
 
 ```
-npx @anthropic-ai/mcpb validate mcpb/manifest.json
-npx @anthropic-ai/mcpb pack mcpb aggrega.mcpb
+scripts/build-mcp-bundle.sh --output-dir <dir>
 ```
 
-The first command checks the manifest against the format's schema. The second writes the installable
-file, and its second argument names where that file is written — it is a build output and does not
-belong in the repository.
+It checks the manifest against the format's schema with the format's own packer, `@anthropic-ai/mcpb`,
+run through `npx` at the exact version the script pins, then writes the installable file
+`aggrega-<version>.mcpb` into `<dir>` and prints its path. The directory must lie outside the
+repository — the built file is a build output and does not belong in it. Node.js and `npx` must be
+installed. The release workflow runs the same script and attaches the file to each release beside the
+binaries.
 
-Everything under `mcpb/` is packed into the built file, so that directory holds the manifest and
-nothing else. These instructions sit one level above it for that reason.
+**The `version` in `mcpb/manifest.json` is a placeholder that the build replaces.** The script stamps
+the bundle with the version the `aggrega` binary built from the same commit reports — the release tag
+on a clean checkout of a tagged commit, a development version anywhere else — into a staged copy of the
+manifest, so the checked-in file is never edited for a release. With `--expect-version <version>` the
+build refuses, naming both versions, when the stamped one differs.
+
+The built file holds the manifest and nothing else, so `mcpb/` holds the manifest and nothing else, and
+the build refuses that directory when it holds anything more. These instructions sit one level above it
+for that reason.

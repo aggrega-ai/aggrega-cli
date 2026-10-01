@@ -4,8 +4,9 @@
 # The single home for the build-provenance version recipe, SOURCED (never executed)
 # by every script that stamps one into an output: the shipped aggrega binary, the
 # embedded guests' describe() self-report, the CLI generating the embedded plugin
-# entities, the editor extension's compile step, and the extension's end-to-end
-# runner, which reads the catalog's and the extension's provenance through it.
+# entities, the installable MCP bundle's manifest, the editor extension's compile
+# step, and the extension's end-to-end runner, which reads the catalog's and the
+# extension's provenance through it.
 # Sourcing one recipe means none of them invokes git on its own, so outputs stamped
 # from one tree at one moment agree.
 #

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "aggrega",
   "display_name": "Aggrega",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Runs Aggrega as a Model Context Protocol server, so an assistant can compile and inspect a Release and read catalog entities through a structured protocol instead of scraping command output. This package carries no Aggrega program of its own: it launches the aggrega executable already installed on this machine, at the path you supply below.",
   "author": {
     "name": "aggrega-ai"

@@ -3,15 +3,17 @@ name: Publish and sign core plugins
 # Tag-driven publisher for the core provider/linter plugins that are embedded in
 # the aggrega binary. On a release tag it works in two phases within one job.
 #
-# The PREP phase has no external side effects: it builds the binary and its
-# embedded guests (plus the light no-embed binary for the release), asserts
-# host/guest ABI self-consistency, and generates the core Plugin catalog
-# entities. Every one of these is pure local computation — no registry push, no
-# image push, no release. Only when every prep step is green does the PUBLISH
-# phase run: it builds and pushes the tooling image, publishes each plugin with
-# its guest to the registry, and creates the GitHub release with the downloadable
-# binaries. Everything the publish phase signs is signed keyless via the GitHub
-# Actions OIDC identity against the public Sigstore instance (Fulcio + Rekor).
+# The PREP phase has no external side effects: it checks that every build script
+# stamping a version takes it from the one shared recipe, builds the binary and
+# its embedded guests (plus the light no-embed binary for the release), asserts
+# host/guest ABI self-consistency, packs the desktop extension package, and
+# generates the core Plugin catalog entities. None of these pushes, publishes or
+# releases anything. Only when every prep step is green does the PUBLISH phase
+# run: it builds and pushes the tooling image, publishes each plugin with its
+# guest to the registry, and creates the GitHub release with the downloadable
+# binaries and the extension package. Everything the publish phase signs is
+# signed keyless via the GitHub Actions OIDC identity against the public
+# Sigstore instance (Fulcio + Rekor).
 #
 # The prep-then-publish split is load-bearing. Nothing with an external side
 # effect runs until every validation has passed, so a failure in the ABI check or
@@ -23,7 +25,8 @@ name: Publish and sign core plugins
 #
 # This workflow NEVER creates or pushes a git tag. Deciding the version and
 # cutting the tag is a human action; this workflow publishes the OCI artifacts and
-# attaches the built binaries to the GitHub release for the already-pushed tag.
+# attaches the built binaries and the extension package to the GitHub release
+# for the already-pushed tag.
 #
 # Before anything is built, the job checks that the registry accepts the stored
 # credential: one authenticated GET /v2/, which pushes nothing and opens no
@@ -31,8 +34,8 @@ name: Publish and sign core plugins
 # dry run is also how to prove that the stored credential matches the registry.
 #
 # The manual-dispatch entry defaults to a dry run. After the credential check it
-# builds, generates the entities, and prints what it would push, publish, sign
-# and release, doing none of it.
+# builds, packs the extension package, generates the entities, and prints what
+# it would push, publish, sign and release, doing none of it.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -60,7 +63,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Check the stored registry credential, build, generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
+        description: "Check the stored registry credential, build, pack the extension package, generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
         required: false
         default: true
         type: boolean
@@ -216,6 +219,24 @@ jobs:
           fi
           git -C aggrega-cli fetch --force --tags origin
           git -C aggrega-cli checkout --force "refs/tags/${TAG}"
+
+      - name: Check that the version recipe has one home
+        # The binary, the embedded guests' self-reported version, the plugin
+        # entities generated from them and the desktop extension package are
+        # each stamped by a different build script, and a release ships them
+        # together. They agree only while every one of those scripts takes the
+        # version from the one shared recipe; a script that derived it by its
+        # own git invocation could ship a release whose outputs disagree on
+        # their version. The check refuses, naming each offending script and
+        # line, when a stamping script does not source the shared recipe or
+        # derives the version inline. It sits after the step that moves the tree
+        # onto the release tag, so it judges the tree this run builds, and before
+        # the build, so a forked recipe halts the run before anything is
+        # stamped. It reads only the CLI tree, with no toolchain and no network,
+        # so it needs nothing the later steps install. It runs on a dry run too.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/check-version-single-source.sh
 
       - name: Resolve sibling checkout refs from the CLI's go.mod
         # The CLI's own manifests decide the sibling versions: read the schemas,
@@ -409,6 +430,44 @@ jobs:
 
           echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
 
+      - name: Set up Node for the extension packer
+        # The desktop extension package is packed by the bundle format's own
+        # packer, an npm package, so the job needs Node. A self-hosted runner need
+        # not carry it, so it is installed here rather than assumed.
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Pack the desktop extension package
+        # Builds aggrega-<version>.mcpb, the single file a client such as Claude
+        # Desktop adds from its extension settings to run Aggrega as a local MCP
+        # server. The step is one invocation of the script that holds the whole
+        # procedure — the pinned packer, the version stamp, validation and
+        # packing — so a local build and a release build cannot differ. The
+        # script stamps the bundle's version from the same recipe the binary's
+        # stamp uses, and refuses, naming both, when the stamp differs from the
+        # version the built binary reports — which, whenever a release tag is in
+        # play, the ABI gate above has already held to that tag. A prep-phase
+        # step with no external side effect: a dry run packs the bundle too, and
+        # the release step attaches it.
+        #
+        # The packer is third-party npm code run inside this job, so the registry
+        # password the job's environment carries is blanked for this step.
+        id: mcp-bundle
+        env:
+          AGGREGA_REGISTRY_PASSWORD: ''
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          BUNDLE="$(aggrega-cli/scripts/build-mcp-bundle.sh --output-dir "$RUNNER_TEMP/mcp-bundle" --expect-version "$BIN_VERSION")"
+          echo "bundle=$BUNDLE" >> "$GITHUB_OUTPUT"
+          echo "packed $BUNDLE"
+
       - name: Generate the core plugin catalog entities
         # Emits one Plugin entity per embedded guest by merging each guest's
         # machine-derived contract fields with its authored overlay; the entity
@@ -590,25 +649,30 @@ jobs:
 
           aggrega-cli/scripts/publish-plugins.sh "${args[@]}"
 
-      - name: Create the GitHub release and upload the binaries
+      - name: Create the GitHub release and upload the binaries and the extension package
         # The publish phase's final side effect: attach the full, light and
-        # stripped binaries to the GitHub release for this tag so they are
-        # downloadable from the release page. The stripped binary is the full
-        # binary without its debug information: the very file the tooling image
-        # carries, which the image step kept at its stripped_binary output. This
-        # step copies that file and never strips, so the asset and the image
-        # cannot differ. The embedded guests are NOT uploaded here — they publish
-        # to the registry with their Plugin entities; the release carries only the
-        # three runnable binaries, and GitHub attaches the source archives on its
-        # own. A dry run prints the planned release and asset names and creates
-        # nothing. The release lands on this repository — GH_REPO pins it
-        # explicitly — for the tag the human already pushed; contents:write
-        # authorizes it. Asset names carry the binary's reported version and the
-        # build's linux/amd64 target.
+        # stripped binaries and the desktop extension package to the GitHub
+        # release for this tag so they are downloadable from the release page.
+        # The stripped binary is the full binary without its debug information:
+        # the very file the tooling image carries, which the image step kept at
+        # its stripped_binary output. This step copies that file and never
+        # strips, so the asset and the image cannot differ. The extension package
+        # is the file the pack step wrote, copied under the name the pack script
+        # gave it. The embedded guests are NOT uploaded here — they publish to the
+        # registry with their Plugin entities; the release carries only the three
+        # runnable binaries and the extension package, and GitHub attaches the
+        # source archives on its own. A dry run prints the planned release and
+        # asset names and creates nothing. The release lands on this repository —
+        # GH_REPO pins it explicitly — for the tag the human already pushed;
+        # contents:write authorizes it. Asset names carry the binary's reported
+        # version; the binaries' also carry the build's linux/amd64 target, and
+        # the extension package's carries none, because it holds no program and
+        # serves every platform its manifest declares.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           STRIPPED_BINARY: ${{ steps.tooling-image.outputs.stripped_binary }}
+          MCP_BUNDLE: ${{ steps.mcp-bundle.outputs.bundle }}
         run: |
           set -euo pipefail
 
@@ -634,20 +698,30 @@ jobs:
             exit 1
           fi
 
+          # The extension package is the file the pack step wrote; refuse rather
+          # than release without it when it is missing.
+          if [ -z "$MCP_BUNDLE" ] || [ ! -f "$MCP_BUNDLE" ]; then
+            echo "the pack step wrote no extension package (expected at '${MCP_BUNDLE:-<unset>}')" >&2
+            exit 1
+          fi
+
           RELEASE_DIR="$RUNNER_TEMP/release"
           mkdir -p "$RELEASE_DIR"
           FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
           LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
           STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-linux-amd64"
+          BUNDLE_ASSET="$RELEASE_DIR/$(basename "$MCP_BUNDLE")"
           cp aggrega-cli/aggrega "$FULL_ASSET"
           cp aggrega-cli/aggrega-light "$LIGHT_ASSET"
           cp "$STRIPPED_BINARY" "$STRIPPED_ASSET"
+          cp "$MCP_BUNDLE" "$BUNDLE_ASSET"
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
             echo "  $(basename "$FULL_ASSET")"
             echo "  $(basename "$LIGHT_ASSET")"
             echo "  $(basename "$STRIPPED_ASSET")"
+            echo "  $(basename "$BUNDLE_ASSET")"
             exit 0
           fi
 
@@ -655,12 +729,13 @@ jobs:
           # already exists): create the release the first time, otherwise
           # re-upload the assets over the existing ones.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET" --clobber
+            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET" "$BUNDLE_ASSET" --clobber
           else
             gh release create "$TAG" \
               "$FULL_ASSET" \
               "$LIGHT_ASSET" \
               "$STRIPPED_ASSET" \
+              "$BUNDLE_ASSET" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information: the same bytes the tooling image carries)."
+              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information: the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
           fi

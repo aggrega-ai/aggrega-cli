@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/check-version-single-source.sh
 #
-# Guards the single home of the build-provenance version recipe. Three outputs
-# must carry the SAME version and short commit so they never disagree: the
-# shipped aggrega binary, the embedded guests' describe() self-report, and the
-# CLI that generates the embedded plugin entities. If those three derived the
-# version by separate `git describe` invocations, a later edit to one invocation
-# would silently fork the version and an embedded entity could advertise a
-# different version than the binary that carries it.
+# Guards the single home of the build-provenance version recipe. The outputs of
+# the scripts in GUARDED below must carry the SAME version and short commit so
+# they never disagree: the shipped aggrega binary, the embedded guests'
+# describe() self-report, the CLI that generates the embedded plugin entities,
+# and the installable MCP bundle a release attaches beside the binaries. If they
+# derived the version by separate `git describe` invocations, a later edit to
+# one invocation would silently fork the version: an embedded entity could
+# advertise a different version than the binary that carries it, or a release's
+# bundle a different version than its binaries.
 #
 # The recipe therefore lives in exactly one file — scripts/lib/build-version.sh —
-# and the three scripts source it instead of invoking git themselves. This guard
-# asserts that arrangement holds:
-#   1. each of the three scripts sources the shared helper, and
-#   2. none of the three re-introduces an inline `git describe` or
+# and every guarded script sources it instead of invoking git itself. The
+# GUARDED list is the only statement of which scripts those are; no count of
+# them is written here, because a count beside the list goes stale the next
+# time the list grows. This guard asserts that arrangement holds:
+#   1. each guarded script sources the shared helper — on a line whose first
+#      word is `.` or `source` and whose argument is a literal, unquoted path
+#      ending in the helper's path; a comment naming the helper does not count,
+#      and
+#   2. none of them re-introduces an inline `git describe` or
 #      `git rev-parse --short` version derivation — spelled plainly or with
 #      git's own options ahead of the subcommand (`git -C <dir> describe`,
 #      `git rev-parse --verify --short`), and
@@ -26,7 +33,7 @@
 # --dirty marker — distinct recipes for distinct outputs, keyed differently from
 # the --dirty binary-provenance recipe guarded here. The container-image builder
 # runs the --dirty recipe itself, for the default tag of the image it builds: an
-# output none of the three guarded scripts stamps. It is exempted from the third
+# output none of the guarded scripts stamps. It is exempted from the third
 # check by name, so the exemption is read where the check is. This check folds
 # none of them in.
 #
@@ -41,7 +48,9 @@
 # binary-provenance chain guarded above, which is why they stay out of scope.
 #
 # Exit 0 when the recipe has one home; exit 1 (naming each offending script and
-# line) otherwise. Deterministic and offline.
+# line) otherwise. Deterministic and offline. The release workflow's prep phase
+# (.github/workflows/publish-plugins-sign.yml) runs it before anything is built,
+# on the tree the run is about to build.
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli module root
 
@@ -54,9 +63,19 @@ GUARDED=(
   scripts/build.sh
   scripts/build-embedded-plugins.sh
   scripts/gen-embedded-plugin-entities.sh
+  scripts/build-mcp-bundle.sh
 )
 
 declare -a violations=()
+
+# A line that sources the helper: `.` or `source` as its first word, then a
+# literal path ending in $HELPER, then the end of the line or a separator.
+# Matching the bare path anywhere would let a comment that names the helper
+# stand in for a removed source line. The path is unquoted and variable-free
+# because that is the only form the guarded scripts use; a script that needs a
+# quoted or "$dir"/-prefixed form widens this pattern deliberately. The path is
+# derived from $HELPER rather than spelled out again here.
+SOURCES_HELPER_RE="^[[:space:]]*(\\.|source)[[:space:]]+([A-Za-z0-9._/-]*/)?${HELPER//./\\.}([[:space:];].*)?\$"
 
 [ -f "$HELPER" ] || { echo "check-version-single-source: shared helper missing: $HELPER" >&2; exit 1; }
 
@@ -84,7 +103,7 @@ for f in "${GUARDED[@]}"; do
     echo "check-version-single-source: guarded script missing: $f" >&2
     exit 1
   fi
-  if ! grep -q 'lib/build-version\.sh' "$f"; then
+  if ! grep -Eq "$SOURCES_HELPER_RE" "$f"; then
     echo "VIOLATION  $f — does not source the shared version helper ($HELPER)"
     violations+=("$f")
   fi
