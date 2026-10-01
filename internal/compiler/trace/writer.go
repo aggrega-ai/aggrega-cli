@@ -6,6 +6,7 @@ package trace
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -374,7 +375,7 @@ func (w *fsWriter) consume() {
 
 func (w *fsWriter) persist(ev event) error {
 	rel := eventPath(ev)
-	full := filepath.Join(w.root, rel)
+	full := filepath.Join(w.root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("trace: mkdir %q: %w", filepath.Dir(full), err)
 	}
@@ -388,6 +389,11 @@ func (w *fsWriter) persist(ev event) error {
 // contract callers rely on when comparing in-memory traces to on-disk
 // .trace/ output.
 //
+// The path is slash-separated on every platform. The memory writer's keys
+// leave this process — written out as a trace directory and returned to an
+// editor — so they are logical names rather than host paths, and the
+// filesystem writer converts one to a host path only where it writes it.
+//
 // Layout:
 //
 //   - Base directory: boundaries/<boundaryPath>/<nodeID>
@@ -397,16 +403,16 @@ func (w *fsWriter) persist(ev event) error {
 //     <base>/<pass>/<fileSuffix>. The fileSuffix already carries its own
 //     extension (e.g. "deployment.yaml") so no default extension is appended.
 func eventPath(ev event) string {
-	dir := filepath.Join("boundaries", ev.boundaryPath, ev.nodeID)
+	dir := path.Join("boundaries", ev.boundaryPath, ev.nodeID)
 	name := string(ev.pass)
 	if ev.fileSuffix != "" {
-		dir = filepath.Join(dir, name)
-		return filepath.Join(dir, ev.fileSuffix)
+		dir = path.Join(dir, name)
+		return path.Join(dir, ev.fileSuffix)
 	}
 	ext := ".yaml"
 	switch ev.pass {
 	case PassEmission, PassLabels:
 		ext = ".log"
 	}
-	return filepath.Join(dir, name+ext)
+	return path.Join(dir, name+ext)
 }

@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/completion"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -270,6 +270,10 @@ func (s *Server) enumerateRecipeImplements(reqCtx context.Context, kindFilter st
 // relative paths (extension-stripped — e.g., "app" for app.yaml).
 // Used by Release-path completion handlers (spec.aggregate:,
 // spec.manifest:).
+//
+// Each path is spelled with forward slashes whatever the host's separator,
+// because a chosen completion is written into the Release, and a Release
+// travels to machines that read a backslash as part of a file name.
 func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFilter string) []string {
 	seen := map[string]bool{}
 	// The walk runs under the request's own context, so a withdrawal that lands
@@ -286,8 +290,8 @@ func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFil
 		if kindFilter != "" && scalarAtPathOnDoc(&doc, []string{"kind"}) != kindFilter {
 			return nil
 		}
-		rel, err := filepath.Rel(s.workspaceRoot, path)
-		if err != nil {
+		rel, ok := pathscope.Relative(s.workspaceRoot, path)
+		if !ok {
 			return nil
 		}
 		rel = strings.TrimSuffix(rel, ".yaml")

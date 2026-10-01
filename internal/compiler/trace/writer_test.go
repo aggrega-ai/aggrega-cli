@@ -6,6 +6,7 @@ package trace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -295,6 +296,12 @@ func TestIsPhaseB0OrLater_DiscriminatesPasses(t *testing.T) {
 // the filesystem writer would produce. The relative-path identity is the
 // load-bearing guarantee the pipeline package relies on when writing the
 // collected map to .trace/ from the CLI wrapper.
+//
+// The expected keys are written as slash-separated literals rather than
+// composed with the host's path join, because the keys are logical names that
+// leave the process: on a platform whose separator is a backslash, a key
+// composed natively would differ from the same trace taken on another
+// platform, and an expectation composed natively would agree with it.
 func TestMemoryWriter_CollectsEntriesUnderRelativePaths(t *testing.T) {
 	t.Parallel()
 	w := NewMemory(Mode{})
@@ -312,13 +319,18 @@ func TestMemoryWriter_CollectsEntriesUnderRelativePaths(t *testing.T) {
 	}
 	got := w.Entries()
 	wantPaths := []string{
-		filepath.Join("boundaries", "default", "api", string(PassPhaseA)+".yaml"),
-		filepath.Join("boundaries", "default", "api", string(PassEmission)+".log"),
-		filepath.Join("boundaries", "default", "api", string(PassPhaseB3), "deployment.yaml"),
+		"boundaries/default/api/" + string(PassPhaseA) + ".yaml",
+		"boundaries/default/api/" + string(PassEmission) + ".log",
+		"boundaries/default/api/" + string(PassPhaseB3) + "/deployment.yaml",
 	}
 	for _, p := range wantPaths {
 		if _, ok := got[p]; !ok {
 			t.Errorf("missing key %q in memory writer entries; got keys: %v", p, keys(got))
+		}
+	}
+	for k := range got {
+		if strings.Contains(k, `\`) {
+			t.Errorf("memory writer key %q carries a backslash; a trace key is a slash-separated name on every platform", k)
 		}
 	}
 	if len(got) != len(wantPaths) {

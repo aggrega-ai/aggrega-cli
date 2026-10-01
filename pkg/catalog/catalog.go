@@ -2512,7 +2512,7 @@ func resolveSubAggregateParameters(typeName string, raw []byte, absPath, returnP
 }
 
 // RelativeToWorkspace returns absPath rendered relative to
-// workspaceRoot, falling back to absPath unchanged when workspaceRoot
+// workspaceRoot, falling back to absPath itself when workspaceRoot
 // is empty (no workspace concept), absPath is empty (no provenance to
 // normalize), or filepath.Rel fails (absPath lives outside the
 // workspace tree on a different volume). The single source of truth
@@ -2526,13 +2526,28 @@ func resolveSubAggregateParameters(typeName string, raw []byte, absPath, returnP
 // The result is still stable across developer machines that share the
 // same workspace-relative layout, which is the byte-identity property
 // the IR wire shape requires.
+//
+// A relative result is spelled with forward slashes on every platform,
+// whichever separator the host uses, so the same workspace yields the same
+// IR whatever platform built it. An absolute path returned unchanged keeps
+// the host's own spelling: it names a location on this machine, and is
+// compared and recognised in that spelling.
 func RelativeToWorkspace(workspaceRoot, absPath string) string {
 	if workspaceRoot == "" || absPath == "" {
-		return absPath
+		return slashedIfRelative(absPath)
 	}
 	rel, err := filepath.Rel(workspaceRoot, absPath)
 	if err != nil {
-		return absPath
+		return slashedIfRelative(absPath)
 	}
-	return rel
+	return filepath.ToSlash(rel)
+}
+
+// slashedIfRelative spells a relative path with forward slashes and returns an
+// absolute one unchanged, which is the rule [RelativeToWorkspace] answers by.
+func slashedIfRelative(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.ToSlash(p)
 }

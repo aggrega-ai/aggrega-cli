@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -3406,7 +3406,11 @@ func computeFinalPath(
 	if evalSub == "" || evalSub == "." {
 		return evalDir, nil
 	}
-	return filepath.Join(evalDir, evalSub), nil
+	// The dispatch path is a slash-separated output name, not a host path: it
+	// prefixes every emitted file's name and reaches an assembling provider as its
+	// boundary path, so it is joined in slash arithmetic on every platform and
+	// converted to a host path only where a file is written.
+	return path.Join(evalDir, evalSub), nil
 }
 
 // parentBoundaryData returns the .parent_boundary.* data map for path-template
