@@ -18,7 +18,7 @@ import (
 // newPluginAddCmd builds the `plugin add` command: it searches the configured
 // registry for a plugin of the named type, resolves the match to one plugin
 // identity, and either writes the attachment into the workspace config file — a
-// `plugins.<type>` list entry (mutator / policy / linter / importer) or a
+// `plugins.<type>` list entry (governance / linter / importer) or a
 // `plugins.providers` capability binding (provider) — or, for the cli type,
 // installs the plugin as a top-level aggrega command.
 func newPluginAddCmd() *cobra.Command {
@@ -47,8 +47,8 @@ What add writes depends on the type:
 
   - A socket type (governance, linter, importer) pins the latest published
     version and adds the bare plugin identity (<type>/<name>:<version>) to the
-    plugins.<type> list. A governance entry also records its --role
-    (label-transform, ir-verdict, or render-verdict).
+    plugins.<type> list. A governance entry also records its --role, one of
+    ` + pluginops.GovernanceRolesHint() + `.
   - The provider type writes the plugin's oci:// identity as a plugins.providers
     entry; --capability names the capability the binding serves, preserving
     existing settings.
@@ -101,7 +101,7 @@ edit.`,
 		},
 	}
 	c.Flags().StringVar(&capability, "capability", "", "Capability the provider binding serves (required for, and only valid with, the provider type)")
-	c.Flags().StringVar(&role, "role", "", "Governance attachment role: label-transform, ir-verdict, or render-verdict (required for, and only valid with, the governance type)")
+	c.Flags().StringVar(&role, "role", "", "Governance attachment role: "+pluginops.GovernanceRolesHint()+" (required for, and only valid with, the governance type)")
 	c.Flags().BoolVar(&global, "global", false, "Write the attachment to the global config shared across every workspace.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A provider or socket attachment defaults here; a cli plugin defaults to the global config.")
 	c.Flags().BoolVar(&acceptCaps, "accept-capabilities", false, "Accept a cli plugin's declared capabilities without the interactive prompt (cli type only)")

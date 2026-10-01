@@ -251,7 +251,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	}
 	if socket == string(workspaceconfig.SocketGovernance) {
 		if _, ok := plugintype.GovernanceRoleTier(plugintype.Role(opts.Role)); !ok {
-			return res, fmt.Errorf("%s: the governance type requires --role naming the attachment role (label-transform, ir-verdict, or render-verdict)", command)
+			return res, fmt.Errorf("%s: the governance type requires --role naming the attachment role (%s)", command, GovernanceRolesHint())
 		}
 	} else if opts.Role != "" {
 		return res, fmt.Errorf("%s: --role applies only to the governance type", command)

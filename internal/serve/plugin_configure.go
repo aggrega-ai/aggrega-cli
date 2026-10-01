@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // pluginWriteScope states how far a plugin mutation reached.
@@ -342,9 +343,12 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 			"plugin add: the provider type requires capability, naming the capability the binding serves")
 	}
-	if params.Role == "" && strings.EqualFold(params.Type, "governance") {
+	// The role is tested with the predicate the shared layer refuses on, so an
+	// unknown role is refused here, in this surface's terms, exactly as a missing
+	// one is, and no role the layer would accept is refused.
+	if _, known := plugintype.GovernanceRoleTier(plugintype.Role(params.Role)); !known && strings.EqualFold(params.Type, "governance") {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"plugin add: the governance type requires role, naming the attachment role (label-transform, ir-verdict, or render-verdict)")
+			"plugin add: the governance type requires role, naming the attachment role ("+pluginops.GovernanceRolesHint()+")")
 	}
 	if isCLI {
 		if !params.AcceptCapabilities {

@@ -86,6 +86,37 @@ func KindsHint() string {
 	return strings.Join(kinds, ", ")
 }
 
+// GovernanceRolesHint names every governance attachment role, in the order the
+// role vocabulary declares them, as one English alternative: the wording the
+// command line and the daemon state the accepted roles in, whether offering them
+// in help or refusing a request that named none of them. It reads that
+// vocabulary rather than listing the roles, because a list written into a
+// message keeps reading as complete after a role is added, so the message would
+// stop offering a value the configuration accepts and nothing would fail.
+func GovernanceRolesHint() string {
+	roles := plugintype.GovernanceRoles()
+	names := make([]string, len(roles))
+	for i, r := range roles {
+		names[i] = string(r)
+	}
+	return choiceList(names)
+}
+
+// choiceList joins choices as an English alternative: "a", "a or b", and
+// "a, b, or c" from three or more.
+func choiceList(choices []string) string {
+	switch len(choices) {
+	case 0:
+		return ""
+	case 1:
+		return choices[0]
+	case 2:
+		return choices[0] + " or " + choices[1]
+	}
+	last := len(choices) - 1
+	return strings.Join(choices[:last], ", ") + ", or " + choices[last]
+}
+
 // workspaceOrRefuse returns the resolved workspace the caller threaded in.
 //
 // A nil workspace is a wiring error — the call was reached without any caller
