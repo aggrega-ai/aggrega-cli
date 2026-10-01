@@ -4,9 +4,10 @@
 # 🔴 THIS IS NOT THE GATE SCRIPT, AND THE TWO SHARE A FILENAME.
 #
 # It builds; it does not test. There are no test modes here — no unit battery, no
-# integration battery, no drift gates, no lint tiers. Its only mode switch is
-# --light. Invoking it and reading a success as "the gate passed" reports a green
-# for a battery that never ran.
+# integration battery, no drift gates, no lint tiers. Its switches choose what to
+# build (--light, --target, --stripped), and --expect-version checks the version
+# the build stamped. Invoking it and reading a success as "the gate passed"
+# reports a green for a battery that never ran.
 #
 # The gate lives at the umbrella root and is invoked from there:
 #
@@ -38,6 +39,32 @@
 #   light binary embeds no Wasm guests and resolves every provider through the
 #   plugin cascade, so it needs no guest regeneration and no overlay check.
 #
+# --target <goos>/<goarch> builds either variant for another system — any pair
+# `go tool dist list` names, as in windows/amd64 — through the same steps: the
+# guests, the overlay check and the entity generation stay host-side (the guests
+# are WebAssembly, the same for every system), and only the final go build is
+# given the target, with cgo off. Its outputs are named for the target, so they
+# never overwrite the host binaries: ./aggrega-<goos>-<goarch> and
+# ./aggrega-light-<goos>-<goarch>, with .exe appended for windows. Without
+# --target the build is for this machine, under the names above.
+#
+# --stripped also writes the stripped binary beside the full one: the full binary
+# without its debug information (the symbol table and the program stay), named
+# ./aggrega-stripped, or ./aggrega-stripped-<goos>-<goarch>[.exe] with --target.
+# It is written by the one stripped-copy recipe in scripts/lib/strip-debug.sh,
+# which the tooling image's build uses too, and the script refuses a copy whose
+# stamped version differs from the full binary's. It does not combine with
+# --light, because the stripped binary is the full one, debug information
+# removed. `strip` (GNU binutils) must be on PATH.
+#
+# --expect-version <version> refuses, after building, unless every binary the run
+# wrote carries <version> as its stamped version. The stamp is read from each
+# binary's own symbol table and data rather than by running it, so a binary built
+# for another system is checked on this one: `go version -m` cannot show it,
+# because Go leaves the linker flags out of the build information of a -trimpath
+# build. That read needs `go tool nm`, and objdump and od from GNU binutils and
+# coreutils.
+#
 # The binary is stamped from git: -X main.version=<git-describe, v-stripped> and
 # -X main.commit=<short-sha>. `git describe` yields the tag, the bare commit
 # before any tag, or a -dirty suffix on uncommitted changes; a leading v on the
@@ -50,9 +77,17 @@
 # Usage:
 #   scripts/build.sh            # embedded aggrega binary (default)
 #   scripts/build.sh --light    # no-embed aggrega-light binary
+#   scripts/build.sh --target windows/amd64 --stripped
+#                               # aggrega-windows-amd64.exe and
+#                               # aggrega-stripped-windows-amd64.exe
+#   scripts/build.sh --light --target windows/amd64
+#                               # aggrega-light-windows-amd64.exe
+#   scripts/build.sh … --expect-version <version>
+#                               # refuse unless what was built stamps <version>
 #   scripts/build.sh --help
 #   scripts/build.sh --test…    # refused (exit 2): names the workspace build script
 #
+# An argument it cannot use is refused with exit 2, before anything is built.
 # Exit non-zero on the first failing step.
 set -euo pipefail
 
@@ -71,6 +106,10 @@ export GOWORK=off
 # invocations. Sourced after the cd above so git resolves against the module root.
 . scripts/lib/build-version.sh
 
+# The stripped-copy recipe (strip_debug_copy), shared with the tooling image's
+# build; --stripped is its only use here.
+. scripts/lib/strip-debug.sh
+
 BINPATH="./cmd/aggrega"
 
 CYAN='\033[36m'
@@ -86,13 +125,34 @@ note() { printf "${YELLOW}  %s${RESET}\n" "$*"; }
 fail() { printf "${RED}✗ %s${RESET}\n" "$*" >&2; }
 
 MODE="build"
-for arg in "$@"; do
+TARGET=""
+STRIPPED=0
+EXPECT_VERSION=""
+while [ "$#" -gt 0 ]; do
+  arg="$1"
   case "$arg" in
     --light)
       MODE="light"
+      shift
+      ;;
+    --target)
+      [ -n "${2:-}" ] || { fail "--target needs <goos>/<goarch>, as in windows/amd64"; exit 2; }
+      TARGET="$2"
+      shift 2
+      ;;
+    --stripped)
+      STRIPPED=1
+      shift
+      ;;
+    --expect-version)
+      [ -n "${2:-}" ] || { fail "--expect-version needs the version the build must stamp"; exit 2; }
+      EXPECT_VERSION="$2"
+      shift 2
       ;;
     -h|--help)
-      sed -n '2,/^# Exit non-zero on the first failing step\.$/p' "$0" | sed 's/^# \{0,1\}//'
+      # Read from CLI_ROOT, not "$0": the cd above has already moved away from
+      # wherever a relative "$0" was resolved.
+      sed -n '2,/^# Exit non-zero on the first failing step\.$/p' "$CLI_ROOT/scripts/$(basename "$0")" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     --test*)
@@ -113,6 +173,39 @@ for arg in "$@"; do
   esac
 done
 
+if [ "$STRIPPED" = 1 ] && [ "$MODE" = "light" ]; then
+  fail "--stripped does not combine with --light: the stripped binary is the full binary"
+  fail "  without its debug information, and --light builds the binary without embedded plugins"
+  exit 2
+fi
+
+# The output names, and the go build environment for a --target build. A target
+# is checked against the toolchain's own list of the systems it builds for, so a
+# misspelt pair is refused by name before anything is built rather than by the
+# compiler after the guests are regenerated.
+OUT_SUFFIX=""
+TARGET_ENV=()
+if [ -n "$TARGET" ]; then
+  targets="$(go tool dist list)" || { fail "go tool dist list failed; cannot check --target $TARGET"; exit 1; }
+  case $'\n'"$targets"$'\n' in
+    *$'\n'"$TARGET"$'\n'*) ;;
+    *)
+      fail "--target $TARGET: not a <goos>/<goarch> pair this Go toolchain builds for"
+      fail "  (go tool dist list names them, as in windows/amd64)"
+      exit 2
+      ;;
+  esac
+  TARGET_OS="${TARGET%/*}"
+  OUT_SUFFIX="-${TARGET_OS}-${TARGET#*/}"
+  [ "$TARGET_OS" = "windows" ] && OUT_SUFFIX="$OUT_SUFFIX.exe"
+  # cgo off: no package of this module uses it, and a binary for another system
+  # cannot link this machine's C library.
+  TARGET_ENV=(GOOS="$TARGET_OS" GOARCH="${TARGET#*/}" CGO_ENABLED=0)
+fi
+FULL_OUT="aggrega$OUT_SUFFIX"
+LIGHT_OUT="aggrega-light$OUT_SUFFIX"
+STRIPPED_OUT="aggrega-stripped$OUT_SUFFIX"
+
 # stamp_ldflags — emit the -ldflags value that stamps version and commit into the
 # binary and clears the build id for reproducibility. The version and commit are
 # the shared recipe's values, sourced once above so a --dirty tree stamps the
@@ -121,13 +214,81 @@ stamp_ldflags() {
   printf -- '-X main.version=%s -X main.commit=%s -buildid=' "$_ver" "$_sha"
 }
 
+# go_build <output> [go build flags…] — the one final go build both variants run:
+# trimmed paths and the version stamp, and for a --target build the target's
+# environment. The guards keep an empty TARGET_ENV from expanding under set -u in
+# older bash.
+go_build() {
+  local out="$1"
+  shift
+  env ${TARGET_ENV[@]+"${TARGET_ENV[@]}"} go build "$@" -trimpath -ldflags "$(stamp_ldflags)" -o "$out" "$BINPATH"
+}
+
+# file_offset <binary> <hex address> — print the file offset holding the byte at
+# <hex address>, from the section table objdump reads for the binary's format
+# (ELF or PE). Only sections whose bytes are in the file and loaded into memory
+# are considered. Fails when no such section holds the address.
+file_offset() {
+  local bin="$1" addr=$((16#$2)) idx size vma off flags sections
+  sections="$(objdump -h "$bin")" || return 1
+  # Each section is a line `Idx Name Size VMA LMA File-off Algn`, then a line of
+  # its flags; the name, load address and alignment are not needed.
+  while read -r idx _ size vma _ off _; do
+    case "$idx" in ''|*[!0-9]*) continue ;; esac
+    read -r flags || return 1
+    case "$flags" in *CONTENTS*ALLOC*) ;; *) continue ;; esac
+    if [ "$addr" -ge $((16#$vma)) ] && [ "$addr" -lt $((16#$vma + 16#$size)) ]; then
+      printf '%d\n' $((addr - 16#$vma + 16#$off))
+      return 0
+    fi
+  done <<<"$sections"
+  return 1
+}
+
+# stamped_version <binary> — print the version the linker stamped into
+# <binary>'s main.version, read from the binary itself rather than by running it,
+# so it reads a binary built for another system: the variable's address from the
+# symbol table, the string header there (a pointer and a length, little-endian),
+# then the bytes it points at. Fails, printing nothing, when the binary has no
+# main.version symbol or its format is not one objdump reads.
+stamped_version() {
+  local bin="$1" symbols addr off header ptr len str_off
+  symbols="$(go tool nm "$bin")" || return 1
+  addr="$(awk '$2 == "D" && $3 == "main.version" { print $1 }' <<<"$symbols")"
+  [ -n "$addr" ] || return 1
+  off="$(file_offset "$bin" "$addr")" || return 1
+  header="$(od -An -t u8 --endian=little -j "$off" -N 16 "$bin")" || return 1
+  read -r ptr len <<<"$header"
+  [ -n "${len:-}" ] || return 1
+  str_off="$(file_offset "$bin" "$(printf '%x' "$ptr")")" || return 1
+  dd if="$bin" iflag=skip_bytes,count_bytes skip="$str_off" count="$len" status=none
+}
+
+# check_stamp <binary> <expected> <what> — refuse unless <binary>'s stamped
+# version is <expected>; <what> names the comparison in the refusal.
+check_stamp() {
+  local bin="$1" expected="$2" what="$3" got
+  if ! got="$(stamped_version "$bin")" || [ -z "$got" ]; then
+    fail "could not read the stamped version of ./$bin from its symbol table and data"
+    exit 1
+  fi
+  if [ "$got" != "$expected" ]; then
+    fail "./$bin stamps version '$got', but $what is '$expected'"
+    exit 1
+  fi
+  ok "./$bin stamps version $got"
+}
+
 if [ "$MODE" = "light" ]; then
   # The light binary embeds no Wasm plugin artifacts (-tags light gates the
   # embed out) and resolves every provider through the plugin cascade, so it
   # needs no guest regeneration and no overlay check.
-  step "go build (light, no embed): aggrega-light"
-  go build -tags light -trimpath -ldflags "$(stamp_ldflags)" -o aggrega-light "$BINPATH"
-  ok "built ./aggrega-light"
+  step "go build (light, no embed): $LIGHT_OUT${TARGET:+ for $TARGET}"
+  go_build "$LIGHT_OUT" -tags light
+  ok "built ./$LIGHT_OUT"
+  if [ -n "$EXPECT_VERSION" ]; then
+    check_stamp "$LIGHT_OUT" "$EXPECT_VERSION" "--expect-version"
+  fi
   printf "${GREEN}${BOLD}build complete${RESET}\n"
   exit 0
 fi
@@ -186,8 +347,29 @@ else
   note "aggrega-hub sibling absent — overlay-consistency check and embedded plugin-entity generation skipped"
 fi
 
-step "go build (embedded): aggrega"
-go build -trimpath -ldflags "$(stamp_ldflags)" -o aggrega "$BINPATH"
-ok "built ./aggrega"
+step "go build (embedded): $FULL_OUT${TARGET:+ for $TARGET}"
+go_build "$FULL_OUT"
+ok "built ./$FULL_OUT"
+if [ -n "$EXPECT_VERSION" ]; then
+  check_stamp "$FULL_OUT" "$EXPECT_VERSION" "--expect-version"
+fi
+
+if [ "$STRIPPED" = 1 ]; then
+  # The stripped binary is the full one without its debug information, written by
+  # the shared recipe. Built for another system it cannot be run to check it, so
+  # its stamped version is read the same way as the full binary's and held to
+  # that: a copy that lost or changed the stamp is refused.
+  step "strip a copy of its debug information: $STRIPPED_OUT"
+  strip_debug_copy "$FULL_OUT" "$STRIPPED_OUT" || { fail "could not write ./$STRIPPED_OUT"; exit 1; }
+  # With --expect-version the full binary was held to it above, so that is its
+  # stamp; otherwise it is read here.
+  full_version="$EXPECT_VERSION"
+  if [ -z "$full_version" ] && { ! full_version="$(stamped_version "$FULL_OUT")" || [ -z "$full_version" ]; }; then
+    fail "could not read the stamped version of ./$FULL_OUT from its symbol table and data"
+    exit 1
+  fi
+  check_stamp "$STRIPPED_OUT" "$full_version" "./$FULL_OUT's"
+  ok "wrote ./$STRIPPED_OUT ($(wc -c < "$STRIPPED_OUT" | tr -d '[:space:]') bytes; ./$FULL_OUT is $(wc -c < "$FULL_OUT" | tr -d '[:space:]') bytes)"
+fi
 
 printf "${GREEN}${BOLD}build complete${RESET}\n"

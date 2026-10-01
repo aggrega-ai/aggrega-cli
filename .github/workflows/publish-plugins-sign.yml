@@ -6,10 +6,10 @@ name: Publish and sign core plugins
 # The PREP phase has no external side effects: it checks that every build script
 # stamping a version takes it from the one shared recipe, builds the binary and
 # its embedded guests (plus the light no-embed binary for the release), asserts
-# host/guest ABI self-consistency, packs the desktop extension package, and
-# generates the core Plugin catalog entities. None of these pushes, publishes or
-# releases anything. Only when every prep step is green does the PUBLISH phase
-# run: it builds and pushes the tooling image, publishes each plugin with its
+# host/guest ABI self-consistency, builds the Windows binaries for the release,
+# packs the desktop extension package, and generates the core Plugin catalog
+# entities. None of these pushes, publishes or releases anything. Only when
+# every prep step is green does the PUBLISH phase run: it builds and pushes the tooling image, publishes each plugin with its
 # guest to the registry, and creates the GitHub release with the downloadable
 # binaries and the extension package. Everything the publish phase signs is
 # signed keyless via the GitHub Actions OIDC identity against the public
@@ -430,6 +430,47 @@ jobs:
 
           echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
 
+      - name: Build the Windows binary and its stripped copy for the release
+        # The release also carries the CLI for windows/amd64, built by the same
+        # build script as the Linux binary with the target named, so the two
+        # cannot follow different build steps. The full binary embeds the guests
+        # the Linux build above regenerated, which are WebAssembly and the same
+        # for every system. --stripped also writes the stripped copy, the full
+        # binary without its debug information, with the one recipe the tooling
+        # image strips the Linux copy with. A Windows binary cannot run on this
+        # runner, so the script reads each binary's stamped version from the
+        # binary itself and refuses, naming both, unless it is the version the
+        # Linux binary reports — which, whenever a release tag is in play, the
+        # ABI gate above has already held to that tag. Writes
+        # aggrega-cli/aggrega-windows-amd64.exe and
+        # aggrega-cli/aggrega-stripped-windows-amd64.exe. A prep-phase step with
+        # no external side effect: a dry run builds both, and the release step
+        # attaches them.
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          aggrega-cli/scripts/build.sh --target windows/amd64 --stripped --expect-version "$BIN_VERSION"
+
+      - name: Build the light Windows binary for the release
+        # The light no-embed binary for windows/amd64, by the same build script
+        # and held to the same version as the step above, for the same reasons.
+        # Writes aggrega-cli/aggrega-light-windows-amd64.exe; a dry run builds it
+        # too.
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          aggrega-cli/scripts/build.sh --light --target windows/amd64 --expect-version "$BIN_VERSION"
+
       - name: Set up Node for the extension packer
         # The desktop extension package is packed by the bundle format's own
         # packer, an npm package, so the job needs Node. A self-hosted runner need
@@ -651,23 +692,27 @@ jobs:
 
       - name: Create the GitHub release and upload the binaries and the extension package
         # The publish phase's final side effect: attach the full, light and
-        # stripped binaries and the desktop extension package to the GitHub
-        # release for this tag so they are downloadable from the release page.
-        # The stripped binary is the full binary without its debug information:
-        # the very file the tooling image carries, which the image step kept at
-        # its stripped_binary output. This step copies that file and never
-        # strips, so the asset and the image cannot differ. The extension package
-        # is the file the pack step wrote, copied under the name the pack script
-        # gave it. The embedded guests are NOT uploaded here — they publish to the
-        # registry with their Plugin entities; the release carries only the three
-        # runnable binaries and the extension package, and GitHub attaches the
-        # source archives on its own. A dry run prints the planned release and
-        # asset names and creates nothing. The release lands on this repository —
-        # GH_REPO pins it explicitly — for the tag the human already pushed;
-        # contents:write authorizes it. Asset names carry the binary's reported
-        # version; the binaries' also carry the build's linux/amd64 target, and
-        # the extension package's carries none, because it holds no program and
-        # serves every platform its manifest declares.
+        # stripped binaries for linux/amd64 and for windows/amd64, and the desktop
+        # extension package, to the GitHub release for this tag so they are
+        # downloadable from the release page. A stripped binary is the full
+        # binary without its debug information. The Linux one is the very file
+        # the tooling image carries, which the image step kept at its
+        # stripped_binary output; this step copies that file and never strips,
+        # so the asset and the image cannot differ. The Windows ones are the
+        # files the Windows build steps wrote, each already held to the Linux
+        # binary's version. The extension package is the file the pack step
+        # wrote, copied under the name the pack script gave it. The embedded
+        # guests are NOT uploaded here — they publish to the registry with their
+        # Plugin entities; the release carries only the runnable binaries and the
+        # extension package, and GitHub attaches the source archives on its own.
+        # The step refuses to release when any of those files is missing. A dry
+        # run prints the planned release and asset names and creates nothing.
+        # The release lands on this repository — GH_REPO pins it explicitly —
+        # for the tag the human already pushed; contents:write authorizes it.
+        # Asset names carry the binary's reported version; the binaries' also
+        # carry their build's target, linux/amd64 or windows/amd64 (with .exe),
+        # and the extension package's carries none, because it holds no program
+        # and serves every platform its manifest declares.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -705,23 +750,48 @@ jobs:
             exit 1
           fi
 
+          # The Windows binaries are the files the Windows build steps wrote;
+          # refuse rather than release without one when it is missing.
+          WIN_FULL="aggrega-cli/aggrega-windows-amd64.exe"
+          WIN_LIGHT="aggrega-cli/aggrega-light-windows-amd64.exe"
+          WIN_STRIPPED="aggrega-cli/aggrega-stripped-windows-amd64.exe"
+          for built in "$WIN_FULL" "$WIN_LIGHT" "$WIN_STRIPPED"; do
+            if [ ! -f "$built" ]; then
+              echo "the Windows build steps wrote no $(basename "$built") (expected at '$built')" >&2
+              exit 1
+            fi
+          done
+
           RELEASE_DIR="$RUNNER_TEMP/release"
           mkdir -p "$RELEASE_DIR"
           FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
           LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
           STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-linux-amd64"
+          WIN_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-windows-amd64.exe"
+          WIN_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-windows-amd64.exe"
+          WIN_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-windows-amd64.exe"
           BUNDLE_ASSET="$RELEASE_DIR/$(basename "$MCP_BUNDLE")"
           cp aggrega-cli/aggrega "$FULL_ASSET"
           cp aggrega-cli/aggrega-light "$LIGHT_ASSET"
           cp "$STRIPPED_BINARY" "$STRIPPED_ASSET"
+          cp "$WIN_FULL" "$WIN_FULL_ASSET"
+          cp "$WIN_LIGHT" "$WIN_LIGHT_ASSET"
+          cp "$WIN_STRIPPED" "$WIN_STRIPPED_ASSET"
           cp "$MCP_BUNDLE" "$BUNDLE_ASSET"
+
+          # The one list of what the release carries: the dry run prints it, and
+          # the upload and the creation attach exactly it.
+          ASSETS=(
+            "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET"
+            "$WIN_FULL_ASSET" "$WIN_LIGHT_ASSET" "$WIN_STRIPPED_ASSET"
+            "$BUNDLE_ASSET"
+          )
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
-            echo "  $(basename "$FULL_ASSET")"
-            echo "  $(basename "$LIGHT_ASSET")"
-            echo "  $(basename "$STRIPPED_ASSET")"
-            echo "  $(basename "$BUNDLE_ASSET")"
+            for asset in "${ASSETS[@]}"; do
+              echo "  $(basename "$asset")"
+            done
             exit 0
           fi
 
@@ -729,13 +799,9 @@ jobs:
           # already exists): create the release the first time, otherwise
           # re-upload the assets over the existing ones.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET" "$BUNDLE_ASSET" --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" \
-              "$FULL_ASSET" \
-              "$LIGHT_ASSET" \
-              "$STRIPPED_ASSET" \
-              "$BUNDLE_ASSET" \
+            gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information: the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
+              --notes "Release $TAG. Downloadable binaries for linux/amd64 and for windows/amd64 (the Windows files end in .exe and are not code-signed): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
           fi

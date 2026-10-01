@@ -34,7 +34,10 @@
 # writes a copy of the binary with its debug information removed
 # (`strip --strip-debug`; the symbol table stays) into a build context of its
 # own, a temporary directory holding only that copy under the name `aggrega`,
-# and builds the image from it. The binary given by --binary is never modified.
+# and builds the image from it. The recipe is the shared one in
+# scripts/lib/strip-debug.sh, which `scripts/build.sh --stripped` also uses, so
+# every stripped binary a release carries is made the same way. The binary given
+# by --binary is never modified.
 # The copy must report the same `version` and `abiVersion` in
 # `aggrega version -o json` as the original, or the script refuses. It strips on
 # every run, a dry run included: stripping is local, and a dry run exists to
@@ -77,6 +80,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# The stripped-copy recipe (strip_debug_copy) has one home, shared with
+# scripts/build.sh; see the header.
+# shellcheck source-path=SCRIPTDIR source=lib/strip-debug.sh
+. "$SCRIPT_DIR/lib/strip-debug.sh"
 
 REGISTRY="hub.aggrega.ai"
 IMAGE_NAME="tools/aggrega"
@@ -160,8 +168,8 @@ case "$TAG" in
 esac
 
 # Strip a copy of the binary into a build context of its own (see the header
-# for why). `strip -o` writes the copy and leaves the input untouched; the mode
-# is set explicitly because `strip -o` creates the copy under the umask.
+# for why), through the shared recipe, which writes the copy and leaves the
+# input untouched.
 command -v strip >/dev/null 2>&1 || die "strip not found on PATH.
 the tooling image carries a copy of the binary stripped of its debug information
 (see --help for why); install GNU binutils, which provides strip, and re-run."
@@ -175,8 +183,7 @@ fi
 CONTEXT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aggrega-tooling-image.XXXXXX")" || die "could not create a temporary build context"
 trap 'rm -rf "$CONTEXT_DIR"' EXIT
 STRIPPED="$CONTEXT_DIR/aggrega"
-strip --strip-debug -o "$STRIPPED" "$BINARY" || die "strip --strip-debug failed on $BINARY"
-chmod 0755 "$STRIPPED"
+strip_debug_copy "$BINARY" "$STRIPPED" || die "could not write the stripped copy of $BINARY"
 
 STRIPPED_JSON="$("$STRIPPED" version -o json 2>/dev/null)" || die "the stripped copy of $BINARY does not run: could not read its version"
 STRIPPED_VERSION="$(json_field "$STRIPPED_JSON" version)"

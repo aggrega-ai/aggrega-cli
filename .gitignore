@@ -7,6 +7,10 @@
 bin/
 /aggrega
 /aggrega-light
+/aggrega-stripped
+# scripts/build.sh --target names its outputs for the target system:
+# aggrega[-light|-stripped]-<goos>-<goarch>, with .exe for windows.
+/aggrega-*-*
 /mutation-baseline
 
 # Test binary, built with `go test -c`
