@@ -223,29 +223,38 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 	if m.Spec.Extends != "" {
 		s.addEntity(m.Spec.Extends, "manifest.spec.extends")
 	}
-	if m.Spec.Mappings.Components != nil {
-		for componentType, recipeURI := range m.Spec.Mappings.Components.Type.All() {
-			// The mapping key is the developer-declared Component URI.
-			s.addEntityKind(componentType, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType), "component")
-			// The mapping value is the Ops-side Recipe URI. Its position (a
-			// components-mapping value) is authoritative for source-descent:
-			// record the recipe kind so a short-form reference is recognised
-			// even without a "/recipe/" path segment.
-			if recipeURI != "" {
-				s.addEntityKind(recipeURI, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType), "recipe")
+	s.walkMapping(m.Spec.Mappings.Components, "components", "component", "recipe")
+	s.walkMapping(m.Spec.Mappings.Features, "features", "feature", "feature_recipe")
+}
+
+// walkMapping records every realization one mapping binds, in every tier it
+// carries, under the authoring path of the entry that binds it: the type tier's
+// component-type → Recipe (or feature-type → FeatureRecipe) entries and the name
+// tier's instance-name → Recipe (or FeatureRecipe) overrides alike.
+//
+// The tiers are read through [types.MappingTier.Tiers], the one statement of
+// which tiers a mapping carries, which is also what the lookup that picks one
+// instance's realization reads. A realization bound by instance name is
+// therefore pinned exactly as one bound by type, and a build verifies it against
+// its pin the same way: the build re-runs this walk and holds the lockfile to it,
+// so a lockfile without the row is refused as drift. Reading a tier here from its
+// field instead would let the lookup return a realization no lockfile row covers.
+//
+// A type-tier key is the developer-declared Component or Feature reference, so it
+// is recorded as one; a name-tier key is an instance name, which is no entity. A
+// value is the Ops-side realization, and its position — a components-mapping
+// value is a Recipe, a features-mapping value a FeatureRecipe — is authoritative
+// for source-descent, so the kind is recorded and a short-form reference is
+// recognised without a "/recipe/" path segment.
+func (s *walkState) walkMapping(mapping *types.MappingTier, section, keyKind, valueKind string) {
+	for _, tier := range mapping.Tiers() {
+		for key, uri := range tier.Entries.All() {
+			site := fmt.Sprintf("manifest.spec.mappings.%s.%s.%s", section, tier.Key, key)
+			if !tier.ByInstanceName {
+				s.addEntityKind(key, site, keyKind)
 			}
-		}
-	}
-	if m.Spec.Mappings.Features != nil {
-		for featureType, frURI := range m.Spec.Mappings.Features.Type.All() {
-			// The mapping key is the developer-declared Feature URI.
-			s.addEntityKind(featureType, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType), "feature")
-			// The mapping value is the Ops-side FeatureRecipe URI. Its position
-			// (a features-mapping value) is authoritative: record the
-			// feature_recipe kind so source-descent recognises it regardless of
-			// the URI's lexical form.
-			if frURI != "" {
-				s.addEntityKind(frURI, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType), "feature_recipe")
+			if uri != "" {
+				s.addEntityKind(uri, site, valueKind)
 			}
 		}
 	}
@@ -765,15 +774,21 @@ func formatConsumerConflicts(m map[string]string) string {
 // referencedFromPreview emits a deterministic-ordered preview of
 // the referencedFrom set for the ErrUnresolvableURI error message.
 func referencedFromPreview(m map[string]struct{}) string {
-	paths := make([]string, 0, len(m))
-	for k := range m {
-		paths = append(paths, k)
+	return ReferencedFromPreview(slices.Collect(maps.Keys(m)))
+}
+
+// ReferencedFromPreview renders the authoring sites that reach one reference
+// for a message: sorted, at most three of them, and "..." where more were
+// recorded. It is the one wording of where a reference is written, shared by the
+// walk's refusal of a reference nothing resolves and by the lockfile's report of
+// a reference it does not pin, so the two name a site the same way. The input is
+// not modified.
+func ReferencedFromPreview(paths []string) string {
+	sorted := slices.Sorted(slices.Values(paths))
+	if len(sorted) > 3 {
+		sorted = append(sorted[:3], "...")
 	}
-	sort.Strings(paths)
-	if len(paths) > 3 {
-		paths = append(paths[:3], "...")
-	}
-	return strings.Join(paths, ", ")
+	return strings.Join(sorted, ", ")
 }
 
 // materialise converts the post-resolution pending maps into the

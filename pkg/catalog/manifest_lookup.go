@@ -325,21 +325,35 @@ func ambiguousMappingKeys(err error) ([]string, bool) {
 // nameThenType resolves a mapping tier with name-wins-over-type precedence:
 // an exact instance-name hit short-circuits all further lookup; otherwise the
 // version-tolerant type match applies. This is the single expression of the
-// Manifest two-tier precedence per entity kind — the render lookup and the
-// pull/source-descent lookup both route through it, so those entry points stay
-// dumb forwarders and the precedence cannot drift between the two resolution
-// paths. An empty instanceName
-// (no per-instance name in scope at a call site) cleanly skips the name tier.
+// Manifest two-tier precedence per entity kind — the render lookup
+// (componentTypeToRecipeWithManifest / featureTypeToFeatureRecipeWithManifest)
+// and the pull's source-descent joins (ComponentRecipeURI / FeatureRecipeURI)
+// both route through it, so those entry points stay dumb forwarders and the
+// precedence cannot drift between the two resolution paths. An empty
+// instanceName (no per-instance name in scope at a call site) cleanly skips the
+// name tier.
+//
+// The tiers are read through [types.MappingTier.Tiers], the one statement of
+// which tiers a mapping carries and in which order, and the lock-time walk that
+// pins every realization a mapping binds reads them through it too. That is what
+// keeps every reference this lookup can return among the pinned ones: walk and
+// lookup cannot come to read different tiers.
 func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (string, bool, error) {
-	if tier == nil {
-		return "", false, nil
-	}
-	if instanceName != "" {
-		if uri, ok := tier.Name.Get(instanceName); ok {
-			return uri, true, nil
+	for _, t := range tier.Tiers() {
+		if t.ByInstanceName {
+			if instanceName == "" {
+				continue
+			}
+			if uri, ok := t.Entries.Get(instanceName); ok {
+				return uri, true, nil
+			}
+			continue
+		}
+		if uri, ok, err := versionTolerantTypeGet(t.Entries, lookupType); err != nil || ok {
+			return uri, ok, err
 		}
 	}
-	return versionTolerantTypeGet(tier.Type, lookupType)
+	return "", false, nil
 }
 
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe

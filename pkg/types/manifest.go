@@ -249,3 +249,42 @@ type MappingTier struct {
 	// empty dictionary clears the inherited set rather than merging into it.
 	Annotations *OrderedMap[AnnotationBinding] `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
+
+// MappingTierEntries is one tier of a [MappingTier], as [MappingTier.Tiers]
+// presents it: the key the tier is written under, what its keys name, and the
+// realization each key binds.
+type MappingTierEntries struct {
+	// Key is the key the tier is written under in the Manifest, "name" or
+	// "type", so a reader can say where an entry was authored.
+	Key string
+
+	// ByInstanceName reports that the tier is keyed by instance name: an entry
+	// applies to the one instance its key names. Otherwise the tier is keyed by
+	// type reference and an entry applies to every instance of that type.
+	ByInstanceName bool
+
+	// Entries maps each key to the Recipe or FeatureRecipe reference it binds,
+	// in author order.
+	Entries OrderedMap[string]
+}
+
+// Tiers returns the mapping's tiers in the order a lookup consults them: the
+// name tier, whose entry for an instance wins, then the type tier. A nil
+// mapping has none.
+//
+// It is the one statement of which tiers a mapping carries. The lookup that
+// picks the realization one instance renders through reads the tiers through
+// it, and so does the lock-time walk that pins every realization a mapping
+// binds, so the set of references the lookup can return is the set the walk
+// pins: a realization bound by instance name is pinned and verified exactly as
+// one bound by type. A tier read directly from a field rather than through here
+// is the shape that lets the two disagree.
+func (t *MappingTier) Tiers() []MappingTierEntries {
+	if t == nil {
+		return nil
+	}
+	return []MappingTierEntries{
+		{Key: "name", ByInstanceName: true, Entries: t.Name},
+		{Key: "type", Entries: t.Type},
+	}
+}

@@ -294,6 +294,11 @@ type driftKey struct {
 	URI             string
 	ResolvedVersion string
 	Digest          string
+
+	// referencedFrom says where the reference is written, for the report of a
+	// reference the lockfile does not pin; it is never compared. It is empty
+	// where the closure member records no authoring site.
+	referencedFrom string
 }
 
 func entityKey(e Entity) driftKey {
@@ -304,9 +309,19 @@ func pluginKey(p Plugin) driftKey {
 	return driftKey{URI: p.URI, ResolvedVersion: p.ResolvedVersion, Digest: p.Digest}
 }
 
+// refKeys carries each closure member's authoring sites onto its key, so a
+// reference the lockfile does not pin is reported with the place that asks for
+// it. For a realization a Manifest binds that place names the mapping entry —
+// for one bound by instance name, the instance name — which is what tells the
+// reader which binding the missing row is for.
 func refKeys(refs []closure.ResolvedRef) []driftKey {
 	return driftKeysOf(refs, func(r closure.ResolvedRef) driftKey {
-		return driftKey{URI: r.URI, ResolvedVersion: r.ResolvedVersion, Digest: r.Digest}
+		return driftKey{
+			URI:             r.URI,
+			ResolvedVersion: r.ResolvedVersion,
+			Digest:          r.Digest,
+			referencedFrom:  closure.ReferencedFromPreview(r.ReferencedFrom),
+		}
 	})
 }
 
@@ -335,6 +350,10 @@ func collectDrift(label string, have, want []driftKey) []error {
 		seen[w.URI] = struct{}{}
 		h, ok := haveByURI[w.URI]
 		if !ok {
+			if w.referencedFrom != "" {
+				out = append(out, fmt.Errorf("%s %q not in lockfile (referenced from %s)", label, w.URI, w.referencedFrom))
+				continue
+			}
 			out = append(out, fmt.Errorf("%s %q not in lockfile", label, w.URI))
 			continue
 		}
