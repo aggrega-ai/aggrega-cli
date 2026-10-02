@@ -756,7 +756,7 @@ func declaredSocketsOf(objections []constraint.Objection) []string {
 func wiredAttachment(featureType string, sockets ...string) types.FeatureInstance {
 	fi := types.FeatureInstance{Type: featureType}
 	for _, s := range sockets {
-		fi.Uses.Set(s, types.UsesSocketValue{Compact: []string{"anything"}})
+		fi.Uses.Set(s, types.FeatureUsesSocketValue{Compact: []string{"anything"}})
 	}
 	return fi
 }

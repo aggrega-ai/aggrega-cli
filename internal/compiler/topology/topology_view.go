@@ -270,6 +270,35 @@ func (v *topologyView) ResolvedUsesSocketConnections(node string) types.OrderedM
 	return v.connections[node]
 }
 
+// FlattenedConnectionAttachmentNames returns the attachments the connections of a
+// node in the flattened set carry, keyed by socket and then by alias, each
+// listing the names its attachments are written under, in author order.
+//
+// It reads the node's own authored block, which flattening carries on the node
+// for a component wherever its document sits, so a component a sub-module
+// contributes answers exactly as one the Aggregate declares. A connection
+// carrying no attachment contributes nothing.
+func (v *topologyView) FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]] {
+	out := types.OrderedMap[types.OrderedMap[[]string]]{}
+	n, ok := v.nodes.Get(node)
+	if !ok || n == nil {
+		return out
+	}
+	for socket, sv := range n.Uses.All() {
+		aliases := types.OrderedMap[[]string]{}
+		for alias, entry := range sv.Verbose.All() {
+			if entry.Features.Len() == 0 {
+				continue
+			}
+			aliases.Set(alias, entry.Features.Keys())
+		}
+		if aliases.Len() > 0 {
+			out.Set(socket, aliases)
+		}
+	}
+	return out
+}
+
 // PerEdgeAuthoredTarget returns the target one connection names, as the document
 // that drew it wrote the name, empty when the composition drew no connection
 // there.

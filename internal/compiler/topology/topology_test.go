@@ -147,8 +147,8 @@ func TestBuild_CyclicEdges(t *testing.T) {
 
 func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("targets", types.UsesSocketValue{Compact: []string{"metrics-db"}})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("targets", types.FeatureUsesSocketValue{Compact: []string{"metrics-db"}})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("monitoring", types.FeatureInstance{Type: "core/monitoring", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}

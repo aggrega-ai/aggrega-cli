@@ -1390,6 +1390,27 @@ type NormalizedView interface {
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.Inject.
 	SocketInjectMechanismNames(componentType string, socket string) []string
 
+	// SocketDeclaredSlotNames are the attachment slot names a dependency
+	// socket declared on a component type lets each connection on it fill, in
+	// author order.
+	//
+	// The set CLOSES the surface it governs, which is the difference between
+	// this and the slots a component type declares for its own attachment
+	// block. A component's own block admits a name no slot declares, so that
+	// set says which names carry a declaration to check a fill against; a
+	// connection admits only the names this set holds, so a rule reads it as
+	// the whole of what a connection may carry.
+	//
+	// Empty is the most constrained answer rather than an absent one: a socket
+	// declaring no slot admits no attachment on its connections. Whether the
+	// socket is declared at all is a separate question — a socket the
+	// component type does not declare reads empty here too, and declares no
+	// slot either — so a rule naming the reason to an author reads the
+	// declared socket set beside this.
+	//
+	// Keyed by (node, socket); read from types.UsesSchemaEntry.FeaturesSchema.
+	SocketDeclaredSlotNames(componentType string, socket string) []string
+
 	// AttachmentSocketInjectMechanismNames are the delivery mechanisms a
 	// dependency socket of the Feature an attachment resolves to allows a
 	// connection wired into it to dictate, in author order.
@@ -1468,6 +1489,25 @@ type NormalizedView interface {
 	//
 	// Keyed by edge; read from types.VerboseUsesEntry.Values.
 	PerEdgeValues(node string, socket string, alias string) types.OrderedMap[any]
+
+	// PerEdgeAttachmentNames are the names one connection of an instance's own
+	// dependency block carries an attachment under, in author order — each
+	// the slot the attachment claims to fill.
+	//
+	// It names the attachments and nothing about them, because the question a
+	// rule over it asks is whether each name is one the connection's socket
+	// declares a slot for, and the name is the whole of what that question
+	// reads. Empty for a connection carrying no attachment and for one the
+	// short authoring form wrote, which has nowhere to carry one.
+	//
+	// It reads the developer's connection entry and no other surface. The
+	// operator may put attachments on the same connection from the Release,
+	// and that is a separate fact with the same shape, because the two are
+	// written by separate hands on separate documents and a finding has to
+	// name the one its author wrote.
+	//
+	// Keyed by edge; read from types.VerboseUsesEntry.Features.
+	PerEdgeAttachmentNames(node string, socket string, alias string) []string
 
 	// AuthoredPerEdgeInject is the delivery a connection dictates as it was
 	// written, keyed by mechanism name in author order, each entry carrying
@@ -2208,6 +2248,25 @@ type NormalizedView interface {
 	//
 	// Keyed by edge; read from types.ReleaseUsesEntry.Infra.
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
+
+	// ReleasePerEdgeAttachmentNames are the names a Release's per-edge entry
+	// carries an attachment under on one connection, in author order — each
+	// the slot the attachment claims to fill.
+	//
+	// It is the operator's counterpart of the names the developer's connection
+	// entry carries, and a separate fact for the reason the two documents'
+	// per-edge configuration is: each is written by its own hand and is
+	// independently absent, and a finding has to name the document whose
+	// author wrote the name.
+	//
+	// It answers for every component the Release writes against, a component a
+	// sub-module contributes included, because the Release addresses such a
+	// component by the identity the composition gives it. Whether that
+	// component's type is knowable yet is a separate question, answered by the
+	// stage that reads it.
+	//
+	// Keyed by edge; read from types.ReleaseUsesEntry.Features.
+	ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string
 
 	// ReleaseAuthoredUsesSocketConnections are the connections a Release's own
 	// edge surface creates on one component, one entry per socket the Release
@@ -3133,6 +3192,28 @@ type TopologyView interface {
 	//
 	// Keyed by (node, socket); read from topology.TopologyResult.Edges.
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
+
+	// FlattenedConnectionAttachmentNames are the attachments the connections
+	// of a node in the flattened set carry, keyed by socket and then by alias,
+	// each listing the names its attachments are written under, in author
+	// order at every level.
+	//
+	// It answers for every node the composition holds, which is what separates
+	// it from the names read off the Aggregate's own instance list: a
+	// component a sub-module contributes keeps its dependency block in that
+	// module's document, read only when the composition is flattened, so the
+	// fact over the authoring document reports every such connection as
+	// carrying nothing.
+	//
+	// Only a connection carrying at least one attachment appears, and a socket
+	// appears only through such a connection. It is read per node rather than
+	// per connection because the flattened composition enumerates no
+	// connections of its own, and a rule asking whether each name fills a
+	// declared slot has to be asked about every connection the node's block
+	// wrote.
+	//
+	// Keyed by node; read from topology.TopologyNode.Uses.
+	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
 
 	// PerEdgeAuthoredTarget is the target one connection names, as the
 	// document that drew it wrote the name — empty when the composition drew

@@ -71,9 +71,10 @@ func AssembleNodeContext(
 	}
 
 	// Every attachment the node holds, author-order preserved, projected through
-	// one shape onto one pillar. Provides is filled in by the orchestrator once
-	// the bound FeatureRecipe has been evaluated.
-	features := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID)
+	// one shape: the node's own onto the `.features` pillar, and the ones its
+	// connections carry beside it, out of a template's sight. Provides is filled
+	// in by the orchestrator once the bound FeatureRecipe has been evaluated.
+	features, connectionAttachments := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID)
 
 	// Metadata from Release
 	var metadata *types.TemplateMetadata
@@ -104,11 +105,12 @@ func AssembleNodeContext(
 		// this context happens later, at Phase B.0, which overwrites the field with
 		// that node's already-resolved map. The two are separate steps, and the field
 		// is empty in between.
-		Locals:    types.OrderedMap[string]{},
-		Provides:  providesForNode,
-		Features:  features,
-		Metadata:  metadata,
-		InjectRaw: injectRaw,
+		Locals:                types.OrderedMap[string]{},
+		Provides:              providesForNode,
+		Features:              features,
+		Metadata:              metadata,
+		InjectRaw:             injectRaw,
+		ConnectionAttachments: connectionAttachments,
 	}
 
 	return ctx
@@ -118,22 +120,41 @@ func AssembleNodeContext(
 // preserving author order. One projection for every attachment family: a
 // family-specific copy would be free to lose a pillar, which is how a pillar
 // carried in the IR becomes unreadable from a template.
-func projectAttachments(bucket types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]], nodeID string) types.OrderedMap[types.TemplateAttachment] {
-	out := types.OrderedMap[types.TemplateAttachment]{}
+//
+// An attachment one of the node's connections carries is projected into the
+// second result rather than the first. It is one of the node's attachments for
+// everything the graph does with one — its own FeatureRecipe renders against it —
+// but it was written on a connection rather than on the node's own block, and a
+// template ranging the node's `.features` to find its own attachments by type
+// would otherwise be handed a connection's credential as if the node had attached
+// it. Whether an entry came from a connection is read off the entry's own mark,
+// never out of its name, and the one projection serves both results so the two
+// cannot come to carry an attachment in different shapes.
+func projectAttachments(
+	bucket types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]],
+	nodeID string,
+) (own, onConnections types.OrderedMap[types.TemplateAttachment]) {
+	own = types.OrderedMap[types.TemplateAttachment]{}
+	onConnections = types.OrderedMap[types.TemplateAttachment]{}
 	entries, ok := bucket.Get(nodeID)
 	if !ok {
-		return out
+		return own, onConnections
 	}
 	for name, entry := range entries.All() {
-		out.Set(name, types.TemplateAttachment{
+		projected := types.TemplateAttachment{
 			Type:            entry.Type,
 			ResolvedVersion: entry.ResolvedVersion,
 			Labels:          entry.Labels,
 			Values:          entry.Values,
 			Infra:           entry.Infra,
-		})
+		}
+		if entry.OnConnection() {
+			onConnections.Set(name, projected)
+			continue
+		}
+		own.Set(name, projected)
 	}
-	return out
+	return own, onConnections
 }
 
 // applyAttachmentProvides folds each attachment's resolved provides bag onto the

@@ -25,17 +25,21 @@ import (
 // message at [TestInjectBlockSurfaceInventory_NoDrift] names what
 // changed.
 //
-// The three entries below correspond to the three typed surfaces walked
+// The four entries below correspond to the four typed surfaces walked
 // today:
 //
 //   - ComponentInstance.Inject (component self-inject)
 //   - FeatureInstance.Inject (feature attachment inject)
-//   - VerboseUsesEntry.Inject (uses[].inject — reached via every
-//     ComponentInstance / FeatureInstance with a Uses block)
+//   - VerboseUsesEntry.Inject (uses[].inject on a component's own block —
+//     reached via every ComponentInstance with a Uses block)
+//   - FeatureUsesEntry.Inject (uses[].inject on an attachment's block —
+//     reached via every FeatureInstance with a Uses block, through the one
+//     projection that walks it with the component's own block's walker)
 var expectedInjectBlockFields = map[string]struct{}{
 	"ComponentInstance.Inject": {},
 	"FeatureInstance.Inject":   {},
 	"VerboseUsesEntry.Inject":  {},
+	"FeatureUsesEntry.Inject":  {},
 }
 
 // TestInjectBlockSurfaceInventory_NoDrift is a defense-in-depth coverage

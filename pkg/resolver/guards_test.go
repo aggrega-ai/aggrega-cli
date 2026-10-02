@@ -76,8 +76,8 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 	// The unknown socket sits on the attachment rather than on the component's
 	// own uses block, because a component's own uses may name a socket the
 	// catalog did not declare and so raises nothing.
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("databases", types.FeatureUsesSocketValue{Compact: []string{"db"}})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("log", types.FeatureInstance{Type: "core/logging:1.0.0", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}

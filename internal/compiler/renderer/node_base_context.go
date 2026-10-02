@@ -73,9 +73,16 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 	}
 	out.Uses = uses
 
+	// The node's own attachments, on the same terms the render context's
+	// `.features` takes them: an attachment one of the node's connections
+	// carries is not one the node attached, so it is left out here as it is
+	// there — see projectAttachments.
 	features := make(map[string]any)
 	if attachments, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok {
 		for name, entry := range attachments.All() {
+			if entry.OnConnection() {
+				continue
+			}
 			features[name] = map[string]any{
 				"type":             entry.Type,
 				"resolved_version": entry.ResolvedVersion,

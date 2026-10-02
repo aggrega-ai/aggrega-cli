@@ -155,6 +155,29 @@ func contributionFrom(surface string, prov featureProvenance, site constraint.Au
 	}
 }
 
+// markConnection records, on a merged attachment, the connection it was written
+// on, when the contribution just folded in came from one. A contribution from a
+// component's own attachment block carries none and leaves the entry as it is,
+// so the mark is set by whichever contribution knows the connection and never
+// cleared by one that does not.
+//
+// The connection travels as data from where the contribution was collected —
+// the topology's lowering of the Aggregate's connection entries, and the
+// Release collection of its own — and nothing here derives it from the
+// attachment's name.
+func (r *featureResult) markConnection(instance string, connection *types.AttachmentConnection) {
+	if connection == nil {
+		return
+	}
+	entry, ok := r.Features.Get(instance)
+	if !ok || entry.Connection != nil {
+		return
+	}
+	c := *connection
+	entry.Connection = &c
+	r.Features.Set(instance, entry)
+}
+
 // recordContributedFill notes a fill that arrived from a scope broader than the
 // node, so the post-cascade slot-shape rule can name the scope it was authored
 // at. Only fills carrying a delivery block are recorded, because a slot's shape
@@ -503,6 +526,7 @@ func collectNodeFeatures(
 			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentOwner); err != nil {
 				return nil, err
 			}
+			result.markConnection(fa.InstanceName, fa.Connection)
 		}
 	}
 
@@ -587,6 +611,7 @@ func collectNodeFeatures(
 			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, owner); err != nil {
 				return nil, err
 			}
+			result.markConnection(cf.name, cf.connection)
 		}
 	}
 
@@ -1470,10 +1495,16 @@ type namedFeature struct {
 // contributions. Carried here for the reason the subsystem side carries its
 // own — it is only knowable inside the walk, and by the time a contribution has
 // been folded, which boundary supplied it is gone.
+//
+// connection is set on an attachment the Release put on one of the component's
+// connections — a `features` entry under a per-edge `uses` entry — and names that
+// connection; it is nil for an attachment of the component entry's own
+// `features` block.
 type namedBoundaryFeature struct {
-	name      string
-	scopePath string
-	feat      types.BoundaryFeature
+	name       string
+	scopePath  string
+	feat       types.BoundaryFeature
+	connection *types.AttachmentConnection
 }
 
 // collectSubsystemFeatures implements the per-subsystem cascade level:
@@ -1610,6 +1641,13 @@ func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary]
 // about one of its leaves points at and the recursion is the only place it is
 // known. The path is joined the way the boundary axis joins its levels, so a
 // value taken from here splits back into the levels the operator wrote.
+//
+// The attachments the Release puts on the component's connections are collected
+// at the same level, after the entry's own block: each is an attachment of the
+// consuming component, named by the alias and the slot, contributing infra only
+// under the same pillar split, and carrying the connection it was written on. A
+// name the Aggregate also lowered from the same connection therefore folds into
+// that attachment by the merge every other same-named contribution goes through.
 func collectCompFeaturesRecursive(
 	boundaries types.OrderedMap[types.Boundary],
 	prefix string,
@@ -1622,6 +1660,22 @@ func collectCompFeaturesRecursive(
 		if bc, ok := components.Get(nodeID); ok {
 			for fname, feat := range bc.Features.All() {
 				*result = append(*result, namedBoundaryFeature{name: fname, scopePath: path, feat: feat})
+			}
+			for socket, aliases := range bc.Uses.All() {
+				for alias, entry := range aliases.All() {
+					for slot, att := range entry.Features.All() {
+						*result = append(*result, namedBoundaryFeature{
+							name:      types.JoinConnectionAttachmentName(alias, slot),
+							scopePath: path,
+							feat: types.BoundaryFeature{
+								Type:        att.Type,
+								Description: att.Description,
+								Infra:       att.Infra,
+							},
+							connection: &types.AttachmentConnection{Socket: socket, Alias: alias, Attachment: slot},
+						})
+					}
+				}
 			}
 		}
 		collectCompFeaturesRecursive(boundary.Boundaries, path, nodeID, result)

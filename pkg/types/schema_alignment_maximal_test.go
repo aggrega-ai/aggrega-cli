@@ -69,6 +69,13 @@ func maximalComponent() types.Component {
 				Inject:      []string{"env"},
 				ValueSchema: mustNode("protocol: { type: string }"),
 				InfraSchema: mustNode("pool_size: { type: integer }"),
+				FeaturesSchema: om[types.AttachmentSlot]("credential", types.AttachmentSlot{
+					Required:    true,
+					Inject:      []string{"env"},
+					Description: "the key this connection presents",
+					Sensitive:   true,
+					Selector:    "feature.aggrega.ai/kind=secret",
+				}),
 			}),
 			// extends and authored pillar content are mutually exclusive on a
 			// Component: an extending one receives its base's pillar block and
@@ -277,6 +284,20 @@ func maximalAggregate() types.Aggregate {
 			Components: om[types.ComponentInstance]("api", types.ComponentInstance{
 				Type:   "core/compute/api-server",
 				Values: om[any]("port", 8080),
+				// A connection carrying an attachment, so the connection entry's
+				// attachment surface is marshalled and validated against the
+				// component's connection def rather than left unexercised.
+				Uses: om[types.UsesSocketValue]("databases", types.UsesSocketValue{
+					Verbose: om[types.VerboseUsesEntry]("primary", types.VerboseUsesEntry{
+						Target: "db",
+						Values: om[any]("pool", 5),
+						Features: om[types.ConnectionAttachment]("credential", types.ConnectionAttachment{
+							Type:        "core/referenced-secret",
+							Description: "the key this connection presents",
+							Values:      om[any]("origin", "team-a"),
+						}),
+					}),
+				}),
 			}),
 		},
 	}
@@ -307,6 +328,16 @@ func maximalRelease() types.Release {
 				Directory: "./dist/main",
 				Components: om[types.BoundaryComponent]("api", types.BoundaryComponent{
 					Infra: om[any]("replicas", 2),
+					Uses: om[types.OrderedMap[types.ReleaseUsesEntry]]("databases",
+						om[types.ReleaseUsesEntry]("primary", types.ReleaseUsesEntry{
+							Target: "db",
+							Infra:  om[any]("storage_class", "fast"),
+							Features: om[types.ReleaseConnectionAttachment]("credential", types.ReleaseConnectionAttachment{
+								Type:        "core/referenced-secret",
+								Description: "sized by the operator",
+								Infra:       om[any]("rotation", "hourly"),
+							}),
+						})),
 				}),
 			}),
 		},

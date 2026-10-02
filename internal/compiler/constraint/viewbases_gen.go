@@ -1799,6 +1799,13 @@ func (TopologyViewBase) SocketInjectMechanismNames(componentType string, socket 
 	panic("this view does not carry socket-inject-mechanism-names, which is read from types.UsesSchemaEntry.Inject")
 }
 
+// SocketDeclaredSlotNames panics. This view does not carry
+// socket-declared-slot-names, which is read from
+// types.UsesSchemaEntry.FeaturesSchema.
+func (TopologyViewBase) SocketDeclaredSlotNames(componentType string, socket string) []string {
+	panic("this view does not carry socket-declared-slot-names, which is read from types.UsesSchemaEntry.FeaturesSchema")
+}
+
 // AttachmentSocketInjectMechanismNames panics. This view does not carry
 // attachment-socket-inject-mechanism-names, which is read from
 // types.UsesSchemaEntry.Inject.
@@ -1816,6 +1823,13 @@ func (TopologyViewBase) PerEdgeTarget(node string, socket string, alias string) 
 // read from types.VerboseUsesEntry.Values.
 func (TopologyViewBase) PerEdgeValues(node string, socket string, alias string) types.OrderedMap[any] {
 	panic("this view does not carry per-edge-values, which is read from types.VerboseUsesEntry.Values")
+}
+
+// PerEdgeAttachmentNames panics. This view does not carry
+// per-edge-attachment-names, which is read from
+// types.VerboseUsesEntry.Features.
+func (TopologyViewBase) PerEdgeAttachmentNames(node string, socket string, alias string) []string {
+	panic("this view does not carry per-edge-attachment-names, which is read from types.VerboseUsesEntry.Features")
 }
 
 // AuthoredPerEdgeInject panics. This view does not carry
@@ -2041,6 +2055,13 @@ func (TopologyViewBase) ReleasePerEdgeInfra(node string, socket string, alias st
 	panic("this view does not carry release-per-edge-infra, which is read from types.ReleaseUsesEntry.Infra")
 }
 
+// ReleasePerEdgeAttachmentNames panics. This view does not carry
+// release-per-edge-attachment-names, which is read from
+// types.ReleaseUsesEntry.Features.
+func (TopologyViewBase) ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string {
+	panic("this view does not carry release-per-edge-attachment-names, which is read from types.ReleaseUsesEntry.Features")
+}
+
 // ReleaseAuthoredUsesSocketConnections panics. This view does not carry
 // release-authored-uses-socket-connections, which is read from
 // types.BoundaryComponent.Uses.
@@ -2215,6 +2236,13 @@ func (GraphViewBase) ResolvedParameter(node string, name string) (any, bool) {
 // topology.TopologyResult.Edges.
 func (GraphViewBase) ResolvedUsesSocketConnections(node string) types.OrderedMap[int] {
 	panic("this view does not carry resolved-uses-socket-connections, which is read from topology.TopologyResult.Edges")
+}
+
+// FlattenedConnectionAttachmentNames panics. This view does not carry
+// flattened-connection-attachment-names, which is read from
+// topology.TopologyNode.Uses.
+func (GraphViewBase) FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]] {
+	panic("this view does not carry flattened-connection-attachment-names, which is read from topology.TopologyNode.Uses")
 }
 
 // PerEdgeAuthoredTarget panics. This view does not carry
@@ -3124,9 +3152,11 @@ type NormalizedStageFacts interface {
 	InstanceComponentType(node string) (string, bool)
 	SocketRequired(componentType string, socket string) bool
 	SocketInjectMechanismNames(componentType string, socket string) []string
+	SocketDeclaredSlotNames(componentType string, socket string) []string
 	AttachmentSocketInjectMechanismNames(featureType string, socket string) []string
 	PerEdgeTarget(node string, socket string, alias string) string
 	PerEdgeValues(node string, socket string, alias string) types.OrderedMap[any]
+	PerEdgeAttachmentNames(node string, socket string, alias string) []string
 	AuthoredPerEdgeInject(node string, socket string, alias string) types.OrderedMap[any]
 	CompactSocketTargets(node string, socket string) []string
 	AuthoredUsesSocketConnections(node string) types.OrderedMap[int]
@@ -3160,6 +3190,7 @@ type NormalizedStageFacts interface {
 	ComponentTypeIsLocalPath(componentType string) bool
 	ReleasePerEdgeTarget(node string, socket string, alias string) string
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
+	ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string
 	ReleaseAuthoredUsesSocketConnections(node string) types.OrderedMap[int]
 	ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string
 	ReleaseComponentEntryPresent(node string) bool
@@ -3198,6 +3229,7 @@ type TopologyStageFacts interface {
 	NodeRecipePinCandidates(node string) []string
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
+	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
 	PerEdgeConnectionDrawn(node string, socket string, alias string) bool
 	ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration

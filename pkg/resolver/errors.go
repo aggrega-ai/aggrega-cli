@@ -415,6 +415,24 @@ var errUnknownUsesSocket = cerrors.Register("unknown-uses-socket", cerrors.Meta{
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrConnectionAttachmentSlotUndeclared wraps an attachment a connection carries
+// under a name the connection's socket declares no slot for. A connection's
+// attachment surface is closed: the socket on the consuming Component declares,
+// in its featuresSchema, every name a connection on it may carry an attachment
+// under, so any other name — and any attachment at all on a socket declaring no
+// slots, which is every socket an Aggregate names without the catalog declaring
+// it — halts when the build loads. It is raised for the Aggregate's connection
+// entries and for the Release's alike, naming the document the name was written
+// in, the component, the socket, the alias and the attachment, and the slots the
+// socket does declare.
+func ErrConnectionAttachmentSlotUndeclared() error { return errConnectionAttachmentSlotUndeclared }
+
+var errConnectionAttachmentSlotUndeclared = cerrors.Register("connection-attachment-slot-undeclared", cerrors.Meta{
+	ShortCode: "E0315",
+	Message:   "a connection carries an attachment under a name its socket declares no slot for",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrSelfInjectForbidden wraps a self-inject declaration on a component
 // whose catalog type does not declare a spec.inject allowlist.
 func ErrSelfInjectForbidden() error { return errSelfInjectForbidden }

@@ -75,6 +75,21 @@ func FindingsFromObjections(
 	})
 }
 
+// FindingsAtTheirOwnDocument is [findingsAtTheirOwnDocument] for a check placed at
+// a later stage of the compilation, whose subjects can be authored in a document
+// a resolve never read — a sub-module's own Aggregate, say, which is read only
+// once the composition is flattened. It is exported for the reason
+// [FindingsFromObjections] is, and it delegates rather than restating the
+// attribution, so a finding is attributed to its document by one rule wherever
+// it is converted.
+func FindingsAtTheirOwnDocument(
+	objections []constraint.Objection,
+	kind string,
+	fallback string,
+) []*ResolverError {
+	return findingsAtTheirOwnDocument(objections, kind, fallback)
+}
+
 // findingsWithNoSubject renders what a check raised for a condition no authored
 // document is at fault for: no entity reference and no locator.
 //

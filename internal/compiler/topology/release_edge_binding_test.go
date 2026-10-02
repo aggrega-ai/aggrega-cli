@@ -99,6 +99,14 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 // cannot be built one way for one proof and another way for the next.
 func buildResultWith(t *testing.T, aggYAML, relYAML, modYAML string) (*TopologyResult, error) {
 	t.Helper()
+	return buildResultWithCatalog(t, bindingCatalog(t), aggYAML, relYAML, modYAML)
+}
+
+// buildResultWithCatalog is buildResultWith over a catalog the caller supplies,
+// for a proof whose components need sockets the binding catalog does not
+// declare. It is the body buildWith and buildResultWith share.
+func buildResultWithCatalog(t *testing.T, catalog resolver.CatalogLookup, aggYAML, relYAML, modYAML string) (*TopologyResult, error) {
+	t.Helper()
 	agg := mustAggregate(t, aggYAML)
 	var rel *types.Release
 	var boundaryInfra map[string]*resolver.BoundaryInfra
@@ -148,7 +156,7 @@ func buildResultWith(t *testing.T, aggYAML, relYAML, modYAML string) (*TopologyR
 			BoundaryInfra:        boundaryInfra,
 			RoutedAggregateInfra: routedInfra,
 		},
-		CatalogLookup:    bindingCatalog(t),
+		CatalogLookup:    catalog,
 		LoadSubAggregate: loader,
 	})
 }

@@ -316,9 +316,9 @@ func mergeBoundaryFeatureMaps(
 // name. A socket value is one expression, so a socket the child wrote replaces
 // the one it inherited whole rather than composing with it.
 func mergeUsesSocketValueMaps(
-	base, overlay types.OrderedMap[types.UsesSocketValue],
-) types.OrderedMap[types.UsesSocketValue] {
-	out := types.OrderedMap[types.UsesSocketValue]{}
+	base, overlay types.OrderedMap[types.FeatureUsesSocketValue],
+) types.OrderedMap[types.FeatureUsesSocketValue] {
+	out := types.OrderedMap[types.FeatureUsesSocketValue]{}
 	for k, v := range base.All() {
 		out.Set(k, v)
 	}

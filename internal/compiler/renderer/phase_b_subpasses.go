@@ -944,7 +944,7 @@ func attachmentRenderSequence(
 			OwnInfra:  map[string]any{},
 			Identity:  attachmentIdentity{host: hostComponentID, instance: ref.InstanceName},
 		}
-		if attach, ok := tmplCtx.Features.Get(ref.InstanceName); ok {
+		if attach, ok := tmplCtx.AttachmentPillars(ref.InstanceName); ok {
 			item.CtxValues, item.CtxInfra = attach.Values, attach.Infra
 			item.OwnValues = attach.Values.TemplateAlphabeticalMapDeep()
 			item.OwnInfra = attach.Infra.TemplateAlphabeticalMapDeep()

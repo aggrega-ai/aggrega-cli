@@ -796,6 +796,16 @@ func (v *normalizedView) PerEdgeValues(node string, socket string, alias string)
 	return entry.Values
 }
 
+// PerEdgeAttachmentNames returns the names one connection of an instance's own
+// dependency block carries an attachment under, in author order.
+func (v *normalizedView) PerEdgeAttachmentNames(node string, socket string, alias string) []string {
+	entry, ok := v.verboseEntry(node, socket, alias)
+	if !ok {
+		return nil
+	}
+	return entry.Features.Keys()
+}
+
 // AuthoredPerEdgeInject returns the delivery payload one connection of an
 // instance's own dependency block dictates, by mechanism, in author order.
 func (v *normalizedView) AuthoredPerEdgeInject(
@@ -905,6 +915,16 @@ func (v *normalizedView) ReleasePerEdgeInfra(
 		return types.OrderedMap[any]{}
 	}
 	return entry.Infra
+}
+
+// ReleasePerEdgeAttachmentNames returns the names the Release's edge surface
+// carries an attachment under on one connection, in author order.
+func (v *normalizedView) ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string {
+	entry, ok := v.releaseEdgeEntry(node, socket, alias)
+	if !ok {
+		return nil
+	}
+	return entry.Features.Keys()
 }
 
 // releaseEdgeEntry returns one connection's entry on the Release's edge
@@ -1071,6 +1091,16 @@ func (v *normalizedView) SocketInjectMechanismNames(componentType string, socket
 		return nil
 	}
 	return entry.Inject
+}
+
+// SocketDeclaredSlotNames returns the attachment slots a dependency socket
+// declared on a component type lets each connection on it fill, in author order.
+func (v *normalizedView) SocketDeclaredSlotNames(componentType string, socket string) []string {
+	entry, ok := v.socketEntry(componentType, socket)
+	if !ok {
+		return nil
+	}
+	return entry.FeaturesSchema.Keys()
 }
 
 // SocketValueSchemaText returns the contract a dependency socket declares over

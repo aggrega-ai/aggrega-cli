@@ -424,6 +424,16 @@ func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile strin
 // SourceTier field on the resulting attachment is therefore always 0
 // today. The field exists for future use; SourceTier carries no
 // meaningful tier information in the current implementation.
+//
+// The attachments a component's connections carry are lowered here too, after
+// the component's own block, so they are attachments of the CONSUMING component
+// from this point on — the Manifest mapping, the FeatureRecipe, the conformance
+// gate and the sensitivity marking treat them like any other. Each takes the
+// name the alias and the slot compose, and carries its connection as data; the
+// walk is over the component's sockets and then each socket's aliases in author
+// order, which is what keeps the attachment order byte-stable. Because this runs
+// for every component flattening reaches, a component a sub-module contributes is
+// lowered exactly as one the Aggregate declares.
 func collectAttachments(result *flattenResult, nodeID string, comp types.ComponentInstance, tier int) {
 	for fname, feat := range comp.Features.All() {
 		result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
@@ -431,6 +441,22 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 			Feature:      feat,
 			SourceTier:   tier,
 		})
+	}
+	for socket, sv := range comp.Uses.All() {
+		for alias, entry := range sv.Verbose.All() {
+			for slot, att := range entry.Features.All() {
+				result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
+					InstanceName: types.JoinConnectionAttachmentName(alias, slot),
+					Feature: types.FeatureInstance{
+						Type:        att.Type,
+						Description: att.Description,
+						Values:      att.Values,
+					},
+					SourceTier: tier,
+					Connection: &types.AttachmentConnection{Socket: socket, Alias: alias, Attachment: slot},
+				})
+			}
+		}
 	}
 }
 

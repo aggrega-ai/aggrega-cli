@@ -147,7 +147,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// own. Only the values and infra pillars depend on that lookup, so they
 		// fall back to the host node's when the attachment carries neither.
 		vals, inf := ctx.Values, ctx.Infra
-		if attachment, ok := ctx.Features.Get(ref.InstanceName); ok {
+		if attachment, ok := ctx.AttachmentPillars(ref.InstanceName); ok {
 			vals, inf = attachment.Values, attachment.Infra
 		}
 		featureCtx := attachmentFRContext(ctx, ref.InstanceName, vals, inf)

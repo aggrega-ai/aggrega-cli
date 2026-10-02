@@ -481,12 +481,15 @@ func DecodeVerboseInjectEntry(entry any) (in, value, from string, hasValue, hasF
 //
 // For a credential, Values holds pointers into a secret store rather than
 // resolved material.
+//
+// Uses is the topology the attached Feature draws, and its connections carry no
+// attachments of their own — see [FeatureUsesSocketValue].
 type FeatureInstance struct {
-	Type        string                      `json:"type" yaml:"type"`
-	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
-	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Type        string                             `json:"type" yaml:"type"`
+	Description string                             `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      OrderedMap[any]                    `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Uses        OrderedMap[FeatureUsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
+	Inject      *InjectBlock                       `json:"inject,omitempty" yaml:"inject,omitempty"`
 }
 
 // PipelineStep is one Wasm plugin invocation in a Recipe or FeatureRecipe pipeline.

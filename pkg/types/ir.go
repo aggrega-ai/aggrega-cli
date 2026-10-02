@@ -237,6 +237,15 @@ type IRNode struct {
 	//
 	// Empty for a node that authored no `uses` block, and omitted from the wire
 	// in that case.
+	//
+	// One part of the block is not carried as authored: an attachment a
+	// connection carries keeps its type and description here and leaves its
+	// values out. The attachment itself is one of the node's attachments, under
+	// [IRSpec.FeatureValuesMapping], where its values are carried with the
+	// per-leaf sensitivity marking a surface displaying the graph withholds by.
+	// A copy of the same values here would sit outside that marking, so a
+	// declared-sensitive value would reach every reader of the graph in the
+	// clear.
 	Uses OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero"`
 	// SensitivePayloadLeaves names the leaves this node's values and infra
 	// payload carries that its Component declares sensitive, each as the
@@ -562,7 +571,28 @@ type IRFeatureEntry struct {
 	// reader finding nothing that consumes it has therefore learnt a fact
 	// about today's consumers, not a reason to remove it.
 	SensitivePayloadLeaves []string `json:"sensitive_payload_leaves,omitempty"`
+
+	// Connection names the connection this attachment was written on, when it
+	// is one a connection carries rather than one written on the node's own
+	// attachment block: the socket, the alias and the slot name it was
+	// authored under. Nil for an attachment of the node's own block.
+	//
+	// It is what tells the two apart, and it is read rather than the
+	// attachment's name: the name is composed from the alias and the slot,
+	// and nothing reads the connection back out of it. An attachment a
+	// connection carries is one of the node's attachments for its Manifest
+	// mapping, its FeatureRecipe, its conformance and its sensitivity marking,
+	// and is left out of the node's own `.features` in a template context.
+	//
+	// It is held in memory and is not part of the graph's wire form: the IR
+	// schema declares no field for it, so an emitted graph does not carry it.
+	Connection *AttachmentConnection `json:"-"`
 }
+
+// OnConnection reports whether the attachment was written on one of the
+// node's connections rather than on the node's own attachment block. See
+// [IRFeatureEntry.Connection].
+func (e IRFeatureEntry) OnConnection() bool { return e.Connection != nil }
 
 // FieldProvenance records the origin of one leaf in an IR feature
 // attachment's values or infra pillar.

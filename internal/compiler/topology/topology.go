@@ -286,10 +286,17 @@ type NormalizedEdge struct {
 // it during the cascade walk. The field exists for future use; the
 // existing inline comment ("set by IR builder in Step 3") describes a
 // behaviour the IR builder has not yet implemented.
+//
+// Connection is set on an attachment a connection of the component carries,
+// lowered onto the component under the name the alias and the slot compose:
+// it names that connection, and every later stage reads the connection from
+// here rather than out of the name. Nil for an attachment of the component's own
+// `features` block.
 type FeatureAttachment struct {
 	InstanceName string
 	Feature      types.FeatureInstance
 	SourceTier   int // Onion Model tier (set by IR builder in Step 3)
+	Connection   *types.AttachmentConnection
 }
 
 // SubAggregateLoader resolves a sub-aggregate type URI to its loaded
@@ -536,7 +543,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if feats, ok := flat.FeatureAttachments[nodeID]; ok {
 			for _, fa := range feats {
 				if fa.Feature.Uses.Len() > 0 {
-					featEdges, err := normalizeUses(fa.Feature.Uses, nodeID, fa.Feature.Type, fa.InstanceName)
+					featEdges, err := normalizeUses(types.FeatureUsesConnections(fa.Feature.Uses), nodeID, fa.Feature.Type, fa.InstanceName)
 					if err != nil {
 						return nil, err
 					}
@@ -566,7 +573,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			if sf.uses.Len() == 0 {
 				continue
 			}
-			subEdges, err := normalizeUses(sf.uses, nodeID, sf.featureType, sf.instanceName)
+			subEdges, err := normalizeUses(types.FeatureUsesConnections(sf.uses), nodeID, sf.featureType, sf.instanceName)
 			if err != nil {
 				return nil, err
 			}
@@ -586,7 +593,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				if bf.uses.Len() == 0 {
 					continue
 				}
-				bndEdges, err := normalizeUses(bf.uses, nodeID, bf.featureType, bf.instanceName)
+				bndEdges, err := normalizeUses(types.FeatureUsesConnections(bf.uses), nodeID, bf.featureType, bf.instanceName)
 				if err != nil {
 					return nil, err
 				}
@@ -905,6 +912,26 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				Violations: configErrs,
 			}
 		}
+
+		// The declared-slots rule for a connection's attachments, asked of the
+		// components a sub-module contributes — the half the reading of the
+		// authoring documents could not ask, because such a component's type is
+		// known only once its module has been read.
+		//
+		// The group names no condition of its own: every finding it carries
+		// names the rule's condition already, and naming the condition here too
+		// would raise it from this function, outside the rule's own declaration.
+		slotErrs, err := guardModuleConnectionAttachmentSlots(ctx.Err, cfg, stageView)
+		if err != nil {
+			return nil, err
+		}
+		if len(slotErrs) > 0 {
+			return result, &resolver.MultiResolverError{
+				Entity:     "connection attachment slots",
+				Summary:    fmt.Sprintf("%d connection attachment(s) under a name no slot declares", len(slotErrs)),
+				Violations: slotErrs,
+			}
+		}
 	}
 
 	return result, nil
@@ -1126,9 +1153,17 @@ func releaseEntityName(release *types.Release) string {
 // cascade can walk tiers; the shape rule is asked of the block as authored, so it
 // is reassembled here rather than the validator being taught a second input
 // shape.
+//
+// An attachment lowered from one of the component's connections is left out: it
+// was written on the connection, not in the component's `features` block, so it
+// is not part of the block this reassembles and a slot the component declares
+// for its own block says nothing about it.
 func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types.FeatureInstance] {
 	out := types.OrderedMap[types.FeatureInstance]{}
 	for _, a := range attachments {
+		if a.Connection != nil {
+			continue
+		}
 		out.Set(a.InstanceName, a.Feature)
 	}
 	return out
@@ -1269,7 +1304,7 @@ func guardSubAggregateReleaseEdges(
 type scopeFeatureUses struct {
 	instanceName string
 	featureType  string
-	uses         types.OrderedMap[types.UsesSocketValue]
+	uses         types.OrderedMap[types.FeatureUsesSocketValue]
 }
 
 // boundaryFeatureUses walks the Release boundary chain named by

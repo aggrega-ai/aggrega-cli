@@ -170,7 +170,7 @@ func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
 // a socket their own component's type declares no entry for is authoring the
 // product accepts, and the asymmetry between the two surfaces is what lets one
 // relax without the other.
-func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
+func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.FeatureUsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
 		return nil

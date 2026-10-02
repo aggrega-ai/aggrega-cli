@@ -1447,6 +1447,31 @@ var facts = []factDecl{
 			"surface that drew the connection.",
 	},
 	{
+		Name:        "socket-declared-slot-names",
+		Stage:       "normalized",
+		SourceField: "types.UsesSchemaEntry.FeaturesSchema",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "SocketDeclaredSlotNames are the attachment slot names a dependency " +
+			"socket declared on a component type lets each connection on it fill, " +
+			"in author order.\n\nThe set CLOSES the surface it governs, which is " +
+			"the difference between this and the slots a component type declares " +
+			"for its own attachment block. A component's own block admits a name " +
+			"no slot declares, so that set says which names carry a declaration to " +
+			"check a fill against; a connection admits only the names this set " +
+			"holds, so a rule reads it as the whole of what a connection may " +
+			"carry.\n\nEmpty is the most constrained answer rather than an absent " +
+			"one: a socket declaring no slot admits no attachment on its " +
+			"connections. Whether the socket is declared at all is a separate " +
+			"question — a socket the component type does not declare reads empty " +
+			"here too, and declares no slot either — so a rule naming the reason " +
+			"to an author reads the declared socket set beside this.",
+	},
+	{
 		Name:        "attachment-socket-inject-mechanism-names",
 		Stage:       "normalized",
 		SourceField: "types.UsesSchemaEntry.Inject",
@@ -1538,6 +1563,31 @@ var facts = []factDecl{
 			"\nAuthor order is carried because these entries reach rendered " +
 			"output, and an unordered payload would put a byte-identical result " +
 			"at the mercy of map iteration.",
+	},
+	{
+		Name:        "per-edge-attachment-names",
+		Stage:       "normalized",
+		SourceField: "types.VerboseUsesEntry.Features",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "PerEdgeAttachmentNames are the names one connection of an instance's " +
+			"own dependency block carries an attachment under, in author order — " +
+			"each the slot the attachment claims to fill.\n\nIt names the " +
+			"attachments and nothing about them, because the question a rule over " +
+			"it asks is whether each name is one the connection's socket declares " +
+			"a slot for, and the name is the whole of what that question reads. " +
+			"Empty for a connection carrying no attachment and for one the short " +
+			"authoring form wrote, which has nowhere to carry one.\n\nIt reads the " +
+			"developer's connection entry and no other surface. The operator may " +
+			"put attachments on the same connection from the Release, and that is " +
+			"a separate fact with the same shape, because the two are written by " +
+			"separate hands on separate documents and a finding has to name the " +
+			"one its author wrote.",
 	},
 	{
 		Name:        "authored-per-edge-inject",
@@ -2406,6 +2456,30 @@ var facts = []factDecl{
 			"for the same reason the target the same entry names is: the edge it " +
 			"is keyed by is identified in part by a node the other document " +
 			"declares.",
+	},
+	{
+		Name:        "release-per-edge-attachment-names",
+		Stage:       "normalized",
+		SourceField: "types.ReleaseUsesEntry.Features",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "ReleasePerEdgeAttachmentNames are the names a Release's per-edge " +
+			"entry carries an attachment under on one connection, in author order " +
+			"— each the slot the attachment claims to fill.\n\nIt is the " +
+			"operator's counterpart of the names the developer's connection entry " +
+			"carries, and a separate fact for the reason the two documents' " +
+			"per-edge configuration is: each is written by its own hand and is " +
+			"independently absent, and a finding has to name the document whose " +
+			"author wrote the name.\n\nIt answers for every component the Release " +
+			"writes against, a component a sub-module contributes included, because " +
+			"the Release addresses such a component by the identity the composition " +
+			"gives it. Whether that component's type is knowable yet is a separate " +
+			"question, answered by the stage that reads it.",
 	},
 	{
 		Name:        "release-authored-uses-socket-connections",
@@ -3305,6 +3379,29 @@ var facts = []factDecl{
 			"separate a socket named-and-left-empty from one never named, " +
 			"which this cannot. A rule asking what an author wrote reads " +
 			"those; a rule asking what the build drew reads this.",
+	},
+	{
+		Name:        "flattened-connection-attachment-names",
+		Stage:       "topology",
+		SourceField: "topology.TopologyNode.Uses",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "types.OrderedMap[types.OrderedMap[[]string]]",
+		Doc: "FlattenedConnectionAttachmentNames are the attachments the " +
+			"connections of a node in the flattened set carry, keyed by socket and " +
+			"then by alias, each listing the names its attachments are written " +
+			"under, in author order at every level.\n\nIt answers for every node " +
+			"the composition holds, which is what separates it from the names read " +
+			"off the Aggregate's own instance list: a component a sub-module " +
+			"contributes keeps its dependency block in that module's document, " +
+			"read only when the composition is flattened, so the fact over the " +
+			"authoring document reports every such connection as carrying " +
+			"nothing.\n\nOnly a connection carrying at least one attachment " +
+			"appears, and a socket appears only through such a connection. It is " +
+			"read per node rather than per connection because the flattened " +
+			"composition enumerates no connections of its own, and a rule asking " +
+			"whether each name fills a declared slot has to be asked about every " +
+			"connection the node's block wrote.",
 	},
 
 	{

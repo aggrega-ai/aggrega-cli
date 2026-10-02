@@ -500,6 +500,14 @@ func runDeclaredRules(
 		cancelled, coordinates, facts, connectionInjectReferenceIsPublished)); err != nil {
 		return nil, err
 	}
+	if err := developerRule(constraint.RunOnEdges(
+		cancelled, coordinates, facts, connectionAttachmentFillsADeclaredSlot)); err != nil {
+		return nil, err
+	}
+	if err := operatorRule(constraint.RunOnEdges(
+		cancelled, coordinates, facts, releaseConnectionAttachmentFillsADeclaredSlot)); err != nil {
+		return nil, err
+	}
 
 	// Once per socket an attachment on a component wires. Ahead of the
 	// per-attachment rules below, which is the position the two held before the

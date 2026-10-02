@@ -16,10 +16,23 @@ import "go.yaml.in/yaml/v3"
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
+//
+// It is one type for both kinds, and the Component's socket is the wider of the
+// two: Required, ValueSchema, InfraSchema and FeaturesSchema are declarable only
+// on a Component's socket. The Feature schema refuses each of them in a
+// Feature's usesSchema when the document's envelope is validated, so a Feature
+// decoded from a document never carries one.
 type UsesSchemaEntry struct {
 	Selector string   `json:"selector" yaml:"selector"`
 	Required bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject   []string `json:"inject,omitempty" yaml:"inject,omitempty"`
+
+	// FeaturesSchema declares the attachment slots each connection wired
+	// through this socket may fill, keyed by slot name, in the same slot shape
+	// a Component declares in its own featuresSchema. A connection carrying an
+	// attachment under any other name is refused when the build loads, and a
+	// socket declaring none admits no attachment on its connections.
+	FeaturesSchema OrderedMap[AttachmentSlot] `json:"featuresSchema,omitempty,omitzero" yaml:"featuresSchema,omitempty"`
 
 	// ValueSchema is the per-edge developer-config contract for this socket:
 	// the JSON Schema 2020-12 content an edge's `values` block (authored in

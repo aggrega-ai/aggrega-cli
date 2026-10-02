@@ -99,15 +99,33 @@ type BoundaryComponent struct {
 
 // ReleaseUsesEntry is one operator-authored per-edge connection within a
 // [BoundaryComponent.Uses] socket. It may set Target (to create an edge into a
-// declared-but-unbound socket, pointing at an existing component) and/or Infra
-// (per-edge operator config validated against the socket infraSchema). It has
-// no Values field by construction — the Release values: ban holds at the edge
+// declared-but-unbound socket, pointing at an existing component), Infra
+// (per-edge operator config validated against the socket infraSchema) and
+// Features (attachments filling the slots the socket declares). It has no
+// Values field by construction — the Release values: ban holds at the edge
 // surface. Retargeting a developer-declared edge is rejected at build (a Loud
 // Guardrail), not represented here.
 // Schema: release-v1alpha1.schema.json#/$defs/release_uses_block
 type ReleaseUsesEntry struct {
 	Target string          `json:"target,omitempty" yaml:"target,omitempty"`
 	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	// Features carries the attachments the Release puts on this connection,
+	// keyed by the slot each fills, in author order: the sizing for an
+	// attachment the Aggregate also declares on the connection, or a whole
+	// attachment only the Release makes. A name has to be a slot the socket
+	// declares; the build refuses any other name when it loads.
+	Features OrderedMap[ReleaseConnectionAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+}
+
+// ReleaseConnectionAttachment is one attachment a Release connection entry
+// carries. Release provides type (for an attachment only the Release makes),
+// description, and infra (operational sizing). Never values — values are the
+// Developer's domain on the Aggregate, and the Release schema refuses the key.
+// Schema: release-v1alpha1.schema.json#/$defs/release_connection_attachment
+type ReleaseConnectionAttachment struct {
+	Type        string          `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string          `json:"description,omitempty" yaml:"description,omitempty"`
+	Infra       OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 }
 
 // BoundaryFeature is a feature attachment within a Release boundary — including
@@ -128,10 +146,10 @@ type ReleaseUsesEntry struct {
 // exactly as it would be for a per-component feature uses-edge.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
-	Type        string                      `json:"type,omitempty" yaml:"type,omitempty"`
-	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
-	Infra       OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
-	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
+	Type        string                             `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string                             `json:"description,omitempty" yaml:"description,omitempty"`
+	Infra       OrderedMap[any]                    `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Uses        OrderedMap[FeatureUsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
 }
 
 // AggregateRouting routes a nested Aggregate sub-module's components into a boundary.

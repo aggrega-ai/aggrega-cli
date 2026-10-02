@@ -44,6 +44,30 @@ type TemplateContext struct {
 	Source         any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (from source resolution onward); nil for sourceless Recipes
 	Workload       *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (from workload synthesis onward); nil for non-synthesized Recipes
 	Boundary       *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
+
+	// ConnectionAttachments holds the attachments the node's connections carry,
+	// keyed by the name each takes on the node, in the same shape Features holds
+	// the node's own. They are attachments of the node for their own
+	// FeatureRecipes, which render with each one's values and infra, and are
+	// deliberately NOT part of Features: a template ranging the node's
+	// attachments to find its own by type would otherwise be handed a
+	// connection's credential as if the node had attached it.
+	//
+	// It is not visible to a template — the field carries no template name — and
+	// is read only through [TemplateContext.AttachmentPillars].
+	ConnectionAttachments OrderedMap[TemplateAttachment] `json:"-" yaml:"-"`
+}
+
+// AttachmentPillars returns the projected attachment a FeatureRecipe bound to
+// the named attachment renders against — its values and infra — whichever block
+// it was written on: the node's own attachments first, then the attachments its
+// connections carry. The two sets never hold one name, because each of the
+// node's attachments is projected into exactly one of them.
+func (c *TemplateContext) AttachmentPillars(name string) (TemplateAttachment, bool) {
+	if a, ok := c.Features.Get(name); ok {
+		return a, true
+	}
+	return c.ConnectionAttachments.Get(name)
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.

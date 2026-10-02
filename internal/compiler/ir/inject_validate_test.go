@@ -275,21 +275,20 @@ func TestValidateAggregate_NestedSubsystems(t *testing.T) {
 
 // TestValidateAggregate_FeatureInstance_NestedUses pins that the walker
 // reaches both-present InjectBlock instances nested inside a feature's
-// own Uses substructure — same surface type (VerboseUsesEntry.Inject)
-// reached via FeatureInstance.Uses rather than directly via
-// ComponentInstance.Uses.
+// own Uses substructure — FeatureUsesEntry.Inject, reached via
+// FeatureInstance.Uses rather than directly via ComponentInstance.Uses.
 func TestValidateAggregate_FeatureInstance_NestedUses(t *testing.T) {
 	t.Parallel()
 
-	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
-	verbose.Set("alias", types.VerboseUsesEntry{
+	verbose := types.OrderedMap[types.FeatureUsesEntry]{}
+	verbose.Set("alias", types.FeatureUsesEntry{
 		Target: "api",
 		Inject: &types.InjectBlock{
 			Env: []any{verboseEntry("K", "v", "ref")},
 		},
 	})
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("scrape_target", types.UsesSocketValue{Verbose: verbose})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("scrape_target", types.FeatureUsesSocketValue{Verbose: verbose})
 
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("metrics", types.FeatureInstance{
@@ -325,15 +324,15 @@ func TestValidateAggregate_FeatureInstance_NestedUses(t *testing.T) {
 func TestValidateAggregate_CredentialAttachment_NestedUses(t *testing.T) {
 	t.Parallel()
 
-	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
-	verbose.Set("alias", types.VerboseUsesEntry{
+	verbose := types.OrderedMap[types.FeatureUsesEntry]{}
+	verbose.Set("alias", types.FeatureUsesEntry{
 		Target: "vault",
 		Inject: &types.InjectBlock{
 			Env: []any{verboseEntry("VAULT_TOKEN", "v", "ref")},
 		},
 	})
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("backend", types.UsesSocketValue{Verbose: verbose})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("backend", types.FeatureUsesSocketValue{Verbose: verbose})
 
 	secrets := types.OrderedMap[types.FeatureInstance]{}
 	secrets.Set("db-creds", types.FeatureInstance{

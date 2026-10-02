@@ -192,7 +192,7 @@ func validateFeatureInstance(feat types.FeatureInstance, prefix string) []error 
 	if err := ValidateInjectBlock(feat.Inject, prefix+".inject"); err != nil {
 		errs = append(errs, err)
 	}
-	errs = append(errs, validateUsesBlock(feat.Uses, prefix)...)
+	errs = append(errs, validateUsesBlock(types.FeatureUsesConnections(feat.Uses), prefix)...)
 	return errs
 }
 

@@ -382,8 +382,8 @@ func TestPipeline_CyclicEdges(t *testing.T) {
 
 func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("targets", types.UsesSocketValue{Compact: []string{"api"}})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("targets", types.FeatureUsesSocketValue{Compact: []string{"api"}})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	// The feature uses should create an edge with OriginFeature.
 	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses})

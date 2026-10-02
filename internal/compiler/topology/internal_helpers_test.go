@@ -156,8 +156,8 @@ func TestBuild_ComponentUsesProducesEdges(t *testing.T) {
 func TestBuild_FeatureUsesProducesEdgesWithOriginFeature(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
-	featUses := types.OrderedMap[types.UsesSocketValue]{}
-	featUses.Set("metrics_target", types.UsesSocketValue{Compact: []string{"backend"}})
+	featUses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	featUses.Set("metrics_target", types.FeatureUsesSocketValue{Compact: []string{"backend"}})
 	feats := types.OrderedMap[types.FeatureInstance]{}
 	feats.Set("monitoring", types.FeatureInstance{Type: "core/monitoring", Uses: featUses})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Features: feats})
@@ -186,8 +186,8 @@ func TestBuild_FeatureUsesProducesEdgesWithOriginFeature(t *testing.T) {
 func TestBuild_CredentialAttachmentUsesProducesEdges(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
-	secUses := types.OrderedMap[types.UsesSocketValue]{}
-	secUses.Set("backing_secret", types.UsesSocketValue{Compact: []string{"backend"}})
+	secUses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	secUses.Set("backing_secret", types.FeatureUsesSocketValue{Compact: []string{"backend"}})
 	secs := types.OrderedMap[types.FeatureInstance]{}
 	secs.Set("db-creds", types.FeatureInstance{Type: "core/credentials", Uses: secUses})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Features: secs})

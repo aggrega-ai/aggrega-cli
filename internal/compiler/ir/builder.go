@@ -321,10 +321,12 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			CatalogMetadata:      buildCatalogMetadata(topoNode.ComponentType, cfg.CatalogLookup),
 			SelfInject:           topoNode.SelfInject,
 			SourceFile:           topoNode.SourceFile,
-			// The authored block, carried verbatim rather than reconstructed from
-			// the edges below: normalisation drops a socket that produced no edge,
-			// so reconstruction could not recover which sockets the author filled.
-			Uses: topoNode.Uses,
+			// The authored block, carried as written rather than reconstructed
+			// from the edges below: normalisation drops a socket that produced no
+			// edge, so reconstruction could not recover which sockets the author
+			// filled. The one exception is a connection attachment's values, which
+			// authoredUsesCopy leaves out; its godoc carries why.
+			Uses: authoredUsesCopy(topoNode.Uses),
 		}
 
 		// Resolved version + schema-declared pillar defaults from catalog.
@@ -521,6 +523,54 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	}
 
 	return graph, featureOrder, attachmentSites, nil
+}
+
+// authoredUsesCopy returns the node's authored `uses` block for the graph's own
+// copy of it, with every attachment a connection carries reduced to its type and
+// description.
+//
+// The values are left out because the graph already carries them in the one
+// place that marks them. A connection's attachment is lowered onto the node as
+// one of its attachments, and there its values sit beside the per-leaf
+// sensitivity marking every surface displaying the graph withholds by — the
+// command-line graph output and an editor's panel alike, each reading the
+// marking at the positions it knows. A second copy in the authored block would
+// sit at a position no marking covers, so a value an author declared sensitive
+// would print in the clear on every one of those surfaces. Keeping the type and
+// description keeps what the block is for — which connections the author
+// filled, and with what — without that second copy.
+//
+// A block carrying no connection attachment is returned as it is, so a node that
+// writes none carries the bytes it carried before; the input is never mutated,
+// since it is the topology's own record of what was authored.
+func authoredUsesCopy(uses types.OrderedMap[types.UsesSocketValue]) types.OrderedMap[types.UsesSocketValue] {
+	carries := false
+	for _, sv := range uses.All() {
+		for _, entry := range sv.Verbose.All() {
+			if entry.Features.Len() > 0 {
+				carries = true
+			}
+		}
+	}
+	if !carries {
+		return uses
+	}
+	out := types.OrderedMap[types.UsesSocketValue]{}
+	for socket, sv := range uses.All() {
+		copied := types.UsesSocketValue{Compact: sv.Compact}
+		for alias, entry := range sv.Verbose.All() {
+			if entry.Features.Len() > 0 {
+				withheld := types.OrderedMap[types.ConnectionAttachment]{}
+				for slot, att := range entry.Features.All() {
+					withheld.Set(slot, types.ConnectionAttachment{Type: att.Type, Description: att.Description})
+				}
+				entry.Features = withheld
+			}
+			copied.Verbose.Set(alias, entry)
+		}
+		out.Set(socket, copied)
+	}
+	return out
 }
 
 // convertInjectBlock translates the topology layer's typed *types.InjectBlock
