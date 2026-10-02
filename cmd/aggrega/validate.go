@@ -38,6 +38,9 @@ import (
 //     around a synthesized minimal Release so an author sees the isolated
 //     rendered output before wiring the entity into any Aggregate. Kinds outside
 //     that set are refused here, naming the scope that reaches them instead.
+//     With --release beside it, the same check runs in that Release's terms:
+//     the entity's references resolve through the catalog directories the
+//     workspace configuration gives that Release, and no closure is validated.
 //
 // Output is deterministic and the command writes nothing to disk.
 func newValidateCmd() *cobra.Command {
@@ -63,20 +66,28 @@ func newValidateCmd() *cobra.Command {
 			"Workload and Plugin. A value the kind requires that the file leaves empty is\n" +
 			"reported first, as a placeholder still owed: every one is named at once, with\n" +
 			"what it takes, read from the kind's own schema. That reading is this scope's\n" +
-			"alone; a whole-catalog run, --release and a build do not apply it. Each kind\n" +
-			"then has its schema checked, then the checks its own kind carries: pillar\n" +
-			"structure for a Component or Feature; shape for a Workload, FeatureRecipe or\n" +
-			"Plugin; and for a Recipe, shape plus an end-to-end compile against a minimal\n" +
-			"generated harness, so its resolution, its guards and a render of its output\n" +
-			"are all exercised. Where that Recipe's source is one that has to be fetched,\n" +
-			"the render is reported as not attempted instead: validating one entity on its\n" +
-			"own reads no lockfile, reads and writes no cache and makes no network request,\n" +
-			"so the chart or module it names is never retrieved and there is nothing to\n" +
-			"render from. Any other kind is refused here today, and the refusal names the\n" +
-			"scope that checks it instead: a whole-catalog run reaches an Aggregate and the\n" +
-			"library kinds when they sit in a catalog directory, and --release reaches a\n" +
-			"Release, the Manifest it names and the Aggregate it deploys. The command\n" +
-			"writes nothing to disk.",
+			"alone; a whole-catalog run, a Release's closure and a build do not apply it.\n" +
+			"Each kind then has its schema checked, then the checks its own kind carries:\n" +
+			"pillar structure for a Component or Feature; shape for a Workload,\n" +
+			"FeatureRecipe or Plugin; and for a Recipe, shape plus an end-to-end compile\n" +
+			"against a minimal generated harness, so its resolution, its guards and a\n" +
+			"render of its output are all exercised. Where that Recipe's source is one\n" +
+			"that has to be fetched, the render is reported as not attempted instead:\n" +
+			"validating one entity on its own reads no lockfile, reads and writes no cache\n" +
+			"and makes no network request, so the chart or module it names is never\n" +
+			"retrieved and there is nothing to render from. Any other kind is refused here\n" +
+			"today, and the refusal names the scope that checks it instead: a whole-catalog\n" +
+			"run reaches an Aggregate and the library kinds when they sit in a catalog\n" +
+			"directory, and --release reaches a Release, the Manifest it names and the\n" +
+			"Aggregate it deploys.\n\n" +
+			"With an entity path and --release together, the entity is checked in that\n" +
+			"Release's terms: its references — the Component a Recipe implements, a\n" +
+			"library a pillar refers to — resolve through the catalog directories the\n" +
+			"workspace configuration gives that Release rather than the workspace's own,\n" +
+			"so a workspace keeping one catalog variant per Release checks an entity\n" +
+			"against the variant that Release builds with. The checks are the entity\n" +
+			"path's; no closure is validated.\n\n" +
+			"The command writes nothing to disk.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""
@@ -91,6 +102,13 @@ func newValidateCmd() *cobra.Command {
 			if irGraph && releasePath == "" {
 				return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
 					fmt.Sprintf("--%s applies to the --release scope, the one scope that resolves a Release to a graph; pass --release <path-to-release.yaml>", flagIRGraph),
+					nil, nil)
+			}
+			// An entity beside --release is still the single-entity scope, checked
+			// in that Release's terms, and it resolves no closure and so no graph.
+			if irGraph && path != "" {
+				return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+					fmt.Sprintf("--%s applies to a Release's dependency closure, and an entity argument checks that one entity in the Release's terms instead, resolving no graph; drop the entity argument to validate the Release's closure", flagIRGraph),
 					nil, nil)
 			}
 			// --type declares the plugin type for a binary-only .wasm check and is
@@ -115,25 +133,22 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if releasePath != "" {
-				// Release-closure mode is mutually exclusive with a positional
-				// entity target — they select different closures.
-				if path != "" {
-					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-						"--release is mutually exclusive with an entity argument; pass one or the other", nil, nil)
-				}
+			if releasePath != "" && path == "" {
 				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
 				// No entity argument → whole-catalog correctness.
 				return validateCatalogWideFromWorkspace(rw, catalogDirs)
 			}
-			return dispatchValidate(cmd.Context(), rw, path, catalogDirs, noUnsupportedFieldWarnings, cmd.OutOrStdout())
+			// An entity argument is the single-entity scope, with --release or
+			// without it: beside an entity, --release names the Release whose terms
+			// the entity is checked in rather than a closure to validate.
+			return dispatchValidate(cmd.Context(), rw, path, releasePath, catalogDirs, noUnsupportedFieldWarnings, cmd.OutOrStdout())
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
 		helpCatalogDir)
-	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML to validate over its resolved dependency closure (mutually exclusive with an entity argument)")
+	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML. Alone, validate over its resolved dependency closure; with an entity argument, check that entity in the Release's terms, its references resolved through the catalog directories the workspace configuration gives that Release")
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
 	// No back-quoted token in the usage text: pflag reads the first one as the
@@ -141,7 +156,7 @@ func newValidateCmd() *cobra.Command {
 	// would render "--response-format detailed" as the placeholder and leave any
 	// later quoted name showing its literal quotes. The two accepted values are
 	// named in prose instead, and the placeholder stays the type.
-	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: detailed (default) reports every diagnostic plus advisory lines; concise reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
+	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope, a Release's closure with no entity argument: detailed (default) reports every diagnostic plus advisory lines; concise reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
 	c.Flags().BoolVar(&noUnsupportedFieldWarnings, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings+". Applies to the entity scope, the one scope that renders")
 	// --response-format sits next to this one and answers a different question:
 	// that flag sets how much of this command's OWN report is written, and this
@@ -172,16 +187,27 @@ func validatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 // single-entity scope core, and renders its structured result: the report lines
 // and rendered artifacts go to out (stdout), advisory notes to stderr. It
 // returns the core's first blocking error so a schema break halts loudly.
-func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
+//
+// release is the --release value as typed, or empty. It names the Release whose
+// terms the entity is checked in, and selects nothing else: the checks are this
+// scope's either way.
+func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path, release string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
 	}
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	// The single-entity scope names no Release — that is the --release scope's —
-	// so it reads the workspace's own stack.
-	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
+	// With no --release the entity concerns no one Release and is checked over
+	// the workspace's own stack; with one, over the stack the configuration gives
+	// that Release, so its references resolve to what that Release builds with.
+	// Asking for the Release's reach is what refuses a --release naming no file;
+	// the reach itself is set aside, since the check reads no workspace document
+	// beyond the entity and the catalog directories it is handed.
+	if _, err := rw.ReleaseReach(release, catalogFlagDirs); err != nil {
+		return err
+	}
+	dirs := rw.ResolveCatalogDirs(release, catalogFlagDirs)
 
 	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {

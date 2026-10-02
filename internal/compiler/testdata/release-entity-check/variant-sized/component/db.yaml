@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/datastore/db
+  version: "1.0.0"
+  description: the variant release-sized.yaml builds with, its storage sized by a shared library
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+spec:
+  schema:
+    infra:
+      storage:
+        $ref: "Sizing#/schemas/Storage"
+    provides:
+      host: { type: string, required: true }

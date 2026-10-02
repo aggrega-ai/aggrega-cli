@@ -20,7 +20,9 @@ import (
 // 1:1: exactly one of release / entity / plugin / catalog selects the scope,
 // with the same mutual-exclusion rules the CLI enforces. type is meaningful
 // only alongside plugin (binary-only declared type); entity alongside plugin is
-// the cross-check Plugin entity, not a single-entity target.
+// the cross-check Plugin entity, not a single-entity target; and release
+// alongside entity names the Release whose terms that entity is checked in,
+// not a closure to validate.
 type validateArgs struct {
 	Release       string   `json:"release"`
 	Entity        string   `json:"entity"`
@@ -60,7 +62,8 @@ const pluginValidateMaxMemoryPages uint32 = 4096
 // consumer reads validity from either field consistently across scopes.
 // Diagnostics is problems-only — each entry is one blocking finding in the order
 // the scope's core produces them. Release is retained and populated on the
-// release scope for callers that read it; other scopes omit it. Artifacts
+// release scope for callers that read it, and on the entity scope when the
+// entity was checked in a Release's terms; other scopes omit it. Artifacts
 // carries the sorted render-artifact keys from the single-entity render tier as
 // a summary — the artifact bytes stay the province of the build / describe /
 // inspect tools and never travel in this payload. Notices carries advisory lines
@@ -96,15 +99,18 @@ var validateToolSpec = toolSpec{
 		"kind is schema-checked, a Component or Feature has its pillar structure checked, a Workload, FeatureRecipe or " +
 		"Plugin has its shape checked, and a Recipe is driven through the real compilation pipeline around a " +
 		"synthesized Aggregate, Manifest and Release so you see the isolated render summary. Any other kind is refused, " +
-		"naming the kinds `entity` accepts and the scope that checks it instead. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
+		"naming the kinds `entity` accepts and the scope that checks it instead. `entity` with `release` runs those same " +
+		"checks in that Release's terms: the entity's references — the Component a Recipe implements, a library a pillar " +
+		"refers to — resolve through the catalog directories the workspace configuration gives that Release rather than " +
+		"the workspace's own, and no closure is validated. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
 		"`type` for a binary-only check, or `entity` (a Plugin entity path) to cross-check the binary against the " +
 		"entity's declared surface. `catalog` true checks the whole catalog: schema-pillar structure, library " +
 		"resolution, extends chains, OCI-location collisions, and provider input-kind capabilities. Each scope " +
 		"dispatches to the same core the CLI validates with and returns whether the target is valid plus each " +
 		"diagnostic verbatim. The selectors are mutually exclusive: `type` needs `plugin`; `plugin` excludes `release`; " +
-		"`release` excludes a single-entity `entity`; and exactly one scope must be chosen. For a diagnostic you do " +
-		"not understand, pass its text to explain-error. `response_format` chooses detailed or concise " +
-		"(release scope).",
+		"`catalog` takes no other selector; and exactly one scope must be chosen, `entity` with `release` " +
+		"being the entity scope. For a diagnostic you do not understand, pass its text to explain-error. " +
+		"`response_format` chooses detailed or concise (release scope, with no `entity`).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
 	listenerNote: "You did not start this server, so a diagnostic naming a place on its host names it relative to " +
 		"the workspace root where it lies inside the workspace, and reads " + keptBackLocationWords + " where it " +
@@ -116,12 +122,12 @@ var validateToolSpec = toolSpec{
     "release": {
       "type": "string",
       "minLength": 1,
-      "description": "Path to a Release YAML to validate over its resolved dependency closure."
+      "description": "Path to a Release YAML to validate over its resolved dependency closure. With entity, the Release whose catalog directories the entity's references resolve through instead; no closure is validated."
     },
     "entity": {
       "type": "string",
       "minLength": 1,
-      "description": "Path to a single catalog entity file (Component, Feature, Recipe, FeatureRecipe, Workload, or Plugin) to schema- and shape-check. When combined with plugin, this is instead the Plugin entity cross-checked against the binary."
+      "description": "Path to a single catalog entity file (Component, Feature, Recipe, FeatureRecipe, Workload, or Plugin) to schema- and shape-check. With release, it is checked in that Release's terms. When combined with plugin, this is instead the Plugin entity cross-checked against the binary."
     },
     "plugin": {
       "type": "string",
@@ -149,12 +155,12 @@ var validateToolSpec = toolSpec{
     "response_format": {
       "type": "string",
       "enum": ["detailed", "concise"],
-      "description": "detailed returns every diagnostic; concise returns the count and the first. Applies to the release scope; defaults to detailed."
+      "description": "detailed returns every diagnostic; concise returns the count and the first. Applies to the release scope with no entity; defaults to detailed."
     }
   },
   "anyOf": [
     {"required":["release"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["entity"]},{"required":["plugin"]},{"required":["type"]}]}},
-    {"required":["entity"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["release"]},{"required":["plugin"]},{"required":["type"]}]}},
+    {"required":["entity"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["plugin"]},{"required":["type"]}]}},
     {"required":["plugin"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["release"]},{"required":["entity"]}]}},
     {"required":["plugin","entity"],"properties":{"catalog":{"const":false}},"not":{"required":["release"]}},
     {"required":["catalog"],"properties":{"catalog":{"const":true}},"not":{"anyOf":[{"required":["release"]},{"required":["entity"]},{"required":["plugin"]},{"required":["type"]}]}}
@@ -165,10 +171,11 @@ var validateToolSpec = toolSpec{
 
 // validateInvoke selects the scope from the mutually-exclusive selectors and
 // dispatches to that scope's core: type needs plugin, plugin excludes release
-// and catalog, release excludes a single-entity target and catalog, catalog
-// excludes a single-entity target, and exactly one scope must be chosen. When
-// plugin is set, entity is the cross-check Plugin entity rather than a
-// single-entity target. The input schema declares these combinations too, so a
+// and catalog, release excludes catalog, catalog excludes a single-entity
+// target, and exactly one scope must be chosen. When plugin is set, entity is
+// the cross-check Plugin entity rather than a single-entity target; when release
+// is set beside entity, the entity is the target and release the Release whose
+// terms it is checked in. The input schema declares these combinations too, so a
 // caller reading it structurally does not have to make the call to learn them.
 //
 // Every failure here is one the caller corrects by changing the arguments, so
@@ -214,14 +221,14 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		return validatePluginScope(ctx, s, a, plugin, pluginType, entity)
 	}
 
-	// Release scope. Mutually exclusive with a single-entity target and with
-	// whole-catalog validation.
+	// Release scope, or one entity in a Release's terms. Mutually exclusive with
+	// whole-catalog validation either way.
 	if release != "" {
-		if entity != "" {
-			return errorResult("validate takes exactly one scope: 'release' and 'entity' are mutually exclusive")
-		}
 		if a.Catalog {
 			return errorResult("validate takes exactly one scope: 'release' and 'catalog' are mutually exclusive")
+		}
+		if entity != "" {
+			return validateEntityScope(ctx, s, a, entity, release)
 		}
 		return validateReleaseScope(s, ctx, a, release, format)
 	}
@@ -234,9 +241,9 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		return validateCatalogScope(s, a)
 	}
 
-	// Single-entity scope.
+	// Single-entity scope, in the terms of no one Release.
 	if entity != "" {
-		return validateEntityScope(ctx, s, a, entity)
+		return validateEntityScope(ctx, s, a, entity, "")
 	}
 
 	return errorResult("validate requires exactly one of 'release', 'entity', 'plugin', or 'catalog'")
@@ -322,7 +329,12 @@ func validateReleaseScope(
 // entity does not validate (the core halts at the first), empty when it does.
 // The render-artifact keys are summarized in the payload; the bytes are not
 // carried here — those belong to the build / describe / inspect tools.
-func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity string) (*callToolResult, *rpcError) {
+//
+// release is the call's 'release' argument, or empty. Naming one checks the
+// entity in that Release's terms: the core is handed the stack the workspace
+// configuration gives that Release instead of the workspace's own, and changes
+// nothing else.
+func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity, release string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "component"))
@@ -331,8 +343,22 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity 
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	dirs := tw.dirs
+	releasePath := ""
+	if release != "" {
+		if releasePath, refusal = tw.workspacePath("validate", "release", release); refusal != "" {
+			return errorResult(refusal)
+		}
+		// Asking for the Release's reach is what refuses a value naming no
+		// Release file; the reach itself is set aside, since the check reads no
+		// workspace document beyond the entity and the stack it is handed.
+		if _, refusal = tw.releaseReach("validate", releasePath); refusal != "" {
+			return errorResult(refusal)
+		}
+		dirs = tw.catalogDirsFor(releasePath)
+	}
 
-	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, tw.dirs, entityPath, false)
+	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, entityPath, false)
 
 	var diags []string
 	if verr != nil {
@@ -350,6 +376,9 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity 
 		Notices:     tw.reportedTexts(res.Notes),
 	}
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(entityPath)
+	if releasePath != "" {
+		payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
+	}
 	return tw.answer(textResult(renderEntityText(res, verr, artifactKeys), payload))
 }
 

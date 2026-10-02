@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Sizing
+  version: "1.0.0"
+  description: the storage sizing only release-sized.yaml's directories carry
+spec:
+  schemas:
+    Storage:
+      type: object
+      properties:
+        size:
+          type: string
+          default: 10Gi

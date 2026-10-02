@@ -230,7 +230,7 @@ func TestAContentPathOutsideTheEntityDirectoryIsRefusedAtEveryMoment(t *testing.
 			}{
 				{"aggrega validate", func() error { return validateCatalogWideFromWorkspace(ws, []string{catalogDir}) }},
 				{"aggrega validate <recipe>", func() error {
-					return dispatchValidate(context.Background(), ws, recipePath, []string{catalogDir}, false, io.Discard)
+					return dispatchValidate(context.Background(), ws, recipePath, "", []string{catalogDir}, false, io.Discard)
 				}},
 				{"aggrega pull --pin-sources", func() error { return containmentPull(t, root) }},
 				{"aggrega build", func() error { return containmentBuild(t, root) }},
@@ -258,7 +258,7 @@ func TestAContentPathThatStaysInsideTheEntityDirectoryIsUntouched(t *testing.T) 
 	if err := validateCatalogWideFromWorkspace(ws, []string{catalogDir}); err != nil {
 		t.Fatalf("aggrega validate: %v", err)
 	}
-	if err := dispatchValidate(context.Background(), ws, recipePath, []string{catalogDir}, false, io.Discard); err != nil {
+	if err := dispatchValidate(context.Background(), ws, recipePath, "", []string{catalogDir}, false, io.Discard); err != nil {
 		t.Fatalf("aggrega validate <recipe>: %v", err)
 	}
 	if err := containmentPull(t, root); err != nil {
@@ -441,7 +441,7 @@ func TestSingleEntityValidateReadsARecipesFilesFromItsOwnDirectory(t *testing.T)
 	t.Chdir(elsewhere)
 
 	var out bytes.Buffer
-	if err := dispatchValidate(context.Background(), ws, recipePath, []string{filepath.Join(root, "catalog")}, false, &out); err != nil {
+	if err := dispatchValidate(context.Background(), ws, recipePath, "", []string{filepath.Join(root, "catalog")}, false, &out); err != nil {
 		t.Fatalf("validating a Recipe from another directory must read its files from its own: %v\n%s", err, out.String())
 	}
 	if got := out.String(); !strings.Contains(got, "Render: ") || !strings.Contains(got, "origin: beside-the-recipe") {

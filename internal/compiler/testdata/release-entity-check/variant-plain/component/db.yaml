@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/datastore/db
+  version: "1.0.0"
+  description: the variant release-plain.yaml builds with, refers to no library
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }

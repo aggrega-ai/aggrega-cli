@@ -197,8 +197,9 @@ func TestValidateToolScopeGuards(t *testing.T) {
 		{"type without plugin", validateArgs{Type: "parser"}, "validate 'type' applies only with 'plugin'"},
 		{"plugin with release", validateArgs{Plugin: "p.wasm", Release: "r.yaml"}, "'plugin' and 'release' are mutually exclusive"},
 		{"plugin with catalog", validateArgs{Plugin: "p.wasm", Catalog: true}, "'plugin' and 'catalog' are mutually exclusive"},
-		{"release with entity", validateArgs{Release: "r.yaml", Entity: "e.yaml"}, "'release' and 'entity' are mutually exclusive"},
 		{"release with catalog", validateArgs{Release: "r.yaml", Catalog: true}, "'release' and 'catalog' are mutually exclusive"},
+		{"release with entity and catalog", validateArgs{Release: "r.yaml", Entity: "e.yaml", Catalog: true}, "'release' and 'catalog' are mutually exclusive"},
+		{"release with entity and plugin", validateArgs{Release: "r.yaml", Entity: "e.yaml", Plugin: "p.wasm"}, "'plugin' and 'release' are mutually exclusive"},
 		{"catalog with entity", validateArgs{Catalog: true, Entity: "e.yaml"}, "'catalog' and 'entity' are mutually exclusive"},
 		{"no scope selected", validateArgs{}, "validate requires exactly one of 'release', 'entity', 'plugin', or 'catalog'"},
 	}

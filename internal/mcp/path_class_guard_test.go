@@ -32,7 +32,7 @@ var workspacePathArguments = map[string]string{
 	"pull: release":                 "the Release whose dependencies are resolved",
 	"describe: release":             "the Release whose closure is summarised, or whose catalog directories a name is resolved through",
 	"list-entities: release":        "the Release whose catalog directories an entity listing is given in the terms of",
-	"validate: release":             "the Release validated over its closure",
+	"validate: release":             "the Release validated over its closure, or whose catalog directories an entity is checked in the terms of",
 	"validate: entity":              "the catalog entity document checked",
 	"validate: plugin":              "the .wasm checked against its own self-report",
 	"lint: release":                 "the Release linted",
