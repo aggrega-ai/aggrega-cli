@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -686,20 +687,22 @@ const syntheticInstanceName = "instance"
 
 // buildEntityHarness synthesizes the minimal Aggregate + Manifest + Release the
 // render tiers drive. The Aggregate carries one instance of the implements
-// Component with each required value filled by a typed placeholder; schema
-// defaults for the remaining values and for infra materialize through the real
-// resolver rather than being hand-written here. The Release routes the instance
-// into a synthesized default boundary; it declares no values: block and no
-// compute the Aggregate did not declare.
+// Component with each required value filled by a typed placeholder, and the
+// Release fills each required infra field of that instance the same way, because
+// the Release is where a real build's infra is written. Schema defaults for every
+// other value and infra field materialize through the real resolver rather than
+// being hand-written here. The Release routes the instance into a synthesized
+// default boundary; it declares no values: block and no compute the Aggregate
+// did not declare.
 func buildEntityHarness(implements, recipeURI string, comp *types.Component, lookup resolver.CatalogLookup) (entityHarness, error) {
-	values, err := requiredValuePlaceholders(comp, lookup.SchemaLibraries)
+	placeholders, err := requiredPlaceholders(comp, lookup.SchemaLibraries)
 	if err != nil {
 		return entityHarness{}, fmt.Errorf("render: synthesize values: %w", err)
 	}
 
 	instance := map[string]any{"type": implements}
-	if len(values) > 0 {
-		instance["values"] = values
+	if len(placeholders.values) > 0 {
+		instance["values"] = placeholders.values
 	}
 	aggregate := map[string]any{
 		"apiVersion": "aggrega.ai/v1alpha1",
@@ -735,6 +738,10 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 		return entityHarness{}, fmt.Errorf("render: synthesized manifest: %w", err)
 	}
 
+	releaseInstance := map[string]any{}
+	if len(placeholders.infra) > 0 {
+		releaseInstance["infra"] = placeholders.infra
+	}
 	releaseBytes, err := yaml.Marshal(map[string]any{
 		"apiVersion": "aggrega.ai/v1alpha1",
 		"kind":       "Release",
@@ -742,7 +749,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 		"spec": map[string]any{
 			"aggregate":  aggregatePath,
 			"manifest":   "validate://manifest.yaml",
-			"components": map[string]any{syntheticInstanceName: map[string]any{}},
+			"components": map[string]any{syntheticInstanceName: releaseInstance},
 		},
 	})
 	if err != nil {
@@ -825,17 +832,17 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		// The isolated render did not complete. This is a genuine finding — the
 		// entity does not render standalone — but the cause may be a harness
 		// limitation rather than an entity defect: a single-entity harness fills
-		// only required values (with schema defaults flowing), and supplies no
-		// attached credential or topology edge. An entity whose template reads a
-		// value delivered only by such an input cannot render in isolation. The
-		// underlying render error surfaces on the diagnostic stream through the
-		// pipeline.
+		// only required values and required infra (with schema defaults flowing),
+		// and supplies no attached credential or topology edge. An entity whose
+		// template reads a value delivered only by such an input cannot render in
+		// isolation. The underlying render error surfaces on the diagnostic stream
+		// through the pipeline.
 		res.Diagnostics = append(res.Diagnostics,
 			"Render: not completed in isolation",
 			"  The render requires build inputs a single-entity harness does not",
 			"  synthesize (for example an attached credential or a topology edge). See the",
 			"  render diagnostic below.")
-		return fmt.Errorf("render: %w", err)
+		return &renderStopError{err: err}
 	}
 	// The render completed, so the finished payload is what this reports from.
 	result := outcome.Completed()
@@ -848,14 +855,51 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 	return nil
 }
 
-// requiredValuePlaceholders compiles the Component's schema and returns a typed
-// placeholder for each required values field that carries no default. Fields
-// with a default are omitted so the real resolver materializes the default; the
-// placeholder types mirror the declared JSON-Schema type (string, integer,
-// number, boolean, object, array).
-func requiredValuePlaceholders(comp *types.Component, libraries map[string]types.SchemaLibrary) (map[string]any, error) {
+// renderStopError reports an isolated render that did not complete.
+//
+// Its text carries every cause beneath the render's own frame on one line, and
+// that is the reason it exists rather than a plain wrap. The render's outermost
+// frame names only the node it was rendering; the sentence that names what
+// stopped it — a template's own failure, a refused reference, a value the
+// template could not read — sits several causes further in, and each frame of the
+// chain renders as itself alone. A caller that prints this error as one line
+// would otherwise report the node and drop the cause. The chain is still
+// reachable through Unwrap, so a caller that renders it frame by frame renders it
+// exactly as it would the render's own error.
+type renderStopError struct {
+	err error
+}
+
+// Error renders the stopped render as one line, carrying every cause beneath it.
+func (e *renderStopError) Error() string {
+	return "render: " + cerrors.CauseChain(e.err)
+}
+
+// Unwrap returns the render's own error, so errors.Is and errors.As reach every
+// frame of it.
+func (e *renderStopError) Unwrap() error {
+	return e.err
+}
+
+// pillarPlaceholders holds the placeholders a build of one fills for the
+// Component it places: those for its values, which the synthesized Aggregate
+// carries, and those for its infra, which the synthesized Release carries.
+type pillarPlaceholders struct {
+	values map[string]any
+	infra  map[string]any
+}
+
+// requiredPlaceholders compiles the Component's schema once and returns, for the
+// values pillar and the infra pillar alike, a typed placeholder for each required
+// field that carries no default.
+//
+// The two pillars are filled by one reading for a reason: a required field with
+// no default is a value no build can omit, whichever pillar declares it, and a
+// build of one has nobody to supply it but this harness. A second reading per
+// pillar would be free to fill one pillar's fields differently from the other's.
+func requiredPlaceholders(comp *types.Component, libraries map[string]types.SchemaLibrary) (pillarPlaceholders, error) {
 	if comp.Spec.Schema.Kind == 0 {
-		return nil, nil
+		return pillarPlaceholders{}, nil
 	}
 	opts := []compactform.CompileOption{}
 	if libraries != nil {
@@ -863,16 +907,28 @@ func requiredValuePlaceholders(comp *types.Component, libraries map[string]types
 	}
 	compiled, err := compactform.Compile(&comp.Spec.Schema, opts...)
 	if err != nil {
-		return nil, err
+		return pillarPlaceholders{}, err
 	}
-	valuesPillar, ok := mapAt(compiled, "properties", "values")
+	return pillarPlaceholders{
+		values: requiredFieldPlaceholders(compiled, "values"),
+		infra:  requiredFieldPlaceholders(compiled, "infra"),
+	}, nil
+}
+
+// requiredFieldPlaceholders returns a typed placeholder for each required field of
+// one pillar of a compiled schema that carries no default, or nil when the pillar
+// declares none. Fields with a default are omitted so the real resolver
+// materializes the default; the placeholder types mirror the declared JSON-Schema
+// type (string, integer, number, boolean, object, array).
+func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[string]any {
+	pillarNode, ok := mapAt(compiled, "properties", pillar)
 	if !ok {
-		return nil, nil
+		return nil
 	}
-	required := toStringSlice(valuesPillar["required"])
-	props, _ := valuesPillar["properties"].(map[string]any)
+	required := toStringSlice(pillarNode["required"])
+	props, _ := pillarNode["properties"].(map[string]any)
 	if len(required) == 0 || props == nil {
-		return nil, nil
+		return nil
 	}
 	out := map[string]any{}
 	for _, name := range required {
@@ -889,7 +945,7 @@ func requiredValuePlaceholders(comp *types.Component, libraries map[string]types
 		}
 		out[name] = placeholderForField(field)
 	}
-	return out, nil
+	return out
 }
 
 // placeholderForField returns a typed placeholder for one compiled schema field
