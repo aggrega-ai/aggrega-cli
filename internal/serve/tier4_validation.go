@@ -50,12 +50,14 @@ import (
 //	         cross-file IR assembly errors; fall back to {1, 1}
 //	         with the "Dependencies: " prefix.
 //
-// When the request file is not the named Release's Aggregate (e.g.,
-// the operator validates a sibling catalog Component while the
-// Release points at a different Aggregate), the Tier-4 pipeline is
-// not relevant to the requested file and the function returns an
-// empty slice — the caller's existing Tier-1 diagnostics for the
-// file already populated stay in place.
+// A catalog entity of a kind the single-entity check accepts never reaches
+// this function: handleValidate answers it with that check in the Release's
+// terms (runEntityValidation). When the request file is some other document
+// that is not the named Release's Aggregate (e.g., the Manifest, a library,
+// or the Release itself), the Tier-4 pipeline is not relevant to the
+// requested file and the function returns an empty slice once the closure
+// has resolved — the caller's existing Tier-1 diagnostics for the file
+// already populated stay in place.
 func (s *Server) runTier4Validation(ctx context.Context, releasePath, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	// Build the per-request catalog view, seeded with the named Release's
 	// lockfile pins, so every Tier-4 resolution read below verifies-on-read

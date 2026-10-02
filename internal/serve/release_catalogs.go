@@ -98,10 +98,31 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	if s.resolvedWorkspace == nil || s.releaseCatalogs == nil {
 		return s.lazyCatalog
 	}
-	dirs := s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
+	dirs := s.catalogDirsFor(releasePath)
 	return s.releaseCatalogs.lookupFor(dirs, func() *catalog.LazyLookup {
 		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil)
 	})
+}
+
+// catalogDirsFor returns the catalog search stack a request naming releasePath
+// reads: the directories the workspace configuration resolves for that Release,
+// with no command-line catalog directories, for the reason catalogFor gives.
+// releasePath is absolute, and the empty string asks for the workspace's own
+// stack.
+//
+// It is the one place the daemon asks the resolver for a Release's directories.
+// catalogFor builds its lookup over what this returns, and a check that reads
+// directories rather than a lookup — one entity's check in a Release's terms —
+// is handed the same list, so the two cannot come to read different stacks for
+// one Release.
+//
+// A Server holding no resolved workspace — the in-memory test harness — has no
+// resolver to ask, and answers the list its configuration carries.
+func (s *Server) catalogDirsFor(releasePath string) []string {
+	if s.resolvedWorkspace == nil {
+		return s.wsConfig.Workspace.CatalogDirs
+	}
+	return s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
 }
 
 // releaseTerms is what a request that may name a Release is answered within: the

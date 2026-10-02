@@ -404,20 +404,33 @@ func TestConventionsLayerClearsWhatWasFixed(t *testing.T) {
 // client never sees one problem reported twice.
 //
 // The fixture is the case where the two questions genuinely meet on one file: a
-// catalog entity that breaks a naming convention, validated against a Release
-// whose closure cannot resolve — which publishes a correctness finding on
-// whatever file was validated. So one reply carries an entry from each layer, and
-// what separates them is the source key.
+// catalog entity that breaks a naming convention and whose pillar refers to a
+// library no catalog directory holds, validated in a Release's terms — so the
+// single-entity check that request runs refuses the reference, which is a
+// correctness finding on that file. So one reply carries an entry from each
+// layer, and what separates them is the source key.
 //
 // It also asserts no entry is duplicated within the reply, because composing
 // three layers at one read is exactly where a file's findings could be appended
 // twice and read as two problems.
 func TestConventionsAndCorrectnessFindingsAreTellableApart(t *testing.T) {
 	t.Parallel()
-	root, rel := conventionsWorkspace(t, conventionsBadComponent)
-	// A Release pointing at an Aggregate the workspace does not hold: the closure
-	// resolution fails, which is the correctness finding published on the file the
-	// request named whatever that file is.
+	root, rel := conventionsWorkspace(t, `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: BadName
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      storage:
+        $ref: "Sizing#/schemas/Storage"
+`)
+	// The Release the request names. Only its catalog directories are read — the
+	// workspace's own list, since the configuration gives it none of its own — and
+	// none of them holds the library, so the check of the entity fails on it.
 	writeFixtureFile(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:

@@ -505,8 +505,10 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 
 // handleValidate parses the supplied content via yaml.v3 and populates
 // the daemon's parse cache + diagnostic cache for the file, then — when the
-// request named a Release — runs the full resolver and semantic checks
-// against that Release.
+// request named a Release — checks the file in that Release's terms: a catalog
+// entity of a kind the single-entity check accepts gets that check, resolved
+// through the Release's catalog directories, and every other document gets the
+// full resolver and semantic checks against the Release.
 //
 // The work divides in two and the request chooses between them. Parsing the
 // buffer, classifying its document envelope and seeding the parse cache act on
@@ -649,12 +651,22 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		s.setDiagnostics(file, nil)
 		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
-	// Tier 4: structured semantic violations via RunTier4Pipeline, against the
-	// Release this request named. A Release that cannot be loaded surfaces as a
-	// closure-level diagnostic from that path, on the validated file, rather
-	// than as a refusal: the request named a real coordinate, and what went
-	// wrong is something the author can read and fix.
-	diags := s.runTier4Validation(ctx, releasePath, file, []byte(params.Content), &doc)
+	// The Release this request named is the terms of the answer, and what it is
+	// asked about depends on the document. A catalog entity of a kind the
+	// single-entity check accepts gets that check, its references resolved through
+	// the Release's catalog directories — the verdict the command line and the
+	// tools give the same entity beside the same Release. Every other document —
+	// the Release's own Aggregate above all — gets Tier 4: structured semantic
+	// violations via RunTier4Pipeline, against that Release. Either way a Release
+	// that cannot be read surfaces as a diagnostic on the validated file rather
+	// than as a refusal: the request named a real coordinate, and what went wrong
+	// is something the author can read and fix.
+	var diags []Diagnostic
+	if isSingleEntityDocument(&doc) {
+		diags = s.runEntityValidation(ctx, releasePath, file, []byte(params.Content))
+	} else {
+		diags = s.runTier4Validation(ctx, releasePath, file, []byte(params.Content), &doc)
+	}
 	if ctx.Err() != nil {
 		// Cancelled mid-pipeline. Leave the prior diagnostic cache
 		// entry intact and return without overwriting it — which means
