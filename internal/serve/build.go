@@ -106,10 +106,18 @@ type buildParams struct {
 // not fill. A caller that asked for the fill asked for a resolution as part of
 // this request, so the facts that resolution computed are owed here rather than
 // only on the request that does nothing else — which the caller would have to
-// send a second time to find out what its own build just pinned. The notices
-// beside it are the same resolution's prose account: the two are parallel
-// complete accounts rather than one summarising the other, so a caller reading
-// the report never has to parse a line of prose to recover a fact.
+// send a second time to find out what its own build just pinned. On this answer
+// those facts are carried here and nowhere else: the lockfile written, and each
+// reference reached with the version it settled on and where this run took it
+// from, with the counts the report keeps beside them.
+//
+// The notices the fill adds beside it are not a second account of the same
+// facts. They are the lines the resolution wrote about its own work as it went,
+// such as a pin reused, a signature checked, a version skipped as withdrawn or
+// retracted, or an advisory, and no line of them lists the references pinned,
+// their versions or where each came from. A fill with nothing to remark on adds
+// no notice at all, so a caller reporting what the fill did reads it off the
+// report and never has to parse a line of prose to recover a fact.
 type buildResult struct {
 	OutputDirectory      string                      `json:"outputDirectory"`
 	Files                []string                    `json:"files"`
@@ -231,9 +239,10 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	}
 
 	// The fill, before the render, because what it writes is what the render's
-	// opening gates read. Its own account of itself is kept for the answer's
-	// notices: a caller that asked for the fill is owed what the fill did, and
-	// nothing here is watching a stream it could have been written to instead.
+	// opening gates read. What it resolved is kept for the answer's report and the
+	// lines it wrote about its own work for the answer's notices: a caller that
+	// asked for the fill is owed both, and nothing here is watching a stream the
+	// lines could have been written to instead.
 	var fillNotices []string
 	var fillReport *dependencyResolutionReport
 	// The render the fill conserved, where it conserved one. Nil is not an error
@@ -345,9 +354,10 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 // Both are returned rather than written anywhere because this request reports no
 // progress: nothing on this path opens a progress run, so a stream the caller is
 // watching does not exist and the answer is where the account can still reach
-// whoever asked for it. The lines and the report are not alternatives — the lines
-// are prose for a person and the report is the facts themselves, and a caller
-// that asked for a fill is owed both.
+// whoever asked for it. The lines and the report are not alternatives, and
+// neither restates the other: the lines are the resolution's remarks on its own
+// work, for a person, and the report is what it resolved, and a caller that asked
+// for a fill is owed both.
 //
 // ctx is the requesting build's own, threaded into the resolution rather than
 // replaced by one this method invented, so a client that withdraws the build
