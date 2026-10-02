@@ -190,7 +190,7 @@ func TestVerifyDriftAndUpdateCacheOnLoadFailure(t *testing.T) {
 
 	// Closure shape doesn't matter on the load-failure branch — the
 	// error fires before the closure is consulted.
-	srv.verifyDriftAndUpdateCache(lockfilePath, closure.Closure{})
+	srv.verifyDriftAndUpdateCache(lockfilePath, "release.yaml", closure.Closure{})
 
 	// Prior drift diagnostic should be cleared.
 	if srv.snapshotDiagnostics(lockfilePath) != nil {

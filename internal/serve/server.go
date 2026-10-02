@@ -1045,10 +1045,14 @@ type Server struct {
 	// its own immutable pin snapshot, so a concurrent request's pins never perturb
 	// it — the consistency the worker pool depends on.
 	//
-	// What reads this lookup directly is what concerns no one Release: the
-	// workspace's entity index and the by-name definition when the request names
-	// no Release, completion, the feature listings, and the candidacy surfaces
-	// addressed by name or label.
+	// What reads this lookup directly is what concerns no one Release. A request
+	// that may name a Release reads it where it names none (workspaceTerms): the
+	// workspace's entity index with the catalog directories' Features in it, the
+	// by-name definition, completion, and hover and go-to-definition where neither
+	// the parse cache nor the walk of the workspace declares the name. The
+	// candidacy surfaces addressed by a workspace document's name or by a label
+	// set name no Release, and read it always. A request naming a Release reads
+	// that Release's lookup through catalogFor instead.
 	lazyCatalog *catalog.LazyLookup
 
 	// releaseCatalogs holds the lookup over each distinct Release catalog stack

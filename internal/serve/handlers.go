@@ -1003,7 +1003,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    fires the aggrega/publishDiagnostics notification. Non-blocking — irGraph
 	//    still produces the IR graph; drift is a Problems-panel signal, not a halt,
 	//    which is why it runs here rather than as one of the preview's own gates.
-	s.verifyDriftAndPublish(ctx, preview.lockfilePath, &preview.resolved.Closure)
+	s.verifyDriftAndPublish(ctx, preview.lockfilePath, params.Release, &preview.resolved.Closure)
 
 	// 5. Advisories to the Problems panel. Every exit-code-neutral finding the run
 	//    raised — the binding-lint findings, the static-analysis advisory stream,
@@ -1123,12 +1123,12 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 		return nil, paramErr
 	}
 
-	// 1. Lockfile-absent gate. Blocking — no IR graph produced
-	//    until the operator regenerates the lockfile (via the
-	//    extension's "Generate Lockfile" toast button, which runs
-	//    aggrega pull in a terminal, or by running aggrega pull
-	//    manually). A refusal for absence also withdraws the drift
-	//    finding standing on that path; requireLockfile says why.
+	// 1. Lockfile-absent gate. Blocking — no IR graph is produced until the
+	//    Release has a lockfile, which a dependency resolution of that Release
+	//    writes: aggrega/resolveDependencies on this server, or the command the
+	//    refusal names, `aggrega pull --release <release>`, at a terminal. A
+	//    refusal for absence also withdraws the drift finding standing on that
+	//    path; requireLockfile says why.
 	lockfilePath := lockfile.PathFor(releasePath)
 	if envelope := s.requireLockfile(ctx, lockfilePath, release); envelope != nil {
 		return nil, envelope
@@ -1260,13 +1260,15 @@ type CompletionItem struct {
 // cursor position references a YAML node in the file at uri.
 //
 // Release is optional. Absent, the definition is looked for in the workspace's
-// own terms. Named, it is a path relative to the workspace root naming a Release
-// inside it, refused in the shapes every Release parameter is refused in, and
-// the definition is looked for in that Release's terms (termsFor): a workspace
-// document under one of the workspace's catalog directories that Release does
-// not read is not a candidate, and a reference no workspace document in those
-// terms declares is resolved through the catalog directories the workspace
-// configuration gives that Release.
+// own terms: among the workspace documents first, and through the workspace's
+// own catalog directories where no workspace document declares the name. Named,
+// it is a path relative to the workspace root naming a Release inside it, refused
+// in the shapes every Release parameter is refused in, and the definition is
+// looked for in that Release's terms (termsFor): through the catalog directories
+// the workspace configuration gives that Release first, and among the workspace
+// documents only where those directories resolve nothing — of which a document
+// under one of the workspace's catalog directories that Release does not read is
+// never a candidate.
 type resolveParams struct {
 	URI      string           `json:"uri"`
 	Position yamlpos.Position `json:"position"`

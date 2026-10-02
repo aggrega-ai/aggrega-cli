@@ -60,7 +60,7 @@ func (s *Server) requireLockfile(ctx context.Context, lockfilePath, release stri
 		return nil
 	}
 	if os.IsNotExist(err) {
-		s.verifyDriftAndPublish(ctx, lockfilePath, nil)
+		s.verifyDriftAndPublish(ctx, lockfilePath, release, nil)
 		return &jsonRPCError{
 			Code:    errLockfileAbsent,
 			Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, release),
@@ -103,12 +103,16 @@ func (s *Server) requireLockfile(ctx context.Context, lockfilePath, release stri
 // verified. Returns the loaded lockfile (nil on load failure, and nil when cl is
 // nil) so the caller can thread it into the render pipeline for build-time
 // source-artifact resolution.
-func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string, cl *closure.Closure) *lockfile.Lockfile {
+//
+// release is the Release the request named, spelled the way the request named
+// it — the value the `--release` flag takes, as the lockfile-absent refusal
+// spells it — so a drift finding names the Release whose lockfile to rewrite.
+func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath, release string, cl *closure.Closure) *lockfile.Lockfile {
 	var lf *lockfile.Lockfile
 	if cl == nil {
 		s.dropDiagnostics(lockfilePath)
 	} else {
-		lf = s.verifyDriftAndUpdateCache(lockfilePath, *cl)
+		lf = s.verifyDriftAndUpdateCache(lockfilePath, release, *cl)
 	}
 	_ = s.publishDiagnostics(ctx, lockfilePath)
 	return lf
@@ -123,7 +127,11 @@ func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string,
 // Returns the freshly-loaded lockfile (nil on load failure). Drift is
 // non-blocking: on drift the lockfile is still returned (it parsed fine), so the
 // render pipeline can resolve sources against its pins regardless.
-func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
+//
+// A drift finding carries the shared remedy for release, read as
+// verifyDriftAndPublish reads it, so the command it names is the one that
+// rewrites this lockfile.
+func (s *Server) verifyDriftAndUpdateCache(lockfilePath, release string, cl closure.Closure) *lockfile.Lockfile {
 	lf, _, err := lockfile.LoadLockfile(lockfilePath)
 	if err != nil {
 		fmt.Fprintf(s.stderr, "  lockfile load %s: %v\n", lockfilePath, err)
@@ -131,7 +139,7 @@ func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closu
 		return nil
 	}
 	if err := lockfile.Verify(lf, cl); err != nil {
-		message := fmt.Sprintf("Lockfile drifted; %s. Details: %v", compilerops.LockfileDriftRemedy("<release>"), err)
+		message := fmt.Sprintf("Lockfile drifted; %s. Details: %v", compilerops.LockfileDriftRemedy(release), err)
 		s.setDiagnostics(lockfilePath, []Diagnostic{
 			{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: message, ConditionCodes: conditionCodesOf(err)},
 		})

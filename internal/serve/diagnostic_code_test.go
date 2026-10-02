@@ -385,7 +385,7 @@ func TestDiagnosticCodeOnLockfileDrift(t *testing.T) {
 	if err := os.WriteFile(lockfilePath, []byte(pinned), 0o644); err != nil {
 		t.Fatalf("write lockfile: %v", err)
 	}
-	if lf := srv.verifyDriftAndUpdateCache(lockfilePath, closure.Closure{}); lf == nil {
+	if lf := srv.verifyDriftAndUpdateCache(lockfilePath, "release.yaml", closure.Closure{}); lf == nil {
 		t.Fatal("lockfile did not load; the drift branch was never reached")
 	}
 	diags := srv.snapshotDiagnostics(lockfilePath)

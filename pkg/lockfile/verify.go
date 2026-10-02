@@ -24,14 +24,18 @@ import (
 // returning, so an operator with multiple drifts sees the full list
 // in one diagnostic rather than one URI per iteration.
 //
-// What clears it depends on which raise site reported it, and each says so.
-// Everything Verify reports is cleared by `aggrega pull --release <release>`,
-// which resolves the Release as it now stands, rewrites the pins that moved and
-// holds every other one — after the pin step that pull names, where what moved is
-// a file under a Recipe's local source — and an edited Release file's entry names
-// that command. A moved source reference is reported by that pull itself, which
-// is why its entry names `aggrega pull --upgrade --release <release>` instead:
-// only an upgrade adopts where a reference now points.
+// What clears it depends on which raise site reported it. Everything Verify
+// reports is cleared by `aggrega pull --release <release>`, which resolves the
+// Release as it now stands, rewrites the pins that moved and holds every other
+// one — after the pin step that pull names, where what moved is a file under a
+// Recipe's local source. Verify's entries do not write that command: it names the
+// Release as the reader named it, which the surface reporting the entries holds
+// and they do not, so printing it beside them is that surface's to do — the build
+// and the daemon's drift warning do — and an edited Release file's entry says only
+// that re-resolving the Release records it.
+// A moved source reference is reported by that pull itself, which is why its
+// entry names `aggrega pull --upgrade --release <release>` instead: only an
+// upgrade adopts where a reference now points.
 //
 // The two raise sites report one condition rather than two, because what an
 // operator is told is the same in both: a pin recorded in the lockfile no longer
@@ -116,13 +120,17 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 // function compares: a Release file has no resolved version, only content, and its
 // entries name a file the reader edits rather than a reference the catalog serves.
 //
-// The remediation rides on each entry, for the reason VerifySourceReferences gives:
-// a joined chain is rendered element by element and the enclosing frame's text is
-// not shown. It is a plain pull rather than an upgrade, because nothing needs to
-// float: a pull reads the Release as it now stands, re-resolves what it asks for
-// while honouring every other pin, and records the file again.
+// Each entry ends by saying what clears it, for the reason VerifySourceReferences
+// gives: a joined chain is rendered element by element and the enclosing frame's
+// text is not shown. It says so in words rather than as a command, because the
+// command names the Release as the reader named it, which only the surface
+// reporting the entry holds — the build and the daemon's drift warning each print
+// it beside the entries in that spelling. What clears it is a plain resolution
+// rather than an upgrade, because nothing needs to float: a pull reads the Release
+// as it now stands, re-resolves what it asks for while honouring every other pin,
+// and records the files it reads again.
 func releaseDocumentDrift(have []ReleaseDocument, want []closure.ReleaseDocument) []error {
-	const remedy = "run `aggrega pull --release <release>` to resolve the Release as it now stands and record it"
+	const remedy = "re-resolving the Release records the files it reads as they now stand"
 	recorded := make(map[string]string, len(have))
 	for _, d := range have {
 		recorded[d.Path] = d.Digest

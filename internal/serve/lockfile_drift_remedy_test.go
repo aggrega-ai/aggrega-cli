@@ -79,8 +79,9 @@ func driftEveryAxis(t *testing.T, root string) {
 
 // TestTheDriftWarningNamesTheSharedRemedyAndAPlainPullWithdrawsIt pins the editor's
 // half of the drift remedy: the warning the daemon publishes on a drifted lockfile
-// carries the command every other surface names, and running that command — a
-// dependency resolution with no upgrade — withdraws the warning.
+// carries the command every other surface names, for the Release the graph request
+// named, and running that command — a dependency resolution with no upgrade —
+// withdraws the warning.
 //
 // The lockfile is written by one session and the edits are made before a second
 // one opens the workspace, the way an editor started over a workspace that changed
@@ -142,8 +143,13 @@ func TestTheDriftWarningNamesTheSharedRemedyAndAPlainPullWithdrawsIt(t *testing.
 		t.Fatalf("a lockfile drifted on every axis must carry one warning; got %d: %+v", len(findings), findings)
 	}
 	message := findings[0].Message
-	if remedy := compilerops.LockfileDriftRemedy("<release>"); !strings.Contains(message, remedy) {
-		t.Errorf("the warning does not carry the shared remedy %q:\n%s", remedy, message)
+	// The remedy names the Release the request named, as the command line writes
+	// it — the file to pull — and never a placeholder a reader has to fill in.
+	if remedy := compilerops.LockfileDriftRemedy(release); !strings.Contains(message, remedy) {
+		t.Errorf("the warning does not carry the shared remedy for %s, %q:\n%s", release, remedy, message)
+	}
+	if placeholder := compilerops.LockfileDriftRemedy("<release>"); strings.Contains(message, placeholder) {
+		t.Errorf("the warning names a placeholder rather than the Release whose lockfile drifted:\n%s", message)
 	}
 	for _, named := range []string{`"demo/web"`, `"./aggregate.yaml"`, `"helm/svc:1.0.0"`, `"BaseTypes"`,
 		`"BaseMappings"`, `"BaseWorkloads"`, `"PlatformArtifacts"`, `"r.yaml"`} {

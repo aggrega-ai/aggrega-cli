@@ -25,12 +25,17 @@ const (
 // the positive control: without it a comparison that reported every Release file
 // as drifted would pass every other row.
 //
-// Every faulting row asserts the condition, the file it names and the remediation
-// the entry itself carries, because the entry is all a reader is shown — the
-// enclosing frame's text does not reach the terminal. A comparison with the axis
-// removed returns nil for every faulting row, so each fails on its errors.Is.
+// Every faulting row asserts the condition, the file it names and what the entry
+// itself says clears it, because the entry is all a reader is shown — the
+// enclosing frame's text does not reach the terminal. And every faulting row
+// asserts the entry names no placeholder Release: the entry does not hold the
+// Release as the reader named it, so the command is the reporting surface's to
+// print, and an entry writing `<release>` would show the reader a command they
+// cannot run as written. A comparison with the axis removed returns nil for every
+// faulting row, so each fails on its errors.Is.
 func TestVerifyReleaseDocuments(t *testing.T) {
 	t.Parallel()
+	const clears = "re-resolving the Release records the files it reads as they now stand"
 	current := []closure.ReleaseDocument{
 		{Path: "release.yaml", Digest: releaseDigestA},
 		{Path: "../shared/base-release.yaml", Digest: parentDigest},
@@ -54,7 +59,7 @@ func TestVerifyReleaseDocuments(t *testing.T) {
 				{Path: "../shared/base-release.yaml", Digest: parentDigest},
 			},
 			want: []string{`release document "release.yaml" was edited after the lockfile was written`,
-				"lockfile=" + releaseDigestB, "current=" + releaseDigestA, "aggrega pull --release <release>"},
+				"lockfile=" + releaseDigestB, "current=" + releaseDigestA, clears},
 		},
 		{
 			name: "a Release it extends was edited",
@@ -62,13 +67,13 @@ func TestVerifyReleaseDocuments(t *testing.T) {
 				{Path: "release.yaml", Digest: releaseDigestA},
 				{Path: "../shared/base-release.yaml", Digest: releaseDigestB},
 			},
-			want: []string{`release document "../shared/base-release.yaml" was edited`, "aggrega pull --release <release>"},
+			want: []string{`release document "../shared/base-release.yaml" was edited`, clears},
 		},
 		{
 			name:     "a lockfile recording no Release file at all",
 			recorded: nil,
 			want: []string{`release document "release.yaml" is not recorded in the lockfile`,
-				`release document "../shared/base-release.yaml" is not recorded`, "aggrega pull --release <release>"},
+				`release document "../shared/base-release.yaml" is not recorded`, clears},
 		},
 		{
 			name: "a recorded file the Release no longer reads",
@@ -78,7 +83,7 @@ func TestVerifyReleaseDocuments(t *testing.T) {
 				{Path: "old-base.yaml", Digest: releaseDigestB},
 			},
 			want: []string{`release document "old-base.yaml" is recorded in the lockfile but the Release no longer reads it`,
-				"aggrega pull --release <release>"},
+				clears},
 		},
 	}
 	for _, tc := range cases {
@@ -101,8 +106,9 @@ func TestVerifyReleaseDocuments(t *testing.T) {
 					t.Errorf("drift message does not carry %q; got:\n%s", w, msg)
 				}
 			}
-			// The Release edit is the user's own; nothing about it is a fetch.
-			for _, wrong := range []string{"--upgrade", "offline", "URL"} {
+			// The Release edit is the user's own; nothing about it is a fetch, and the
+			// entry names no Release it was not given.
+			for _, wrong := range []string{"--upgrade", "offline", "URL", "<release>"} {
 				if strings.Contains(msg, wrong) {
 					t.Errorf("drift message for a Release file points at %q, which is not what fixes it:\n%s", wrong, msg)
 				}

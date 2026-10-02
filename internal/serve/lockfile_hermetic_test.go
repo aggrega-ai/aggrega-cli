@@ -214,7 +214,7 @@ func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 	if err := lockfile.Verify(pinned, reconClosure); err != nil {
 		t.Fatalf("drift against the reconstructed closure should be clean, got: %v", err)
 	}
-	srv.verifyDriftAndUpdateCache(lockfilePath, reconClosure)
+	srv.verifyDriftAndUpdateCache(lockfilePath, rel, reconClosure)
 	if diags := srv.snapshotDiagnostics(lockfilePath); len(diags) != 0 {
 		t.Fatalf("an undrifted lockfile should publish no drift diagnostic, got %d: %+v", len(diags), diags)
 	}
@@ -225,9 +225,9 @@ func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 	drifted.Entities = append(drifted.Entities, lockfile.Entity{
 		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})
-	srv.verifyDriftAndUpdateCache(lockfilePath, computed.Closure) // reset the entry off the clean state
+	srv.verifyDriftAndUpdateCache(lockfilePath, rel, computed.Closure) // reset the entry off the clean state
 	writeFixtureLockfile(t, lockfilePath, drifted)
-	srv.verifyDriftAndUpdateCache(lockfilePath, reconClosure)
+	srv.verifyDriftAndUpdateCache(lockfilePath, rel, reconClosure)
 	driftDiags := srv.snapshotDiagnostics(lockfilePath)
 	if len(driftDiags) == 0 {
 		t.Fatal("a drifted lockfile must still report drift; got no diagnostic")

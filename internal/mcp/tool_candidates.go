@@ -97,10 +97,11 @@ var attachCandidatesToolSpec = toolSpec{
 		"nothing here vouches for) — so you can explain any candidate from the answer alone instead of re-deriving it, " +
 		"which is how your answer and the compiler's come apart. It ANSWERS AND STOPS: it creates no attachment, writes " +
 		"nothing to any file and proposes no text; composing and applying any edit that follows is yours. Candidates come " +
-		"from the workspace and the configured catalog directories; join each on kind, name and file against list-entities " +
-		"for anything more to display. A `node` or `graph_node` that does not resolve is refused rather than answered with " +
-		"an empty list, so a typo never reads as \"nothing may attach here\"; a `labels` call has no name to mistype, so an " +
-		"empty list there means what it says.",
+		"from the workspace and the configured catalog directories — for a `graph_node`, only those its `release` reaches, so " +
+		"a Feature kept under a catalog directory only another Release reads is not offered; join each on kind, name and " +
+		"file against list-entities for anything more to display. A `node` or `graph_node` that does not resolve is refused " +
+		"rather than answered with an empty list, so a typo never reads as \"nothing may attach here\"; a `labels` call has " +
+		"no name to mistype, so an empty list there means what it says.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -254,7 +255,18 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 
 	// The graph comes off the finished payload: the refusal above returned, so the
 	// run this reports candidates from is one that ended.
-	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, view, preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
+	//
+	// The candidates are drawn in this Release's terms — the view above, over its
+	// own catalog stack, and its reach over the workspace documents — so a Feature
+	// kept under a catalog directory only another Release reads is not offered for
+	// a node of this one's graph. The preview has read the Release, so asking for
+	// its reach here does not refuse a value that got this far.
+	reach, refusal := tw.releaseReach("attach-candidates", releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
+	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, view, reach,
+		preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed. A caller told "no workspace entity is named X" after

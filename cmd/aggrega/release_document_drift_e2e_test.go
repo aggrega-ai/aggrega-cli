@@ -59,8 +59,10 @@ func rewriteRelease(t *testing.T, path, from, to string) {
 }
 
 // requireReleaseDrift asserts that err is the lockfile-drift condition raised for
-// the named Release file and carrying the plain-pull remediation, and that
-// nothing about it is a fetch.
+// the named Release file, saying that re-resolving the Release clears it, that it
+// names no placeholder Release, and that nothing about it is a fetch. It holds on
+// every surface that reports the entry, so it asserts what the entry says rather
+// than the command a build prints beside it.
 func requireReleaseDrift(t *testing.T, err error, step, file, condition string) {
 	t.Helper()
 	if err == nil {
@@ -73,12 +75,13 @@ func requireReleaseDrift(t *testing.T, err error, step, file, condition string) 
 		t.Errorf("%s: the halt still carries a fetch failure: %v", step, err)
 	}
 	msg := err.Error()
-	for _, want := range []string{`release document "` + file + `" ` + condition, "aggrega pull --release <release>"} {
+	for _, want := range []string{`release document "` + file + `" ` + condition,
+		"re-resolving the Release records the files it reads as they now stand"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("%s: diagnostic does not carry %q:\n%s", step, want, msg)
 		}
 	}
-	for _, wrong := range []string{"no lockfile entry", "verify the URL", "offline"} {
+	for _, wrong := range []string{"no lockfile entry", "verify the URL", "offline", "<release>"} {
 		if strings.Contains(msg, wrong) {
 			t.Errorf("%s: diagnostic still points at %q:\n%s", step, wrong, msg)
 		}

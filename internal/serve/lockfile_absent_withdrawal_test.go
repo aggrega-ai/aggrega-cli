@@ -190,7 +190,7 @@ func TestVerifyDriftAndPublishWithNoClosureWithdrawsWithoutReading(t *testing.T)
 	})
 
 	ctx, flush := serializerContext(t, &out)
-	if lf := srv.verifyDriftAndPublish(ctx, lockfilePath, nil); lf != nil {
+	if lf := srv.verifyDriftAndPublish(ctx, lockfilePath, rel, nil); lf != nil {
 		t.Errorf("a withdrawal returned a lockfile, so it read one: %+v", lf)
 	}
 	flush()
