@@ -127,7 +127,12 @@ var validateToolSpec = toolSpec{
 		"leaves empty is reported first, every one at once, as a placeholder still owed with what it takes; then every " +
 		"kind is schema-checked, a Component or Feature has its pillar structure checked, a Workload, FeatureRecipe or " +
 		"Plugin has its shape checked, and a Recipe is driven through the real compilation pipeline around a " +
-		"synthesized Aggregate, Manifest and Release so you see the isolated render summary. Any other kind is refused, " +
+		"synthesized Aggregate, Manifest and Release so you see the isolated render summary. That synthesized build " +
+		"wires no connection and attaches no Feature, so a Recipe whose render stops while its templates read anything " +
+		"under .context.inject, .context.uses or .features is reported as not attempted rather than failed: valid, " +
+		"with no diagnostic, and the text naming those reads and the sentence the render stopped on. What decides it is " +
+		"what the Recipe reads, so a fault of its own beside such a read is set aside with it; a template that does " +
+		"not parse, a reference the render refuses and a Recipe assertion that calls fail still fail. Any other kind is refused, " +
 		"naming the kinds `entity` accepts and the scope that checks it instead. `entity` with `release` runs those same " +
 		"checks in that Release's terms: the entity's references — the Component a Recipe implements, a library a pillar " +
 		"refers to — resolve through the catalog directories the workspace configuration gives that Release rather than " +

@@ -42,9 +42,10 @@ type RenderedArtifact struct {
 // per-tier status lines (schema, pillars/shape, resolution, render), the
 // declined-check line naming any required uses sockets a single-entity run
 // could not cover, the not-attempted explanation when the Recipe's source is one
-// a single-entity run cannot fetch, and the render-failure explanation when a
-// render that WAS attempted did not complete — each verbatim and newline-free
-// (a renderer emits one per line). Artifacts carries the rendered output of a
+// a single-entity run cannot fetch or when its render stopped while its
+// templates read what a build of one cannot supply, and the render-failure
+// explanation when a render that WAS attempted did not complete for any other
+// reason — each verbatim and newline-free (a renderer emits one per line). Artifacts carries the rendered output of a
 // render-bearing Recipe, ordered by key, so a caller can print the bytes or
 // summarize a count. Notes
 // carries advisory lines a caller routes to a diagnostic stream rather than the
@@ -414,7 +415,7 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
 //
-// Three checks of a real build are out of reach here, and each is declined rather
+// Four checks of a real build are out of reach here, and each is declined rather
 // than failed.
 //
 // The first is whether the Component's `required: true` uses sockets are
@@ -437,6 +438,14 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // line in the same place. A source the workspace already holds is NOT declined:
 // it needs no fetch, so a render over it is attempted and a failure in it is a
 // real finding.
+//
+// The fourth is a render that stops while the Recipe's templates read what only
+// a connection or an attached Feature supplies — anything under .context.inject,
+// .context.uses or .features. The build of one wires no connection and attaches
+// no Feature, so those reads find nothing, and a render that stops beside them
+// cannot be judged here. Whether it is declined is decided by what the Recipe
+// READS, as buildOfOneReads states, never by what the stop says; the render runs
+// first and is not changed in any way to make the decision.
 //
 // Every decline is named in Diagnostics, so the report states which surface it
 // did not cover instead of leaving a silent difference between what validate
@@ -524,7 +533,134 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		RecipeDocument: func(*types.Recipe) (string, bool) { return path, true },
 	}
 	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(),
-		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source))
+		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source),
+		buildOfOneReadsOf(&rec, cat, lookup))
+}
+
+// buildOfOneSuppliedRoots are the context paths under which a Recipe's template
+// reads what only a real build supplies: the delivery pipe a connection or an
+// attached Feature fills, the connections themselves, and the attached Features.
+// A build of one wires no connection and attaches no Feature, so every read under
+// these finds nothing there.
+var buildOfOneSuppliedRoots = []string{".context.inject", ".context.uses", ".features"}
+
+// buildOfOneReads is what a Recipe's templates read that a build of one cannot
+// supply, as the read census reports it over every template the Recipe's render
+// evaluates, imported content included (renderer.RecipeTemplateReads).
+//
+// paths are those reads — each at or beneath one of buildOfOneSuppliedRoots, or
+// naming a path that encloses one, since reading the enclosing value reads what is
+// beneath it — de-duplicated and in lexical order, which is the order the census
+// itself reports a template's reads in. readable is false when the census could
+// not be taken: a template that does not parse, or an import that does not
+// resolve. Then nothing is known about what the Recipe reads, and nothing is
+// declined on its account.
+type buildOfOneReads struct {
+	paths    []string
+	readable bool
+}
+
+// buildOfOneReadsOf takes the census over the Recipe's templates, resolving its
+// imports against the catalog's libraries and reading its artifacts with the
+// delimiter pair its provider declares, and keeps the reads a build of one cannot
+// supply.
+func buildOfOneReadsOf(rec *types.Recipe, cat *catalog.Catalog, lookup resolver.CatalogLookup) buildOfOneReads {
+	left, right := providerArtifactDelimiters(lookup, rec.Spec.Capability)
+	reads, err := renderer.RecipeTemplateReads(rec, renderer.RecipeTemplateLibraries{
+		Mappings:  cat.MappingLibraries,
+		Workloads: cat.WorkloadLibraries,
+		Artifacts: cat.ArtifactLibraries,
+	}, left, right)
+	if err != nil {
+		return buildOfOneReads{}
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, read := range reads {
+		if seen[read] || !readsWhatABuildOfOneLacks(read) {
+			continue
+		}
+		seen[read] = true
+		paths = append(paths, read)
+	}
+	sort.Strings(paths)
+	return buildOfOneReads{paths: paths, readable: true}
+}
+
+// readsWhatABuildOfOneLacks reports whether one census path is at, beneath, or
+// encloses one of buildOfOneSuppliedRoots.
+func readsWhatABuildOfOneLacks(read string) bool {
+	for _, root := range buildOfOneSuppliedRoots {
+		if read == root || strings.HasPrefix(read, root+".") || strings.HasPrefix(root, read+".") {
+			return true
+		}
+	}
+	return false
+}
+
+// providerArtifactDelimiters is the delimiter pair the Recipe's provider applies
+// to artifacts, read from the provider entity the catalog lookup resolves the
+// capability to — the claim a provider's own report is held to when it loads —
+// or the usual pair where the lookup resolves none or the entity declares none.
+func providerArtifactDelimiters(lookup resolver.CatalogLookup, capability string) (string, string) {
+	if lookup.ProviderPlugin != nil {
+		if p, found, err := lookup.ProviderPlugin(capability); err == nil && found {
+			if d := p.Spec.Provider.Contract.ArtifactDelimiters; d != nil {
+				return d.Left, d.Right
+			}
+		}
+	}
+	return "{{", "}}"
+}
+
+// recipeOwnRenderFaults are the conditions a render stop carries when the fault
+// is the Recipe's own whatever a real build would supply: a reference the
+// template is refused, in any of the forms the render refuses one, and a Recipe
+// assertion that called fail. Each is matched through its exported accessor.
+//
+// An assertion is here because a Recipe assertion over a value a Release sets —
+// an image, a prerequisite's presence — fails every build of one, and that
+// failure is kept: the assertion is the Recipe saying what it requires, and the
+// check reports it. The condition is the one an assertion's fail call raises; an
+// assertion that halts on a key it reads but does not find names none, and is
+// decided like any other stop. A template that does not parse is not here because
+// no condition names it; it is ruled out by buildOfOneReads being unreadable.
+var recipeOwnRenderFaults = []func() error{
+	renderer.ErrAssertionFailed,
+	renderer.ErrTemplateUnknownRoot,
+	renderer.ErrProvidesSelfContainment,
+	renderer.ErrLocalsForwardReference,
+	renderer.ErrLocalsUnknownReference,
+	renderer.ErrArtifactPillarNotDeclared,
+}
+
+// declinesRenderStop reports whether a render that stopped with err is reported
+// as not attempted rather than failed.
+//
+// It is decided by what the Recipe reads, never by what the stop says: a Recipe
+// whose templates read anything a build of one cannot supply has a render this
+// check cannot judge, so its stop is declined — unless the stop is one of
+// recipeOwnRenderFaults, which no supplied value changes, or the reads could not
+// be taken at all. The consequence is stated rather than closed: a fault of the
+// Recipe's own that names no such condition — a misspelled key, say — in a Recipe
+// that also reads such a value is declined with it, and the report carries the
+// stop's own sentence so the reader can see which it was.
+//
+// A run its caller withdrew is not a render stop at all, so it is never declined:
+// the withdrawal is returned as the caller's own, whatever the Recipe reads.
+func (r buildOfOneReads) declinesRenderStop(err error) bool {
+	if !r.readable || len(r.paths) == 0 {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	for _, own := range recipeOwnRenderFaults {
+		if errors.Is(err, own()) {
+			return false
+		}
+	}
+	return true
 }
 
 // declinedRequirements names what a build of one cannot satisfy on the Component
@@ -778,7 +914,13 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // sourceNeedsFetch declines Tier 3 and reports it as not attempted. Tier 2 still
 // runs and still fails the run on a resolution error, so declining the render
 // narrows what is covered without softening anything that is.
-func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool) error {
+//
+// reads is what the Recipe's templates read that a build of one cannot supply.
+// It is consulted only once Tier 3 has run and stopped: a stop it declines is
+// reported as not attempted, naming those reads and carrying the stop's own
+// sentence, and every other stop fails the run as before. Nothing about the
+// render itself depends on it.
+func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool, reads buildOfOneReads) error {
 	// A single-entity harness runs against no workspace at all — it synthesizes
 	// its Release in memory — so the defaults are the configuration in force, and
 	// they are supplied explicitly rather than left unset: an unsupplied
@@ -829,19 +971,26 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		SuppressUnsupportedFieldWarnings: suppressUnsupportedFieldWarnings,
 	})
 	if err != nil {
-		// The isolated render did not complete. This is a genuine finding — the
-		// entity does not render standalone — but the cause may be a harness
-		// limitation rather than an entity defect: a single-entity harness fills
-		// only required values and required infra (with schema defaults flowing),
-		// and supplies no attached credential or topology edge. An entity whose
-		// template reads a value delivered only by such an input cannot render in
-		// isolation. The underlying render error surfaces on the diagnostic stream
-		// through the pipeline.
+		if reads.declinesRenderStop(err) {
+			res.Diagnostics = append(res.Diagnostics,
+				"Render: not attempted (this Recipe reads values a build of one cannot supply)",
+				"  Validating a Recipe on its own places its Component in a build that wires",
+				"  no connection and attaches no Feature, so nothing supplies what its",
+				"  templates read under .context.inject, .context.uses or .features. Its",
+				"  render stopped, and whether on one of those values or on a fault of its",
+				"  own is not judged here. To render it, build a Release that deploys a",
+				"  component this Recipe implements.",
+				"  Reads: "+strings.Join(reads.paths, ", "))
+			res.Diagnostics = append(res.Diagnostics, indentedLines("  The render stopped: ", cerrors.CauseChain(err))...)
+			res.Valid = true
+			return nil
+		}
+		// The isolated render did not complete, and nothing it reads is withheld
+		// by the build of one — or the stop is a fault no supplied value changes.
+		// The failure is the finding, and its sentence travels in the error.
 		res.Diagnostics = append(res.Diagnostics,
 			"Render: not completed in isolation",
-			"  The render requires build inputs a single-entity harness does not",
-			"  synthesize (for example an attached credential or a topology edge). See the",
-			"  render diagnostic below.")
+			"  The render diagnostic below names what stopped it.")
 		return &renderStopError{err: err}
 	}
 	// The render completed, so the finished payload is what this reports from.
@@ -853,6 +1002,22 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 	}
 	res.Valid = true
 	return nil
+}
+
+// indentedLines renders text as report lines: the first opened by lead, each
+// further non-blank one indented beneath it. Diagnostics holds one line per entry,
+// so a sentence carrying a line break of its own — a provider's message may — is
+// split rather than written into one entry.
+func indentedLines(lead, text string) []string {
+	parts := strings.Split(text, "\n")
+	out := []string{lead + parts[0]}
+	for _, part := range parts[1:] {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		out = append(out, "    "+part)
+	}
+	return out
 }
 
 // renderStopError reports an isolated render that did not complete.

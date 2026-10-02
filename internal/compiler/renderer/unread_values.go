@@ -147,14 +147,17 @@ func unreadValueWarnings(
 //     pipeline step's input and gate, taken from [RecipeTemplateFields] rather
 //     than re-enumerated — that function is the one home of which fields those
 //     are, and a second list here would be free to drift from it;
-//   - the source block, walked by mapRecipeSourceTemplates, which is the one home
-//     of which parts of a source carry a template. It is asked rather than
-//     answered here for the same reason, and it covers a scalar source whole as
-//     well as every string-valued field of the structured form;
 //   - each locals entry, each provides entry and each assertion, which the
 //     enumeration above deliberately leaves out because each has its own rules
 //     elsewhere. Those rules govern what a template may REFERENCE; this reading
-//     asks what it DOES reference, so the exclusion does not carry over.
+//     asks what it DOES reference, so the exclusion does not carry over;
+//   - the source block, walked by mapRecipeSourceTemplates, which is the one home
+//     of which parts of a source carry a template. It covers a scalar source whole
+//     as well as every string-valued field of the structured form.
+//
+// The last two are presented by [recipeBlockTemplates] rather than listed here,
+// because [RecipeTemplateReads] walks the same set and a block one of them listed
+// and the other did not would be read by one and missed by the other.
 //
 // # The direction a doubtful case is resolved in
 //
@@ -201,24 +204,7 @@ func recipeReadReferences(recipe *types.Recipe) ([]string, bool) {
 			return nil, false
 		}
 	}
-	for _, block := range []types.OrderedMap[string]{
-		recipe.Spec.Locals, recipe.Spec.Provides, recipe.Spec.Assertions,
-	} {
-		for _, text := range block.All() {
-			if !collect(text) {
-				return nil, false
-			}
-		}
-	}
-
-	sourceReadable := true
-	_, _ = mapRecipeSourceTemplates(recipe.Spec.Source, func(_, tmplText string) (string, error) {
-		if !collect(tmplText) {
-			sourceReadable = false
-		}
-		return tmplText, nil
-	})
-	if !sourceReadable {
+	if !recipeBlockTemplates(recipe, func(_, text string) bool { return collect(text) }) {
 		return nil, false
 	}
 	return refs, true

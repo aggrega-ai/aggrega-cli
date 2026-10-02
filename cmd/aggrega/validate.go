@@ -82,7 +82,14 @@ func newValidateCmd() *cobra.Command {
 			"that has to be fetched, the render is reported as not attempted instead:\n" +
 			"validating one entity on its own reads no lockfile, reads and writes no cache\n" +
 			"and makes no network request, so the chart or module it names is never\n" +
-			"retrieved and there is nothing to render from. Any other kind is refused here\n" +
+			"retrieved and there is nothing to render from. A render that stops while the\n" +
+			"Recipe's templates read what only a connection or an attached Feature\n" +
+			"supplies — anything under .context.inject, .context.uses or .features — is\n" +
+			"reported as not attempted too: the generated harness wires no connection and\n" +
+			"attaches no Feature, so that render cannot be judged there, and a fault of\n" +
+			"the Recipe's own beside such a read is set aside with it. A template that\n" +
+			"does not parse, a reference the render refuses and a Recipe assertion that\n" +
+			"calls fail still fail. Any other kind is refused here\n" +
 			"today, and the refusal names the scope that checks it instead: a whole-catalog\n" +
 			"run reaches an Aggregate and the library kinds when they sit in a catalog\n" +
 			"directory, and --release reaches a Release, the Manifest it names and the\n" +
