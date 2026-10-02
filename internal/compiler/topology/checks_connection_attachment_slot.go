@@ -39,7 +39,7 @@ func guardModuleConnectionAttachmentSlots(
 	if view == nil || cfg.ResolveResult == nil {
 		return nil, nil
 	}
-	developer, err := constraint.RunOnNodes(
+	developer, err := constraint.RunOnEdges(
 		cancelled, view, constraint.TopologyView(view), resolver.ModuleConnectionAttachmentFillsADeclaredSlot)
 	if err != nil {
 		return nil, err

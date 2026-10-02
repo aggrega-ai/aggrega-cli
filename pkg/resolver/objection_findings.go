@@ -139,11 +139,23 @@ func findingsAtTheirOwnDocument(
 	fallback string,
 ) []*ResolverError {
 	return findings(objections, func(o constraint.Objection) (string, string) {
-		if o.SourceFile() == "" {
-			return fallback, o.Locator()
-		}
-		return kind + " " + o.SourceFile(), o.Locator()
+		return DocumentEntity(kind, o.SourceFile(), fallback), o.Locator()
 	})
+}
+
+// DocumentEntity names the document a finding is attributed to when the finding's
+// own subject says which file it was authored in: the document kind and that
+// file, or fallback where no file is known.
+//
+// It is the one spelling of that attribution, shared by the conversion above and
+// by a finding a later stage builds outside any rule — the conformance of a
+// connection attachment a sub-module wrote, say — so the two cannot come to name
+// one document two ways.
+func DocumentEntity(kind, sourceFile, fallback string) string {
+	if sourceFile == "" {
+		return fallback
+	}
+	return kind + " " + sourceFile
 }
 
 // findings is the per-objection derivation the conversions above share: every

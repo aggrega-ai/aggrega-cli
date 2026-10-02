@@ -314,3 +314,46 @@ func flattenAnnotationValueMap(m types.OrderedMap[*types.AnnotationValue]) types
 	}
 	return result
 }
+
+// WalkReleaseBoundaries visits every boundary a Release declares with the path
+// it is named by, descending into nested scopes, in the document's own order.
+//
+// A scope normalization synthesized is not visited: the operator declared no such
+// scope, so a coordinate naming one would name a key the document does not
+// contain. Its children are still descended into, from the empty path, so a
+// component placed beneath it is reached by the path the document would spell.
+//
+// It is the one walk the stages after resolution enumerate a Release's
+// boundaries by, and the presentations answering a fact keyed by a boundary read
+// through it too. Two walks would be free to differ on which scopes they visit or
+// on the path they name one by, and a rule would then be invoked at a coordinate
+// the presentation could not answer.
+func WalkReleaseBoundaries(release *types.Release, visit func(path string, b types.Boundary)) {
+	if release == nil {
+		return
+	}
+	rel := types.NormalizeRelease(release).Release()
+	if rel == nil {
+		return
+	}
+	var walk func(path string, b types.Boundary)
+	walk = func(path string, b types.Boundary) {
+		if !b.Synthesized {
+			visit(path, b)
+		}
+		for name, child := range b.Boundaries.All() {
+			next := name
+			if path != "" {
+				next = path + "/" + name
+			}
+			walk(next, child)
+		}
+	}
+	for name, b := range rel.Spec.Boundaries.All() {
+		start := name
+		if b.Synthesized {
+			start = ""
+		}
+		walk(start, b)
+	}
+}

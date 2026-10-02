@@ -414,7 +414,9 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		// halt below).
 		attachmentErrs = append(attachmentErrs,
 			validateNodeAttachments(nodeID, featResult.Features,
-				attachmentParams, attachmentEntity, compiledFeature)...)
+				attachmentParams, attachmentEntity, compiledFeature,
+				connectionAttachmentSites(NodeInstanceOf(nodeID, irNode), topoNode,
+					featResult.contributions, res, attachmentEntity))...)
 
 		// Ask the slot-shape rule of every fill this node received from a broader
 		// scope. It belongs here and not with the authored-document guards for the

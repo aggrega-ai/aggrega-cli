@@ -24,8 +24,9 @@ import (
 //
 // Applied to a Release: boundaries compose per boundary name and a boundary per
 // key, components per component name, infra deep, features per instance name and
-// then per pillar; and directory, subDirectory, syncWave and the Aggregate and
-// Manifest pointers are scalars that replace.
+// then per pillar, a connection per socket and alias with its attachments per
+// slot by that same features rule; and directory, subDirectory, syncWave and the
+// Aggregate and Manifest pointers are scalars that replace.
 //
 // Identity and provenance do not travel. Every metadata field is the child's
 // own, which is what keeps a child from carrying its parent's environment into
@@ -288,7 +289,43 @@ func mergeBoundaryComponent(base, overlay types.BoundaryComponent) types.Boundar
 func mergeBoundaryFeatureMaps(
 	base, overlay types.OrderedMap[types.BoundaryFeature],
 ) types.OrderedMap[types.BoundaryFeature] {
-	out := types.OrderedMap[types.BoundaryFeature]{}
+	return mergeAttachmentMaps(base, overlay, func(inherited, ov types.BoundaryFeature) types.BoundaryFeature {
+		merged := inherited
+		merged.Type, merged.Description, merged.Infra = composeAttachmentDeclaration(
+			inherited.Type, inherited.Description, inherited.Infra, ov.Type, ov.Description, ov.Infra)
+		merged.Uses = mergeUsesSocketValueMaps(inherited.Uses, ov.Uses)
+		return merged
+	})
+}
+
+// mergeConnectionAttachmentMaps composes the attachments a Release connection
+// entry carries, per slot name and then per pillar, by the rule a component
+// entry's own attachments compose under.
+//
+// It is that rule and not a parallel one. A connection attachment the Release
+// writes is the same declaration as a component attachment it writes, less the
+// wiring a connection attachment cannot carry, so a child Release sizing a
+// credential on a connection and a child sizing one on the component meet one
+// behaviour: the type and description replace when the child writes them, the
+// sizing composes key by key, and an attachment only the parent wrote stands.
+func mergeConnectionAttachmentMaps(
+	base, overlay types.OrderedMap[types.ReleaseConnectionAttachment],
+) types.OrderedMap[types.ReleaseConnectionAttachment] {
+	return mergeAttachmentMaps(base, overlay, func(inherited, ov types.ReleaseConnectionAttachment) types.ReleaseConnectionAttachment {
+		merged := inherited
+		merged.Type, merged.Description, merged.Infra = composeAttachmentDeclaration(
+			inherited.Type, inherited.Description, inherited.Infra, ov.Type, ov.Description, ov.Infra)
+		return merged
+	})
+}
+
+// mergeAttachmentMaps composes two attachment maps a Release writes per instance
+// name: a name only the parent carries stands, a name only the child carries is
+// introduced, and a name both carry is composed by mergeOne. The parent's author
+// order is kept and the child's new names follow in theirs, the order every other
+// map in this file composes in.
+func mergeAttachmentMaps[A any](base, overlay types.OrderedMap[A], mergeOne func(inherited, ov A) A) types.OrderedMap[A] {
+	out := types.OrderedMap[A]{}
 	for k, v := range base.All() {
 		out.Set(k, v)
 	}
@@ -298,18 +335,28 @@ func mergeBoundaryFeatureMaps(
 			out.Set(k, ov)
 			continue
 		}
-		merged := inherited
-		if ov.Type != "" {
-			merged.Type = ov.Type
-		}
-		if ov.Description != "" {
-			merged.Description = ov.Description
-		}
-		merged.Infra = mergeInheritedAnyMaps(inherited.Infra, ov.Infra)
-		merged.Uses = mergeUsesSocketValueMaps(inherited.Uses, ov.Uses)
-		out.Set(k, merged)
+		out.Set(k, mergeOne(inherited, ov))
 	}
 	return out
+}
+
+// composeAttachmentDeclaration is the per-pillar rule for one attachment a
+// Release writes and a child Release redeclares: the type and the description are
+// each one indivisible value and replace when the child writes one, and the infra
+// composes key by key. It is the one home of that rule, read by both attachment
+// surfaces a Release has — a component entry's own and a connection entry's.
+func composeAttachmentDeclaration(
+	baseType, baseDescription string, baseInfra types.OrderedMap[any],
+	overlayType, overlayDescription string, overlayInfra types.OrderedMap[any],
+) (string, string, types.OrderedMap[any]) {
+	typ, description := baseType, baseDescription
+	if overlayType != "" {
+		typ = overlayType
+	}
+	if overlayDescription != "" {
+		description = overlayDescription
+	}
+	return typ, description, mergeInheritedAnyMaps(baseInfra, overlayInfra)
 }
 
 // mergeUsesSocketValueMaps composes an attachment's topology wiring per socket
@@ -329,7 +376,10 @@ func mergeUsesSocketValueMaps(
 }
 
 // mergeReleaseUsesBlocks composes the operator edge surface, which is keyed by
-// socket and then by alias, per key at both levels.
+// socket and then by alias, per key at both levels. Within one connection both
+// documents wrote, the target replaces when the child names one, the per-edge
+// infra composes key by key, and the attachments compose per slot by the rule a
+// component entry's attachments compose under.
 func mergeReleaseUsesBlocks(
 	base, overlay types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]],
 ) types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]] {
@@ -354,6 +404,7 @@ func mergeReleaseUsesBlocks(
 					composed.Target = entry.Target
 				}
 				composed.Infra = mergeInheritedAnyMaps(base.Infra, entry.Infra)
+				composed.Features = mergeConnectionAttachmentMaps(base.Features, entry.Features)
 				merged.Set(alias, composed)
 				continue
 			}

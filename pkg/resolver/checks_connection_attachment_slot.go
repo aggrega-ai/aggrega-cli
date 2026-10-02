@@ -166,39 +166,39 @@ var releaseConnectionAttachmentFillsADeclaredSlot = constraint.Check[
 // once: the earlier half was asked about it while the authoring documents were
 // read, and asking again here would report one fault twice.
 //
-// It is invoked once per node and walks that node's connections itself, because
-// the flattened composition enumerates no connections of its own.
+// It is invoked once per connection a flattened node's own dependency block
+// wrote, so a finding sits at the connection entry in the document the component
+// was written in — the sub-module's own — exactly as its earlier twin's sits in
+// the Aggregate's.
 var ModuleConnectionAttachmentFillsADeclaredSlot = constraint.Check[
 	constraint.TopologyView,
-	constraint.NodeSubject,
+	constraint.EdgeSubject,
 ]{
 	Sentinel: ErrConnectionAttachmentSlotUndeclared(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.TopologyView,
-		s constraint.NodeSubject,
+		s constraint.EdgeSubject,
 	) []constraint.Objection {
-		if _, declared := v.InstanceComponentType(s.NodeID()); declared {
+		node, socket, alias := s.NodeID(), s.SocketName(), s.AliasName()
+		if _, declared := v.InstanceComponentType(node); declared {
 			return nil
 		}
-		connections := v.FlattenedConnectionAttachmentNames(s.NodeID())
-		if connections.Len() == 0 {
+		var names []string
+		connections := v.FlattenedConnectionAttachmentNames(node)
+		if aliases, ok := connections.Get(socket); ok {
+			names, _ = aliases.Get(alias)
+		}
+		if len(names) == 0 {
 			return nil
 		}
-		componentType, held := v.FlattenedNodeComponentType(s.NodeID())
+		componentType, held := v.FlattenedNodeComponentType(node)
 		if !held || !v.CatalogComponentPresent(componentType) {
 			return nil
 		}
-		declaredSockets := v.DeclaredSocketNames(componentType)
-		var out []constraint.Objection
-		for socket, aliases := range connections.All() {
-			slots := v.SocketDeclaredSlotNames(componentType, socket)
-			for alias, names := range aliases.All() {
-				out = append(out, connectionAttachmentSlotObjections(s, s.NodeID(), socket, alias, names,
-					slots, slices.Contains(declaredSockets, socket))...)
-			}
-		}
-		return out
+		return connectionAttachmentSlotObjections(s, node, socket, alias, names,
+			v.SocketDeclaredSlotNames(componentType, socket),
+			slices.Contains(v.DeclaredSocketNames(componentType), socket))
 	},
 }
 

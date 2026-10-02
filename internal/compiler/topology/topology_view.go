@@ -4,6 +4,9 @@
 package topology
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -96,6 +99,16 @@ type topologyView struct {
 	// would remove the subject before any rule saw it.
 	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance
 
+	// boundaryScopes is every boundary the Release declares, an enclosing scope
+	// before the scopes nested inside it, each with the attachments it declares on
+	// itself in author order.
+	//
+	// It is folded once, when this value is built, because the presentation holds
+	// no authored document: the axis over boundary-wide attachments and the fact
+	// naming what each reaches are both answered from this one reading, so the
+	// attachment a rule is invoked for is one the fact can answer about.
+	boundaryScopes []releaseBoundaryScope
+
 	// recipeResolutions is what each node's Recipe resolution came to, joined
 	// once when this value was built.
 	//
@@ -126,6 +139,7 @@ func newTopologyView(
 	earlier constraint.NormalizedView,
 	references []constraint.BoundaryComponentReferenceInstance,
 	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance,
+	boundaryScopes []releaseBoundaryScope,
 	resolveRecipe nodeRecipeResolver,
 ) *topologyView {
 	v := &topologyView{
@@ -139,6 +153,7 @@ func newTopologyView(
 		contributed:         map[string][]string{},
 		references:          references,
 		edgeConfigurations:  edgeConfigurations,
+		boundaryScopes:      boundaryScopes,
 		recipeResolutions:   map[string]resolver.NodeRecipeResolution{},
 	}
 
@@ -455,6 +470,111 @@ func releaseEdgeConfigurations(
 	return out
 }
 
+// ReleaseConnectionAttachmentSite returns the document and the locator naming one
+// attachment the Release wrote on one of a component's connections, and whether
+// the Release wrote an entry for that connection at all.
+//
+// It reads the entry through the same fold the traversal over the Release's
+// per-edge surface is built from, so a finding about an attachment the entry
+// carries names the very entry a rule over that entry would name — the boundary
+// it sits in and the keys the operator typed to reach the component — and never
+// a path composed from the name the attachment carries on the consuming
+// component. The connection is matched by the socket and the alias it was written
+// under, which the caller holds as data.
+func ReleaseConnectionAttachmentSite(
+	rel *types.Release,
+	sourceFile, node, socket, alias, attachment string,
+) (entity, locator string, found bool) {
+	for _, entry := range releaseEdgeConfigurations(rel, sourceFile) {
+		c := entry.Configuration
+		if c.Node == node && c.Socket == socket && c.Alias == alias {
+			return releaseEntityName(rel), constraint.ReleaseConnectionAttachmentLocator(entry, attachment), true
+		}
+	}
+	return "", "", false
+}
+
+// releaseBoundaryScope is one boundary a Release declares: the coordinate an axis
+// over it names, and the attachments it declares on itself in author order.
+type releaseBoundaryScope struct {
+	coordinate  constraint.AuthoredCoordinate
+	attachments []string
+}
+
+// releaseBoundaryScopes folds the boundaries a Release declares, with the
+// attachments each declares on itself, into the shape the boundary axes
+// enumerate.
+//
+// It reads them through the one walk every stage enumerates a Release's
+// boundaries by, so a coordinate named here is spelled exactly as the stages
+// either side of this one spell it. A boundary normalization synthesized is not
+// a scope the operator declared and contributes none, and it carries no
+// attachments of its own to contribute: the Release's top level declares
+// components only.
+func releaseBoundaryScopes(rel *types.Release, sourceFile string) []releaseBoundaryScope {
+	var out []releaseBoundaryScope
+	resolver.WalkReleaseBoundaries(rel, func(path string, b types.Boundary) {
+		out = append(out, releaseBoundaryScope{
+			coordinate:  constraint.AuthoredCoordinate{Value: path, SourceFile: sourceFile},
+			attachments: b.Features.Keys(),
+		})
+	})
+	return out
+}
+
+// Boundaries returns every boundary the Release declares, at every depth, in
+// author order with an enclosing scope before the scopes nested inside it.
+func (v *topologyView) Boundaries() []constraint.AuthoredCoordinate {
+	if len(v.boundaryScopes) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(v.boundaryScopes))
+	for _, scope := range v.boundaryScopes {
+		out = append(out, scope.coordinate)
+	}
+	return out
+}
+
+// BoundaryAttachments returns the attachments one boundary declares on itself,
+// in the order the Release declares them.
+func (v *topologyView) BoundaryAttachments(boundary string) []string {
+	for _, scope := range v.boundaryScopes {
+		if scope.coordinate.Value == boundary {
+			return scope.attachments
+		}
+	}
+	return nil
+}
+
+// BoundaryAttachmentReachedNodes returns the nodes one attachment a boundary
+// declares on itself reaches: every node placed in that boundary or in a boundary
+// nested inside it, in the order the composition produced them, and none when
+// the boundary declares no attachment under that name.
+//
+// The reach is read off the placement each node carries, which is the same
+// placement the build attaches a boundary-wide attachment by, so a rule reading
+// this and the attachment the build produces cannot disagree about which
+// components one boundary's attachment lands on.
+func (v *topologyView) BoundaryAttachmentReachedNodes(boundary string, attachment string) []string {
+	if boundary == "" || !slices.Contains(v.BoundaryAttachments(boundary), attachment) {
+		return nil
+	}
+	// The prefix every boundary path nested inside this one begins with: the
+	// boundary joined to a level not yet named, by the one join the boundary axis
+	// composes its paths with.
+	nested := constraint.JoinBoundaryScope(boundary, "", false)
+	var out []string
+	for id, node := range v.nodes.All() {
+		if node == nil {
+			continue
+		}
+		if node.BoundaryPath == boundary || strings.HasPrefix(node.BoundaryPath, nested) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // boundaryComponentReferences folds the component entries a Release's
 // boundaries declare into the shape a traversal over them enumerates.
 //
@@ -567,6 +687,45 @@ func (v *topologyView) Nodes() []constraint.NodeInstance {
 	return out
 }
 
+// Edges returns every connection a node's own dependency block wrote, for every
+// node the flattened set holds: in node order, then in each block's socket order
+// and, within a socket, in the order its connections were written.
+//
+// The axis is the developers' own blocks and deliberately nothing else. The
+// connection set the composition drew also holds connections an attachment or
+// the Release drew, and a rule over what a developer wrote on a connection has to
+// be asked once per connection a developer wrote — including one the composition
+// drew nothing for, which is the connection set's blind side. Reading the blocks
+// the flattened nodes carry is what makes a component a sub-module contributes
+// enumerate exactly as one the Aggregate declares, positioned in the document it
+// was written in.
+//
+// Each connection's alias is read through the one projection of a socket's
+// authored value onto its connections, so a connection the short form listed is
+// named by its target and marked as an alias no key spells — the locator then
+// stops at the socket, which is what the author wrote.
+func (v *topologyView) Edges() []constraint.EdgeInstance {
+	var out []constraint.EdgeInstance
+	for _, node := range v.Nodes() {
+		n, ok := v.nodes.Get(node.ID)
+		if !ok || n == nil {
+			continue
+		}
+		for socket, sv := range n.Uses.All() {
+			shortForm := len(sv.Compact) > 0
+			for _, ev := range resolver.EdgeValuesOf(sv) {
+				out = append(out, constraint.EdgeInstance{
+					Node:             node,
+					Socket:           socket,
+					Alias:            ev.Alias,
+					SynthesizedAlias: shortForm,
+				})
+			}
+		}
+	}
+	return out
+}
+
 // NodeSockets returns the dependency sockets a node's component type declares,
 // in that type's own author order.
 //
@@ -614,8 +773,11 @@ var (
 	_ constraint.ModuleEnumerator                     = (*topologyView)(nil)
 	_ constraint.NodeEnumerator                       = (*topologyView)(nil)
 	_ constraint.NodeSocketEnumerator                 = (*topologyView)(nil)
+	_ constraint.EdgeEnumerator                       = (*topologyView)(nil)
 	_ constraint.BoundaryComponentReferenceEnumerator = (*topologyView)(nil)
 	_ constraint.ReleaseEdgeConfigurationEnumerator   = (*topologyView)(nil)
+	_ constraint.BoundaryEnumerator                   = (*topologyView)(nil)
+	_ constraint.BoundaryAttachmentEnumerator         = (*topologyView)(nil)
 	_ StageAxes                                       = (*topologyView)(nil)
 )
 
@@ -637,6 +799,7 @@ func newStageView(cfg BuildConfig, flat *flattenResult, edges []NormalizedEdge) 
 		flat, edges, earlier,
 		boundaryComponentReferences(rr.Release),
 		releaseEdgeConfigurations(rr.Release, rr.ReleasePath),
+		releaseBoundaryScopes(rr.Release, rr.ReleasePath),
 		nodeRecipeResolverOver(cfg.CatalogLookup, rr.Manifest),
 	)
 }

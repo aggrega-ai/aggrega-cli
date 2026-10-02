@@ -213,7 +213,7 @@ func TestAttachmentConformance_FeatureInfraViolation(t *testing.T) {
 	feats := types.OrderedMap[types.IRFeatureEntry]{}
 	feats.Set("mon", types.IRFeatureEntry{Type: "core/monitoring", Infra: vmap("replicas", 0)})
 	errs := validateNodeAttachments("api", feats,
-		nil, "Aggregate test", testCompiledFor(t, conformanceFeatureCatalog(t)))
+		nil, "Aggregate test", testCompiledFor(t, conformanceFeatureCatalog(t)), nil)
 	if len(errs) == 0 {
 		t.Fatal("expected an infra conformance violation for replicas below minimum")
 	}

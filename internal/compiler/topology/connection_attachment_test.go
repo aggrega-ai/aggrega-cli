@@ -303,20 +303,20 @@ spec:
 			name: "the module writes a name the socket declares no slot for",
 			agg:  moduleRoot,
 			mod:  moduleDocument(undeclared),
-			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw"}},
+			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw.uses.models.gpt"}},
 		},
 		{
 			name: "the module writes an attachment on a socket declaring no slots",
 			agg:  moduleRoot,
 			mod:  moduleDocument(onSlotlessSocket),
-			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw"}},
+			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw.uses.logs.sink"}},
 		},
 		{
 			name: "the module writes an attachment on a socket its type does not declare",
 			agg:  moduleRoot,
 			mod: moduleDocument(
 				"backups:\n  spare:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n"),
-			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw"}},
+			want: []finding{{entity: "Aggregate mod.yaml", field: ".spec.components.gw.uses.backups.spare"}},
 		},
 		{
 			name:    "the operator sizes the slot the module filled",

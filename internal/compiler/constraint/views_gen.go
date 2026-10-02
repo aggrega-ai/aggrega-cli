@@ -2268,6 +2268,27 @@ type NormalizedView interface {
 	// Keyed by edge; read from types.ReleaseUsesEntry.Features.
 	ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string
 
+	// ReleasePerEdgeAttachmentType is the Feature type one attachment a
+	// Release's per-edge entry carries names, reported absent when the entry
+	// carries no attachment under that name.
+	//
+	// The absence is reported rather than resolved, and an empty type on an
+	// attachment that is present is its own answer: the operator may write an
+	// attachment on a connection to size one the developer already declared
+	// there, naming no type because the developer's names it, so an empty type
+	// is a fault only where the developer declared nothing under that name on
+	// that connection. Reading that takes the developer's names beside this,
+	// which is why this fact states the type and nothing about the other
+	// document.
+	//
+	// It is keyed by the connection and the attachment rather than by the
+	// consuming component, because a connection's attachment lives in that
+	// connection's entry and the component's own attachment block is a
+	// separate surface with a fact of its own.
+	//
+	// Keyed by edge; read from types.ReleaseConnectionAttachment.Type.
+	ReleasePerEdgeAttachmentType(node string, socket string, alias string, attachment string) (string, bool)
+
 	// ReleaseAuthoredUsesSocketConnections are the connections a Release's own
 	// edge surface creates on one component, one entry per socket the Release
 	// wrote for it, in author order, each holding that socket's
@@ -3206,11 +3227,11 @@ type TopologyView interface {
 	// carrying nothing.
 	//
 	// Only a connection carrying at least one attachment appears, and a socket
-	// appears only through such a connection. It is read per node rather than
-	// per connection because the flattened composition enumerates no
-	// connections of its own, and a rule asking whether each name fills a
-	// declared slot has to be asked about every connection the node's block
-	// wrote.
+	// appears only through such a connection. It is keyed by the node and
+	// answers for the node's whole block, because a rule over one connection
+	// reads that connection's names out of it and a rule over a component
+	// entry the Release wrote has to see every connection the node's block
+	// carries an attachment on.
 	//
 	// Keyed by node; read from topology.TopologyNode.Uses.
 	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
@@ -3482,6 +3503,36 @@ type TopologyView interface {
 	// Keyed by boundary-component-reference; read from
 	// types.Boundary.Components.
 	BoundaryDeclaredComponentReferences() []string
+
+	// BoundaryAttachmentReachedNodes are the nodes one attachment a boundary
+	// declares on itself reaches once the composition is flattened — every
+	// node placed in that boundary or in a boundary nested inside it, in the
+	// order the composition produced them — and none when the boundary
+	// declares no attachment under that name.
+	//
+	// It reads the placement each node carries rather than the components the
+	// boundary names, and the difference is what makes it the reach rather
+	// than one spelling of it. A boundary places a component it names and
+	// every component of a sub-module it routes in, and a routed module's
+	// components exist only once that module's own document is read — so the
+	// answer is complete here and nowhere earlier, and a reading of the
+	// boundary's own entries would never reach a routed module's components at
+	// all.
+	//
+	// The nested boundaries are included because a boundary-wide attachment
+	// cascades: written on a boundary, it is attached to every component
+	// beneath it at any depth. A component a false activation toggle removed
+	// was never composed, so nothing reaches it.
+	//
+	// It is keyed by the attachment as well as the boundary because that is
+	// where the question is asked: a rule over a boundary-wide attachment is
+	// invoked once per attachment the operator wrote, and reads what that
+	// attachment reaches. Every attachment one boundary declares reaches the
+	// same nodes.
+	//
+	// Keyed by (boundary, attachment); read from
+	// topology.TopologyNode.BoundaryPath.
+	BoundaryAttachmentReachedNodes(boundary string, attachment string) []string
 }
 
 // GraphView exposes the facts complete at the graph stage: the finalised

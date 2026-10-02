@@ -11,14 +11,16 @@ import (
 )
 
 // releaseEdgeConfigurationReachesAnEdge reports each entry the Release's per-edge
-// `uses` surface writes that carries `infra` no connection will ever receive.
+// `uses` surface writes that carries configuration no connection will ever
+// receive: per-edge `infra`, attachments under `features`, or both.
 //
 // The fault is silent in the direction that costs most. An entry carrying `infra`
-// says what physical shape the operator wants a connection to take; an entry that
-// reached no connection puts that shape nowhere, and the build then succeeds with
-// the infrastructure absent from its output. Halting is what makes the operator's
-// authoring visible to them, which is the alternative to a build that reports
-// success for a document it acted on only in part.
+// says what physical shape the operator wants a connection to take, and one
+// carrying attachments says what the connection should present; an entry that
+// reached no connection puts either nowhere, and the build then succeeds with the
+// infrastructure or the attachment absent from its output. Halting is what makes
+// the operator's authoring visible to them, which is the alternative to a build
+// that reports success for a document it acted on only in part.
 //
 // The predicate is exact rather than heuristic. By the time the rule is asked, the
 // connection set is final — every surface that draws one has drawn it — so the
@@ -28,10 +30,11 @@ import (
 // Three shapes pass, and each is left to the rule that owns it so that a halt here
 // cannot stand in for one of them:
 //
-//   - An entry carrying no `infra` configures nothing, so there is nothing for a
-//     connection to receive and no fault to report. An entry that named a target
-//     and drew a connection is covered by the same reading rather than by a case
-//     of its own: the connection exists, so the entry reached one.
+//   - An entry carrying neither `infra` nor attachments configures nothing, so
+//     there is nothing for a connection to receive and no fault to report. An
+//     entry that named a target and drew a connection is covered by the same
+//     reading rather than by a case of its own: the connection exists, so the
+//     entry reached one.
 //   - A socket the consuming component's type does not declare belongs to the
 //     socket-allowlist rule, which produces the better diagnostic because it can
 //     list the sockets that do exist. A component type the catalog holds no entry
@@ -79,7 +82,8 @@ var releaseEdgeConfigurationReachesAnEdge = constraint.Check[
 	) []constraint.Objection {
 		node, socket, alias := s.NodeID(), s.SocketName(), s.AliasName()
 		infra := v.ReleasePerEdgeInfra(node, socket, alias)
-		if infra.Len() == 0 {
+		configures := configurationNamed(infra.Len() > 0, len(v.ReleasePerEdgeAttachmentNames(node, socket, alias)) > 0)
+		if configures == "" {
 			return nil
 		}
 		if v.PerEdgeConnectionDrawn(node, socket, alias) {

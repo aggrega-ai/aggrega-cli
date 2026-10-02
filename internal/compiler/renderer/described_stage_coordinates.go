@@ -616,61 +616,21 @@ func (c *describedStageCoordinates) BoundaryPathTemplateFields(boundary string) 
 }
 
 // walkBoundaries visits every declared boundary with the path it is named by,
-// descending into nested scopes, in the Release's own order.
+// descending into nested scopes, in the Release's own order, through the one walk
+// every stage enumerates a Release's boundaries by.
 func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b types.Boundary)) {
-	walkReleaseBoundaries(c.release, visit)
-}
-
-// walkReleaseBoundaries visits every boundary a Release declares with the path
-// it is named by, descending into nested scopes, in the document's own order.
-//
-// A scope normalization synthesized is not visited: the operator declared no such
-// scope, so a coordinate naming one would name a key the document does not
-// contain. Its children are still descended into, from the empty path, so a
-// component placed beneath it is reached by the path the document would spell.
-//
-// One home because two surfaces walk it — the axes this stage supplies, and the
-// presentation that answers a fact keyed by a boundary. Two walks would be free
-// to differ on which scopes they visit or on the path they name one by, and a
-// rule would then be invoked at a coordinate the presentation could not answer.
-func walkReleaseBoundaries(release *types.Release, visit func(path string, b types.Boundary)) {
-	if release == nil {
-		return
-	}
-	rel := types.NormalizeRelease(release).Release()
-	if rel == nil {
-		return
-	}
-	var walk func(path string, b types.Boundary)
-	walk = func(path string, b types.Boundary) {
-		if !b.Synthesized {
-			visit(path, b)
-		}
-		for name, child := range b.Boundaries.All() {
-			next := name
-			if path != "" {
-				next = path + "/" + name
-			}
-			walk(next, child)
-		}
-	}
-	for name, b := range rel.Spec.Boundaries.All() {
-		start := name
-		if b.Synthesized {
-			start = ""
-		}
-		walk(start, b)
-	}
+	resolver.WalkReleaseBoundaries(c.release, visit)
 }
 
 // boundaryAtPath returns the boundary a Release declares at one path.
 //
-// It walks rather than indexing, through the one walk above, so the path it
-// matches is spelled exactly as the axis that produced the coordinate spelled it.
+// It walks rather than indexing, through the one walk the axes are enumerated by,
+// so the path it matches is spelled exactly as the axis that produced the
+// coordinate spelled it.
 func boundaryAtPath(release *types.Release, path string) (types.Boundary, bool) {
 	var found types.Boundary
 	var held bool
-	walkReleaseBoundaries(release, func(p string, b types.Boundary) {
+	resolver.WalkReleaseBoundaries(release, func(p string, b types.Boundary) {
 		if p == path {
 			found, held = b, true
 		}

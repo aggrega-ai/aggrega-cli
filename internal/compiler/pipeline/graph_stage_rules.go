@@ -133,10 +133,11 @@ func runGraphStageRules(
 	// 🔴 This rule declares the flattened composition rather than the finalised
 	// graph, because both targets it reads are complete once the composition is
 	// flattened. It is asked here all the same, and the reason is the axis: the
-	// flattened composition enumerates no connections, so the earliest
-	// enumeration a per-connection rule can be walked over is the one this scope
-	// holds. A declaration reading facts complete earlier than the suite that
-	// walks it is the expected shape, not a placement to correct.
+	// flattened composition enumerates only the connections a component's own
+	// block wrote, so the earliest enumeration of every connection — what this
+	// rule is asked of — is the one this scope holds. A declaration reading facts
+	// complete earlier than the suite that walks it is the expected shape, not a
+	// placement to correct.
 	// The traversal is instantiated at the presentation the rule declares rather
 	// than at the one this scope holds. Type inference would otherwise take the
 	// view from the argument and refuse the rule: a check carries its view as a

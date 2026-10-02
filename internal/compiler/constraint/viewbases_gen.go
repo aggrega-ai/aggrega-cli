@@ -2062,6 +2062,13 @@ func (TopologyViewBase) ReleasePerEdgeAttachmentNames(node string, socket string
 	panic("this view does not carry release-per-edge-attachment-names, which is read from types.ReleaseUsesEntry.Features")
 }
 
+// ReleasePerEdgeAttachmentType panics. This view does not carry
+// release-per-edge-attachment-type, which is read from
+// types.ReleaseConnectionAttachment.Type.
+func (TopologyViewBase) ReleasePerEdgeAttachmentType(node string, socket string, alias string, attachment string) (string, bool) {
+	panic("this view does not carry release-per-edge-attachment-type, which is read from types.ReleaseConnectionAttachment.Type")
+}
+
 // ReleaseAuthoredUsesSocketConnections panics. This view does not carry
 // release-authored-uses-socket-connections, which is read from
 // types.BoundaryComponent.Uses.
@@ -2299,6 +2306,13 @@ func (GraphViewBase) ComponentDeactivated(node string) bool {
 // types.Boundary.Components.
 func (GraphViewBase) BoundaryDeclaredComponentReferences() []string {
 	panic("this view does not carry boundary-declared-component-references, which is read from types.Boundary.Components")
+}
+
+// BoundaryAttachmentReachedNodes panics. This view does not carry
+// boundary-attachment-reached-nodes, which is read from
+// topology.TopologyNode.BoundaryPath.
+func (GraphViewBase) BoundaryAttachmentReachedNodes(boundary string, attachment string) []string {
+	panic("this view does not carry boundary-attachment-reached-nodes, which is read from topology.TopologyNode.BoundaryPath")
 }
 
 // DescribedViewBase is a base for an implementation of DescribedView.
@@ -3191,6 +3205,7 @@ type NormalizedStageFacts interface {
 	ReleasePerEdgeTarget(node string, socket string, alias string) string
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
 	ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string
+	ReleasePerEdgeAttachmentType(node string, socket string, alias string, attachment string) (string, bool)
 	ReleaseAuthoredUsesSocketConnections(node string) types.OrderedMap[int]
 	ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string
 	ReleaseComponentEntryPresent(node string) bool
@@ -3238,6 +3253,7 @@ type TopologyStageFacts interface {
 	ModuleContributedNodes(module string) []string
 	ComponentDeactivated(node string) bool
 	BoundaryDeclaredComponentReferences() []string
+	BoundaryAttachmentReachedNodes(boundary string, attachment string) []string
 }
 
 // GraphStageFacts are the facts the graph stage declares itself, and not

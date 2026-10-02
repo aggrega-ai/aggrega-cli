@@ -66,13 +66,15 @@ var errReleaseEdgeRetarget = cerrors.Register("release-edge-retarget", cerrors.M
 })
 
 // ErrUnboundReleaseEdgeConfig fires when a Release per-edge `uses` entry
-// carries per-edge `infra` but no edge exists at its (consumer, socket, alias)
-// once every edge has been drawn. An entry that names a target creates the edge
-// it configures; an entry that omits one configures an edge that must already
-// have been declared, so an entry with configuration and no edge to put it on
-// applies to nothing. Accepting it would let an operator author infrastructure
-// that never reaches the output and read the successful build as confirmation,
-// which is the inverse of a Loud Guardrail (Invariant 4).
+// carries per-edge configuration — `infra`, attachments under `features`, or
+// both — but no edge exists at its (consumer, socket, alias) once every edge has
+// been drawn. An entry that names a target creates the edge it configures; an
+// entry that omits one configures an edge that must already have been declared,
+// so an entry with configuration and no edge to put it on applies to nothing.
+// Accepting it would let an operator author infrastructure, or an attachment the
+// connection was meant to carry, that never reaches the output and read the
+// successful build as confirmation, which is the inverse of a Loud Guardrail
+// (Invariant 4).
 //
 // The condition is exact rather than heuristic: after the Release edge pass the
 // edge set is final, so the entry either landed on an edge or it did not. Note
@@ -89,6 +91,69 @@ var errUnboundReleaseEdgeConfig = cerrors.Register("unbound-release-edge-config"
 	Message:   "release per-edge configuration has no edge to apply to",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
+
+// ErrConnectionAttachmentWrittenOffItsConnection fires when a Release writes an
+// attachment, on a component entry's own `features` block or on a boundary's,
+// under the name an attachment on one of a component's connections takes once it
+// is lowered onto the component: the connection's alias, a dot, and the slot it
+// fills.
+//
+// A connection's attachment has one spelling, and that is its connection entry —
+// on the Aggregate's connection, or on the Release's entry for the same
+// connection. Both attachment blocks a Release writes admit a dot in their keys,
+// so the lowered name can be written on a component entry, or on a boundary,
+// whose attachments reach every component beneath it. Either would otherwise
+// fold into the connection's attachment by the merge every same-named
+// contribution goes through, and an author reading either document would see
+// only part of what the build does with it. A socket's slot is filled per
+// connection and never by a scope cascading onto it. So the build halts instead,
+// naming both spellings (Invariant 4).
+//
+// It is raised by the two rules declared over what a Release writes — one over
+// each component entry its boundaries declare, one over each attachment a
+// boundary declares on itself — both asked once the composition is flattened,
+// because a component a sub-module contributes carries its connections in that
+// module's document. The diagnostic names the key the Release wrote, the
+// component, the connection and its slot, and the connection entry to write it on
+// instead.
+func ErrConnectionAttachmentWrittenOffItsConnection() error {
+	return errConnectionAttachmentWrittenOffItsConnection
+}
+
+var errConnectionAttachmentWrittenOffItsConnection = cerrors.Register(
+	"connection-attachment-written-off-its-connection", cerrors.Meta{
+		ShortCode: "E0316",
+		Message: "a Release attachment takes the name of an attachment one of a component's " +
+			"connections carries",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
+	})
+
+// ErrReleaseConnectionAttachmentUntyped fires when a Release per-edge entry puts
+// an attachment on a connection under a slot the Aggregate declares no
+// attachment for on that connection, and names no Feature type for it.
+//
+// An attachment the Release writes on a connection either sizes one the
+// developer already declared there — naming no type, because the developer's
+// declaration names it — or is an attachment only the Release makes, and then
+// the Release's entry is the only place its type can come from. Without one the
+// attachment attaches nothing a realization can be chosen for, so the build
+// halts at the entry rather than failing later on a type that was never written
+// (Invariant 4).
+//
+// It is raised by the rule declared over each entry the Release's per-edge
+// `uses` surface writes, asked once the composition is flattened, because the
+// developer's attachments on a component a sub-module contributes are written in
+// that module's document. The diagnostic names the attachment, the connection,
+// the socket and the component.
+func ErrReleaseConnectionAttachmentUntyped() error { return errReleaseConnectionAttachmentUntyped }
+
+var errReleaseConnectionAttachmentUntyped = cerrors.Register(
+	"release-connection-attachment-untyped", cerrors.Meta{
+		ShortCode: "E0317",
+		Message: "a Release connection attachment names no Feature type, and the type is required for " +
+			"an attachment only the Release makes",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
+	})
 
 // ErrDanglingUsesTarget fires when a `uses` edge names a target component
 // that is not present in the assembled graph — origin-agnostic: a

@@ -927,6 +927,23 @@ func (v *normalizedView) ReleasePerEdgeAttachmentNames(node string, socket strin
 	return entry.Features.Keys()
 }
 
+// ReleasePerEdgeAttachmentType returns the Feature type one attachment the
+// Release's edge surface carries on one connection names, and whether the entry
+// carries an attachment under that name at all.
+func (v *normalizedView) ReleasePerEdgeAttachmentType(
+	node string, socket string, alias string, attachment string,
+) (string, bool) {
+	entry, ok := v.releaseEdgeEntry(node, socket, alias)
+	if !ok {
+		return "", false
+	}
+	att, ok := entry.Features.Get(attachment)
+	if !ok {
+		return "", false
+	}
+	return att.Type, true
+}
+
 // releaseEdgeEntry returns one connection's entry on the Release's edge
 // surface.
 func (v *normalizedView) releaseEdgeEntry(node, socket, alias string) (types.ReleaseUsesEntry, bool) {

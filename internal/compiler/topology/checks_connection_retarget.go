@@ -25,9 +25,10 @@ import (
 // 🔴 The presentation this rule declares and the suite that invokes it are one
 // stage apart, and that gap is deliberate rather than a mismatch to close. A
 // rule is walked over an axis, and the flattened composition enumerates
-// modules, nodes, node sockets and the components a Release's boundaries
-// name — it enumerates no connections at all. The finalised graph carries the
-// earliest connection enumeration, so that is where this rule is invoked from.
+// modules, nodes, node sockets, the components a Release's boundaries name and
+// the connections a component's own block wrote — not those an attachment or
+// the Release drew. The finalised graph carries the earliest enumeration of every
+// connection, so that is where this rule is invoked from.
 // Moving the invocation to the stage the declaration names would leave nothing
 // to walk it over, and narrowing the declaration to the suite that invokes it
 // would claim the rule needs a later presentation than its facts do.

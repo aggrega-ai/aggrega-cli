@@ -678,12 +678,20 @@ func collectNodeFeatures(
 // an attachment is an overlay and does not own a rendering provider, so its
 // schema.infra is its complete infra contract. Errors are returned unsorted;
 // joinAttachmentViolations canonicalises the combined set.
+//
+// An attachment a connection carries is measured at the connection entry the
+// pillar was written on, through connectionSite: it is not in the component's
+// own attachment block, so a finding naming that block would send the author to
+// a key the document does not have. A nil connectionSite measures every
+// attachment at the component's block, which is what a caller holding no
+// authoring documents can name.
 func validateNodeAttachments(
 	nodeID string,
 	feats types.OrderedMap[types.IRFeatureEntry],
 	parameters map[string]any,
 	entity string,
 	compiledFor func(featureType string) (compactform.Schema, bool),
+	connectionSite connectionAttachmentSite,
 ) []*resolver.ResolverError {
 	var errs []*resolver.ResolverError
 	for name, entry := range feats.All() {
@@ -691,11 +699,75 @@ func validateNodeAttachments(
 		if !ok {
 			continue
 		}
-		prefix := fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
-		errs = append(errs, resolver.ValidatePillarConformance(compiled, "values", entry.Values, parameters, entity, prefix, "the Feature schema")...)
-		errs = append(errs, resolver.ValidatePillarConformance(compiled, "infra", entry.Infra, parameters, entity, prefix, "the Feature schema")...)
+		for _, pillar := range []string{pillarValues, pillarInfra} {
+			pillarEntity, prefix := entity, fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
+			if entry.Connection != nil && connectionSite != nil {
+				pillarEntity, prefix = connectionSite(name, *entry.Connection, pillar)
+			}
+			payload := entry.Values
+			if pillar == pillarInfra {
+				payload = entry.Infra
+			}
+			errs = append(errs, resolver.ValidatePillarConformance(
+				compiled, pillar, payload, parameters, pillarEntity, prefix, "the Feature schema")...)
+		}
 	}
 	return errs
+}
+
+// connectionAttachmentSite names the document and the locator one pillar of one
+// connection attachment a node carries was written at.
+type connectionAttachmentSite func(
+	attachment string, connection types.AttachmentConnection, pillar string,
+) (entity, locator string)
+
+// connectionAttachmentSites returns the site rule for the connection attachments
+// one node carries.
+//
+// The pillar decides the document, as it does for every attachment: values are
+// the developer's and are written on the Aggregate's connection entry, infra is
+// the operator's and is written on the Release's. An attachment one document
+// alone wrote is measured at that document's entry for both pillars, because the
+// other document has no entry to name — which is what puts a Release-only
+// attachment's missing values at the Release entry the operator wrote, rather
+// than at an Aggregate path that does not exist.
+//
+// Which documents wrote the attachment is read from the contributions the
+// cascade recorded while it folded, and the connection from the record the
+// lowering carried; nothing is read out of the attachment's name. The developer's
+// entry sits in the document the component was authored in, so a component a
+// sub-module contributed is measured in that module's document, and a component
+// the Aggregate declares under the Aggregate's own name. The operator's entry is
+// read through the same fold the rules over the Release's per-edge surface are
+// positioned by.
+func connectionAttachmentSites(
+	node constraint.NodeInstance,
+	topoNode *topology.TopologyNode,
+	contributions map[string][]constraint.AttachmentContribution,
+	res *resolver.ResolveResult,
+	aggregateEntity string,
+) connectionAttachmentSite {
+	return func(attachment string, c types.AttachmentConnection, pillar string) (string, string) {
+		wroteBy := func(surface string) bool {
+			return slices.ContainsFunc(contributions[attachment], func(p constraint.AttachmentContribution) bool {
+				return p.Surface == surface
+			})
+		}
+		developer := wroteBy(constraint.ContributionAggregateComponent)
+		operator := wroteBy(constraint.ContributionReleaseComponent)
+		if operator && (pillar == pillarInfra || !developer) && res != nil && res.Release != nil {
+			entity, locator, found := topology.ReleaseConnectionAttachmentSite(
+				res.Release, res.ReleasePath, node.ID, c.Socket, c.Alias, c.Attachment)
+			if found {
+				return entity, locator
+			}
+		}
+		entity := aggregateEntity
+		if topoNode != nil && topoNode.SourceAggregate != "" {
+			entity = resolver.DocumentEntity("Aggregate", topoNode.SourceFile, aggregateEntity)
+		}
+		return entity, constraint.ConnectionAttachmentLocator(node, c.Socket, c.Alias, c.Attachment)
+	}
 }
 
 // validateContributedFillSlots asks the slot-shape rule of every fill this node

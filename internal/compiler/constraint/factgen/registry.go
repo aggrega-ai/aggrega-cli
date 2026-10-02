@@ -2482,6 +2482,33 @@ var facts = []factDecl{
 			"question, answered by the stage that reads it.",
 	},
 	{
+		Name:        "release-per-edge-attachment-type",
+		Stage:       "normalized",
+		SourceField: "types.ReleaseConnectionAttachment.Type",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "ReleasePerEdgeAttachmentType is the Feature type one attachment a " +
+			"Release's per-edge entry carries names, reported absent when the entry " +
+			"carries no attachment under that name.\n\nThe absence is reported rather " +
+			"than resolved, and an empty type on an attachment that is present is " +
+			"its own answer: the operator may write an attachment on a connection " +
+			"to size one the developer already declared there, naming no type " +
+			"because the developer's names it, so an empty type is a fault only " +
+			"where the developer declared nothing under that name on that " +
+			"connection. Reading that takes the developer's names beside this, " +
+			"which is why this fact states the type and nothing about the other " +
+			"document.\n\nIt is keyed by the connection and the attachment rather " +
+			"than by the consuming component, because a connection's attachment " +
+			"lives in that connection's entry and the component's own attachment " +
+			"block is a separate surface with a fact of its own.",
+	},
+	{
 		Name:        "release-authored-uses-socket-connections",
 		Stage:       "normalized",
 		SourceField: "types.BoundaryComponent.Uses",
@@ -3398,10 +3425,10 @@ var facts = []factDecl{
 			"authoring document reports every such connection as carrying " +
 			"nothing.\n\nOnly a connection carrying at least one attachment " +
 			"appears, and a socket appears only through such a connection. It is " +
-			"read per node rather than per connection because the flattened " +
-			"composition enumerates no connections of its own, and a rule asking " +
-			"whether each name fills a declared slot has to be asked about every " +
-			"connection the node's block wrote.",
+			"keyed by the node and answers for the node's whole block, because a " +
+			"rule over one connection reads that connection's names out of it and a " +
+			"rule over a component entry the Release wrote has to see every " +
+			"connection the node's block carries an attachment on.",
 	},
 
 	{
@@ -3681,6 +3708,40 @@ var facts = []factDecl{
 			"any other. Normalizing such a document gives it a boundary of its " +
 			"own holding exactly those entries, so the axis covers that authoring " +
 			"form without a reader knowing the form exists.",
+	},
+
+	{
+		Name:        "boundary-attachment-reached-nodes",
+		Stage:       "topology",
+		SourceField: "topology.TopologyNode.BoundaryPath",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "BoundaryAttachmentReachedNodes are the nodes one attachment a " +
+			"boundary declares on itself reaches once the composition is " +
+			"flattened — every node placed in that boundary or in a boundary " +
+			"nested inside it, in the order the composition produced them — and " +
+			"none when the boundary declares no attachment under that name.\n\n" +
+			"It reads the placement each node carries rather than the components " +
+			"the boundary names, and the difference is what makes it the reach " +
+			"rather than one spelling of it. A boundary places a component it " +
+			"names and every component of a sub-module it routes in, and a " +
+			"routed module's components exist only once that module's own " +
+			"document is read — so the answer is complete here and nowhere " +
+			"earlier, and a reading of the boundary's own entries would never " +
+			"reach a routed module's components at all.\n\nThe nested boundaries " +
+			"are included because a boundary-wide attachment cascades: written on " +
+			"a boundary, it is attached to every component beneath it at any " +
+			"depth. A component a false activation toggle removed was never " +
+			"composed, so nothing reaches it.\n\nIt is keyed by the attachment " +
+			"as well as the boundary because that is where the question is " +
+			"asked: a rule over a boundary-wide attachment is invoked once per " +
+			"attachment the operator wrote, and reads what that attachment " +
+			"reaches. Every attachment one boundary declares reaches the same " +
+			"nodes.",
 	},
 
 	// ------------------------------------------------------------------- graph

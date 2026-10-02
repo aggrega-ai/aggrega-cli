@@ -932,6 +932,29 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				Violations: slotErrs,
 			}
 		}
+
+		// The rules over what the Release writes about a component's connection
+		// attachments: a component-level or boundary-wide key spelling one, and an
+		// attachment only the Release makes naming no type. All read the
+		// developer's connection attachments, which a sub-module's component
+		// carries in its own document, so all are asked here. They follow the
+		// declared-slots rule because a name no slot declares is the earlier
+		// fault: an author fixes the name before the spelling or the type it is
+		// written with means anything.
+		//
+		// The group names no condition, for the declared-slots group's reason:
+		// each finding names its rule's condition already.
+		attachmentErrs, err := guardReleaseConnectionAttachments(ctx.Err, cfg, stageView)
+		if err != nil {
+			return nil, err
+		}
+		if len(attachmentErrs) > 0 {
+			return result, &resolver.MultiResolverError{
+				Entity:     "release connection attachments",
+				Summary:    fmt.Sprintf("%d release connection attachment violation(s)", len(attachmentErrs)),
+				Violations: attachmentErrs,
+			}
+		}
 	}
 
 	return result, nil
@@ -1170,13 +1193,15 @@ func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types
 }
 
 // guardUnboundReleaseEdgeConfig halts when a Release per-edge `uses` entry
-// carries `infra` and names a consuming component the composition does not hold.
-// It runs inside the flattening, after the Release edge pass, where the edge set
-// becomes final: an entry naming a target has drawn its edge by then, and an
-// entry omitting one has had its chance to land on an edge the Aggregate or a
-// Feature declared. Configuration still holding no edge at that point is
-// authoring that does nothing, and accepting it silently would put the operator's
-// infrastructure out of the output while the build succeeds.
+// carries configuration — `infra`, attachments under `features`, or both — and
+// names a consuming component the composition does not hold. It runs inside the
+// flattening, after the Release edge pass, where the edge set becomes final: an
+// entry naming a target has drawn its edge by then, and an entry omitting one has
+// had its chance to land on an edge the Aggregate or a Feature declared.
+// Configuration still holding no edge at that point is authoring that does
+// nothing, and accepting it silently would put the operator's infrastructure, or
+// the attachment the operator meant the connection to carry, out of the output
+// while the build succeeds.
 //
 // Three conditions are deliberately NOT this guard's, and each is left to the
 // rule that owns it, so a halt added here cannot disable one of them:
@@ -1219,7 +1244,8 @@ func guardUnboundReleaseEdgeConfig(
 		return nil
 	}
 	for _, ref := range resolver.ReleaseEdgeEntries(release) {
-		if ref.Entry.Infra.Len() == 0 {
+		configures := releaseEdgeEntryConfigures(ref.Entry)
+		if configures == "" {
 			continue
 		}
 		bound := false
@@ -1237,11 +1263,42 @@ func guardUnboundReleaseEdgeConfig(
 		}
 		if _, isNode := flat.Nodes.Get(ref.NodeID); !isNode {
 			return fmt.Errorf(
-				"%w: release edge %s/%s/%s sets infra on %q, which is not a component in the topology",
-				ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias, ref.NodeID)
+				"%w: release edge %s/%s/%s sets %s on %q, which is not a component in the topology",
+				ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias, configures, ref.NodeID)
 		}
 	}
 	return nil
+}
+
+// releaseEdgeEntryConfigures names what a Release per-edge entry configures on
+// the connection it addresses — its per-edge `infra`, the attachments it puts
+// under `features`, or both — and is empty for an entry carrying neither.
+func releaseEdgeEntryConfigures(entry types.ReleaseUsesEntry) string {
+	return configurationNamed(entry.Infra.Len() > 0, entry.Features.Len() > 0)
+}
+
+// configurationNamed spells which of a Release connection entry's two
+// configuration surfaces carry something, in the order the Release schema
+// declares the two keys, and is empty when neither does.
+//
+// It is the one reading of "this entry carries configuration" for the two places
+// that ask whether such an entry reached a connection — the guard inside the
+// flattening, which holds the entry, and the rule asked over the finished
+// composition, which reads the same two surfaces as facts — so the two cannot
+// come to disagree about which entries they are judging. The answer is spelled
+// the way a diagnostic names it, because an entry that sets only attachments and a
+// message saying it sets infra would send the operator looking for a key they
+// never wrote.
+func configurationNamed(infra, attachments bool) string {
+	switch {
+	case infra && attachments:
+		return "infra and features"
+	case infra:
+		return "infra"
+	case attachments:
+		return "features"
+	}
+	return ""
 }
 
 // guardSubAggregateReleaseEdges validates the Release's per-edge `uses` surface

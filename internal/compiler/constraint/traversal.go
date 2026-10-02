@@ -2176,13 +2176,6 @@ func RunOnReleaseEdgeConfigurations[V View](
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
-		var segments []string
-		if nesting, named := originNesting(entry.Configuration.Document); named {
-			tail := make([]string, 0, len(entry.ComponentKeys)+3)
-			tail = append(tail, entry.ComponentKeys...)
-			tail = append(tail, authoredKeyUses, entry.Configuration.Socket, entry.Configuration.Alias)
-			segments = authoredSiteSegments(nesting, entry.Site, tail...)
-		}
 		out = append(out, check.Run(view, newReleaseEdgeConfigurationSubject(
 			entry.SourceFile,
 			entry.Configuration.Document,
@@ -2190,8 +2183,63 @@ func RunOnReleaseEdgeConfigurations[V View](
 			entry.Configuration.Node,
 			entry.Configuration.Socket,
 			entry.Configuration.Alias,
-			segments...,
+			releaseEdgeConfigurationSegments(entry)...,
 		))...)
 	}
 	return out, nil
+}
+
+// releaseEdgeConfigurationSegments returns the segments naming where one entry of
+// the Release's per-edge `uses` surface was written, with tail appended inside
+// the entry: the boundary it sits in, the keys reaching the consuming component's
+// own block, the `uses` container, the socket and the alias.
+//
+// It is the one spelling of that site, shared by the traversal invoking a rule
+// once per entry and by the locator naming an element written inside an entry,
+// so a finding about the entry and a finding about an attachment it carries
+// cannot come to name two different entries.
+//
+// An entry whose document this rule cannot name yields no segments, which is the
+// mechanical form of not inventing a locator.
+func releaseEdgeConfigurationSegments(entry ReleaseEdgeConfigurationInstance, tail ...string) []string {
+	nesting, named := originNesting(entry.Configuration.Document)
+	if !named {
+		return nil
+	}
+	keys := make([]string, 0, len(entry.ComponentKeys)+3+len(tail))
+	keys = append(keys, entry.ComponentKeys...)
+	keys = append(keys, authoredKeyUses, entry.Configuration.Socket, entry.Configuration.Alias)
+	keys = append(keys, tail...)
+	return authoredSiteSegments(nesting, entry.Site, keys...)
+}
+
+// ReleaseConnectionAttachmentLocator returns the locator naming one attachment a
+// Release per-edge entry carries: the entry's own site, then the `features` block
+// and the slot the attachment is written under.
+//
+// It is exported for the one finding about such an attachment that is not raised
+// by a rule over the entry — the conformance of the attachment's merged
+// configuration, measured once the attachment cascade has folded — so that
+// finding names the entry the operator wrote through the same assembly every
+// rule over the entry is positioned by, rather than a path spelled from the name
+// the attachment carries on the consuming component.
+func ReleaseConnectionAttachmentLocator(entry ReleaseEdgeConfigurationInstance, attachment string) string {
+	return authoredLocator(releaseEdgeConfigurationSegments(entry, authoredKeyFeatures, attachment)...)
+}
+
+// ConnectionAttachmentLocator returns the locator naming one attachment a
+// component's own connection entry carries, in the document the component was
+// written in: the component's block, the `uses` container, the socket and the
+// alias, then the `features` block and the slot the attachment is written under.
+//
+// It is exported for the reason [ReleaseConnectionAttachmentLocator] is, from the
+// other authoring document: the conformance of a connection attachment's merged
+// configuration is measured outside any rule's traversal, and the finding has to
+// name the connection entry the developer wrote rather than an attachment block
+// the consuming component does not have. A connection carrying attachments is
+// always written in the long form, whose alias is a key the author typed, so the
+// alias is always a segment here.
+func ConnectionAttachmentLocator(node NodeInstance, socket, alias, attachment string) string {
+	return authoredLocator(componentInnerSegments(
+		node, authoredKeyUses, socket, alias, authoredKeyFeatures, attachment)...)
 }
