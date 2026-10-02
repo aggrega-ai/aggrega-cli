@@ -15,17 +15,19 @@ name: Publish and sign core plugins
 # signed keyless via the GitHub Actions OIDC identity against the public
 # Sigstore instance (Fulcio + Rekor).
 #
-# A second job, windows-smoke, runs after that one on a GitHub-hosted Windows
-# runner and proves the Windows binaries there: it runs each binary's version
-# report, the protocol handshake over standard input and output, a validate,
-# pull and build of a worked example whose result it compares byte for byte with
-# the result this workflow's build machine produced, and the tests that prove
-# each platform split behaves on Windows. It needs nothing the build needs — no
+# Two more jobs run after that one and prove the Windows and macOS binaries on
+# GitHub-hosted machines of each platform: windows-smoke on a Windows runner, and
+# macos-smoke on an Apple silicon (darwin/arm64) and an Intel (darwin/amd64)
+# macOS runner. Each runs every binary's version report, the protocol handshake
+# over standard input and output, a validate, pull and build of a worked example
+# whose result it compares byte for byte with the result this workflow's build
+# machine produced, and the tests that prove each platform split behaves on that
+# platform, all through one script. They need nothing the build needs — no
 # sibling repository, no toolchain, no secret — because the prep phase stages
-# everything it runs as one workflow artifact. It publishes nothing, so a dry run
-# is how Windows is proved before a real release; on a release tag it runs after
-# the release step, so a failure there marks the run failed but does not stop
-# that release.
+# everything each runs as one workflow artifact per target. They publish
+# nothing, so a dry run is how Windows and macOS are proved before a real
+# release; on a release tag they run after the release step, so a failure there
+# marks the run failed but does not stop that release.
 #
 # The prep-then-publish split is load-bearing. Nothing with an external side
 # effect runs until every validation has passed, so a failure in the ABI check or
@@ -47,8 +49,8 @@ name: Publish and sign core plugins
 #
 # The manual-dispatch entry defaults to a dry run. After the credential check it
 # builds, packs the extension package, generates the entities, and prints what
-# it would push, publish, sign and release, doing none of it; the Windows smoke
-# job then runs in full.
+# it would push, publish, sign and release, doing none of it; the Windows and
+# macOS smoke jobs then run in full.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -109,11 +111,13 @@ jobs:
     # need the one build's outputs on the same workspace).
     runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
 
-    # The commit the Windows smoke inputs were staged from, which the
-    # windows-smoke job checks out: on a dispatch naming a tag the tree here is
-    # moved onto that tag, so the commit the run was launched at may not be it.
+    # The commit the Windows and the macOS smoke inputs were staged from, which
+    # the windows-smoke and macos-smoke jobs check out: on a dispatch naming a
+    # tag the tree here is moved onto that tag, so the commit the run was
+    # launched at may not be it.
     outputs:
       smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
+      macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
 
     env:
       # Destination registry host. A repository variable the operator sets once;
@@ -580,7 +584,7 @@ jobs:
           AGGREGA_REGISTRY_PASSWORD: ''
         run: |
           set -euo pipefail
-          aggrega-cli/scripts/stage-windows-smoke.sh --output-dir "$RUNNER_TEMP/windows-smoke"
+          aggrega-cli/scripts/stage-platform-smoke.sh --target windows/amd64 --output-dir "$RUNNER_TEMP/windows-smoke"
           # The commit the windows-smoke job checks out is the one the staged
           # inputs record, so the job and the inputs cannot name different ones.
           while IFS='=' read -r key value; do
@@ -597,6 +601,57 @@ jobs:
         with:
           name: windows-smoke-inputs
           path: ${{ runner.temp }}/windows-smoke
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: true
+
+      - name: Stage the macOS smoke runs' inputs
+        # Everything each macos-smoke job runs, staged by the same script as the
+        # Windows inputs, once per macOS target into a directory of its own: the
+        # full and light binaries above for that target, its test executables,
+        # cross-compiled here, and the worked example with the workspace this
+        # machine's validate, pull and build of it leave. The tests listed for
+        # Windows alone are left out and named in the log. A prep-phase step
+        # with no external side effect; a dry run stages too. It needs no
+        # credential, so the registry password is blanked for it.
+        id: macos-smoke-inputs
+        env:
+          AGGREGA_REGISTRY_PASSWORD: ''
+        run: |
+          set -euo pipefail
+          for target in darwin/arm64 darwin/amd64; do
+            aggrega-cli/scripts/stage-platform-smoke.sh --target "$target" --output-dir "$RUNNER_TEMP/macos-smoke/${target/\//-}"
+          done
+          # Both targets are staged from this one tree, so their inputs record
+          # one commit; the macos-smoke jobs check out that commit, and the
+          # smoke script refuses a checkout at any other.
+          while IFS='=' read -r key value; do
+            if [ "$key" = commit ]; then
+              printf 'commit=%s\n' "$value" >> "$GITHUB_OUTPUT"
+            fi
+          done < "$RUNNER_TEMP/macos-smoke/darwin-arm64/smoke.env"
+
+      - name: Upload the macOS arm64 smoke run's inputs
+        # One workflow artifact per macOS target, read only by that target's
+        # macos-smoke job of this same run and kept for a day. Hidden files are
+        # included so the example reaches the macOS run exactly as it was built
+        # here. An artifact keeps the bytes of each file, the signature the
+        # linker embeds in an arm64 executable among them, but not its mode; the
+        # smoke script makes the executables executable again.
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-inputs-darwin-arm64
+          path: ${{ runner.temp }}/macos-smoke/darwin-arm64
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: true
+
+      - name: Upload the macOS amd64 smoke run's inputs
+        # The darwin/amd64 inputs, as the step above uploads the darwin/arm64 ones.
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-inputs-darwin-amd64
+          path: ${{ runner.temp }}/macos-smoke/darwin-amd64
           if-no-files-found: error
           retention-days: 1
           include-hidden-files: true
@@ -1006,8 +1061,92 @@ jobs:
         # The versions, the handshake, the example and its byte comparison —
         # with a planted one-byte difference shown turning the comparison red —
         # then the named tests, any of which skipping or not running fails the
-        # step. aggrega-cli/scripts/windows-smoke.sh --help says what each
+        # step. aggrega-cli/scripts/platform-smoke.sh --help says what each
         # check asserts.
         run: |
           set -euo pipefail
-          aggrega-cli/scripts/windows-smoke.sh --inputs "$RUNNER_TEMP/windows-smoke"
+          aggrega-cli/scripts/platform-smoke.sh --target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke"
+
+  macos-smoke:
+    # Runs the macOS binaries the job above built, on macOS: the darwin/arm64
+    # ones on an Apple silicon runner and the darwin/amd64 ones on an Intel
+    # runner, through the same script and the same checks as windows-smoke. It
+    # proves that the binaries start, answer, and build what the Linux build
+    # builds, byte for byte, and that the platform splits — file locks, files
+    # another process holds open, forward-slash paths, a Unix-socket listen
+    # address — behave there. The script also refuses a machine whose
+    # architecture is not the target's, because a Mac with Apple silicon runs
+    # an amd64 binary too, through Rosetta 2. Everything it runs comes from the
+    # artifact the job above staged for the target; it checks out this
+    # repository only so that each test executable runs from its package
+    # directory, at the commit the artifact records. It holds no secret and
+    # reads only this repository.
+    #
+    # macos-15 names GitHub's hosted Apple silicon image and macos-15-intel its
+    # hosted Intel image. A label GitHub does not offer leaves its job queued,
+    # waiting for a runner that never comes, so a job that never starts is the
+    # sign that its label needs changing here.
+    needs: publish-sign
+    name: macos-smoke (${{ matrix.target }})
+    strategy:
+      # Each target is a proof of its own: one failing does not cancel the other.
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin/arm64
+            artifact: macos-smoke-inputs-darwin-arm64
+            runner: macos-15
+          - target: darwin/amd64
+            artifact: macos-smoke-inputs-darwin-amd64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep line endings exactly as committed
+        # The comparison and the tests read checked-out files, so the checkout
+        # must hold the committed bytes whatever the runner's Git is configured
+        # to do with line endings.
+        run: git config --global core.autocrlf false
+
+      - name: Check out the CLI at the commit the inputs were staged from
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.publish-sign.outputs.macos_smoke_commit }}
+          persist-credentials: false
+
+      - name: Download the macOS smoke run's inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/macos-smoke
+
+      - name: Provide a bash the smoke script can run under
+        # The smoke script needs bash 4.3 or later, and the bash macOS ships is
+        # older. The script's own check decides: when the bash on PATH passes
+        # it, nothing is installed; otherwise Homebrew installs a current bash,
+        # and its directory goes first on PATH for the steps after this one.
+        run: |
+          if bash -c '. aggrega-cli/scripts/lib/platform-smoke-common.sh && smoke_require_bash'; then
+            echo "bash on PATH: $(command -v bash), $BASH_VERSION"
+          else
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install bash
+            echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Run the macOS binaries and tests
+        # The machine check, the versions, the handshake, the example and its
+        # byte comparison — with a planted one-byte difference shown turning the
+        # comparison red — then the named tests, any of which skipping or not
+        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
+        # says what each check asserts.
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/platform-smoke.sh --target "$TARGET" --inputs "$RUNNER_TEMP/macos-smoke"
