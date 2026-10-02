@@ -397,7 +397,7 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
 //
-// Two checks of a real build are out of reach here, and each is declined rather
+// Three checks of a real build are out of reach here, and each is declined rather
 // than failed.
 //
 // The first is whether the Component's `required: true` uses sockets are
@@ -405,7 +405,13 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // no second component an edge could target, and no authoring of the synthesized
 // documents can change that.
 //
-// The second is the render itself, when the Recipe's source is one that has to
+// The second is whether the Component's `required: true` attachment slots are
+// filled. The synthesized build attaches no Feature, because which Feature fills
+// a slot is chosen by whoever deploys the Component, not by the Recipe — so no
+// fill exists here to bind the slot, for the same reason no edge exists to
+// populate a socket.
+//
+// The third is the render itself, when the Recipe's source is one that has to
 // be fetched. A single-entity run reads no lockfile and no cache, so it holds
 // neither a record of which bytes that source resolves to nor a store to resolve
 // them from, and the infrastructure code the Recipe names exists nowhere it can
@@ -415,7 +421,7 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // it needs no fetch, so a render over it is attempted and a failure in it is a
 // real finding.
 //
-// Both declines are named in Diagnostics, so the report states which surface it
+// Every decline is named in Diagnostics, so the report states which surface it
 // did not cover instead of leaving a silent difference between what validate
 // checks and what a build checks.
 //
@@ -469,20 +475,27 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		return err
 	}
 
-	// Decline the required-socket check for this run and say so, rather than
-	// report the author's own valid Recipe as broken. The narrowing is applied
-	// to the catalog view THIS harness hands the pipeline and to nothing else,
-	// so the rule itself is untouched: a build asks it about the Component
-	// exactly as authored.
-	tierLookup := lookup
-	if declined := declaredRequiredSockets(&comp); len(declined) > 0 {
-		tierLookup = lookupWithSocketsOptional(lookup, rec.Spec.Implements, declined)
+	// Decline the required-socket and required-slot checks for this run and say
+	// so, rather than report the author's own valid Recipe as broken. The
+	// narrowing is applied to the catalog view THIS harness hands the pipeline
+	// and to nothing else, so each rule itself is untouched: a build asks it
+	// about the Component exactly as authored.
+	declined := declinedRequirementsOf(&comp)
+	tierLookup := lookupWithRequirementsDeclined(lookup, rec.Spec.Implements, declined)
+	if len(declined.sockets) > 0 {
 		res.Diagnostics = append(res.Diagnostics,
-			fmt.Sprintf("Sockets: required uses sockets not checked (%s)", strings.Join(declined, ", ")),
+			fmt.Sprintf("Sockets: required uses sockets not checked (%s)", strings.Join(declined.sockets, ", ")),
 			"  Validating a Recipe on its own places its Component in a build of one,",
 			"  so no other component exists for a required socket to be wired to. Whether",
 			"  each of these sockets is populated is checked when the Component is deployed",
 			"  in an Aggregate.")
+	}
+	if len(declined.slots) > 0 {
+		res.Diagnostics = append(res.Diagnostics,
+			fmt.Sprintf("Attachments: required attachment slots not checked (%s)", strings.Join(declined.slots, ", ")),
+			"  Validating a Recipe on its own places its Component in a build that attaches",
+			"  no Feature, so nothing exists to fill a required slot. Whether each of these",
+			"  slots is filled is checked when a Release that deploys the Component is built.")
 	}
 
 	recipeLookup := renderer.RecipeLookup{
@@ -495,6 +508,24 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 	}
 	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(),
 		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source))
+}
+
+// declinedRequirements names what a build of one cannot satisfy on the Component
+// it places: the uses sockets and the attachment slots the Component declares
+// `required: true`, each in the entity's author order.
+type declinedRequirements struct {
+	sockets []string
+	slots   []string
+}
+
+// declinedRequirementsOf reads the Component's required sockets and required
+// slots, the two requirements no authoring of the synthesized documents can
+// meet.
+func declinedRequirementsOf(comp *types.Component) declinedRequirements {
+	return declinedRequirements{
+		sockets: declaredRequiredSockets(comp),
+		slots:   declaredRequiredSlots(comp),
+	}
 }
 
 // declaredRequiredSockets returns the names of every uses socket the Component
@@ -520,24 +551,44 @@ func declaredRequiredSockets(comp *types.Component) []string {
 	return out
 }
 
-// lookupWithSocketsOptional returns a copy of lookup whose Component accessor
-// reports typeURI's named uses sockets as optional. Every other type, and every
-// other accessor, passes through untouched.
+// declaredRequiredSlots returns the names of every attachment slot the
+// Component declares `required: true`, in the entity's author order.
+//
+// The synthesized build attaches no Feature — not on the instance and not at
+// any scope above it — so every required slot is one this harness cannot fill,
+// and, as with sockets, the declared set and the out-of-reach set coincide.
+//
+// Like its socket counterpart it reads a declared flag and decides nothing:
+// whether an unfilled required slot is an error stays the analyzer's rule, and a
+// build asks it about the Component as authored.
+func declaredRequiredSlots(comp *types.Component) []string {
+	var out []string
+	for name, slot := range comp.Spec.FeaturesSchema.All() {
+		if slot.Required {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// lookupWithRequirementsDeclined returns a copy of lookup whose Component
+// accessor reports typeURI's named uses sockets and named attachment slots as
+// optional. Every other type, and every other accessor, passes through
+// untouched; with nothing to decline it returns lookup itself.
 //
 // The copy is what the single-entity render tiers read, so the narrowing reaches
 // only this in-memory validation run — the catalog itself is never modified, and
-// no other command shares the view. The socket entries survive intact apart from
-// the flag, so the checks that read a socket's name or its per-edge schema still
-// see exactly what the author declared, and the entries are rebuilt in author
-// order so the run stays byte-identical across invocations.
-func lookupWithSocketsOptional(lookup resolver.CatalogLookup, typeURI string, sockets []string) resolver.CatalogLookup {
-	if lookup.Component == nil || len(sockets) == 0 {
+// no other command shares the view. The socket and slot entries survive intact
+// apart from the flag, so the checks that read a socket's per-edge schema or a
+// slot's label constraint and delivery mechanisms still see exactly what the
+// author declared, and the entries are rebuilt in author order so the run stays
+// byte-identical across invocations.
+func lookupWithRequirementsDeclined(lookup resolver.CatalogLookup, typeURI string, declined declinedRequirements) resolver.CatalogLookup {
+	if lookup.Component == nil || (len(declined.sockets) == 0 && len(declined.slots) == 0) {
 		return lookup
 	}
-	optional := make(map[string]bool, len(sockets))
-	for _, s := range sockets {
-		optional[s] = true
-	}
+	optionalSockets := namedSet(declined.sockets)
+	optionalSlots := namedSet(declined.slots)
 
 	inner := lookup.Component
 	narrowed := lookup
@@ -546,20 +597,41 @@ func lookupWithSocketsOptional(lookup resolver.CatalogLookup, typeURI string, so
 		if !found || t != typeURI {
 			return comp, found
 		}
-		// A fresh map, not a struct copy: OrderedMap holds its entries behind a
+		// Fresh maps, not struct copies: OrderedMap holds its entries behind a
 		// shared backing map, so writing through a copy would reach the catalog's
 		// own component.
-		relaxed := types.OrderedMap[types.UsesSchemaEntry]{}
-		for name, entry := range comp.Spec.UsesSchema.All() {
-			if optional[name] {
-				entry.Required = false
+		if len(optionalSockets) > 0 {
+			relaxed := types.OrderedMap[types.UsesSchemaEntry]{}
+			for name, entry := range comp.Spec.UsesSchema.All() {
+				if optionalSockets[name] {
+					entry.Required = false
+				}
+				relaxed.Set(name, entry)
 			}
-			relaxed.Set(name, entry)
+			comp.Spec.UsesSchema = relaxed
 		}
-		comp.Spec.UsesSchema = relaxed
+		if len(optionalSlots) > 0 {
+			relaxed := types.OrderedMap[types.AttachmentSlot]{}
+			for name, slot := range comp.Spec.FeaturesSchema.All() {
+				if optionalSlots[name] {
+					slot.Required = false
+				}
+				relaxed.Set(name, slot)
+			}
+			comp.Spec.FeaturesSchema = relaxed
+		}
 		return comp, true
 	}
 	return narrowed
+}
+
+// namedSet returns names as a membership set.
+func namedSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
 }
 
 // validateFeatureRecipeEntity runs the FeatureRecipe shape check. The render
