@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/completion"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -39,7 +40,12 @@ import (
 // run on after the answer is no longer wanted. The parameter is named for the
 // request rather than spelled ctx because the cursor classification below binds
 // that name to a yamlpos.Context.
-func (s *Server) handleCompletion(reqCtx context.Context, params completionParams) ([]CompletionItem, *jsonRPCError) {
+//
+// terms are the terms the request named, or the workspace's own. Every
+// candidate drawn from the workspace documents is drawn from the ones
+// terms.reach holds, and every name drawn from the catalog directories is drawn
+// from terms.lookup.
+func (s *Server) handleCompletion(reqCtx context.Context, params completionParams, terms releaseTerms) ([]CompletionItem, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
@@ -70,7 +76,7 @@ func (s *Server) handleCompletion(reqCtx context.Context, params completionParam
 	hostKind := scalarAtPathOnDoc(entry.node, []string{"kind"})
 
 	// Branch 1: navigation-shape cursor (yamlpos recognized it).
-	if items, handled := s.completionForNavigationContext(reqCtx, ctx, hostKind, entry.node, prefix); handled {
+	if items, handled := s.completionForNavigationContext(reqCtx, ctx, hostKind, entry.node, prefix, terms); handled {
 		return adaptItems(items), nil
 	}
 
@@ -85,24 +91,25 @@ func (s *Server) handleCompletion(reqCtx context.Context, params completionParam
 // registered completion handler; (_, false) when the Kind has no
 // completion equivalent (MetadataName, SchemaProperty — no candidates
 // at those positions). sourceDoc is the cursor's source file used by
-// the intra-document UsesTarget branch.
-func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yamlpos.Context, hostKind string, sourceDoc *yaml.Node, prefix string) ([]completion.CompletionItem, bool) {
+// the intra-document UsesTarget branch. terms are the request's, as
+// handleCompletion states.
+func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yamlpos.Context, hostKind string, sourceDoc *yaml.Node, prefix string, terms releaseTerms) ([]completion.CompletionItem, bool) {
 	switch ctx.Kind {
 	case yamlpos.ContextKindExtendsValue:
-		uris := s.enumerateEntityNames(reqCtx, hostKind)
+		uris := s.enumerateEntityNames(reqCtx, hostKind, terms)
 		return completion.Extends(uris, prefix), true
 	case yamlpos.ContextKindComponentsType:
-		uris := s.enumerateEntityNames(reqCtx, "Component")
+		uris := s.enumerateEntityNames(reqCtx, "Component", terms)
 		return completion.ComponentsType(uris, prefix), true
 	case yamlpos.ContextKindFeaturesType:
-		uris := s.enumerateEntityNames(reqCtx, "Feature")
+		uris := s.enumerateEntityNames(reqCtx, "Feature", terms)
 		return completion.FeaturesType(uris, prefix), true
 	case yamlpos.ContextKindRecipeImplements:
 		targetKind := "Component"
 		if hostKind == "FeatureRecipe" {
 			targetKind = "Feature"
 		}
-		uris := s.enumerateEntityNames(reqCtx, targetKind)
+		uris := s.enumerateEntityNames(reqCtx, targetKind, terms)
 		return completion.Implements(uris, prefix), true
 	case yamlpos.ContextKindManifestRecipeReference:
 		// Implements-aware ranking: a Manifest mapping value binds a component
@@ -126,13 +133,13 @@ func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yaml
 		if isTypeMapping && len(ctx.Path) > 0 {
 			mappingType = ctx.Path[len(ctx.Path)-1]
 		}
-		uris := s.enumerateEntityNames(reqCtx, recipeKind)
-		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(reqCtx, recipeKind)), true
+		uris := s.enumerateEntityNames(reqCtx, recipeKind, terms)
+		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(reqCtx, recipeKind, terms.reach)), true
 	case yamlpos.ContextKindReleaseAggregatePath:
-		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Aggregate")
+		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Aggregate", terms.reach)
 		return completion.ReleaseAggregatePath(paths, prefix), true
 	case yamlpos.ContextKindReleaseManifestPath:
-		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Manifest")
+		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Manifest", terms.reach)
 		return completion.ReleaseManifestPath(paths, prefix), true
 	case yamlpos.ContextKindUsesTarget:
 		names := completion.EnumerateLocalComponentKeys(sourceDoc)
@@ -177,7 +184,9 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 // enumerateEntityNames is the candidate population every completion that names
 // an entity by kind offers: the metadata.name of each workspace document of that
 // kind, together with the name of each entity of that kind the configured
-// catalog directories declare.
+// catalog directories declare — both read in terms, so a request naming a
+// Release is offered the workspace documents that Release's answer holds and
+// the entities that Release's catalog directories declare.
 //
 // Both populations are needed because an ordinary workspace consumes most of
 // what it names rather than authoring it. A workspace whose Components and
@@ -189,19 +198,20 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 // every YAML file under the root, so a withdrawal that lands mid-traversal ends
 // it between files; the dispatcher's entry check answers only the request that
 // had already been withdrawn when it arrived.
-func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string) []string {
-	return entityNamesIn(reqCtx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), kind)
+func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string, terms releaseTerms) []string {
+	return entityNamesIn(reqCtx, s.workspaceRoot, terms.lookup, s.overlayDocs(), kind, terms.reach)
 }
 
 // entityNamesIn is the whole of enumerateEntityNames with the root, the catalog
-// lookup and the fresher-than-disk overlay supplied rather than read off a
-// session.
+// lookup, the fresher-than-disk overlay and the reach supplied rather than read
+// off a session.
 //
 // It reads the two sources every other candidate surface reads, and no third:
-// the workspace document traversal, and the catalog lookup's directory index by
-// name. The second reports names only for the kinds that index holds, so a kind
-// it does not hold is offered from the workspace documents alone, and the
-// enumeration reaches no artifact cache and no registry for any kind.
+// the workspace document traversal, of which only the documents reach holds,
+// and the catalog lookup's directory index by name. The second reports names
+// only for the kinds that index holds, so a kind it does not hold is offered
+// from the workspace documents alone, and the enumeration reaches no artifact
+// cache and no registry for any kind.
 //
 // A name both sources carry is offered once — the workspace root is frequently
 // itself a configured catalog directory, so the overlap is the ordinary case —
@@ -209,7 +219,7 @@ func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string) []str
 // hold rather than of the order either delivered it in. An empty kind matches
 // every workspace document and no catalog entity. A request withdrawn during
 // the traversal does not go on to read the directory index.
-func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, kind string) []string {
+func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, kind string, reach workspaceconfig.ReleaseReach) []string {
 	var names []string
 	seen := map[string]bool{}
 	offer := func(name string) {
@@ -221,6 +231,9 @@ func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, o
 	}
 	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
 		if kind != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kind {
+			return true
+		}
+		if !reach.Holds(doc.path) {
 			return true
 		}
 		name, _ := metadataNameOf(doc.node)
@@ -245,11 +258,12 @@ func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, o
 // that half is the whole list. The first document to
 // declare a name wins, which the traversal's per-path ordering makes
 // deterministic. It runs under the request's own context, for the reason stated
-// on the projection above.
-func (s *Server) enumerateRecipeImplements(reqCtx context.Context, kindFilter string) map[string]string {
+// on the projection above, and reads only the documents reach holds, as that
+// projection does.
+func (s *Server) enumerateRecipeImplements(reqCtx context.Context, kindFilter string, reach workspaceconfig.ReleaseReach) map[string]string {
 	out := map[string]string{}
 	s.rangeWorkspaceDocs(reqCtx, func(doc workspaceDoc) bool {
-		if scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
+		if scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter || !reach.Holds(doc.path) {
 			return true
 		}
 		name, _ := metadataNameOf(doc.node)
@@ -274,11 +288,16 @@ func (s *Server) enumerateRecipeImplements(reqCtx context.Context, kindFilter st
 // Each path is spelled with forward slashes whatever the host's separator,
 // because a chosen completion is written into the Release, and a Release
 // travels to machines that read a backslash as part of a file name.
-func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFilter string) []string {
+//
+// Only the files reach holds are offered, as every other completion offers them.
+func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFilter string, reach workspaceconfig.ReleaseReach) []string {
 	seen := map[string]bool{}
 	// The walk runs under the request's own context, so a withdrawal that lands
 	// while it is reading the workspace ends it between files.
 	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
+		if !reach.Holds(path) {
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil

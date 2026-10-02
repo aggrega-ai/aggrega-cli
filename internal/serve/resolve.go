@@ -11,7 +11,9 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -25,10 +27,12 @@ import (
 // The source file must be in the parse cache (validated prior).
 // Returns the file-not-validated error envelope when not. Returns
 // a nil Location (no envelope) when the cursor's classification does
-// not target a referenceable URI, when the target URI does not appear
-// in any workspace YAML's metadata.name, or when the workspace walk
-// has nothing to scan.
-func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos yamlpos.Position) (*yamlpos.Location, *jsonRPCError) {
+// not target a referenceable URI, or when neither a workspace document
+// nor the catalog lookup in terms declares the target URI.
+//
+// terms are the terms the request named, or the workspace's own: an entity
+// reference is looked up in them as findDefinitionByURI states.
+func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos yamlpos.Position, terms releaseTerms) (*yamlpos.Location, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(s.canonicalFile(uri))
 	if !ok {
 		return nil, &jsonRPCError{
@@ -60,8 +64,7 @@ func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos y
 		if ctx.Value == "" {
 			return nil, nil
 		}
-		name, version, _ := resolver.SplitVersionedURI(ctx.Value)
-		return s.findDefinitionByURI(reqCtx, name, version)
+		return s.findDefinitionByURI(reqCtx, ctx.Value, terms)
 	case yamlpos.ContextKindUsesTarget:
 		// Intra-document local-component reference. Walk the source
 		// document's spec.components (and recursively-nested
@@ -84,25 +87,55 @@ func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos y
 	}
 }
 
-// findDefinitionByURI locates the YAML file in the workspace whose
-// metadata.name == name. Scans BOTH the parse cache and the workspace
-// (deduplicated by path); warns on stderr when more than one unique
-// path matches; returns the first match.
+// findDefinitionByURI locates the document declaring the entity reference
+// names, in terms. Two sources answer:
 //
-// expectedVersion, when non-empty, drives a secondary version check.
-// The lookup matches by bare name first (versions are not part of
+//   - The Release's lookup: the reference resolved through terms.lookup
+//     (catalogDefinitionFor), the answer being the document that lookup resolves
+//     it to.
+//   - The workspace documents: the YAML files whose metadata.name is the
+//     reference's name, read from BOTH the parse cache and the workspace
+//     (deduplicated by path), of which only those terms.reach holds are
+//     candidates. More than one unique matching path draws a warning on stderr,
+//     and the first match is the answer.
+//
+// A request naming a Release is answered through that Release's lookup first, so
+// go-to-definition opens the document the Release's catalog directories resolve
+// the name to, in the order the workspace configuration gives them — the one a
+// lookup by name in that Release's terms answers — wherever a workspace document
+// elsewhere declares the same name; the workspace documents answer only where the
+// lookup resolves nothing. A request naming none reads the workspace documents first, so a
+// reference a workspace document answers keeps that answer, and the workspace's
+// own lookup only where no workspace document matches: that is what answers for
+// an entity only a catalog directory holds, which need not sit inside the
+// workspace at all. A withdrawn request reads no catalog, whether it was
+// withdrawn before a named Release's lookup or during the walk.
+//
+// A version suffix on the reference drives a secondary check on the workspace
+// documents. They are matched by bare name first (versions are not part of
 // metadata.name in any entity schema); when a matched entity's
-// metadata.version differs from expectedVersion, the function emits
+// metadata.version differs from the reference's, the function emits
 // a one-line stderr warning naming the version mismatch but still
 // returns the Location (navigation succeeds — the user wanted to see
 // the entity definition, version-pinning is a compile-time concern).
+// The lookup is handed the reference as written, so it selects the version the
+// reference names the way it does for a build.
 //
-// Cost note: this implementation always walks the workspace to detect
-// cross-cache+disk duplicate definitions. The workspace-walk cost is
-// bounded by workspace size (single-digit-ms for typical sizes); the
-// duplicate-detection correctness gain is worth the unconditional
-// walk cost for a user-driven editor operation.
-func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersion string) (*yamlpos.Location, *jsonRPCError) {
+// Cost note: wherever the workspace documents are read, the workspace is
+// walked whole, to detect cross-cache+disk duplicate definitions. The
+// workspace-walk cost is bounded by workspace size (single-digit-ms for typical
+// sizes); the duplicate-detection correctness gain is worth the walk cost for a
+// user-driven editor operation.
+func (s *Server) findDefinitionByURI(reqCtx context.Context, reference string, terms releaseTerms) (*yamlpos.Location, *jsonRPCError) {
+	if terms.release != "" {
+		if reqCtx.Err() != nil {
+			return nil, nil
+		}
+		if loc, ok := s.catalogDefinitionFor(terms, reference); ok {
+			return loc, nil
+		}
+	}
+	name, expectedVersion, _ := resolver.SplitVersionedURI(reference)
 	type match struct {
 		path     string
 		version  string
@@ -115,7 +148,7 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 	encoding := s.positionEncoding()
 	s.parseCache.Range(func(path string, node *yaml.Node, content []byte) bool {
 		entityName, nameNode := metadataNameOf(node)
-		if entityName != name || nameNode == nil {
+		if entityName != name || nameNode == nil || !terms.reach.Holds(path) {
 			return true
 		}
 		entityVersion := scalarValueAtPath(node, []string{"metadata", "version"})
@@ -133,7 +166,7 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 	// pass (a parse-cached file would be re-read from disk and possibly
 	// produce a duplicate; dedup by absolute path).
 	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
-		if seen[path] {
+		if seen[path] || !terms.reach.Holds(path) {
 			return nil
 		}
 		content, readErr := os.ReadFile(path)
@@ -164,7 +197,16 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 	}
 
 	if len(matches) == 0 {
-		return nil, nil
+		// A named Release's lookup was read above; a request withdrawn during the
+		// walk does not go on to read the catalog.
+		if terms.release != "" || reqCtx.Err() != nil {
+			return nil, nil
+		}
+		loc, ok := s.catalogDefinitionFor(terms, reference)
+		if !ok {
+			return nil, nil
+		}
+		return loc, nil
 	}
 
 	if len(matches) > 1 {
@@ -181,6 +223,74 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 			name+":"+expectedVersion, name+":"+first.version, first.path)
 	}
 	return &first.location, nil
+}
+
+// catalogDefinitionFor is the definition the catalog lookup the terms read gives
+// for reference: the metadata.name of the document catalogDocumentFor answers,
+// positioned in the bytes it answers with. ok is false where that document is no
+// answer, or declares no metadata.name to point at.
+func (s *Server) catalogDefinitionFor(terms releaseTerms, reference string) (*yamlpos.Location, bool) {
+	path, doc, content, ok := s.catalogDocumentFor(terms, reference)
+	if !ok {
+		return nil, false
+	}
+	_, nameNode := metadataNameOf(doc)
+	if nameNode == nil {
+		return nil, false
+	}
+	loc := nodeToLocation(path, yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding()), nameNode)
+	return &loc, true
+}
+
+// catalogDocumentFor resolves reference through the catalog lookup the terms
+// read, and returns the document the matched entity was authored in: its path,
+// its parsed root and its bytes. ok is false where the lookup resolves nothing,
+// or resolves an entity with no authored document to name — one read from the
+// artifact cache — or the document cannot be read.
+//
+// The resolution is the by-name one every surface shares
+// (compilerops.ResolveEntity), over a request-scoped view holding no pins, as a
+// lookup by name reads it: the reference is resolved the way the catalog
+// directories declare it, the version it names selected as a build selects it.
+//
+// The lookup picks the document from the catalog directories as they stand on
+// disk; what is answered for it is the copy the editor holds of that path where
+// the parse cache holds one still declaring the name the reference names, so a
+// position falls on the line the editor shows and a hover renders what the
+// author is reading, unsaved changes included. The cache is asked by the same
+// key the request's own document is asked by, and drops a copy the file on disk
+// has since moved past. Where no such copy is held — or the one held declares
+// some other name, a rename the catalog directories have not seen yet — the bytes
+// are read from disk, as the workspace walk reads a document whose cached copy
+// does not match.
+func (s *Server) catalogDocumentFor(terms releaseTerms, reference string) (string, *yaml.Node, []byte, bool) {
+	if terms.lookup == nil {
+		return "", nil, nil, false
+	}
+	match, found := compilerops.ResolveEntity(terms.lookup.ForRequest(nil), reference)
+	if !found || match.Source == "" {
+		return "", nil, nil, false
+	}
+	path := match.Source
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(s.workspaceRoot, path)
+	}
+	path = s.canonicalFile(path)
+	if entry, held := s.parseCache.Get(path); held {
+		name, _, _ := resolver.SplitVersionedURI(reference)
+		if declared, _ := metadataNameOf(entry.node); declared == name {
+			return path, entry.node, entry.content, true
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, nil, false
+	}
+	var doc yaml.Node
+	if uerr := yaml.Unmarshal(content, &doc); uerr != nil {
+		return "", nil, nil, false
+	}
+	return path, &doc, content, true
 }
 
 // resolveUsesTarget walks the cursor's source document for a sibling
@@ -298,7 +408,12 @@ func mappingChild(n *yaml.Node, key string) *yaml.Node {
 // is not in the parse cache. Returns an empty slice (no envelope) when
 // the cursor does not address metadata.name or when the target URI is
 // empty.
-func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
+//
+// Only the documents reach holds are read: a request naming a Release reports
+// no reference from a document under one of the workspace's catalog directories
+// that Release does not read, and one naming none passes the zero reach, which
+// holds every document.
+func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position, reach workspaceconfig.ReleaseReach) ([]yamlpos.Location, *jsonRPCError) {
 	target, errEnvelope := s.uriAtMetadataName(uri, pos)
 	if errEnvelope != nil {
 		return nil, errEnvelope
@@ -309,6 +424,9 @@ func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri strin
 	var out []yamlpos.Location
 	var selfDefinitions []string
 	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
+		if !reach.Holds(path) {
+			return nil
+		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return nil
@@ -349,7 +467,11 @@ func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri strin
 // Both contribute Locations pointing at the implementing / child
 // entity's metadata.name. Cursor must address metadata.name for a
 // non-empty result.
-func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
+//
+// Only the documents reach holds are read, as findReferencesAcrossWorkspace
+// reads them: a request naming a Release reports only the implementations and
+// children that Release's answer holds.
+func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position, reach workspaceconfig.ReleaseReach) ([]yamlpos.Location, *jsonRPCError) {
 	target, errEnvelope := s.uriAtMetadataName(uri, pos)
 	if errEnvelope != nil {
 		return nil, errEnvelope
@@ -359,6 +481,9 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 	}
 	var out []yamlpos.Location
 	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
+		if !reach.Holds(path) {
+			return nil
+		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return nil

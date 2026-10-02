@@ -34,7 +34,10 @@ import (
 // on after the answer is no longer wanted. The parameter is named for the
 // request rather than spelled ctx because the cursor classification below binds
 // that name to a yamlpos.Context.
-func (s *Server) handleHover(reqCtx context.Context, params hoverParams) (*MarkupContent, *jsonRPCError) {
+//
+// terms are the terms the request named, or the workspace's own: a reference is
+// looked up in them as findEntityForHover states.
+func (s *Server) handleHover(reqCtx context.Context, params hoverParams, terms releaseTerms) (*MarkupContent, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
@@ -61,7 +64,8 @@ func (s *Server) handleHover(reqCtx context.Context, params hoverParams) (*Marku
 		return s.hoverReleasePath(ctx.Value, "Manifest"), nil
 	}
 
-	// URI-based references (parse-cache + workspace walk; version-stripped).
+	// URI-based references (the Release's lookup and the workspace documents, in
+	// the order findEntityForHover states).
 	switch ctx.Kind {
 	case yamlpos.ContextKindMetadataName:
 		// Self-hover — render the current file's own entity.
@@ -74,35 +78,66 @@ func (s *Server) handleHover(reqCtx context.Context, params hoverParams) (*Marku
 		if ctx.Value == "" {
 			return nil, nil
 		}
-		name, _, _ := resolver.SplitVersionedURI(ctx.Value)
-		return s.hoverByURI(reqCtx, name), nil
+		return s.hoverByURI(reqCtx, ctx.Value, terms), nil
 	}
 
 	// All other ContextKinds (SchemaProperty, Unknown, etc.) — null Contents.
 	return nil, nil
 }
 
-// hoverByURI locates the target entity in parse cache or workspace
-// walk, reads its kind, and dispatches to the corresponding
-// per-kind renderer. Returns nil when no target file matches.
-func (s *Server) hoverByURI(reqCtx context.Context, targetURI string) *MarkupContent {
-	doc, content := s.findEntityForHover(reqCtx, targetURI)
+// hoverByURI locates the entity reference names, reads its kind, and
+// dispatches to the corresponding per-kind renderer. Returns nil when nothing
+// declares it.
+func (s *Server) hoverByURI(reqCtx context.Context, reference string, terms releaseTerms) *MarkupContent {
+	doc, content := s.findEntityForHover(reqCtx, reference, terms)
 	if doc == nil {
 		return nil
 	}
 	return s.renderEntityFromCache(doc, content)
 }
 
-// findEntityForHover scans the parse cache + workspace walk for a
-// YAML file whose metadata.name matches targetURI. Returns the
-// parsed root + raw bytes on hit; (nil, nil) on miss.
-func (s *Server) findEntityForHover(reqCtx context.Context, targetURI string) (*yaml.Node, []byte) {
+// findEntityForHover finds the document declaring the entity reference names,
+// in terms, and returns its parsed root and raw bytes; (nil, nil) when nothing
+// declares it.
+//
+// Two sources answer, and which comes first depends on whether the request named
+// a Release:
+//
+//   - The Release's lookup: the reference resolved through terms.lookup, the
+//     catalog directories the terms read, as written, version included
+//     (catalogDocumentFor).
+//   - The workspace documents: the parse cache, then a walk of the workspace,
+//     matched by metadata.name with any version suffix on the reference stripped,
+//     of which only those terms.reach holds are candidates.
+//
+// A request naming a Release is answered through that Release's lookup first, so
+// the entity shown is the one its catalog directories resolve the name to, in the
+// order the workspace configuration gives them — what a lookup by name in that
+// Release's terms answers, wherever a workspace document elsewhere declares the
+// same name — and from the workspace documents only where the lookup resolves
+// nothing. A request naming none reads the workspace documents first, so a
+// reference a workspace document answers keeps that answer, and the workspace's
+// own lookup only where none declares it: that is what answers for an entity only
+// a catalog directory holds, which need not sit inside the workspace at all.
+//
+// A withdrawn request reads no catalog, whether it was withdrawn before a named
+// Release's lookup or during the walk.
+func (s *Server) findEntityForHover(reqCtx context.Context, reference string, terms releaseTerms) (*yaml.Node, []byte) {
+	if terms.release != "" {
+		if reqCtx.Err() != nil {
+			return nil, nil
+		}
+		if _, doc, content, ok := s.catalogDocumentFor(terms, reference); ok {
+			return doc, content
+		}
+	}
+	targetURI, _, _ := resolver.SplitVersionedURI(reference)
 	// Parse-cache pass first (cheap, no filesystem).
 	var hitNode *yaml.Node
 	var hitContent []byte
-	s.parseCache.Range(func(_ string, node *yaml.Node, content []byte) bool {
+	s.parseCache.Range(func(path string, node *yaml.Node, content []byte) bool {
 		name, _ := metadataNameOf(node)
-		if name == targetURI {
+		if name == targetURI && terms.reach.Holds(path) {
 			hitNode, hitContent = node, content
 			return false
 		}
@@ -119,7 +154,7 @@ func (s *Server) findEntityForHover(reqCtx context.Context, targetURI string) (*
 	var foundDoc *yaml.Node
 	var foundContent []byte
 	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
-		if foundDoc != nil {
+		if foundDoc != nil || !terms.reach.Holds(path) {
 			return nil
 		}
 		content, err := os.ReadFile(path)
@@ -137,7 +172,19 @@ func (s *Server) findEntityForHover(reqCtx context.Context, targetURI string) (*
 		}
 		return nil
 	})
-	return foundDoc, foundContent
+	if foundDoc != nil {
+		return foundDoc, foundContent
+	}
+	// A named Release's lookup was read above; a request withdrawn during the walk
+	// does not go on to read the catalog.
+	if terms.release != "" || reqCtx.Err() != nil {
+		return nil, nil
+	}
+	_, doc, content, ok := s.catalogDocumentFor(terms, reference)
+	if !ok {
+		return nil, nil
+	}
+	return doc, content
 }
 
 // renderEntityFromCache reads the entity's kind: field and dispatches

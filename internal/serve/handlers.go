@@ -1258,9 +1258,19 @@ type CompletionItem struct {
 
 // resolveParams is the request shape for `aggrega/resolve`. The
 // cursor position references a YAML node in the file at uri.
+//
+// Release is optional. Absent, the definition is looked for in the workspace's
+// own terms. Named, it is a path relative to the workspace root naming a Release
+// inside it, refused in the shapes every Release parameter is refused in, and
+// the definition is looked for in that Release's terms (termsFor): a workspace
+// document under one of the workspace's catalog directories that Release does
+// not read is not a candidate, and a reference no workspace document in those
+// terms declares is resolved through the catalog directories the workspace
+// configuration gives that Release.
 type resolveParams struct {
 	URI      string           `json:"uri"`
 	Position yamlpos.Position `json:"position"`
+	Release  string           `json:"release,omitempty"`
 }
 
 // resolveResult is the response shape for `aggrega/resolve`. Location
@@ -1279,7 +1289,11 @@ func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position)
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+	}
+	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position, terms)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -1289,9 +1303,13 @@ func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error
 // findReferencesParams is the request shape for
 // `aggrega/findReferences`. The cursor position must address a
 // metadata.name scalar for the result to be non-empty.
+//
+// Release is optional, read as resolveParams reads it: named, a reference in a
+// workspace document that Release's terms do not hold is not reported.
 type findReferencesParams struct {
 	URI      string           `json:"uri"`
 	Position yamlpos.Position `json:"position"`
+	Release  string           `json:"release,omitempty"`
 }
 
 // findReferencesResult is the response shape for `aggrega/findReferences`.
@@ -1308,7 +1326,11 @@ func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position)
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+	}
+	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position, terms.reach)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -1320,9 +1342,13 @@ func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest
 
 // findImplementationsParams is the request shape for
 // `aggrega/findImplementations`.
+//
+// Release is optional, read as resolveParams reads it: named, an implementing or
+// extending document that Release's terms do not hold is not reported.
 type findImplementationsParams struct {
 	URI      string           `json:"uri"`
 	Position yamlpos.Position `json:"position"`
+	Release  string           `json:"release,omitempty"`
 }
 
 // findImplementationsResult is the response shape for
@@ -1338,7 +1364,11 @@ func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRe
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position)
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+	}
+	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position, terms.reach)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -1350,9 +1380,13 @@ func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRe
 
 // hoverParams is the request shape for `aggrega/hover`. The cursor
 // position references a YAML node in the file at uri.
+//
+// Release is optional, read as resolveParams reads it: named, the entity shown
+// is the one the reference resolves to in that Release's terms.
 type hoverParams struct {
 	URI      string           `json:"uri"`
 	Position yamlpos.Position `json:"position"`
+	Release  string           `json:"release,omitempty"`
 }
 
 // hoverResult is the response shape for `aggrega/hover`. Contents is
@@ -1374,7 +1408,11 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	contents, errEnvelope := s.handleHover(ctx, params)
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+	}
+	contents, errEnvelope := s.handleHover(ctx, params, terms)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -1384,10 +1422,16 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 // completionParams is the request shape for `aggrega/completion`.
 // The optional Context carries the LSP CompletionContext (triggerKind
 // + triggerCharacter) for trigger-character-aware narrowing.
+//
+// Release is optional, read as resolveParams reads it: named, the names offered
+// are those of the workspace documents in that Release's terms and of the
+// entities the catalog directories the workspace configuration gives that
+// Release declare.
 type completionParams struct {
 	URI      string             `json:"uri"`
 	Position yamlpos.Position   `json:"position"`
 	Context  *completionContext `json:"context,omitempty"`
+	Release  string             `json:"release,omitempty"`
 }
 
 // completionContext mirrors a slice of LSP's CompletionContext shape.
@@ -1417,7 +1461,11 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	items, errEnvelope := s.handleCompletion(ctx, params)
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+	}
+	items, errEnvelope := s.handleCompletion(ctx, params, terms)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}

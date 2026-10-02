@@ -44,20 +44,20 @@ import (
 const traversalReturnCeiling = 30 * time.Second
 
 func parkedControlTraversal(srv *Server, ctx context.Context, done chan<- int) {
-	done <- len(srv.enumerateEntityNames(ctx, "Component"))
+	done <- len(srv.enumerateEntityNames(ctx, "Component", srv.workspaceTerms()))
 }
 
 func parkedStoppedTraversal(srv *Server, ctx context.Context, done chan<- int) {
-	done <- len(srv.enumerateEntityNames(ctx, "Component"))
+	done <- len(srv.enumerateEntityNames(ctx, "Component", srv.workspaceTerms()))
 }
 
 func parkedControlHoverTraversal(srv *Server, ctx context.Context, done chan<- bool) {
-	doc, _ := srv.findEntityForHover(ctx, "never-present")
+	doc, _ := srv.findEntityForHover(ctx, "never-present", srv.workspaceTerms())
 	done <- doc != nil
 }
 
 func parkedStoppedHoverTraversal(srv *Server, ctx context.Context, done chan<- bool) {
-	doc, _ := srv.findEntityForHover(ctx, "never-present")
+	doc, _ := srv.findEntityForHover(ctx, "never-present", srv.workspaceTerms())
 	done <- doc != nil
 }
 
@@ -318,7 +318,7 @@ func TestACompletionWhoseRequestHasAlreadyEndedWalksNothing(t *testing.T) {
 	stop()
 
 	done := make(chan int, 1)
-	go func() { done <- len(srv.enumerateEntityNames(withdrawn, "Component")) }()
+	go func() { done <- len(srv.enumerateEntityNames(withdrawn, "Component", srv.workspaceTerms())) }()
 
 	select {
 	case got := <-done:
@@ -334,7 +334,9 @@ func TestACompletionWhoseRequestHasAlreadyEndedWalksNothing(t *testing.T) {
 	// The live control must behave differently, or the assertion above is
 	// satisfied by a traversal that never reads anything under any circumstances.
 	liveDone := make(chan int, 1)
-	go func() { liveDone <- len(srv.enumerateEntityNames(context.Background(), "Component")) }()
+	go func() {
+		liveDone <- len(srv.enumerateEntityNames(context.Background(), "Component", srv.workspaceTerms()))
+	}()
 	select {
 	case <-liveDone:
 		t.Fatal("the live control returned without parking, so the withdrawn arm above proves " +

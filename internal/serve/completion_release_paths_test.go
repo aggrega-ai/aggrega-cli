@@ -51,7 +51,7 @@ func TestReleasePathCompletionsAreSlashSeparated(t *testing.T) {
 		{kind: "Manifest", want: []string{"releases/manifests/prod"}},
 	}
 	for _, tc := range cases {
-		got := s.enumerateWorkspaceRelativePaths(context.Background(), tc.kind)
+		got := s.enumerateWorkspaceRelativePaths(context.Background(), tc.kind, s.workspaceTerms().reach)
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s completions = %q, want %q", tc.kind, got, tc.want)
 		}
