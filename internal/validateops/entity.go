@@ -40,8 +40,9 @@ type RenderedArtifact struct {
 //
 // Diagnostics is the ordered set of report lines — the identity header, the
 // per-tier status lines (schema, pillars/shape, resolution, render), the
-// declined-check line naming any required uses sockets a single-entity run
-// could not cover, the not-attempted explanation when the Recipe's source is one
+// declined-check lines naming any required uses sockets, required attachment
+// slots and presence mandates a single-entity run could not cover, the
+// not-attempted explanation when the Recipe's source is one
 // a single-entity run cannot fetch or when its render stopped while its
 // templates read what a build of one cannot supply, and the render-failure
 // explanation when a render that WAS attempted did not complete for any other
@@ -424,10 +425,13 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // documents can change that.
 //
 // The second is whether the Component's `required: true` attachment slots are
-// filled. The synthesized build attaches no Feature, because which Feature fills
-// a slot is chosen by whoever deploys the Component, not by the Recipe — so no
-// fill exists here to bind the slot, for the same reason no edge exists to
-// populate a socket.
+// filled, and whether an attachment of each Feature type its presence mandates
+// name is present. The synthesized build attaches no Feature, because which
+// Feature fills a slot or carries a mandated type is chosen by whoever deploys
+// the Component, not by the Recipe — so no attachment exists here to bind the
+// slot or satisfy the mandate, for the same reason no edge exists to populate a
+// socket. A mandate whose declaration cannot be evaluated is not declined: it is
+// a fault of the Component's own, and is reported as one.
 //
 // The third is the render itself, when the Recipe's source is one that has to
 // be fetched. A single-entity run reads no lockfile and no cache, so it holds
@@ -501,11 +505,11 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		return err
 	}
 
-	// Decline the required-socket and required-slot checks for this run and say
-	// so, rather than report the author's own valid Recipe as broken. The
-	// narrowing is applied to the catalog view THIS harness hands the pipeline
-	// and to nothing else, so each rule itself is untouched: a build asks it
-	// about the Component exactly as authored.
+	// Decline the required-socket, required-slot and presence-mandate checks for
+	// this run and say so, rather than report the author's own valid Recipe as
+	// broken. The narrowing is applied to the catalog view THIS harness hands the
+	// pipeline and to nothing else, so each rule itself is untouched: a build asks
+	// it about the Component exactly as authored.
 	declined := declinedRequirementsOf(&comp)
 	tierLookup := lookupWithRequirementsDeclined(lookup, rec.Spec.Implements, declined)
 	if len(declined.sockets) > 0 {
@@ -522,6 +526,14 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 			"  Validating a Recipe on its own places its Component in a build that attaches",
 			"  no Feature, so nothing exists to fill a required slot. Whether each of these",
 			"  slots is filled is checked when a Release that deploys the Component is built.")
+	}
+	if len(declined.mandates) > 0 {
+		res.Diagnostics = append(res.Diagnostics,
+			fmt.Sprintf("Attachments: presence mandates not checked (%s)", presenceMandateList(declined.mandates)),
+			"  Validating a Recipe on its own places its Component in a build that attaches",
+			"  no Feature, so nothing exists to carry a type the Component requires. Whether",
+			"  an attachment of each of these types is present is checked when a Release",
+			"  that deploys the Component is built.")
 	}
 
 	recipeLookup := renderer.RecipeLookup{
@@ -665,20 +677,60 @@ func (r buildOfOneReads) declinesRenderStop(err error) bool {
 
 // declinedRequirements names what a build of one cannot satisfy on the Component
 // it places: the uses sockets and the attachment slots the Component declares
-// `required: true`, each in the entity's author order.
+// `required: true`, and the presence mandates it declares that can be evaluated,
+// each in the entity's author order.
 type declinedRequirements struct {
-	sockets []string
-	slots   []string
+	sockets  []string
+	slots    []string
+	mandates []types.RequiredAttachmentType
 }
 
-// declinedRequirementsOf reads the Component's required sockets and required
-// slots, the two requirements no authoring of the synthesized documents can
-// meet.
+// declinedRequirementsOf reads the Component's required sockets, required slots
+// and presence mandates, the three requirements no authoring of the synthesized
+// documents can meet.
 func declinedRequirementsOf(comp *types.Component) declinedRequirements {
 	return declinedRequirements{
-		sockets: declaredRequiredSockets(comp),
-		slots:   declaredRequiredSlots(comp),
+		sockets:  declaredRequiredSockets(comp),
+		slots:    declaredRequiredSlots(comp),
+		mandates: declaredPresenceMandates(comp),
 	}
+}
+
+// declaredPresenceMandates returns every presence mandate the Component declares
+// whose declaration can be evaluated, in the entity's author order.
+//
+// The synthesized build attaches no Feature at any scope, so no attachment of a
+// mandated type can be present, and the declared set and the out-of-reach set
+// coincide as they do for slots. The mandates are read through
+// types.RequiredAttachmentTypes, the one reading of the annotation family the
+// rule that judges them reads too, so the two cannot come to disagree about which
+// annotations are mandates.
+//
+// A malformed mandate is left out on purpose. It is not a requirement a build of
+// one cannot meet but a declaration no build can evaluate, which a build refuses
+// whatever is attached, so the rule reporting it must still see it here.
+//
+// It reads the declarations and decides nothing: whether a mandate is met stays
+// the analyzer's rule, and a build asks it about the Component as authored.
+func declaredPresenceMandates(comp *types.Component) []types.RequiredAttachmentType {
+	var out []types.RequiredAttachmentType
+	for _, mandate := range types.RequiredAttachmentTypes(comp.Metadata.Annotations) {
+		if mandate.Malformed == "" {
+			out = append(out, mandate)
+		}
+	}
+	return out
+}
+
+// presenceMandateList renders declined mandates for the report as each one's
+// label and the Feature type it names, in the order the Component declares them —
+// the two halves of the annotation as its author wrote it.
+func presenceMandateList(mandates []types.RequiredAttachmentType) string {
+	parts := make([]string, 0, len(mandates))
+	for _, mandate := range mandates {
+		parts = append(parts, mandate.Label+": "+mandate.Type)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // declaredRequiredSockets returns the names of every uses socket the Component
@@ -726,8 +778,9 @@ func declaredRequiredSlots(comp *types.Component) []string {
 
 // lookupWithRequirementsDeclined returns a copy of lookup whose Component
 // accessor reports typeURI's named uses sockets and named attachment slots as
-// optional. Every other type, and every other accessor, passes through
-// untouched; with nothing to decline it returns lookup itself.
+// optional, and declares none of its named presence mandates. Every other type,
+// and every other accessor, passes through untouched; with nothing to decline it
+// returns lookup itself.
 //
 // The copy is what the single-entity render tiers read, so the narrowing reaches
 // only this in-memory validation run — the catalog itself is never modified, and
@@ -736,12 +789,24 @@ func declaredRequiredSlots(comp *types.Component) []string {
 // slot's label constraint and delivery mechanisms still see exactly what the
 // author declared, and the entries are rebuilt in author order so the run stays
 // byte-identical across invocations.
+//
+// A presence mandate has no flag to clear — it is an annotation, and declaring it
+// is what makes it a requirement — so a declined one is left out of the
+// Component's annotations in the copy, and every other annotation is kept in
+// author order, a malformed mandate among them. The same annotations are what the
+// render context carries as the Component's catalog annotations, so a template in
+// this run reading a declined mandate's key would find it absent; nothing a
+// provider reads is among them.
 func lookupWithRequirementsDeclined(lookup resolver.CatalogLookup, typeURI string, declined declinedRequirements) resolver.CatalogLookup {
-	if lookup.Component == nil || (len(declined.sockets) == 0 && len(declined.slots) == 0) {
+	if lookup.Component == nil || (len(declined.sockets) == 0 && len(declined.slots) == 0 && len(declined.mandates) == 0) {
 		return lookup
 	}
 	optionalSockets := namedSet(declined.sockets)
 	optionalSlots := namedSet(declined.slots)
+	undeclaredMandates := make(map[string]bool, len(declined.mandates))
+	for _, mandate := range declined.mandates {
+		undeclaredMandates[mandate.Key] = true
+	}
 
 	inner := lookup.Component
 	narrowed := lookup
@@ -772,6 +837,15 @@ func lookupWithRequirementsDeclined(lookup resolver.CatalogLookup, typeURI strin
 				relaxed.Set(name, slot)
 			}
 			comp.Spec.FeaturesSchema = relaxed
+		}
+		if len(undeclaredMandates) > 0 {
+			kept := types.OrderedMap[string]{}
+			for key, value := range comp.Metadata.Annotations.All() {
+				if !undeclaredMandates[key] {
+					kept.Set(key, value)
+				}
+			}
+			comp.Metadata.Annotations = kept
 		}
 		return comp, true
 	}
@@ -1080,11 +1154,11 @@ func requiredPlaceholders(comp *types.Component, libraries map[string]types.Sche
 	}, nil
 }
 
-// requiredFieldPlaceholders returns a typed placeholder for each required field of
-// one pillar of a compiled schema that carries no default, or nil when the pillar
+// requiredFieldPlaceholders returns a placeholder for each required field of one
+// pillar of a compiled schema that carries no default, or nil when the pillar
 // declares none. Fields with a default are omitted so the real resolver
-// materializes the default; the placeholder types mirror the declared JSON-Schema
-// type (string, integer, number, boolean, object, array).
+// materializes the default; each placeholder is a value of the field's declared
+// type that its own declared constraints accept, as placeholderForField states.
 func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[string]any {
 	pillarNode, ok := mapAt(compiled, "properties", pillar)
 	if !ok {
@@ -1102,7 +1176,7 @@ func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[strin
 		}
 		field, _ := props[name].(map[string]any)
 		if field == nil {
-			out[name] = "example"
+			out[name] = placeholderString
 			continue
 		}
 		if _, hasDefault := field["default"]; hasDefault {
@@ -1111,44 +1185,6 @@ func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[strin
 		out[name] = placeholderForField(field)
 	}
 	return out
-}
-
-// placeholderForField returns a typed placeholder for one compiled schema field
-// keyed by its declared type. An integer or number uses the declared minimum
-// when present so a min-constrained field passes; other types use a neutral
-// zero-shaped value.
-func placeholderForField(field map[string]any) any {
-	typ, _ := field["type"].(string)
-	switch typ {
-	case "integer", "number":
-		if m, ok := numericMinimum(field); ok {
-			return m
-		}
-		return 0
-	case "boolean":
-		return false
-	case "object":
-		return map[string]any{}
-	case "array":
-		return []any{}
-	default:
-		return "example"
-	}
-}
-
-// numericMinimum extracts a field's `minimum` constraint as a plain number when
-// present, tolerating the int and float shapes a compiled schema may carry.
-func numericMinimum(field map[string]any) (any, bool) {
-	switch m := field["minimum"].(type) {
-	case int:
-		return m, true
-	case int64:
-		return m, true
-	case float64:
-		return m, true
-	default:
-		return nil, false
-	}
 }
 
 // toStringSlice normalizes a compiled schema's `required` value into a string

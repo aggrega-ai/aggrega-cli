@@ -230,6 +230,153 @@ func TestLookupWithRequirementsDeclined_NothingDeclinedIsIdentity(t *testing.T) 
 	}
 }
 
+const (
+	mandatedType      = "example/compute/mandated"
+	otherMandatedType = "example/compute/other-mandated"
+)
+
+// mandatedComponent is socketedComponent carrying, in author order, a presence
+// mandate, an annotation outside the mandate family, a second mandate, a mandate
+// whose value is not a Feature type, and the family's key with no label — so a
+// test can tell author order from sorted order, and a mandate that can be
+// evaluated from one that cannot, in one fixture.
+func mandatedComponent(name string) types.Component {
+	comp := socketedComponent(name)
+	annotations := types.OrderedMap[string]{}
+	annotations.Set(types.RequiredAttachmentTypeAnnotationPrefix+"zeta_audit", "core/audit-logging")
+	annotations.Set("example.com/owner", "payments")
+	annotations.Set(types.RequiredAttachmentTypeAnnotationPrefix+"alpha_monitoring", "core/prometheus-exporter")
+	annotations.Set(types.RequiredAttachmentTypeAnnotationPrefix+"broken", "Not A Feature Type")
+	annotations.Set("features.aggrega.ai/requiredType", "core/audit-logging")
+	comp.Metadata.Annotations = annotations
+	return comp
+}
+
+func mandatedLookup() resolver.CatalogLookup {
+	return resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			switch typeURI {
+			case mandatedType, otherMandatedType:
+				return mandatedComponent(typeURI), true
+			}
+			return types.Component{}, false
+		},
+	}
+}
+
+func TestDeclaredPresenceMandates_EvaluableOnlyInAuthorOrder(t *testing.T) {
+	t.Parallel()
+	comp := mandatedComponent(mandatedType)
+	got := declaredPresenceMandates(&comp)
+	// Author order, not sorted, and only the two a build could evaluate: the
+	// malformed value and the labelless key are faults of the declaration, which
+	// the build of one must go on reporting.
+	if len(got) != 2 {
+		t.Fatalf("declaredPresenceMandates = %+v, want the two evaluable mandates", got)
+	}
+	for i, want := range []struct{ label, typ string }{
+		{"zeta_audit", "core/audit-logging"},
+		{"alpha_monitoring", "core/prometheus-exporter"},
+	} {
+		if got[i].Label != want.label || got[i].Type != want.typ || got[i].Malformed != "" {
+			t.Errorf("mandate %d = %+v, want label %q naming %q", i, got[i], want.label, want.typ)
+		}
+	}
+	if list, want := presenceMandateList(got), "zeta_audit: core/audit-logging, alpha_monitoring: core/prometheus-exporter"; list != want {
+		t.Errorf("presenceMandateList = %q, want %q", list, want)
+	}
+}
+
+func TestDeclaredPresenceMandates_NoneDeclaredIsEmpty(t *testing.T) {
+	t.Parallel()
+	comp := socketedComponent(socketedType)
+	if got := declaredPresenceMandates(&comp); len(got) != 0 {
+		t.Fatalf("declaredPresenceMandates on a Component declaring none = %+v, want empty", got)
+	}
+}
+
+// TestLookupWithRequirementsDeclined_PresenceMandatesThroughTheCompilersOwnReading
+// asks the compiler's own reading of a type's presence mandates — the one the
+// rules judging a mandate and a malformed declaration both read — about the
+// authored and the narrowed view. The narrowing must leave that reading with
+// nothing evaluable to demand and every malformed declaration still there to
+// report, keep every other annotation in author order, write nothing back to the
+// source, and reach no other type.
+func TestLookupWithRequirementsDeclined_PresenceMandatesThroughTheCompilersOwnReading(t *testing.T) {
+	t.Parallel()
+	base := mandatedLookup()
+	comp, _ := base.Component(mandatedType)
+	readMandates := func(lookup resolver.CatalogLookup, typeURI string) []types.RequiredAttachmentType {
+		view := resolver.NewNormalizedView(types.Normalize(&types.Aggregate{}), nil, lookup, nil)
+		return view.RequiredAttachmentMandates(typeURI)
+	}
+
+	if got := readMandates(base, mandatedType); len(got) != 4 {
+		t.Fatalf("as authored: expected the compiler's reading to find 4 mandates, got %+v", got)
+	}
+
+	narrowed := lookupWithRequirementsDeclined(base, mandatedType, declinedRequirementsOf(&comp))
+	left := readMandates(narrowed, mandatedType)
+	if len(left) != 2 {
+		t.Fatalf("narrowed: expected the two malformed declarations to remain, got %+v", left)
+	}
+	for _, mandate := range left {
+		if mandate.Malformed == "" {
+			t.Errorf("narrowed: an evaluable mandate is still declared: %+v", mandate)
+		}
+	}
+
+	narrowedComp, _ := narrowed.Component(mandatedType)
+	wantKeys := "example.com/owner," + types.RequiredAttachmentTypeAnnotationPrefix + "broken,features.aggrega.ai/requiredType"
+	if got := strings.Join(narrowedComp.Metadata.Annotations.Keys(), ","); got != wantKeys {
+		t.Errorf("narrowed annotations = %q, want %q", got, wantKeys)
+	}
+	if value, _ := narrowedComp.Metadata.Annotations.Get("example.com/owner"); value != "payments" {
+		t.Errorf("an annotation outside the mandate family changed: %q", value)
+	}
+	if entry, _ := narrowedComp.Spec.UsesSchema.Get("zebra_backend"); entry.Required {
+		t.Error("the sockets the Component declares were not declined beside its mandates")
+	}
+
+	if got := readMandates(base, mandatedType); len(got) != 4 {
+		t.Errorf("the narrowed view wrote through to the source component: it now reads %+v", got)
+	}
+	if got := readMandates(narrowed, otherMandatedType); len(got) != 4 {
+		t.Errorf("the mandate narrowing reached a type it was not scoped to: %+v", got)
+	}
+}
+
+// TestLookupWithRequirementsDeclined_MandatesOnlyWhatItNames declines one surface
+// at a time, so a narrowing that dropped every mandate whenever it was asked to
+// decline anything, or cleared sockets and slots whenever it was asked to drop a
+// mandate, would fail here.
+func TestLookupWithRequirementsDeclined_MandatesOnlyWhatItNames(t *testing.T) {
+	t.Parallel()
+	comp, _ := mandatedLookup().Component(mandatedType)
+	evaluable := declaredPresenceMandates(&comp)
+
+	socketsOnly := lookupWithRequirementsDeclined(mandatedLookup(), mandatedType, declinedRequirements{sockets: []string{"zebra_backend"}})
+	got, _ := socketsOnly.Component(mandatedType)
+	if mandates := types.RequiredAttachmentTypes(got.Metadata.Annotations); len(mandates) != 4 {
+		t.Errorf("declining a socket dropped a mandate: %+v", mandates)
+	}
+
+	oneMandate := lookupWithRequirementsDeclined(mandatedLookup(), mandatedType, declinedRequirements{mandates: evaluable[:1]})
+	got, _ = oneMandate.Component(mandatedType)
+	if _, present := got.Metadata.Annotations.Get(evaluable[0].Key); present {
+		t.Errorf("mandate %q is still declared after being declined", evaluable[0].Key)
+	}
+	if _, present := got.Metadata.Annotations.Get(evaluable[1].Key); !present {
+		t.Errorf("declining %q also dropped %q", evaluable[0].Key, evaluable[1].Key)
+	}
+	if entry, _ := got.Spec.UsesSchema.Get("zebra_backend"); !entry.Required {
+		t.Error("declining a mandate cleared a socket")
+	}
+	if slot, _ := got.Spec.FeaturesSchema.Get("zeta_password"); !slot.Required {
+		t.Error("declining a mandate cleared a slot")
+	}
+}
+
 // requiredThroughTheCompilersOwnReading reports which of a type's declared
 // sockets and declared slots carry a requirement, read through the compiler's
 // own presentation rather than off the entity.
