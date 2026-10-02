@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // CatalogEntity is one workspace-local entity in the aggrega/catalogIndex
@@ -50,6 +51,24 @@ type CatalogEntity struct {
 	Origin      string            `json:"origin"`
 }
 
+// catalogIndexParams is the request shape for `aggrega/catalogIndex`.
+//
+// Release is optional. Absent, the index is the workspace's own: every entity its
+// documents declare, and the Features its configured catalog directories declare.
+// Named, it is a path relative to the workspace root naming a Release inside it,
+// refused in the shapes every Release parameter is refused in, and the index is
+// given in that Release's terms: the Features the catalog directories the
+// workspace configuration gives that Release declare, and every workspace
+// document but those under a catalog directory only other Releases read. A
+// workspace keeping one entity's variants side by side, one per Release, is then
+// listed with the one variant the named Release builds with.
+//
+// It is declared rather than left to the routing fields, so a field this method
+// does not take is still refused rather than dropped.
+type catalogIndexParams struct {
+	Release string `json:"release"`
+}
+
 // catalogIndexResult is the aggrega/catalogIndex response: every
 // workspace-local entity the daemon can see, in a stable order.
 //
@@ -69,20 +88,26 @@ type catalogIndexResult struct {
 //
 // The index is a property of one workspace, so the request names which. Two
 // requests naming two workspaces are answered from two trees, and neither
-// entity set reaches the other. Read-only — it mutates nothing, resolves
-// nothing, and reaches no registry or network.
+// entity set reaches the other. A request may also name a Release, and is then
+// answered in that Release's terms — see catalogIndexParams. Read-only — it
+// mutates nothing, resolves nothing, and reaches no registry or network.
 func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) error {
-	// A method with no parameters of its own still decodes, so a field a caller
-	// sent is refused rather than dropped. See noParams for why an answer that
-	// ignored an argument is worse than a refusal naming it.
-	if err := decodeParams(req, &noParams{}); err != nil {
+	// The params are decoded strictly, so a field a caller sent that this method
+	// does not take is refused rather than dropped. See noParams for why an
+	// answer that ignored an argument is worse than a refusal naming it.
+	var params catalogIndexParams
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
-	return s.writeResult(ctx, req.ID, catalogIndexResult{Entities: s.catalogIndex(ctx)})
+	return s.writeResult(ctx, req.ID, catalogIndexResult{Entities: s.catalogIndexIn(ctx, terms)})
 }
 
 // catalogIndex projects the workspace document traversal down to the
@@ -125,7 +150,14 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // ahead of a workspace document sharing its kind and name rather than
 // landing in an order that depends on where the daemon happened to read it.
 func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
-	return workspaceEntityIndex(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs())
+	return s.catalogIndexIn(ctx, s.workspaceTerms())
+}
+
+// catalogIndexIn is catalogIndex given in the terms supplied: the Features come
+// from the terms' lookup, and the workspace documents are the ones the terms'
+// reach holds.
+func (s *Server) catalogIndexIn(ctx context.Context, terms releaseTerms) []CatalogEntity {
+	return workspaceEntityIndex(ctx, s.workspaceRoot, terms.lookup, s.overlayDocs(), terms.reach)
 }
 
 // WorkspaceEntityIndex reports every entity a workspace holds — each one's kind,
@@ -139,11 +171,16 @@ func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
 // is holding unsaved; with none, the answer is read from what is on disk, which
 // is what such a caller can see anyway.
 //
+// reach says which workspace documents the answer holds: the zero value holds
+// every one, and a Release's reach holds the ones an answer in that Release's
+// terms holds. view is then the lookup over the same Release's stack, so the
+// Features it contributes and the documents the reach holds are one Release's.
+//
 // Read-only: it resolves nothing, writes nothing, and reaches no registry or
 // network. The collection is never nil, so a caller iterates it without a nil
 // check.
-func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup) []CatalogEntity {
-	return workspaceEntityIndex(ctx, root, view, nil)
+func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, reach workspaceconfig.ReleaseReach) []CatalogEntity {
+	return workspaceEntityIndex(ctx, root, view, nil, reach)
 }
 
 // ReleaseCandidates reports every Release-kind document under root, decided by
@@ -194,10 +231,10 @@ func LockfilesFor(releases []string) map[string]string {
 }
 
 // workspaceEntityIndex is the whole of the entity index with the root, the
-// catalog lookup and the fresher-than-disk overlay supplied rather than read off
-// a session, so the session-bound method and the sessionless entry point above
-// are one implementation rather than two that agree today.
-func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc) []CatalogEntity {
+// catalog lookup, the fresher-than-disk overlay and the reach supplied rather
+// than read off a session, so the session-bound method and the sessionless entry
+// point above are one implementation rather than two that agree today.
+func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, reach workspaceconfig.ReleaseReach) []CatalogEntity {
 	out := []CatalogEntity{}
 	workspaceFeatures := map[string]bool{}
 	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
@@ -222,6 +259,11 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 			// statement about membership and not about the path, since
 			// entities that legitimately live outside the root reach the
 			// index through catalog resolution below.
+			return true
+		}
+		if !reach.Holds(doc.path) {
+			// A document under a catalog directory only another Release reads
+			// is that Release's variant, not part of an answer in these terms.
 			return true
 		}
 		if kind == "Feature" {

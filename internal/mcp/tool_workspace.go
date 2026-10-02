@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The bound on a listing that returns records, and the page a call that names no
@@ -152,19 +153,22 @@ func entityKindCounts(entities []serve.CatalogEntity) []entityKindCount {
 // There is no argument that selects a subject, and that is the point of the
 // tool: it answers what the workspace holds, which is a property of the
 // workspace rather than of anything a caller would have to name first. Two of the
-// arguments only say which workspace, and both have defaults; the rest choose
-// between the two shapes of the answer and, where the answer carries records, which
-// of them.
+// arguments only say which workspace, and both have defaults; one says in whose
+// terms the answer is given, and is absent for the workspace's own; the rest
+// choose between the two shapes of the answer and, where the answer carries
+// records, which of them.
 //
-// ResponseFormat, Limit and Offset are pointers so that a value a caller sent is
-// distinguishable from one it left out. Zero is a limit this surface refuses and
-// an offset it accepts, and every response format outside the declared set is
-// refused, the blank string among them — so a plain value would make a refused one
-// and an absent one the same bytes at exactly the point the two have to be told
-// apart.
+// Release, ResponseFormat, Limit and Offset are pointers so that a value a caller
+// sent is distinguishable from one it left out. Zero is a limit this surface
+// refuses and an offset it accepts, every response format outside the declared
+// set is refused, the blank string among them, and a blank Release names none
+// while an absent one asks for the workspace's own listing — so a plain value
+// would make a refused one and an absent one the same bytes at exactly the point
+// the two have to be told apart.
 type listEntitiesArgs struct {
 	WorkspaceRoot  string   `json:"workspace_root"`
 	CatalogDirs    []string `json:"catalog_dirs"`
+	Release        *string  `json:"release"`
 	ResponseFormat *string  `json:"response_format"`
 	Limit          *int     `json:"limit"`
 	Offset         *int     `json:"offset"`
@@ -227,7 +231,11 @@ var listEntitiesToolSpec = toolSpec{
 		"document counts as an entity when it declares both a kind and a name and declares no apiVersion outside " +
 		"Aggrega's own, so YAML declaring no kind — a chart's values file, a configuration file — is skipped, and " +
 		"so is a document belonging to another project, such as a rendered Kubernetes manifest. Pair it with " +
-		"list-releases and join the two on kind, name and file.",
+		"list-releases and join the two on kind, name and file. Send `release` (a Release path, as list-releases " +
+		"returns one) for the listing in that Release's terms: the Features the catalog directories the workspace " +
+		"configuration gives that Release declare, and no document under a catalog directory only other Releases " +
+		"read — so a workspace keeping variants of one entity side by side, one per Release, is listed with the " +
+		"variant that Release builds with.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
@@ -240,6 +248,11 @@ var listEntitiesToolSpec = toolSpec{
       "type": "array",
       "items": { "type": "string" },
       "description": "Optional catalog directories, prepended (first-match-wins) to the workspace catalog search stack. Features they declare are reported alongside the workspace's own."
+    },
+    "release": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional Release path. The listing is then given in that Release's terms: the Features its catalog directories declare, and every workspace document except those under a catalog directory only other Releases read. Absent, the listing is the workspace's own."
     },
     "response_format": {
       "type": "string",
@@ -282,14 +295,34 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if a.Release != nil && strings.TrimSpace(*a.Release) == "" {
+		return errorResult("list-entities: `release` names the Release whose terms the listing is given in, and a " +
+			"blank value names none. Send a Release path, as list-releases returns one, or leave `release` out for " +
+			"the workspace's own listing.")
+	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to list its entities.", err, "component"))
 	}
 
-	// The listing is the workspace's, not one Release's, so it reads the
-	// workspace's own stack — the index the editor's Catalog view reads too.
-	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView("", nil))
+	// With no Release named, the listing is the workspace's, so it reads the
+	// workspace's own stack and holds every document — the index the editor's
+	// Catalog view reads when it names no Release either. With one named, the
+	// stack and the documents held are that Release's, read through the same
+	// projection the editor's view reads, so the two report one Release alike.
+	var releasePath string
+	var reach workspaceconfig.ReleaseReach
+	if a.Release != nil {
+		releasePath, refusal = tw.workspacePath("list-entities", "release", strings.TrimSpace(*a.Release))
+		if refusal != "" {
+			return tw.answer(errorResult(refusal))
+		}
+		reach, refusal = tw.releaseReach("list-entities", releasePath)
+		if refusal != "" {
+			return tw.answer(errorResult(refusal))
+		}
+	}
+	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView(releasePath, nil), reach)
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(entities))
 	payload := listEntitiesResult{
 		ResponseFormat: format,

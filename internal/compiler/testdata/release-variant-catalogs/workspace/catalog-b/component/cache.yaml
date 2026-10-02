@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/datastore/cache
+  version: "1.0.0"
+  description: declared only among release-b.yaml's directories
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }

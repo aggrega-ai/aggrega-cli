@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo-app
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: demo/datastore/db

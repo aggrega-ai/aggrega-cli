@@ -36,6 +36,7 @@ func newInspectCmd() *cobra.Command {
 	// onward; the locals never reach a per-kind renderer.
 	var (
 		catalogDirs  []string
+		releaseFlag  string
 		listFlag     bool
 		detailFlag   bool
 		rawFlag      bool
@@ -66,7 +67,10 @@ A single argument routes by its shape. A path — anything starting with ./, ../
 or /, or ending in .yaml or .yml — is read as a file and inspected by its own
 kind: header. A registry reference — oci://<host>/<repository>:<tag>, or
 @<digest> in place of :<tag> — is read from the registry that publishes it.
-Anything else is looked up by name in the catalog search stack.
+Anything else is looked up by name in the catalog search stack: the
+workspace's own, or, with --release, the one the workspace configuration
+gives that Release, so a name several catalog variants declare, one per
+Release, resolves to the variant that Release builds with.
 
 A registry reference shows the entity exactly as it was published: unpacked
 from the archive its kind is published as where it is one, and rendered by the
@@ -146,6 +150,9 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 				if closureFlag {
 					return refuseClosure("a raw plugin artifact")
 				}
+				if releaseFlag != "" {
+					return refuseReleaseTerms("a raw plugin artifact")
+				}
 				return inspectRawPlugin(cmd.Context(), out, pluginFlag)
 			}
 			rw, err := workspaceFromContext(cmd.Context())
@@ -186,11 +193,13 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 				unredacted:     unredactedFlag,
 				irGraph:        irGraphFlag,
 				closure:        closureFlag,
+				release:        releaseFlag,
 			}
 			return dispatchInspect(cmd.Context(), rw, args[0], catalogDirs, opts)
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, helpCatalogDir)
+	c.Flags().StringVar(&releaseFlag, "release", "", "Look a catalog name up in the terms of this Release file: through the catalog directories the workspace configuration gives that Release, with --catalog prepended. Applies to a name; a file or a registry reference is inspected as it stands and refuses it.")
 	c.Flags().BoolVar(&listFlag, "list", false, "Render identifiers only.")
 	c.Flags().BoolVar(&detailFlag, "detail", false, "Render full field bodies.")
 	c.Flags().BoolVar(&rawFlag, "raw", false, "Render the entity as authored, without resolution.")
@@ -242,6 +251,17 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 // them resolve a dependency closure and one builds a graph — work that leaves the
 // process and that a reader must be able to stop.
 func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
+	// --release chooses the stack a name resolves through. A registry reference
+	// is read from its registry and a file is read as it stands, so neither has a
+	// stack to choose, and the flag is refused rather than silently doing nothing.
+	if opts.release != "" {
+		if compilerops.IsRegistryReference(identifier) {
+			return refuseReleaseTerms("a registry reference")
+		}
+		if isPathInput(identifier) {
+			return refuseReleaseTerms("a file")
+		}
+	}
 	if compilerops.IsRegistryReference(identifier) {
 		// No kind a registry publishes is a Release, so both Release-only
 		// documents are refused before anything is fetched rather than after a
@@ -344,6 +364,19 @@ func refuseReleaseOnly(flag, subject, document string) error {
 	return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
 		fmt.Sprintf("--%s applies to a Release, and %s resolves to no %s; point inspect at a Release file to read one",
 			flag, subject, document),
+		nil, nil)
+}
+
+// refuseReleaseTerms reports --release given with a subject that is read as it
+// stands rather than looked up through a catalog stack, naming the subject and
+// what --release applies to. It is loud for the reason refuseReleaseOnly is: a
+// flag that changed nothing reads to the person who typed it exactly like one
+// that was honoured.
+func refuseReleaseTerms(subject string) error {
+	return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+		fmt.Sprintf("--release applies to a catalog name, and %s is read as it stands rather than looked up "+
+			"through the catalog directories a Release reads; pass a catalog name with --release, or drop --release",
+			subject),
 		nil, nil)
 }
 
@@ -559,9 +592,15 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
-	// A name concerns no one Release, so it resolves over the workspace's own
-	// stack.
-	dirs := rw.ResolveCatalogDirs("", catalogDirs)
+	// A name with no --release concerns no one Release, so it resolves over the
+	// workspace's own stack; with one, over the stack the configuration gives that
+	// Release. Asking for the Release's reach is what refuses a --release naming
+	// no file; the reach itself is set aside, since nothing here walks the
+	// workspace's documents.
+	if _, err := rw.ReleaseReach(opts.release, catalogDirs); err != nil {
+		return err
+	}
+	dirs := rw.ResolveCatalogDirs(opts.release, catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		// A load that stopped on one document reports that document's refusal once:
@@ -591,10 +630,14 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// It is decided by the one predicate every surface carrying the account
 	// reads. A strict load that got this far refused no document, so there is no
 	// refusal record to hold the name against, and the account is given.
+	//
+	// With --release the account is the one the workspace gives for that Release,
+	// which names its entry under workspace.releases rather than the workspace's
+	// list, since that entry is what the lookup read.
 	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
 	if !found {
 		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier,
-			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(""), nil, identifier, ""))
+			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(opts.release), nil, identifier, ""))
 	}
 	// The identity the withdrawal advisory is looked up by is read from the
 	// resolved entity, never from the typed identifier, which may carry a version

@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The two requests here answer questions the daemon's positional surfaces
@@ -34,8 +35,19 @@ import (
 // as it is written where one entity references another. It is required: the
 // answer is the entity that name resolves to, so there is nothing to fall back
 // on and nothing sensible to guess.
+//
+// Release is optional. Absent, the name resolves over the workspace's own
+// catalog lookup. Named, it is a path relative to the workspace root naming a
+// Release inside it, refused in the shapes every Release parameter is refused
+// in, and the name resolves in that Release's terms: through the catalog
+// directories the workspace configuration gives that Release. A name several
+// variants in one workspace declare, one per Release, then resolves to the
+// variant the named Release builds with. A registry reference is read from the
+// registry that publishes it, which no Release's directories reach, so a
+// reference sent with a Release is refused.
 type entityDefinitionParams struct {
-	Name string `json:"name"`
+	Name    string `json:"name"`
+	Release string `json:"release"`
 }
 
 // entityDefinitionResult is the `aggrega/entityDefinition` response: the kind
@@ -200,25 +212,37 @@ func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCReque
 		if err := compilerops.CheckRegistryReference(name); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
+		if params.Release != "" {
+			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+				"invalid params: a registry reference is read from the registry that publishes it, which no "+
+					"Release's catalog directories reach; send the reference without release, or name the entity "+
+					"by its catalog name to resolve it in that Release's terms")
+		}
+	}
+	terms, errEnvelope := s.termsFor(params.Release)
+	if errEnvelope != nil {
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 
-	result, errEnvelope := s.entityDefinition(ctx, name)
+	result, errEnvelope := s.entityDefinition(ctx, name, terms)
 	if errEnvelope != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	return s.writeResult(ctx, req.ID, result)
 }
 
-// entityDefinition resolves name across every catalog kind and marshals the
-// match, or produces the refusal for a name that resolved to nothing.
-func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefinitionResult, *jsonRPCError) {
+// entityDefinition resolves name across every catalog kind, in the terms
+// supplied, and marshals the match, or produces the refusal for a name that
+// resolved to nothing.
+func (s *Server) entityDefinition(ctx context.Context, name string, terms releaseTerms) (entityDefinitionResult, *jsonRPCError) {
 	if compilerops.IsRegistryReference(name) {
 		return s.publishedEntityDefinition(ctx, name)
 	}
-	// No pins: this request names no Release, so there is no pin set for one.
-	// The view is still request-scoped, so a resolution here cannot perturb a
-	// concurrent request that does hold pins.
-	view := s.lazyCatalog.ForRequest(nil)
+	// No pins, whether or not the request names a Release: a lookup by name
+	// answers what the stack declares under the name, and a Release only chooses
+	// which stack that is. The view is still request-scoped, so a resolution here
+	// cannot perturb a concurrent request that does hold pins.
+	view := terms.lookup.ForRequest(nil)
 
 	// The resolution is the shared one every by-name surface runs, so a name
 	// resolves to the same entity here as it does at a command line or a tool
@@ -228,7 +252,7 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 	// merges it.
 	match, ok := compilerops.ResolveEntity(view, name)
 	if !ok {
-		return entityDefinitionResult{}, s.unresolvedEntityEnvelope(ctx, view, name)
+		return entityDefinitionResult{}, s.unresolvedEntityEnvelope(ctx, view, name, terms)
 	}
 	definition, err := yaml.Marshal(match.Definition)
 	if err != nil {
@@ -340,12 +364,20 @@ func (s *Server) publishedEntityDefinition(ctx context.Context, reference string
 // the authority on what resolves, so a name that resolved needs no second
 // opinion, and the traversal — which reads the parse cache and then walks the
 // workspace — is not run for it.
-func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.LazyLookup, name string) *jsonRPCError {
+//
+// A request naming a Release asks the workspace question in that Release's
+// terms: a document under a catalog directory only other Releases read is another
+// variant rather than this Release's declaration, so it is not offered as the
+// document that declares the name. Where nothing in those terms declares it, the
+// refusal names the Release and carries the account of where that Release reads
+// local entities from, which names its entry under `workspace.releases` — the
+// remedy when the entity exists only among another Release's directories.
+func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.LazyLookup, name string, terms releaseTerms) *jsonRPCError {
 	// A reference may carry a version suffix; a document's metadata.name never
 	// does. The comparison is against the identity, so the suffix is stripped
 	// the same way every other reference-shaped lookup here strips it.
 	identity, _, _ := resolver.SplitVersionedURI(name)
-	if file, kind, ok := s.workspaceDeclarationOf(ctx, identity); ok {
+	if file, kind, ok := s.workspaceDeclarationOf(ctx, identity, terms.reach); ok {
 		skipped := view.SkippedEntities()
 		hint := compilerops.KindHintFor(kind)
 		var message string
@@ -360,8 +392,18 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 		}
 		return &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: s.localCatalogContext(message, skipped, name, hint),
+			Message: s.localCatalogContext(message, skipped, name, hint, terms.release),
 			Data:    newErrorData(file, 0, 0),
+		}
+	}
+	if terms.release != "" {
+		return &jsonRPCError{
+			Code: errEntityNotResolvable,
+			Message: s.localCatalogContext(fmt.Sprintf(
+				"%q matched no entity of any kind in the terms of the Release %s: no catalog tier that Release's "+
+					"search reaches resolves it, and no workspace document outside the catalog directories only "+
+					"other Releases read declares that name",
+				name, pathscope.ReportedName(s.workspaceRoot, terms.release)), view.SkippedEntities(), name, "", terms.release),
 		}
 	}
 	return &jsonRPCError{
@@ -400,9 +442,13 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 // break and an indent, which is the shape an error printed to a terminal wants;
 // an envelope message is one line, so it is folded on the way the skips already
 // are.
-func (s *Server) localCatalogContext(msg string, skipped []catalog.SkippedEntity, name, kindHint string) string {
+//
+// release is the Release the lookup was made in the terms of, as an absolute
+// path, or empty for a lookup that named none; the account is the one the
+// workspace gives for that Release.
+func (s *Server) localCatalogContext(msg string, skipped []catalog.SkippedEntity, name, kindHint, release string) string {
 	note := strings.TrimSpace(compilerops.LocalCatalogAdvice(
-		s.resolvedWorkspace.LocalCatalogAdviceNote(""), skipped, name, kindHint))
+		s.resolvedWorkspace.LocalCatalogAdviceNote(release), skipped, name, kindHint))
 	if note == "" {
 		return msg
 	}
@@ -440,14 +486,18 @@ func indefiniteArticle(kind string) string {
 // name, and a buffer the editor happened to send is not the workspace declaring
 // anything. The skip is therefore about membership rather than about the path,
 // and the other refusal is the honest answer for it.
-func (s *Server) workspaceDeclarationOf(ctx context.Context, identity string) (file, kind string, ok bool) {
+//
+// A document reach does not hold is skipped for the same reason: it is another
+// Release's variant, so it is not the workspace declaring the name in the terms
+// the request was made in.
+func (s *Server) workspaceDeclarationOf(ctx context.Context, identity string, reach workspaceconfig.ReleaseReach) (file, kind string, ok bool) {
 	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
 		name, _ := metadataNameOf(doc.node)
 		if name != identity {
 			return true
 		}
 		rel, inside := pathscope.Relative(s.workspaceRoot, doc.path)
-		if !inside {
+		if !inside || !reach.Holds(doc.path) {
 			return true
 		}
 		file, kind, ok = rel, scalarAtPathOnDoc(doc.node, []string{"kind"}), true

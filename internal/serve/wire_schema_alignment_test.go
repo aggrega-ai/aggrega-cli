@@ -164,6 +164,7 @@ func wireSubjects() []wireSubject {
 		{name: "cacheShortfallResult", typ: reflect.TypeOf(cacheShortfallResult{}), def: "#/$defs/CacheShortfall"},
 		{name: "cacheStatusResult", typ: reflect.TypeOf(cacheStatusResult{}), def: "#/$defs/CacheStatusResult"},
 		{name: "cancelParams", typ: reflect.TypeOf(cancelParams{}), def: "#/$defs/CancelRequestParams"},
+		{name: "catalogIndexParams", typ: reflect.TypeOf(catalogIndexParams{}), def: "#/$defs/CatalogIndexParams"},
 		{name: "catalogIndexResult", typ: reflect.TypeOf(catalogIndexResult{}), def: "#/$defs/CatalogIndexResult"},
 		{name: "clientCapabilities", typ: reflect.TypeOf(clientCapabilities{}), def: "#/$defs/ClientCapabilities"},
 		{name: "completionContext", typ: reflect.TypeOf(completionContext{}), def: "#/$defs/CompletionContext"},

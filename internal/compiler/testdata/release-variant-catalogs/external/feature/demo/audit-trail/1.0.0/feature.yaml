@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: demo/audit-trail
+  version: 1.0.0
+  description: read by release-a.yaml only, from a directory outside the workspace
+spec:
+  schema:
+    values:
+      sink:
+        type: string
+        required: true
+        description: Where the audit records go.

@@ -28,7 +28,7 @@ func TestEntityDefinitionReadsARegistryReferenceSentAsTheName(t *testing.T) {
 	t.Parallel()
 	s := &Server{wsConfig: workspaceconfig.Config{Offline: true}}
 
-	result, envelope := s.entityDefinition(context.Background(), "oci://registry.example.com/component/core/api:1.0.0")
+	result, envelope := s.entityDefinition(context.Background(), "oci://registry.example.com/component/core/api:1.0.0", s.workspaceTerms())
 	if envelope == nil {
 		t.Fatalf("an offline workspace answered a registry reference: %+v", result)
 	}

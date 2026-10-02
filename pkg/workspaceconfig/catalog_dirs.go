@@ -40,8 +40,10 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // or absolute — and is matched against the configuration's entries by the file
 // it names, not by its spelling. An empty release asks for the workspace's own
 // stack, which is what an operation that concerns no one Release reads: a
-// whole-catalog lint or validation, a by-name lookup, the daemon's listing of
-// the workspace's entities.
+// whole-catalog lint or validation, and a by-name lookup or the listing of the
+// workspace's entities that names no Release. A lookup or a listing that names
+// one reads that Release's stack, and holds the workspace documents
+// [ResolvedWorkspace.ReleaseReach] says it holds.
 //
 // The list is an ordered first-win precedence stack (the loader resolves a
 // duplicate identity to the earliest-listed directory and records the rest as

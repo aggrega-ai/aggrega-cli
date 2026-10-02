@@ -192,10 +192,11 @@ func (tw *toolWorkspace) reportedTexts(lines []string) []string {
 //
 // The config files are the contributing layers the cascade labels as files,
 // classified by the one function that produces those labels rather than by the
-// label's text. The catalog directories are resolved through the one resolver
-// every surface reads a stack through, for the workspace and for each Release the
-// configuration gives directories of its own. Both collections arrive in the
-// cascade's own order, so the list is the same for identical input.
+// label's text. The catalog directories are every stack's, for the workspace and
+// for each Release the configuration gives directories of its own, as the
+// resolved workspace reports them through the one resolver every surface reads a
+// stack through. Both collections arrive in the cascade's own order, so the list
+// is the same for identical input.
 func (tw *toolWorkspace) heldLocations() []string {
 	var held []string
 	add := func(loc string) {
@@ -212,13 +213,8 @@ func (tw *toolWorkspace) heldLocations() []string {
 			add(layer)
 		}
 	}
-	for _, dir := range tw.dirs {
+	for _, dir := range tw.rw.CatalogDirsOfEveryStack(tw.flagDirs) {
 		add(dir)
-	}
-	for _, release := range tw.cfg.Workspace.Releases.Keys() {
-		for _, dir := range tw.rw.ResolveCatalogDirs(release, tw.flagDirs) {
-			add(dir)
-		}
 	}
 	return held
 }

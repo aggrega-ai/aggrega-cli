@@ -107,6 +107,12 @@ type inspectOptions struct {
 	// Only a Release resolves a closure. Every other kind refuses the request
 	// rather than rendering its own view and quietly dropping it.
 	closure bool
+	// release is the Release file a catalog name is looked up in the terms of,
+	// as the person typed it, or empty for the workspace's own stack. It selects
+	// which stack a name resolves through, so it applies to a name alone: a file
+	// and a registry reference are read as they stand, and refuse it rather than
+	// quietly dropping it.
+	release string
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

@@ -340,10 +340,10 @@ type toolWorkspace struct {
 	cacheDir string
 
 	// dirs is the workspace's own catalog search stack, which is what an
-	// operation concerning no one Release reads: a whole-catalog validation, a
-	// by-name description, the workspace's entity listing. A Release-scoped read
-	// asks catalogDirsFor instead, so a Release the configuration gives its own
-	// directories is answered from them.
+	// operation concerning no one Release reads: a whole-catalog validation, and a
+	// by-name description or the workspace's entity listing that names no Release.
+	// A Release-scoped read asks catalogDirsFor instead, so a Release the
+	// configuration gives its own directories is answered from them.
 	dirs []string
 
 	// flagDirs are the call's own catalog_dirs argument, kept so the stack for a
@@ -400,6 +400,24 @@ func (tw *toolWorkspace) catalogDirsFor(release string) []string {
 		return tw.dirs
 	}
 	return tw.rw.ResolveCatalogDirs(release, tw.flagDirs)
+}
+
+// releaseReach reports which workspace documents an answer given in the terms of
+// the Release at releasePath holds — for an answer that concerns no one Release by
+// itself, such as an entity listing or a lookup by name — or the corrective text
+// for a path that names no Release file. releasePath is the call's 'release'
+// argument as workspacePath resolved it, and tool is the tool's advertised name, so
+// a refusal names what to correct in the caller's own spelling.
+//
+// The reach is read with this call's own catalog_dirs argument, as newView reads
+// the stack, so the documents an answer holds and the stack its names resolve
+// through are one Release's.
+func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig.ReleaseReach, string) {
+	reach, err := tw.rw.ReleaseReach(releasePath, tw.flagDirs)
+	if err != nil {
+		return workspaceconfig.ReleaseReach{}, fmt.Sprintf("%s's 'release' names no Release: %v.", tool, err)
+	}
+	return reach, ""
 }
 
 // newView builds the request-scoped catalog lookup for a tool call: a lazy

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // releaseCatalogs holds the catalog lookups one workspace's Release-scoped
@@ -101,4 +102,54 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	return s.releaseCatalogs.lookupFor(dirs, func() *catalog.LazyLookup {
 		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil)
 	})
+}
+
+// releaseTerms is what a request that may name a Release is answered within: the
+// catalog lookup it resolves names through, and which workspace documents its
+// answer holds.
+//
+// A request naming no Release is answered within the workspace's own terms — the
+// session lookup, holding every workspace document — which are the terms every
+// request concerning no one Release reads. A request naming one is answered from the
+// lookup over that Release's stack, and holds only the workspace documents that
+// Release's reach holds, so variants a workspace keeps side by side for different
+// Releases are never conflated in one answer.
+type releaseTerms struct {
+	// release is the absolute path of the Release the request named, and empty
+	// where it named none.
+	release string
+	lookup  *catalog.LazyLookup
+	reach   workspaceconfig.ReleaseReach
+}
+
+// workspaceTerms returns the terms of a request that names no Release.
+func (s *Server) workspaceTerms() releaseTerms {
+	return releaseTerms{lookup: s.lazyCatalog}
+}
+
+// termsFor returns the terms a request naming release is answered within, or the
+// refusal for a value that cannot name one. release is the request's own value: a
+// path relative to the workspace root, refused in the shapes every Release
+// parameter is refused in, or empty for a request that names none.
+//
+// The lookup and the reach are both read for the Release with no command-line
+// catalog directories, as catalogFor reads the lookup, so the documents an answer
+// holds and the stack its names resolve through are read from one stack.
+//
+// Every request that answers about workspace documents in a Release's terms asks
+// this, rather than composing its own pair, so no two of them can come to read a
+// different stack or a different set of documents for the same Release.
+func (s *Server) termsFor(release string) (releaseTerms, *jsonRPCError) {
+	if release == "" {
+		return s.workspaceTerms(), nil
+	}
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	if paramErr != nil {
+		return releaseTerms{}, paramErr
+	}
+	reach, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil)
+	if err != nil {
+		return releaseTerms{}, &jsonRPCError{Code: jsonRPCInvalidParams, Message: "invalid params: " + err.Error(), cause: err}
+	}
+	return releaseTerms{release: releasePath, lookup: s.catalogFor(releasePath), reach: reach}, nil
 }

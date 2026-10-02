@@ -1046,8 +1046,9 @@ type Server struct {
 	// it — the consistency the worker pool depends on.
 	//
 	// What reads this lookup directly is what concerns no one Release: the
-	// workspace's entity index, completion, the feature listings, the candidacy
-	// surfaces addressed by name or label, and the by-name definition.
+	// workspace's entity index and the by-name definition when the request names
+	// no Release, completion, the feature listings, and the candidacy surfaces
+	// addressed by name or label.
 	lazyCatalog *catalog.LazyLookup
 
 	// releaseCatalogs holds the lookup over each distinct Release catalog stack

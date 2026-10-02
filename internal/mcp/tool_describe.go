@@ -15,8 +15,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
-// describeArgs is the describe tool's argument shape. Exactly one of name or
-// release selects the subject.
+// describeArgs is the describe tool's argument shape. Name or release selects the
+// subject: a name alone is the entity it resolves to, and a release alone is that
+// Release's dependency closure. Both together are the name in that Release's
+// terms — the entity it resolves to through the catalog directories the workspace
+// configuration gives that Release.
 type describeArgs struct {
 	Name          string   `json:"name"`
 	Release       string   `json:"release"`
@@ -182,12 +185,15 @@ var describeToolSpec = toolSpec{
 		"Release is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
 		"before wiring it into an Aggregate, and `release` to see what a Release depends on before building it. " +
+		"Pass both to resolve `name` in that Release's terms — through the catalog directories the workspace " +
+		"configuration gives that Release — which is how a name that several variants in one workspace declare, " +
+		"one per Release, resolves to the variant that Release builds with. " +
 		"`name` may instead be a registry reference, oci://<host>/<repository>:<tag> or @<digest>, which reads the " +
 		"entity exactly as it was published there — reaching that registry with the login the machine this server " +
 		"runs on holds for it, checking the bytes against the digest the artifact's own manifest records and against " +
-		"nothing else, and writing nothing. Over a listener, a reference is read only from a registry the served " +
-		"workspace is configured with — its default registry, or one listed under `registries` — and a reference to " +
-		"any other host is refused before that host is contacted. " +
+		"nothing else, and writing nothing; a reference takes no `release`. Over a listener, a reference is read only " +
+		"from a registry the served workspace is configured with — its default registry, or one listed under " +
+		"`registries` — and a reference to any other host is refused before that host is contacted. " +
 		"`response_format` shapes the `release` mode: detailed (every reference) or concise (identity and counts).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
@@ -196,12 +202,12 @@ var describeToolSpec = toolSpec{
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "A catalog entity type URI (any kind) to resolve and describe, e.g. core/compute/api-server — or a registry reference, e.g. oci://hub.aggrega.ai/component/core/compute/api-server:1.0.0, to read the entity published there. Mutually exclusive with release."
+      "description": "A catalog entity type URI (any kind) to resolve and describe, e.g. core/compute/api-server — or a registry reference, e.g. oci://hub.aggrega.ai/component/core/compute/api-server:1.0.0, to read the entity published there. With release, a type URI is resolved in that Release's terms; a registry reference takes no release."
     },
     "release": {
       "type": "string",
       "minLength": 1,
-      "description": "A Release path whose dependency closure to report. Mutually exclusive with name."
+      "description": "A Release path. Alone, the Release whose dependency closure to report. With name, the Release whose catalog directories the name is resolved through instead."
     },
     "workspace_root": {
       "type": "string",
@@ -219,9 +225,10 @@ var describeToolSpec = toolSpec{
     }
   },
   "anyOf": [
-    {"required":["name"],"not":{"required":["release"]}},
-    {"required":["release"],"not":{"required":["name"]}}
-  ]
+    {"required":["name"]},
+    {"required":["release"]}
+  ],
+  "not": {"required":["name","release"],"properties":{"name":{"pattern":"^oci://"}}}
 }`,
 	invoke: describeInvoke,
 }
@@ -243,14 +250,17 @@ func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	name := strings.TrimSpace(a.Name)
 	release := strings.TrimSpace(a.Release)
 	switch {
-	case name != "" && release != "":
-		return errorResult("describe takes exactly one of 'name' or 'release', not both")
 	case name == "" && release == "":
-		return errorResult("describe requires either a 'name' (catalog entity) or a 'release' (path)")
+		return errorResult("describe requires a 'name' (catalog entity), a 'release' (path), or both (the name " +
+			"resolved in that Release's terms)")
+	case compilerops.IsRegistryReference(name) && release != "":
+		return errorResult("describe reads a registry reference from the registry that publishes it, which no " +
+			"Release's catalog directories reach, so 'release' cannot be sent with one. Send the reference without " +
+			"'release', or send the entity's catalog name with 'release' to resolve it in that Release's terms.")
 	case compilerops.IsRegistryReference(name):
 		return s.describePublishedEntity(ctx, a, name)
 	case name != "":
-		return s.describeCatalogEntity(a, name)
+		return s.describeCatalogEntity(a, name, release)
 	default:
 		return s.describeRelease(ctx, a, release, format)
 	}
@@ -265,20 +275,51 @@ func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 // the same entity and the same kind. A name that resolves to nothing is refused
 // rather than answered with an empty definition: an empty answer would report a
 // mistyped name as an entity with nothing to say about itself.
-func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolResult, *rpcError) {
+//
+// release, where the call sent one, is the Release whose terms the name is
+// resolved in: the view is built over that Release's stack, and a name it does
+// not resolve is refused with the workspace's account of where that Release reads
+// local entities from, which names its entry under `workspace.releases`.
+func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the catalog lookup.", err, "component"))
 	}
-	// A name concerns no one Release, so it resolves over the workspace's own stack.
-	view := tw.newView("", nil)
+	// A name that names no Release concerns none, so it resolves over the
+	// workspace's own stack. One sent with a Release resolves over that Release's.
+	// The documents the Release's reach holds are not consulted here — nothing
+	// below walks the workspace — so naming the Release is checked and its reach
+	// set aside.
+	var releasePath string
+	if release != "" {
+		var refusal string
+		releasePath, refusal = tw.workspacePath("describe", "release", release)
+		if refusal != "" {
+			return tw.answer(errorResult(refusal))
+		}
+		if _, refusal = tw.releaseReach("describe", releasePath); refusal != "" {
+			return tw.answer(errorResult(refusal))
+		}
+	}
+	view := tw.newView(releasePath, nil)
 
 	match, ok := compilerops.ResolveEntity(view, name)
 	if !ok {
-		return errorResult(explainDiagnostic(fmt.Sprintf(
-			"No catalog entity named %q resolved, in any kind (%s). Check the type URI and that the "+
-				"catalog directories cover it.",
-			name, strings.Join(compilerops.EntityKinds(), ", ")), "component"))
+		kinds := strings.Join(compilerops.EntityKinds(), ", ")
+		if releasePath == "" {
+			return errorResult(explainDiagnostic(fmt.Sprintf(
+				"No catalog entity named %q resolved, in any kind (%s). Check the type URI and that the "+
+					"catalog directories cover it.",
+				name, kinds), "component"))
+		}
+		// The Release is spelled the way every reported path is, which is how the
+		// account beside it spells the same Release; over a listener the answer's
+		// prose is then told the way the rest of it is.
+		note := compilerops.LocalCatalogAdvice(tw.rw.LocalCatalogAdviceNote(releasePath), view.SkippedEntities(), name, "")
+		return tw.answer(errorResult(explainDiagnostic(fmt.Sprintf(
+			"No catalog entity named %q resolved, in any kind (%s), in the terms of the Release %s. Check the "+
+				"type URI and that the catalog directories that Release reads cover it.%s",
+			name, kinds, pathscope.ReportedName(tw.root, releasePath), note), "component")))
 	}
 	def, mErr := json.Marshal(match.Definition)
 	if mErr != nil {

@@ -123,7 +123,10 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"list-entities", "the smallest page", `{"response_format":"detailed","limit":1}`, true},
 		{"list-entities", "the largest page", `{"response_format":"detailed","limit":500}`, true},
 		{"list-entities", "an offset at the start", `{"offset":0}`, true},
-		{"list-entities", "every optional argument at once", `{"workspace_root":"/w","catalog_dirs":["c"],"response_format":"concise","limit":25,"offset":0}`, true},
+		{"list-entities", "every optional argument at once", `{"workspace_root":"/w","catalog_dirs":["c"],"release":"r.yaml","response_format":"concise","limit":25,"offset":0}`, true},
+		{"list-entities", "the listing in one Release's terms", `{"release":"r.yaml"}`, true},
+		{"list-entities", "a blank Release, which names none", `{"release":""}`, false},
+		{"list-entities", "a Release of the wrong type", `{"release":5}`, false},
 		{"list-entities", "a page of no records", `{"response_format":"detailed","limit":0}`, false},
 		{"list-entities", "a negative page", `{"response_format":"detailed","limit":-5}`, false},
 		{"list-entities", "a page past the bound", `{"response_format":"detailed","limit":501}`, false},
@@ -146,11 +149,14 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"list-releases", "an offset before the start", `{"offset":-1}`, false},
 		{"list-releases", "a response format outside the published set", `{"response_format":"verbose"}`, false},
 
-		// describe: exactly one subject.
+		// describe: a name, a Release, or a name in a Release's terms — and a
+		// registry reference, which is read from its registry, never with a Release.
 		{"describe", "catalog-entity mode", `{"name":"core/compute/api-server"}`, true},
 		{"describe", "Release-closure mode", `{"release":"r.yaml"}`, true},
 		{"describe", "no subject", `{}`, false},
-		{"describe", "both subjects", `{"name":"n","release":"r.yaml"}`, false},
+		{"describe", "a name in a Release's terms", `{"name":"n","release":"r.yaml"}`, true},
+		{"describe", "a registry reference alone", `{"name":"oci://hub.aggrega.ai/component/core/x:1.0.0"}`, true},
+		{"describe", "a registry reference with a Release", `{"name":"oci://hub.aggrega.ai/component/core/x:1.0.0","release":"r.yaml"}`, false},
 		{"describe", "a blank subject", `{"name":""}`, false},
 		{"describe", "a response format outside the published set", `{"name":"n","response_format":"verbose"}`, false},
 
