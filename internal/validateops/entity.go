@@ -84,13 +84,29 @@ type EntityResult struct {
 // run ends that work: a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns.
 func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
-	var res EntityResult
-	res.Path = path
-
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return res, fmt.Errorf("read %q: %w", path, err)
+		return EntityResult{Path: path}, fmt.Errorf("read %q: %w", path, err)
 	}
+	return ValidateEntityContent(ctx, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
+}
+
+// ValidateEntityContent runs the checks ValidateEntity runs, over data as the
+// content of the entity file at path rather than over the bytes path holds on
+// disk — which is what an editor holds before the file is saved.
+//
+// path still anchors everything the entity names relative to itself, as it does
+// for ValidateEntity: a Recipe's local source, a file an import names, and the
+// directory a path may not leave are all read against the directory holding
+// path. Only the entity's own bytes come from data. The catalog the checks
+// resolve through is read from the directories handed in, as it stands on disk.
+//
+// It is the one implementation of the single-entity check; ValidateEntity reads
+// the file and calls it, so a check of a saved file and a check of the same
+// bytes held unsaved cannot come to differ.
+func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+	var res EntityResult
+	res.Path = path
 
 	var preamble struct {
 		Kind string `yaml:"kind"`
