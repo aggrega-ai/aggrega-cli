@@ -9,24 +9,34 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // validateCatalogWideFromWorkspace resolves the workspace's catalog directories
-// and cache, then runs the whole-catalog correctness pass. The search stack is
-// the shared one — the repeatable --catalog flag prepended to the workspace
-// config's catalog_dirs, with the conventional catalog directory at the
-// workspace root last — and a run with nothing in it is refused rather than
-// reported as a clean catalog, because a pass over no entity at all passes
+// and cache, then runs the whole-catalog correctness pass over each pass the one
+// decision of which passes a whole-catalog check runs returns. Each pass's search
+// stack is the shared one — the repeatable --catalog flag prepended to the
+// configured catalog_dirs, with the conventional catalog directory at the
+// workspace root last — and a run with nothing in any pass is refused rather
+// than reported as a clean catalog, because a pass over no entity at all passes
 // vacuously and reads exactly like a pass over a healthy one.
+//
+// A workspace that gives no Release directories of its own has one pass, over
+// its own stack, and is validated exactly as a single catalog is. A workspace
+// that does is validated once for each Release over the directories that Release
+// reads, so one catalog variant is never loaded beside another; see
+// validateCatalogPasses.
 //
 // The refusal names what a reader can do about it. Release-scoped correctness
 // resolves a specific closure rather than a whole-tree enumeration, so it has
@@ -39,20 +49,61 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	// The refusal keys on the RESOLVED stack rather than on the flag and the
-	// configured list, so a workspace whose entities sit in the conventional
+	// The refusal keys on the RESOLVED stacks rather than on the flag and the
+	// configured lists, so a workspace whose entities sit in the conventional
 	// directory is scanned rather than refused, and a workspace that switched the
 	// local catalog off with an empty `catalog_dirs` is refused rather than
-	// silently scanning nothing. The whole catalog concerns no one Release, so the
-	// workspace's own stack is the one scanned.
-	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
-	if len(dirs) == 0 {
+	// silently scanning nothing.
+	passes := serve.WholeCatalogPasses(rw, catalogFlagDirs)
+	perRelease := len(passes) > 0 && passes[0].NamesReleases()
+	if !workspaceconfig.AnyCatalogPassReads(passes) {
+		// A workspace that gives its Releases directories of their own is also told
+		// where a Release's own list is set, since the workspace's list does not
+		// reach a Release whose entry replaces it.
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or validate a specific Release with --release)",
-				workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSetting, workspaceconfig.ConfigFilename),
+			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set %s (or validate a specific Release with --release)",
+				workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSettingWords(perRelease)),
 			nil, nil)
 	}
-	return validateCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)
+	if !perRelease {
+		return validateCatalogWide(wsRoot, cacheDir, passes[0].Dirs, os.Stderr, os.Stdout)
+	}
+	return validateCatalogPasses(wsRoot, cacheDir, passes, os.Stderr, os.Stdout)
+}
+
+// validateCatalogPasses runs the whole-catalog correctness pass once for each
+// pass, each under a line naming the Releases it is run for and the directories
+// it reads, and reports every pass whatever an earlier one found: a broken
+// entity in one Release's catalog variant says nothing about another's, so a
+// reader is told about each. A pass whose Releases read no catalog directory says
+// so and checks nothing.
+//
+// The verdict is a failure when any pass failed, and it names the Releases whose
+// directories failed; each failing pass's own reason is written beneath its line
+// on diagOut, where the single-catalog run's diagnostics go.
+func validateCatalogPasses(wsRoot, cacheDir string, passes []workspaceconfig.CatalogPass, diagOut, out io.Writer) error {
+	var failed []string
+	for i, pass := range passes {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		reported := make([]string, 0, len(pass.Dirs))
+		for _, d := range pass.Dirs {
+			reported = append(reported, pathscope.ReportedName(wsRoot, d))
+		}
+		fmt.Fprintln(out, workspaceconfig.CatalogPassHeading(pass.Releases, reported))
+		if len(pass.Dirs) == 0 {
+			continue
+		}
+		if err := validateCatalogWide(wsRoot, cacheDir, pass.Dirs, diagOut, out); err != nil {
+			fmt.Fprintf(diagOut, "  %s\n", cerrors.CauseChain(err))
+			failed = append(failed, pass.Releases...)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("catalog validation failed in the catalog directories of %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
 
 // validateCatalogWide runs the whole-catalog correctness pass core and renders

@@ -25,7 +25,9 @@ import (
 //
 //   - No argument: whole-catalog correctness — every catalog entity is loaded
 //     and its schema-pillar structure, library resolution, extends chains, and
-//     provider input-kind capabilities are checked.
+//     provider input-kind capabilities are checked; once for each Release, over
+//     that Release's directories, where the workspace gives its Releases
+//     directories of their own.
 //   - --release <path>: release-scoped correctness — the entities a Release's
 //     dependency closure reaches are validated (closure-scoped pillars, extends,
 //     and pre-render authored-value conformance).
@@ -57,7 +59,12 @@ func newValidateCmd() *cobra.Command {
 		Long: "Check CORRECTNESS across three symmetric scopes.\n\n" +
 			"With no argument, validate checks the WHOLE catalog: schema-pillar\n" +
 			"structure, cross-document library resolution, extends chains, and provider\n" +
-			"input-kind capabilities, over every catalog entity.\n\n" +
+			"input-kind capabilities, over every catalog entity. Where the workspace\n" +
+			"configuration gives its Releases catalog directories of their own under\n" +
+			"workspace.releases, it checks the catalog once for each Release, over the\n" +
+			"directories that Release reads, and reports each pass under a line naming\n" +
+			"its Releases and those directories; Releases reading the same directories\n" +
+			"share one pass.\n\n" +
 			"With --release, validate checks the entities a Release's dependency closure\n" +
 			"reaches: closure-scoped pillars, extends, and pre-render authored-value\n" +
 			"conformance — the same correctness a build applies, scoped to that Release.\n\n" +
@@ -137,7 +144,8 @@ func newValidateCmd() *cobra.Command {
 				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
-				// No entity argument → whole-catalog correctness.
+				// No entity argument → whole-catalog correctness, one pass for each
+				// Release where the workspace gives its Releases directories of their own.
 				return validateCatalogWideFromWorkspace(rw, catalogDirs)
 			}
 			// An entity argument is the single-entity scope, with --release or

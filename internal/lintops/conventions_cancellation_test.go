@@ -130,7 +130,7 @@ func TestCatalogWideStopsWalkingWhenTheCallerStops(t *testing.T) {
 	diag := &cancelOnFirstReport{cancel: cancel}
 	collect := &FindingCollector{}
 
-	err := RunCatalogWide(ctx, rw, []string{ws}, io.Discard, diag, collect)
+	err := RunCatalogWide(ctx, rw, rw.WholeCatalogPasses(nil, []string{ws}), io.Discard, diag, collect)
 
 	if !diag.fired {
 		t.Fatalf("the pass reported on no entity, so nothing cancelled it and the count below measures nothing; the diagnostic stream held:\n%s", diag.buf.String())
@@ -163,7 +163,7 @@ func TestCatalogWideRunsToTheEndWhenNobodyStopsIt(t *testing.T) {
 	var out, diag bytes.Buffer
 	collect := &FindingCollector{}
 
-	if err := RunCatalogWide(t.Context(), rw, []string{ws}, &out, &diag, collect); err != nil {
+	if err := RunCatalogWide(t.Context(), rw, rw.WholeCatalogPasses(nil, []string{ws}), &out, &diag, collect); err != nil {
 		t.Fatalf("an uncancelled whole-catalog pass: %v", err)
 	}
 

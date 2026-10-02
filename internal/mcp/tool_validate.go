@@ -11,9 +11,11 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // validateArgs is the validate tool's argument shape. It mirrors the CLI verb
@@ -74,6 +76,13 @@ const pluginValidateMaxMemoryPages uint32 = 4096
 // withheld flag beside it, which is omitted where nothing was kept back. The
 // catalog scope's target is the workspace root itself, which is such a location
 // for a caller reaching a listener.
+//
+// Passes is carried on the catalog scope only, and only in a workspace whose
+// configuration gives its Releases catalog directories of their own, where the
+// catalog is checked once for each Release over the directories that Release
+// reads. Valid, Diagnostics and Notices then cover every pass together, in pass
+// order, so a caller that reads only those reads the whole verdict, and Passes
+// says which Releases each diagnostic was found for. Every other answer omits it.
 type validateResultPayload struct {
 	Scope           string  `json:"scope"`
 	Target          *string `json:"target"`
@@ -84,6 +93,26 @@ type validateResultPayload struct {
 	Valid       bool     `json:"valid"`
 	Diagnostics []string `json:"diagnostics"`
 	Artifacts   []string `json:"artifacts,omitempty"`
+	Notices     []string `json:"notices,omitempty"`
+
+	Passes []validateCatalogPass `json:"passes,omitempty"`
+}
+
+// validateCatalogPass is one pass of the catalog scope in a workspace that gives
+// its Releases catalog directories of their own: the Releases it was run for, the
+// directories it read, and its own verdict over them.
+//
+// Releases are spelled relative to the workspace root, and Releases reading the
+// same directories share one pass. Each catalog directory is spelled as the
+// caller may be told a location, and one the caller is not told reads as the
+// kept-back phrase. An empty CatalogDirs is a pass whose Releases read no catalog
+// directory: it checked nothing, and it is valid because nothing it read was
+// wrong. Neither list is ever null.
+type validateCatalogPass struct {
+	Releases    []string `json:"releases"`
+	CatalogDirs []string `json:"catalog_dirs"`
+	Valid       bool     `json:"valid"`
+	Diagnostics []string `json:"diagnostics"`
 	Notices     []string `json:"notices,omitempty"`
 }
 
@@ -105,7 +134,10 @@ var validateToolSpec = toolSpec{
 		"the workspace's own, and no closure is validated. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
 		"`type` for a binary-only check, or `entity` (a Plugin entity path) to cross-check the binary against the " +
 		"entity's declared surface. `catalog` true checks the whole catalog: schema-pillar structure, library " +
-		"resolution, extends chains, OCI-location collisions, and provider input-kind capabilities. Each scope " +
+		"resolution, extends chains, OCI-location collisions, and provider input-kind capabilities — over the " +
+		"workspace's catalog directories, or, in a workspace whose configuration gives its Releases catalog " +
+		"directories of their own under workspace.releases, once for each Release over the directories that " +
+		"Release reads, the answer's `passes` saying which Releases each pass covered and what it found. Each scope " +
 		"dispatches to the same core the CLI validates with and returns whether the target is valid plus each " +
 		"diagnostic verbatim. The selectors are mutually exclusive: `type` needs `plugin`; `plugin` excludes `release`; " +
 		"`catalog` takes no other selector; and exactly one scope must be chosen, `entity` with `release` " +
@@ -141,7 +173,7 @@ var validateToolSpec = toolSpec{
     },
     "catalog": {
       "type": "boolean",
-      "description": "When true, validate the whole catalog: schema-pillar structure, library resolution, extends chains, OCI-location collisions, and provider input-kind capabilities."
+      "description": "When true, validate the whole catalog: schema-pillar structure, library resolution, extends chains, OCI-location collisions, and provider input-kind capabilities. A workspace that gives its Releases catalog directories of their own is validated once for each Release, over the directories that Release reads."
     },
     "workspace_root": {
       "type": "string",
@@ -426,22 +458,92 @@ func validatePluginScope(ctx context.Context, s *server, a validateArgs, plugin,
 	return tw.answer(textResult(renderPluginText(res, verr), payload))
 }
 
-// validateCatalogScope runs the whole-catalog correctness pass core. Diagnostics
-// is problems-only and carries the FULL ordered category detail — one entry per
+// validateCatalogScope runs the whole-catalog correctness pass core over each
+// pass the one decision of which passes a whole-catalog check runs returns — the
+// same passes `aggrega validate` runs with no argument. Diagnostics is
+// problems-only and carries the FULL ordered category detail — one entry per
 // extends error, the OCI-location collision, and one entry per input-kind
 // capability error — never a collapsed count. Exactly one failing category is
-// populated by the core, in its halt-at-first order. Advisory notices never fail
-// the verdict and travel in Notices.
+// populated by the core for a pass, in its halt-at-first order. Advisory notices
+// never fail the verdict and travel in Notices.
+//
+// A workspace that gives no Release directories of its own has one pass, over
+// its own stack, and is answered exactly as a single catalog is. A workspace that
+// does is checked once for each Release, and the answer carries each pass beside
+// the verdict over all of them; see validateCatalogPasses.
 func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for catalog validation.", err, "component"))
+	}
+	passes := serve.WholeCatalogPasses(tw.rw, tw.flagDirs)
+	if len(passes) > 0 && passes[0].NamesReleases() {
+		return validateCatalogPasses(tw, passes)
 	}
 	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs)
 	if cerr != nil {
 		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component")))
 	}
 
+	diags := catalogDiagnostics(res)
+	payload := validateResultPayload{
+		Scope:       validateScopeCatalog,
+		Valid:       len(diags) == 0,
+		Diagnostics: tw.reportedTexts(diags),
+		Notices:     tw.reportedTexts(res.Notices),
+	}
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderCatalogText(payload), payload))
+}
+
+// validateCatalogPasses answers the catalog scope in a workspace that gives its
+// Releases catalog directories of their own: one pass for each Release over the
+// directories that Release reads, every pass answered whatever an earlier one
+// found, since a broken entity in one Release's catalog variant says nothing
+// about another's. A pass whose catalog cannot be loaded is answered as that
+// pass's diagnostic rather than as the whole call's failure, for the same reason.
+// A pass whose Releases read no directory checks nothing and is valid.
+//
+// The answer's own Valid, Diagnostics and Notices cover every pass together, so
+// a caller reading only those keys reads the whole verdict.
+func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPass) (*callToolResult, *rpcError) {
+	payload := validateResultPayload{Scope: validateScopeCatalog}
+	for _, pass := range passes {
+		answered := validateCatalogPass{
+			Releases:    append([]string{}, pass.Releases...),
+			CatalogDirs: make([]string, 0, len(pass.Dirs)),
+		}
+		for _, dir := range pass.Dirs {
+			name, told := tw.reportedLocation(dir)
+			if !told {
+				name = keptBackLocationWords
+			}
+			answered.CatalogDirs = append(answered.CatalogDirs, name)
+		}
+		var diags, notices []string
+		if len(pass.Dirs) > 0 {
+			res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, pass.Dirs)
+			if cerr != nil {
+				diags = []string{"Catalog validation could not load the catalog: " + cerr.Error()}
+			} else {
+				diags, notices = catalogDiagnostics(res), res.Notices
+			}
+		}
+		answered.Valid = len(diags) == 0
+		answered.Diagnostics = tw.reportedTexts(diags)
+		answered.Notices = tw.reportedTexts(notices)
+		payload.Diagnostics = append(payload.Diagnostics, answered.Diagnostics...)
+		payload.Notices = append(payload.Notices, answered.Notices...)
+		payload.Passes = append(payload.Passes, answered)
+	}
+	payload.Valid = len(payload.Diagnostics) == 0
+	payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
+	return tw.answer(textResult(renderCatalogPassesText(payload), payload))
+}
+
+// catalogDiagnostics flattens a whole-catalog result into its ordered diagnostic
+// lines, each carrying the category it failed in.
+func catalogDiagnostics(res validateops.CatalogResult) []string {
 	var diags []string
 	for _, e := range res.ExtendsErrs {
 		diags = append(diags, "extends: "+e.Error())
@@ -452,14 +554,7 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	for _, e := range res.InputKindErrs {
 		diags = append(diags, "input-kind: "+e.Error())
 	}
-	payload := validateResultPayload{
-		Scope:       validateScopeCatalog,
-		Valid:       len(diags) == 0,
-		Diagnostics: tw.reportedTexts(diags),
-		Notices:     tw.reportedTexts(res.Notices),
-	}
-	payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
-	return tw.answer(textResult(renderCatalogText(payload), payload))
+	return diags
 }
 
 // validateDiagnostics flattens a ValidateResult into the ordered list of
@@ -694,6 +789,30 @@ func renderCatalogText(p validateResultPayload) string {
 	fmt.Fprintf(&b, "%s has %d validation diagnostic(s):\n", catalogSubject(p.Target), len(p.Diagnostics))
 	for i, d := range p.Diagnostics {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, d)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderCatalogPassesText renders the human-readable whole-catalog result of a
+// workspace checked once for each Release: each pass under the line naming its
+// Releases and the directories it read, then that pass's verdict and its full
+// ordered diagnostic lines.
+func renderCatalogPassesText(p validateResultPayload) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is checked once for each Release, over the catalog directories that Release reads.\n",
+		catalogSubject(p.Target))
+	for _, pass := range p.Passes {
+		fmt.Fprintf(&b, "\n%s\n", workspaceconfig.CatalogPassHeading(pass.Releases, pass.CatalogDirs))
+		switch {
+		case len(pass.CatalogDirs) == 0:
+		case pass.Valid:
+			b.WriteString("  validated clean: no diagnostics.\n")
+		default:
+			fmt.Fprintf(&b, "  %d validation diagnostic(s):\n", len(pass.Diagnostics))
+			for i, d := range pass.Diagnostics {
+				fmt.Fprintf(&b, "  %d. %s\n", i+1, d)
+			}
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

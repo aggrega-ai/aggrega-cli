@@ -179,9 +179,11 @@ func (s *Server) refreshConventionDiagnostics(ctx context.Context, file string, 
 // Entity and Release select the subject and are each a path relative to the
 // workspace root, refused in the same shapes every other document parameter here
 // is. Sending neither asks for every catalog entity the configured catalog
-// directories hold, which is the third subject the capability covers — so one
-// parameter set carries all three questions the command line asks, rather than
-// this surface answering a subset of them under the same name.
+// directories hold, which is the third subject the capability covers — once for
+// each Release, over that Release's directories, where the workspace gives its
+// Releases directories of their own — so one parameter set carries all three
+// questions the command line asks, rather than this surface answering a subset
+// of them under the same name.
 //
 // PrePublish compares one entity against its previously published version and
 // classifies the proposed version bump against it. It is the mode that consults a
@@ -246,6 +248,14 @@ type lintFileFindings struct {
 // aggrega/validate already asks for, where a document carrying error-severity
 // diagnostics is a successful response. An error envelope is reserved for a run
 // that could not produce a verdict at all.
+//
+// Passes is carried only for a whole-catalog run in a workspace whose
+// configuration gives its Releases catalog directories of their own, where the
+// check runs once for each Release over the directories that Release reads. It
+// says which Releases each finding was found for. Everything above it then covers
+// every pass together, so a client that reads only today's keys still reads the
+// whole run, and a client that groups by Release reads the passes instead. Every
+// other run omits it.
 type lintResult struct {
 	Entity   string             `json:"entity,omitempty"`
 	Release  string             `json:"release,omitempty"`
@@ -256,6 +266,28 @@ type lintResult struct {
 	Infos    int                `json:"infos"`
 	Files    []lintFileFindings `json:"files"`
 	Halted   bool               `json:"halted"`
+	Passes   []lintPass         `json:"passes,omitempty"`
+}
+
+// lintPass is one pass of a whole-catalog run in a workspace that gives its
+// Releases catalog directories of their own: the Releases it was run for, the
+// directories it read, and what it found there, counted and grouped as the
+// answer around it counts and groups the whole run.
+//
+// Releases are spelled relative to the workspace root, the coordinate every
+// Release this surface names takes, and Releases reading the same directories
+// share one pass. CatalogDirs are spelled by the rule Files follows. An empty
+// CatalogDirs is a pass whose Releases read no catalog directory, so it checked
+// nothing and failed none of the others. Neither list is ever null.
+type lintPass struct {
+	Releases    []string           `json:"releases"`
+	CatalogDirs []string           `json:"catalogDirs"`
+	Checked     int                `json:"checked"`
+	Findings    int                `json:"findings"`
+	Errors      int                `json:"errors"`
+	Warnings    int                `json:"warnings"`
+	Infos       int                `json:"infos"`
+	Files       []lintFileFindings `json:"files"`
 }
 
 // resolveEntityParam turns the `entity` request parameter into the absolute path
@@ -331,7 +363,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		}
 		runErr = lintops.RunRelease(ctx, s.resolvedWorkspace, abs, nil, io.Discard, io.Discard, collect)
 	default:
-		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, nil, io.Discard, io.Discard, collect)
+		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, WholeCatalogPasses(s.resolvedWorkspace, nil), io.Discard, io.Discard, collect)
 	}
 	// The request's own context is what the arms above were given, so by the time
 	// this is read the run has already abandoned its remaining work rather than
@@ -359,7 +391,35 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		Infos:    report.Summary.Infos,
 		Files:    s.lintFindingsByFile(report.Findings),
 		Halted:   runErr != nil,
+		Passes:   s.lintPasses(report.Passes),
 	})
+}
+
+// lintPasses projects a whole-catalog run's passes onto the answer, each spelled
+// and grouped by the rules the answer around it follows. It returns nil for a run
+// that carries no passes, which leaves the key out of the answer.
+func (s *Server) lintPasses(passes []lintops.PassReport) []lintPass {
+	if len(passes) == 0 {
+		return nil
+	}
+	out := make([]lintPass, 0, len(passes))
+	for _, p := range passes {
+		dirs := make([]string, 0, len(p.CatalogDirs))
+		for _, d := range p.CatalogDirs {
+			dirs = append(dirs, pathscope.ReportedName(s.workspaceRoot, d))
+		}
+		out = append(out, lintPass{
+			Releases:    append([]string{}, p.Releases...),
+			CatalogDirs: dirs,
+			Checked:     p.Summary.EntitiesChecked,
+			Findings:    p.Summary.Findings,
+			Errors:      p.Summary.Errors,
+			Warnings:    p.Summary.Warnings,
+			Infos:       p.Summary.Infos,
+			Files:       s.lintFindingsByFile(p.Findings),
+		})
+	}
+	return out
 }
 
 // lintFindingsByFile groups a run's findings by the document each concerns, in

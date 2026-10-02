@@ -21,25 +21,37 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// RunCatalogWide resolves the workspace's catalog directories and runs the
-// structural publishing-linter rules over every catalog entity found under them.
-// The search stack is the shared one — catalogFlagDirs prepended to the
-// workspace config's catalog_dirs, with the conventional catalog directory at
-// the workspace root last — and a run with nothing in it is refused rather than
-// reported as a clean catalog, because a pass over no entity at all passes
-// vacuously and reads exactly like a pass over a healthy one. This is the
-// conventions counterpart to
+// RunCatalogWide runs the structural publishing-linter rules over every catalog
+// entity found under the catalog directories of each pass in passes, which the
+// caller takes from the one decision of which passes a whole-catalog check runs
+// (see [workspaceconfig.ResolvedWorkspace.WholeCatalogPasses]). Each pass's stack
+// is the shared one — the --catalog directories prepended to the configured
+// list, with the conventional catalog directory at the workspace root last.
+//
+// A workspace that gives no Release directories of its own has one pass, over
+// its own stack, and is reported exactly as a single catalog is. A workspace that
+// does has one pass for each Release — Releases reading identical directories
+// sharing one — and each pass is reported under a line naming its Releases and
+// the directories it read, with its findings and its own summary after it, so a
+// catalog variant one Release reads is never checked against another's. A pass
+// whose Releases read no directory says so and fails none of the others.
+//
+// A run whose passes read nothing at all is refused rather than reported as a
+// clean catalog, because a pass over no entity at all passes vacuously and reads
+// exactly like a pass over a healthy one. This is the conventions counterpart to
 // whole-catalog correctness (`aggrega validate`): correctness halts on a broken
 // entity, conventions report publishing-discipline advisories and never halt on a
 // convention finding alone.
 //
 // collect optionally gathers the findings as data alongside the human report; nil
-// collects nothing.
+// collects nothing. For a run of several passes it also gathers each pass on its
+// own, under the Releases it was run for.
 //
 // ctx ends the pass where the caller stops wanting it. This is the pass whose
 // cost scales with the catalog — one guest dispatch per entity over every entity
@@ -47,26 +59,63 @@ import (
 // and discarding the answer are materially different outcomes. Both the tree
 // walk and the per-entity loop observe it, so a stop is honoured whichever of
 // the two the pass is in.
-func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
+func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, passes []workspaceconfig.CatalogPass, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
 	}
-	wsCfg := rw.Config()
-	// The refusal keys on the RESOLVED stack rather than on the flag and the
-	// configured list, so a workspace whose entities sit in the conventional
+	// The refusal keys on the RESOLVED stacks rather than on the flag and the
+	// configured lists, so a workspace whose entities sit in the conventional
 	// directory is scanned rather than refused, and a workspace that switched the
 	// local catalog off with an empty `catalog_dirs` is refused rather than
-	// silently scanning nothing. The whole catalog concerns no one Release, so the
-	// workspace's own stack is the one scanned.
-	dirs := rw.ResolveCatalogDirs("", catalogFlagDirs)
-	if len(dirs) == 0 {
-		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or check a specific Release with --release)",
-				workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSetting, workspaceconfig.ConfigFilename),
-			nil, nil)
+	// silently scanning nothing.
+	perRelease := len(passes) > 0 && passes[0].NamesReleases()
+	if !workspaceconfig.AnyCatalogPassReads(passes) {
+		return emptyCatalogRefusal(perRelease)
 	}
-	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
+	if !perRelease {
+		return lintCatalogPass(ctx, rw, passes[0].Dirs, out, diagOut, collect)
+	}
+	for i, pass := range passes {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		reported := make([]string, 0, len(pass.Dirs))
+		for _, d := range pass.Dirs {
+			reported = append(reported, pathscope.ReportedName(rw.Root(), d))
+		}
+		fmt.Fprintln(out, workspaceconfig.CatalogPassHeading(pass.Releases, reported))
+		gathered := collect.forPass()
+		var passErr error
+		if len(pass.Dirs) > 0 {
+			passErr = lintCatalogPass(ctx, rw, pass.Dirs, out, diagOut, gathered)
+		}
+		collect.addPass(pass.Releases, pass.Dirs, gathered)
+		if passErr != nil {
+			return passErr
+		}
+	}
+	return nil
+}
+
+// emptyCatalogRefusal is the refusal a whole-catalog conventions check gives
+// when none of its passes has a directory to read. Its remedies are the ones a
+// reader can act on in the workspace in front of them: a workspace that gives
+// its Releases directories of their own is also told where a Release's own list
+// is set, since setting the workspace's list does not reach a Release whose
+// entry replaces it.
+func emptyCatalogRefusal(perRelease bool) error {
+	return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+		fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set %s (or check a specific Release with --release)",
+			workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSettingWords(perRelease)),
+		nil, nil)
+}
+
+// lintCatalogPass is one pass of the whole-catalog conventions check: every
+// catalog entity under dirs, linted against lookups over the same dirs, then the
+// summary and the kinds the walk passed over.
+func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
+	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, rw.Config().ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
 	}
@@ -74,13 +123,15 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	for _, f := range files {
 		paths = append(paths, f.Path)
 	}
-	// No Release names this pass, and the record of the plugin identities trusted
-	// for the workspace's verdict attachments sits beside a Release — so there is
-	// no record to locate here and the linter attachments resolve pin-free, exactly
-	// as they did before that record existed. The release-scoped pass below is the
-	// lint path that does hold them to it, and it is the same path that already
-	// reads the lockfile beside the Release, so both files are read from one place.
-	if err := lintConventionsFiles(ctx, rw, "", catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+	// No pass of the whole-catalog check holds its linter attachments to the
+	// record of the plugin identities trusted for the workspace's verdict
+	// attachments, including a pass run for a named Release: the pass's subject is
+	// the directories it reads, not that Release's dependency closure. So the
+	// attachments resolve pin-free, exactly as they did before that record existed.
+	// The release-scoped pass below is the lint path that does hold them to it, and
+	// it is the same path that reads the lockfile beside the Release, so both files
+	// are read from one place.
+	if err := lintConventionsFiles(ctx, rw, dirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
 		return err
 	}
 	// This is the pass whose summary claims a corpus — "every catalog entity under
@@ -196,8 +247,8 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	//
 	// This is the lint path that names a Release, and therefore the one that can
 	// locate the record — the same reason it is the lint path that reads the
-	// lockfile above. The single-entity pass and the whole-catalog pass name none,
-	// and say so where they resolve their attachments.
+	// lockfile above. The single-entity pass and the whole-catalog pass read no
+	// such record, and say so where they resolve their attachments.
 	trusted, terr := compilerops.VerdictPluginTrust(lazyView, wsCfg, releasePath)
 	if terr != nil {
 		return terr
@@ -235,7 +286,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	lintErr := lintConventionsFiles(ctx, rw, releasePath, catalogFlagDirs, paths, trusted, out, diagOut, collect)
+	lintErr := lintConventionsFiles(ctx, rw, dirs, paths, trusted, out, diagOut, collect)
 
 	// A Manifest mapping the catalog contradicts is reported here rather than
 	// halting ahead of the pass, so the conventions report the author came for
@@ -275,14 +326,16 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 //
 // trusted carries the digests recorded as trusted for the plugins that return an
 // accept-or-reject verdict, threaded from the caller rather than read here,
-// because only one of the two callers can locate the record: it sits beside a
-// Release, and the whole-catalog pass names none. Both arms of the linter socket's
+// because only one of the two callers reads the record: it sits beside a Release,
+// and a whole-catalog pass is about the directories it reads rather than any one
+// Release's dependency closure, even where it is run for one. Both arms of the linter socket's
 // resolution receive it, so a recorded digest governs the bytes whichever tier
 // serves them. An empty set is the ordinary case and resolves pin-free.
 //
-// releasePath is the Release the release-scoped pass names, or empty for the
-// whole-catalog pass, and it decides which catalog directories the plugin and
-// Component lookups below read — the same ones the caller walked.
+// dirs are the catalog directories the caller walked to find paths, and the
+// plugin and Component lookups below read exactly those: a whole-catalog pass run
+// for several Releases that share a stack, and a Release's closure pass, are each
+// handed the one stack they read rather than re-deriving it here.
 //
 // ctx is observed once per entity, at the top of the loop, which is the seam
 // that makes a stop reach the work: this loop is where both passes spend their
@@ -293,9 +346,8 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // summary line claims a corpus — "conventions checked: N entities" — and
 // printing it after a stop would report a partial walk in the words of a complete
 // one, which is the one thing a reader cannot recover from the output.
-func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
+func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))

@@ -98,7 +98,7 @@ func TestConventionsPassHonoursADisagreeingRecordedDigest(t *testing.T) {
 		PinVersions: map[string]string{"linter/publishing": wrong},
 	}
 
-	err := lintConventionsFiles(t.Context(), rw, "", nil, []string{entity}, trusted, io.Discard, io.Discard, nil)
+	err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), []string{entity}, trusted, io.Discard, io.Discard, nil)
 	if err == nil {
 		t.Fatal("a recorded digest the resolved bytes do not match must not resolve; got a clean pass")
 	}
@@ -111,7 +111,7 @@ func TestConventionsPassStaysPinFreeWithoutRecordedDigests(t *testing.T) {
 	rw := twoAttachmentWorkspace(t, oneLinterAttachment)
 	entity := componentWithOneFinding(t)
 
-	if err := lintConventionsFiles(t.Context(), rw, "", nil, []string{entity}, pluginpath.PinMaps{}, io.Discard, io.Discard, nil); err != nil {
+	if err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), []string{entity}, pluginpath.PinMaps{}, io.Discard, io.Discard, nil); err != nil {
 		t.Fatalf("no recorded digest must resolve exactly as before; got %v", err)
 	}
 }

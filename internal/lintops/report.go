@@ -61,9 +61,31 @@ type Finding struct {
 //
 // Findings is never nil on the wire — an empty run emits an empty list rather
 // than null, so a consumer iterates unconditionally.
+//
+// Passes is present only for a whole-catalog run in a workspace that gives its
+// Releases catalog directories of their own, where the check runs once for each
+// Release over that Release's directories. It groups the run by pass, and
+// Findings and Summary above it then cover every pass together — a document two
+// passes read is checked, and counted, in each — so a consumer that reads only
+// those two reads the whole run. Every other run carries no Passes at all.
 type Report struct {
 	Findings []Finding     `json:"findings"`
 	Summary  ReportSummary `json:"summary"`
+	Passes   []PassReport  `json:"passes,omitempty"`
+}
+
+// PassReport is one pass of a whole-catalog run: the Releases it was run for,
+// the catalog directories it read, and what it found there.
+//
+// Releases sharing a set of directories share one pass, which names each of
+// them. CatalogDirs is empty for a pass whose Releases read no catalog
+// directory, which is reported rather than failing the passes beside it. Both
+// lists are never nil, so a consumer iterates them unconditionally.
+type PassReport struct {
+	Releases    []string      `json:"releases"`
+	CatalogDirs []string      `json:"catalogDirs"`
+	Findings    []Finding     `json:"findings"`
+	Summary     ReportSummary `json:"summary"`
 }
 
 // ReportSummary counts a run's findings by severity. EntitiesChecked is the
@@ -145,6 +167,7 @@ type FindingCollector struct {
 	findings []Finding
 	entities int
 	reached  bool
+	passes   []PassReport
 }
 
 // Add appends the diagnostics one entity file produced, attributing every one to
@@ -172,12 +195,47 @@ func (c *FindingCollector) Reached() bool {
 	return c != nil && c.reached
 }
 
+// forPass returns the collector one pass of a whole-catalog run gathers into,
+// which addPass then folds back into c. It is nil when c is, so a run that
+// collects nothing collects nothing per pass either.
+func (c *FindingCollector) forPass() *FindingCollector {
+	if c == nil {
+		return nil
+	}
+	return &FindingCollector{}
+}
+
+// addPass folds what one pass gathered into c and records the pass beside it,
+// under the Releases it was run for and the directories it read.
+//
+// The run counts as reached once any pass has: a pass with no directory to read
+// reports that and checks nothing, so a run whose only other passes failed before
+// any rule ran is still a run that produced no verdict. It is safe on a nil
+// receiver.
+func (c *FindingCollector) addPass(releases, dirs []string, pass *FindingCollector) {
+	if c == nil || pass == nil {
+		return
+	}
+	c.reached = c.reached || pass.reached
+	c.findings = append(c.findings, pass.findings...)
+	c.entities += pass.entities
+	report := NewReport(pass.findings, pass.entities)
+	c.passes = append(c.passes, PassReport{
+		Releases:    append([]string{}, releases...),
+		CatalogDirs: append([]string{}, dirs...),
+		Findings:    report.Findings,
+		Summary:     report.Summary,
+	})
+}
+
 // Report assembles what the collector gathered.
 func (c *FindingCollector) Report() Report {
 	if c == nil {
 		return NewReport(nil, 0)
 	}
-	return NewReport(c.findings, c.entities)
+	r := NewReport(c.findings, c.entities)
+	r.Passes = c.passes
+	return r
 }
 
 // NewReport assembles a report over findings gathered across entitiesChecked

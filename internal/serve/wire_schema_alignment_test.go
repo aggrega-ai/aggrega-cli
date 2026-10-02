@@ -241,6 +241,7 @@ func wireSubjects() []wireSubject {
 		},
 		{name: "lintFileFindings", typ: reflect.TypeOf(lintFileFindings{}), def: "#/$defs/LintFileFindings"},
 		{name: "lintParams", typ: reflect.TypeOf(lintParams{}), def: "#/$defs/LintParams"},
+		{name: "lintPass", typ: reflect.TypeOf(lintPass{}), def: "#/$defs/LintPass"},
 		{name: "lintResult", typ: reflect.TypeOf(lintResult{}), def: "#/$defs/LintResult"},
 		{name: "logoutParams", typ: reflect.TypeOf(logoutParams{}), def: "#/$defs/LogoutParams"},
 		{name: "logoutResult", typ: reflect.TypeOf(logoutResult{}), def: "#/$defs/LogoutResult"},

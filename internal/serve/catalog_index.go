@@ -209,6 +209,21 @@ func ReleaseCandidates(root string) []string {
 	return out
 }
 
+// WholeCatalogPasses returns the passes a check of the whole catalog runs in the
+// workspace rw resolved — the conventions check and the correctness check alike,
+// on the command line, on this daemon and on the assistant-facing tools — with
+// flagDirs prepended to every pass's stack.
+//
+// The Releases a workspace holds are the ones ReleaseCandidates reports, so the
+// Releases a whole-catalog check runs its passes for are the Releases an editor
+// is offered, decided by the same walk. The walk runs only where the workspace's
+// configuration gives a Release directories of its own; see
+// [workspaceconfig.ResolvedWorkspace.WholeCatalogPasses] for the passes that
+// follow.
+func WholeCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, flagDirs []string) []workspaceconfig.CatalogPass {
+	return rw.WholeCatalogPasses(func() []string { return ReleaseCandidates(rw.Root()) }, flagDirs)
+}
+
 // LockfilesFor maps each Release path to the path of its lockfile, placed by
 // [lockfile.PathFor] — the rule every command that writes or reads a lockfile
 // applies — so an answer carrying it names the file a pull writes and a build

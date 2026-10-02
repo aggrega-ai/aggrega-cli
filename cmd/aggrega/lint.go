@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -69,9 +70,14 @@ Three invocation shapes, mirroring validate:
   aggrega lint <entity>           publishing discipline for one entity
 
 Without an entity argument, lint runs the structural conventions rules
-over every catalog entity found under the catalog directories. With
---release it runs them over the entities that Release's closure reaches.
-In both, findings are advisory (warn severity) and never halt.
+over every catalog entity found under the catalog directories. Where the
+workspace configuration gives its Releases catalog directories of their own
+under workspace.releases, it runs them once for each Release, over the
+directories that Release reads, and reports each pass under a line naming
+its Releases and those directories; Releases reading the same directories
+share one pass. With --release it runs them over the entities that
+Release's closure reaches. In both, findings are advisory (warn severity)
+and never halt.
 
 With an entity path, lint runs the publishing-linter rule set against
 that one entity. In default mode the rules run at warn severity over
@@ -148,8 +154,9 @@ under either format.`,
 				return emit(lintops.RunRelease(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
 			if path == "" {
-				// No entity argument → whole-catalog conventions.
-				return emit(lintops.RunCatalogWide(cmd.Context(), rw, opts.catalogDirs, opOut, os.Stderr, collect))
+				// No entity argument → whole-catalog conventions, one pass for each
+				// Release where the workspace gives its Releases directories of their own.
+				return emit(lintops.RunCatalogWide(cmd.Context(), rw, serve.WholeCatalogPasses(rw, opts.catalogDirs), opOut, os.Stderr, collect))
 			}
 			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a
