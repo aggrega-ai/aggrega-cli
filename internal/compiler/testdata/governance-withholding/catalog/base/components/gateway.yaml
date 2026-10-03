@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: withhold/gateway
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  featuresSchema:
+    # A slot of the component's own, filled on the component's own attachment
+    # block, delivering its credential through an environment variable.
+    db_password:
+      sensitive: true
+      inject: [env]
+  usesSchema:
+    models:
+      selector: "component.aggrega.ai/category=model"
+      featuresSchema:
+        # The slot each connection wired through this socket may fill.
+        credential:
+          sensitive: true
+          description: The credential the gateway presents to the model a connection reaches.
+  schema:
+    values:
+      region: { type: string }
+      # A value of the node's own that its Component declares sensitive.
+      admin_token: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

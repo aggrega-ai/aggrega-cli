@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: governance-withholding-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        gateway:
+          features:
+            # Infra the Release writes on the component's own attachment.
+            db_password:
+              infra:
+                rotation_window: weekly
+                rotation_token: planted-release-infra
+          uses:
+            models:
+              gpt:
+                features:
+                  # Infra the Release writes on the connection's attachment.
+                  credential:
+                    infra:
+                      rotation_window: daily
+                      rotation_token: planted-connection-infra
+        model: {}

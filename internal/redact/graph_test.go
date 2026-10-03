@@ -332,8 +332,8 @@ func TestGraph_UnreadableInputWithholdsWholly(t *testing.T) {
 	}
 }
 
-// TestGraph_InputIsNotMutated is what keeps the withholding on the display side
-// of the boundary. The graph handed in is the one the pipeline hands onward, so
+// TestGraph_InputIsNotMutated keeps the withholding with the surface handing
+// the graph out. The graph handed in is the one the pipeline hands onward, so
 // a substitution reaching it would reach the deployable — which is the one place
 // a placeholder is a broken deployment rather than a protected one.
 func TestGraph_InputIsNotMutated(t *testing.T) {

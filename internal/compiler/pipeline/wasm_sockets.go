@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -261,13 +262,14 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 
 // runPolicySocket runs the Step-4 policy socket: it marshals the
 // analyzer's assembled PolicyInput (the full IR graph plus precalculated paths)
-// once, dispatches each configured policy plugin's verdict_ir export (or a
-// per-attachment override), and appends one AnalysisError per failed verdict to
-// analysis.Errors. Appending (rather than returning a function-level error)
-// routes a policy rejection through the same gate selector and appliesTo
-// violations use: RunPipeline joins Errors into a build-halting error, while the
-// Tier-4 validation path surfaces them as diagnostics — so a policy rejection
-// halts a build without breaking daemon responsiveness. Policy never mutates.
+// with every declared-sensitive leaf withheld, dispatches each configured policy
+// plugin's verdict_ir export (or a per-attachment override), and appends one
+// AnalysisError per failed verdict to analysis.Errors. Appending (rather than
+// returning a function-level error) routes a policy rejection through the same
+// gate selector and appliesTo violations use: RunPipeline joins Errors into a
+// build-halting error, while the Tier-4 validation path surfaces them as
+// diagnostics — so a policy rejection halts a build without breaking daemon
+// responsiveness. Policy never mutates.
 // An unconfigured socket is a no-op. A resolution or load failure halts the build
 // loudly (a misconfigured plugin is a build fault, not a policy verdict), and so
 // does an output that is not this socket's shape: an attachment whose entry
@@ -283,6 +285,25 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	}
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 
+	// The graph a policy plugin receives is the one the printed graph shows:
+	// every leaf the graph's own sensitivity markings name — an attachment's
+	// values and infra, whatever scope or connection it was written on, a
+	// boundary attachment's infra, and a node's own values and infra — arrives
+	// as the withheld marker rather than as the value an author wrote. What a
+	// policy reasons on stays readable: each attachment's type, resolved version,
+	// labels, catalog annotations, binding, connection and origin, the markings
+	// themselves, and every leaf no declaration marks. A plugin judges where a
+	// declared-sensitive datum travels, never the datum itself.
+	//
+	// It is the same withholding the command line applies when it prints the
+	// graph, called rather than restated, so the two surfaces cannot come to
+	// disagree about which leaves a declaration covers. It runs once per run,
+	// before the first dispatch, and it copies: the graph the analysis carries
+	// shares its maps with the graph the assertions and the render read after
+	// this socket returns, so a substitution made in place would reach the
+	// rendered artifacts.
+	withheld := redact.Graph(&analysis.PolicyInput.Graph)
+
 	for _, ref := range refs {
 		export := policyExport(ref, wasm.VerdictIRExport)
 		resolved, err := lookup(ref.URI)
@@ -293,10 +314,12 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		if err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
-		// Per-ref payload: the shared graph and paths plus this attachment's own
-		// sources and settings. The graph fields are shared references (a shallow
-		// copy), so per-ref marshalling adds only this attachment's inputs.
+		// Per-ref payload: the withheld graph and the shared paths plus this
+		// attachment's own sources and settings. The graph fields are shared
+		// references (a shallow copy), so per-ref marshalling adds only this
+		// attachment's inputs.
 		in := *analysis.PolicyInput
+		in.Graph = *withheld
 		in.Sources = sources
 		in.Settings = attachmentSettings(ref)
 		payload, err := json.Marshal(in)

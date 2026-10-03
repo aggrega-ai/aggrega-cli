@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-withholding
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: withhold/gateway
+      values:
+        region: eu
+        admin_token: planted-node-own-value
+      features:
+        # An attachment of the component's own block.
+        db_password:
+          type: feature.withhold/token
+          values:
+            key: db-key
+            secret: planted-component-credential
+          inject:
+            env:
+              - in: DB_SECRET
+                from: key
+      uses:
+        models:
+          gpt:
+            target: model
+            features:
+              # An attachment written on the connection.
+              credential:
+                type: feature.withhold/token
+                values:
+                  key: gpt-key
+                  secret: planted-connection-credential
+    model:
+      type: withhold/model

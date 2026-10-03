@@ -82,7 +82,8 @@
 // slice halts before the render, with one stderr line per violation.
 // AnalysisResult.PolicyInput is computed on every build and, when a
 // workspace configures a policy plugin, the pipeline marshals it to that
-// plugin and appends each failed verdict to
+// plugin — with every leaf the graph's own sensitivity markings name
+// withheld, on a copy — and appends each failed verdict to
 // AnalysisResult.Errors, so a policy rejection halts the build through the
 // same gate. AnalysisResult.Paths ride the PolicyInput to the plugin as
 // precalculated reachability; they are otherwise not consumed by the render.

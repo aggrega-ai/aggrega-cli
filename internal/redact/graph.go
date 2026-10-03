@@ -37,10 +37,15 @@ const (
 // untouched, so a graph declaring no sensitivity emits the bytes it emitted
 // before this existed.
 //
+// The command line calls it when it prints the graph, and the governance
+// socket calls it when it hands the graph to a policy plugin. Each calls it
+// rather than walking the markings itself, which is what keeps every surface
+// that withholds from the graph withholding the same leaves.
+//
 // The input is never mutated. The graph this reads is the one the pipeline
 // produced and hands onward, so an in-place substitution here would reach every
-// later consumer of it — the copy is what keeps the withholding on the display
-// side of the boundary rather than upstream of rendering.
+// later consumer of it — the copy is what keeps the withholding on the side of
+// the surface handing the graph out rather than upstream of rendering.
 //
 // The delivery pipe is deliberately NOT reached, and the omission is not one to
 // complete later. A delivery entry maps a delivery key to the provides key it

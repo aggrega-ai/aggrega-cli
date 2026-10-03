@@ -732,11 +732,13 @@ func runStepsOneToFour(
 
 		// Step 4b: ir-verdict governance role. Config-driven off the ir-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
-		// unconfigured. When configured, each plugin evaluates the full IR graph and
-		// its failed verdicts append to analysis.Errors, so a verdict rejection halts
-		// the build through the same gate selector/appliesTo violations use
-		// (RunPipeline joins Errors; the Tier-4 path surfaces them as diagnostics). A
-		// verdict role never mutates the graph.
+		// unconfigured. When configured, each plugin evaluates the full IR graph
+		// with its declared-sensitive leaves withheld, and its failed verdicts
+		// append to analysis.Errors, so a verdict rejection halts the build through
+		// the same gate selector/appliesTo violations use (RunPipeline joins
+		// Errors; the Tier-4 path surfaces them as diagnostics). A verdict role
+		// never mutates the graph, and the withholding works on a copy, so the
+		// graph read below is the one the analysis was handed.
 		if err := runPolicySocket(ctx, inputs, catalogLookup, analysis); err != nil {
 			return err
 		}

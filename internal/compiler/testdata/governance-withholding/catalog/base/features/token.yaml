@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.withhold/token
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+    # A label of the fixture author's own invention, which a policy must still
+    # receive after the declared-sensitive values are withheld.
+    withholding.example/owner: platform
+spec:
+  schema:
+    # Each pillar declares one leaf sensitive and leaves one readable, so the
+    # withheld leaf and the readable one arrive side by side.
+    values:
+      key: { type: string }
+      secret: { type: string, sensitive: true }
+    infra:
+      rotation_window: { type: string }
+      rotation_token: { type: string, sensitive: true }
+    provides:
+      key: { type: string, required: true }

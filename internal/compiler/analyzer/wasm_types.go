@@ -22,7 +22,11 @@ import (
 //
 // assemblePolicyInput populates the structure on every build; the Step-4
 // policy socket marshals it to a configured policy plugin and reads
-// the plugin's verdicts back.
+// the plugin's verdicts back. Graph is assembled whole here, and what crosses
+// the socket is a copy of it with every leaf the graph's own sensitivity
+// markings name replaced by the withheld marker — the same withholding the
+// printed graph applies — so a plugin still reads where a datum an author
+// declared sensitive sits and how it is marked, and never its value.
 type PolicyInput struct {
 	Graph              types.IRGraph       `json:"graph"`
 	PrecalculatedPaths []PrecalculatedPath `json:"precalculated_paths"`

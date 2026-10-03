@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: withhold-token-compose
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: feature.withhold/token
+  provides:
+    key: "{{ .values.secret }}"

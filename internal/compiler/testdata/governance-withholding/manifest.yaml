@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: governance-withholding-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        withhold/gateway: withhold-gateway-recipe:1.0.0
+        withhold/model: withhold-model-recipe:1.0.0
+    features:
+      type:
+        feature.withhold/token: withhold-token-compose:1.0.0
