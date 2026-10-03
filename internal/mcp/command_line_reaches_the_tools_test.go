@@ -31,10 +31,12 @@ import (
 // vector: the global flags the parsing one parsed, and everything the
 // forwarding one was handed.
 type parsedGlobals struct {
-	offline      bool
-	offlineTyped bool
-	config       string
-	forwarded    string
+	offline            bool
+	offlineTyped       bool
+	config             string
+	workspaceRoot      string
+	workspaceRootTyped bool
+	forwarded          string
 }
 
 // globalFlagTree builds a command tree carrying the global flags under the names
@@ -55,6 +57,8 @@ func globalFlagTree(got *parsedGlobals) *cobra.Command {
 			got.offline, _ = cmd.Flags().GetBool(workspaceconfig.OfflineSettingKey)
 			got.offlineTyped = cmd.Flags().Changed(workspaceconfig.OfflineSettingKey)
 			got.config, _ = cmd.Flags().GetString(workspaceconfig.ConfigFlagName)
+			got.workspaceRoot, _ = cmd.Flags().GetString("workspace-root")
+			got.workspaceRootTyped = cmd.Flags().Changed("workspace-root")
 			return nil
 		},
 	})
@@ -75,23 +79,37 @@ func globalFlagTree(got *parsedGlobals) *cobra.Command {
 // the argument vector the tool built through a real command parser — so what is
 // asserted is what the command would have read, not only where an argument sits.
 //
-// The rows hold five properties. A server started with no global flag runs a
-// command exactly as before, flag for flag. A server started with --offline or
-// --config hands that flag on, in the direction it was typed. A call sending the
-// same flag for itself is answered with its own value. A command that parses no
-// flag of its own and passes its arguments on is handed none of the server's,
-// so what it receives is unchanged. And the command line the tool reports is the
-// one that ran, the server's flags included, so a caller can read what
-// configuration a result was produced under.
+// The rows hold seven properties. A server started with no global flag and
+// serving the workspace it was started in runs a command exactly as before,
+// flag for flag. A server started with --offline or --config hands that flag
+// on, in the direction it was typed. A server started over a workspace root
+// hands that root on as the command's --workspace-root, ahead of the others, so
+// the command takes it as its root rather than finding one from the directory
+// the server was started in. A call
+// sending the same flag for itself is answered with its own value. A call naming
+// its own workspace — an empty one included, which a command line reads as "find
+// it from the working directory" — is answered in that one, and its command line
+// carries no root but its own. A command that parses no flag of its own and
+// passes its arguments on is handed none of the server's, so what it receives is
+// unchanged. And the command line the tool reports is the one that ran, the
+// server's flags included, so a caller can read what configuration and which
+// workspace a result was produced under.
 //
 // 🔴 PLANTED DEFECT: have invoke pass no server flags to argv and every row
-// whose server was handed a flag reads the built-in default in the child.
+// whose server was handed a flag reads the built-in default in the child. Have
+// it hand no served root and the rows serving one read no workspace root in the
+// child; have it hand the root whatever the call names and the rows naming their
+// own carry two.
 func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 	t.Parallel()
 	on, off := true, false
+	// The root the server serves. The stand-in command reads it as text and
+	// opens nothing, so it is a fixed path rather than a directory on disk.
+	const served = "/srv/served-workspace"
 	for _, tc := range []struct {
 		name       string
 		tool       string // "" is cli-work
+		served     string // the server's own root; "" is a server started inside its workspace
 		server     workspaceconfig.FlagOverlay
 		call       map[string]any
 		wantArgv   []string
@@ -158,6 +176,55 @@ func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 			wantArgv:   []string{"relay", "--", "x"},
 			wantParsed: parsedGlobals{forwarded: "-- x"},
 		},
+		{
+			name:       "the root the server serves reaches a command for a call naming no workspace",
+			served:     served,
+			call:       map[string]any{},
+			wantArgv:   []string{"--workspace-root=" + served, "work"},
+			wantParsed: parsedGlobals{workspaceRoot: served, workspaceRootTyped: true},
+		},
+		{
+			name:     "the served root leads the server's other flags, in the order the root declares them",
+			served:   served,
+			server:   workspaceconfig.FlagOverlay{ConfigPath: "/g.yaml", Offline: &on},
+			call:     map[string]any{},
+			wantArgv: []string{"--workspace-root=" + served, "--config=/g.yaml", "--offline=true", "work"},
+			wantParsed: parsedGlobals{
+				offline: true, offlineTyped: true, config: "/g.yaml",
+				workspaceRoot: served, workspaceRootTyped: true,
+			},
+		},
+		{
+			name:       "a call naming its own workspace is answered there, and the served root is not handed",
+			served:     served,
+			call:       map[string]any{"workspace_root": "/elsewhere"},
+			wantArgv:   []string{"work", "--workspace-root=/elsewhere"},
+			wantParsed: parsedGlobals{workspaceRoot: "/elsewhere", workspaceRootTyped: true},
+		},
+		{
+			name:       "a call naming an empty workspace root keeps it, as a command line does",
+			served:     served,
+			call:       map[string]any{"workspace_root": ""},
+			wantArgv:   []string{"work", "--workspace-root="},
+			wantParsed: parsedGlobals{workspaceRoot: "", workspaceRootTyped: true},
+		},
+		{
+			name:       "a call naming its own workspace keeps the server's other flags",
+			served:     served,
+			server:     workspaceconfig.FlagOverlay{Offline: &on},
+			call:       map[string]any{"workspace_root": "/elsewhere"},
+			wantArgv:   []string{"--offline=true", "work", "--workspace-root=/elsewhere"},
+			wantParsed: parsedGlobals{offline: true, offlineTyped: true, workspaceRoot: "/elsewhere", workspaceRootTyped: true},
+		},
+		{
+			name:       "a command that passes its arguments on is handed no served root either",
+			tool:       "cli-relay",
+			served:     served,
+			server:     workspaceconfig.FlagOverlay{Offline: &on},
+			call:       map[string]any{"args": []string{"x"}},
+			wantArgv:   []string{"relay", "--", "x"},
+			wantParsed: parsedGlobals{forwarded: "-- x"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -174,7 +241,7 @@ func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 			s := &server{
 				out:          io.Discard,
 				logw:         io.Discard,
-				startDir:     t.TempDir(),
+				startDir:     tc.served,
 				flags:        tc.server,
 				runCommand:   run,
 				commandTools: deriveCommandTools(projectCommandSurface(globalFlagTree(&parsedGlobals{}))),

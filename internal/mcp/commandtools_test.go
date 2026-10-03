@@ -393,8 +393,10 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	}
 
 	// The flags are emitted in the derived order, so one set of arguments always
-	// produces one argument vector.
-	want := []string{"work", "--catalog=a", "--catalog=b", "--depth=7", "--dry-run=true", "--output-dir=/tmp/out"}
+	// produces one argument vector. The fixture server serves a workspace of its
+	// own, so every command it runs leads with that root.
+	served := "--workspace-root=" + s.startDir
+	want := []string{served, "work", "--catalog=a", "--catalog=b", "--depth=7", "--dry-run=true", "--output-dir=/tmp/out"}
 	if strings.Join(gotArgs, " ") != strings.Join(want, " ") {
 		t.Errorf("argv = %v, want %v", gotArgs, want)
 	}
@@ -409,7 +411,7 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
 		t.Fatalf("unmarshal structured payload: %v", err)
 	}
-	if payload.Command != "aggrega work --catalog=a --catalog=b --depth=7 --dry-run=true --output-dir=/tmp/out" {
+	if payload.Command != "aggrega "+strings.Join(want, " ") {
 		t.Errorf("structured payload command = %q", payload.Command)
 	}
 
@@ -418,8 +420,8 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	if res2.IsError {
 		t.Fatalf("cli-group-nested reported error: %s", res2.Content[0].Text)
 	}
-	if strings.Join(gotArgs, " ") != "group nested" {
-		t.Errorf("nested argv = %v, want [group nested]", gotArgs)
+	if strings.Join(gotArgs, " ") != served+" group nested" {
+		t.Errorf("nested argv = %v, want [%s group nested]", gotArgs, served)
 	}
 
 	// Positional arguments go behind a bare double dash, so a value beginning
@@ -428,8 +430,8 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	if res3.IsError {
 		t.Fatalf("cli-inspect reported error: %s", res3.Content[0].Text)
 	}
-	if strings.Join(gotArgs, " ") != "inspect -- -weird-name" {
-		t.Errorf("positional argv = %v, want [inspect -- -weird-name]", gotArgs)
+	if strings.Join(gotArgs, " ") != served+" inspect -- -weird-name" {
+		t.Errorf("positional argv = %v, want [%s inspect -- -weird-name]", gotArgs, served)
 	}
 }
 

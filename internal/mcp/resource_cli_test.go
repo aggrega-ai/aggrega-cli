@@ -61,8 +61,10 @@ func TestReadingCliHelpRunsNoCommand(t *testing.T) {
 		t.Fatalf("the command tool reached the runner %d time(s), want 1; the zero above says "+
 			"nothing while the runner is unreachable", len(ran))
 	}
-	if strings.Join(ran[0], " ") != "work" {
-		t.Errorf("the command tool ran %v, want [work]", ran[0])
+	// The fixture server serves a workspace of its own, which the command is
+	// handed ahead of its path.
+	if want := "--workspace-root=" + s.startDir + " work"; strings.Join(ran[0], " ") != want {
+		t.Errorf("the command tool ran %v, want [%s]", ran[0], want)
 	}
 }
 

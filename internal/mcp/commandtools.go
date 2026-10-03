@@ -545,6 +545,10 @@ func jsonQuote(s string) string {
 // list of flag names kept here. A command that passes its arguments on
 // verbatim is handed none, because it parses no global flag.
 //
+// It is handed the workspace root this server was launched with the same way,
+// ahead of those, for a call that names no workspace of its own; see
+// servedRootFlag.
+//
 // Every failure this tool can produce is one the caller corrects by changing the
 // arguments — a property the command does not accept, a value of the wrong
 // shape, or a non-zero exit reporting something about the workspace — so each is
@@ -559,7 +563,7 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 	}
 	var serverFlags []string
 	if !ct.forwardsFlags {
-		serverFlags = s.flags.Args()
+		serverFlags = append(ct.servedRootFlag(s.startDir, supplied), s.flags.Args()...)
 	}
 	argv, refusal := ct.argv(serverFlags, supplied)
 	if refusal != "" {
@@ -598,6 +602,42 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 		Output:  stdout.String(),
 		Diags:   stderr.String(),
 	})
+}
+
+// servedRootFlag renders the workspace root this server was launched with as the
+// command's own workspace-root flag, for a call that names no workspace of its
+// own, so the command takes that root as its workspace — as it would typed with
+// the same flag — rather than finding one from the directory this server was
+// started in.
+//
+// root is where this server starts each call's resolution — the root it was
+// launched with — read as it is held rather than resolved again here. Empty
+// means it was launched with none and resolves from its working directory, as
+// the command does by itself, so nothing is handed and the command line is the
+// one the call alone builds. The command takes the root as given, which is what
+// the flag does at a terminal, while the tools here start their own resolution
+// from it; the two name one workspace whenever that root is a workspace's own
+// root rather than a directory inside one.
+//
+// A call that sends the property names its workspace, whatever value it sends,
+// and that value is the one the command reads: the call's own flag is the only
+// one on its command line. The flag is the one the command declares under the
+// property a call names its workspace with, read from the command's own
+// arguments rather than spelled here; a command declaring none is handed
+// nothing.
+func (ct commandTool) servedRootFlag(root string, supplied map[string]json.RawMessage) []string {
+	if root == "" {
+		return nil
+	}
+	if _, named := supplied[argumentWorkspaceRoot]; named {
+		return nil
+	}
+	for _, a := range ct.arguments {
+		if a.property == argumentWorkspaceRoot {
+			return []string{"--" + a.flag + "=" + root}
+		}
+	}
+	return nil
 }
 
 // commandToolResultPayload is a generated tool's structured payload: the

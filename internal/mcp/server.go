@@ -120,9 +120,11 @@ type Config struct {
 	// which is what a client launching this server inside a project gets.
 	//
 	// It is where resolution begins for a call that names no workspace of its
-	// own; a call that does name one is answered in the workspace it named. It
-	// binds on every transport, because which workspace a process serves is a
-	// property of the process rather than of how a client reached it.
+	// own; a call that does name one is answered in the workspace it named. A
+	// generated command tool's command is handed it as its --workspace-root for
+	// such a call, so the command takes it as its root, as it would typed with
+	// that flag. It binds on every transport, because which workspace a process
+	// serves is a property of the process rather than of how a client reached it.
 	WorkspaceRoot string
 
 	// Flags is what the invocation that launched this process said about
@@ -199,8 +201,10 @@ type server struct {
 	toolchain *lockfile.ToolchainStamp
 
 	// startDir is where workspace resolution begins for a tool call that
-	// supplies no explicit workspace_root. Empty resolves from the process
-	// working directory. A test points it at a fixture workspace.
+	// supplies no explicit workspace_root, and the root a generated command
+	// tool's command is handed for such a call. Empty resolves from the process
+	// working directory and hands nothing. A test points it at a fixture
+	// workspace.
 	startDir string
 
 	// flags is the command line the process was launched with, as it bears on
