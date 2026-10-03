@@ -229,6 +229,7 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.RenderNodeOutput](t, "RenderNodeOutput", false)
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
 	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitivePayloadLeaves", false)
+	vec[abi.IRSpec](t, "IRSpecConnectionAttachment", false)
 	vec[abi.IRNode](t, "IRNodeSensitivePayloadLeaves", false)
 	vec[abi.IRBoundaryFeature](t, "IRBoundaryFeatureSensitivePayloadLeaves", false)
 	vec[abi.AssembleBoundaryInput](t, "AssembleBoundaryInput", false)

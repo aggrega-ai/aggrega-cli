@@ -51,8 +51,8 @@ const (
 )
 
 // AttachmentBindingFree is the value [IRFeatureEntry.Binding] carries when an
-// attachment fills no declared attachment slot on its host Component — a free
-// attachment. It is spelled once here so the IR builder, a consumer comparing
+// attachment fills no declared attachment slot — a free attachment. It is
+// spelled once here so the IR builder, a consumer comparing
 // against it, and the ir-v1alpha1 contract that documents it cannot diverge on
 // the literal.
 //
@@ -414,13 +414,14 @@ type IREdge struct {
 //
 // Sensitive, SensitiveInject and SensitivePayloadLeaves are derived,
 // not authored. All three are computed at IR-build time from
-// declarations alone — the attached Feature's schema and the host
-// Component's attachment-slot declaration — over the merged
-// attachment, after the whole attachment cascade has folded. None of
-// them inspects a value, and none infers meaning from a name: the
-// attachment's name locates the slot it binds through an exact lookup
-// against the declared slot map, and nothing is read out of the name
-// itself. All three are absent from the wire when the declarations
+// declarations alone — the attached Feature's schema and the
+// attachment-slot declaration the attachment fills, on the host
+// Component or on the socket of the connection it was written on — over
+// the merged attachment, after the whole attachment cascade has folded.
+// None of them inspects a value, and none infers meaning from a name: the
+// slot name locates the slot through an exact lookup against the
+// declared slot map, and nothing is read out of the name itself. All
+// three are absent from the wire when the declarations
 // that would populate them are absent, so an attachment whose Feature
 // and slot declare nothing carries the same bytes it carried before
 // the axis existed.
@@ -469,12 +470,20 @@ type IRFeatureEntry struct {
 	// type resolves to no catalog entity — the same condition that leaves
 	// ResolvedVersion empty.
 	CatalogAnnotations OrderedMap[string] `json:"catalog_annotations,omitempty,omitzero"`
-	// Binding names the host Component attachment slot this attachment fills,
-	// or AttachmentBindingFree when it fills none. The slot pairs with the
+	// Binding names the attachment slot this attachment fills, or
+	// AttachmentBindingFree when it fills none. The slot pairs with the
 	// attachment by NAME — an attachment fills a slot when the Feature is
-	// attached under the slot's name — so the value is an exact key from the
-	// resolved Component's declared slot set, never anything read out of the
-	// name itself.
+	// attached under the slot's name — so the value is an exact key from a
+	// declared slot set, never anything read out of the name itself.
+	//
+	// Which slot set depends on where the attachment was written. An attachment
+	// of the node's own block fills a slot the host Component declares in its
+	// own featuresSchema, paired by the name it is attached under. An attachment
+	// a connection carries (Connection is set) fills a slot the connection's
+	// socket declares, paired by the slot name Connection records — never by its
+	// composed name, which no declared slot carries. A socket's slot set is
+	// closed, so such an attachment never reports AttachmentBindingFree in a
+	// graph whose build succeeded.
 	//
 	// The slot name is carried rather than a bare boolean because which slot
 	// was filled is the more useful half of the answer: a consumer that wants
@@ -503,8 +512,10 @@ type IRFeatureEntry struct {
 	// Sensitive is true when the attachment handles material an author
 	// declared sensitive: either the attached Feature declares a
 	// sensitive leaf in its values, infra or provides pillar, or the
-	// host Component's attachment slot of the same name declares the
-	// material it carries sensitive. The two declarations carry
+	// slot the attachment fills declares the material it carries
+	// sensitive — the host Component's slot of the same name, or for an
+	// attachment a connection carries, the slot of that name the
+	// connection's socket declares. The two declarations carry
 	// different claims — a leaf says this datum is secret material, a
 	// slot says whatever binds here handles secret material — and
 	// either one alone makes the attachment sensitive.
@@ -582,11 +593,15 @@ type IRFeatureEntry struct {
 	// and nothing reads the connection back out of it. An attachment a
 	// connection carries is one of the node's attachments for its Manifest
 	// mapping, its FeatureRecipe, its conformance and its sensitivity marking,
-	// and is left out of the node's own `.features` in a template context.
+	// and is left out of the node's own `.features` in a template context. Its
+	// Binding and the slot half of its Sensitive are read from the slot the
+	// connection's socket declares rather than from the Component's own slots.
 	//
-	// It is held in memory and is not part of the graph's wire form: the IR
-	// schema declares no field for it, so an emitted graph does not carry it.
-	Connection *AttachmentConnection `json:"-"`
+	// The graph's wire form carries the socket and the alias, so a consumer of
+	// an emitted graph joins the attachment to the edge whose source is this
+	// node and whose socket and alias are these. The slot name stays off the
+	// wire, where Binding reports it; see [AttachmentConnection].
+	Connection *AttachmentConnection `json:"connection,omitempty"`
 }
 
 // OnConnection reports whether the attachment was written on one of the

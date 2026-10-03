@@ -33,6 +33,45 @@ func ComponentAttachmentSlots(catalogLookup resolver.CatalogLookup, componentTyp
 	return comp.Spec.FeaturesSchema, true
 }
 
+// SocketAttachmentSlots resolves the attachment slots one socket of a Component
+// declares — the slots each connection wired through that socket may fill — in
+// the entity's own declaration order, together with whether the declared set is
+// KNOWN, on the same terms as [ComponentAttachmentSlots].
+//
+// A Component that resolves and does not declare the socket answers an empty,
+// known set: such a socket declares no slots, which is a determination rather
+// than an absence of one. An unresolved Component answers an unknown set, since
+// none of its sockets can be read.
+func SocketAttachmentSlots(catalogLookup resolver.CatalogLookup, componentType, socket string) (types.OrderedMap[types.AttachmentSlot], bool) {
+	if componentType == "" || catalogLookup.Component == nil {
+		return types.OrderedMap[types.AttachmentSlot]{}, false
+	}
+	comp, found := catalogLookup.Component(componentType)
+	if !found {
+		return types.OrderedMap[types.AttachmentSlot]{}, false
+	}
+	entry, _ := comp.Spec.UsesSchema.Get(socket)
+	return entry.FeaturesSchema, true
+}
+
+// attachmentSlotSet is one declared slot set as the per-attachment facts read
+// it: the slots, the ones among them declared sensitive, and whether the set is
+// known at all. A Component's own slots and a socket's slots are both held in
+// this one shape, so the binding and sensitivity facts are read from either by
+// the same code.
+type attachmentSlotSet struct {
+	slots     types.OrderedMap[types.AttachmentSlot]
+	sensitive map[string]bool
+	resolved  bool
+}
+
+// newAttachmentSlotSet pairs a resolved slot set with its sensitive subset, read
+// through [SensitiveSlots] so a socket's slots and a Component's are read for
+// sensitivity by the same reader.
+func newAttachmentSlotSet(slots types.OrderedMap[types.AttachmentSlot], resolved bool) attachmentSlotSet {
+	return attachmentSlotSet{slots: slots, sensitive: SensitiveSlots(slots), resolved: resolved}
+}
+
 // SensitiveSlots names the declared attachment slots whose declaration states
 // that whatever binds them handles secret material.
 //

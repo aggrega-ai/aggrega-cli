@@ -803,7 +803,9 @@ func connectionAttachmentSites(
 // Free attachments are skipped, because Binding carries the answer the merge
 // already computed: an instance name the node's Component declares no slot for
 // is unconstrained, and an unresolved Component leaves Binding empty rather than
-// claiming the slot set is known.
+// claiming the slot set is known. An attachment a connection carries is skipped
+// too: its Binding names a slot its connection's socket declares, which the
+// Component's own slot shape does not govern.
 func validateContributedFillSlots(
 	nodeID, entity string,
 	result *featureResult,
@@ -828,7 +830,7 @@ func validateContributedFillSlots(
 		// post-cascade answer to "which declared slot does this attachment fill",
 		// and asking the map again here would be a second home for that lookup.
 		entry, merged := result.Features.Get(fill.instance)
-		if !merged || entry.Binding == "" || entry.Binding == types.AttachmentBindingFree {
+		if !merged || entry.Binding == "" || entry.Binding == types.AttachmentBindingFree || entry.Connection != nil {
 			continue
 		}
 		if verr := shape.ValidateContributedFill(
@@ -1331,6 +1333,15 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // belongs to the NODE's Component, so it is the same set whichever cascade tier
 // contributed the attachment.
 //
+// An attachment a connection carries fills a slot of a different set — the one
+// the connection's socket declares on the node's Component — and pairs with it
+// by the slot name its connection record carries, since its own instance name is
+// the composed one no declared slot carries. Both facts are then read from that
+// set exactly as they are read from the Component's own: the same lookup, the
+// same reader of the slot's sensitivity declaration, the same free-versus-unknown
+// distinction. The connection record is what selects the set; nothing is read
+// out of the composed name.
+//
 // The leaf half of Sensitive reads what the Feature's schema DECLARES, not the
 // subset of sensitive leaves this attachment's payload happens to carry a value
 // for. Sensitivity is a property of the catalog entity plus the slot it fills,
@@ -1370,8 +1381,20 @@ func finalizeAttachmentFacts(
 	if topoNode != nil {
 		componentType = topoNode.ComponentType
 	}
-	slots, slotsResolved := ComponentAttachmentSlots(catalogLookup, componentType)
-	sensitiveSlots := SensitiveSlots(slots)
+	ownSlots := newAttachmentSlotSet(ComponentAttachmentSlots(catalogLookup, componentType))
+	socketSlots := map[string]attachmentSlotSet{}
+	slotFilled := func(name string, entry types.IRFeatureEntry) (attachmentSlotSet, string) {
+		if entry.Connection == nil {
+			return ownSlots, name
+		}
+		socket := entry.Connection.Socket
+		set, cached := socketSlots[socket]
+		if !cached {
+			set = newAttachmentSlotSet(SocketAttachmentSlots(catalogLookup, componentType, socket))
+			socketSlots[socket] = set
+		}
+		return set, entry.Connection.Attachment
+	}
 
 	declaredCache := map[string]resolver.SensitiveLeaves{}
 	declaredFor := func(featureType string) resolver.SensitiveLeaves {
@@ -1388,17 +1411,18 @@ func finalizeAttachmentFacts(
 
 	for name, entry := range result.Features.All() {
 		declared := declaredFor(entry.Type)
-		_, slotDeclared := slots.Get(name)
+		set, slot := slotFilled(name, entry)
+		_, slotDeclared := set.slots.Get(slot)
 
 		entry.Labels, entry.CatalogAnnotations = featureCatalogLabelsAndAnnotations(catalogLookup, entry.Type)
-		if slotsResolved {
+		if set.resolved {
 			entry.Binding = types.AttachmentBindingFree
 			if slotDeclared {
-				entry.Binding = name
+				entry.Binding = slot
 			}
 		}
 
-		sensitive := declared.Any() || sensitiveSlots[name]
+		sensitive := declared.Any() || set.sensitive[slot]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
 		markedLeaves := derivePayloadSensitiveLeaves(entry.Values, entry.Infra, declared)
 		if sensitive || marked.Len() > 0 || len(markedLeaves) > 0 {

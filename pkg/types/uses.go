@@ -101,10 +101,17 @@ type ConnectionAttachment struct {
 // stage that needs the connection reads it from here. The attachment's own name
 // is composed from the alias and the slot by [JoinConnectionAttachmentName], and
 // nothing reads the connection back out of that name.
+//
+// The graph's wire form carries the socket and the alias, which are what join the
+// attachment to its edge. Attachment stays off the wire on purpose: the slot an
+// attachment fills is reported once, by [IRFeatureEntry.Binding], and a second
+// field stating it would be a second answer to the same question that a reader
+// could find disagreeing with the first. So a graph decoded from its wire form
+// carries Socket and Alias here and an empty Attachment.
 type AttachmentConnection struct {
-	Socket     string
-	Alias      string
-	Attachment string
+	Socket     string `json:"socket"`
+	Alias      string `json:"alias"`
+	Attachment string `json:"-"`
 }
 
 // JoinConnectionAttachmentName composes the name an attachment a connection

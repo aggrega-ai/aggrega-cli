@@ -47,7 +47,9 @@ import (
 // inject and sensitive-inject, and a boundary attachment's infra — alongside the
 // structurally encoded order-preserving containers beside them. The two groups
 // behave differently on the wire, which is the subject of
-// TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads.
+// TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads. It also carries an
+// attachment written on the node's connection, so the connection that attachment
+// names crosses the wire on both sides.
 func irFixture(t *testing.T) types.IRGraph {
 	t.Helper()
 
@@ -73,6 +75,17 @@ func irFixture(t *testing.T) types.IRGraph {
 		InfraProvenance:        om[types.FieldProvenance](t, "size", types.FieldProvenance{Origin: types.OriginAnnotation, Side: "release", AnnotationKey: "aggrega.ai/size"}),
 		Sensitive:              true,
 		SensitivePayloadLeaves: []string{"values.zulu", "infra.size"},
+	}
+
+	// An attachment written on the node's connection: it names the connection it
+	// belongs to, which is the edge below. The slot name the connection record
+	// also holds stays off the wire, where the binding reports it.
+	onConnection := types.IRFeatureEntry{
+		Type:            "feature/token",
+		ResolvedVersion: "1.0.0",
+		Binding:         "credential",
+		Sensitive:       true,
+		Connection:      &types.AttachmentConnection{Socket: "databases", Alias: "primary", Attachment: "credential"},
 	}
 
 	node := types.IRNode{
@@ -128,7 +141,7 @@ func irFixture(t *testing.T) types.IRGraph {
 			ValuesMapping: om[json.RawMessage](t, "zeta/web", json.RawMessage(`{"replicas":2}`), "db", json.RawMessage(`{}`)),
 			InfraMapping:  om[json.RawMessage](t, "zeta/web", json.RawMessage(`{"cpu":"500m"}`)),
 			FeatureValuesMapping: om[types.OrderedMap[types.IRFeatureEntry]](t,
-				"zeta/web", om[types.IRFeatureEntry](t, "obs", entry),
+				"zeta/web", om[types.IRFeatureEntry](t, "obs", entry, "primary.credential", onConnection),
 			),
 			BoundaryFeatures: om[types.OrderedMap[types.IRBoundaryFeature]](t,
 				"prod/eks", om[types.IRBoundaryFeature](t,
@@ -271,6 +284,18 @@ func TestHostGuestWireParity_IRGraph(t *testing.T) {
 	}
 	if !obs.Sensitive {
 		t.Error("the decoded attachment lost its sensitivity marking")
+	}
+	if obs.Connection != nil {
+		t.Errorf("the decoded attachment of the node's own block gained a connection: %+v", obs.Connection)
+	}
+	credential, ok := entry.Get("primary.credential")
+	if !ok {
+		t.Fatal("the decoded graph lost the attachment written on the connection")
+	}
+	want := types.AttachmentConnection{Socket: "databases", Alias: "primary"}
+	if credential.Connection == nil || *credential.Connection != want {
+		t.Errorf("decoded connection = %+v, want %+v — the socket and alias ride the wire and the slot name does not",
+			credential.Connection, want)
 	}
 }
 

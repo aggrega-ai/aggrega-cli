@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: conn/gateway
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  featuresSchema:
+    # A slot of the component's own, filled on the component's own attachment
+    # block. Declared sensitive, so the attachment filling it is marked from the
+    # slot rather than from its Feature, which declares nothing sensitive.
+    db_password:
+      sensitive: true
+  usesSchema:
+    models:
+      selector: "component.aggrega.ai/category=model"
+      featuresSchema:
+        # The slot each connection wired through this socket may fill. Declared
+        # sensitive on the socket, so the attachment a connection carries here is
+        # marked from the socket's slot, the same way the component's own is.
+        credential:
+          sensitive: true
+          description: The credential the gateway presents to the model a connection reaches.
+  schema:
+    values:
+      region: { type: string }
+    provides:
+      host: { type: string, required: true }

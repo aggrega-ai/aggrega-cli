@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: conn-token-compose
+  version: "1.0.0"
+  description: >
+    Compose implementation of feature.conn/token. It renders no resource of its
+    own; its whole job is to fulfil the Feature's provides contract.
+spec:
+  capability: compose
+  implements: feature.conn/token
+  provides:
+    key: "{{ .values.key }}"

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.conn/token
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  # Declares nothing sensitive, so each attachment of it is marked sensitive by
+  # the slot it fills and by nothing else.
+  schema:
+    values:
+      key: { type: string }
+    provides:
+      key: { type: string, required: true }

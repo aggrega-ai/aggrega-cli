@@ -231,6 +231,77 @@ func (t *FieldProvenance) DecodeCBORStrict(data []byte) error {
 	return t.DecodeCBOR(data)
 }
 
+// EncodeCBOR encodes AttachmentConnection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t AttachmentConnection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends AttachmentConnection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t AttachmentConnection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "alias")
+	dst = appendCBORTextString(dst, t.Alias)
+	dst = appendCBORTextString(dst, "socket")
+	dst = appendCBORTextString(dst, t.Socket)
+	return dst, nil
+}
+
+// DecodeCBOR decodes AttachmentConnection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *AttachmentConnection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *AttachmentConnection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "socket":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Socket = s
+			}
+		case "alias":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Alias = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes AttachmentConnection exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *AttachmentConnection) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "socket", "alias"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes IRFeatureEntry as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t IRFeatureEntry) EncodeCBOR() ([]byte, error) {
@@ -261,6 +332,9 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 		n++
 	}
 	if t.Sensitive != false {
+		n++
+	}
+	if t.Connection != nil {
 		n++
 	}
 	if t.AnnotationKey != "" {
@@ -336,6 +410,14 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Sensitive != false {
 		dst = appendCBORTextString(dst, "sensitive")
 		dst = appendCBORBool(dst, t.Sensitive)
+	}
+	if t.Connection != nil {
+		dst = appendCBORTextString(dst, "connection")
+		if t.Connection == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.Connection.appendCBOR(dst); err != nil {
+			return nil, err
+		}
 	}
 	if t.AnnotationKey != "" {
 		dst = appendCBORTextString(dst, "annotation_key")
@@ -615,6 +697,14 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 				}
 				t.SensitivePayloadLeaves = s
 			}
+		case "connection":
+			{
+				v := new(AttachmentConnection)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.Connection = v
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -631,7 +721,7 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRFeatureEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_payload_leaves"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_payload_leaves", "connection"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: connection-attachment-app
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: conn/gateway
+      values:
+        region: eu
+      # An attachment of the component's own block, filling the component's
+      # own slot. It carries no connection.
+      features:
+        db_password:
+          type: feature.conn/token
+          values:
+            key: db-key
+      uses:
+        models:
+          gpt:
+            target: model
+            # An attachment written on the connection, filling the slot the
+            # socket declares. It is keyed `gpt.credential` on the gateway and
+            # carries the connection it was written on.
+            features:
+              credential:
+                type: feature.conn/token
+                values:
+                  key: gpt-key
+    model:
+      type: conn/model

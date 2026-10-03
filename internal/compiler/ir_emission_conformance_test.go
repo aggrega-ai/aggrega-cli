@@ -54,6 +54,11 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 		// fills, or a Go field the schema does not declare, would go unremarked
 		// on every other row here.
 		{"authored-leaf-marking", "testdata/authored-leaf-marking/release.yaml", []string{"testdata/authored-leaf-marking/catalog/base"}},
+		// The one fixture carrying an attachment written on a connection. It is keyed
+		// on the consuming node by its qualified name, which holds a dot, and it
+		// carries the connection it belongs to — so the attachment-name key pattern
+		// and the connection field are both exercised here and on no other row.
+		{"connection-attachment", "testdata/connection-attachment/release.yaml", []string{"testdata/connection-attachment/catalog/base"}},
 	}
 	for _, c := range cases {
 		c := c
