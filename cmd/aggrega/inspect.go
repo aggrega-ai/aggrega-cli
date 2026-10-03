@@ -1040,8 +1040,9 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // credential's name and key — public locators an author left unmarked.
 //
 // Both layouts carry the attachment-level facts clause on the attachment's own
-// line, so which slot an attachment fills and whether it handles declared
-// secret material read the same whichever layout the provenance selects.
+// line, so which connection an attachment was written on, which slot it fills
+// and whether it handles declared secret material read the same whichever
+// layout the provenance selects.
 func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
 	// Formatted once, ahead of the layout branch: the clause describes the
 	// attachment rather than a leaf, so both layouts print it in the same
@@ -1105,12 +1106,21 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 	return label
 }
 
-// attachmentFactsBracket formats the clause carrying the two per-attachment
-// facts the IR builder derives about an attachment itself rather than about one
-// of its leaves: the attachment slot it fills, and whether it handles material
-// an author declared sensitive. Both are read from the entry; neither is
-// recomputed here, so what inspect prints and what the IR carries cannot
-// disagree.
+// attachmentFactsBracket formats the clause carrying the per-attachment facts the
+// IR builder records about an attachment itself rather than about one of its
+// leaves: the connection it was written on, the attachment slot it fills, and
+// whether it handles material an author declared sensitive. Each is read from
+// the entry; none is recomputed here, so what inspect prints and what the IR
+// carries cannot disagree.
+//
+// The connection half leads, and appears only for an attachment written on one
+// of the node's connections. It names the connection by the alias it is written
+// under and the socket it is wired through, read from the entry's own connection
+// field and never out of the attachment's qualified name: the name carries the
+// alias but not the socket, and a reader joining the attachment to the edge it
+// is presented on needs both. Its presence also says which declaration the slot
+// half below names — the slot the connection's socket declares rather than one
+// the host Component declares for its own attachments.
 //
 // The slot half distinguishes three states, not two:
 //
@@ -1126,11 +1136,15 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 // records that no declaration marked the attachment, which is a narrower
 // statement than the attachment being free of secret material.
 //
-// Returns the empty string when the entry carries neither fact, so an
-// attachment on a node whose Component does not resolve and whose declarations
-// mark nothing prints the line it printed before either fact existed.
+// Returns the empty string when the entry carries none of the facts, so an
+// attachment of the node's own block, on a node whose Component does not
+// resolve and whose declarations mark nothing, prints the line it printed
+// before any fact existed.
 func attachmentFactsBracket(entry types.IRFeatureEntry) string {
 	var parts []string
+	if c := entry.Connection; c != nil {
+		parts = append(parts, "connection: "+c.Alias+" through socket "+c.Socket)
+	}
 	switch entry.Binding {
 	case "":
 	case types.AttachmentBindingFree:
