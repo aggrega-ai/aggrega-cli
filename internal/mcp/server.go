@@ -125,14 +125,20 @@ type Config struct {
 	// property of the process rather than of how a client reached it.
 	WorkspaceRoot string
 
-	// Flags is the command-line layer of the configuration precedence ladder:
-	// the settings the reader set on the invocation that launched this process.
-	// The command layer supplies the layer it composed onto its own resolution,
-	// and every workspace a call resolves has it applied on top, so a setting
-	// typed on that command line — the offline posture above all — is in force
-	// for every tool, and for the documentation acquisition at the start of the
-	// run, exactly as it is for any other command, and is reported as the flag
+	// Flags is what the invocation that launched this process said about
+	// configuration on its command line: the global configuration file it named
+	// with --config, and the settings the reader set there. The command layer
+	// supplies the value it composed for its own resolution. Every workspace a
+	// call resolves reads its global layer from that file and has those settings
+	// applied on top, so a setting typed on that command line — the offline
+	// posture above all — is in force for every tool, and for the documentation
+	// acquisition at the start of the run, exactly as it is for any other
+	// command, and each setting is reported as coming from the flag or the file
 	// that set it.
+	//
+	// A generated command tool's command is handed the same flags ahead of the
+	// call's own, so the command it runs reads that configuration too, and a flag
+	// the call sends for itself, coming later, wins.
 	//
 	// It binds on every transport and over every workspace a call resolves,
 	// including one a call names for itself: the flag is a property of the
@@ -197,9 +203,11 @@ type server struct {
 	// working directory. A test points it at a fixture workspace.
 	startDir string
 
-	// flags is the command-line layer the process was launched with, applied on
-	// top of every workspace resolveToolWorkspace resolves. The zero value
-	// changes nothing; a test that is not about the layer leaves it unset.
+	// flags is the command line the process was launched with, as it bears on
+	// configuration: every workspace resolveToolWorkspace resolves is resolved
+	// with it, and a generated command tool's command is handed it as flags. The
+	// zero value changes nothing; a test that is not about the layer leaves it
+	// unset.
 	flags workspaceconfig.FlagOverlay
 
 	// transport is which transport composed this session, and it decides what a

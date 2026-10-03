@@ -303,7 +303,7 @@ func TestTheDisclosureIsDerivedFromTheOperation(t *testing.T) {
 	// it the day a curated tool is written for its operation, and the symptom is
 	// this assertion failing for a reason that has nothing to do with what it tests.
 	id, path := anUncuratedCommand(t)
-	unpaired := deriveCommandTool(clisurface.Descriptor{Path: path})
+	unpaired := deriveCommandTool(clisurface.Descriptor{Path: path}, false)
 	if unpaired.operation != id {
 		t.Errorf("a generated tool for %q records the operation %q, want %q", path, unpaired.operation, id)
 	}

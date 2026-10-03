@@ -226,10 +226,10 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	if beforeWorkspace != nil {
 		beforeWorkspace()
 	}
-	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {
+	if err := requireServableWorkspace(cfg.WorkspaceRoot, cfg.Flags); err != nil {
 		return refused(err)
 	}
-	noteAnUnusedSigningKey(lifecycle, cfg.WorkspaceRoot, listen.Address)
+	noteAnUnusedSigningKey(lifecycle, cfg.WorkspaceRoot, cfg.Flags, listen.Address)
 	handler, err := NewHTTPHandler(ctx, cfg, transport)
 	if err != nil {
 		return refused(err)
@@ -306,12 +306,13 @@ const unusedSigningKeyDetail = "signing.key_path names a key this server holds, 
 // for whether the address may open — the refusal above has already settled the only
 // workspace question that decides that — so a configuration this cannot read costs
 // the operator a line rather than the launch.
-func noteAnUnusedSigningKey(lifecycle lifecycleLog, root, address string) {
+func noteAnUnusedSigningKey(lifecycle lifecycleLog, root string, flags workspaceconfig.FlagOverlay, address string) {
 	// The same resolution a call answered over this listener makes: it begins
-	// where the process was pointed, and names no root of its own, because a caller
-	// reaching a listener cannot name one. So the configuration read here is the
-	// configuration those calls will read.
-	rw, err := workspaceconfig.Resolve(root, "")
+	// where the process was pointed, names no root of its own, because a caller
+	// reaching a listener cannot name one, and reads the command line the process
+	// was started with. So the configuration read here is the configuration those
+	// calls will read — a key named in the global file --config names included.
+	rw, err := workspaceconfig.ResolveWithFlags(root, "", flags)
 	if err != nil || !namesASigningKey(rw.Config()) {
 		return
 	}
@@ -358,12 +359,14 @@ func namesASigningKey(cfg workspaceconfig.Config) bool {
 // workspace, and whether that directory is furnished yet is a question for the
 // calls answered in it rather than for whether the address may open. With no
 // root supplied, discovery must find something to anchor on — falling back to
-// the working directory is exactly the case this refuses.
-func requireServableWorkspace(root string) error {
+// the working directory is exactly the case this refuses. The resolution reads
+// the command line the process was started with, as every call's does, so a
+// global file --config names is the one read here too.
+func requireServableWorkspace(root string, flags workspaceconfig.FlagOverlay) error {
 	if root != "" {
 		return nil
 	}
-	rw, err := workspaceconfig.Resolve("", "")
+	rw, err := workspaceconfig.ResolveWithFlags("", "", flags)
 	if err != nil {
 		return fmt.Errorf("resolve the workspace this server would serve: %w", err)
 	}

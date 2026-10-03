@@ -35,6 +35,15 @@ type CommandSurface struct {
 	// Runnable reports whether the command executes an operation. A grouping
 	// command that only holds subcommands yields no tool.
 	Runnable bool
+
+	// ForwardsFlags reports whether the command hands every argument after its
+	// name on verbatim rather than parsing flags itself, which is what a command
+	// an installed extension contributes does. Such a command reads no global
+	// flag — not at a terminal either — so its tool does not lead the argument
+	// vector with this server's own: they would reach the extension as arguments
+	// it never declared. It is supplied for the reason Runnable is: the command
+	// tree is the only place that knows.
+	ForwardsFlags bool
 }
 
 // CommandExemption records one command deliberately absent from the generated
@@ -230,6 +239,11 @@ type commandTool struct {
 	// positional is the command's positional-argument summary as it declares
 	// it, empty when the command takes none.
 	positional string
+
+	// forwardsFlags reports that the command passes its arguments on verbatim
+	// rather than parsing them, so the server's own global flags are not put in
+	// front of them. See CommandSurface.ForwardsFlags.
+	forwardsFlags bool
 }
 
 // deriveCommandTools projects the command surface into the generated tool set,
@@ -250,7 +264,7 @@ func deriveCommandTools(surface []CommandSurface) []toolSpec {
 		if cs.Descriptor.Hidden {
 			continue
 		}
-		out = append(out, deriveCommandTool(cs.Descriptor))
+		out = append(out, deriveCommandTool(cs.Descriptor, cs.ForwardsFlags))
 	}
 	return out
 }
@@ -258,16 +272,19 @@ func deriveCommandTools(surface []CommandSurface) []toolSpec {
 // deriveCommandTool builds one generated tool from a command descriptor: its
 // name from the invocation path, its description from the command's own one-line
 // help, and its arguments from the flags the command declares and inherits.
+// forwardsFlags is the command tree's answer to whether the command passes its
+// arguments on verbatim; see CommandSurface.ForwardsFlags.
 //
 // Nothing about the command is restated here. Every field is read from the
 // descriptor, so a renamed flag or a reworded help line reaches the tool surface
 // without a second place to edit.
-func deriveCommandTool(d clisurface.Descriptor) toolSpec {
+func deriveCommandTool(d clisurface.Descriptor, forwardsFlags bool) toolSpec {
 	ct := commandTool{
-		name:       commandToolName(d.Path),
-		path:       commandArgvPath(d.Path),
-		arguments:  commandArguments(d),
-		positional: commandPositionalSummary(d.Use),
+		name:          commandToolName(d.Path),
+		path:          commandArgvPath(d.Path),
+		arguments:     commandArguments(d),
+		positional:    commandPositionalSummary(d.Use),
+		forwardsFlags: forwardsFlags,
 	}
 	operation := commandOperation(d.Path)
 	// The class the operation declares, read here for the same reason a curated
@@ -519,6 +536,15 @@ func jsonQuote(s string) string {
 // the command's output becomes tool data and cannot reach this server's own
 // stdout, where it would corrupt the protocol stream.
 //
+// The command is handed the global flags this server was started with that bear
+// on configuration — the global file --config names and settings such as
+// --offline — so it reads the configuration every other tool here reads: a
+// server started offline runs its commands offline, while a flag the call sends
+// for itself still wins. They are the server's own command line rendered back
+// as flags, from the one value the command layer handed over, rather than a
+// list of flag names kept here. A command that passes its arguments on
+// verbatim is handed none, because it parses no global flag.
+//
 // Every failure this tool can produce is one the caller corrects by changing the
 // arguments — a property the command does not accept, a value of the wrong
 // shape, or a non-zero exit reporting something about the workspace — so each is
@@ -531,7 +557,11 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 			return invalidToolArguments(ct.name, err)
 		}
 	}
-	argv, refusal := ct.argv(supplied)
+	var serverFlags []string
+	if !ct.forwardsFlags {
+		serverFlags = s.flags.Args()
+	}
+	argv, refusal := ct.argv(serverFlags, supplied)
 	if refusal != "" {
 		return errorResult(refusal)
 	}
@@ -580,9 +610,14 @@ type commandToolResultPayload struct {
 	Diags   string `json:"diagnostics,omitempty"`
 }
 
-// argv builds the argument vector for a call: the command path, then one entry
-// per supplied flag in the derived argument order, then the positional
-// arguments behind a bare double dash.
+// argv builds the argument vector for a call: the server's own global flags,
+// then the command path, then one entry per supplied flag in the derived
+// argument order, then the positional arguments behind a bare double dash.
+//
+// The server's flags lead, where a reader types global flags, and that position
+// is what lets a call override one: a flag given twice takes the later value,
+// so a call sending offline or config for itself is answered with its own value
+// — and the reported command line shows both, in the order they were read.
 //
 // Flags are emitted in the derived order rather than in the order the caller's
 // object happened to serialize them, so one set of arguments always produces one
@@ -594,7 +629,7 @@ type commandToolResultPayload struct {
 // the vector is good. It is text rather than an error envelope because the
 // caller fixes it by changing the arguments, and the channel that decision picks
 // belongs to the invoke path above rather than to vector building.
-func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, string) {
+func (ct commandTool) argv(serverFlags []string, supplied map[string]json.RawMessage) ([]string, string) {
 	known := map[string]bool{commandPositionalProperty: ct.positional != ""}
 	for _, a := range ct.arguments {
 		known[a.property] = true
@@ -612,7 +647,7 @@ func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, strin
 			ct.name, strings.Join(quoteAll(unknown), ", "), strings.Join(ct.acceptedProperties(), ", "))
 	}
 
-	argv := append([]string(nil), ct.path...)
+	argv := append(append([]string(nil), serverFlags...), ct.path...)
 	for _, a := range ct.arguments {
 		raw, ok := supplied[a.property]
 		if !ok {

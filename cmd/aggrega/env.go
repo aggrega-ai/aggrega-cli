@@ -81,11 +81,17 @@ const helpOffline = "Refuse every network reach for this one run: the offline po
 // environment set, and would leave no way at all to turn one off for a single
 // run.
 //
+// The overlay also carries the --config value, so a server this invocation
+// starts is handed the whole of what its command line said about configuration
+// in one value. That value is carried as typed: an empty one is the flag's
+// absence, exactly as globalConfigLookup reads it, because the two are built from
+// the same flag at the same site.
+//
 // It is the single construction site for that layer. The root command calls it
 // once and stashes the result on the workspace resolver, so every command body
 // reads one composed configuration rather than each re-reading the flag.
-func flagOverlayFromCobra(cmd *cobra.Command, offline bool) workspaceconfig.FlagOverlay {
-	var out workspaceconfig.FlagOverlay
+func flagOverlayFromCobra(cmd *cobra.Command, offline bool, configPath string) workspaceconfig.FlagOverlay {
+	out := workspaceconfig.FlagOverlay{ConfigPath: configPath}
 	if cmd.Flags().Changed(workspaceconfig.OfflineSettingKey) {
 		out.Offline = &offline
 	}
@@ -101,17 +107,12 @@ func flagOverlayFromCobra(cmd *cobra.Command, offline bool) workspaceconfig.Flag
 // the operator sets it. This is the single construction site for the flag-aware
 // lookup; command bodies read the result from the context rather than rebuilding
 // it. base is the underlying reader; pass nil for the live process environment.
+//
+// The rule itself is the overlay's (workspaceconfig.FlagOverlay.Lookup), which
+// is what a server started from this command line reads its global layer
+// through, so a command and a server cannot come to read --config differently.
 func globalConfigLookup(configPath string, base func(string) string) func(string) string {
-	base = envLookupOrGetenv(base)
-	if configPath == "" {
-		return base
-	}
-	return func(name string) string {
-		if name == workspaceconfig.EnvConfigOverride {
-			return configPath
-		}
-		return base(name)
-	}
+	return workspaceconfig.FlagOverlay{ConfigPath: configPath}.Lookup(envLookupOrGetenv(base))
 }
 
 // envLookupOrGetenv returns look when non-nil, else os.Getenv. The single

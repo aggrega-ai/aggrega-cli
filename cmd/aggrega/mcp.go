@@ -243,10 +243,11 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// lockfile a tool call writes records the same compiler and the same core
 		// plugin versions a lockfile written at a terminal records for this binary.
 		Toolchain: toolchainStamp(),
-		// The command-line layer this invocation's own resolution carries, handed
-		// over so every workspace a tool call resolves carries it too: a setting
-		// typed on this command line — --offline above all — is in force for the
-		// tools exactly as it is for any other command.
+		// What this invocation's command line says about configuration — the
+		// global file --config names, and the settings such as --offline — handed
+		// over so every workspace a tool call resolves reads it, and every command
+		// a generated tool runs is given it as flags: it is in force for the tools
+		// exactly as it is for any other command.
 		Flags:    flagOverlayFromContext(cmd.Context()),
 		Commands: commandSurface(cmd.Root()),
 		// Read from the same resolved block the listener settings below are, and
@@ -466,18 +467,21 @@ func mcpSettingOrigin(ws *workspaceconfig.ResolvedWorkspace, field string) (work
 // It runs here because this is the only package that can see both the command
 // tree and the server. The projection itself is the shared command catalog, so
 // no command is restated: a command reaches the tool surface by existing in the
-// tree. What this adds is the one fact the catalog deliberately does not record
-// — whether a command executes an operation — read from the tree rather than
-// inferred from a descriptor, so a grouping command that later gains an
-// operation of its own reaches the tool surface with no change here.
+// tree. What this adds is the two facts the catalog deliberately does not record
+// — whether a command executes an operation, and whether it passes its
+// arguments on verbatim rather than parsing its flags — read from the tree
+// rather than inferred from a descriptor, so a grouping command that later gains
+// an operation of its own reaches the tool surface with no change here.
 func commandSurface(root *cobra.Command) []mcp.CommandSurface {
 	if root == nil {
 		return nil
 	}
 	runnable := map[string]bool{}
+	forwards := map[string]bool{}
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		runnable[c.CommandPath()] = c.Runnable()
+		forwards[c.CommandPath()] = c.DisableFlagParsing
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
@@ -487,7 +491,7 @@ func commandSurface(root *cobra.Command) []mcp.CommandSurface {
 	cat := clisurface.Catalog(root)
 	out := make([]mcp.CommandSurface, 0, len(cat))
 	for _, d := range cat {
-		out = append(out, mcp.CommandSurface{Descriptor: d, Runnable: runnable[d.Path]})
+		out = append(out, mcp.CommandSurface{Descriptor: d, Runnable: runnable[d.Path], ForwardsFlags: forwards[d.Path]})
 	}
 	return out
 }

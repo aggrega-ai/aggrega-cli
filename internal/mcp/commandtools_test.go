@@ -83,9 +83,11 @@ func fixtureCommandSurface() []CommandSurface {
 // the projection learned something this one did not.
 func projectCommandSurface(root *cobra.Command) []CommandSurface {
 	runnable := map[string]bool{}
+	forwards := map[string]bool{}
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		runnable[c.CommandPath()] = c.Runnable()
+		forwards[c.CommandPath()] = c.DisableFlagParsing
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
@@ -95,7 +97,7 @@ func projectCommandSurface(root *cobra.Command) []CommandSurface {
 	cat := clisurface.Catalog(root)
 	out := make([]CommandSurface, 0, len(cat))
 	for _, d := range cat {
-		out = append(out, CommandSurface{Descriptor: d, Runnable: runnable[d.Path]})
+		out = append(out, CommandSurface{Descriptor: d, Runnable: runnable[d.Path], ForwardsFlags: forwards[d.Path]})
 	}
 	return out
 }

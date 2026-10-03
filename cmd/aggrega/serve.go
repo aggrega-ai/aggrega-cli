@@ -33,8 +33,9 @@ manifest*.yaml.
 
 Configuration is the cascade composition of the .aggrega-config.yaml
 files from the workspace root down to the working directory (nearer
-overrides farther), beneath which $AGGREGA_CONFIG (when set) and the
-built-in defaults apply.
+overrides farther), beneath which the global config file — the one
+--config names, else the one $AGGREGA_CONFIG names, else the default
+location when a file is there — and the built-in defaults apply.
 
 The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight
@@ -83,10 +84,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		CompilerVersion: provenanceCompilerVersion(),
 		Toolchain:       toolchainStamp(),
 		BuildOnInspect:  buildOnInspect,
-		// The command-line layer this invocation's own resolution carries, handed
-		// over so every workspace the daemon resolves carries it too: a setting
-		// typed on this command line — --offline above all — is in force for every
-		// request exactly as it is for any other command.
+		// What this invocation's command line says about configuration — the
+		// global file --config names, and the settings such as --offline — handed
+		// over so every workspace the daemon resolves reads it: it is in force for
+		// every request exactly as it is for any other command.
 		Flags: flagOverlayFromContext(cmd.Context()),
 		// Supplied for the same reason the compiler version and the toolchain stamp
 		// are: the value belongs to this package and the daemon lives below it. The

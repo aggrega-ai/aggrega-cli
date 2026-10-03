@@ -32,6 +32,11 @@ type lazyWorkspace struct {
 	// settings the reader set on this invocation — composed onto the resolution
 	// below. It is empty on an invocation that set none, which is the ordinary
 	// case, and an empty layer changes nothing.
+	//
+	// It also carries the --config value, which this resolution reads through
+	// lookup rather than through it: both are built from that one flag at the
+	// one site that reads it, and the overlay holds it so a server this
+	// invocation starts is handed the command line's configuration in one value.
 	flags workspaceconfig.FlagOverlay
 	// errOut receives the advisories resolution produces — the CI-overlay
 	// warnings and the first-run configuration notice. Nil selects the process's
@@ -135,13 +140,14 @@ func configLookupFromContext(ctx context.Context) func(string) string {
 }
 
 // flagOverlayFromContext returns the command-line layer the workspace resolver
-// carries: the settings the reader set on this invocation, read once by the root
-// command and stashed there.
+// carries: the global configuration file named with --config and the settings
+// the reader set on this invocation, read once by the root command and stashed
+// there.
 //
 // It exists for a command that hands resolution on to a server of its own. Such
 // a server resolves a workspace for each request rather than reading the one
-// this invocation resolved, so it is handed this same layer to apply on top of
-// each of those resolutions — the value the root command composed, not the flags
+// this invocation resolved, so it is handed this same value to resolve each of
+// those workspaces with — the value the root command composed, not the flags
 // read a second time. It returns the empty layer when no resolver is attached,
 // which happens only when a command helper is invoked directly outside the root
 // wiring (tests), and the empty layer changes nothing.

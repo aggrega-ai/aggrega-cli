@@ -12,6 +12,8 @@ import (
 
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // init discards the browser-opener's stdout process-wide. The interactive
@@ -82,7 +84,7 @@ func newRootCmd() *cobra.Command {
 			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
 			ctx := withWorkspaceResolver(cmd.Context(), root,
 				globalConfigLookup(configPathFlag, nil),
-				flagOverlayFromCobra(cmd, offlineFlag))
+				flagOverlayFromCobra(cmd, offlineFlag, configPathFlag))
 			if cmd.CommandPath() == configInitInvocation {
 				withholdFirstRunNotice(ctx)
 			}
@@ -93,13 +95,13 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
 		"absolute path to use as the workspace root (skips discovery)")
-	root.PersistentFlags().StringVar(&configPathFlag, "config", "",
+	root.PersistentFlags().StringVar(&configPathFlag, workspaceconfig.ConfigFlagName, "",
 		"path to the global config file, overriding $AGGREGA_CONFIG and the default location. Workspace-tree config files still layer on top")
 	root.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
 		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
 	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,
 		"Accessible mode: disable color and draw plain, static progress lines with no spinner animation or cursor repaint, even on a terminal. Intended for screen readers")
-	root.PersistentFlags().BoolVar(&offlineFlag, "offline", false, helpOffline)
+	root.PersistentFlags().BoolVar(&offlineFlag, workspaceconfig.OfflineSettingKey, false, helpOffline)
 	// Every capability is attached by naming the operation it carries, so the
 	// command line registers nothing the operation table does not account for and
 	// nothing under a path the table does not give. The grouping commands run

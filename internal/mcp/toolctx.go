@@ -370,24 +370,25 @@ type toolWorkspace struct {
 // reads that Release's stack through catalogDirsFor, which the workspace
 // configuration may give directories of its own.
 //
-// The command-line layer the process was launched with is applied on top of
-// the resolution, here and nowhere else, so every setting it carries — the
-// offline posture above all — is what every tool, and the documentation
-// acquisition at the start of the run, reads and reaches the network through.
-// It applies over a workspace a call names for itself as much as over the one
-// the process was started in, because a flag is a property of the invocation
-// rather than of a workspace.
+// The command line the process was launched with is applied to the resolution,
+// here and nowhere else: the global configuration file it names with --config
+// is the one the cascade's global layer is read from, and every setting it
+// carries — the offline posture above all — is laid on top. So that is what
+// every tool, and the documentation acquisition at the start of the run, reads
+// and reaches the network through, and a setting's source is reported as the
+// command line reports it. It applies over a workspace a call names for itself
+// as much as over the one the process was started in, because a flag is a
+// property of the invocation rather than of a workspace.
 func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*toolWorkspace, error) {
 	start := rootArg
 	flagRoot := rootArg
 	if start == "" {
 		start = s.startDir
 	}
-	resolved, err := workspaceconfig.Resolve(start, flagRoot)
+	rw, err := workspaceconfig.ResolveWithFlags(start, flagRoot, s.flags)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace: %w", err)
 	}
-	rw := resolved.WithFlags(s.flags)
 	cfg := rw.Config()
 	root := rw.Root()
 	tw := &toolWorkspace{

@@ -389,33 +389,33 @@ type RunConfig struct {
 	// the graph without running it. Nothing is written to disk either way.
 	BuildOnInspect *bool
 
-	// Flags is the command-line layer of the configuration precedence ladder:
-	// the settings the reader set on the invocation that launched this daemon,
-	// such as --offline. The command layer supplies the layer it composed onto
-	// its own resolution, and every workspace the daemon resolves — the one it
-	// was launched over and each one a request names — has it applied on top,
-	// so a setting typed on that command line is in force for every request
-	// exactly as it is for any other command, and is reported as the flag that
-	// set it. The zero value carries nothing and changes nothing.
+	// Flags is what the invocation that launched this daemon said about
+	// configuration on its command line: the global configuration file it named
+	// with --config, and the settings the reader set there, such as --offline.
+	// The command layer supplies the value it composed for its own resolution,
+	// and every workspace the daemon resolves — the one it was launched over and
+	// each one a request names — reads its global layer from that file and has
+	// those settings applied on top, so what was typed on that command line is in
+	// force for every request exactly as it is for any other command, and each
+	// setting is reported as coming from the flag or the file that set it. The
+	// zero value carries nothing and changes nothing.
 	Flags workspaceconfig.FlagOverlay
 }
 
 // resolveWorkspace resolves the workspace at root through the chokepoint every
-// command resolves through, with the command-line layer the daemon was launched
-// with applied on top. It is the one place the daemon resolves a workspace —
-// the launch resolution and every workspace a request names both come through
-// here — so that layer reaches every one of them by construction rather than by
-// each site remembering to apply it.
+// command resolves through, with the command line the daemon was launched with
+// applied: the global file it names with --config is the one the cascade's
+// global layer is read from, and the settings it carries are laid on top. It is
+// the one place the daemon resolves a workspace — the launch resolution and
+// every workspace a request names both come through here — so that command
+// line reaches every one of them by construction rather than by each site
+// remembering to apply it.
 //
 // The root is supplied explicitly as the flag root, so discovery is not
 // consulted where one is given; an empty root discovers upward from the working
 // directory, which is what the launch resolution with no --workspace-root does.
 func resolveWorkspace(root string, flags workspaceconfig.FlagOverlay) (*workspaceconfig.ResolvedWorkspace, error) {
-	resolved, err := workspaceconfig.Resolve("", root)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.WithFlags(flags), nil
+	return workspaceconfig.ResolveWithFlags("", root, flags)
 }
 
 // resolveBuildOnInspect applies the build-on-inspect precedence: an explicit
@@ -812,10 +812,11 @@ type session struct {
 	// that workspace's own configuration says.
 	buildOnInspectFlag *bool
 
-	// flags is the command-line layer the daemon was launched with. Like the
-	// flag above it is a property of the launch rather than of a workspace, and
-	// it is applied on top of every workspace resolveWorkspace resolves. The
-	// zero value changes nothing, which is the in-memory test harness's shape.
+	// flags is the command line the daemon was launched with, as it bears on
+	// configuration. Like the flag above it is a property of the launch rather
+	// than of a workspace, and every workspace resolveWorkspace resolves is
+	// resolved with it. The zero value changes nothing, which is the in-memory
+	// test harness's shape.
 	flags workspaceconfig.FlagOverlay
 
 	// installCLIPlugin installs a command-extension plugin as a top-level command,
@@ -1698,16 +1699,17 @@ func (s *Server) forgetPublished() {
 //
 // Config loading uses the precedence cascade per resolveWorkspace — the flags
 // the daemon was launched with > environment > workspace file > global file >
-// built-in defaults — and every workspace a request later names is resolved
+// built-in defaults, the global file being the one --config named at launch
+// where it named one — and every workspace a request later names is resolved
 // through that same call, so one workspace's settings are read the way the
 // command line reads them rather than inherited from whichever tree the process
 // happened to start in.
 //
 // On unrecoverable startup failure (root not discoverable, config malformed,
-// explicit AGGREGA_CONFIG pointing at a missing file), Run returns an error
-// before entering the dispatch loop. The cobra entry point surfaces that error
-// to the process exit code; the IDE client interprets non-zero exit as a
-// "language server failed to start" condition.
+// an explicit --config or AGGREGA_CONFIG pointing at a missing file), Run
+// returns an error before entering the dispatch loop. The cobra entry point
+// surfaces that error to the process exit code; the IDE client interprets
+// non-zero exit as a "language server failed to start" condition.
 func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
