@@ -104,16 +104,18 @@ type validateResultPayload struct {
 //
 // Releases are spelled relative to the workspace root, and Releases reading the
 // same directories share one pass. Each catalog directory is spelled as the
-// caller may be told a location, and one the caller is not told reads as the
-// kept-back phrase. An empty CatalogDirs is a pass whose Releases read no catalog
+// caller may be told a location: one the caller is not told is null in its
+// place, so every other directory keeps its position, and CatalogDirsWithheld
+// marks the pass. An empty CatalogDirs is a pass whose Releases read no catalog
 // directory: it checked nothing, and it is valid because nothing it read was
 // wrong. Neither list is ever null.
 type validateCatalogPass struct {
-	Releases    []string `json:"releases"`
-	CatalogDirs []string `json:"catalog_dirs"`
-	Valid       bool     `json:"valid"`
-	Diagnostics []string `json:"diagnostics"`
-	Notices     []string `json:"notices,omitempty"`
+	Releases            []string  `json:"releases"`
+	CatalogDirs         []*string `json:"catalog_dirs"`
+	CatalogDirsWithheld bool      `json:"catalog_dirs_withheld,omitempty"`
+	Valid               bool      `json:"valid"`
+	Diagnostics         []string  `json:"diagnostics"`
+	Notices             []string  `json:"notices,omitempty"`
 }
 
 var validateToolSpec = toolSpec{
@@ -516,14 +518,12 @@ func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPa
 	for _, pass := range passes {
 		answered := validateCatalogPass{
 			Releases:    append([]string{}, pass.Releases...),
-			CatalogDirs: make([]string, 0, len(pass.Dirs)),
+			CatalogDirs: make([]*string, 0, len(pass.Dirs)),
 		}
 		for _, dir := range pass.Dirs {
-			name, told := tw.reportedLocation(dir)
-			if !told {
-				name = keptBackLocationWords
-			}
+			name, withheld := tw.reportedLocationField(dir)
 			answered.CatalogDirs = append(answered.CatalogDirs, name)
+			answered.CatalogDirsWithheld = answered.CatalogDirsWithheld || withheld
 		}
 		var diags, notices []string
 		if len(pass.Dirs) > 0 {
@@ -800,14 +800,19 @@ func renderCatalogText(p validateResultPayload) string {
 
 // renderCatalogPassesText renders the human-readable whole-catalog result of a
 // workspace checked once for each Release: each pass under the line naming its
-// Releases and the directories it read, then that pass's verdict and its full
-// ordered diagnostic lines.
+// Releases and the directories it read, a directory kept back from the caller
+// reading as the kept-back phrase, then that pass's verdict and its full ordered
+// diagnostic lines.
 func renderCatalogPassesText(p validateResultPayload) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s is checked once for each Release, over the catalog directories that Release reads.\n",
 		catalogSubject(p.Target))
 	for _, pass := range p.Passes {
-		fmt.Fprintf(&b, "\n%s\n", workspaceconfig.CatalogPassHeading(pass.Releases, pass.CatalogDirs))
+		dirs := make([]string, 0, len(pass.CatalogDirs))
+		for _, dir := range pass.CatalogDirs {
+			dirs = append(dirs, reportedLocationWords(dir))
+		}
+		fmt.Fprintf(&b, "\n%s\n", workspaceconfig.CatalogPassHeading(pass.Releases, dirs))
 		switch {
 		case len(pass.CatalogDirs) == 0:
 		case pass.Valid:

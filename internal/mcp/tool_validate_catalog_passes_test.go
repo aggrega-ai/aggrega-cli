@@ -118,7 +118,8 @@ func catalogScopeOverAListener(t *testing.T, root string) *callToolResult {
 // and no other, the pass reading nothing valid and empty, and the call's own
 // verdict covering every pass. Over the process's own streams a directory is told
 // as it is held; over a listener, one inside the workspace by its name relative to
-// the root and one outside it not at all.
+// the root and one outside it not at all — null in its place, with the pass
+// marked as keeping it back, and the kept-back phrase in the text.
 func TestValidateToolCatalogScopeRunsOncePerRelease(t *testing.T) {
 	root := catalogPassesWorkspace(t)
 	elsewhere := filepath.Join(filepath.Dir(root), "elsewhere")
@@ -127,10 +128,15 @@ func TestValidateToolCatalogScopeRunsOncePerRelease(t *testing.T) {
 		name     string
 		listener bool
 		wantA    string
+		// wantElse is the directory outside the workspace as the pass names it,
+		// and empty where it is kept back.
 		wantElse string
+		// wantElseText is how the text names that directory.
+		wantElseText string
 	}{
-		{name: "over the process's own streams", wantA: filepath.Join(root, "variant-a"), wantElse: elsewhere},
-		{name: "over a listener", listener: true, wantA: "variant-a", wantElse: keptBackLocationWords},
+		{name: "over the process's own streams", wantA: filepath.Join(root, "variant-a"), wantElse: elsewhere,
+			wantElseText: elsewhere},
+		{name: "over a listener", listener: true, wantA: "variant-a", wantElseText: keptBackLocationWords},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,22 +162,38 @@ func TestValidateToolCatalogScopeRunsOncePerRelease(t *testing.T) {
 			}
 			want := []struct {
 				release string
-				dirs    []string
-				valid   bool
-				diags   int
+				// dirs are the directories the pass names, an empty entry standing
+				// for one kept back; nil leaves the pass's directories unasserted.
+				dirs     []string
+				withheld bool
+				valid    bool
+				diags    int
 			}{
-				{"release-a.yaml", []string{tc.wantA}, true, 0},
-				{"release-b.yaml", nil, false, 1},
-				{"release-elsewhere.yaml", []string{tc.wantElse}, true, 0},
-				{"release-off.yaml", []string{}, true, 0},
+				{"release-a.yaml", []string{tc.wantA}, false, true, 0},
+				{"release-b.yaml", nil, false, false, 1},
+				{"release-elsewhere.yaml", []string{tc.wantElse}, tc.wantElse == "", true, 0},
+				{"release-off.yaml", []string{}, false, true, 0},
 			}
 			for i, w := range want {
 				got := payload.Passes[i]
 				if strings.Join(got.Releases, ",") != w.release {
 					t.Errorf("pass %d was run for %v; want %s", i, got.Releases, w.release)
 				}
-				if w.dirs != nil && (got.CatalogDirs == nil || strings.Join(got.CatalogDirs, ",") != strings.Join(w.dirs, ",")) {
-					t.Errorf("pass %d read %#v; want %#v", i, got.CatalogDirs, w.dirs)
+				if w.dirs != nil {
+					read := make([]string, 0, len(got.CatalogDirs))
+					for _, dir := range got.CatalogDirs {
+						if dir == nil {
+							read = append(read, "")
+							continue
+						}
+						read = append(read, *dir)
+					}
+					if got.CatalogDirs == nil || strings.Join(read, ",") != strings.Join(w.dirs, ",") {
+						t.Errorf("pass %d read %#v; want %#v", i, read, w.dirs)
+					}
+					if got.CatalogDirsWithheld != w.withheld {
+						t.Errorf("pass %d marks its directories withheld=%v; want %v", i, got.CatalogDirsWithheld, w.withheld)
+					}
 				}
 				if got.Valid != w.valid || len(got.Diagnostics) != w.diags {
 					t.Errorf("pass %d valid %v with %d diagnostic(s); want %v and %d: %v",
@@ -180,6 +202,10 @@ func TestValidateToolCatalogScopeRunsOncePerRelease(t *testing.T) {
 			}
 			if !strings.Contains(res.Content[0].Text, "Release release-off.yaml reads no catalog directory") {
 				t.Errorf("the text does not report the pass reading nothing:\n%s", res.Content[0].Text)
+			}
+			if !strings.Contains(res.Content[0].Text, "Release release-elsewhere.yaml reads "+tc.wantElseText) {
+				t.Errorf("the text does not name the directory outside the workspace as %q:\n%s",
+					tc.wantElseText, res.Content[0].Text)
 			}
 		})
 	}
