@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -102,6 +103,39 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	return s.releaseCatalogs.lookupFor(dirs, func() *catalog.LazyLookup {
 		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil)
 	})
+}
+
+// catalogDirsRefusal refuses a request naming release whose catalog search stack
+// holds a directory a whole-catalog load cannot walk — one that does not exist,
+// say — with that load's own refusal, and returns nil where every directory can
+// be walked. A release value that cannot name a Release is refused as every
+// Release parameter is.
+//
+// The stack is read off the lookup the request is answered from (catalogFor), so
+// the directories checked are the directories resolved through, and the check is
+// the lookup's own (CheckDirectories), which walks them by the walk the load runs.
+// Nothing here asks the filesystem itself: a second test of whether a directory
+// exists would be free to answer differently from the load it stands in for.
+//
+// The message is the refusal's whole cause chain on one line, which is the
+// command line's report of the same directory — the directory, the load it
+// stopped and why — in the single line this wire carries. It travels as a failure
+// to resolve what the Release reaches, the code a client already routes to the
+// reader, and with no document attached: a directory is not a document a position
+// could be given in.
+func (s *Server) catalogDirsRefusal(release string) *jsonRPCError {
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	if paramErr != nil {
+		return paramErr
+	}
+	if err := s.catalogFor(releasePath).CheckDirectories(); err != nil {
+		return &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: cerrors.CauseChain(err),
+			cause:   err,
+		}
+	}
+	return nil
 }
 
 // catalogDirsFor returns the catalog search stack a request naming releasePath

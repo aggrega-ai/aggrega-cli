@@ -1424,6 +1424,33 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]indexedDoc
 	}
 }
 
+// CheckDirectories returns the refusal a whole-catalog load gives the first of
+// this lookup's catalog directories it cannot walk — one that does not exist, or
+// one that cannot be read — or nil when it can walk every one.
+//
+// The walks this lookup runs find what they can, so a directory none of them can
+// enter is passed over without a word and every resolution through the lookup
+// reads as though the directory held nothing. A command that loads the whole
+// catalog refuses the same directory instead. A caller that has to answer as that
+// command answers asks here and is handed the load's own refusal: the directories
+// are walked by the walk the load runs, reading no document, so the two cannot
+// come to disagree about which directory cannot be walked or about the words that
+// say so.
+//
+// It is asked at the moment of the call rather than recorded by an earlier walk,
+// because a directory can appear or vanish between two requests, and the indexes
+// built before it did would still stand. And it reads only what NewLazyLookup was
+// given, which nothing rewrites, so it takes no lock: holding the lookup for a
+// directory walk would stall every resolution through it meanwhile.
+func (l *LazyLookup) CheckDirectories() error {
+	for _, dir := range l.catalogDirs {
+		if err := walkCatalogDir(l.workspaceRoot, dir, l.cacheDir, func(string) error { return nil }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // buildSchemaLibraries walks the catalog directories once, parses + validates every
 // SchemaLibrary through the shared per-entity resolve (parseSchemaLibraryEntity),
 // and caches them in l.schemaLibraries. SchemaLibraries are consumed as a complete

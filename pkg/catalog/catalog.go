@@ -487,16 +487,7 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 // duplicate is left for the first-win merge.
 func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedEntity, error) {
 	var skipped []SkippedEntity
-	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return SkipDirIfArtifactCache(c.workspaceRoot, path, cacheClean)
-		}
-		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
-			return nil
-		}
+	if err := walkCatalogDir(c.workspaceRoot, dir, cacheClean, func(path string) error {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if tolerant {
@@ -514,9 +505,39 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 		}
 		return nil
 	}); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
+		return nil, err
 	}
 	return skipped, nil
+}
+
+// walkCatalogDir walks one catalog directory as a whole-catalog load walks it,
+// handing visit every YAML document beneath it with the artifact cache stepped
+// over, and returns the load's refusal of the directory: whatever stopped the
+// walk — a directory that does not exist or cannot be read, or an error visit
+// returned — under the directory's own name. It returns nil when the walk ran to
+// its end.
+//
+// It is the one place that refusal is composed. The load hands it a visit that
+// reads and indexes each document, and a check that has to refuse what the load
+// refuses without loading anything hands it one that reads nothing, so the two
+// meet a directory they cannot walk in the same walk and refuse it in the same
+// words.
+func walkCatalogDir(workspaceRoot, dir, cacheDir string, visit func(path string) error) error {
+	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return SkipDirIfArtifactCache(workspaceRoot, path, cacheDir)
+		}
+		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
+			return nil
+		}
+		return visit(path)
+	}); err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
+	}
+	return nil
 }
 
 // SkipDirIfArtifactCache returns the walk directive for a directory reached at

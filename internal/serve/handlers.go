@@ -992,7 +992,22 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // same reason rather than by inheritance: that caller builds a graph too. A
 // surface that does not build one crosses no such precondition, which is what
 // keeps the name-addressed coordinate answering on an unprepared workspace.
+//
+// # A catalog directory the Release reads and nothing can walk is refused first
+//
+// The graph is the editor's counterpart of `aggrega inspect` on the same Release,
+// and that command loads the Release's whole catalog stack before it reads
+// anything else, so a configured directory that does not exist stops it with the
+// load's own refusal. The lookup a graph resolves through finds what it can, and
+// would draw the graph as though the directory were empty — a graph no build of
+// the same Release reaches, because the build refuses the directory too. So the
+// stack is asked first, through the load's own walk (catalogDirsRefusal), and the
+// refusal is the command's, ahead of the lockfile gate as the command line reaches
+// its stack before any lockfile.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
+	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
+		return irGraphResult{}, errEnvelope
+	}
 	preview, errEnvelope := s.previewRelease(ctx, params.Release, s.irGraphPipelineOptions())
 	if errEnvelope != nil {
 		// The panel is republished from whatever the run reached, and BEFORE the
