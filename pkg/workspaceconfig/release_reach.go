@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
@@ -125,17 +126,31 @@ func underAnyDir(path string, dirs []string) bool {
 
 // requireReleaseFile refuses a release naming nothing, or naming a directory,
 // spelling it the way the account of a failed lookup spells a Release.
+//
+// Each refusal is filed under the operator's concern, since the value at fault
+// is the Release a request or a command line named, and it names no registered
+// condition because no rule fired: what was refused is the argument. The
+// category is set where the refusal is made, so it reads the same wherever the
+// refusal is reported.
 func (r *ResolvedWorkspace) requireReleaseFile(release string) error {
 	abs, err := filepath.Abs(release)
 	if err != nil {
-		return fmt.Errorf("the Release %s cannot be located: %w", release, err)
+		return releaseArgumentRefusal(fmt.Sprintf("the Release %s cannot be located: %v", release, err))
 	}
 	fi, err := os.Stat(abs)
 	switch {
 	case err != nil:
-		return fmt.Errorf("the Release %s does not exist; name an existing Release file", r.reportedReleaseName(release))
+		return releaseArgumentRefusal(fmt.Sprintf("the Release %s does not exist; name an existing Release file",
+			r.reportedReleaseName(release)))
 	case fi.IsDir():
-		return fmt.Errorf("the Release %s is a directory; name one Release file", r.reportedReleaseName(release))
+		return releaseArgumentRefusal(fmt.Sprintf("the Release %s is a directory; name one Release file",
+			r.reportedReleaseName(release)))
 	}
 	return nil
+}
+
+// releaseArgumentRefusal is the refusal of a value that cannot name a Release
+// file, carrying the sentence that says why.
+func releaseArgumentRefusal(message string) error {
+	return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{}, message, nil, nil)
 }

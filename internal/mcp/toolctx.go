@@ -411,13 +411,18 @@ func (tw *toolWorkspace) catalogDirsFor(release string) []string {
 // argument as workspacePath resolved it, and tool is the tool's advertised name, so
 // a refusal names what to correct in the caller's own spelling.
 //
+// The corrective text is guidance in the shape every tool refusing a Release it
+// cannot read gives it: what was refused, the reason the workspace gave, and the
+// page teaching what a Release is.
+//
 // The reach is read with this call's own catalog_dirs argument, as newView reads
 // the stack, so the documents an answer holds and the stack its names resolve
 // through are one Release's.
 func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig.ReleaseReach, string) {
 	reach, err := tw.rw.ReleaseReach(releasePath, tw.flagDirs)
 	if err != nil {
-		return workspaceconfig.ReleaseReach{}, fmt.Sprintf("%s's 'release' names no Release: %v.", tool, err)
+		return workspaceconfig.ReleaseReach{}, explainToolError(
+			fmt.Sprintf("%s's 'release' names no Release.", tool), err, "release")
 	}
 	return reach, ""
 }
