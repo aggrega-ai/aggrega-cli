@@ -200,16 +200,42 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 		})
 }
 
-// walkComponentInstanceFeatures collects every Feature URI declared via the
-// component-instance's Features map. Every attachment family is declared there,
-// so one walk reaches them all — a credential attachment's type resolves to a
-// Feature entity like any other, and its registry location is feature/<name>.
+// walkComponentInstanceFeatures collects every Feature URI a component instance
+// attaches: the ones its own Features map declares, and the ones its connections
+// carry. Every attachment family is declared in one of the two, so one walk
+// reaches them all — a credential attachment's type resolves to a Feature entity
+// like any other, and its registry location is feature/<name>.
+//
+// An attachment a connection carries is lowered onto this component and realized
+// through the Manifest like one of its own, so the Feature it names is pinned like
+// one: acquired at pull, recorded with its version and content digest, and held
+// to that row by every build. The set is read from
+// [types.ComponentInstance.ConnectionAttachments], the enumeration the lowering
+// reads, so the build cannot lower an attachment whose Feature this walk missed.
 func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, path string) {
 	for name, fi := range ci.Features.All() {
 		if fi.Type != "" {
 			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
 		}
 	}
+	for conn, att := range ci.ConnectionAttachments() {
+		s.addConnectionAttachment(conn, att.Type, path)
+	}
+}
+
+// addConnectionAttachment records the Feature type one connection attachment
+// names, under the path its author wrote it at: the component's own path, then the
+// connection — its socket and alias — and the slot the attachment fills. An entry
+// naming no type adds nothing, as an attachment written without one does
+// elsewhere: on the Release it is the sizing for an attachment the Aggregate
+// declares on the same connection, whose type is recorded where the Aggregate
+// writes it.
+func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, featureType, componentPath string) {
+	if featureType == "" {
+		return
+	}
+	s.addEntityKind(featureType,
+		fmt.Sprintf("%s.uses.%s.%s.features.%s.type", componentPath, conn.Socket, conn.Alias, conn.Attachment), "feature")
 }
 
 // walkManifest descends Manifest.Spec.Mappings.{Components,
@@ -262,7 +288,11 @@ func (s *walkState) walkMapping(mapping *types.MappingTier, section, keyKind, va
 
 // walkReleaseAttachments descends Release.Spec.Boundaries and every boundary
 // nested inside them, collecting the type URIs of the Feature attachments declared
-// on the boundary itself and on each component the boundary routes. A Feature
+// on the boundary itself and on each component the boundary routes — the
+// component entry's own attachments and the ones it puts on the component's
+// connections, read from [types.BoundaryComponent.ConnectionAttachments], the
+// enumeration the build's collection of them reads. An attachment only the
+// Release makes on a connection therefore pins its Feature here. A Feature
 // attached at any nesting depth is collected like one attached at the top. A
 // credential is a Feature carrying the feature.aggrega.ai/kind: secret label, so it
 // is collected through the same walk as any other attachment.
@@ -296,8 +326,11 @@ func (s *walkState) walkReleaseAttachments(r *types.Release) {
 				return b
 			},
 			Visit: func(bc types.BoundaryComponent, name, path string, _ bool, scope types.Boundary) error {
-				locator := types.BoundaryComponentLocator(scope, name)
-				s.addBoundaryFeatures(bc.Features, fmt.Sprintf("%s.%s", path, strings.Join(locator, ".")))
+				componentPath := fmt.Sprintf("%s.%s", path, strings.Join(types.BoundaryComponentLocator(scope, name), "."))
+				s.addBoundaryFeatures(bc.Features, componentPath)
+				for conn, att := range bc.ConnectionAttachments() {
+					s.addConnectionAttachment(conn, att.Type, componentPath)
+				}
 				return nil
 			},
 			Leave: func(b types.Boundary, _, path string, _ types.Boundary) {

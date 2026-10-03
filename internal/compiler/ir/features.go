@@ -1755,6 +1755,8 @@ func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary]
 // under the same pillar split, and carrying the connection it was written on. A
 // name the Aggregate also lowered from the same connection therefore folds into
 // that attachment by the merge every other same-named contribution goes through.
+// The set and its order are read from [types.BoundaryComponent.ConnectionAttachments],
+// the enumeration the lock-time walk reads too.
 func collectCompFeaturesRecursive(
 	boundaries types.OrderedMap[types.Boundary],
 	prefix string,
@@ -1768,21 +1770,17 @@ func collectCompFeaturesRecursive(
 			for fname, feat := range bc.Features.All() {
 				*result = append(*result, namedBoundaryFeature{name: fname, scopePath: path, feat: feat})
 			}
-			for socket, aliases := range bc.Uses.All() {
-				for alias, entry := range aliases.All() {
-					for slot, att := range entry.Features.All() {
-						*result = append(*result, namedBoundaryFeature{
-							name:      types.JoinConnectionAttachmentName(alias, slot),
-							scopePath: path,
-							feat: types.BoundaryFeature{
-								Type:        att.Type,
-								Description: att.Description,
-								Infra:       att.Infra,
-							},
-							connection: &types.AttachmentConnection{Socket: socket, Alias: alias, Attachment: slot},
-						})
-					}
-				}
+			for conn, att := range bc.ConnectionAttachments() {
+				*result = append(*result, namedBoundaryFeature{
+					name:      types.JoinConnectionAttachmentName(conn.Alias, conn.Attachment),
+					scopePath: path,
+					feat: types.BoundaryFeature{
+						Type:        att.Type,
+						Description: att.Description,
+						Infra:       att.Infra,
+					},
+					connection: &conn,
+				})
 			}
 		}
 		collectCompFeaturesRecursive(boundary.Boundaries, path, nodeID, result)

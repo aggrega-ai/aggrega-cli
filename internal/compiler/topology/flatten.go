@@ -429,11 +429,14 @@ func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile strin
 // the component's own block, so they are attachments of the CONSUMING component
 // from this point on — the Manifest mapping, the FeatureRecipe, the conformance
 // gate and the sensitivity marking treat them like any other. Each takes the
-// name the alias and the slot compose, and carries its connection as data; the
-// walk is over the component's sockets and then each socket's aliases in author
-// order, which is what keeps the attachment order byte-stable. Because this runs
-// for every component flattening reaches, a component a sub-module contributes is
-// lowered exactly as one the Aggregate declares.
+// name the alias and the slot compose, and carries its connection as data. The
+// set and its order are read from [types.ComponentInstance.ConnectionAttachments]
+// — the component's sockets, then each socket's aliases, then each connection's
+// slots, in author order, which is what keeps the attachment order byte-stable —
+// and the lock-time walk reads the same enumeration, so every attachment lowered
+// here names a Feature the lockfile pins. Because this runs for every component
+// flattening reaches, a component a sub-module contributes is lowered exactly as
+// one the Aggregate declares.
 func collectAttachments(result *flattenResult, nodeID string, comp types.ComponentInstance, tier int) {
 	for fname, feat := range comp.Features.All() {
 		result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
@@ -442,21 +445,17 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 			SourceTier:   tier,
 		})
 	}
-	for socket, sv := range comp.Uses.All() {
-		for alias, entry := range sv.Verbose.All() {
-			for slot, att := range entry.Features.All() {
-				result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
-					InstanceName: types.JoinConnectionAttachmentName(alias, slot),
-					Feature: types.FeatureInstance{
-						Type:        att.Type,
-						Description: att.Description,
-						Values:      att.Values,
-					},
-					SourceTier: tier,
-					Connection: &types.AttachmentConnection{Socket: socket, Alias: alias, Attachment: slot},
-				})
-			}
-		}
+	for conn, att := range comp.ConnectionAttachments() {
+		result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
+			InstanceName: types.JoinConnectionAttachmentName(conn.Alias, conn.Attachment),
+			Feature: types.FeatureInstance{
+				Type:        att.Type,
+				Description: att.Description,
+				Values:      att.Values,
+			},
+			SourceTier: tier,
+			Connection: &conn,
+		})
 	}
 }
 
