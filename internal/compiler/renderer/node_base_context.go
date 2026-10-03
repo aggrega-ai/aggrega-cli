@@ -73,21 +73,18 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 	}
 	out.Uses = uses
 
-	// The node's own attachments, on the same terms the render context's
-	// `.features` takes them: an attachment one of the node's connections
-	// carries is not one the node attached, so it is left out here as it is
-	// there — see projectAttachments.
+	// The node's own attachments, taken from the one projection the render
+	// context's `.features` is taken from, so the two surfaces cannot disagree
+	// about which attachments are the node's: one a connection carries is not one
+	// the node attached, and is left out here as it is there. This surface reads
+	// each in its own narrower shape — no labels, infra or provides.
 	features := make(map[string]any)
-	if attachments, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok {
-		for name, entry := range attachments.All() {
-			if entry.OnConnection() {
-				continue
-			}
-			features[name] = map[string]any{
-				"type":             entry.Type,
-				"resolved_version": entry.ResolvedVersion,
-				"values":           entry.Values.TemplateAlphabeticalMapDeep(),
-			}
+	own, _ := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID, nil, nil)
+	for name, attachment := range own.All() {
+		features[name] = map[string]any{
+			"type":             attachment.Type,
+			"resolved_version": attachment.ResolvedVersion,
+			"values":           attachment.Values.TemplateAlphabeticalMapDeep(),
 		}
 	}
 	out.Features = features

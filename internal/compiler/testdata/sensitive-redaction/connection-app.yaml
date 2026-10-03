@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitive-redaction-connection-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/connection-consumer
+      values:
+        appName: conndemo
+      # The connection carries a credential of the same Feature the node also
+      # holds itself. The connection's is displayed under its edge; the node's
+      # own is not displayed by the per-pass trace at all.
+      uses:
+        marked:
+          storeEdge:
+            target: store
+            features:
+              credential:
+                type: feature.test/db-credential
+                values:
+                  secretName: conn-locator-public
+                  literalPassword: conn-password-plaintext
+      features:
+        credentials:
+          type: feature.test/db-credential
+          values:
+            secretName: own-locator-public
+            literalPassword: own-password-plaintext
+    store:
+      type: core/uses-target

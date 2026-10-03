@@ -168,13 +168,15 @@ func referenceReachesWithheld(ref string, keys redact.Keys) bool {
 }
 
 // contextReferenceReachesWithheld decides a reference below the context root,
-// where the two withheld surfaces are the delivery pipe and the uses edges.
+// where the withheld surfaces are the delivery pipe and the uses edges — an edge
+// carrying both its target's provides and the attachments written on the
+// connection.
 //
-// Both are two levels deep — a mechanism then a delivery key, an alias then a
-// provides key — so a read that stops short of the leaf reaches every leaf beneath
-// it and withholds on that basis. That is the same ancestor rule the pillar paths
-// use, and it is what makes a dynamic lookup such as `index .context.inject.env $k`
-// conservative rather than invisible.
+// Each is addressed level by level — a mechanism then a delivery key, an alias
+// then a provides key or a slot — so a read that stops short of the leaf reaches
+// every leaf beneath it and withholds on that basis. That is the same ancestor rule
+// the pillar paths use, and it is what makes a dynamic lookup such as
+// `index .context.inject.env $k` conservative rather than invisible.
 func contextReferenceReachesWithheld(rest string, keys redact.Keys) bool {
 	surface, below := splitPillarReference("." + rest)
 	switch surface {
@@ -189,29 +191,77 @@ func contextReferenceReachesWithheld(rest string, keys redact.Keys) bool {
 		return keys.Delivery(mechanism, firstPathSegment(key))
 	case "uses":
 		if below == "" {
-			return anyMarked(keys.UsesProvides)
+			return anyMarked(keys.UsesProvides) || len(keys.UsesAttachments) > 0
 		}
 		alias, edgeField := splitPillarReference("." + below)
 		marked := keys.UsesProvides[alias]
-		if len(marked) == 0 {
+		attached := keys.UsesAttachments[alias]
+		if len(marked) == 0 && len(attached) == 0 {
 			return false
 		}
 		if edgeField == "" {
-			// A read of the whole edge reaches its provides bag.
+			// A read of the whole edge reaches its provides bag and every
+			// attachment written on the connection.
 			return true
 		}
-		field, provideKey := splitPillarReference("." + edgeField)
-		if field != "provides" {
-			// Every other field on the edge — its target, socket, labels, and the
-			// per-connection values and infra authored on the edge itself — is not
-			// what the target's provides declaration governs.
+		field, fieldRest := splitPillarReference("." + edgeField)
+		switch field {
+		case "provides":
+			if len(marked) == 0 {
+				return false
+			}
+			if fieldRest == "" {
+				return true
+			}
+			return marked[firstPathSegment(fieldRest)]
+		case "features":
+			return connectionAttachmentReachesWithheld(fieldRest, attached)
+		}
+		// Every other field on the edge — its target, socket, labels, and the
+		// per-connection values and infra authored on the edge itself — is
+		// governed by none of the declarations the set carries.
+		return false
+	}
+	return false
+}
+
+// connectionAttachmentReachesWithheld decides a reference below one connection's
+// features entry, against what each attached Feature declares. The pillar rule
+// below the attachment is the one a node's own pillars take — equal, ancestor or
+// descendant of a declared path — and a provides key is decided as an edge's is.
+func connectionAttachmentReachesWithheld(rest string, slots map[string]redact.AttachmentKeys) bool {
+	if len(slots) == 0 {
+		return false
+	}
+	if rest == "" {
+		// A read of the whole features entry reaches every attachment on it.
+		return true
+	}
+	slot, below := splitPillarReference("." + rest)
+	declared, ok := slots[slot]
+	if !ok {
+		return false
+	}
+	if below == "" {
+		return declared.Any()
+	}
+	pillar, path := splitPillarReference("." + below)
+	switch pillar {
+	case "values":
+		return pathReachesWithheld(path, declared.Values)
+	case "infra":
+		return pathReachesWithheld(path, declared.Infra)
+	case "provides":
+		if len(declared.Provides) == 0 {
 			return false
 		}
-		if provideKey == "" {
+		if path == "" {
 			return true
 		}
-		return marked[firstPathSegment(provideKey)]
+		return declared.Provides[firstPathSegment(path)]
 	}
+	// The attachment's type, version and labels are catalog metadata no
+	// declaration governs.
 	return false
 }
 
@@ -269,15 +319,48 @@ func workloadReadsWithheld(tmplText string, keys redact.Keys) bool {
 // no-op. An edge whose provides come from a boundary-scope FeatureRecipe rather
 // than from the target Component's own Recipe resolves against no Component
 // declaration and is likewise not covered.
+//
+// The same walk reads the third thing an edge displays: the attachments written on
+// the connection, under the slot each fills. Each is governed by its own Feature,
+// so declaredAttachment is asked about the attachment's Feature type — the reader
+// every attachment's declarations come from, which is what makes a connection's
+// credential withheld exactly where the same Feature attached to the node itself
+// would be. Nothing is read out of the slot: a slot declaring itself sensitive
+// marks the attachment whole, which no display reads as a statement about any one
+// of its leaves. A nil reader reads nothing, and an attachment whose Feature
+// declares nothing contributes nothing.
 func usesWithheld(
 	uses types.OrderedMap[types.EnrichedEdge],
 	declaredProvides func(componentType string) map[string]bool,
+	declaredAttachment func(featureType string) resolver.SensitiveLeaves,
 ) redact.CrossNode {
 	var out redact.CrossNode
-	if uses.Len() == 0 || declaredProvides == nil {
+	if uses.Len() == 0 {
 		return out
 	}
 	for alias, edge := range uses.All() {
+		if declaredAttachment != nil {
+			for slot, attachment := range edge.Features.All() {
+				leaves := declaredAttachment(attachment.Type)
+				if !leaves.Any() {
+					continue
+				}
+				if out.Attachments == nil {
+					out.Attachments = map[string]map[string]redact.AttachmentKeys{}
+				}
+				if out.Attachments[alias] == nil {
+					out.Attachments[alias] = map[string]redact.AttachmentKeys{}
+				}
+				out.Attachments[alias][slot] = redact.AttachmentKeys{
+					Values:   leaves.Values,
+					Infra:    leaves.Infra,
+					Provides: leaves.Provides,
+				}
+			}
+		}
+		if declaredProvides == nil {
+			continue
+		}
 		declared := declaredProvides(edge.Component)
 		if len(declared) == 0 {
 			continue

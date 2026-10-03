@@ -412,7 +412,7 @@ func TestUsesWithheld_KeysPublishedByAliasAndDeliveredByMechanism(t *testing.T) 
 	}
 	got := usesWithheld(uses, func(componentType string) map[string]bool {
 		return declared[componentType]
-	})
+	}, nil)
 
 	if !got.Provides["storeEdge"]["zzTargetSecret"] {
 		t.Errorf("the declaring target's key must reach the published set under its edge's alias; got %v", got.Provides)
@@ -437,10 +437,10 @@ func TestUsesWithheld_KeysPublishedByAliasAndDeliveredByMechanism(t *testing.T) 
 	// axis existed.
 	onlyPlain := types.OrderedMap[types.EnrichedEdge]{}
 	onlyPlain.Set("plainEdge", types.EnrichedEdge{Target: "plain", Component: "core/uses-plain", Inject: plainInject})
-	if got := usesWithheld(onlyPlain, func(string) map[string]bool { return declared["nope"] }); got.Provides != nil || got.Inject != nil {
+	if got := usesWithheld(onlyPlain, func(string) map[string]bool { return declared["nope"] }, nil); got.Provides != nil || got.Inject != nil {
 		t.Errorf("no declaring target must produce a nil set on both halves; got %+v", got)
 	}
-	if got := usesWithheld(types.OrderedMap[types.EnrichedEdge]{}, nil); got.Provides != nil || got.Inject != nil {
+	if got := usesWithheld(types.OrderedMap[types.EnrichedEdge]{}, nil, nil); got.Provides != nil || got.Inject != nil {
 		t.Errorf("no edges must produce a nil set on both halves; got %+v", got)
 	}
 	// An edge that declares no inject mapping contributes to the published half
@@ -448,7 +448,7 @@ func TestUsesWithheld_KeysPublishedByAliasAndDeliveredByMechanism(t *testing.T) 
 	// mapping rather than to the declaration alone.
 	noInject := types.OrderedMap[types.EnrichedEdge]{}
 	noInject.Set("storeEdge", types.EnrichedEdge{Target: "store", Component: "core/uses-target"})
-	bare := usesWithheld(noInject, func(componentType string) map[string]bool { return declared[componentType] })
+	bare := usesWithheld(noInject, func(componentType string) map[string]bool { return declared[componentType] }, nil)
 	if !bare.Provides["storeEdge"]["zzTargetSecret"] {
 		t.Errorf("an edge with no inject mapping still publishes; got %v", bare.Provides)
 	}

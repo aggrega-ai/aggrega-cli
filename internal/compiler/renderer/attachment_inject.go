@@ -348,8 +348,9 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 //
 // This is the one home for resolving an attachment's provides. Every attachment
 // routes through it, so the published output a consumer reads at
-// .features.<name>.provides, the contract check, and the attachment
-// FeatureRecipe's own .provides at Phase B.6 all derive from a single
+// .features.<name>.provides — or at .context.uses.<alias>.features.<slot>.provides
+// for an attachment one of its connections carries — the contract check, and the
+// attachment FeatureRecipe's own .provides at Phase B.6 all derive from a single
 // evaluation and cannot drift. An attachment with no bound FeatureRecipe is
 // skipped; instances are walked in sorted order so the first-reported shortfall
 // is deterministic.

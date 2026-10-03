@@ -1358,25 +1358,27 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
-		// Build template context
-		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw, renderedNames)
-		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
-			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
-		}
-
 		// Resolve every attachment's bound-FeatureRecipe provides ONCE (a single
 		// bag for the node) and expose it to the consumer as
-		// .features.<name>.provides. The same bag is retained on state below and
-		// reused at Phase B.6 as the attachment FeatureRecipe's own .provides, so
-		// the consumer's read and the generated resource derive from one
-		// evaluation (no drift). Resolution also halts a bound FeatureRecipe that
-		// does not fulfil its Feature's provides contract.
+		// .features.<name>.provides — or, for an attachment one of the node's
+		// connections carries, as .context.uses.<alias>.features.<slot>.provides.
+		// The same bag is retained on state below and reused at Phase B.6 as the
+		// attachment FeatureRecipe's own .provides, so the consumer's read and the
+		// generated resource derive from one evaluation (no drift). Resolution also
+		// halts a bound FeatureRecipe that does not fulfil its Feature's provides
+		// contract. It reads nothing the template context carries, so it runs
+		// first and the context is assembled with the bag already in hand.
 		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
 		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, recipeLookup, input.CatalogLookup)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
 		}
-		applyAttachmentProvides(&tmplCtx.Features, attachmentProvides)
+
+		// Build template context
+		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw, renderedNames, attachmentProvides)
+		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
+			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
+		}
 
 		// The node's redaction set, assembled once here where the catalog, the
 		// node's attachments and the bound Recipe's authored template text are all
@@ -1399,11 +1401,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// delivery keys where the edge's inject mapping routes it — so both are
 		// governed by the target's declarations and not this node's. Reading them
 		// costs one more call to the same memoised declaration reader, against the
-		// target Component the edge names.
+		// target Component the edge names. The attachments written on a connection
+		// ride the same edge into the display and are governed by their Features, so
+		// they are read through the one Feature reader every attachment's
+		// declarations come from.
 		declared := declaredLeaves(node.Component)
 		crossNode := usesWithheld(tmplCtx.Context.Uses, func(componentType string) map[string]bool {
 			return declaredLeaves(componentType).Provides
-		})
+		}, input.declaredFeatureLeaves)
 		// Read from the bound Recipe as the catalog holds it, BEFORE Phase B.0
 		// replaces the local copy's source with the resolved value: the reading is
 		// over authored template text, and resolved text carries no reference to read.

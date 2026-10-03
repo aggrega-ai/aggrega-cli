@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-connection-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./connection-app.yaml
+  manifest: ./connection-manifest.yaml
+  boundaries:
+    connection:
+      directory: ./dist/connection
+      components:
+        app: {}
+        store: {}

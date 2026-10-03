@@ -34,7 +34,9 @@ type TemplateContext struct {
 	// Features is every attachment on the node, keyed by the instance name
 	// the author gave it. One pillar for every attachment family — what
 	// differs between attachments is what they produce, not how a template
-	// reads them.
+	// reads them. An attachment written on one of the node's connections is
+	// not among them; a template reads it under that connection, at
+	// [EnrichedEdge.Features].
 	Features       OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Metadata       *TemplateMetadata              `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 	AttachmentName string                         `json:"attachment_name,omitempty" yaml:"attachment_name,omitempty"`
@@ -53,8 +55,10 @@ type TemplateContext struct {
 	// attachments to find its own by type would otherwise be handed a
 	// connection's credential as if the node had attached it.
 	//
-	// It is not visible to a template — the field carries no template name — and
-	// is read only through [TemplateContext.AttachmentPillars].
+	// It is not visible to a template under this name — the field carries no
+	// template name — and is read only through [TemplateContext.AttachmentPillars].
+	// A template reads the same attachments under the connection each was written
+	// on, at [EnrichedEdge.Features], keyed by slot rather than by this name.
 	ConnectionAttachments OrderedMap[TemplateAttachment] `json:"-" yaml:"-"`
 }
 
@@ -382,6 +386,19 @@ type EnrichedEdge struct {
 	Values        OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	Infra         OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 
+	// Features holds the attachments written on this connection, keyed by the
+	// slot name the connection's socket declares for each, in the shape the
+	// node's own Features pillar holds an attachment — the bound FeatureRecipe's
+	// resolved provides included — so a template reads a connection's credential
+	// at .context.uses.<alias>.features.<slot>.
+	//
+	// These attachments belong to the consuming node for everything the build
+	// does with one, and are deliberately absent from that node's own Features: a
+	// template ranging the node's attachments to find its own by type would
+	// otherwise be handed a connection's credential as if the node had attached
+	// it. Empty for a connection that carries none.
+	Features OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+
 	// Per-endpoint network inputs, carried as pure opaque data for a provider
 	// engine to resolve into a network identity (the compose engine compares
 	// resolved names to decide whether an edge crosses a network seam). The core
@@ -408,6 +425,9 @@ type TemplateMetadata struct {
 // the per-instance view of an attached Feature, keyed by the instance name the
 // author gave it. Every attachment exposes the same shape; what differs
 // between attachments is what they produce, not the shape they are read through.
+// An attachment written on one of the node's connections is read in this same
+// shape under that connection, at .context.uses.<alias>.features.<slot>, and
+// never under the node's own .features.
 //
 // Type is the attached Feature's catalog URI. Values and Infra are the
 // attachment's own per-instance pillars — developer intent and operational

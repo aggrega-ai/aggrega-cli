@@ -405,7 +405,7 @@ func TestUses_ReplacesTheMarkedProvidesKeyAndKeepsEveryControl(t *testing.T) {
 		Provides:  sm("zzTargetSecret", "visible", "aaTargetHost", "plain"),
 	})
 
-	out := Uses(in, map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}})
+	out := Keys{UsesProvides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}}.Uses(in)
 
 	marked, _ := out.Get("storeEdge")
 	if v, _ := marked.Provides.Get("zzTargetSecret"); v != placeholder {
@@ -444,7 +444,7 @@ func TestUses_EmptySetIsIdentity(t *testing.T) {
 	t.Parallel()
 	in := types.OrderedMap[types.EnrichedEdge]{}
 	in.Set("main", types.EnrichedEdge{Target: "db", Provides: sm("dsn", "postgres://x")})
-	out := Uses(in, nil)
+	out := Keys{}.Uses(in)
 	edge, _ := out.Get("main")
 	if v, _ := edge.Provides.Get("dsn"); v != "postgres://x" {
 		t.Errorf("an empty set must leave the uses projection untouched; got %q", v)

@@ -30,7 +30,10 @@ import (
 // resolved provides into this node's display, so those values are governed by the
 // target Component's declarations rather than this node's. The set passed here
 // carries them per alias, so a value the target declared sensitive is withheld on
-// the consumer's display even when the consumer declares nothing.
+// the consumer's display even when the consumer declares nothing. The attachments
+// written on a connection are displayed under its edge too, and each is governed
+// by its own Feature's declarations; the set carries those per alias and slot,
+// and the one applier for the uses map withholds both.
 //
 // .workload is not addressable by key. It is a parsed document: a datum a
 // template interpolated into it lands in a field no author declared, and nothing
@@ -107,7 +110,7 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 
 	// Inject mapping and later: uses edges visible.
 	if isPhaseAOrLater(pass) && ctx.Context.Uses.Len() > 0 {
-		out["context.uses"] = redact.Uses(ctx.Context.Uses, keys.UsesProvides)
+		out["context.uses"] = keys.Uses(ctx.Context.Uses)
 	}
 
 	// Source resolution onward: locals are populated.

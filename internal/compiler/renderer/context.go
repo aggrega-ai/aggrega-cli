@@ -22,6 +22,14 @@ import (
 // attachments in author order, and the immutable inject_raw record of what the
 // developer actually authored.
 //
+// attachmentProvides is the node's attachment bag as ResolveAttachmentProvides
+// resolved it, keyed by attachment name. It is folded onto every projected
+// attachment here — the node's own under .features, and each one a connection
+// carries under that connection in the uses map — so a consumer's read of an
+// attachment's provides and the resource that attachment's FeatureRecipe
+// generates derive from one evaluation. A nil bag leaves every attachment's
+// provides empty.
+//
 // The reported name is taken from the pass that collected it before any node was
 // rendered rather than asked for here, so every surface that reads it reads one
 // answer. A node whose provider reports none carries an empty value, and the rule
@@ -30,8 +38,7 @@ import (
 // Several fields are deliberately left empty here and filled by whoever owns
 // them, which is the trap for a reader who assumes the returned context is
 // final: locals are evaluated ahead of the node's provides and published onto
-// the context later, each attachment's resolved provides arrive once its bound
-// FeatureRecipe has been evaluated, and Release identity is folded in by
+// the context later, and Release identity is folded in by
 // AssembleNodeContextWithRelease. Reading one of those off a freshly assembled
 // context yields the zero value rather than an error.
 func AssembleNodeContext(
@@ -42,6 +49,7 @@ func AssembleNodeContext(
 	inject types.InjectPipe,
 	injectRaw any,
 	renderedNames NodeRenderedNames,
+	attachmentProvides map[string]types.OrderedMap[string],
 ) *types.TemplateContext {
 	node, _ := graph.Spec.Nodes.Get(nodeID)
 
@@ -71,10 +79,11 @@ func AssembleNodeContext(
 	}
 
 	// Every attachment the node holds, author-order preserved, projected through
-	// one shape: the node's own onto the `.features` pillar, and the ones its
-	// connections carry beside it, out of a template's sight. Provides is filled
-	// in by the orchestrator once the bound FeatureRecipe has been evaluated.
-	features, connectionAttachments := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID)
+	// one shape with its resolved provides: the node's own onto the `.features`
+	// pillar, and each one a connection carries onto that connection's entry in
+	// the uses map — and, by the name it takes on the node, beside the pillar for
+	// its own FeatureRecipe.
+	features, connectionAttachments := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID, attachmentProvides, &uses)
 
 	// Metadata from Release
 	var metadata *types.TemplateMetadata
@@ -119,7 +128,14 @@ func AssembleNodeContext(
 // projectAttachments projects one node's attachments onto the template surface,
 // preserving author order. One projection for every attachment family: a
 // family-specific copy would be free to lose a pillar, which is how a pillar
-// carried in the IR becomes unreadable from a template.
+// carried in the IR becomes unreadable from a template. Every surface that
+// exposes a node's attachments takes its attachment set from here, so which of
+// them are the node's own is decided once.
+//
+// provides is the node's resolved attachment bag, keyed by attachment name; each
+// projected attachment carries its own bag, and one with none keeps an empty
+// Provides. The bag is read here and never evaluated, so every place an
+// attachment is shown holds the one evaluation.
 //
 // An attachment one of the node's connections carries is projected into the
 // second result rather than the first. It is one of the node's attachments for
@@ -128,11 +144,20 @@ func AssembleNodeContext(
 // template ranging the node's `.features` to find its own attachments by type
 // would otherwise be handed a connection's credential as if the node had attached
 // it. Whether an entry came from a connection is read off the entry's own mark,
-// never out of its name, and the one projection serves both results so the two
-// cannot come to carry an attachment in different shapes.
+// never out of its name.
+//
+// Where uses is non-nil, each such attachment is also placed on the entry of the
+// connection it was written on, under the slot name its socket declares: the
+// entry whose alias and socket are the ones the mark records. The value placed
+// there is the one projected value, so the connection view and the name a
+// FeatureRecipe finds it by cannot come to carry an attachment in different
+// shapes. An attachment whose connection has no entry in uses — no edge was
+// projected for it — is shown under no connection.
 func projectAttachments(
 	bucket types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]],
 	nodeID string,
+	provides map[string]types.OrderedMap[string],
+	uses *types.OrderedMap[types.EnrichedEdge],
 ) (own, onConnections types.OrderedMap[types.TemplateAttachment]) {
 	own = types.OrderedMap[types.TemplateAttachment]{}
 	onConnections = types.OrderedMap[types.TemplateAttachment]{}
@@ -147,33 +172,25 @@ func projectAttachments(
 			Labels:          entry.Labels,
 			Values:          entry.Values,
 			Infra:           entry.Infra,
+			Provides:        provides[name],
 		}
-		if entry.OnConnection() {
-			onConnections.Set(name, projected)
+		if !entry.OnConnection() {
+			own.Set(name, projected)
 			continue
 		}
-		own.Set(name, projected)
+		onConnections.Set(name, projected)
+		if uses == nil {
+			continue
+		}
+		conn := entry.Connection
+		edge, found := uses.Get(conn.Alias)
+		if !found || edge.Socket != conn.Socket {
+			continue
+		}
+		edge.Features.Set(conn.Attachment, projected)
+		uses.Set(conn.Alias, edge)
 	}
 	return own, onConnections
-}
-
-// applyAttachmentProvides folds each attachment's resolved provides bag onto the
-// projected attachment. Iteration runs over the projection's author order rather
-// than the resolved-bag map so the write order is deterministic; an attachment
-// with no resolved bag keeps its empty Provides.
-func applyAttachmentProvides(attachments *types.OrderedMap[types.TemplateAttachment], provides map[string]types.OrderedMap[string]) {
-	if len(provides) == 0 {
-		return
-	}
-	for _, name := range attachments.Keys() {
-		bag, ok := provides[name]
-		if !ok {
-			continue
-		}
-		att, _ := attachments.Get(name)
-		att.Provides = bag
-		attachments.Set(name, att)
-	}
 }
 
 // AssembleNodeContextWithRelease enriches the context with Release metadata.

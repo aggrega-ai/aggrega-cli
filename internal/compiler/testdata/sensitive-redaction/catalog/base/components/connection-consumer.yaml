@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/connection-consumer
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # One socket whose connections may each carry a credential attachment, and
+  # one slot of the node's own holding a credential of the SAME Feature. The
+  # consumer declares nothing sensitive itself and neither slot declares
+  # sensitivity, so every withholding on its display comes from the attached
+  # Feature's own declarations.
+  usesSchema:
+    marked:
+      selector: "component.aggrega.ai/type=stateful-server"
+      featuresSchema:
+        credential:
+          required: false
+  featuresSchema:
+    credentials:
+      required: false
+  schema:
+    values:
+      appName: { type: string }
+    provides:
+      host: { type: string, required: true }

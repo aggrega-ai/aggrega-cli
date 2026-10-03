@@ -1,0 +1,34 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: connection-consumer-recipe
+  version: "1.0.0"
+  description: >
+    Reads the credential written on its connection into its workload: a
+    declared values leaf beside an undeclared one, and a declared provides key
+    beside an undeclared one. Every value reaches the rendered artifact in the
+    clear — the artifact is the deployable and is never redacted.
+spec:
+  capability: compose
+  implements: core/connection-consumer
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: consumer:1.0
+        variables:
+          APP_NAME: '{{ .values.appName }}'
+          CONN_PASSWORD: '{{ .context.uses.storeEdge.features.credential.values.literalPassword }}'
+          CONN_LOCATOR: '{{ .context.uses.storeEdge.features.credential.values.secretName }}'
+          CONN_PROVIDED: '{{ .context.uses.storeEdge.features.credential.provides.password }}'
+          CONN_NAME: '{{ .context.uses.storeEdge.features.credential.provides.name }}'
+        ports:
+          p: 8080
+    services:
+      app:
+        type: ClusterIP
+        ports:
+          p: 8080

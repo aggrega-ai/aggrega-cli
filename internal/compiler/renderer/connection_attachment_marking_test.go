@@ -120,19 +120,21 @@ func TestRenderedKeyMarking_CannotReachAConnectionAttachment(t *testing.T) {
 			t.Parallel()
 			graph := markingGraph()
 			inject, injectRaw := BuildInjectPipe(nil)
-			ctx := AssembleNodeContext("gw", graph, NodeProvides{"gw": types.OrderedMap[string]{}}, nil, inject, injectRaw, nil)
-			if _, own := ctx.Features.Get(connectionAttachment); own {
-				t.Fatalf("the attachment the connection carries is among the node's own attachments")
-			}
 			// The published locators reach the context the way the render folds
-			// them: by attachment name, onto the node's own attachments only.
+			// them: one resolved bag keyed by attachment name, folded onto each
+			// attachment where the projection places it — the connection's
+			// attachment never among the node's own.
 			locators := types.OrderedMap[string]{}
 			locators.Set("name", "gw-secret")
 			locators.Set("key", "token")
-			applyAttachmentProvides(&ctx.Features, map[string]types.OrderedMap[string]{
-				"token":              locators,
-				connectionAttachment: locators,
-			})
+			ctx := AssembleNodeContext("gw", graph, NodeProvides{"gw": types.OrderedMap[string]{}}, nil, inject, injectRaw, nil,
+				map[string]types.OrderedMap[string]{
+					"token":              locators,
+					connectionAttachment: locators,
+				})
+			if _, own := ctx.Features.Get(connectionAttachment); own {
+				t.Fatalf("the attachment the connection carries is among the node's own attachments")
+			}
 
 			r := minimalRecipe("gateway")
 			r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
