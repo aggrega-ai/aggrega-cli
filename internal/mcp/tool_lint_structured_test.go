@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -172,6 +173,40 @@ func TestLintToolCarriesEachFindingsRuleIdentityAndPosition(t *testing.T) {
 	// the key load-bearing rather than decorative.
 	if strings.Contains(found.Message, found.RuleID) {
 		t.Errorf("the rule identity is embedded in the message %q; the key is the only place it travels", found.Message)
+	}
+
+	// The short code of the condition the rule names travels as a key of its own
+	// on the structured answer, and is the code printed at the head of the text
+	// answer's row for the same finding. It is read off the condition through its
+	// exported accessor, never written here as a literal, and off the payload as a
+	// client decodes it, so a renamed key fails here rather than round-tripping
+	// through the report type.
+	short, ok := cerrors.ShortCodeOf(lintops.ErrNameShape())
+	if !ok || short == "" {
+		t.Fatal("the naming-shape condition reports no short code, so there is nothing to look for")
+	}
+	if found.ShortCode != short {
+		t.Errorf("ShortCode = %q; the condition the naming-shape rule names declares %q", found.ShortCode, short)
+	}
+	var wire struct {
+		Findings []map[string]any `json:"findings"`
+	}
+	if err := json.Unmarshal(res.StructuredContent, &wire); err != nil {
+		t.Fatalf("decode the structured payload: %v\npayload: %s", err, res.StructuredContent)
+	}
+	keyed := false
+	for _, entry := range wire.Findings {
+		if entry["ruleId"] == found.RuleID && entry["shortCode"] == short {
+			keyed = true
+		}
+	}
+	if !keyed {
+		t.Errorf("no finding on the structured payload carries shortCode %q beside ruleId %q: %s",
+			short, found.RuleID, res.StructuredContent)
+	}
+	if !strings.Contains(res.Content[0].Text, short+" "+found.RuleID+": ") {
+		t.Errorf("the text answer carries no row printing the short code %q the structured answer carries "+
+			"ahead of %q: %q", short, found.RuleID, res.Content[0].Text)
 	}
 
 	// The human rendering still carries the same finding, so the two renderings

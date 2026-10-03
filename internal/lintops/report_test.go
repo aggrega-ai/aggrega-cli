@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // TestFindingFromCarriesTextVerbatim pins that the projection copies the
@@ -100,6 +102,109 @@ func TestFindingFromInventsNoPosition(t *testing.T) {
 	}
 	if !strings.Contains(string(enc), "\"file\"") {
 		t.Errorf("payload must always carry the file: %s", enc)
+	}
+}
+
+// TestFindingFromCarriesTheShortCodeOfTheConditionItsRuleNames pins the one
+// field the projection reads rather than copies: the short code of the
+// condition a finding's rule names, on the finding and under its own key in the
+// structured report, and absent exactly where the human row prints none.
+//
+// The expected code is read off each condition through its exported accessor,
+// never written here as a literal: a literal keeps compiling after the condition
+// is renumbered, at which point the assertion would go on demanding a code the
+// report no longer prints. Two registered rules are driven rather than one, so a
+// projection that wrote one condition's code onto every finding fails on the
+// second.
+func TestFindingFromCarriesTheShortCodeOfTheConditionItsRuleNames(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		// condition is the registered condition the rule names, or nil for a
+		// finding whose rule no condition names.
+		condition error
+		// ruleID and code are the diagnostic's own identifiers where condition is
+		// nil; a registered rule's identifier is read off its condition.
+		ruleID, code string
+	}{
+		{
+			name:      "the category-label rule names its registered condition",
+			condition: ErrCategoryMatchesDirectory(),
+		},
+		{
+			name:      "the naming-shape rule names its registered condition",
+			condition: ErrNameShape(),
+		},
+		{
+			name:   "a rule from a linter's own rule set names no condition",
+			ruleID: "rule-of-another-linter",
+		},
+		{
+			name: "a finding carrying no rule identity names no condition",
+			code: "code-of-another-linter",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ruleID, want := tc.ruleID, ""
+			if tc.condition != nil {
+				descriptive, ok := cerrors.CodeOf(tc.condition)
+				if !ok {
+					t.Fatalf("the condition reports no descriptive code, so this row names no rule: %v", tc.condition)
+				}
+				short, ok := cerrors.ShortCodeOf(tc.condition)
+				if !ok || short == "" {
+					t.Fatalf("the condition reports no short code, so this row has nothing to look for: %v", tc.condition)
+				}
+				ruleID, want = descriptive, short
+			}
+
+			f := FindingFrom(abi.Diagnostic{
+				Severity: abi.SeverityWarn,
+				Message:  "the rule's own sentence about the entity",
+				RuleID:   ruleID,
+				Code:     tc.code,
+			}, "component.yaml")
+
+			if f.ShortCode != want {
+				t.Errorf("ShortCode = %q; the condition the rule names declares %q", f.ShortCode, want)
+			}
+
+			// A consumer of the structured report reads the key, so the key is read
+			// off the encoding rather than off the field.
+			enc, err := json.Marshal(f)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var keys map[string]any
+			if err := json.Unmarshal(enc, &keys); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			got, present := keys["shortCode"]
+			switch {
+			case want == "" && present:
+				t.Errorf("a finding whose rule names no condition carries shortCode %v, where its row prints "+
+					"none: %s", got, enc)
+			case want != "" && got != want:
+				t.Errorf("shortCode on the wire = %v (present %v); the condition the rule names declares %q: %s",
+					got, present, want, enc)
+			}
+
+			// The row the human report prints for the same finding carries the same
+			// code at its head, and none where the structured finding carries none.
+			head := f.Severity + ":"
+			if want != "" {
+				head += " " + want
+			}
+			if ruleID != "" {
+				head += " " + ruleID
+			}
+			if row := advisoryLine(f); !strings.HasPrefix(row, head+": ") {
+				t.Errorf("the human row %q does not open with %q", row, head+": ")
+			}
+		})
 	}
 }
 

@@ -44,6 +44,11 @@ type Finding struct {
 	Message  string `json:"message"`
 	// RuleID names the rule that produced the finding.
 	RuleID string `json:"ruleId,omitempty"`
+	// ShortCode is the short code of the condition RuleID names — the code the
+	// human report prints at the head of the same finding's row, which prints
+	// this field — and is empty for a rule no condition names, whose row prints
+	// none. [FindingFrom] fills it through [ConditionForRule].
+	ShortCode string `json:"shortCode,omitempty"`
 	// Code is a stable machine-matchable code, independent of Message, when the
 	// producing rule assigns one.
 	Code string `json:"code,omitempty"`
@@ -116,6 +121,11 @@ type ReportSummary struct {
 // finer-grained position is copied only where the diagnostic actually carried
 // one, since a rule that located nothing must not be reported as having located
 // line zero.
+//
+// The short code is the one field the diagnostic does not carry: the guest
+// reports a rule identity, and the condition that identity names is the host's.
+// It is read here, where the identity is first read, so the structured report
+// and the human rows built from this projection quote one code for one finding.
 func FindingFrom(d abi.Diagnostic, file string) Finding {
 	f := Finding{
 		Severity:       d.Severity,
@@ -125,6 +135,9 @@ func FindingFrom(d abi.Diagnostic, file string) Finding {
 		Classification: d.Classification,
 		Suggest:        d.Suggest,
 		Location:       &FindingLocation{File: file},
+	}
+	if condition, ok := ConditionForRule(d.RuleID); ok {
+		f.ShortCode = condition.ErrorShortCode()
 	}
 	if d.Location != nil {
 		f.Location.KeyPath = d.Location.KeyPath

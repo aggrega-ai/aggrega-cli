@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // The disposition of one field of the shared lint shapes on this surface.
@@ -68,8 +69,13 @@ var findingDispositions = map[string]disposition{
 		why: "translated from the plugin wire's severity vocabulary into this wire's, which is " +
 			"asserted below by name",
 	},
-	"Message":        {kind: carried, wireKey: "message"},
-	"RuleID":         {kind: carried, wireKey: "code"},
+	"Message": {kind: carried, wireKey: "message"},
+	"RuleID":  {kind: carried, wireKey: "code"},
+	"ShortCode": {
+		kind: transformed,
+		why: "read on the entry off the condition the rule identity names, through the lookup that filled it, " +
+			"together with the reference that explains it; asserted below by name",
+	},
 	"Code":           {kind: transformed, why: "collapsed into the same code key as RuleID, which wins; asserted below by name"},
 	"Classification": {kind: carried, wireKey: "classification"},
 	"Suggest":        {kind: carried, wireKey: "suggest"},
@@ -300,6 +306,35 @@ func TestTheDaemonTransformsWhatItDoesNotCarryVerbatim(t *testing.T) {
 		f.RuleID = ""
 		if got := conventionDiagnostic(f).Code; got != f.Code {
 			t.Errorf("code = %q with no rule identity; want the finding's own code %q", got, f.Code)
+		}
+	})
+
+	t.Run("the short code is the one the finding carries, standing with its reference", func(t *testing.T) {
+		t.Parallel()
+		descriptive, ok := cerrors.CodeOf(lintops.ErrNameShape())
+		if !ok {
+			t.Fatal("the naming-shape condition reports no descriptive code, so no finding here names it")
+		}
+		for _, ruleID := range []string{descriptive, "rule-of-another-linter"} {
+			f := lintops.FindingFrom(abi.Diagnostic{
+				Severity: abi.SeverityWarn,
+				Message:  "the rule's own sentence about the entity",
+				RuleID:   ruleID,
+			}, "component.yaml")
+			// Non-vacuity: a registered rule's finding that carried no short code
+			// would make the comparison below hold two empty strings against each
+			// other.
+			if ruleID == descriptive && f.ShortCode == "" {
+				t.Fatalf("the lint operation filled no short code on a %s finding, so there is nothing to compare", ruleID)
+			}
+			d := conventionDiagnostic(f)
+			if d.ShortCode != f.ShortCode {
+				t.Errorf("[%s] the entry quotes the short code %q and the finding carries %q", ruleID, d.ShortCode, f.ShortCode)
+			}
+			if (d.CodeDescription != nil) != (d.ShortCode != "") {
+				t.Errorf("[%s] the reference and the short code do not stand together: shortCode %q, "+
+					"codeDescription %+v", ruleID, d.ShortCode, d.CodeDescription)
+			}
 		}
 	})
 

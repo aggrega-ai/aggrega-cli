@@ -143,8 +143,10 @@ var lintToolSpec = toolSpec{
 		"mismatch. `plugin` overrides the workspace-configured linter attachments with a filesystem path. The operation is " +
 		"offline-first: a missing artifact fails loudly rather than reaching for a network. Every result carries the " +
 		"findings as structured data beside the human summary — each finding's severity, the rule that produced it, its " +
-		"message and the entity file it concerns, plus counts by severity, in the same field vocabulary `aggrega lint " +
-		"--output json` emits. A finding carries a line and column only when the rule that produced it located the issue " +
+		"short code (the code printed at the head of its advisory row, which `aggrega explain` expands), its message and " +
+		"the entity file it concerns, plus counts by severity, in the same field vocabulary `aggrega lint --output json` " +
+		"emits. A finding from a rule Aggrega does not declare, one a linter of your own adds, carries no short code, as " +
+		"its row prints none. A finding carries a line and column only when the rule that produced it located the issue " +
 		"that precisely; otherwise the file alone locates it. Use it before publishing an " +
 		"entity, or to check a whole Release's dependencies in one pass.",
 	listenerNote: "You did not start this server, so a finding's file is named relative to the workspace root, " +

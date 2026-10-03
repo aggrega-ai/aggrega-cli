@@ -1078,13 +1078,17 @@ func reportFindings(findings []abi.Diagnostic, entityKind, entityPath string, di
 // what they quote and look up. A finding whose rule this build does not know by
 // name carries no code, and a finding carrying no rule identifier at all carries
 // neither — each absent token is omitted rather than stood in for.
+//
+// The code is the finding's own short code, which [FindingFrom] read off the
+// condition the rule names, so the row and the structured report print the
+// same code for a finding because they print the same field.
 func advisoryLine(f Finding) string {
 	var b strings.Builder
 	b.WriteString(f.Severity)
 	b.WriteString(":")
-	if condition, ok := ConditionForRule(f.RuleID); ok {
+	if f.ShortCode != "" {
 		b.WriteString(" ")
-		b.WriteString(condition.ErrorShortCode())
+		b.WriteString(f.ShortCode)
 	}
 	if f.RuleID != "" {
 		b.WriteString(" ")

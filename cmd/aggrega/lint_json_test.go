@@ -118,20 +118,92 @@ func TestLintJSONEmitsFindingFields(t *testing.T) {
 // also structural — but it is recorded as deliberate here so that a later pass
 // exporting the renderer does not read this as an oversight to tidy away.
 //
-// The short code is the one token the row carries that the structured surface
-// does not. The linter guest assigns no code of its own, so the code on the row
-// is the host's, registered under the rule's own identifier; it is read back
-// through the registry's by-code lookup rather than copied into a table here, so
-// a rule added to the set needs no edit in this file.
+// The linter guest assigns no code of its own, so the short code on the row is
+// the host's, registered under the rule's own identifier. It is read back here
+// through the registry's by-code lookup rather than off the structured finding,
+// which carries it too, and rather than copied into a table here: an independent
+// reading is what lets the row comparison fail on a code the rule's condition
+// does not declare, and a rule added to the set needs no edit in this file.
+// [TestLintJSONCarriesEachFindingsShortCode] holds the structured finding's own
+// short code to the same reading.
 func advisoryRow(f lintops.Finding) string {
 	row := f.Severity + ":"
-	if condition, ok := cerrors.ConditionByCode(f.RuleID); ok {
-		row += " " + condition.ShortCode
+	if short := registeredShortCode(f.RuleID); short != "" {
+		row += " " + short
 	}
 	if f.RuleID != "" {
 		row += " " + f.RuleID
 	}
 	return row + ": " + f.Message
+}
+
+// registeredShortCode reads the short code of the condition registered under a
+// rule's identifier through the registry's by-code lookup, or returns empty
+// where no condition is registered under it.
+func registeredShortCode(ruleID string) string {
+	if condition, ok := cerrors.ConditionByCode(ruleID); ok {
+		return condition.ShortCode
+	}
+	return ""
+}
+
+// TestLintJSONCarriesEachFindingsShortCode pins the short code on the structured
+// surface: each finding carries, under its own key, the short code of the
+// condition its rule names — the code printed at the head of its row in the
+// human report — and carries no such key where its rule names no condition, as
+// its row then prints none.
+//
+// The key is read off the document as a client decodes it rather than through
+// the report type, so a renamed key fails here instead of round-tripping through
+// one struct tag. The expected code is read through the registry's by-code
+// lookup, independently of the lookup the operation fills the finding from,
+// which is what lets the comparison fail.
+func TestLintJSONCarriesEachFindingsShortCode(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")
+	entityPath := filepath.Join(root, "component.yaml")
+	writeFixture(t, entityPath, parityBadComponent)
+
+	_, raw, humanReport := runLintJSON(t, root, entityPath)
+
+	var doc struct {
+		Findings []map[string]any `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\nstdout:\n%s", err, raw)
+	}
+
+	quoted := 0
+	for i, entry := range doc.Findings {
+		ruleID, _ := entry["ruleId"].(string)
+		got, present := entry["shortCode"]
+		want := registeredShortCode(ruleID)
+		if want == "" {
+			if present {
+				t.Errorf("finding %d (rule %q) names no registered condition and carries shortCode %v; its "+
+					"row prints none", i, ruleID, got)
+			}
+			continue
+		}
+		if got != want {
+			t.Errorf("finding %d (rule %q) carries shortCode %v (present %v); the condition registered under "+
+				"the rule declares %q", i, ruleID, got, present, want)
+			continue
+		}
+		// The row the same run printed for this finding carries the same code at
+		// its head, ahead of the rule's identity.
+		if !strings.Contains(humanReport, " "+want+" "+ruleID+": ") {
+			t.Errorf("finding %d carries shortCode %q and no row in the human report prints it ahead of %q:\n%s",
+				i, want, ruleID, humanReport)
+		}
+		quoted++
+	}
+	// Non-vacuity: the fixture trips the naming rules, which are registered, so a
+	// document in which no finding carried a short code proves nothing.
+	if quoted == 0 {
+		t.Fatalf("no finding carried a short code to compare; this fixture must draw at least one finding "+
+			"whose rule names a registered condition\nstdout:\n%s", raw)
+	}
 }
 
 // TestLintJSONCarriesDiagnosticTextVerbatim is the single-source assertion: the
