@@ -461,20 +461,37 @@ type listReleasesArgs struct {
 // this answer carries, so the summary shape carries an empty object and a
 // page's map grows with the page and not with the workspace.
 //
+// UnreadLinkedDirs names each link the listing's walk met that leads to a
+// directory outside the workspace root, where the link itself sits and in the
+// order the walk met them — the walk that found Releases, so the two cannot
+// disagree about what was read. The walk does not enter such a directory, so a
+// Release inside one is absent from Count and Releases even though an editor's
+// file tree shows it under the link; this is what lets a caller say why. Like
+// Directories it describes the whole workspace rather than the page, so both
+// shapes carry it whole, and it grows with the links leading out of the
+// workspace rather than with the documents in it. It is always an array, empty
+// where there is no such link.
+//
+// Each name is the link's own place, relative to the root, and never the place
+// it leads to — the coordinate Releases is reported in, so it reads the same to a
+// caller at this machine and to one reaching a listener, and nothing about the
+// directory outside the workspace is told to either.
+//
 // WorkspaceRoot and its mark carry what they carry on the entity listing, for
 // the same reason.
 type listReleasesResult struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 
-	ResponseFormat string                  `json:"response_format"`
-	Count          int                     `json:"count"`
-	Directories    []releaseDirectoryCount `json:"directories"`
-	Offset         int                     `json:"offset"`
-	Returned       int                     `json:"returned"`
-	MoreRemaining  bool                    `json:"more_remaining"`
-	Releases       []string                `json:"releases"`
-	Lockfiles      map[string]string       `json:"lockfiles"`
+	ResponseFormat   string                  `json:"response_format"`
+	Count            int                     `json:"count"`
+	Directories      []releaseDirectoryCount `json:"directories"`
+	Offset           int                     `json:"offset"`
+	Returned         int                     `json:"returned"`
+	MoreRemaining    bool                    `json:"more_remaining"`
+	Releases         []string                `json:"releases"`
+	Lockfiles        map[string]string       `json:"lockfiles"`
+	UnreadLinkedDirs []string                `json:"unread_linked_dirs"`
 }
 
 var listReleasesToolSpec = toolSpec{
@@ -487,7 +504,9 @@ var listReleasesToolSpec = toolSpec{
 		"coordinate list-entities reports a file under, so the two answers line up — bounded to `limit` paths from " +
 		"`offset`, with `more_remaining` saying whether to ask again. `lockfiles` maps each returned path to the " +
 		"path of that Release's lockfile, in the same coordinate: the file pull writes and build reads, so you never " +
-		"work out where it lives yourself. Membership is decided by the file's own kind " +
+		"work out where it lives yourself. `unread_linked_dirs`, in both shapes, names each link the listing meets " +
+		"that leads to a directory outside the workspace: no such directory is searched, so a Release inside one is " +
+		"not listed even where an editor shows it under the link. Membership is decided by the file's own kind " +
 		"header, never by its name: a Release named without a conventional prefix is included, and a file merely " +
 		"named like one is not. Call this when you need to name a Release and do not know which exist — build, " +
 		"describe and validate each require one named and none can enumerate for you. Feed a returned path straight " +
@@ -541,28 +560,44 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		return errorResult(explainToolError("Could not resolve the workspace to list its Releases.", err, "release"))
 	}
 
-	releases := serve.ReleaseCandidates(tw.root)
+	walked := serve.WalkReleaseCandidates(tw.root)
+	releases := walked.Releases
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(releases))
 	page := releases[from:to]
 	payload := listReleasesResult{
-		ResponseFormat: format,
-		Count:          len(releases),
-		Directories:    releaseDirectoryCounts(releases),
-		Offset:         from,
-		Returned:       to - from,
-		MoreRemaining:  more,
-		Releases:       page,
-		Lockfiles:      serve.LockfilesFor(page),
+		ResponseFormat:   format,
+		Count:            len(releases),
+		Directories:      releaseDirectoryCounts(releases),
+		Offset:           from,
+		Returned:         to - from,
+		MoreRemaining:    more,
+		Releases:         page,
+		Lockfiles:        serve.LockfilesFor(page),
+		UnreadLinkedDirs: walked.UnreadLinkedDirs,
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderListReleasesText(payload), payload))
 }
 
-// renderListReleasesText renders the human-readable Release listing, and says
-// what an empty one means: the walk ran and found none, rather than the question
-// having been refused. Each path is printed with its lockfile, read off the
-// answer's own map, so the text and the structured result name the same file.
+// renderListReleasesText renders the human-readable Release listing, closing
+// with one line naming the links to directories outside the workspace the walk
+// did not enter, where there are any — in every shape, the empty listing
+// included, since a workspace whose only Release sits behind such a link is
+// exactly the one whose reader needs to be told why none is listed.
 func renderListReleasesText(p listReleasesResult) string {
+	text := renderReleasePathsText(p)
+	if len(p.UnreadLinkedDirs) == 0 {
+		return text
+	}
+	return text + "\n\nNo Release inside these links is listed, because each leads to a directory outside the " +
+		"workspace and none is searched: " + strings.Join(p.UnreadLinkedDirs, ", ")
+}
+
+// renderReleasePathsText renders the listing itself, and says what an empty one
+// means: the walk ran and found none, rather than the question having been
+// refused. Each path is printed with its lockfile, read off the answer's own
+// map, so the text and the structured result name the same file.
+func renderReleasePathsText(p listReleasesResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Releases in %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), p.Count)
 	if p.Count == 0 {

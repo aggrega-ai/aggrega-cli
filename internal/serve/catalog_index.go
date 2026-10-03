@@ -197,15 +197,39 @@ func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 //
 // The paths are sorted, and the collection is never nil.
 func ReleaseCandidates(root string) []string {
-	out := []string{}
-	for _, abs := range walkForReleases(root) {
+	return WalkReleaseCandidates(root).Releases
+}
+
+// ReleaseCandidateWalk is what one walk of a workspace for its Releases reports,
+// every path relative to the workspace root.
+type ReleaseCandidateWalk struct {
+	// Releases are the Release-kind documents found, as ReleaseCandidates
+	// reports them: sorted, and never nil.
+	Releases []string
+	// UnreadLinkedDirs are the links the walk met that lead to a directory
+	// outside the workspace root, each named where the link itself sits and in
+	// the order the walk met them — the same list the editor's Release-candidate
+	// answer carries. The walk does not enter such a directory, so a Release
+	// inside one is not among Releases. Never nil.
+	UnreadLinkedDirs []string
+}
+
+// WalkReleaseCandidates is ReleaseCandidates together with the linked
+// directories the same walk did not read, so a caller that reports which
+// Releases a workspace holds can also say why one its reader sees through a link
+// is absent, without walking the workspace a second time.
+func WalkReleaseCandidates(root string) ReleaseCandidateWalk {
+	walked := walkReleases(root)
+	out := ReleaseCandidateWalk{Releases: []string{}, UnreadLinkedDirs: []string{}}
+	for _, abs := range walked.releases {
 		rel, inside := pathscope.Relative(root, abs)
 		if !inside {
 			continue
 		}
-		out = append(out, rel)
+		out.Releases = append(out.Releases, rel)
 	}
-	sort.Strings(out)
+	sort.Strings(out.Releases)
+	out.UnreadLinkedDirs = append(out.UnreadLinkedDirs, walked.unreadLinkedDirs...)
 	return out
 }
 
