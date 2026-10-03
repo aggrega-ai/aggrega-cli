@@ -133,8 +133,12 @@ var proseOnlyFailureReturns = map[string]int{
 	// The third is a read that failed: it hands back no partial entity, so the
 	// one thing it has in hand is the condition that stopped it, and the prose
 	// opens with that condition's short code.
+	//
+	// Description's lookup by name refuses one more before it looks anything up: a
+	// catalog directory the name would be resolved through that cannot be walked.
+	// It is asked ahead of the lookup, so there is no definition in hand to carry.
 	"tool_validate.go": 18,
-	"tool_describe.go": 11,
+	"tool_describe.go": 12,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.

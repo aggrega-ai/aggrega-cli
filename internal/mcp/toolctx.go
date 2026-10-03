@@ -5,12 +5,14 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -439,6 +441,44 @@ func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog
 		v.SetPins(catalog.PinsFromLockfile(lf))
 	}
 	return v
+}
+
+// catalogDirsRefusal returns the refusal a whole-catalog load gives the first
+// directory of the catalog search stack for release that it cannot walk — one the
+// workspace configuration lists and that does not exist, say — or nil where it can
+// walk every one. release is resolved as newView resolves it, and the empty
+// string is the workspace's own stack.
+//
+// A tool asks it where its command-line twin loads the whole catalog, and so
+// refuses such a directory before it does anything else: the build, as `aggrega
+// build` does, and the lookup of a catalog entity by name, as `aggrega inspect`
+// does when it looks a name up. A lookup built by newView finds what it can and
+// passes over a directory it cannot enter, so without the question a tool would
+// answer over the directories that remain where its twin refuses. A tool whose
+// twin reads through such a lookup too tolerates the directory as its twin does,
+// and does not ask.
+//
+// The stack is read off a lookup built exactly as newView builds the call's own,
+// so the directories checked are the directories resolved through, and the check
+// is that lookup's own (CheckDirectories), which walks them by the walk the load
+// runs and reads no document. Nothing here asks the filesystem itself: a second
+// test of whether a directory exists would be free to answer differently from the
+// load the twin runs.
+func (tw *toolWorkspace) catalogDirsRefusal(release string) error {
+	return tw.newView(release, nil).CheckDirectories()
+}
+
+// catalogDirsGuidance is the text a refusal catalogDirsRefusal returned is
+// answered with: action, saying what the tool did not do, then the refusal with
+// every cause beneath it on one line — the command line's report of the same
+// directory: the directory, the load it stopped, and the reason the filesystem
+// gave — and the page teaching where this server's catalog directories come from.
+//
+// The cause chain is rendered rather than the refusal's own text because a
+// compiler error renders a single frame, which here would name the directory and
+// the load and drop the reason beneath them.
+func catalogDirsGuidance(action string, refusal error) string {
+	return explainToolErrorAt(action, errors.New(cerrors.CauseChain(refusal)), docServerReference)
 }
 
 // workspacePath resolves a path a tool call named, in the way the transport this

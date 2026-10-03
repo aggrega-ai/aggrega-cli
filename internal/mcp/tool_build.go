@@ -353,6 +353,24 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		return errorResult(refusal)
 	}
 
+	// The catalog directories this Release reads, before the fill and the render.
+	// `aggrega build` loads every one of them first and stops at one it cannot walk
+	// — a directory the workspace configuration lists that does not exist — while
+	// the view this tool renders through passes over such a directory and would
+	// build from the ones that remain. So the stack is asked first, the way the
+	// command line's load asks it, and a refusal there is answered before the fill
+	// below writes a lockfile: what a build refuses, it refuses having written
+	// nothing. It answers in this tool's refusal shape, naming the Release and no
+	// file; nothing had run, so there is no finding to carry.
+	if refused := tw.catalogDirsRefusal(releasePath); refused != nil {
+		payload := buildResultPayload{Files: []buildFile{}}
+		payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
+		return tw.answer(structuredErrorResult(catalogDirsGuidance(
+			"The build refused before resolving anything: a catalog directory this Release reads cannot be "+
+				"walked, and `aggrega build` refuses the same directory. Nothing was resolved, rendered or written.",
+			refused), payload))
+	}
+
 	// The fill, before anything reads the lockfile, because what it writes is what
 	// the render then resolves against. Whether it runs is composed in the workspace
 	// config, which owns one of the two inputs — the argument turns it on for this

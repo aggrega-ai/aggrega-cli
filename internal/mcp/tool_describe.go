@@ -301,6 +301,19 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 			return tw.answer(errorResult(refusal))
 		}
 	}
+	// The catalog directories the name is resolved through, before the lookup.
+	// `aggrega inspect` loads every one of them to look a name up, and stops at one
+	// it cannot walk — a directory the workspace configuration lists that does not
+	// exist — while the view below passes over such a directory and would answer
+	// from the ones that remain. So the stack is asked first, the way the command
+	// line's load asks it; nothing has been looked up at that point, so there is no
+	// definition in hand to carry.
+	if refused := tw.catalogDirsRefusal(releasePath); refused != nil {
+		return tw.answer(errorResult(catalogDirsGuidance(
+			"The lookup refused before resolving the name: a catalog directory it would be resolved through "+
+				"cannot be walked, and `aggrega inspect` refuses the same directory when it looks a name up.",
+			refused)))
+	}
 	view := tw.newView(releasePath, nil)
 
 	match, ok := compilerops.ResolveEntity(view, name)
