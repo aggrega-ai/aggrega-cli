@@ -147,9 +147,19 @@ type initializeResult struct {
 // its own deletion from anything else — reads the path the daemon checks rather
 // than keeping a copy of the rule that places it. It is always an object, empty
 // when the workspace holds no Release.
+//
+// UnreadLinkedDirs names each link standing where the walk would read a
+// directory that leads to a directory outside the workspace root, relative to
+// the root where the link itself sits and in the order the walk met them. The
+// walk does not enter a directory outside the root, so a Release inside one is
+// not in Releases even though an editor's file tree shows it under the link; the
+// field is what lets a client say why, rather than offer fewer Releases than the
+// reader can see with nothing said. It is always an array, empty when the
+// workspace holds no such link.
 type releaseCandidatesResult struct {
-	Releases  []string          `json:"releases"`
-	Lockfiles map[string]string `json:"lockfiles"`
+	Releases         []string          `json:"releases"`
+	Lockfiles        map[string]string `json:"lockfiles"`
+	UnreadLinkedDirs []string          `json:"unreadLinkedDirs"`
 }
 
 // dispatchReleaseCandidates returns the Release-candidate set of the workspace
@@ -168,13 +178,19 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 
-	releases := walkForReleases(s.workspaceRoot)
+	walked := walkReleases(s.workspaceRoot)
+	releases := walked.releases
 	if releases == nil {
 		releases = []string{}
 	}
+	unread := walked.unreadLinkedDirs
+	if unread == nil {
+		unread = []string{}
+	}
 	return s.writeResult(ctx, req.ID, releaseCandidatesResult{
-		Releases:  releases,
-		Lockfiles: LockfilesFor(releases),
+		Releases:         releases,
+		Lockfiles:        LockfilesFor(releases),
+		UnreadLinkedDirs: unread,
 	})
 }
 

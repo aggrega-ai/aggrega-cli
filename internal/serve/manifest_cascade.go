@@ -13,6 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -213,10 +214,56 @@ func resolveCascadePath(workspaceRoot, p string) string {
 // root, not a configured subdirectory, so filtering vendored copies
 // and build outputs is load-bearing for correctness.
 func walkForReleases(workspaceRoot string) []string {
-	var out []string
+	return walkReleases(workspaceRoot).releases
+}
+
+// releaseWalk is what one walk of a workspace for its Releases met.
+type releaseWalk struct {
+	// releases are the absolute paths of the Release-kind files found.
+	releases []string
+	// unreadLinkedDirs are the links met that lead to a directory outside the
+	// workspace root, each named relative to the root where the link itself
+	// sits, in the order the walk met them.
+	unreadLinkedDirs []string
+}
+
+// walkReleases is the walk walkForReleases answers from, keeping as well each
+// link it met that leads to a directory outside the workspace root.
+//
+// The walk never enters a link: filepath.WalkDir reports one as an entry of its
+// own and does not descend into it. A link to a directory inside the root needs
+// nothing more, because that directory is walked, or left out, where it actually
+// sits. A link to a directory outside the root leads somewhere the walk does not
+// go, so a Release inside it is never found. It is recorded where the walk meets
+// it, so an answer can name the directories that were not read rather than leave
+// its reader to wonder why a Release their editor shows is not offered.
+//
+// A link is judged as the directory it stands in for. One the walk would leave
+// out as a directory — by where it sits or by its name — is not recorded, just as
+// a directory there would not be read; one inside a directory the walk leaves out
+// is never met at all. And a link is recorded only where resolving it succeeds:
+// one that leads nowhere, or round a loop, has no directory behind it to name, and
+// nothing further is tried to find out where it was meant to go.
+//
+// Recording a link changes nothing else about the walk, so the Releases found are
+// exactly those walkForReleases reports.
+func walkReleases(workspaceRoot string) releaseWalk {
+	var out releaseWalk
+	absRoot, resolvedRoot := "", ""
 	_ = filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
+		}
+		if path != workspaceRoot && d.Type()&fs.ModeSymlink != 0 && !shouldExcludeDir(d.Name(), path, workspaceRoot) {
+			if resolvedRoot == "" {
+				absRoot = absolutePath(workspaceRoot)
+				resolvedRoot = resolvedPath(workspaceRoot)
+			}
+			if linkLeadsOutOfRoot(path, resolvedRoot) {
+				if rel, ok := pathscope.Relative(absRoot, absolutePath(path)); ok {
+					out.unreadLinkedDirs = append(out.unreadLinkedDirs, rel)
+				}
+			}
 		}
 		if d.IsDir() {
 			if shouldExcludeDir(d.Name(), path, workspaceRoot) {
@@ -239,11 +286,56 @@ func walkForReleases(workspaceRoot string) []string {
 			return nil
 		}
 		if hdr.Kind == "Release" {
-			out = append(out, path)
+			out.releases = append(out.releases, path)
 		}
 		return nil
 	})
 	return out
+}
+
+// linkLeadsOutOfRoot reports whether the link at path resolves to a directory
+// outside resolvedRoot, the workspace root with its own links resolved.
+//
+// Where the link goes is read once, by filepath.EvalSymlinks, and that resolution
+// is the whole of what is asked of it. A link it cannot complete — one leading
+// nowhere, or round a loop — reports false, and nothing further is tried. Both
+// sides are compared resolved, so a root reached through a link of its own still
+// counts what lies under it as inside. The root itself is inside, and the
+// containment question for everything else is pathscope.Relative's.
+func linkLeadsOutOfRoot(path, resolvedRoot string) bool {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	target = absolutePath(target)
+	info, err := os.Stat(target)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	if target == resolvedRoot {
+		return false
+	}
+	_, inside := pathscope.Relative(resolvedRoot, target)
+	return !inside
+}
+
+// resolvedPath is p made absolute with its links resolved, or made absolute and
+// cleaned where its links cannot be resolved.
+func resolvedPath(p string) string {
+	p = absolutePath(p)
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
+}
+
+// absolutePath is p made absolute and cleaned, or p cleaned where the working
+// directory it would be anchored to cannot be read.
+func absolutePath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return filepath.Clean(p)
 }
 
 // shouldExcludeDir filters out the canonical ignore-set plus any
