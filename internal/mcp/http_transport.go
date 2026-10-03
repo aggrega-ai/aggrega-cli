@@ -284,6 +284,10 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
 		startDir:       cfg.WorkspaceRoot,
+		// Handed to this transport exactly as to the other: what the operator
+		// typed when starting the process is in force for every call it answers,
+		// whoever is calling.
+		flags: cfg.Flags,
 		// Handed to this transport exactly as to the other: which plugin a
 		// reference resolves to is a property of the workspace and the process
 		// rather than of how a caller reached it, so an importer that runs for a

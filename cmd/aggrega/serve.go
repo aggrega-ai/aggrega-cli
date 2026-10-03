@@ -83,6 +83,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		CompilerVersion: provenanceCompilerVersion(),
 		Toolchain:       toolchainStamp(),
 		BuildOnInspect:  buildOnInspect,
+		// The command-line layer this invocation's own resolution carries, handed
+		// over so every workspace the daemon resolves carries it too: a setting
+		// typed on this command line — --offline above all — is in force for every
+		// request exactly as it is for any other command.
+		Flags: flagOverlayFromContext(cmd.Context()),
 		// Supplied for the same reason the compiler version and the toolchain stamp
 		// are: the value belongs to this package and the daemon lives below it. The
 		// install's collision guard reads the freshly built command tree, which is

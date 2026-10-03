@@ -243,7 +243,12 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// lockfile a tool call writes records the same compiler and the same core
 		// plugin versions a lockfile written at a terminal records for this binary.
 		Toolchain: toolchainStamp(),
-		Commands:  commandSurface(cmd.Root()),
+		// The command-line layer this invocation's own resolution carries, handed
+		// over so every workspace a tool call resolves carries it too: a setting
+		// typed on this command line — --offline above all — is in force for the
+		// tools exactly as it is for any other command.
+		Flags:    flagOverlayFromContext(cmd.Context()),
+		Commands: commandSurface(cmd.Root()),
 		// Read from the same resolved block the listener settings below are, and
 		// handed to both transports rather than to the listener alone: which tools
 		// a client is offered is a property of the server, and the client a

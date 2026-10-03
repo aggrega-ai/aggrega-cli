@@ -134,6 +134,24 @@ func configLookupFromContext(ctx context.Context) func(string) string {
 	return os.Getenv
 }
 
+// flagOverlayFromContext returns the command-line layer the workspace resolver
+// carries: the settings the reader set on this invocation, read once by the root
+// command and stashed there.
+//
+// It exists for a command that hands resolution on to a server of its own. Such
+// a server resolves a workspace for each request rather than reading the one
+// this invocation resolved, so it is handed this same layer to apply on top of
+// each of those resolutions — the value the root command composed, not the flags
+// read a second time. It returns the empty layer when no resolver is attached,
+// which happens only when a command helper is invoked directly outside the root
+// wiring (tests), and the empty layer changes nothing.
+func flagOverlayFromContext(ctx context.Context) workspaceconfig.FlagOverlay {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
+		return l.flags
+	}
+	return workspaceconfig.FlagOverlay{}
+}
+
 // workspaceRootFromContext returns the resolved --workspace-root value (flag or
 // environment) carried by the workspace resolver, so a config-mutating command
 // that resolves the workspace off the shared path still pins the exact root the

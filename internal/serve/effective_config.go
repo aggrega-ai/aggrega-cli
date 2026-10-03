@@ -12,15 +12,10 @@ import (
 // that determined it.
 //
 // Source is a config file's absolute path, an environment variable behind an
-// "env:" prefix, or the built-in-defaults label. It is produced by the same
-// call the command line attributes a setting with, so the two surfaces cannot
-// report different origins for the same setting.
-//
-// The command line has a fourth shape this surface does not: a flag the reader
-// typed on that invocation, named as they typed it. A daemon resolves a
-// workspace with no command line of its own, so no setting reported here is
-// ever attributed to one — which is why three shapes exhaust this surface
-// while four exhaust the attribution.
+// "env:" prefix, a flag typed on the command line that launched this daemon,
+// named as it was typed, or the built-in-defaults label. It is produced by the
+// same call the command line attributes a setting with, so the two surfaces
+// cannot report different origins for the same setting.
 //
 // It carries no position within the source. A setting attributed to a config
 // file does have one available, and it is deliberately not published here: an

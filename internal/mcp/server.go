@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // Config carries the I/O streams the server reads from and writes to plus
@@ -124,6 +125,21 @@ type Config struct {
 	// property of the process rather than of how a client reached it.
 	WorkspaceRoot string
 
+	// Flags is the command-line layer of the configuration precedence ladder:
+	// the settings the reader set on the invocation that launched this process.
+	// The command layer supplies the layer it composed onto its own resolution,
+	// and every workspace a call resolves has it applied on top, so a setting
+	// typed on that command line — the offline posture above all — is in force
+	// for every tool, and for the documentation acquisition at the start of the
+	// run, exactly as it is for any other command, and is reported as the flag
+	// that set it.
+	//
+	// It binds on every transport and over every workspace a call resolves,
+	// including one a call names for itself: the flag is a property of the
+	// invocation, not of a workspace. The zero value carries nothing and changes
+	// nothing, which is the shape a caller with no command line runs in.
+	Flags workspaceconfig.FlagOverlay
+
 	// AnnounceTools names the tools the server announces, spelled as the tool
 	// list reports them. Nil announces every tool the session serves, a list
 	// announces exactly those, and an empty non-nil list announces none — so
@@ -180,6 +196,11 @@ type server struct {
 	// supplies no explicit workspace_root. Empty resolves from the process
 	// working directory. A test points it at a fixture workspace.
 	startDir string
+
+	// flags is the command-line layer the process was launched with, applied on
+	// top of every workspace resolveToolWorkspace resolves. The zero value
+	// changes nothing; a test that is not about the layer leaves it unset.
+	flags workspaceconfig.FlagOverlay
 
 	// transport is which transport composed this session, and it decides what a
 	// call may name rather than how a message is framed. Framing is settled by
@@ -398,6 +419,7 @@ func Run(ctx context.Context, cfg Config) error {
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
 		startDir:       cfg.WorkspaceRoot,
+		flags:          cfg.Flags,
 		transport:      transportStdio,
 
 		resolveImportPlugin: cfg.ResolveImportPlugin,
