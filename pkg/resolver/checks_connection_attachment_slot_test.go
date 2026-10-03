@@ -86,11 +86,13 @@ func connectionSlotFindings(objections []constraint.Objection) []connectionSlotF
 	return out
 }
 
-// TestConnectionAttachmentFillsADeclaredSlot proves both earlier halves of the
-// declared-slots rule — the developer's connection entries and the Release's —
-// over every answer the socket declaration gives, in both directions: a name the
-// socket declares passes, any other name is refused naming the attachment, the
-// connection, the socket, the component and the declared slots.
+// TestConnectionAttachmentFillsADeclaredSlot proves the earlier half of the
+// declared-slots rule — the developer's connection entries of a component the
+// Aggregate declares — over every answer the socket declaration gives, in both
+// directions: a name the socket declares passes, any other name is refused naming
+// the attachment, each declared slot within one edit of it, the connection, the
+// socket, the component and the declared slots. The Release's half is asked once
+// the composition is flattened and is proved there.
 //
 // Each row carries one fault or none, and the passing rows are the controls that
 // keep each refusal attributable to its own fault.
@@ -114,21 +116,17 @@ spec:
 	const declaredSlot = "models:\n  gpt:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n"
 
 	cases := []struct {
-		name    string
-		uses    string
-		release string
-		rule    constraint.Check[constraint.NormalizedView, constraint.EdgeSubject]
-		want    []connectionSlotFinding
+		name string
+		uses string
+		want []connectionSlotFinding
 	}{
 		{
 			name: "the developer fills the slot the socket declares",
 			uses: declaredSlot,
-			rule: connectionAttachmentFillsADeclaredSlot,
 		},
 		{
 			name: "the developer writes a name the socket declares no slot for",
 			uses: "models:\n  gpt:\n    target: gpt\n    features:\n      token:\n        type: core/referenced-secret\n",
-			rule: connectionAttachmentFillsADeclaredSlot,
 			want: []connectionSlotFinding{{
 				condition: true,
 				detail:    []string{"token", "gpt", "models", "gw", "credential"},
@@ -136,9 +134,19 @@ spec:
 			}},
 		},
 		{
+			// One transposition from the declared slot: the refusal names the slot
+			// it sits near in the same sentence.
+			name: "a name one edit from a declared slot is refused naming that slot",
+			uses: "models:\n  gpt:\n    target: gpt\n    features:\n      credentail:\n        type: core/referenced-secret\n",
+			want: []connectionSlotFinding{{
+				condition: true,
+				detail:    []string{"credentail", "credential", "gpt", "models", "gw", "credential"},
+				advice:    "Write the attachment under one of the slots the socket declares",
+			}},
+		},
+		{
 			name: "only the undeclared one of two names is refused",
 			uses: "models:\n  gpt:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n      token:\n        type: core/referenced-secret\n",
-			rule: connectionAttachmentFillsADeclaredSlot,
 			want: []connectionSlotFinding{{
 				condition: true,
 				detail:    []string{"token", "gpt", "models", "gw", "credential"},
@@ -148,7 +156,6 @@ spec:
 		{
 			name: "a declared socket declaring no slots admits no attachment",
 			uses: "logs:\n  sink:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n",
-			rule: connectionAttachmentFillsADeclaredSlot,
 			want: []connectionSlotFinding{{
 				condition: true,
 				detail:    []string{"credential", "sink", "logs", "gw"},
@@ -158,65 +165,17 @@ spec:
 		{
 			name: "a socket the type does not declare admits no attachment",
 			uses: "backups:\n  spare:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n",
-			rule: connectionAttachmentFillsADeclaredSlot,
 			want: []connectionSlotFinding{{
 				condition: true,
 				detail:    []string{"credential", "spare", "backups", "gw"},
 				advice:    "The component's type does not declare this socket",
 			}},
 		},
-		{
-			name:    "the operator sizes the slot the developer filled",
-			uses:    declaredSlot,
-			release: "models:\n  gpt:\n    features:\n      credential:\n        infra:\n          rotation: hourly\n",
-			rule:    releaseConnectionAttachmentFillsADeclaredSlot,
-		},
-		{
-			name:    "the operator writes a name the socket declares no slot for",
-			uses:    declaredSlot,
-			release: "models:\n  gpt:\n    features:\n      token:\n        type: core/referenced-secret\n",
-			rule:    releaseConnectionAttachmentFillsADeclaredSlot,
-			want: []connectionSlotFinding{{
-				condition: true,
-				detail:    []string{"token", "gpt", "models", "gw", "credential"},
-				advice:    "Write the attachment under one of the slots the socket declares",
-			}},
-		},
-		{
-			// The Release may address only declared sockets, and the socket rule
-			// refuses this entry for that by name; this rule leaves it alone so one
-			// fault is reported once.
-			name:    "the operator writes on a socket the type does not declare",
-			uses:    declaredSlot,
-			release: "backups:\n  spare:\n    target: gpt\n    features:\n      credential:\n        type: core/referenced-secret\n",
-			rule:    releaseConnectionAttachmentFillsADeclaredSlot,
-		},
-		{
-			// The developer's names are this rule's twin's to judge.
-			name: "the operator's rule is not asked about the developer's names",
-			uses: "models:\n  gpt:\n    target: gpt\n    features:\n      token:\n        type: core/referenced-secret\n",
-			rule: releaseConnectionAttachmentFillsADeclaredSlot,
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var release *types.Release
-			if tc.release != "" {
-				release = parseRelease(t, `apiVersion: aggrega.ai/v1alpha1
-kind: Release
-metadata:
-  name: demo-prod
-spec:
-  boundaries:
-    prod:
-      components:
-        gw:
-          uses:
-`+indent(tc.release, 12)+`        gpt: {}
-`)
-			}
-			view := newNormalizedView(normalized(t, aggregate(tc.uses)), release, connectionSlotCatalog(t), nil)
+			view := newNormalizedView(normalized(t, aggregate(tc.uses)), nil, connectionSlotCatalog(t), nil)
 			var objections []constraint.Objection
 			func() {
 				defer func() {
@@ -226,7 +185,7 @@ spec:
 				}()
 				var err error
 				objections, err = constraint.RunOnEdges[constraint.NormalizedView](
-					nil, newCoordinateSet(view), view, tc.rule)
+					nil, newCoordinateSet(view), view, connectionAttachmentFillsADeclaredSlot)
 				if err != nil {
 					t.Fatalf("the connection walk returned an error: %v", err)
 				}
@@ -299,5 +258,111 @@ spec:
 	}
 	if got := ask(doc("credential")); len(got) != 0 {
 		t.Fatalf("the declared name must not halt; got %v", got)
+	}
+}
+
+// TestNearMissOnAConnectionIsRefusedAndNeverAdvised proves the two readings of a
+// name one edit from a declared slot agree about where each applies: on a
+// component's own attachment block — which is open — the name draws the advisory
+// pairing the two spellings and nothing halts, while on a connection — whose set
+// is closed — the refusal names the near slot and no advisory is raised beside it.
+//
+// The first row is the control: the advisory fires on the component's own block,
+// so its silence on the connection row is the rule not applying there rather than
+// the reading not running.
+func TestNearMissOnAConnectionIsRefusedAndNeverAdvised(t *testing.T) {
+	t.Parallel()
+
+	const gwYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: app/gateway
+  version: "1.0.0"
+spec:
+  featuresSchema:
+    credential: {}
+  usesSchema:
+    models:
+      featuresSchema:
+        credential: {}
+`
+	var gw types.Component
+	if err := yaml.Unmarshal([]byte(gwYAML), &gw); err != nil {
+		t.Fatalf("gateway fixture parse: %v", err)
+	}
+	catalog := CatalogLookup{
+		Component: func(u string) (types.Component, bool) {
+			if u == "app/gateway:1.0.0" {
+				return gw, true
+			}
+			return types.Component{}, false
+		},
+	}
+	doc := func(block string) *types.Aggregate {
+		return parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  components:
+    gw:
+      type: app/gateway:1.0.0
+`+indent(block, 6)+`    gpt:
+      type: app/gateway:1.0.0
+`)
+	}
+
+	cases := []struct {
+		name         string
+		block        string
+		wantAdvisory bool
+		wantRefusal  bool
+	}{
+		{
+			name:         "on the component's own block the near name is advised and not refused",
+			block:        "features:\n  credentail:\n    type: core/referenced-secret\n",
+			wantAdvisory: true,
+		},
+		{
+			name: "on a connection the near name is refused and not advised",
+			block: "uses:\n  models:\n    gpt:\n      target: gpt\n      features:\n" +
+				"        credentail:\n          type: core/referenced-secret\n",
+			wantRefusal: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			view := newNormalizedView(normalized(t, doc(tc.block)), nil, catalog, nil)
+			advisories, err := runDeclaredAdvisories(nil, view, nil, "Aggregate demo")
+			if err != nil {
+				t.Fatalf("the advisories returned an error: %v", err)
+			}
+			advised := false
+			for _, a := range advisories {
+				if errors.Is(a, ErrAttachmentSlotNearMiss()) {
+					advised = true
+				}
+			}
+			if advised != tc.wantAdvisory {
+				t.Errorf("near-miss advisory raised = %v; want %v (advisories: %v)", advised, tc.wantAdvisory, advisories)
+			}
+			halts, err := runDeclaredRules(nil, view, "Aggregate demo", "Release")
+			if err != nil {
+				t.Fatalf("the declared rules returned an error: %v", err)
+			}
+			var refusals []*ResolverError
+			for _, h := range halts {
+				if errors.Is(h, ErrConnectionAttachmentSlotUndeclared()) {
+					refusals = append(refusals, h)
+				}
+			}
+			if got := len(refusals) > 0; got != tc.wantRefusal {
+				t.Fatalf("declared-slot refusal raised = %v; want %v (findings: %v)", got, tc.wantRefusal, halts)
+			}
+			if tc.wantRefusal && !strings.Contains(refusals[0].Error(), `near the declared slot "credential"`) {
+				t.Errorf("the refusal must name the slot the name sits near; got %v", refusals[0])
+			}
+		})
 	}
 }

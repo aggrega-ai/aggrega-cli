@@ -86,7 +86,7 @@ func TestRenderedKeyMarking_CannotReachAConnectionAttachment(t *testing.T) {
 	if !known {
 		t.Fatal("the Component's own slot set must resolve")
 	}
-	socketSlots, known := ir.SocketAttachmentSlots(lookup, markingComponentType, "models")
+	socketSlots, known := resolver.SocketAttachmentSlots(lookup, markingComponentType, "models")
 	if !known || !ir.SensitiveSlots(socketSlots)["credential"] {
 		t.Fatal("the socket must declare its credential slot sensitive, or a refusal below proves nothing")
 	}

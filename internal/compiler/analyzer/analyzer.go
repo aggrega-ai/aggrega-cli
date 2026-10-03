@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -113,10 +114,12 @@ type AnalysisError struct {
 	// carrying no recoverable site.
 	Kind    AnalysisErrorKind
 	Message string
-	// OriginFile records the absolute filesystem path of the source file
-	// where the violating authoring lives. A rule's subject supplies it from
-	// the document its coordinate was authored in; it stays empty when the
-	// violation has no recoverable single-file origin. Consumers that filter
+	// OriginFile records the source file where the violating authoring lives,
+	// in the form the compilation names that document by — relative to the
+	// workspace root wherever the run was given one. A
+	// rule's subject supplies it from the document its coordinate was authored
+	// in; it stays empty when the violation has no recoverable single-file
+	// origin. Consumers that filter
 	// per-file diagnostics (the daemon's editor-facing validation) drop
 	// entries whose OriginFile does not match the requested file; consumers
 	// that surface all diagnostics ignore the field.
@@ -134,6 +137,14 @@ type AnalysisError struct {
 	// about a component the author nested inside a subsystem is positioned
 	// rather than declined.
 	Field string
+	// Document is which authoring document the violation was written in — one of
+	// the two the constraint framework names, constraint.AuthoringDocumentAggregate
+	// or constraint.AuthoringDocumentRelease — taken from the site the rule's
+	// subject was read at, and empty where that site records none. It is what
+	// ToCompilerError files the violation under, so a fault the operator wrote on
+	// the Release reports as the operator's and one the developer wrote as the
+	// developer's, whichever surface converts it.
+	Document string
 	// Sentinel is the domain sentinel this violation wraps. ToCompilerError
 	// surfaces it as the CompilerError's inner error so callers can detect
 	// the violation class with errors.Is at the pipeline boundary. The rule
@@ -161,19 +172,8 @@ func (e AnalysisError) Error() string {
 }
 
 // ToCompilerError converts the violation into a *cerrors.CompilerError,
-// choosing the category from the violation's Kind. A violation about one
-// connection's declared label constraint, one about the applicability a Feature
-// declares, one about the constraint an attachment slot declares over what may
-// fill it, one about a required slot nothing binds, and one about a presence
-// mandate no attachment satisfies are all authoring-time problems on the
-// developer's Aggregate — the developer authored the connection or the Feature
-// attachment that fails it, left the slot unbound, or did not attach the type
-// the component's own declaration demands — so they route to
-// cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
-// governance rejection from an operator-attached policy plugin, not a
-// developer authoring mistake, so it routes to cerrors.PolicyError; the
-// remediation is to satisfy the enforced policy or reconsider its attachment,
-// not to edit the Aggregate.
+// choosing the category from the violation's Kind and, for a located one, from
+// the document it was written in — see [AnalysisError.category].
 //
 // The source pointer names where a finding is, which only the located class
 // knows: a rule's subject carries the file its coordinate was authored in and
@@ -203,10 +203,7 @@ func (e AnalysisError) Error() string {
 // ErrMissingRequiredFeature, and policy verdicts carry ErrPolicyViolation.
 // When Sentinel is nil the inner chain is empty.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
-	category := cerrors.DeveloperError
-	if e.Kind == AnalysisErrorPolicy {
-		category = cerrors.PolicyError
-	}
+	category := e.category()
 	var pointer cerrors.SourceLocation
 	if e.Kind == AnalysisErrorLocated {
 		pointer = cerrors.SourceLocation{File: e.OriginFile, Locator: e.Field}
@@ -218,6 +215,36 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 		nil,
 		e.Sentinel,
 	)
+}
+
+// category answers which authoring surface the violation is filed under.
+//
+// A policy verdict (Kind [AnalysisErrorPolicy]) is a governance rejection from
+// an operator-attached policy plugin rather than an authoring mistake in either
+// document, so it is filed under the policy surface: the remedy is to satisfy the
+// enforced policy or reconsider its attachment, not to edit a document.
+//
+// Any other violation is filed under the document it was written in, through
+// cerrors.ClassifyEntityKind — the one mapping from an entity kind to the surface
+// its faults belong to, and the one a finding naming its document is filed by
+// when the composition is flattened. So a fault in what the operator wrote on the
+// Release reads as the operator's and a fault in what the developer wrote in the
+// Aggregate as the developer's, whichever stage of the build noticed it.
+//
+// A violation whose site recorded no document is filed under the developer's
+// surface, which is the mapping's answer for the Aggregate: every rule here whose
+// site records none positions its finding at a component's own block, in the
+// Aggregate that component was written in.
+func (e *AnalysisError) category() cerrors.Category {
+	if e.Kind == AnalysisErrorPolicy {
+		return cerrors.PolicyError
+	}
+	if kind, named := constraint.AuthoringDocumentKind(e.Document); named {
+		if category, covered := cerrors.ClassifyEntityKind(string(kind)); covered {
+			return category
+		}
+	}
+	return cerrors.DeveloperError
 }
 
 // PrecalculatedPath is one acyclic path through the IR graph,

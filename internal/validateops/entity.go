@@ -888,6 +888,10 @@ type entityHarness struct {
 	manifest       *types.Manifest
 	release        *types.Release
 	aggregatePath  string
+	// releasePath is the label the synthesized Release is loaded under. No file
+	// holds that Release, so the label is the only name it has, and the run is
+	// handed the same one it was loaded under rather than none.
+	releasePath string
 }
 
 // syntheticInstanceName is the single component-instance name the synthesized
@@ -965,7 +969,8 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 	if err != nil {
 		return entityHarness{}, fmt.Errorf("render: marshal synthesized release: %w", err)
 	}
-	release, err := resolver.LoadReleaseFromBytes(releaseBytes, "validate://release.yaml")
+	const releasePath = "validate://release.yaml"
+	release, err := resolver.LoadReleaseFromBytes(releaseBytes, releasePath)
 	if err != nil {
 		return entityHarness{}, fmt.Errorf("render: synthesized release: %w", err)
 	}
@@ -975,6 +980,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 		manifest:       manifest,
 		release:        release,
 		aggregatePath:  aggregatePath,
+		releasePath:    releasePath,
 	}, nil
 }
 
@@ -1007,6 +1013,7 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		Manifest:          h.manifest,
 		AggregateRawBytes: h.aggregateBytes,
 		AggregatePath:     h.aggregatePath,
+		ReleasePath:       h.releasePath,
 		WorkspaceConfig:   &wsCfg,
 		// No workspace means no recorded closure, so nothing was ever going to
 		// pin what this harness resolves. Written rather than omitted: the

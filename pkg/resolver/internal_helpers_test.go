@@ -560,16 +560,17 @@ func TestExpandBindingStructured_ValuesPillarOnReleaseSideContributesNothing(t *
 	}
 }
 
-// TestAggregateAnnotationSourcePath_EmptyPrefixDefault pins the
-// fallback when the Aggregate file path is empty: the formatter
-// substitutes "aggregate.yaml" so source locators have a usable prefix
-// even when the resolver was invoked without a file-on-disk Aggregate.
-func TestAggregateAnnotationSourcePath_EmptyPrefixDefault(t *testing.T) {
+// TestAggregateAnnotationSourcePath_NoFileIsTheKeyPathAlone pins what the
+// formatter produces when the run names no file for the Aggregate: the key path
+// the author wrote, with no file name put in front of it. A name the run was not
+// given would send the reader to a file that may not be the one holding the
+// annotation.
+func TestAggregateAnnotationSourcePath_NoFileIsTheKeyPathAlone(t *testing.T) {
 	t.Parallel()
 	got := aggregateAnnotationSourcePath("", "subsystems.data", "feature.myco/db-pool")
-	want := "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool"
+	want := "subsystems.data.annotations.feature.myco/db-pool"
 	if got != want {
-		t.Errorf("empty prefix: got %q; want %q", got, want)
+		t.Errorf("no file: got %q; want %q", got, want)
 	}
 }
 
@@ -596,9 +597,13 @@ func TestAnnotationSourcePath_ComponentVsBoundaryShape(t *testing.T) {
 	if got := annotationSourcePath("release.yaml", "prod", "api", "feature.myco/x", false); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
 		t.Errorf("component-scoped: got %q", got)
 	}
-	// Empty prefix falls back to release.yaml.
-	if got := annotationSourcePath("", "prod", "api", "feature.myco/x", false); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
-		t.Errorf("empty prefix fallback: got %q", got)
+	// No file named for the Release: the key path alone, no file name invented.
+	if got := annotationSourcePath("", "prod", "api", "feature.myco/x", false); got != "boundaries.prod.components.api.annotations.feature.myco/x" {
+		t.Errorf("no file: got %q", got)
+	}
+	// A file the run names is the prefix, whatever it is called.
+	if got := annotationSourcePath("releases/prod.yaml", "prod", "api", "feature.myco/x", false); got != "releases/prod.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
+		t.Errorf("named file: got %q", got)
 	}
 	// Nested boundary uses slash-to-dot translation.
 	if got := annotationSourcePath("release.yaml", "outer/inner", "", "feature.myco/x", false); got != "release.yaml:boundaries.outer.boundaries.inner.annotations.feature.myco/x" {

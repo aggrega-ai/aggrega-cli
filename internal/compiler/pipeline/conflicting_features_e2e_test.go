@@ -227,6 +227,45 @@ func TestConflictingFeaturesHaltWhereTheirReachesMeet(t *testing.T) {
 			locator: ".spec.components.web",
 		},
 		{
+			// A connection's attachment reaches the component that draws the
+			// connection, and is written on the connection's entry: the place names
+			// that entry rather than the component's own block, which does not hold
+			// it.
+			name: "one on a connection's entry in the Aggregate, the other on the component",
+			aggregate: "  components:\n    web:\n      type: core/web\n" +
+				"      features:\n        b: { type: core/conflict-b }\n" +
+				"      uses:\n        peers:\n          db-link:\n            target: db\n" +
+				"            features:\n              token: { type: core/conflict-a }\n" +
+				"    db:\n      type: core/web\n",
+			release: "  boundaries:\n    edge:\n      directory: ./dist/edge\n" +
+				"      components:\n        web: {}\n        db: {}\n",
+			halts: 1,
+			mentions: []string{
+				`"core/conflict-a"`, `attached in the Aggregate on the connection "db-link"`,
+				`through socket "peers"`, `of component "web"`,
+				`conflicts with "core/conflict-b"`, `attached in the Aggregate on component "web"`,
+			},
+			locator: ".spec.components.web",
+		},
+		{
+			name: "one on a connection's entry in the Release, the other on the component",
+			aggregate: "  components:\n    web:\n      type: core/web\n" +
+				"      features:\n        b: { type: core/conflict-b }\n" +
+				"      uses:\n        peers:\n          db-link:\n            target: db\n" +
+				"    db:\n      type: core/web\n",
+			release: "  boundaries:\n    edge:\n      directory: ./dist/edge\n" +
+				"      components:\n        web:\n          uses:\n            peers:\n              db-link:\n" +
+				"                features:\n                  token: { type: core/conflict-a }\n" +
+				"        db: {}\n",
+			halts: 1,
+			mentions: []string{
+				`"core/conflict-a"`, `attached in the Release on the connection "db-link"`,
+				`through socket "peers"`, `of the entry for component "web"`, `in boundary "edge"`,
+				`conflicts with "core/conflict-b"`, `attached in the Aggregate on component "web"`,
+			},
+			locator: ".spec.components.web",
+		},
+		{
 			name:      "both on one boundary holding two components halts once per component",
 			aggregate: webAndDB,
 			release: "  boundaries:\n    edge:\n      directory: ./dist/edge\n" +

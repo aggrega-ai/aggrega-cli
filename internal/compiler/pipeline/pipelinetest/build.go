@@ -179,6 +179,9 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 			Manifest:          manifest,
 			AggregateRawBytes: aggRes.Bytes,
 			AggregatePath:     aggRes.Path,
+			// Supplied as a build supplies it, so a finding about what the fixture's
+			// Release wrote names that file here as it does on every other surface.
+			ReleasePath:       in.ReleasePath,
 			MappingLibraries:  cat.MappingLibraries,
 			WorkloadLibraries: cat.WorkloadLibraries,
 			ArtifactLibraries: cat.ArtifactLibraries,

@@ -391,7 +391,8 @@ type IREdge struct {
 // provenance maps below. For annotation-driven attachments,
 // AnnotationKey carries the annotation name that triggered the
 // expansion and AnnotationSource locates the source declaration as
-// <file-path>:<dotted-yaml-key-path>. The top-level provenance
+// <file-path>:<dotted-yaml-key-path>, or as the key path alone where the
+// compilation named no file for that document. The top-level provenance
 // fields populate to the singular value when every leaf shares the
 // same FieldProvenance shape; when leaves diverge, the top-level
 // fields stay empty and consumers must read ValuesProvenance /
@@ -623,7 +624,8 @@ func (e IRFeatureEntry) OnConnection() bool { return e.Connection != nil }
 // AnnotationKey and AnnotationSource carry the triggering annotation
 // for "annotation"-origin leaves: the key as declared in the manifest
 // binding registry, and the source location as
-// <file-path>:<dotted-yaml-key-path>. Both fields are empty for
+// <file-path>:<dotted-yaml-key-path> (the key path alone where the
+// compilation named no file for that document). Both fields are empty for
 // "explicit"-origin leaves.
 //
 // OverriddenAnnotation holds the annotation contribution that lost this

@@ -916,12 +916,14 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		// The declared-slots rule for a connection's attachments, asked of the
 		// components a sub-module contributes — the half the reading of the
 		// authoring documents could not ask, because such a component's type is
-		// known only once its module has been read.
+		// known only once its module has been read — and of every entry the
+		// Release writes, which this stage enumerates with the site each was
+		// written at.
 		//
 		// The group names no condition of its own: every finding it carries
 		// names the rule's condition already, and naming the condition here too
 		// would raise it from this function, outside the rule's own declaration.
-		slotErrs, err := guardModuleConnectionAttachmentSlots(ctx.Err, cfg, stageView)
+		slotErrs, err := guardConnectionAttachmentSlots(ctx.Err, cfg, stageView)
 		if err != nil {
 			return nil, err
 		}

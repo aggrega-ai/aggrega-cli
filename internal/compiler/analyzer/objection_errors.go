@@ -30,7 +30,9 @@ import (
 //
 // The locator becomes the field the violation positions at, and the source file
 // becomes its origin, which together let a front end place the violation on the
-// offending authoring key in the file that holds it. The sentinel becomes the
+// offending authoring key in the file that holds it. The authoring document the
+// subject's site recorded becomes the violation's document, which is what the
+// violation is filed under when it is converted. The sentinel becomes the
 // violation's own sentinel, so a caller matching by identity keeps matching
 // through the compiler error this converts into.
 //
@@ -54,6 +56,7 @@ func ErrorsFromObjections(objections []constraint.Objection) []AnalysisError {
 			Message:    constraint.ObjectionMessage(o),
 			Field:      o.Locator(),
 			OriginFile: o.SourceFile(),
+			Document:   o.AuthoringDocument(),
 			Sentinel:   o.Sentinel(),
 		})
 	}

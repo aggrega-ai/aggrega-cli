@@ -18,14 +18,18 @@
 //     entity's appliesTo / appliesToAnyOf constraints (AND across the
 //     two surfaces; an omitted constraint is vacuously satisfied).
 //   - featuresSchema selector rules on every attachment slot a component
-//     type declares — the labels of the Feature bound to the slot must
-//     satisfy the selector string the slot declares. A slot declaring no
-//     selector accepts any fill.
+//     type declares, on the component itself and on each of its dependency
+//     sockets — the labels of the Feature bound to the slot must satisfy the
+//     selector string the slot declares. A slot declaring no selector accepts
+//     any fill. A socket's slot is filled by each connection on the socket, so
+//     its rule is asked of each attachment a connection carries.
 //   - featuresSchema required rules on the same slots — a slot the component
 //     type declares required must be bound by some attachment on the node,
-//     counting every scope the node inherits from. Whether a slot may be left
-//     unbound is this rule's question and not the one above it: the two are
-//     asked of the same slot and answer about different things.
+//     counting every scope the node inherits from, and a slot a socket
+//     declares required must be filled on every connection wired through the
+//     socket. Whether a slot may be left unbound is this rule's question and
+//     not the one above it: the two are asked of the same slot and answer about
+//     different things.
 //   - presence mandates a component type declares — each
 //     features.aggrega.ai/requiredType.<label> annotation must be satisfied by
 //     some attachment of the type it names, under any name, counting every
@@ -34,8 +38,10 @@
 // The first three delegate label matching to pkg/selector, all five report on
 // [AnalysisResult].Errors, and none is evaluated in this package. Each is
 // declared here — [EdgeTargetSatisfiesSocketSelector],
-// [AttachmentSatisfiesFeatureApplicability], [SlotFillSatisfiesSlotSelector],
-// [RequiredAttachmentSlotBound] and [RequiredAttachmentTypeAttached] — and each
+// [AttachmentSatisfiesFeatureApplicability], [SlotFillSatisfiesSlotSelector] and
+// [ConnectionAttachmentSatisfiesSocketSlotSelector], [RequiredAttachmentSlotBound]
+// and [RequiredSocketSlotFilledOnEveryConnection], and
+// [RequiredAttachmentTypeAttached] — and each
 // is evaluated over a presentation of the finalised graph, which this package is
 // not handed; whatever holds that presentation invokes them and appends what
 // they raised to the same slice, through [ErrorsFromObjections]. So a reader

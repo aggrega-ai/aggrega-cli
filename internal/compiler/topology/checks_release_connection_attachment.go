@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// Three rules over what the Release writes about a component's connection
+// The rules over what the Release writes about a component's connection
 // attachments, all asked once the composition is flattened. Each reads the
 // attachments the developer put on a component's connections, and a component a
 // sub-module contributes keeps its connections in that module's document, which
@@ -296,10 +296,74 @@ var releaseConnectionAttachmentNamesItsType = constraint.Check[
 	},
 }
 
-// guardReleaseConnectionAttachments asks the three rules above: the spelling rule
+// releaseConnectionAttachmentTypeAgreesWithTheDeveloper reports each attachment a
+// Release per-edge entry carries whose type differs from the type the developer
+// named for the same attachment on the same connection.
+//
+// Both documents may write one connection's attachment — the developer names it
+// and configures it, the operator sizes it — and the two are merged into one
+// attachment of the consuming component. That merge only means anything if they
+// name the same Feature; naming two is a statement with no resolution rather than
+// a precedence question, so it halts, as the same disagreement over an attachment
+// on a component's own block does.
+//
+// It is asked here, beside the rule above, because it reads what the developer
+// wrote on a component's connections, which a component a sub-module contributes
+// keeps in its own document. An attachment the Release alone makes, or one it
+// sizes without naming a type, states nothing to disagree with.
+//
+// The finding sits at the Release's connection entry, where the second type was
+// written, and names both: the developer's first, then the operator's, then the
+// slot, the connection, the socket and the component.
+var releaseConnectionAttachmentTypeAgreesWithTheDeveloper = constraint.Check[
+	constraint.TopologyView,
+	constraint.ReleaseEdgeConfigurationSubject,
+]{
+	Sentinel: resolver.ErrFeatureMergeConflict(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.TopologyView,
+		s constraint.ReleaseEdgeConfigurationSubject,
+	) []constraint.Objection {
+		node, socket, alias := s.NodeID(), s.SocketName(), s.AliasName()
+		slots := v.ReleasePerEdgeAttachmentNames(node, socket, alias)
+		if len(slots) == 0 {
+			return nil
+		}
+		if _, held := v.FlattenedNodeComponentType(node); !held || v.ComponentDeactivated(node) {
+			return nil
+		}
+		var out []constraint.Objection
+		for _, slot := range slots {
+			deployed, _ := v.ReleasePerEdgeAttachmentType(node, socket, alias, slot)
+			if deployed == "" {
+				continue
+			}
+			authored, written := v.FlattenedConnectionAttachmentType(node, socket, alias, slot)
+			if !written || authored == "" || authored == deployed {
+				continue
+			}
+			out = append(out, s.RaiseWithAdvice(
+				resolver.ErrFeatureMergeConflict(),
+				"Drop the type from the Release's entry so it sizes the attachment the Aggregate declares, "+
+					"or name the same Feature in both documents.",
+				constraint.Captioned("the Aggregate names", authored),
+				constraint.Captioned("the Release names", deployed),
+				constraint.Captioned("for the slot", slot),
+				constraint.Captioned("on the connection", alias),
+				constraint.Captioned("through socket", socket),
+				constraint.Captioned("of component", node),
+			))
+		}
+		return out
+	},
+}
+
+// guardReleaseConnectionAttachments asks the four rules above: the spelling rule
 // of every component entry the Release's boundaries declare and then of every
-// attachment a boundary declares on itself, then the type rule of every entry the
-// Release's per-edge surface writes.
+// attachment a boundary declares on itself, then the two type rules of every entry
+// the Release's per-edge surface writes — whether an attachment only the Release
+// makes names a type, and whether one both documents write names the same one.
 //
 // They are asked in that order because a key spelling a connection attachment
 // at either scope is the earlier fault in a document carrying both — the author
@@ -339,5 +403,10 @@ func guardReleaseConnectionAttachments(
 	if err != nil {
 		return nil, err
 	}
-	return resolver.FindingsFromObjections(untyped, entity), nil
+	retyped, err := constraint.RunOnReleaseEdgeConfigurations(
+		cancelled, view, constraint.TopologyView(view), releaseConnectionAttachmentTypeAgreesWithTheDeveloper)
+	if err != nil {
+		return nil, err
+	}
+	return resolver.FindingsFromObjections(append(untyped, retyped...), entity), nil
 }

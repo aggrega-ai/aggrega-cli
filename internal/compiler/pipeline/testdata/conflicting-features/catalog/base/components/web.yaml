@@ -6,6 +6,14 @@ metadata:
   labels:
     component.aggrega.ai/type: "server"
 spec:
+  # A socket whose connections each carry one attachment of their own, so a row
+  # can attach one of the two Features on a connection entry rather than on a
+  # block of the component's.
+  usesSchema:
+    peers:
+      selector: "component.aggrega.ai/type=server"
+      featuresSchema:
+        token: {}
   schema:
     infra:
       port: { type: integer, default: 8080 }

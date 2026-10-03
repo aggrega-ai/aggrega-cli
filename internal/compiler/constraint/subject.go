@@ -71,6 +71,13 @@ type provenance struct {
 	file     string
 	segments []string
 	locator  string
+
+	// document is which authoring document the subject was written in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease], and empty where
+	// the traversal that built the subject records none. It is set only from a
+	// site that already carries the document — never derived from the file, which
+	// names a path and not what kind of document lives at it.
+	document string
 }
 
 func (provenance) sealed() {}
@@ -92,6 +99,16 @@ func newProvenance(sourceFile string, segments ...string) provenance {
 		segments: slices.Clone(segments),
 		locator:  authoredLocator(segments...),
 	}
+}
+
+// newProvenanceIn is [newProvenance] for a subject whose site says which
+// authoring document it was written in. It delegates the attribution rather
+// than assembling it again, so the file and the locator still have one home and
+// the document is the only thing added.
+func newProvenanceIn(document, sourceFile string, segments ...string) provenance {
+	p := newProvenance(sourceFile, segments...)
+	p.document = document
+	return p
 }
 
 // Raise, RaiseWith and RaiseWithAdvice are three signatures over one
@@ -138,7 +155,7 @@ func (p provenance) RaiseWith(sentinel error, detail ...DetailValue) Objection {
 // A rule whose registered sentence already says what to do supplies none, and the
 // message it composes is unchanged by the parameter existing.
 func (p provenance) RaiseWithAdvice(sentinel error, advice string, detail ...DetailValue) Objection {
-	o := Objection{sentinel: sentinel, file: p.file, locator: p.locator, advice: advice}
+	o := Objection{sentinel: sentinel, file: p.file, document: p.document, locator: p.locator, advice: advice}
 	if len(detail) > 0 {
 		o.detail = make([]DetailValue, len(detail))
 		copy(o.detail, detail)

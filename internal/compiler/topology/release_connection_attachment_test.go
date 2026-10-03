@@ -501,6 +501,102 @@ func TestReleaseOnlyConnectionAttachmentNamesItsType(t *testing.T) {
 	}
 }
 
+// TestReleaseConnectionAttachmentTypeAgreesWithTheDeveloper proves an attachment
+// both documents write on one connection must name one Feature: the operator
+// naming a different type than the developer named halts at the Release's
+// connection entry, naming both types, for a component the Aggregate declares
+// and one a sub-module contributes alike. Naming the same type, naming none, and
+// an attachment only the Release makes each pass.
+//
+// Each row carries one fault or none, and the passing rows are the controls that
+// move one variable away from a failing one.
+func TestReleaseConnectionAttachmentTypeAgreesWithTheDeveloper(t *testing.T) {
+	t.Parallel()
+
+	retype := func(featureType string) string {
+		return "uses:\n  models:\n    gpt:\n      features:\n        credential:\n          type: " + featureType + "\n"
+	}
+	cases := []struct {
+		name string
+		agg  string
+		mod  string
+		rel  string
+		want []releaseFinding
+	}{
+		{
+			name: "the operator names another Feature for the developer's attachment",
+			agg:  rootDocument(declaredNoNim),
+			rel:  releaseFor(false, retype("core/generated-secret"), ""),
+			want: []releaseFinding{{entity: "Release demo-prod", field: ".spec.boundaries.prod.components.gw.uses.models.gpt"}},
+		},
+		{
+			name: "the operator names the developer's Feature",
+			agg:  rootDocument(declaredNoNim),
+			rel:  releaseFor(false, retype("core/referenced-secret"), ""),
+		},
+		{
+			name: "the operator sizes the developer's attachment naming no Feature",
+			agg:  rootDocument(declaredNoNim),
+			rel: releaseFor(false, "uses:\n  models:\n    gpt:\n      features:\n        credential:\n"+
+				"          infra:\n            rotation: hourly\n", ""),
+		},
+		{
+			name: "an attachment only the Release makes",
+			agg:  rootDocument(declaredNoNim),
+			rel: releaseFor(false, "uses:\n  models:\n    nim:\n      features:\n        credential:\n"+
+				"          type: core/generated-secret\n", ""),
+		},
+		{
+			name: "a component a sub-module contributes, addressed through its routing entry",
+			agg:  moduleRoot,
+			mod:  moduleDocument(declaredNoNim),
+			rel:  releaseFor(true, retype("core/generated-secret"), ""),
+			want: []releaseFinding{{
+				entity: "Release demo-prod",
+				field:  ".spec.boundaries.prod.aggregates.mod.components.gw.uses.models.gpt",
+			}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("the build panicked: %v", r)
+					}
+				}()
+				_, err = buildResultWithCatalog(t, connectionCatalog(t), tc.agg, tc.rel, tc.mod)
+			}()
+			if len(tc.want) == 0 {
+				if err != nil {
+					t.Fatalf("the composition must build; got %v", err)
+				}
+				return
+			}
+			found := releaseFindings(t, err, resolver.ErrFeatureMergeConflict())
+			var got []releaseFinding
+			for _, v := range found {
+				got = append(got, releaseFinding{entity: v.Entity, field: v.Field})
+				for _, both := range []string{
+					`the Aggregate names "core/referenced-secret"`,
+					`the Release names "core/generated-secret"`,
+					`for the slot "credential"`,
+					`on the connection "gpt"`,
+				} {
+					if !strings.Contains(v.Message, both) {
+						t.Errorf("the finding must name %s; message %q", both, v.Message)
+					}
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("findings = %+v; want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestTopologyEdgeAxisEnumeratesEveryDevelopersConnection proves the flattened
 // composition's edge axis presents every connection a node's own dependency
 // block wrote — for a component a sub-module contributes as for one the

@@ -497,10 +497,10 @@ func RunOnEdges[V View](
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
-		file, segments := connectionSite(
+		file, document, segments := connectionSite(
 			edge.Node, edge.Origin, edge.Socket, edge.Alias, edge.SynthesizedAlias)
-		subject := newEdgeSubject(
-			file, edge.Node.ID, edge.Socket, edge.Alias, segments...,
+		subject := newEdgeSubjectWrittenIn(
+			document, file, edge.Node.ID, edge.Socket, edge.Alias, segments...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}
@@ -558,30 +558,36 @@ func originNesting(document string) (scopeNesting, bool) {
 //
 // An origin whose site the enumeration could not record yields no segments,
 // which is the mechanical form of not inventing a locator.
+//
+// The authoring document comes back beside the file whenever the origin's own
+// site is the one named, because that site is where the document was settled —
+// a connection an attachment drew is written in whichever document declared
+// the attachment, and one the Release's edge surface drew in the Release. The
+// first shape names the node's own block and records none.
 func connectionSite(
 	node NodeInstance,
 	origin ConnectionOrigin,
 	socket, alias string,
 	synthesizedAlias bool,
-) (string, []string) {
+) (file, document string, segments []string) {
 	aliasSegment := alias
 	if synthesizedAlias {
 		aliasSegment = ""
 	}
 	if origin.Kind == "" || origin.Kind == OriginComponent {
-		return node.SourceFile,
+		return node.SourceFile, "",
 			componentInnerSegments(node, authoredKeyUses, socket, aliasSegment)
 	}
 	nesting, named := originNesting(origin.Document)
 	if !named {
-		return origin.SourceFile, nil
+		return origin.SourceFile, origin.Document, nil
 	}
 	var tail []string
 	if origin.Kind == OriginAttachment {
 		tail = append(tail, authoredKeyFeatures, origin.Attachment)
 	}
 	tail = append(tail, authoredKeyUses, socket, aliasSegment)
-	return origin.SourceFile, authoredSiteSegments(nesting, origin.Site, tail...)
+	return origin.SourceFile, origin.Document, authoredSiteSegments(nesting, origin.Site, tail...)
 }
 
 // RunOnOriginatedConnections invokes check once per connection together with the
@@ -607,12 +613,12 @@ func RunOnOriginatedConnections[V View](
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
-		file, segments := connectionSite(
+		file, document, segments := connectionSite(
 			connection.Node, connection.Origin,
 			connection.Socket, connection.Alias, connection.SynthesizedAlias,
 		)
-		subject := newOriginatedConnectionSubject(
-			file, connection.Node.ID,
+		subject := newOriginatedConnectionSubjectWrittenIn(
+			document, file, connection.Node.ID,
 			connection.Origin.Kind, connection.Origin.Attachment,
 			connection.Socket, connection.Alias, connection.Target,
 			segments...,
@@ -626,6 +632,16 @@ func RunOnOriginatedConnections[V View](
 // node order and then attachment order.
 //
 // An attachment's locator is .spec.components.<name>.features.<attachment>.
+//
+// An attachment written on one of the node's connections is the exception, and
+// the enumerator says which those are: where it also supplies
+// [ConnectionAttachmentSiteEnumerator] and reports a site for an attachment, the
+// attachment is positioned at the connection entry it was written in, in the file
+// of the document whose author wrote it —
+// .spec.components.<name>.uses.<socket>.<alias>.features.<slot> in the
+// Aggregate, and the Release's own per-edge entry for one the operator wrote.
+// Such an attachment reaches the node under a composed name no file spells, so
+// the shape above would name a block the component does not have.
 func RunOnNodeAttachments[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -633,10 +649,19 @@ func RunOnNodeAttachments[V View](
 	view V,
 	check Check[V, NodeAttachmentSubject],
 ) ([]Objection, error) {
+	sites, _ := attachments.(ConnectionAttachmentSiteEnumerator)
 	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSubject {
 		names := attachments.Attachments(node.ID)
 		out := make([]NodeAttachmentSubject, 0, len(names))
 		for _, attachment := range names {
+			if sites != nil {
+				if site, written := sites.ConnectionAttachmentSite(node.ID, attachment); written {
+					out = append(out, newNodeAttachmentSubjectWrittenIn(
+						site.Document, site.SourceFile, node.ID, attachment, connectionAttachmentSegments(site)...,
+					))
+					continue
+				}
+			}
 			out = append(out, newNodeAttachmentSubject(
 				node.SourceFile, node.ID, attachment,
 				componentInnerSegments(node, authoredKeyFeatures, attachment)...,
@@ -2202,44 +2227,55 @@ func RunOnReleaseEdgeConfigurations[V View](
 // An entry whose document this rule cannot name yields no segments, which is the
 // mechanical form of not inventing a locator.
 func releaseEdgeConfigurationSegments(entry ReleaseEdgeConfigurationInstance, tail ...string) []string {
-	nesting, named := originNesting(entry.Configuration.Document)
+	return connectionEntrySegments(entry.Configuration.Document, entry.Site, entry.ComponentKeys,
+		entry.Configuration.Socket, entry.Configuration.Alias, tail...)
+}
+
+// connectionEntrySegments returns the segments naming one connection entry in
+// the document it was written in, with tail appended inside the entry: the scope
+// and component the entry's site names, the keys reaching the component's own
+// block from there, the `uses` container, the socket and the alias.
+//
+// It is the one spelling of a connection entry's site whichever document holds
+// it, shared by the traversal over the Release's per-edge entries and by the site
+// of an attachment a connection carries, so a finding about an entry and a
+// finding about an attachment it carries cannot come to name two different
+// entries. A document this rule cannot name yields no segments, which is the
+// mechanical form of not inventing a locator.
+func connectionEntrySegments(
+	document string,
+	site AuthoredSite,
+	componentKeys []string,
+	socket, alias string,
+	tail ...string,
+) []string {
+	nesting, named := originNesting(document)
 	if !named {
 		return nil
 	}
-	keys := make([]string, 0, len(entry.ComponentKeys)+3+len(tail))
-	keys = append(keys, entry.ComponentKeys...)
-	keys = append(keys, authoredKeyUses, entry.Configuration.Socket, entry.Configuration.Alias)
+	keys := make([]string, 0, len(componentKeys)+3+len(tail))
+	keys = append(keys, componentKeys...)
+	keys = append(keys, authoredKeyUses, socket, alias)
 	keys = append(keys, tail...)
-	return authoredSiteSegments(nesting, entry.Site, keys...)
+	return authoredSiteSegments(nesting, site, keys...)
 }
 
-// ReleaseConnectionAttachmentLocator returns the locator naming one attachment a
-// Release per-edge entry carries: the entry's own site, then the `features` block
-// and the slot the attachment is written under.
-//
-// It is exported for the one finding about such an attachment that is not raised
-// by a rule over the entry — the conformance of the attachment's merged
-// configuration, measured once the attachment cascade has folded — so that
-// finding names the entry the operator wrote through the same assembly every
-// rule over the entry is positioned by, rather than a path spelled from the name
-// the attachment carries on the consuming component.
-func ReleaseConnectionAttachmentLocator(entry ReleaseEdgeConfigurationInstance, attachment string) string {
-	return authoredLocator(releaseEdgeConfigurationSegments(entry, authoredKeyFeatures, attachment)...)
+// connectionAttachmentSegments returns the segments naming one attachment a
+// connection carries: the connection entry's own site, then the `features`
+// block and the slot the attachment is written under.
+func connectionAttachmentSegments(site ConnectionAttachmentSite) []string {
+	return connectionEntrySegments(site.Document, site.Site, site.ComponentKeys,
+		site.Socket, site.Alias, authoredKeyFeatures, site.Slot)
 }
 
-// ConnectionAttachmentLocator returns the locator naming one attachment a
-// component's own connection entry carries, in the document the component was
-// written in: the component's block, the `uses` container, the socket and the
-// alias, then the `features` block and the slot the attachment is written under.
+// Locator returns the locator naming the attachment the site describes, through
+// the same assembly a rule over the attachment is positioned by.
 //
-// It is exported for the reason [ReleaseConnectionAttachmentLocator] is, from the
-// other authoring document: the conformance of a connection attachment's merged
-// configuration is measured outside any rule's traversal, and the finding has to
-// name the connection entry the developer wrote rather than an attachment block
-// the consuming component does not have. A connection carrying attachments is
-// always written in the long form, whose alias is a key the author typed, so the
-// alias is always a segment here.
-func ConnectionAttachmentLocator(node NodeInstance, socket, alias, attachment string) string {
-	return authoredLocator(componentInnerSegments(
-		node, authoredKeyUses, socket, alias, authoredKeyFeatures, attachment)...)
+// It is exported for the finding about such an attachment that is not raised by
+// a rule — the conformance of the attachment's merged configuration, measured
+// once the attachment cascade has folded — so that finding and every rule's
+// finding about the same attachment name one entry rather than two spellings of
+// it.
+func (s ConnectionAttachmentSite) Locator() string {
+	return authoredLocator(connectionAttachmentSegments(s)...)
 }

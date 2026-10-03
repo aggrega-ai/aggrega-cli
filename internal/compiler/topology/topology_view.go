@@ -314,6 +314,32 @@ func (v *topologyView) FlattenedConnectionAttachmentNames(node string) types.Ord
 	return out
 }
 
+// FlattenedConnectionAttachmentType returns the Feature type one attachment the
+// developer wrote on one connection of a node in the flattened set names, and
+// whether that connection carries an attachment under the name at all.
+//
+// It reads the same authored block [topologyView.FlattenedConnectionAttachmentNames]
+// reads, so a name that fact lists is a name this answers for.
+func (v *topologyView) FlattenedConnectionAttachmentType(node string, socket string, alias string, attachment string) (string, bool) {
+	n, ok := v.nodes.Get(node)
+	if !ok || n == nil {
+		return "", false
+	}
+	sv, held := n.Uses.Get(socket)
+	if !held {
+		return "", false
+	}
+	entry, held := sv.Verbose.Get(alias)
+	if !held {
+		return "", false
+	}
+	written, held := entry.Features.Get(attachment)
+	if !held {
+		return "", false
+	}
+	return written.Type, true
+}
+
 // PerEdgeAuthoredTarget returns the target one connection names, as the document
 // that drew it wrote the name, empty when the composition drew no connection
 // there.
@@ -470,7 +496,7 @@ func releaseEdgeConfigurations(
 	return out
 }
 
-// ReleaseConnectionAttachmentSite returns the document and the locator naming one
+// ReleaseConnectionAttachmentSite returns the document and the site naming one
 // attachment the Release wrote on one of a component's connections, and whether
 // the Release wrote an entry for that connection at all.
 //
@@ -484,14 +510,14 @@ func releaseEdgeConfigurations(
 func ReleaseConnectionAttachmentSite(
 	rel *types.Release,
 	sourceFile, node, socket, alias, attachment string,
-) (entity, locator string, found bool) {
+) (entity string, site constraint.ConnectionAttachmentSite, found bool) {
 	for _, entry := range releaseEdgeConfigurations(rel, sourceFile) {
 		c := entry.Configuration
 		if c.Node == node && c.Socket == socket && c.Alias == alias {
-			return releaseEntityName(rel), constraint.ReleaseConnectionAttachmentLocator(entry, attachment), true
+			return releaseEntityName(rel), constraint.ConnectionAttachmentSiteInRelease(entry, attachment), true
 		}
 	}
-	return "", "", false
+	return "", constraint.ConnectionAttachmentSite{}, false
 }
 
 // releaseBoundaryScope is one boundary a Release declares: the coordinate an axis

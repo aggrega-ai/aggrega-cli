@@ -500,12 +500,11 @@ func runDeclaredRules(
 		cancelled, coordinates, facts, connectionInjectReferenceIsPublished)); err != nil {
 		return nil, err
 	}
+	// The declared-slots rule for a connection's attachments, the developer's half.
+	// The operator's half is asked once the composition is flattened, where the
+	// Release's per-edge entries are enumerated with the site each was written at.
 	if err := developerRule(constraint.RunOnEdges(
 		cancelled, coordinates, facts, connectionAttachmentFillsADeclaredSlot)); err != nil {
-		return nil, err
-	}
-	if err := operatorRule(constraint.RunOnEdges(
-		cancelled, coordinates, facts, releaseConnectionAttachmentFillsADeclaredSlot)); err != nil {
 		return nil, err
 	}
 

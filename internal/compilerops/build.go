@@ -39,6 +39,10 @@ type BuildInputs struct {
 	// unlocatability are different facts, and a default would report the second as
 	// the first — a workspace that has recorded gates would build with none of them
 	// held to their recorded identity, and nothing would say so.
+	//
+	// It is also handed to the pipeline as the Release's own path, which names the
+	// Release's file in every finding about what the Release wrote and in the
+	// source an annotation written there is traced to in the graph.
 	ReleasePath                      string
 	WorkspaceConfig                  workspaceconfig.Config
 	WorkspaceRoot                    string
@@ -93,6 +97,10 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		Manifest:          r.Manifest,
 		AggregateRawBytes: r.AggBytes,
 		AggregatePath:     catalog.RelativeToWorkspace(in.WorkspaceRoot, r.AggregatePath),
+		// The path as this core holds it. The pipeline renders it into the same
+		// workspace coordinate system against WorkspaceRoot below, which is the one
+		// place the Release's path is rendered whichever surface ran the build.
+		ReleasePath: in.ReleasePath,
 		// A pointer into this call's own inputs value, so the composition below
 		// re-points it at the copy it rewrites and the caller's configuration is
 		// never written through.

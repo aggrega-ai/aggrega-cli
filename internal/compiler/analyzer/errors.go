@@ -36,11 +36,16 @@ var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
 // selector violation, evaluated against the attached Feature's labels at
 // Step 4.
 //
-// It has one emission site, [SlotFillSatisfiesSlotSelector], which raises it
-// through the framework over the presentation of the finalised graph. That is
-// why it separates a slot-fill violation from the two rules sharing
-// [ErrSelectorViolation]: a caller matching on identity alone already knows
-// which of the three label constraints went unsatisfied.
+// It has two emission sites, one per place a slot is declared, and both raise
+// it through the framework over the presentation of the finalised graph:
+// [SlotFillSatisfiesSlotSelector] for a component type's own slot, and
+// [ConnectionAttachmentSatisfiesSocketSlotSelector] for a slot a dependency
+// socket declares, filled per connection. The two are one condition on two
+// declaration surfaces, and the second's finding names the socket and the
+// connection besides. That is why it separates a slot-fill violation from the
+// two rules sharing [ErrSelectorViolation]: a caller matching on identity alone
+// already knows a slot's constraint went unsatisfied, and the locator says which
+// slot.
 //
 // The rule reports both an unsatisfied constraint and one the label matcher
 // cannot evaluate at all, under this one identity. Both carry the same number of
@@ -64,14 +69,18 @@ var errSlotSelectorUnsatisfied = cerrors.Register("slot-selector-unsatisfied", c
 // uses socket, evaluated over the resolved set rather than over an authored
 // block.
 //
-// It has one emission site, [RequiredAttachmentSlotBound], which raises it
-// through the framework over the presentation of the finalised graph. The
-// stage is what makes the rule honest: an attachment contributed at a
-// subsystem, boundary or Release scope binds the slot for every component
-// under that scope, so a slot is satisfied whether an author fills it
-// per-consumer or attaches once at a scope the consumers share. Only the
-// post-cascade set can see both shapes, and the check is a name-presence
-// test over it — it never inspects what the fill means.
+// It has two emission sites, both raising it through the framework over the
+// presentation of the finalised graph. [RequiredAttachmentSlotBound] reports a
+// component type's own slot; there the stage is what makes the rule honest: an
+// attachment contributed at a subsystem, boundary or Release scope binds the
+// slot for every component under that scope, so a slot is satisfied whether an
+// author fills it per-consumer or attaches once at a scope the consumers share.
+// Only the post-cascade set can see both shapes, and the check is a
+// name-presence test over it — it never inspects what the fill means.
+// [RequiredSocketSlotFilledOnEveryConnection] reports a slot a dependency socket
+// declares, which each connection on the socket fills for itself, so it is owed
+// once per connection and its finding names the socket and the connection that
+// leaves the slot empty.
 //
 // A finding leads with the slot's own name — the value the registered sentence
 // already names — and carries the component type declaring it captioned after

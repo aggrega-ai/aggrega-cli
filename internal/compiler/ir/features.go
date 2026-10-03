@@ -139,8 +139,15 @@ func (r *featureResult) recordContribution(instance string, place constraint.Att
 // rather than by the block the expansion wrote it onto, whatever that block is:
 // the author changes the annotation, not the block, to remove what it produced.
 // Every other contribution is named by the surface it was written on and the
-// site within it.
-func contributionFrom(surface string, prov featureProvenance, site constraint.AuthoredSite) constraint.AttachmentContribution {
+// site within it — and, for one written on a connection entry, by that
+// connection, which travels as data from where the contribution was collected
+// and is never read out of the attachment's composed name.
+func contributionFrom(
+	surface string,
+	prov featureProvenance,
+	site constraint.AuthoredSite,
+	connection *types.AttachmentConnection,
+) constraint.AttachmentContribution {
 	if prov.Origin == types.OriginAnnotation {
 		return constraint.AttachmentContribution{
 			Surface:          constraint.ContributionAnnotation,
@@ -148,11 +155,16 @@ func contributionFrom(surface string, prov featureProvenance, site constraint.Au
 			AnnotationSource: prov.AnnotationSource,
 		}
 	}
-	return constraint.AttachmentContribution{
+	place := constraint.AttachmentContribution{
 		Surface:   surface,
 		ScopePath: site.ScopePath,
 		Component: site.Component,
 	}
+	if connection != nil {
+		place.Socket = connection.Socket
+		place.Alias = connection.Alias
+	}
+	return place
 }
 
 // markConnection records, on a merged attachment, the connection it was written
@@ -536,7 +548,7 @@ func collectNodeFeatures(
 				}
 			}
 			result.recordContribution(fa.InstanceName,
-				contributionFrom(constraint.ContributionAggregateComponent, prov, componentOwner.site))
+				contributionFrom(constraint.ContributionAggregateComponent, prov, componentOwner.site, fa.Connection))
 			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentOwner); err != nil {
 				return nil, err
 			}
@@ -559,7 +571,7 @@ func collectNodeFeatures(
 		result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
 		owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
 		result.recordContribution(sf.name,
-			contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site))
+			contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site, nil))
 		if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 			return nil, err
 		}
@@ -580,7 +592,7 @@ func collectNodeFeatures(
 			// changed.
 			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: bf.scopePath}}
 			result.recordContribution(bf.name,
-				contributionFrom(constraint.ContributionReleaseBoundary, explicitProvenance, owner.site))
+				contributionFrom(constraint.ContributionReleaseBoundary, explicitProvenance, owner.site, nil))
 			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
@@ -618,7 +630,7 @@ func collectNodeFeatures(
 				site:  constraint.AuthoredSite{ScopePath: cf.scopePath, Component: nodeID},
 			}
 			result.recordContribution(cf.name,
-				contributionFrom(constraint.ContributionReleaseComponent, prov, owner.site))
+				contributionFrom(constraint.ContributionReleaseComponent, prov, owner.site, cf.connection))
 			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, owner); err != nil {
 				return nil, err
 			}
@@ -713,7 +725,9 @@ func validateNodeAttachments(
 		for _, pillar := range []string{pillarValues, pillarInfra} {
 			pillarEntity, prefix := entity, fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
 			if entry.Connection != nil && connectionSite != nil {
-				pillarEntity, prefix = connectionSite(name, *entry.Connection, pillar)
+				var site constraint.ConnectionAttachmentSite
+				pillarEntity, site = connectionSite(name, *entry.Connection, pillar)
+				prefix = site.Locator()
 			}
 			payload := entry.Values
 			if pillar == pillarInfra {
@@ -726,11 +740,11 @@ func validateNodeAttachments(
 	return errs
 }
 
-// connectionAttachmentSite names the document and the locator one pillar of one
+// connectionAttachmentSite names the document and the site one pillar of one
 // connection attachment a node carries was written at.
 type connectionAttachmentSite func(
 	attachment string, connection types.AttachmentConnection, pillar string,
-) (entity, locator string)
+) (entity string, site constraint.ConnectionAttachmentSite)
 
 // connectionAttachmentSites returns the site rule for the connection attachments
 // one node carries.
@@ -742,6 +756,12 @@ type connectionAttachmentSite func(
 // other document has no entry to name — which is what puts a Release-only
 // attachment's missing values at the Release entry the operator wrote, rather
 // than at an Aggregate path that does not exist.
+//
+// The values pillar's answer is also where the attachment itself is declared —
+// the developer's entry wherever the developer wrote one, which is where its type
+// is named, and the operator's only for an attachment the Release alone makes —
+// so a rule over the attachment as a whole is positioned through the same rule
+// (see [AttachmentSites] and [GraphStageCoordinates.ConnectionAttachmentSite]).
 //
 // Which documents wrote the attachment is read from the contributions the
 // cascade recorded while it folded, and the connection from the record the
@@ -758,7 +778,7 @@ func connectionAttachmentSites(
 	res *resolver.ResolveResult,
 	aggregateEntity string,
 ) connectionAttachmentSite {
-	return func(attachment string, c types.AttachmentConnection, pillar string) (string, string) {
+	return func(attachment string, c types.AttachmentConnection, pillar string) (string, constraint.ConnectionAttachmentSite) {
 		wroteBy := func(surface string) bool {
 			return slices.ContainsFunc(contributions[attachment], func(p constraint.AttachmentContribution) bool {
 				return p.Surface == surface
@@ -767,17 +787,17 @@ func connectionAttachmentSites(
 		developer := wroteBy(constraint.ContributionAggregateComponent)
 		operator := wroteBy(constraint.ContributionReleaseComponent)
 		if operator && (pillar == pillarInfra || !developer) && res != nil && res.Release != nil {
-			entity, locator, found := topology.ReleaseConnectionAttachmentSite(
+			entity, site, found := topology.ReleaseConnectionAttachmentSite(
 				res.Release, res.ReleasePath, node.ID, c.Socket, c.Alias, c.Attachment)
 			if found {
-				return entity, locator
+				return entity, site
 			}
 		}
 		entity := aggregateEntity
 		if moduleContributed(topoNode) {
 			entity = resolver.DocumentEntity("Aggregate", topoNode.SourceFile, aggregateEntity)
 		}
-		return entity, constraint.ConnectionAttachmentLocator(node, c.Socket, c.Alias, c.Attachment)
+		return entity, constraint.ConnectionAttachmentSiteInAggregate(node, c.Socket, c.Alias, c.Attachment)
 	}
 }
 
@@ -1390,7 +1410,7 @@ func finalizeAttachmentFacts(
 		socket := entry.Connection.Socket
 		set, cached := socketSlots[socket]
 		if !cached {
-			set = newAttachmentSlotSet(SocketAttachmentSlots(catalogLookup, componentType, socket))
+			set = newAttachmentSlotSet(resolver.SocketAttachmentSlots(catalogLookup, componentType, socket))
 			socketSlots[socket] = set
 		}
 		return set, entry.Connection.Attachment

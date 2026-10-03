@@ -1112,12 +1112,30 @@ func (v *normalizedView) SocketInjectMechanismNames(componentType string, socket
 
 // SocketDeclaredSlotNames returns the attachment slots a dependency socket
 // declared on a component type lets each connection on it fill, in author order.
+//
+// It and the two facts below read the socket's slots through
+// [SocketAttachmentSlots], the one home the binding a connection attachment
+// records is derived through as well, so a rule over a socket's slots and the
+// binding it judges read one declaration.
 func (v *normalizedView) SocketDeclaredSlotNames(componentType string, socket string) []string {
-	entry, ok := v.socketEntry(componentType, socket)
-	if !ok {
-		return nil
-	}
-	return entry.FeaturesSchema.Keys()
+	slots, _ := SocketAttachmentSlots(v.catalog, componentType, socket)
+	return slots.Keys()
+}
+
+// SocketSlotSelector returns the label constraint one slot a dependency socket
+// declares sets over what may fill it, empty when it declares none.
+func (v *normalizedView) SocketSlotSelector(componentType string, socket string, slot string) string {
+	slots, _ := SocketAttachmentSlots(v.catalog, componentType, socket)
+	entry, _ := slots.Get(slot)
+	return entry.Selector
+}
+
+// SocketSlotRequired reports whether one slot a dependency socket declares must
+// be filled on every connection wired through the socket.
+func (v *normalizedView) SocketSlotRequired(componentType string, socket string, slot string) bool {
+	slots, _ := SocketAttachmentSlots(v.catalog, componentType, socket)
+	entry, declared := slots.Get(slot)
+	return declared && entry.Required
 }
 
 // SocketValueSchemaText returns the contract a dependency socket declares over

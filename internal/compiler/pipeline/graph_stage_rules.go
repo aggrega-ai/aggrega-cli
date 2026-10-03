@@ -194,6 +194,26 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// The same constraint declared on a slot a dependency socket declares,
+	// evaluated once per attachment a node carries and asked only of the ones a
+	// connection carries. Each such attachment is the fill one connection entry
+	// wrote, so the axis is the attachments themselves rather than the declared
+	// slots: no scope reaches a socket's slot, and an unfilled one is the
+	// required-slot reading's question below. The enumeration positions each at
+	// the connection entry its type was written on. The signal is read once per
+	// node, which is the granularity the traversal promises.
+	violations, err = constraint.RunOnNodeAttachments(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		analyzer.ConnectionAttachmentSatisfiesSocketSlotSelector,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// Each presence mandate a node's component type declares is satisfied by some
 	// attachment of the type it names. The satisfying set is the node's merged
 	// attachment names and each name's resolved type, so an attachment
@@ -232,6 +252,25 @@ func runGraphStageRules(
 		coordinates,
 		out.GraphView,
 		analyzer.RequiredAttachmentSlotBound,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
+	// Each slot a dependency socket declares required is filled on every
+	// connection wired through that socket, evaluated once per connection. A
+	// socket's slot is filled per connection and never by a scope, so the demand
+	// is owed by each connection and the axis is the connection set the graph
+	// holds — a connection the Release wired included, which either document may
+	// then fill. The fills are read off the attachments the node carries, by the
+	// connection each was written on. The signal is read once per connection,
+	// which is the granularity the traversal promises.
+	violations, err = constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		analyzer.RequiredSocketSlotFilledOnEveryConnection,
 	)
 	if err != nil {
 		return err

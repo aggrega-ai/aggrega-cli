@@ -422,9 +422,10 @@ var errUnknownUsesSocket = cerrors.Register("unknown-uses-socket", cerrors.Meta{
 // under, so any other name — and any attachment at all on a socket declaring no
 // slots, which is every socket an Aggregate names without the catalog declaring
 // it — halts when the build loads. It is raised for the Aggregate's connection
-// entries and for the Release's alike, naming the document the name was written
-// in, the component, the socket, the alias and the attachment, and the slots the
-// socket does declare.
+// entries and for the Release's alike, positioned at the entry in the document the
+// name was written in, naming the attachment, each declared slot within one edit
+// of it, the alias, the socket and the component, and the slots the socket does
+// declare.
 func ErrConnectionAttachmentSlotUndeclared() error { return errConnectionAttachmentSlotUndeclared }
 
 var errConnectionAttachmentSlotUndeclared = cerrors.Register("connection-attachment-slot-undeclared", cerrors.Meta{

@@ -153,6 +153,24 @@ func (v *graphView) AttachmentContributions(node string, attachment string) []co
 	return v.sites.contributionsOf(node, attachment)
 }
 
+// AttachmentConnection returns the connection one attachment a node carries was
+// written on — its socket, its alias and the slot the attachment fills there —
+// and whether it was written on one at all.
+//
+// It reads the record the lowering carried onto the merged entry and nothing
+// else; the attachment's composed name is never split to recover any part of it.
+func (v *graphView) AttachmentConnection(node string, attachment string) (constraint.AttachmentConnection, bool) {
+	entry, ok := v.attachment(node, attachment)
+	if !ok || entry.Connection == nil {
+		return constraint.AttachmentConnection{}, false
+	}
+	return constraint.AttachmentConnection{
+		Socket: entry.Connection.Socket,
+		Alias:  entry.Connection.Alias,
+		Slot:   entry.Connection.Attachment,
+	}, true
+}
+
 // AttachmentResolvedType returns the Feature type an attachment resolves to,
 // empty when it resolved to no catalog entity.
 func (v *graphView) AttachmentResolvedType(node string, attachment string) string {

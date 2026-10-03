@@ -247,10 +247,14 @@ func TestConnectionAttachmentsAreLoweredOntoTheConsumer(t *testing.T) {
 }
 
 // TestModuleConnectionAttachmentSlotsAreRefusedOnce proves the declared-slots rule
-// is asked of a component a sub-module contributes once the composition is
-// flattened — for the names its own document wrote and for the names the Release
-// wrote against it, in both directions — and that a component the Aggregate
-// declares is left to the earlier half, so one fault is reported once.
+// is asked once the composition is flattened of the names a sub-module's own
+// document wrote on its component's connections, and of every name the Release
+// wrote on a connection entry — for a component the Aggregate declares as for one
+// a sub-module contributes — in both directions; and that the developer's names on
+// a component the Aggregate declares are left to the earlier half, so one fault
+// is reported once. A Release finding is positioned at the entry the operator
+// wrote, inside the boundary it sits in, and names a declared slot within one edit
+// of the refused name.
 //
 // Each row carries one fault or none. The Release places every component, so a
 // row halts only for the fault it carries.
@@ -286,6 +290,9 @@ spec:
 	type finding struct {
 		entity string
 		field  string
+		// near is the declared slot the finding must name as the one the refused
+		// name sits near, empty where it must name none.
+		near string
 	}
 	cases := []struct {
 		name    string
@@ -335,15 +342,39 @@ spec:
 			}},
 		},
 		{
+			name:    "the operator writes a name one edit from a declared slot",
+			agg:     moduleRoot,
+			mod:     moduleDocument(declared),
+			release: release(true, "models:\n  gpt:\n    features:\n      credentail:\n        type: core/referenced-secret\n"),
+			want: []finding{{
+				entity: "Release demo-prod",
+				field:  ".spec.boundaries.prod.aggregates.mod.components.gw.uses.models.gpt",
+				near:   "credential",
+			}},
+		},
+		{
 			// The Aggregate's own components are judged while the authoring
-			// documents are read; this stage leaves them alone.
+			// documents are read; this stage leaves the developer's names on them
+			// alone.
 			name: "a component the Aggregate declares is the earlier half's",
 			agg:  rootDocument(undeclared),
 		},
 		{
-			name:    "an operator entry on a component the Aggregate declares is the earlier half's",
+			name:    "the operator sizes the slot the developer filled on a component the Aggregate declares",
+			agg:     rootDocument(declared),
+			release: release(false, "models:\n  gpt:\n    features:\n      credential:\n        infra:\n          rotation: hourly\n"),
+		},
+		{
+			// The operator's names are judged here for every component, so the
+			// finding names the entry the operator wrote rather than a path shaped
+			// like the developer's, which the Release does not contain.
+			name:    "the operator writes a name no slot declares on a component the Aggregate declares",
 			agg:     rootDocument(declared),
 			release: release(false, "models:\n  gpt:\n    features:\n      token:\n        type: core/referenced-secret\n"),
+			want: []finding{{
+				entity: "Release demo-prod",
+				field:  ".spec.boundaries.prod.components.gw.uses.models.gpt",
+			}},
 		},
 	}
 	for _, tc := range cases {
@@ -369,12 +400,17 @@ spec:
 				t.Fatalf("the build must halt with a group of findings; got %v", err)
 			}
 			var got []finding
-			for _, v := range multi.Violations {
+			for i, v := range multi.Violations {
 				if !errors.Is(v, resolver.ErrConnectionAttachmentSlotUndeclared()) {
 					t.Errorf("finding %v does not carry the declared-slots condition", v)
 					continue
 				}
-				got = append(got, finding{entity: v.Entity, field: v.Field})
+				near := ""
+				if i < len(tc.want) && tc.want[i].near != "" &&
+					strings.Contains(v.Message, `near the declared slot "`+tc.want[i].near+`"`) {
+					near = tc.want[i].near
+				}
+				got = append(got, finding{entity: v.Entity, field: v.Field, near: near})
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("findings = %+v; want %+v", got, tc.want)

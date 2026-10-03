@@ -235,28 +235,106 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 		if fillType == "" {
 			return nil
 		}
-		match, err := selector.MatchString(labelConstraint, v.AttachmentFeatureLabels(fillType))
-		if err != nil {
-			return []constraint.Objection{s.RaiseWithAdvice(
-				ErrSlotSelectorUnsatisfied(),
-				"Correct the selector on the slot's declaration in the component's catalog entity.",
-				constraint.Uncaptioned(labelConstraint),
-				constraint.Captioned("declared on slot", s.SlotName()),
-				constraint.Captioned("which could not be evaluated:", err.Error()),
-			)}
-		}
-		if match {
+		return slotSelectorObjections(s, labelConstraint, v.AttachmentFeatureLabels(fillType), fillType,
+			"Correct the selector on the slot's declaration in the component's catalog entity.",
+			constraint.Captioned("declared on slot", s.SlotName()))
+	},
+}
+
+// ConnectionAttachmentSatisfiesSocketSlotSelector reports each attachment a
+// connection carries whose Feature does not satisfy the label constraint the
+// slot it fills declares on the connection's socket.
+//
+// It is the slot rule above asked of the other place a slot is declared. A
+// component type declares slots of its own, filled on the component, and slots
+// on each of its dependency sockets, filled once per connection wired through
+// that socket; the constraint is written in one grammar on one kind of
+// declaration, and it is evaluated against the labels of the Feature filling the
+// slot either way. What differs is how the rule finds the slot: a socket's slot
+// is named by the connection the attachment was written on, which the lowering
+// carried onto the attachment as data, and never by the attachment's own name,
+// which is a composed one no slot carries.
+//
+// It is invoked once per attachment a node carries and passes every attachment
+// no connection carries — the rule above owns those. A connection fills each
+// of its slots itself and no scope reaches one, so the attachment the rule is
+// asked about is exactly the fill one connection entry wrote, in the document
+// whose author named its type; the finding is positioned there.
+//
+// The finding carries what the rule above carries, plus the socket and the
+// connection, because the same slot name may be declared on a socket and on
+// the component itself, and one socket's slot is filled separately on each of
+// its connections.
+var ConnectionAttachmentSatisfiesSocketSlotSelector = constraint.Check[
+	constraint.GraphView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrSlotSelectorUnsatisfied(),
+	Severity: constraint.SeverityFatal,
+	Run: func(v constraint.GraphView, s constraint.NodeAttachmentSubject) []constraint.Objection {
+		connection, carried := v.AttachmentConnection(s.NodeID(), s.AttachmentName())
+		if !carried {
 			return nil
 		}
+		componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+		if !present {
+			return nil
+		}
+		labelConstraint := v.SocketSlotSelector(componentType, connection.Socket, connection.Slot)
+		if labelConstraint == "" {
+			return nil
+		}
+		fillType := v.AttachmentResolvedType(s.NodeID(), s.AttachmentName())
+		if fillType == "" {
+			return nil
+		}
+		return slotSelectorObjections(s, labelConstraint, v.AttachmentFeatureLabels(fillType), fillType,
+			"Correct the selector on the slot's declaration in the socket's featuresSchema on the "+
+				"component's catalog entity.",
+			constraint.Captioned("declared on slot", connection.Slot),
+			constraint.Captioned("of socket", connection.Socket),
+			constraint.Captioned("filled on the connection", connection.Alias))
+	},
+}
+
+// slotSelectorObjections is the comparison both slot rules make once each has
+// read its facts: the constraint a slot declares, evaluated against the labels
+// of the Feature filling it.
+//
+// It is handed the values rather than the view, so every fact a rule reads is
+// named in the rule's own body, where its point in the compilation is read off.
+// Sharing it is what keeps the two slot surfaces from coming to disagree about
+// what an unsatisfied or unreadable constraint is and how each is reported.
+//
+// declaredOn names where the slot is declared, after the constraint and before
+// the reason; correction is the remedy for a constraint the matcher cannot
+// evaluate, which is an edit to that declaration and so differs by surface.
+func slotSelectorObjections(
+	s constraint.Subject,
+	labelConstraint string,
+	fillLabels types.OrderedMap[string],
+	fillType string,
+	correction string,
+	declaredOn ...constraint.DetailValue,
+) []constraint.Objection {
+	detail := append([]constraint.DetailValue{constraint.Uncaptioned(labelConstraint)}, declaredOn...)
+	match, err := selector.MatchString(labelConstraint, fillLabels)
+	if err != nil {
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrSlotSelectorUnsatisfied(),
-			"Add the labels the slot's selector requires to the Feature's labels, "+
-				"or fill the slot with a Feature that already carries them.",
-			constraint.Uncaptioned(labelConstraint),
-			constraint.Captioned("declared on slot", s.SlotName()),
-			constraint.Captioned("not satisfied by the labels of the Feature filling it,", fillType),
+			correction,
+			append(detail, constraint.Captioned("which could not be evaluated:", err.Error()))...,
 		)}
-	},
+	}
+	if match {
+		return nil
+	}
+	return []constraint.Objection{s.RaiseWithAdvice(
+		ErrSlotSelectorUnsatisfied(),
+		"Add the labels the slot's selector requires to the Feature's labels, "+
+			"or fill the slot with a Feature that already carries them.",
+		append(detail, constraint.Captioned("not satisfied by the labels of the Feature filling it,", fillType))...,
+	)}
 }
 
 // RequiredAttachmentTypeAttached reports each presence mandate a node's
@@ -517,6 +595,69 @@ var RequiredAttachmentSlotBound = constraint.Check[
 	},
 }
 
+// RequiredSocketSlotFilledOnEveryConnection reports, for each connection, every
+// slot its socket declares required that no attachment the connection carries
+// fills.
+//
+// A socket's slot is filled per connection: each connection wired through the
+// socket carries its own attachments, written on its own entry in the Aggregate
+// or in the Release, and no scope reaches one. So the requirement is owed once by
+// each connection rather than once by the component, and a socket with two
+// connections of which one fills the slot reports the other alone.
+//
+// It is invoked once per connection the graph holds and reads which slots the
+// connection fills from the attachments the node carries, by the connection each
+// was written on — the record the lowering carried onto the attachment — and
+// never by splitting an attachment's composed name. A connection an attachment
+// drew is wired into a socket the attached Feature declares, not one the
+// component type declares, so the component's slots are not its to fill and the
+// rule passes it.
+//
+// It names the slot, the socket and the component type declaring it, and the
+// connection that leaves it empty, and is positioned at that connection's entry
+// in the document that drew it — the one place a fill can be written for it,
+// whichever document then writes it.
+var RequiredSocketSlotFilledOnEveryConnection = constraint.Check[
+	constraint.GraphView,
+	constraint.EdgeSubject,
+]{
+	Sentinel: ErrRequiredSlotUnfilled(),
+	Severity: constraint.SeverityFatal,
+	Run: func(v constraint.GraphView, s constraint.EdgeSubject) []constraint.Objection {
+		node, socket, alias := s.NodeID(), s.SocketName(), s.AliasName()
+		if v.PerEdgeOriginFeatureType(node, socket, alias) != "" {
+			return nil
+		}
+		componentType, present := v.FlattenedNodeComponentType(node)
+		if !present {
+			return nil
+		}
+		var filled []string
+		for _, attachment := range v.MergedAttachmentNames(node) {
+			connection, carried := v.AttachmentConnection(node, attachment)
+			if carried && connection.Socket == socket && connection.Alias == alias {
+				filled = append(filled, connection.Slot)
+			}
+		}
+		var out []constraint.Objection
+		for _, slot := range v.SocketDeclaredSlotNames(componentType, socket) {
+			if !v.SocketSlotRequired(componentType, socket, slot) || slices.Contains(filled, slot) {
+				continue
+			}
+			out = append(out, s.RaiseWithAdvice(
+				ErrRequiredSlotUnfilled(),
+				"Attach a Feature under that slot in this connection's features, on its entry in the "+
+					"Aggregate or in the Release.",
+				constraint.Uncaptioned(slot),
+				constraint.Captioned("declared required by socket", socket),
+				constraint.Captioned("of component type", componentType),
+				constraint.Captioned("left unfilled by the connection", alias),
+			))
+		}
+		return out
+	},
+}
+
 // ConflictingFeaturesDoNotReachOneComponent reports each pair of Features a
 // node's merged attachment set holds where either one names the other in its
 // interoperability.conflictsWith list.
@@ -684,9 +825,21 @@ func contributionDetail(places []constraint.AttachmentContribution) []constraint
 // words of the document an author would open to change it. A surface this rule
 // does not know is spelled by its token rather than dropped, so a place added to
 // the cascade is never silently missing from a finding.
+//
+// A contribution written on a connection entry is spelled as that entry — the
+// connection, its socket and the component it belongs to — because the entry is
+// where its author edits it, and the component's own attachment block, which the
+// component alone would point at, does not hold it.
 func contributionPlace(place constraint.AttachmentContribution) []constraint.DetailValue {
 	switch place.Surface {
 	case constraint.ContributionAggregateComponent:
+		if place.Alias != "" {
+			return []constraint.DetailValue{
+				constraint.Captioned("attached in the Aggregate on the connection", place.Alias),
+				constraint.Captioned("through socket", place.Socket),
+				constraint.Captioned("of component", place.Component),
+			}
+		}
 		return []constraint.DetailValue{
 			constraint.Captioned("attached in the Aggregate on component", place.Component),
 		}
@@ -701,6 +854,13 @@ func contributionPlace(place constraint.AttachmentContribution) []constraint.Det
 	case constraint.ContributionReleaseComponent:
 		detail := []constraint.DetailValue{
 			constraint.Captioned("attached in the Release on the entry for component", place.Component),
+		}
+		if place.Alias != "" {
+			detail = []constraint.DetailValue{
+				constraint.Captioned("attached in the Release on the connection", place.Alias),
+				constraint.Captioned("through socket", place.Socket),
+				constraint.Captioned("of the entry for component", place.Component),
+			}
 		}
 		if place.ScopePath != "" {
 			detail = append(detail, constraint.Captioned("in boundary", place.ScopePath))

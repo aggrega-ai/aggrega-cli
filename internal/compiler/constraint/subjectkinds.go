@@ -20,6 +20,13 @@ package constraint
 //   - an unexported constructor taking the source file and the segments the
 //     author typed, which is why locator assembly has one home.
 //
+// A kind whose site can sit in either authoring document — a connection, an
+// attachment written on one — also declares a second constructor taking which
+// document the site recorded, named for the first with "WrittenIn" added. The
+// document is a provenance input rather than a coordinate, so the first
+// constructor stays the one a kind's coordinates are paired against, and it
+// delegates to the second rather than building the subject a second time.
+//
 // Coordinates nest; kinds do not. A kind keyed by (node, socket) is reached
 // within a node, and the generated Coordinates field is where a traversal reads
 // that nesting. The interface for it embeds Subject and NOT the node kind's
@@ -454,8 +461,15 @@ func (s edgeSubject) SocketName() string { return s.socket }
 func (s edgeSubject) AliasName() string { return s.alias }
 
 func newEdgeSubject(sourceFile, node, socket, alias string, segments ...string) EdgeSubject {
+	return newEdgeSubjectWrittenIn("", sourceFile, node, socket, alias, segments...)
+}
+
+// newEdgeSubjectWrittenIn is [newEdgeSubject] for a connection whose site records
+// which authoring document it was written in; document is empty where it records
+// none.
+func newEdgeSubjectWrittenIn(document, sourceFile, node, socket, alias string, segments ...string) EdgeSubject {
 	return edgeSubject{
-		provenance: newProvenance(sourceFile, segments...),
+		provenance: newProvenanceIn(document, sourceFile, segments...),
 		node:       node,
 		socket:     socket,
 		alias:      alias,
@@ -534,8 +548,19 @@ func newOriginatedConnectionSubject(
 	sourceFile, node, kind, attachment, socket, alias, target string,
 	segments ...string,
 ) OriginatedConnectionSubject {
+	return newOriginatedConnectionSubjectWrittenIn(
+		"", sourceFile, node, kind, attachment, socket, alias, target, segments...)
+}
+
+// newOriginatedConnectionSubjectWrittenIn is [newOriginatedConnectionSubject] for
+// a connection whose origin's site records which authoring document it was
+// written in; document is empty where it records none.
+func newOriginatedConnectionSubjectWrittenIn(
+	document, sourceFile, node, kind, attachment, socket, alias, target string,
+	segments ...string,
+) OriginatedConnectionSubject {
 	return originatedConnectionSubject{
-		provenance: newProvenance(sourceFile, segments...),
+		provenance: newProvenanceIn(document, sourceFile, segments...),
 		node:       node,
 		kind:       kind,
 		attachment: attachment,
@@ -573,8 +598,16 @@ func (s nodeAttachmentSubject) NodeID() string { return s.node }
 func (s nodeAttachmentSubject) AttachmentName() string { return s.attachment }
 
 func newNodeAttachmentSubject(sourceFile, node, attachment string, segments ...string) NodeAttachmentSubject {
+	return newNodeAttachmentSubjectWrittenIn("", sourceFile, node, attachment, segments...)
+}
+
+// newNodeAttachmentSubjectWrittenIn is [newNodeAttachmentSubject] for an
+// attachment whose site records which authoring document it was written in —
+// the connection entry it was written on, for an attachment a connection
+// carries.
+func newNodeAttachmentSubjectWrittenIn(document, sourceFile, node, attachment string, segments ...string) NodeAttachmentSubject {
 	return nodeAttachmentSubject{
-		provenance: newProvenance(sourceFile, segments...),
+		provenance: newProvenanceIn(document, sourceFile, segments...),
 		node:       node,
 		attachment: attachment,
 	}

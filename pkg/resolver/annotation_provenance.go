@@ -16,7 +16,9 @@ type AnnotationProvenance struct {
 	AnnotationKey string
 
 	// AnnotationSource locates the annotation declaration in source
-	// form: <release-file-path>:<dotted-yaml-key-path>. For an
+	// form: <file-path>:<dotted-yaml-key-path>, the file being the
+	// document the annotation was written in, or the key path alone
+	// where the run named no file for that document. For an
 	// inherited boundary-level annotation, the key-path points to the
 	// boundary's annotations map (where the author wrote the
 	// annotation, not where it took effect). Line numbers are not yet

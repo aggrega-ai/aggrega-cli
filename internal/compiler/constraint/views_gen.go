@@ -98,6 +98,39 @@ type AttachmentContribution struct {
 	// AnnotationSource names where that annotation was declared, empty where
 	// the author wrote the attachment explicitly.
 	AnnotationSource string
+
+	// Socket is the dependency socket of the connection the contribution was
+	// written on, empty where it was written on an attachment block rather
+	// than on a connection entry.
+	Socket string
+
+	// Alias is the alias of the connection the contribution was written on,
+	// empty where it was written on an attachment block rather than on a
+	// connection entry. Together with Socket it names the connection entry an
+	// author edits, which the component the contribution was keyed under does
+	// not.
+	Alias string
+}
+
+// AttachmentConnection is the connection one attachment a node carries was
+// written on: the dependency socket and the alias naming the connection,
+// and the slot of that socket the attachment fills.
+//
+// It is one fact rather than three because no part of it answers anything
+// alone. A slot is a slot of one socket, so the slot without its socket
+// names no declaration; and a socket carries many connections, so the
+// socket without the alias names no connection a fill can be owed by.
+type AttachmentConnection struct {
+	// Socket is the consuming component's dependency socket the connection is
+	// wired through.
+	Socket string
+
+	// Alias names the connection within its socket.
+	Alias string
+
+	// Slot is the slot the socket declares that the attachment fills — the
+	// name the attachment was written under on its connection entry.
+	Slot string
 }
 
 // DerivedNameDeclaration is one contributor's declaration that it derived
@@ -1799,6 +1832,24 @@ type NormalizedView interface {
 	// Keyed by (node, slot); read from types.AttachmentSlot.Required.
 	SlotRequired(componentType string, slot string) bool
 
+	// SocketSlotRequired reports whether one slot a component type's
+	// dependency socket declares must be filled on every connection wired
+	// through that socket.
+	//
+	// It is a separate fact from the requirement a component type's own slot
+	// declares, although both come from one slot declaration, because the two
+	// are owed by different things. A component's own slot is filled once for
+	// the component, by whichever scope binds its name; a socket's slot is
+	// filled per connection, so the demand is owed once by each connection on
+	// the socket and is keyed by the connection rather than by the node.
+	//
+	// A slot the socket does not declare is not required, which is the same
+	// answer as a declared slot left optional: the question is whether a
+	// connection owes a fill, and neither owes one.
+	//
+	// Keyed by edge; read from types.AttachmentSlot.Required.
+	SocketSlotRequired(componentType string, socket string, slot string) bool
+
 	// AuthoredInjectBlockPresent reports whether an instance wrote an
 	// injection block at all.
 	//
@@ -1941,6 +1992,29 @@ type NormalizedView interface {
 	//
 	// Keyed by (node, slot); read from types.AttachmentSlot.Selector.
 	SlotSelector(componentType string, slot string) string
+
+	// SocketSlotSelector is the label constraint one slot a component type's
+	// dependency socket declares on which Feature may fill it on a connection,
+	// empty when it accepts any fill.
+	//
+	// It is keyed per attachment because the attachment a connection carries
+	// is what fills the slot: a rule asks it of each such attachment a node
+	// carries, with the socket and the slot the attachment's connection names.
+	// It is a separate fact from the constraint a component type's own slot
+	// declares, although both are written in one grammar on one kind of
+	// declaration, because they sit on separate authored surfaces — a
+	// socket's slots under its entry in the type's dependency sockets, a
+	// component's own beside them — and a name may be declared on both with
+	// different constraints.
+	//
+	// Emptiness is one answer rather than two. A slot declared with no
+	// constraint and a slot the socket does not declare both leave the fill
+	// unconstrained here, and whether a connection may carry an attachment
+	// under a name at all is the socket's slot-name set's question, asked when
+	// the documents are read.
+	//
+	// Keyed by (node, attachment); read from types.AttachmentSlot.Selector.
+	SocketSlotSelector(componentType string, socket string, slot string) string
 
 	// SlotInjectMechanismNames are the delivery mechanisms an attachment slot
 	// allows for the material bound to it, in author order.
@@ -3236,6 +3310,24 @@ type TopologyView interface {
 	// Keyed by node; read from topology.TopologyNode.Uses.
 	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
 
+	// FlattenedConnectionAttachmentType is the Feature type one attachment the
+	// developer wrote on one connection of a node in the flattened set names,
+	// reported absent when that connection carries no attachment under the
+	// name.
+	//
+	// It is the developer's counterpart of the type a Release's per-edge entry
+	// names for the same attachment, and the pair is what a rule comparing the
+	// two documents reads: each is written by its own hand on its own
+	// document, and a disagreement between them is visible in neither alone.
+	//
+	// It answers for every node the composition holds, for the reason the
+	// attachment names on the same connections are read here: a component a
+	// sub-module contributes keeps its dependency block in that module's
+	// document, which is read only when the composition is flattened.
+	//
+	// Keyed by edge; read from types.ConnectionAttachment.Type.
+	FlattenedConnectionAttachmentType(node string, socket string, alias string, attachment string) (string, bool)
+
 	// PerEdgeAuthoredTarget is the target one connection names, as the
 	// document that drew it wrote the name — empty when the composition drew
 	// no connection there.
@@ -3693,6 +3785,26 @@ type GraphView interface {
 	//
 	// Keyed by (node, attachment); read from ir.AttachmentSites.
 	AttachmentContributions(node string, attachment string) []AttachmentContribution
+
+	// AttachmentConnection is the connection one attachment a node carries was
+	// written on — the socket, the alias and the slot it fills there —
+	// reported absent for an attachment the node's own block or a scope above
+	// it supplied.
+	//
+	// It is taken from the record the lowering carried onto the attachment and
+	// never out of the attachment's name. An attachment a connection carries
+	// reaches its node under a composed name, and a rule recovering the
+	// socket, the alias or the slot by splitting that name would be a second
+	// spelling of the composition, free to disagree with the one that produced
+	// it.
+	//
+	// It is placed where the attachment cascade has folded because the mark is
+	// set while the cascade folds: the developer's and the operator's
+	// contributions to one connection attachment are merged into one
+	// attachment there, and either may be the one that carried the connection.
+	//
+	// Keyed by (node, attachment); read from types.IRFeatureEntry.Connection.
+	AttachmentConnection(node string, attachment string) (AttachmentConnection, bool)
 
 	// UsesInjectDeliverySockets are the dependency sockets through which a
 	// node's own dependency edges deliver one injection key under one

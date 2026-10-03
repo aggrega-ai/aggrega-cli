@@ -3,6 +3,8 @@
 
 package constraint
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+
 // The enumerator surface: what the framework needs enumerated, declared here and
 // supplied by the caller.
 //
@@ -256,6 +258,25 @@ const (
 	// boundaries.
 	AuthoringDocumentRelease = "release"
 )
+
+// AuthoringDocumentKind returns the entity kind an authoring document holds,
+// and reports whether the document is one of the two this package names.
+//
+// It is the one correspondence between the two vocabularies, for a reader that
+// holds a document coordinate and has to ask a question keyed by entity kind —
+// which authoring surface a finding is filed under, say. A document outside the
+// pair is reported as uncovered rather than given a kind, so a caller cannot
+// acquire one by omission.
+func AuthoringDocumentKind(document string) (entitykind.Kind, bool) {
+	switch document {
+	case AuthoringDocumentAggregate:
+		return entitykind.Aggregate, true
+	case AuthoringDocumentRelease:
+		return entitykind.Release, true
+	default:
+		return "", false
+	}
+}
 
 // OriginatedConnectionInstance is one connection together with the origin that
 // drew it: which node's which socket, under which alias, from which surface.
@@ -708,6 +729,103 @@ type ReleaseEdgeConfigurationEnumerator interface {
 	// ReleaseEdgeConfigurations returns every entry the Release's per-edge `uses`
 	// surface writes, in a deterministic order the implementation declares.
 	ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance
+}
+
+// ConnectionAttachmentSite names where one attachment a connection carries was
+// written: the connection entry holding it, in the document whose author wrote
+// it, and the slot it is written under there.
+//
+// It exists because such an attachment reaches the node carrying it under a
+// composed name — the connection's alias, a dot, and the slot — that no key in
+// either document spells. A locator built the way every other attachment's is,
+// from the node's own block and the attachment's name, would name an attachment
+// block the consuming component does not have, and the composed name's dot would
+// cut it short there besides. The connection entry is the one place an author
+// edits it.
+//
+// The document is carried rather than derived because either may hold the
+// entry: the developer writes an attachment on the Aggregate's connection entry
+// and the operator on the Release's, and a finding names the entry whose author
+// wrote what the finding is about.
+type ConnectionAttachmentSite struct {
+	// Document is the authoring document the entry sits in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
+	// scope nesting the site path is spelled with.
+	Document string
+
+	// Site names the component entry holding the connection: the scope it sits
+	// in, and the component key it was written under when the scope names the
+	// component directly.
+	Site AuthoredSite
+
+	// ComponentKeys are the authoring keys reaching the consuming component's own
+	// block from inside the site's scope where the scope does not name the
+	// component under its own key — the routing keys a Release writes for a
+	// component a sub-module contributes — and nothing where it does.
+	ComponentKeys []string
+
+	// Socket and Alias are the keys the connection entry is written under in the
+	// component's dependency block.
+	Socket string
+	Alias  string
+
+	// Slot is the key the attachment is written under in the entry's own
+	// attachment block — the slot of the socket it fills.
+	Slot string
+
+	// SourceFile is the workspace-relative file the entry was written in, empty
+	// when it has no single-file origin.
+	SourceFile string
+}
+
+// ConnectionAttachmentSiteInAggregate is the site of an attachment the developer
+// wrote on one of a component's connection entries, in the document the
+// component was written in.
+//
+// The component's site is the one the framework names the component itself by,
+// so the entry and the component it sits in cannot come to be located
+// differently. A connection carrying attachments is always written in the long
+// form, whose alias is a key the author typed, so the alias is always a segment.
+func ConnectionAttachmentSiteInAggregate(node NodeInstance, socket, alias, slot string) ConnectionAttachmentSite {
+	return ConnectionAttachmentSite{
+		Document:   AuthoringDocumentAggregate,
+		Site:       ComponentSite(node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem),
+		Socket:     socket,
+		Alias:      alias,
+		Slot:       slot,
+		SourceFile: node.SourceFile,
+	}
+}
+
+// ConnectionAttachmentSiteInRelease is the site of an attachment a Release
+// per-edge entry carries, taken from that entry's own site so a finding about
+// the attachment and a finding about the entry name the same entry.
+func ConnectionAttachmentSiteInRelease(entry ReleaseEdgeConfigurationInstance, slot string) ConnectionAttachmentSite {
+	return ConnectionAttachmentSite{
+		Document:      entry.Configuration.Document,
+		Site:          entry.Site,
+		ComponentKeys: entry.ComponentKeys,
+		Socket:        entry.Configuration.Socket,
+		Alias:         entry.Configuration.Alias,
+		Slot:          slot,
+		SourceFile:    entry.SourceFile,
+	}
+}
+
+// ConnectionAttachmentSiteEnumerator supplies, for an attachment a node carries,
+// the connection entry it was written in, where it was written on one.
+//
+// It is an optional companion of [AttachmentEnumerator] rather than a method of
+// it. The traversal over the attachments a node carries asks it of the
+// enumerator it is handed, and an enumerator that does not implement it — or
+// that reports no site for an attachment — leaves that attachment positioned at
+// the node's own attachment block, which is the right answer for every
+// attachment not written on a connection and the only one an enumeration over a
+// stage before connection attachments are lowered can give.
+type ConnectionAttachmentSiteEnumerator interface {
+	// ConnectionAttachmentSite returns where one attachment of one node was
+	// written, and whether it was written on a connection entry at all.
+	ConnectionAttachmentSite(node, attachment string) (ConnectionAttachmentSite, bool)
 }
 
 // NodeEnumerator supplies the node set: every component instance in the

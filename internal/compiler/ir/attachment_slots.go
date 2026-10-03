@@ -33,32 +33,12 @@ func ComponentAttachmentSlots(catalogLookup resolver.CatalogLookup, componentTyp
 	return comp.Spec.FeaturesSchema, true
 }
 
-// SocketAttachmentSlots resolves the attachment slots one socket of a Component
-// declares — the slots each connection wired through that socket may fill — in
-// the entity's own declaration order, together with whether the declared set is
-// KNOWN, on the same terms as [ComponentAttachmentSlots].
-//
-// A Component that resolves and does not declare the socket answers an empty,
-// known set: such a socket declares no slots, which is a determination rather
-// than an absence of one. An unresolved Component answers an unknown set, since
-// none of its sockets can be read.
-func SocketAttachmentSlots(catalogLookup resolver.CatalogLookup, componentType, socket string) (types.OrderedMap[types.AttachmentSlot], bool) {
-	if componentType == "" || catalogLookup.Component == nil {
-		return types.OrderedMap[types.AttachmentSlot]{}, false
-	}
-	comp, found := catalogLookup.Component(componentType)
-	if !found {
-		return types.OrderedMap[types.AttachmentSlot]{}, false
-	}
-	entry, _ := comp.Spec.UsesSchema.Get(socket)
-	return entry.FeaturesSchema, true
-}
-
 // attachmentSlotSet is one declared slot set as the per-attachment facts read
 // it: the slots, the ones among them declared sensitive, and whether the set is
 // known at all. A Component's own slots and a socket's slots are both held in
 // this one shape, so the binding and sensitivity facts are read from either by
-// the same code.
+// the same code. A socket's slots are resolved by [resolver.SocketAttachmentSlots],
+// the one home every rule over a socket's slots reads them through as well.
 type attachmentSlotSet struct {
 	slots     types.OrderedMap[types.AttachmentSlot]
 	sensitive map[string]bool

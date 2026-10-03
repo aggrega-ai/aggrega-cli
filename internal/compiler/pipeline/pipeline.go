@@ -34,6 +34,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -55,10 +56,23 @@ type Inputs struct {
 	Manifest          *types.Manifest
 	AggregateRawBytes []byte
 	AggregatePath     string
-	// ReleasePath is a source-location label only (no I/O), forwarded into the
-	// resolver so the annotation-expansion pass can build Release-authored
-	// annotation source locations. Optional: callers that leave it empty get an
-	// empty release path in those source-location strings, unchanged from before.
+	// ReleasePath is the path of the Release document the run compiles, as the
+	// caller holds it: the path a command was given, or the one a request named.
+	// It is a label, and nothing is read through it.
+	//
+	// The run renders it against WorkspaceRoot through catalog.RelativeToWorkspace,
+	// the rule every other authored document's path in the graph is rendered by,
+	// and that rendering is what names the Release wherever the run names it: the
+	// file of a finding about what the Release wrote — an attachment it fills, a
+	// connection it draws, a boundary it declares — and the source an annotation
+	// written in it is traced to in the graph. A caller holding an absolute path and
+	// one holding a path relative to the workspace therefore produce the same
+	// graph, byte for byte, on any machine holding the same workspace layout.
+	//
+	// Every surface that runs the pipeline over a Release supplies it. A run that
+	// leaves it empty names no file for the Release: a finding about what the
+	// Release wrote carries its authored key alone, and an annotation written there
+	// is traced to its key path with no file before it.
 	ReleasePath string
 	// RootAggregateFile is the source-location label stamped onto the flattened
 	// root-tier topology node (and carried to IRNode.SourceFile) — a label only,
@@ -124,6 +138,9 @@ type Inputs struct {
 	// source resolves to its lockfile-pinned, content-addressed cache entry and
 	// renders. When Lockfile is nil or WorkspaceRoot is empty, the renderer
 	// forwards each source verbatim — the sourceless and local-path paths.
+	//
+	// WorkspaceRoot is also what ReleasePath is rendered against, so a run
+	// supplying no root names the Release by its path unchanged.
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
 
@@ -828,7 +845,7 @@ func ResolveAndValidate(
 		Manifest:          inputs.Manifest,
 		AggregateRawBytes: inputs.AggregateRawBytes,
 		AggregatePath:     inputs.AggregatePath,
-		ReleasePath:       inputs.ReleasePath,
+		ReleasePath:       releaseSourcePath(inputs),
 	}, func(resolveResult *resolver.ResolveResult) error {
 		// The annotation-transform governance role runs first in the resolve
 		// continuation: it injects annotations onto resolved components before
@@ -936,6 +953,21 @@ func ResolveAndValidate(
 		}
 		return use(resolveResult)
 	})
+}
+
+// releaseSourcePath is the Release's path as everything this run produces names
+// it: the path the caller supplied, rendered against the workspace root by
+// catalog.RelativeToWorkspace.
+//
+// It is the one place a run puts the Release's path into that form, and it is
+// read at the one site the path enters the compilation, so the form cannot depend
+// on which surface ran the pipeline. Surfaces hold the path differently — an
+// absolute path where a request or a core resolved one, the path as typed where a
+// command was given one — and leaving each to convert would let one of them hand
+// the graph a machine-specific path while the others did not, which is the
+// difference the graph's byte-identity across machines rules out.
+func releaseSourcePath(in Inputs) string {
+	return catalog.RelativeToWorkspace(in.WorkspaceRoot, in.ReleasePath)
 }
 
 // resolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve

@@ -31,6 +31,11 @@ type Objection struct {
 	locator  string
 	detail   []DetailValue
 
+	// document is which authoring document the subject was written in, empty
+	// where the traversal that supplied the subject records none. See
+	// [Objection.AuthoringDocument].
+	document string
+
 	// advice is what this occurrence tells the author to do, empty for a rule
 	// whose registered sentence says the whole of it.
 	//
@@ -115,6 +120,21 @@ func (o Objection) SourceFile() string { return o.file }
 // stands for, or the empty string when no authored locator is derivable. It
 // never carries a line or a column; see the package documentation.
 func (o Objection) Locator() string { return o.locator }
+
+// AuthoringDocument returns which authoring document the subject was written
+// in — [AuthoringDocumentAggregate] or [AuthoringDocumentRelease] — or the empty
+// string where the traversal that supplied the subject records none.
+//
+// It is recorded where a subject's site can sit in either document — a
+// connection, or an attachment written on one, drawn by the developer in the
+// Aggregate or by the operator in the Release — and it is taken from that site,
+// which settled it, rather than read back off the file: a file names a path, and
+// nothing in the path says what kind of document lives there.
+//
+// A boundary that files a finding under the author it belongs to reads it, the
+// way a finding naming a document is filed by that document's kind; a boundary
+// that only positions a finding reads the file and the locator instead.
+func (o Objection) AuthoringDocument() string { return o.document }
 
 // Advice returns what this occurrence tells the author to do, or the empty
 // string for a rule whose registered sentence says the whole of it.

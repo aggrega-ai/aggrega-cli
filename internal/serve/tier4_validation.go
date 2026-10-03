@@ -52,12 +52,16 @@ import (
 //
 // A catalog entity of a kind the single-entity check accepts never reaches
 // this function: handleValidate answers it with that check in the Release's
-// terms (runEntityValidation). When the request file is some other document
-// that is not the named Release's Aggregate (e.g., the Manifest, a library,
-// or the Release itself), the Tier-4 pipeline is not relevant to the
-// requested file and the function returns an empty slice once the closure
-// has resolved — the caller's existing Tier-1 diagnostics for the file
-// already populated stay in place.
+// terms (runEntityValidation). When the request file is the named Release
+// itself, the pipeline runs as it does for the Aggregate and the answer is the
+// graph findings positioned in the Release — a finding about what the Release
+// wrote lands on the Release, on the key that wrote it, and on the Aggregate
+// not at all (see releaseDocumentDiagnostics). When the request file is any
+// other document that is not the named Release's Aggregate (e.g., the
+// Manifest or a library), the Tier-4 pipeline is not relevant to the requested
+// file and the function returns an empty slice once the closure has resolved —
+// the caller's existing Tier-1 diagnostics for the file already populated stay
+// in place.
 func (s *Server) runTier4Validation(ctx context.Context, releasePath, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	// Build the per-request catalog view, seeded with the named Release's
 	// lockfile pins, so every Tier-4 resolution read below verifies-on-read
@@ -152,22 +156,30 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	aggPath := resolved.AggregatePath
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+	// The named Release's own document, in the same coordinate system. It is the
+	// form the pipeline names the Release by, because the validation below hands
+	// the pipeline this request's Release path and this daemon's workspace root
+	// and the pipeline renders the one against the other by this same rule — so a
+	// finding about what the Release wrote carries exactly this string as its file.
+	relRelease := catalog.RelativeToWorkspace(s.workspaceRoot, releasePath)
 
-	// The Tier-4 branch is meaningful only when the request file IS the
-	// named Release's Aggregate. Validating a different file against that
-	// Release produces no semantic diagnostics for THAT file from this
-	// pipeline.
+	// The Tier-4 branch answers two documents: the named Release's Aggregate,
+	// which carries everything this validation reports bar what is positioned in
+	// the Release, and the named Release itself, which carries what is.
+	// Validating any other file against that Release produces no semantic
+	// diagnostics for THAT file from this pipeline.
 	//
-	// The two are compared in that one coordinate system rather than as the
-	// strings they arrived as. The resolved Aggregate's path and the validated
-	// file reach this function from different places — one from the closure
-	// resolution, one from the request — so comparing the raw strings asks
-	// whether the two agree on a spelling when the question is whether they name
-	// the same document. Deciding it on the spelling withholds every finding
-	// below from a request that named this very file the other way, and
-	// withholds them as an empty result, which reads as a file with nothing
+	// The paths are compared in that one coordinate system rather than as the
+	// strings they arrived as. The resolved Aggregate's path, the Release's path
+	// and the validated file reach this function from different places — the
+	// closure resolution, the request's Release, the request's file — so comparing
+	// the raw strings asks whether they agree on a spelling when the question is
+	// whether they name the same document. Deciding it on the spelling withholds
+	// every finding below from a request that named this very file the other way,
+	// and withholds them as an empty result, which reads as a file with nothing
 	// wrong rather than as a comparison that failed.
-	if relFile != relAggPath {
+	onAggregate := relFile == relAggPath
+	if !onAggregate && relFile != relRelease {
 		return nil
 	}
 
@@ -186,6 +198,10 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// The deprecation notices lead every set below, matching the order the facts
 	// were decided in: the lockfile recorded its markers at the pull, before the
 	// Manifest was judged and before any gate here read anything.
+	//
+	// Both are the Aggregate's to carry. A request on the Release's own document is
+	// answered with what is positioned in it alone, below, so neither class is
+	// published twice.
 	mappingDiags := deprecationDiags
 	for _, f := range resolved.ManifestConsistencyFindings {
 		mappingDiags = append(mappingDiags, Diagnostic{
@@ -227,6 +243,12 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		WorkspaceConfig: s.wsConfig,
 		CompilerVersion: s.compilerVersion,
 	})
+
+	// The request is on the Release's own document: what is positioned there,
+	// and nothing else.
+	if !onAggregate {
+		return s.releaseDocumentDiagnostics(vr, relFile, content, doc)
+	}
 
 	// Closure-scoped extends — early-warning extends gate. A dangling parent (or
 	// a cycle / malformed chain) on an in-closure Component/Feature surfaces as a
@@ -471,6 +493,40 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 		})
 	}
 	return out
+}
+
+// releaseDocumentDiagnostics answers a validation of the named Release's own
+// document: the graph findings the validation positioned in it, each placed on
+// the authored key its locator names, and nothing else.
+//
+// A rule over what the Release wrote — an attachment it fills on a connection, a
+// connection it draws — names the Release's file, so the Release document is the
+// one an author opens to act on it, and it is published there. Every other class
+// this validation produces stays on the Aggregate's answer, a graph finding
+// naming no file among them: the filter below keeps only what names this file and
+// adopts nothing, so no finding is shown on both documents.
+//
+// A cancelled run publishes nothing, exactly as on the Aggregate. A run a gate
+// stopped before the graph was built has no graph finding to place, and what
+// stopped it is published on the Aggregate.
+func (s *Server) releaseDocumentDiagnostics(vr *compilerops.ValidateResult, file string, content []byte, doc *yaml.Node) []Diagnostic {
+	if errors.Is(vr.RunErr, context.Canceled) || errors.Is(vr.RunErr, context.DeadlineExceeded) {
+		return nil
+	}
+	if vr.Tier4 == nil || vr.Tier4.Analysis == nil {
+		return nil
+	}
+	var placed []analyzer.AnalysisError
+	for _, e := range vr.Tier4.Analysis.Errors {
+		if e.OriginFile == file {
+			placed = append(placed, e)
+		}
+	}
+	if len(placed) == 0 {
+		return nil
+	}
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
+	return analyzerErrorsToDiagnostics(placed, file, doc, idx)
 }
 
 // resolverFindingToDiagnostic maps a resolver-class finding to a

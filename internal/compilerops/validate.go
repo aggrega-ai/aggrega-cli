@@ -146,6 +146,10 @@ type ValidateInputs struct {
 	// unsupplied path is VerdictPluginTrust's, which is where the record's address is
 	// derived, so there is one refusal rather than a second guard here that could
 	// disagree with it.
+	//
+	// It is also handed to the pipeline as the Release's own path, so a finding
+	// about what the Release wrote names the Release's file here exactly as it does
+	// on every other surface that runs the pipeline over the same documents.
 	ReleasePath string
 	AggBytes    []byte
 	// Lockfile is the record of what this Release resolved to, and supplying it is
@@ -314,6 +318,9 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		Manifest:          in.Manifest,
 		AggregateRawBytes: in.AggBytes,
 		AggregatePath:     in.AggregatePath,
+		// The path as this core holds it. The pipeline renders it against the
+		// workspace root set below, and that is the one place the rendering happens.
+		ReleasePath: in.ReleasePath,
 		// A pointer into this call's own inputs value, so the composition below
 		// re-points it at the copy it rewrites and the caller's configuration is
 		// never written through.

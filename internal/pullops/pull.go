@@ -1050,7 +1050,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
-			CompilerVersion:   cfg.CompilerVersion,
+			// The Release's path as this pass holds it; the pipeline renders it
+			// against WorkspaceRoot below, so a finding about what the Release wrote
+			// names its file here as it does on a build.
+			ReleasePath:     cfg.ReleasePath,
+			CompilerVersion: cfg.CompilerVersion,
 			// The composed configuration above, not the live one: a transform-role
 			// attachment shapes the graph, so a graph drawn without it is not the
 			// graph these pins describe.

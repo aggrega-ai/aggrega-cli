@@ -1899,6 +1899,12 @@ func (TopologyViewBase) SlotRequired(componentType string, slot string) bool {
 	panic("this view does not carry slot-required, which is read from types.AttachmentSlot.Required")
 }
 
+// SocketSlotRequired panics. This view does not carry
+// socket-slot-required, which is read from types.AttachmentSlot.Required.
+func (TopologyViewBase) SocketSlotRequired(componentType string, socket string, slot string) bool {
+	panic("this view does not carry socket-slot-required, which is read from types.AttachmentSlot.Required")
+}
+
 // AuthoredInjectBlockPresent panics. This view does not carry
 // authored-inject-block-present, which is read from
 // types.ComponentInstance.Inject.
@@ -1958,6 +1964,12 @@ func (TopologyViewBase) AttachmentSocketSelector(featureType string, socket stri
 // read from types.AttachmentSlot.Selector.
 func (TopologyViewBase) SlotSelector(componentType string, slot string) string {
 	panic("this view does not carry slot-selector, which is read from types.AttachmentSlot.Selector")
+}
+
+// SocketSlotSelector panics. This view does not carry
+// socket-slot-selector, which is read from types.AttachmentSlot.Selector.
+func (TopologyViewBase) SocketSlotSelector(componentType string, socket string, slot string) string {
+	panic("this view does not carry socket-slot-selector, which is read from types.AttachmentSlot.Selector")
 }
 
 // SlotInjectMechanismNames panics. This view does not carry
@@ -2252,6 +2264,13 @@ func (GraphViewBase) FlattenedConnectionAttachmentNames(node string) types.Order
 	panic("this view does not carry flattened-connection-attachment-names, which is read from topology.TopologyNode.Uses")
 }
 
+// FlattenedConnectionAttachmentType panics. This view does not carry
+// flattened-connection-attachment-type, which is read from
+// types.ConnectionAttachment.Type.
+func (GraphViewBase) FlattenedConnectionAttachmentType(node string, socket string, alias string, attachment string) (string, bool) {
+	panic("this view does not carry flattened-connection-attachment-type, which is read from types.ConnectionAttachment.Type")
+}
+
 // PerEdgeAuthoredTarget panics. This view does not carry
 // per-edge-authored-target, which is read from
 // topology.NormalizedEdge.AuthoredTarget.
@@ -2389,6 +2408,13 @@ func (DescribedViewBase) MergedAttachmentNames(node string) []string {
 // attachment-contributions, which is read from ir.AttachmentSites.
 func (DescribedViewBase) AttachmentContributions(node string, attachment string) []AttachmentContribution {
 	panic("this view does not carry attachment-contributions, which is read from ir.AttachmentSites")
+}
+
+// AttachmentConnection panics. This view does not carry
+// attachment-connection, which is read from
+// types.IRFeatureEntry.Connection.
+func (DescribedViewBase) AttachmentConnection(node string, attachment string) (AttachmentConnection, bool) {
+	panic("this view does not carry attachment-connection, which is read from types.IRFeatureEntry.Connection")
 }
 
 // UsesInjectDeliverySockets panics. This view does not carry
@@ -3181,6 +3207,7 @@ type NormalizedStageFacts interface {
 	SubsystemAttachmentDeclaration(subsystem string, attachment string) (AttachmentDeclaration, bool)
 	AuthoredAnnotationSubvalue(document string, scope string, component string, key string, subkey string) (any, bool)
 	SlotRequired(componentType string, slot string) bool
+	SocketSlotRequired(componentType string, socket string, slot string) bool
 	AuthoredInjectBlockPresent(node string) bool
 	AuthoredInjectMechanismNames(node string) []string
 	AuthoredInjectDeliveryKeys(node string, mechanism string) []string
@@ -3190,6 +3217,7 @@ type NormalizedStageFacts interface {
 	SocketSelector(componentType string, socket string) string
 	AttachmentSocketSelector(featureType string, socket string) string
 	SlotSelector(componentType string, slot string) string
+	SocketSlotSelector(componentType string, socket string, slot string) string
 	SlotInjectMechanismNames(componentType string, slot string) []string
 	FeatureAppliesTo(featureType string) string
 	FeatureAppliesToAnyOf(featureType string) []types.SelectorTerm
@@ -3245,6 +3273,7 @@ type TopologyStageFacts interface {
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
+	FlattenedConnectionAttachmentType(node string, socket string, alias string, attachment string) (string, bool)
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
 	PerEdgeConnectionDrawn(node string, socket string, alias string) bool
 	ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration
@@ -3278,6 +3307,7 @@ type GraphStageFacts interface {
 	AttachmentResolvedType(node string, attachment string) string
 	MergedAttachmentNames(node string) []string
 	AttachmentContributions(node string, attachment string) []AttachmentContribution
+	AttachmentConnection(node string, attachment string) (AttachmentConnection, bool)
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
 	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]

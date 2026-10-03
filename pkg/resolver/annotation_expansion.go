@@ -319,31 +319,44 @@ func expandBoundaries(
 }
 
 // annotationSourcePath formats the source location for an annotation
-// declaration. The format is <release-file-path>:<dotted-yaml-key-path>;
-// line numbers are deferred until yaml.Node access lands in the
-// resolver pipeline. componentName empty signals a boundary-level
-// annotation; non-empty signals a component-level annotation under
-// that boundary.
+// declaration written in the Release, in the shape [annotationSource] composes;
+// line numbers are deferred until yaml.Node access lands in the resolver
+// pipeline. componentName empty signals a boundary-level annotation; non-empty
+// signals a component-level annotation under that boundary.
 func annotationSourcePath(releasePath, boundaryPath, componentName, key string, synthesized bool) string {
-	prefix := releasePath
-	if prefix == "" {
-		prefix = "release.yaml"
-	}
 	// A synthesized-default boundary holds components authored at the top-level
 	// `.spec.components` surface; attribute their annotations to that root shape
 	// rather than the generated `boundaries.default` scope. Keys on the
 	// provenance flag, not the path string.
 	if synthesized {
 		if componentName != "" {
-			return prefix + ":components." + componentName + ".annotations." + key
+			return annotationSource(releasePath, "components."+componentName+".annotations."+key)
 		}
-		return prefix + ":annotations." + key
+		return annotationSource(releasePath, "annotations."+key)
 	}
 	dotted := "boundaries." + strings.ReplaceAll(boundaryPath, "/", ".boundaries.")
 	if componentName != "" {
-		return prefix + ":" + dotted + ".components." + componentName + ".annotations." + key
+		return annotationSource(releasePath, dotted+".components."+componentName+".annotations."+key)
 	}
-	return prefix + ":" + dotted + ".annotations." + key
+	return annotationSource(releasePath, dotted+".annotations."+key)
+}
+
+// annotationSource composes the source an annotation is traced to: the file the
+// annotation was written in, a colon, and the dotted key path inside that file.
+//
+// Where the run names no file for the document, the source is the key path alone.
+// No file name is put in the empty place: a name the run was not given is a name
+// the author may not have written, and a source naming it sends them to a file
+// that is not the one holding the annotation. The key path is still exactly what
+// they wrote, so it travels whole.
+//
+// It is the one composition both authoring documents' formatters use, so the two
+// sides of an annotation's provenance cannot come to be spelled differently.
+func annotationSource(file, keyPath string) string {
+	if file == "" {
+		return keyPath
+	}
+	return file + ":" + keyPath
 }
 
 // expandBinding consumes an annotation value plus its binding and
@@ -862,18 +875,14 @@ func expandAggregateSubsystems(
 }
 
 // aggregateAnnotationSourcePath formats the source location for an
-// Aggregate-authored annotation. The format is
-// <aggregate-file-path>:<canonical-dotted-path>.annotations.<key>;
-// line numbers are deferred until yaml.Node access lands in the
-// resolver pipeline. componentPath is the canonical dotted path of the
-// authoring scope (the subsystem path for a subsystem-level annotation
-// or the component path for a component-level annotation).
+// Aggregate-authored annotation, in the shape [annotationSource] composes, the
+// key path being <canonical-dotted-path>.annotations.<key>; line numbers are
+// deferred until yaml.Node access lands in the resolver pipeline.
+// componentPath is the canonical dotted path of the authoring scope (the
+// subsystem path for a subsystem-level annotation or the component path for a
+// component-level annotation).
 func aggregateAnnotationSourcePath(aggregatePath, componentPath, key string) string {
-	prefix := aggregatePath
-	if prefix == "" {
-		prefix = "aggregate.yaml"
-	}
-	return prefix + ":" + componentPath + ".annotations." + key
+	return annotationSource(aggregatePath, componentPath+".annotations."+key)
 }
 
 // writeAggregateComponent persists a mutated ComponentInstance back
