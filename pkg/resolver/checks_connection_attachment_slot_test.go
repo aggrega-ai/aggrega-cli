@@ -239,7 +239,7 @@ spec:
 	}
 	ask := func(agg *types.Aggregate) []*ResolverError {
 		view := newNormalizedView(normalized(t, agg), nil, connectionSlotCatalog(t), nil)
-		errs, err := runDeclaredRules(nil, view, "Aggregate demo", "Release")
+		errs, err := runDeclaredRules(nil, view, "", "Aggregate demo", "Release")
 		if err != nil {
 			t.Fatalf("the declared rules returned an error: %v", err)
 		}
@@ -347,7 +347,7 @@ spec:
 			if advised != tc.wantAdvisory {
 				t.Errorf("near-miss advisory raised = %v; want %v (advisories: %v)", advised, tc.wantAdvisory, advisories)
 			}
-			halts, err := runDeclaredRules(nil, view, "Aggregate demo", "Release")
+			halts, err := runDeclaredRules(nil, view, "", "Aggregate demo", "Release")
 			if err != nil {
 				t.Fatalf("the declared rules returned an error: %v", err)
 			}

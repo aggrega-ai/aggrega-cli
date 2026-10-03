@@ -229,38 +229,44 @@ var connectionValuesConformToTheSocket = constraint.Check[
 // pillar and the other document, and the socket declares a separate contract for
 // each — so a socket may constrain one pillar and say nothing about the other.
 //
-// The connections it measures are the entries the Release wrote, read as
-// authorship rather than as content. Both fields of such an entry are optional,
-// so an entry with neither set carries nothing at all and every content fact
-// reads its zero value for it — the same zero those facts read for an alias
-// nothing was written at. The two need opposite treatment: an entry that writes
-// nothing is the maximal violation of a key the socket's contract declares
-// required, while a connection this document never wrote is not its to answer
-// for.
+// It is invoked once per entry the Release's per-edge surface writes, which is
+// what positions a finding at the entry the operator wrote — inside the boundary
+// it sits in, under the keys reaching the component there — rather than at the
+// consuming component's own dependency block, a path a Release placing its
+// components in boundaries does not contain. The entries are read as authorship
+// rather than as content. Both fields of such an entry are optional, so an entry
+// with neither set carries nothing at all and every content fact reads its zero
+// value for it; it is still an entry the operator wrote, and it is the maximal
+// violation of a key the socket's contract declares required. A connection the
+// Release wrote no entry for is not this document's to answer for, and no entry
+// for it is enumerated.
+//
+// It measures the entries written against a component the Aggregate declares,
+// whose type and contracts are known while the two documents are read. An entry
+// against a component a sub-module contributes ends the rule here: that
+// component's type is known only once the composition is flattened, where its
+// per-edge sizing is judged with the module's other connections.
 var connectionInfraConformsToTheSocket = constraint.Check[
 	constraint.NormalizedView,
-	constraint.EdgeSubject,
+	constraint.ReleaseEdgeConfigurationSubject,
 ]{
 	Sentinel: ErrSchemaConformance(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.NormalizedView,
-		s constraint.EdgeSubject,
+		s constraint.ReleaseEdgeConfigurationSubject,
 	) []constraint.Objection {
-		if !slices.Contains(
-			v.ReleaseAuthoredUsesSocketEntryAliases(s.NodeID(), s.SocketName()), s.AliasName()) {
-			return nil
-		}
-		componentType, present := v.InstanceComponentType(s.NodeID())
+		node, socket, alias := s.NodeID(), s.SocketName(), s.AliasName()
+		componentType, present := v.InstanceComponentType(node)
 		if !present || !v.CatalogComponentPresent(componentType) {
 			return nil
 		}
-		contract, resolved := v.CompiledSocketInfraSchema(componentType, s.SocketName())
+		contract, resolved := v.CompiledSocketInfraSchema(componentType, socket)
 		if !resolved {
 			return nil
 		}
 		return pillarObjections(s, "infra", contract,
-			v.ReleasePerEdgeInfra(s.NodeID(), s.SocketName(), s.AliasName()),
+			v.ReleasePerEdgeInfra(node, socket, alias),
 			v.ResolvedParameterContext(s.SourceFile()))
 	},
 }

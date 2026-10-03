@@ -168,6 +168,12 @@ func DocumentEntity(kind, sourceFile, fallback string) string {
 // conversion that chose them separately could produce a path belonging to a
 // document the finding does not name. Returning them from one call makes that
 // pairing unspellable rather than merely discouraged.
+//
+// The file is the one the objection's own site recorded, carried wherever a
+// locator is: it names the document the locator is a path inside, which is the
+// site's fact rather than the caller's, so no conversion supplies it. A
+// conversion that drops the locator drops the file with it, because a file with
+// no path inside it would place the finding somewhere no rule positioned it.
 func findings(
 	objections []constraint.Objection,
 	subjectOf func(constraint.Objection) (entity string, field string),
@@ -178,9 +184,14 @@ func findings(
 	out := make([]*ResolverError, 0, len(objections))
 	for _, o := range objections {
 		entity, field := subjectOf(o)
+		file := ""
+		if field != "" {
+			file = o.SourceFile()
+		}
 		out = append(out, &ResolverError{
 			Entity:  entity,
 			Field:   field,
+			File:    file,
 			Message: strings.Join(o.RenderedDetail(), ", "),
 			Advice:  o.Advice(),
 			Err:     o.Sentinel(),

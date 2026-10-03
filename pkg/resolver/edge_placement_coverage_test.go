@@ -221,9 +221,10 @@ func TestTheReleaseEdgeSocketRuleReachesEveryPlacement(t *testing.T) {
 // directions: operator per-edge sizing that violates the socket's contract is
 // reported, and conforming sizing of the same shape is not.
 //
-// The locator names the placement the author wrote, so it differs per placement
-// even though the component's identity — the name the Release addresses it by
-// — does not.
+// The locator names the entry the operator wrote, in the boundary the Release
+// placed the component in, so it is the same whichever placement the Aggregate
+// gave the component: the Release addresses the component by its identity, and
+// the developer's placement is not a key the Release's document contains.
 func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 	t.Parallel()
 	for _, pl := range nodePlacements {
@@ -235,16 +236,16 @@ func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 			ask := func(release *types.Release) []string {
 				na := normalized(t, agg)
 				view := newNormalizedView(na, release, cat, nil)
-				objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+				objections, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
 					nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
 				if err != nil {
-					t.Fatalf("the connection walk returned an error: %v", err)
+					t.Fatalf("the per-edge walk returned an error: %v", err)
 				}
 				return locatorsOf(objections)
 			}
 
 			bad := releaseNaming(t, "databases", "main", "target: db\ninfra:\n  storage_class: nonsense\n")
-			want := []string{pl.dotted + ".uses.databases.main.infra.storage_class"}
+			want := []string{".spec.boundaries.prod.components.api.uses.databases.main.infra.storage_class"}
 			if got := ask(bad); !equalStrings(got, want) {
 				t.Fatalf("non-conforming per-edge sizing raised %v; want %v", got, want)
 			}

@@ -52,6 +52,56 @@ func newAttachmentSlotSet(slots types.OrderedMap[types.AttachmentSlot], resolved
 	return attachmentSlotSet{slots: slots, sensitive: SensitiveSlots(slots), resolved: resolved}
 }
 
+// facts answers the two per-attachment facts this slot set decides for an
+// attachment filling the slot of the given name, given what the attached
+// Feature declares sensitive: the binding — the slot's name when the set
+// declares it, [types.AttachmentBindingFree] when the resolved set does not, and
+// empty when the set is unknown — and whether the attachment handles material an
+// author declared sensitive, which either declaration alone makes true.
+//
+// It is the one statement of how the two facts follow from their declarations,
+// read by the graph build for every attachment and by [ConnectionAttachmentFacts]
+// for a reader holding no graph, so the two cannot come to answer differently.
+func (s attachmentSlotSet) facts(slot string, declared resolver.SensitiveLeaves) (binding string, sensitive bool) {
+	if s.resolved {
+		binding = types.AttachmentBindingFree
+		if _, declaredSlot := s.slots.Get(slot); declaredSlot {
+			binding = slot
+		}
+	}
+	return binding, declared.Any() || s.sensitive[slot]
+}
+
+// ConnectionAttachmentFacts derives, for one attachment a connection carries, the
+// slot it fills and whether it handles material an author declared sensitive —
+// the Binding and the Sensitive the graph's entry for that attachment records —
+// from the connection it was written on and the Feature type it names.
+//
+// It exists for a reader that holds the lowering's record of a connection
+// attachment but builds no graph: an Aggregate presented on its own, which no
+// Release deploys and no Manifest maps. Such a reader still owes the same answer
+// the graph would give, so it calls the derivation the graph build applies — the
+// socket's slots read through [resolver.SocketAttachmentSlots], the Feature's
+// declarations through [CompileFeatureSchema] — rather than reading the slot's
+// marker itself and agreeing with the build only for as long as the two are
+// written alike.
+//
+// The slot is the one the connection record names, never anything read out of
+// the attachment's composed name.
+func ConnectionAttachmentFacts(
+	catalogLookup resolver.CatalogLookup,
+	componentType string,
+	connection types.AttachmentConnection,
+	featureType string,
+) (binding string, sensitive bool) {
+	set := newAttachmentSlotSet(resolver.SocketAttachmentSlots(catalogLookup, componentType, connection.Socket))
+	var declared resolver.SensitiveLeaves
+	if compiled, ok := CompileFeatureSchema(catalogLookup, featureType); ok {
+		declared = resolver.DeclaredSensitiveLeaves(compiled)
+	}
+	return set.facts(connection.Attachment, declared)
+}
+
 // SensitiveSlots names the declared attachment slots whose declaration states
 // that whatever binds them handles secret material.
 //

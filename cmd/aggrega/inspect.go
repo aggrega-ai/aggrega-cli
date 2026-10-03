@@ -961,6 +961,10 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// The view is built with no registry client, so this stays a local read: a slot
 	// the cache does not hold is a clean miss reported as such, never a fetch.
 	catalogLookup.PluginFromCache = catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil).PluginFromCacheByURI
+	// One lookup over this Release's Manifest, read by the graph build for the
+	// Recipes and by the layout for the realization each attachment is bound to,
+	// so the layout names the FeatureRecipe a build of the same documents renders.
+	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 
 	// Build the graph through the one entry that produces one, so what this
 	// command draws is the graph a build would render rather than one assembled
@@ -1003,7 +1007,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			PluginPins: pluginpath.RecordedPins(pluginpath.PinMaps{}),
 		},
 		catalogLookup,
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		recipeLookup.Recipe,
 		cat.SubAggregateLoader(),
 		func(gs *pipeline.GraphScope) error {
 			if opts.irGraph {
@@ -1014,7 +1018,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			if authored {
 				return emitYAMLRoundTrip(opts, releasePath, data)
 			}
-			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup)
+			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup, recipeLookup.FeatureRecipe)
 		},
 	)
 }
@@ -1044,18 +1048,34 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // and whether it handles declared secret material read the same whichever
 // layout the provenance selects.
 func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
+	writeAttachment(out, "    ", instanceName, attachmentFactsBracket(entry), entry, declared)
+}
+
+// renderConnectionAttachment writes one attachment a connection carries,
+// beneath the line naming that connection. The line has the shape every
+// attachment's line has; its facts clause is the connection form, which leaves
+// out what the connection's own line above it already says.
+func renderConnectionAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, realization string, declared resolver.SensitiveLeaves) {
+	writeAttachment(out, "        ", instanceName, connectionAttachmentFactsBracket(entry, realization), entry, declared)
+}
+
+// writeAttachment is the one layout of an attachment's line and, where the
+// provenance is not uniform, of the leaves beneath it, at the indentation the
+// caller places the attachment at. The two attachment views differ in where the
+// line sits and which facts clause it carries, and in nothing else, so the
+// layout choice, the redaction and the provenance brackets are written once.
+func writeAttachment(out io.Writer, indent, instanceName, facts string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
 	// Formatted once, ahead of the layout branch: the clause describes the
 	// attachment rather than a leaf, so both layouts print it in the same
 	// position and neither can be edited into dropping it alone.
-	facts := attachmentFactsBracket(entry)
 	if facts != "" {
 		facts = "    " + facts
 	}
 	if featureProvenanceLayout(entry) {
-		fmt.Fprintf(out, "    - %s%s    %s\n", featureLabel(instanceName, entry), facts, perAttachmentBracket(entry))
+		fmt.Fprintf(out, "%s- %s%s    %s\n", indent, featureLabel(instanceName, entry), facts, perAttachmentBracket(entry))
 		return
 	}
-	fmt.Fprintf(out, "    - %s%s\n", featureLabel(instanceName, entry), facts)
+	fmt.Fprintf(out, "%s- %s%s\n", indent, featureLabel(instanceName, entry), facts)
 	for _, leaf := range walkLeavesInOrder(entry) {
 		// walkLeavesInOrder emits the pillar-prefixed coordinate, which is what
 		// the declarations answer about, so the question is asked of them
@@ -1063,10 +1083,10 @@ func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRF
 		// covers every leaf beneath it, so a value authored inside one prints
 		// the placeholder exactly as a directly declared leaf does.
 		if declared.Covers(leaf.path) {
-			fmt.Fprintf(out, "        %s: %s    %s\n", leaf.path, redact.Placeholder(), perLeafBracket(leaf.provenance))
+			fmt.Fprintf(out, "%s    %s: %s    %s\n", indent, leaf.path, redact.Placeholder(), perLeafBracket(leaf.provenance))
 			continue
 		}
-		fmt.Fprintf(out, "        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
+		fmt.Fprintf(out, "%s    %s: %v    %s\n", indent, leaf.path, leaf.value, perLeafBracket(leaf.provenance))
 	}
 }
 
@@ -1122,6 +1142,12 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 // half below names — the slot the connection's socket declares rather than one
 // the host Component declares for its own attachments.
 //
+// The resolved Release view prints an attachment a connection carries beneath
+// that connection's own line, with [connectionAttachmentFactsBracket] instead,
+// so this clause's connection half is printed only for such an attachment whose
+// connection the view shows no line for. The two clauses never describe one
+// attachment, so the view states each attachment's connection once.
+//
 // The slot half distinguishes three states, not two:
 //
 //   - a slot name prints as "slot: <name>";
@@ -1145,16 +1171,60 @@ func attachmentFactsBracket(entry types.IRFeatureEntry) string {
 	if c := entry.Connection; c != nil {
 		parts = append(parts, "connection: "+c.Alias+" through socket "+c.Socket)
 	}
-	switch entry.Binding {
+	return factsClause(append(parts, slotAndSensitivityHalves(entry.Binding, entry.Sensitive)...))
+}
+
+// connectionAttachmentFactsBracket formats the facts clause of an attachment a
+// connection carries, printed beneath that connection's own line.
+//
+// The line above it names the connection by its alias and its target, so the
+// clause leaves the alias out and leads with the socket, which that line does
+// not name — read, like the alias, from the entry's connection field. The slot
+// and sensitivity halves follow exactly as [attachmentFactsBracket] prints them,
+// and the realization last: the FeatureRecipe the Manifest binds for the
+// attachment, which the caller supplies and leaves empty where the Manifest binds
+// none, so an empty one prints nothing rather than a realization nobody chose.
+func connectionAttachmentFactsBracket(entry types.IRFeatureEntry, realization string) string {
+	var parts []string
+	if c := entry.Connection; c != nil {
+		parts = append(parts, "socket: "+c.Socket)
+	}
+	parts = append(parts, slotAndSensitivityHalves(entry.Binding, entry.Sensitive)...)
+	if realization != "" {
+		parts = append(parts, "realization: "+realization)
+	}
+	return factsClause(parts)
+}
+
+// slotAndSensitivityHalves renders the slot half and the sensitivity half of an
+// attachment's facts clause, in that order, from the binding and the roll-up the
+// attachment carries. It is the one spelling of both halves for every view that
+// prints them — the resolved Release's, whose values the graph carries, and the
+// Aggregate's, whose values the same derivation produces without a graph — so a
+// slot or a mark reads alike wherever an attachment is shown.
+//
+// The slot half has three states, not two: a slot name prints as "slot: <name>",
+// [types.AttachmentBindingFree] prints as that bare word, and an empty binding —
+// the absence of a finding — prints nothing. The sensitivity half prints only for
+// a marked attachment.
+func slotAndSensitivityHalves(binding string, sensitive bool) []string {
+	var parts []string
+	switch binding {
 	case "":
 	case types.AttachmentBindingFree:
 		parts = append(parts, types.AttachmentBindingFree)
 	default:
-		parts = append(parts, "slot: "+entry.Binding)
+		parts = append(parts, "slot: "+binding)
 	}
-	if entry.Sensitive {
+	if sensitive {
 		parts = append(parts, "sensitive")
 	}
+	return parts
+}
+
+// factsClause brackets a facts clause's parts, or returns the empty string when
+// there are none, so a line carrying no fact prints no empty brackets.
+func factsClause(parts []string) string {
 	if len(parts) == 0 {
 		return ""
 	}

@@ -3230,6 +3230,10 @@ func TestTheConnectionConfigurationConformanceRuleMeasuresTheAuthoredEntry(t *te
 	}
 }
 
+// TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote proves the
+// operator-side per-edge rule is asked of each entry the Release wrote and
+// positions its finding inside that entry, in the boundary the Release placed the
+// component in — the document and the key the operator edits to fix it.
 func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing.T) {
 	t.Parallel()
 
@@ -3264,14 +3268,14 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
                 infra:
                   tier: 7
 `,
-			raised: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			raised: []string{".spec.boundaries.prod.components.web.uses.store.primary.infra.tier"},
 		},
 		{
 			// The Release wires a connection the Aggregate did not declare,
-			// which the edge surface permits within a declared socket. The rule
-			// still positions it in the Aggregate's dependency block — where the
-			// file contains no such key at all.
-			name: "sizing on a connection only the Release wired is reported, positioned in the Aggregate's block",
+			// which the edge surface permits within a declared socket. The
+			// finding is positioned at the entry that wired it, in the Release —
+			// the Aggregate's own dependency block holds no such key at all.
+			name: "sizing on a connection only the Release wired is reported at the Release's entry",
 			components: []conformanceComponent{
 				{name: "db", typ: conformanceBareType},
 				{name: "web", typ: conformanceContractedType,
@@ -3288,7 +3292,7 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
                 infra:
                   tier: 7
 `,
-			raised: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			raised: []string{".spec.boundaries.prod.components.web.uses.store.primary.infra.tier"},
 		},
 		{
 			// A connection the Release wrote an entry for but no sizing on is
@@ -3311,7 +3315,7 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
             store:
               primary: {}
 `,
-			raised: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			raised: []string{".spec.boundaries.prod.components.web.uses.store.primary.infra.tier"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3326,13 +3330,22 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
 			release := loadRelease(t, releaseDocument(tc.deployed))
 			view := newNormalizedView(na, release, catalog, nil)
 
-			objections, err := constraint.RunOnEdges[constraint.NormalizedView](
-				nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
+			objections, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
+				nil, newCoordinateSet(view).withReleaseSource("release.yaml"), view, connectionInfraConformsToTheSocket)
 			if err != nil {
-				t.Fatalf("the connection walk returned an error: %v", err)
+				t.Fatalf("the per-edge walk returned an error: %v", err)
 			}
 			if got := locatorsOf(objections); !equalStrings(got, tc.raised) {
 				t.Errorf("raised sequence = %v; want %v", got, tc.raised)
+			}
+			// The finding names the Release's file as well as the path inside it,
+			// so a surface placing it in an open document places it in the
+			// Release.
+			for _, o := range objections {
+				if o.SourceFile() != "release.yaml" {
+					t.Errorf("finding at %s names file %q; want the Release's, %q",
+						o.Locator(), o.SourceFile(), "release.yaml")
+				}
 			}
 		})
 	}
@@ -3383,17 +3396,18 @@ func TestTheConformanceRulesReportOneDocumentAtAKnownMultiplicity(t *testing.T) 
 		}
 		raised += len(objections)
 	}
-	for _, check := range []constraint.Check[constraint.NormalizedView, constraint.EdgeSubject]{
-		connectionValuesConformToTheSocket,
-		connectionInfraConformsToTheSocket,
-	} {
-		objections, err := constraint.RunOnEdges[constraint.NormalizedView](
-			nil, coordinates, view, check)
-		if err != nil {
-			t.Fatalf("the connection walk returned an error: %v", err)
-		}
-		raised += len(objections)
+	configuration, err := constraint.RunOnEdges[constraint.NormalizedView](
+		nil, coordinates, view, connectionValuesConformToTheSocket)
+	if err != nil {
+		t.Fatalf("the connection walk returned an error: %v", err)
 	}
+	raised += len(configuration)
+	sizing, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
+		nil, coordinates, view, connectionInfraConformsToTheSocket)
+	if err != nil {
+		t.Fatalf("the per-edge walk returned an error: %v", err)
+	}
+	raised += len(sizing)
 
 	const want = 4
 	if raised != want {

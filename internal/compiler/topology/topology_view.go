@@ -451,51 +451,6 @@ func (v *topologyView) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConfi
 	return v.edgeConfigurations
 }
 
-// releaseEdgeConfigurations folds the entries a Release's per-edge `uses` surface
-// writes into the shape a traversal over them enumerates.
-//
-// The walk is the resolver's own, which is what keeps this axis and the guards
-// over the same surface agreeing on which entries a Release declares and in what
-// order. It supplies the boundary each entry sits in and the keys the author
-// typed to reach the consuming component, so nothing here re-derives an authoring
-// site the walk already settled.
-//
-// An entry in the boundary normalization synthesized names the top-level shape
-// its author wrote: that boundary spells no level, so the keys relative to it
-// have nothing to be relative to and the component travels on the site instead —
-// the same division the boundary-component axis draws. Such a boundary holds no
-// routing entries, so its entries are always the direct ones.
-func releaseEdgeConfigurations(
-	rel *types.Release,
-	sourceFile string,
-) []constraint.ReleaseEdgeConfigurationInstance {
-	entries := resolver.ReleaseEdgeEntries(rel)
-	if len(entries) == 0 {
-		return nil
-	}
-	out := make([]constraint.ReleaseEdgeConfigurationInstance, 0, len(entries))
-	for _, e := range entries {
-		instance := constraint.ReleaseEdgeConfigurationInstance{
-			Configuration: constraint.ReleaseEdgeConfiguration{
-				Document:     constraint.AuthoringDocumentRelease,
-				BoundaryPath: e.BoundaryScopePath,
-				Node:         e.NodeID,
-				Socket:       e.Socket,
-				Alias:        e.Alias,
-			},
-			SourceFile: sourceFile,
-		}
-		if e.BoundaryScopePath == "" {
-			instance.Site = constraint.AuthoredSite{Component: e.NodeID}
-		} else {
-			instance.Site = constraint.AuthoredSite{ScopePath: e.BoundaryScopePath}
-			instance.ComponentKeys = e.ComponentKeys
-		}
-		out = append(out, instance)
-	}
-	return out
-}
-
 // ReleaseConnectionAttachmentSite returns the document and the site naming one
 // attachment the Release wrote on one of a component's connections, and whether
 // the Release wrote an entry for that connection at all.
@@ -511,7 +466,7 @@ func ReleaseConnectionAttachmentSite(
 	rel *types.Release,
 	sourceFile, node, socket, alias, attachment string,
 ) (entity string, site constraint.ConnectionAttachmentSite, found bool) {
-	for _, entry := range releaseEdgeConfigurations(rel, sourceFile) {
+	for _, entry := range resolver.ReleaseEdgeConfigurations(rel, sourceFile) {
 		c := entry.Configuration
 		if c.Node == node && c.Socket == socket && c.Alias == alias {
 			return releaseEntityName(rel), constraint.ConnectionAttachmentSiteInRelease(entry, attachment), true
@@ -824,7 +779,7 @@ func newStageView(cfg BuildConfig, flat *flattenResult, edges []NormalizedEdge) 
 	return newTopologyView(
 		flat, edges, earlier,
 		boundaryComponentReferences(rr.Release),
-		releaseEdgeConfigurations(rr.Release, rr.ReleasePath),
+		resolver.ReleaseEdgeConfigurations(rr.Release, rr.ReleasePath),
 		releaseBoundaryScopes(rr.Release, rr.ReleasePath),
 		nodeRecipeResolverOver(cfg.CatalogLookup, rr.Manifest),
 	)

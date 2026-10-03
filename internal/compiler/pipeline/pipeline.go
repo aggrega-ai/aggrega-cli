@@ -923,7 +923,7 @@ func ResolveAndValidate(
 		// this build stops paying for the rest of it, and a walk that stops hands
 		// back nothing rather than a partial set that would read as a document
 		// satisfying rules nobody asked.
-		guardErrs, err := resolver.RunGuards(ctx.Err, normalized, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+		guardErrs, err := resolver.RunGuards(ctx.Err, normalized, resolveResult.Release, resolveResult.ReleasePath, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
 		if err != nil {
 			return err
 		}

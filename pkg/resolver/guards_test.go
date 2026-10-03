@@ -94,7 +94,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 		},
 	}
 
-	errs, err := RunGuards(nil, normalized(t, agg), nil, testCatalog(), nil, nil)
+	errs, err := RunGuards(nil, normalized(t, agg), nil, "", testCatalog(), nil, nil)
 	if err != nil {
 		t.Fatalf("the suite returned an error: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 }
 
 func TestRunGuards_NilInputs(t *testing.T) {
-	errs, err := RunGuards(nil, normalized(t, nil), nil, CatalogLookup{}, nil, nil)
+	errs, err := RunGuards(nil, normalized(t, nil), nil, "", CatalogLookup{}, nil, nil)
 	if err != nil {
 		t.Fatalf("the suite returned an error: %v", err)
 	}

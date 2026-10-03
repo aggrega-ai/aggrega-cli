@@ -456,7 +456,7 @@ func TestRunAdvisories_NeverReachesTheHaltingSuite(t *testing.T) {
 			t.Parallel()
 
 			na := tc.na(t)
-			errs, err := RunGuards(nil, na, nil, tc.catalog, nil, nil)
+			errs, err := RunGuards(nil, na, nil, "", tc.catalog, nil, nil)
 			if err != nil || len(errs) != 0 {
 				t.Fatalf("the near-miss reading must not halt through the guard suite; got %v (err %v)", errs, err)
 			}

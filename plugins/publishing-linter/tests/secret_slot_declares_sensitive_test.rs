@@ -18,6 +18,9 @@
 //!    that declare no slots.
 //!  - The finding's severity is `warn`, so the rule never halts.
 //!  - Both slot-declaring entity kinds.
+//!  - A slot a Component's dependency socket declares, judged as the
+//!    entity's own slot is and named with its socket; a Feature's socket,
+//!    which declares no slots, left unread.
 
 mod common;
 
@@ -218,4 +221,159 @@ fn every_pinning_slot_is_reported_and_declared_ones_are_skipped() {
     // runs of the same input.
     assert!(findings[0].contains("a_flagged"), "got {findings:?}");
     assert!(findings[1].contains("c_flagged"), "got {findings:?}");
+}
+
+// ---- Slots a dependency socket declares ----
+
+/// An entity whose `spec` is given whole, for the rows that place slots on a
+/// socket rather than on the entity's own block.
+fn classify_spec(kind: &str, spec: Value) -> Vec<String> {
+    let entity = json!({
+        "apiVersion": "aggrega.ai/v1alpha1",
+        "kind": kind,
+        "metadata": {"name": "core/gateway/example", "version": "1.0.0"},
+        "spec": spec,
+    });
+    let input = common::fixture(kind, entity, None, None, None);
+    rule::classify(&input)
+        .into_iter()
+        .map(|f| {
+            assert_eq!(f.rule_id, "secret-slot-declares-sensitive");
+            assert_eq!(
+                f.severity, "warn",
+                "the rule is advisory on a socket's slot as on the entity's own"
+            );
+            f.message
+        })
+        .collect()
+}
+
+/// A Component spec whose one socket, "models", declares the given slots.
+fn socket_spec(slots: Value) -> Value {
+    json!({
+        "usesSchema": {
+            "models": {
+                "selector": "component.aggrega.ai/category=ai-model",
+                "featuresSchema": slots,
+            }
+        }
+    })
+}
+
+#[test]
+fn a_socket_slot_pinning_the_secret_kind_without_the_marker_is_flagged_naming_its_socket() {
+    for selector in PINNING {
+        let findings = classify_spec(
+            "Component",
+            socket_spec(json!({"credential": {"selector": selector}})),
+        );
+        assert_eq!(
+            findings.len(),
+            1,
+            "a socket slot whose selector {selector:?} pins the secret kind and declares no marker \
+             must be flagged; got {findings:?}"
+        );
+        assert!(
+            findings[0].contains("\"credential\"") && findings[0].contains("socket \"models\""),
+            "the finding must name the slot and the socket declaring it; got {:?}",
+            findings[0]
+        );
+        assert!(
+            findings[0].contains(selector.trim()) || findings[0].contains(selector),
+            "the finding must quote the selector; got {:?}",
+            findings[0]
+        );
+    }
+}
+
+#[test]
+fn a_socket_slot_declaring_the_marker_is_silent() {
+    for selector in PINNING {
+        let findings = classify_spec(
+            "Component",
+            socket_spec(json!({"credential": {"selector": selector, "sensitive": true}})),
+        );
+        assert!(
+            findings.is_empty(),
+            "a socket slot declaring sensitive: true must be silent for {selector:?}; got {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn a_socket_slot_is_read_with_the_same_grammar_as_the_entitys_own() {
+    for selector in NOT_PINNING {
+        let findings = classify_spec(
+            "Component",
+            socket_spec(json!({"credential": {"selector": selector}})),
+        );
+        assert!(
+            findings.is_empty(),
+            "selector {selector:?} does not pin the secret kind on a socket slot either; got {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn the_entitys_own_slots_are_reported_before_each_sockets_in_socket_order() {
+    let spec = json!({
+        "featuresSchema": {"own": {"selector": "feature.aggrega.ai/kind=secret"}},
+        "usesSchema": {
+            "zeta": {
+                "selector": "component.aggrega.ai/category=ai-model",
+                "featuresSchema": {"credential": {"selector": "feature.aggrega.ai/kind=secret"}},
+            },
+            "alpha": {
+                "selector": "component.aggrega.ai/category=ai-model",
+                "featuresSchema": {
+                    "credential": {"selector": "feature.aggrega.ai/kind=secret"},
+                    "declared": {"selector": "feature.aggrega.ai/kind=secret", "sensitive": true},
+                },
+            },
+            "bare": {"selector": "component.aggrega.ai/category=sink"},
+        }
+    });
+    let findings = classify_spec("Component", spec);
+    assert_eq!(findings.len(), 3, "got {findings:?}");
+    assert!(
+        findings[0].contains("\"own\"") && !findings[0].contains("socket"),
+        "the entity's own slot comes first and names no socket; got {findings:?}"
+    );
+    assert!(findings[1].contains("socket \"alpha\""), "got {findings:?}");
+    assert!(findings[2].contains("socket \"zeta\""), "got {findings:?}");
+}
+
+#[test]
+fn a_feature_socket_is_not_read_for_slots() {
+    // A Feature's dependency socket admits a selector and an inject list only,
+    // so a slot written there is no declaration the rule judges; the Feature's
+    // own block is still read.
+    let spec = json!({
+        "featuresSchema": {"own": {"selector": "feature.aggrega.ai/kind=secret"}},
+        "usesSchema": {
+            "models": {
+                "selector": "component.aggrega.ai/category=ai-model",
+                "featuresSchema": {"credential": {"selector": "feature.aggrega.ai/kind=secret"}},
+            }
+        }
+    });
+    let findings = classify_spec("Feature", spec);
+    assert_eq!(findings.len(), 1, "got {findings:?}");
+    assert!(
+        findings[0].contains("\"own\"") && !findings[0].contains("socket"),
+        "only the Feature's own slot is judged; got {findings:?}"
+    );
+}
+
+#[test]
+fn a_socket_declaring_no_slot_set_is_silent() {
+    for slots in [Value::Null, json!([]), json!("credential"), json!({})] {
+        let findings = classify_spec("Component", socket_spec(slots.clone()));
+        assert!(
+            findings.is_empty(),
+            "a socket whose featuresSchema is {slots:?} declares no slot to judge; got {findings:?}"
+        );
+    }
+    let no_sockets = classify_spec("Component", json!({"usesSchema": []}));
+    assert!(no_sockets.is_empty(), "got {no_sockets:?}");
 }

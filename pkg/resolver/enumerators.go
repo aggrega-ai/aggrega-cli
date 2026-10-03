@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // coordinateSet supplies the instance sets the constraint traversals walk for
@@ -48,6 +49,12 @@ type coordinateSet struct {
 	// the axes hanging off it empty, which asks the rules over them about
 	// nothing rather than answering them from a Recipe nobody bound.
 	recipeFor RecipeBinding
+
+	// releaseSource is the workspace-relative file the Release was read from,
+	// empty for a caller that holds none. It is held rather than derived for the
+	// reason recipeFor is: the presentation holds the documents and not the paths
+	// they were read from, and only the caller knows the path.
+	releaseSource string
 }
 
 // socketAlias identifies one connection within one node: the socket it wires and
@@ -87,6 +94,19 @@ func newCoordinateSet(view *normalizedView) *coordinateSet {
 // before, so the rules over the rest are unaffected by its absence.
 func (c *coordinateSet) withRecipeBinding(recipeFor RecipeBinding) *coordinateSet {
 	c.recipeFor = recipeFor
+	return c
+}
+
+// withReleaseSource hands the set the file the Release was read from, and
+// returns the set so construction reads as one expression.
+//
+// It is separate from the constructor for withRecipeBinding's reason: the path
+// is not a reading of either document. A set built without it enumerates every
+// axis all the same, the Release's per-edge entries included; those entries then
+// carry no file, which leaves a finding about one positioned in the Release
+// without naming the file it is a path inside.
+func (c *coordinateSet) withReleaseSource(releaseSource string) *coordinateSet {
+	c.releaseSource = releaseSource
 	return c
 }
 
@@ -202,6 +222,30 @@ func (c *coordinateSet) Boundaries() []constraint.AuthoredCoordinate {
 // finding is attributed to.
 func (c *coordinateSet) AuthoredAnnotations() []constraint.AuthoredAnnotationInstance {
 	return c.view.annotations
+}
+
+// ReleaseEdgeConfigurations returns every entry the Release's per-edge `uses`
+// surface writes, each with the site it was written at, in the order the
+// document declares them — through [ReleaseEdgeConfigurations], the one fold of
+// that surface every stage enumerating it reads, over the Release as this
+// presentation reads it.
+//
+// The axis is offered here because a rule over what an entry configures is asked
+// once that rule's facts are complete, and the facts about an entry's own
+// configuration are complete when the two documents are read: a rule asked over
+// this axis here names the entry the operator wrote, in the boundary it sits in,
+// rather than a path shaped like the consuming component's own block, which a
+// Release placing its components in boundaries does not contain.
+//
+// Unlike the scope axes beside it, the entries carry the Release's file when the
+// caller supplied one: a finding about an entry is a path inside the Release, and
+// a surface placing that finding in an open document has to know which document
+// it is.
+func (c *coordinateSet) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConfigurationInstance {
+	if c.view.release == nil {
+		return nil
+	}
+	return ReleaseEdgeConfigurations(types.NormalizeRelease(c.view.release).Release(), c.releaseSource)
 }
 
 // authoredCoordinates presents recorded scope paths as the coordinate shape the
@@ -373,4 +417,6 @@ var (
 	_ constraint.SubsystemAttachmentEnumerator = (*coordinateSet)(nil)
 	_ constraint.BoundaryAttachmentEnumerator  = (*coordinateSet)(nil)
 	_ constraint.ProvidesKeyEnumerator         = (*coordinateSet)(nil)
+
+	_ constraint.ReleaseEdgeConfigurationEnumerator = (*coordinateSet)(nil)
 )

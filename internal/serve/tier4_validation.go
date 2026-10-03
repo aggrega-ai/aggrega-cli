@@ -54,9 +54,10 @@ import (
 // this function: handleValidate answers it with that check in the Release's
 // terms (runEntityValidation). When the request file is the named Release
 // itself, the pipeline runs as it does for the Aggregate and the answer is the
-// graph findings positioned in the Release — a finding about what the Release
-// wrote lands on the Release, on the key that wrote it, and on the Aggregate
-// not at all (see releaseDocumentDiagnostics). When the request file is any
+// findings positioned in the Release — a finding about what the Release wrote,
+// whether the composition or the graph raised it, lands on the Release, on the
+// key that wrote it, and on the Aggregate not at all (see
+// releaseDocumentDiagnostics and writtenInRelease). When the request file is any
 // other document that is not the named Release's Aggregate (e.g., the
 // Manifest or a library), the Tier-4 pipeline is not relevant to the requested
 // file and the function returns an empty slice once the closure has resolved —
@@ -318,6 +319,12 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		perViolation = tier4.ResolveDiagnostics
 	}
 	for _, ve := range perViolation {
+		// A finding about what the Release wrote is the Release document's to
+		// carry, and it is published there; the full slice still answers the
+		// phase-error question below, because it was published, only elsewhere.
+		if writtenInRelease(ve.File, relRelease) {
+			continue
+		}
 		diags = append(diags, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
 	}
 
@@ -496,37 +503,72 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 }
 
 // releaseDocumentDiagnostics answers a validation of the named Release's own
-// document: the graph findings the validation positioned in it, each placed on
-// the authored key its locator names, and nothing else.
+// document: the findings the validation positioned in it, each placed on the
+// authored key its locator names, and nothing else.
 //
-// A rule over what the Release wrote — an attachment it fills on a connection, a
-// connection it draws — names the Release's file, so the Release document is the
-// one an author opens to act on it, and it is published there. Every other class
-// this validation produces stays on the Aggregate's answer, a graph finding
-// naming no file among them: the filter below keeps only what names this file and
-// adopts nothing, so no finding is shown on both documents.
+// A rule over what the Release wrote — an entry it writes on a connection, an
+// attachment it fills there, a connection it draws — names the Release's file,
+// so the Release document is the one an author opens to act on it, and it is
+// published there. That holds for a finding the composition raised before any
+// graph existed as for one the graph's rules raised, and both are read through
+// [writtenInRelease], the one statement of which document a finding belongs to.
+// Every other finding this validation produces stays on the Aggregate's answer,
+// a finding naming no file among them: the filters below keep only what names
+// this file and adopt nothing, so no finding is shown on both documents.
 //
-// A cancelled run publishes nothing, exactly as on the Aggregate. A run a gate
-// stopped before the graph was built has no graph finding to place, and what
-// stopped it is published on the Aggregate.
+// The composition's findings lead, in the order they were raised, followed by
+// the graph's: the order the two classes were decided in, which is the order the
+// Aggregate's answer publishes them in too.
+//
+// A cancelled run publishes nothing, exactly as on the Aggregate. What stopped a
+// run before any of these findings could be raised — a gate over the
+// dependencies, say — names no file of the Release's and is published on the
+// Aggregate.
 func (s *Server) releaseDocumentDiagnostics(vr *compilerops.ValidateResult, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	if errors.Is(vr.RunErr, context.Canceled) || errors.Is(vr.RunErr, context.DeadlineExceeded) {
 		return nil
 	}
-	if vr.Tier4 == nil || vr.Tier4.Analysis == nil {
+	if vr.Tier4 == nil {
 		return nil
 	}
-	var placed []analyzer.AnalysisError
-	for _, e := range vr.Tier4.Analysis.Errors {
-		if e.OriginFile == file {
-			placed = append(placed, e)
+	var composition []*resolver.ResolverError
+	for _, ve := range vr.Tier4.ResolveDiagnostics {
+		if writtenInRelease(ve.File, file) {
+			composition = append(composition, ve)
 		}
 	}
-	if len(placed) == 0 {
+	var placed []analyzer.AnalysisError
+	if vr.Tier4.Analysis != nil {
+		for _, e := range vr.Tier4.Analysis.Errors {
+			if writtenInRelease(e.OriginFile, file) {
+				placed = append(placed, e)
+			}
+		}
+	}
+	if len(composition) == 0 && len(placed) == 0 {
 		return nil
 	}
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
-	return analyzerErrorsToDiagnostics(placed, file, doc, idx)
+	var out []Diagnostic
+	for _, ve := range composition {
+		out = append(out, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
+	}
+	return append(out, analyzerErrorsToDiagnostics(placed, file, doc, idx)...)
+}
+
+// writtenInRelease reports whether a finding is about what the named Release
+// wrote: whether the file its locator is a path inside — the one its own subject
+// recorded — is that Release's document, in the workspace-relative form the
+// compilation names the Release by.
+//
+// It is the one rule deciding which of the two documents a validation answers a
+// finding belongs to. A finding it answers yes for is published on the Release,
+// on the key that wrote it, and on the Aggregate not at all; every other finding
+// is the Aggregate's to carry. A finding recording no file is never the
+// Release's: that absence says nothing about which document holds the path, and
+// publishing it on the Release would assert a place no rule positioned it at.
+func writtenInRelease(file, release string) bool {
+	return file != "" && file == release
 }
 
 // resolverFindingToDiagnostic maps a resolver-class finding to a

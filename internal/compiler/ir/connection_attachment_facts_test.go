@@ -171,6 +171,96 @@ func TestConnectionAttachmentFacts_ReadTheSocketSlot(t *testing.T) {
 	}
 }
 
+// TestConnectionAttachmentFactsAnswerWhatTheGraphRecords proves the derivation a
+// reader holding no graph calls answers, for every attachment a connection
+// carries, exactly the binding and sensitivity the graph build records on that
+// attachment's entry — over a sensitive socket slot, a socket slot declaring
+// nothing, a name the socket declares no slot for, a Feature declaring a
+// sensitive leaf in a slot declaring nothing, and a component whose slot set is
+// unknown.
+//
+// The graph is built through the real builder and each expectation is read off
+// its entry rather than written here, so the rows hold the two answers to each
+// other rather than to a value a test author chose; the per-row expectation is a
+// second check that the fixture exercises the cell it names.
+func TestConnectionAttachmentFactsAnswerWhatTheGraphRecords(t *testing.T) {
+	t.Parallel()
+
+	base := connectionFactsCatalog(t)
+	catalog := base
+	catalog.Feature = func(typeURI string) (types.Feature, bool) {
+		if typeURI == "core/secretive" {
+			return types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/secretive", Version: "1.0.0"},
+				Spec: types.FeatureSpec{Schema: schemaNode(t, `values:
+  key: { type: string, sensitive: true }
+`)},
+			}, true
+		}
+		return base.Feature(typeURI)
+	}
+
+	secretive := onConnection("models", "vault", "audit")
+	secretive.Feature.Type = "core/secretive"
+	feats := []topology.FeatureAttachment{
+		onConnection("models", "gpt", "credential"),
+		onConnection("models", "nim", "audit"),
+		onConnection("models", "stray", "token"),
+		secretive,
+	}
+
+	for _, row := range []struct {
+		name          string
+		componentType string
+		attachment    topology.FeatureAttachment
+		binding       string
+		sensitive     bool
+	}{
+		{"a sensitive socket slot", "core/gateway", feats[0], "credential", true},
+		{"a socket slot declaring nothing", "core/gateway", feats[1], "audit", false},
+		{"a name the socket declares no slot for", "core/gateway", feats[2], types.AttachmentBindingFree, false},
+		{"a Feature declaring a sensitive leaf", "core/gateway", feats[3], "audit", true},
+		{"a component whose slot set is unknown", "core/unknown", feats[0], "", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			nodes := types.OrderedMap[*topology.TopologyNode]{}
+			nodes.Set("gw", &topology.TopologyNode{InstanceID: "gw", ComponentType: row.componentType})
+			graph, _, _, err := buildIR(BuildIRConfig{
+				Topology: &topology.TopologyResult{
+					Nodes:              nodes,
+					FeatureAttachments: map[string][]topology.FeatureAttachment{"gw": {row.attachment}},
+				},
+				ResolveResult: &resolver.ResolveResult{
+					Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+					BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+				},
+				CatalogLookup: catalog,
+			})
+			if err != nil {
+				t.Fatalf("BuildIRContext: %v", err)
+			}
+			attachments, ok := graph.Spec.FeatureValuesMapping.Get("gw")
+			if !ok {
+				t.Fatalf("no attachments emitted for node gw")
+			}
+			recorded := entry(t, attachments, row.attachment.InstanceName)
+
+			binding, sensitive := ConnectionAttachmentFacts(
+				catalog, row.componentType, *row.attachment.Connection, row.attachment.Feature.Type)
+			if binding != recorded.Binding || sensitive != recorded.Sensitive {
+				t.Errorf("the derivation answers binding %q, sensitive %v; the graph records binding %q, "+
+					"sensitive %v — a view reading the derivation would show what no build records",
+					binding, sensitive, recorded.Binding, recorded.Sensitive)
+			}
+			if binding != row.binding || sensitive != row.sensitive {
+				t.Errorf("binding %q, sensitive %v; want %q, %v — the fixture no longer exercises %s",
+					binding, sensitive, row.binding, row.sensitive, row.name)
+			}
+		})
+	}
+}
+
 // TestConnectionAttachmentFacts_BindingAbsentWhenTheSlotSetIsUnknown is the
 // unknown-set row for the socket's slots: a node whose Component resolves to no
 // entity has no socket to read, so an attachment its connection carries reports

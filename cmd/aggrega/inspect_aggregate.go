@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -196,7 +197,7 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		body := indent + "  "
 		values := authored.applyTo(id, node.Values)
 		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(opts, lookup, node.ComponentType))
-		renderAggregateNodeUses(opts, body, node.Uses)
+		renderAggregateNodeUses(opts, body, node, topo.FeatureAttachments[id], lookup)
 		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}
 }
@@ -278,7 +279,15 @@ func declaredComponentLeaves(opts inspectOptions, lookup resolver.CatalogLookup,
 // renderAggregateNodeUses prints the node's uses-edges grouped by socket. Both
 // authoring forms (string-array, verbose alias-map) are surfaced as alias →
 // target lines under each socket; a node with no uses prints `Uses: (none)`.
-func renderAggregateNodeUses(opts inspectOptions, indent string, uses types.OrderedMap[types.UsesSocketValue]) {
+//
+// Each connection is followed by the attachments it carries, read from the
+// composition's record of the node's attachments: an attachment written on a
+// connection is lowered onto the consuming component carrying the connection it
+// was written on — socket, alias and slot — and that record is what places it
+// here, never the composed name it is keyed by. Only the long form can carry an
+// attachment, so the short form's targets carry none.
+func renderAggregateNodeUses(opts inspectOptions, indent string, node *topology.TopologyNode, attachments []topology.FeatureAttachment, lookup resolver.CatalogLookup) {
+	uses := node.Uses
 	if uses.Len() == 0 {
 		fmt.Fprintf(opts.out, "%sUses: (none)\n", indent)
 		return
@@ -295,7 +304,33 @@ func renderAggregateNodeUses(opts inspectOptions, indent string, uses types.Orde
 				target = alias
 			}
 			fmt.Fprintf(opts.out, "%s    - %s → %s\n", indent, alias, opts.colorize.uri(target))
+			renderAggregateConnectionAttachments(opts, indent+"        ", node.ComponentType, socket, alias, attachments, lookup)
 		}
+	}
+}
+
+// renderAggregateConnectionAttachments prints the attachments one connection
+// carries, beneath that connection's line: each under the name it is keyed by on
+// the consuming component, with the Feature type it names and the facts clause's
+// slot and sensitivity halves.
+//
+// The two facts are the ones a graph's entry for the attachment records, and
+// they come from the derivation the graph build applies, called with the
+// connection this record carries. The Aggregate builds no graph and binds no
+// Manifest, so the realization a Release's Manifest would choose is not known
+// here and is not printed.
+func renderAggregateConnectionAttachments(opts inspectOptions, indent, componentType, socket, alias string, attachments []topology.FeatureAttachment, lookup resolver.CatalogLookup) {
+	for _, a := range attachments {
+		c := a.Connection
+		if c == nil || c.Socket != socket || c.Alias != alias {
+			continue
+		}
+		binding, sensitive := ir.ConnectionAttachmentFacts(lookup, componentType, *c, a.Feature.Type)
+		facts := factsClause(slotAndSensitivityHalves(binding, sensitive))
+		if facts != "" {
+			facts = "    " + facts
+		}
+		fmt.Fprintf(opts.out, "%s- %s (%s)%s\n", indent, a.InstanceName, opts.colorize.uri(a.Feature.Type), facts)
 	}
 }
 

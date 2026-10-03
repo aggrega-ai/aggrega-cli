@@ -148,6 +148,84 @@ func TestTheConversionAttributesFindingsToTheDocumentItIsGiven(t *testing.T) {
 	}
 }
 
+// TestAFindingCarriesTheFileItsSiteRecordedBesideItsLocator pins the file a
+// converted finding carries: the one the objection's own site recorded, travelling
+// with the locator and never without it.
+//
+// The objections come from the operator-side per-edge rule over an entry a
+// Release wrote, invoked through the per-edge traversal over a coordinate set
+// handed the Release's file, so the site records it the way a real resolve does.
+// The node-axis row is the control: a normalized component carries no file, and
+// its finding must carry none rather than one supplied from somewhere else.
+//
+// INVARIANT: a finding names the file its locator is a path inside when its site
+// recorded one, and names no file when it carries no locator.
+// CONSEQUENCE: a surface placing findings inside open documents chooses the
+// document by this file, so a finding carrying the wrong one is published on a
+// document its author never wrote, and one carrying a file without a path would
+// be placed somewhere no rule positioned it.
+func TestAFindingCarriesTheFileItsSiteRecordedBesideItsLocator(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+	na := normalized(t, conformanceAggregate(conformanceComponent{
+		name: "web", typ: conformanceContractedType,
+		values: conformancePayload("replicas", "many"),
+		connections: []conformanceConnection{
+			{alias: "primary", target: "db", values: conformancePayload("pool", 1)},
+		},
+	}))
+	release := loadRelease(t, releaseDocument(`    prod:
+      directory: ./output
+      components:
+        web:
+          uses:
+            store:
+              primary:
+                infra:
+                  tier: 7
+`))
+	view := newNormalizedView(na, release, catalog, nil)
+
+	sizing, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
+		nil, newCoordinateSet(view).withReleaseSource("release.yaml"), view, connectionInfraConformsToTheSocket)
+	if err != nil {
+		t.Fatalf("the per-edge walk returned an error: %v", err)
+	}
+	if len(sizing) == 0 {
+		t.Fatal("the rule raised nothing over an entry violating the socket's contract, so " +
+			"there is no finding whose file could be read")
+	}
+	for _, f := range FindingsFromObjections(sizing, "Release prod") {
+		if f.File != "release.yaml" || !strings.HasPrefix(f.Field, ".spec.boundaries.prod.") {
+			t.Errorf("finding at %q carries file %q; want the Release's file, %q, beside a path "+
+				"inside the Release", f.Field, f.File, "release.yaml")
+		}
+	}
+	for _, f := range findingsWithNoSubject(sizing) {
+		if f.File != "" || f.Field != "" {
+			t.Errorf("a finding naming no subject carries file %q and field %q; want neither — "+
+				"a file with no path inside it places the finding nowhere a rule positioned it",
+				f.File, f.Field)
+		}
+	}
+
+	configuration, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view).withReleaseSource("release.yaml"), view, componentValuesConformToTheType)
+	if err != nil {
+		t.Fatalf("the node walk returned an error: %v", err)
+	}
+	if len(configuration) == 0 {
+		t.Fatal("the control rule raised nothing, so the control asserts nothing")
+	}
+	for _, f := range FindingsFromObjections(configuration, "Aggregate positions") {
+		if f.File != "" {
+			t.Errorf("a finding over a component whose site recorded no file carries %q; want "+
+				"none, rather than a file supplied from somewhere other than its site", f.File)
+		}
+	}
+}
+
 // TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt measures the two
 // positions a finding can take, on ONE component, so the only thing that differs
 // between the two readings is which raise the rule used.

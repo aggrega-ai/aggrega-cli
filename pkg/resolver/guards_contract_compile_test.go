@@ -78,7 +78,7 @@ func contractNode(t *testing.T, content string) *yaml.Node {
 func guardFindings(t *testing.T, catalog CatalogLookup) []*ResolverError {
 	t.Helper()
 	na := oneInstanceAggregate(t, "svc", types.OrderedMap[any]{})
-	errs, err := RunGuards(nil, na, nil, catalog, nil, nil)
+	errs, err := RunGuards(nil, na, nil, "", catalog, nil, nil)
 	if err != nil {
 		t.Fatalf("the guard suite returned an error: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestTheContractRefusalPrecedesTheFindingsItSuppressed(t *testing.T) {
 	values := types.OrderedMap[any]{}
 	values.Set("top_k", "not an integer")
 	na := oneInstanceAggregate(t, "svc", values)
-	errs, err := RunGuards(nil, na, nil, singleTypeCatalog(comp), nil, nil)
+	errs, err := RunGuards(nil, na, nil, "", singleTypeCatalog(comp), nil, nil)
 	if err != nil {
 		t.Fatalf("the guard suite returned an error: %v", err)
 	}

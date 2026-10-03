@@ -673,9 +673,19 @@ var errVerdictPluginTrustMismatch = cerrors.Register("verdict-plugin-trust-misma
 // it can be true: a condition whose remedy differs between its own violation
 // classes has no single sentence to register beside its identity, and a
 // registered one would be wrong at whichever class it did not describe.
+//
+// File is the document Field is a path inside, as the workspace-relative path
+// the compilation named it by, when the finding's own subject recorded one — a
+// rule over an entry the Release wrote records the Release's file. It is empty
+// where the subject recorded none, which a reader must take as "not known here"
+// rather than as any particular document. It is carried for a surface that
+// places the finding inside an open document and has to choose which one;
+// Error and ToCompilerError do not read it, so a finding renders the same
+// whether or not its file is known.
 type ResolverError struct {
 	Entity  string // e.g. "Aggregate my-app"
 	Field   string // e.g. ".spec.components.bad name"
+	File    string // e.g. "release.yaml"; empty when the finding's subject recorded no file
 	Message string // what this occurrence supplied, not a description of the condition
 	Advice  string // what this occurrence tells the author to do, empty where the condition's own sentence says it
 	Err     error  // sentinel for errors.Is

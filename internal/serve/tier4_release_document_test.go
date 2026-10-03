@@ -94,6 +94,144 @@ func TestAGraphFindingIsPublishedOnTheDocumentThatWroteIt(t *testing.T) {
 	}
 }
 
+// TestACompositionFindingIsPublishedOnTheDocumentThatWroteIt pins the same rule
+// for the findings raised before any graph exists — while the two documents are
+// read, and once they are flattened — and for the conformance of a connection
+// attachment's pillars: each is published on the document whose author wrote
+// what it is about, on the authored key there, and on the other document not at
+// all.
+//
+// Every Release row is a refusal of something the operator wrote on a
+// connection entry inside a boundary, a path the Aggregate does not contain; the
+// Aggregate row is the control, a refusal of the same kind the developer wrote,
+// which must stay on the Aggregate.
+func TestACompositionFindingIsPublishedOnTheDocumentThatWroteIt(t *testing.T) {
+	t.Parallel()
+
+	for _, row := range []struct {
+		name            string
+		extraConnection string
+		releaseGateway  string
+		// writtenIn is the document the finding must land on, key the authored
+		// key it must land on there, and detail a value only this finding names.
+		writtenIn string
+		key       string
+		detail    string
+	}{
+		{
+			name: "the two documents name different Features for one connection's attachment",
+			releaseGateway: "          uses:\n            models:\n              gpt:\n                features:\n" +
+				"                  credential:\n                    type: feature.conn/identity\n",
+			writtenIn: "release.yaml",
+			key:       "gpt:",
+			detail:    `the Release names "feature.conn/identity"`,
+		},
+		{
+			name: "the Release writes a name its socket declares no slot for",
+			releaseGateway: "          uses:\n            models:\n              gpt:\n                features:\n" +
+				"                  credentail:\n                    type: feature.conn/token\n",
+			writtenIn: "release.yaml",
+			key:       "gpt:",
+			detail:    `"credentail", near the declared slot "credential"`,
+		},
+		{
+			name: "the Release sizes a connection against the socket's contract",
+			releaseGateway: "          uses:\n            models:\n              gpt:\n                infra:\n" +
+				"                  timeout: soon\n",
+			writtenIn: "release.yaml",
+			key:       "timeout:",
+			detail:    `"infra.timeout"`,
+		},
+		{
+			name: "the Release sizes a connection's attachment against its Feature's contract",
+			releaseGateway: "          uses:\n            models:\n              gpt:\n                features:\n" +
+				"                  credential:\n                    infra:\n                      tier: gold\n",
+			writtenIn: "release.yaml",
+			key:       "tier:",
+			detail:    "infra pillar does not conform to the Feature schema",
+		},
+		{
+			name: "the Aggregate writes a name its socket declares no slot for",
+			extraConnection: "          gpt-b:\n            target: model\n            features:\n" +
+				"              credentail:\n                type: feature.conn/token\n",
+			writtenIn: "aggregate.yaml",
+			key:       "gpt-b:",
+			detail:    `"credentail", near the declared slot "credential"`,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			ws := compositionFindingWorkspace(t, row.extraConnection, row.releaseGateway)
+			srv := newTestServer(t, ws, nil, nil)
+			dirs := []string{filepath.Join(ws, "catalog")}
+			srv.wsConfig.Workspace.CatalogDirs = dirs
+			srv.lazyCatalog = catalog.NewLazyLookup(ws, "", dirs, nil)
+
+			for _, document := range []string{"aggregate.yaml", "release.yaml"} {
+				content, diags := validateDocumentAgainstRelease(t, srv, filepath.Join(ws, document))
+				if document != row.writtenIn {
+					for _, d := range diags {
+						if containsSubstring(d.Message, row.detail) {
+							t.Errorf("%s carries a finding written in %s: %q at %d:%d",
+								document, row.writtenIn, d.Message, d.Line, d.Column)
+						}
+					}
+					continue
+				}
+				finding := findDiagnostic(t, diags, row.detail)
+				if finding.Severity != "error" {
+					t.Errorf("the finding on %s is published at %q; want error", document, finding.Severity)
+				}
+				if want := fixtureKeyLine(t, content, row.key); finding.Line != want {
+					t.Errorf("the finding on %s is at line %d; want the %q key at line %d (diagnostics: %v)",
+						document, finding.Line, row.key, want, diagMessages(diags))
+				}
+			}
+		})
+	}
+}
+
+// compositionFindingWorkspace is requiredSocketSlotWorkspace with what the
+// composition's refusals need beside it: the gateway's socket declares an infra
+// contract and its slot is optional, the token Feature declares an infra
+// contract of its own, and a second Feature the Manifest maps stands ready to be
+// named for one attachment by the other document.
+func compositionFindingWorkspace(t *testing.T, extraConnection, releaseGateway string) string {
+	t.Helper()
+	ws := requiredSocketSlotWorkspace(t, extraConnection, releaseGateway)
+	catalogDir := filepath.Join(ws, "catalog")
+	manifest, err := os.ReadFile(filepath.Join(ws, "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("read the workspace manifest: %v", err)
+	}
+	for path, body := range map[string]string{
+		filepath.Join(catalogDir, "components", "gateway.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Component\n" +
+			"metadata:\n  name: conn/gateway\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: \"server\"\n" +
+			"spec:\n  featuresSchema:\n    db_password:\n      sensitive: true\n" +
+			"  usesSchema:\n    models:\n      selector: \"component.aggrega.ai/category=model\"\n" +
+			"      infraSchema:\n        timeout: { type: integer }\n" +
+			"      featuresSchema:\n        credential:\n          sensitive: true\n" +
+			"  schema:\n    values:\n      region: { type: string }\n    provides:\n      host: { type: string, required: true }\n",
+		filepath.Join(catalogDir, "features", "token.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\n" +
+			"metadata:\n  name: feature.conn/token\n  version: \"1.0.0\"\n  labels:\n    feature.aggrega.ai/kind: secret\n" +
+			"spec:\n  schema:\n    values:\n      key: { type: string }\n" +
+			"    infra:\n      tier: { type: string, enum: [standard, premium] }\n" +
+			"    provides:\n      key: { type: string, required: true }\n",
+		filepath.Join(catalogDir, "features", "identity.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\n" +
+			"metadata:\n  name: feature.conn/identity\n  version: \"1.0.0\"\n  labels:\n    feature.aggrega.ai/kind: secret\n" +
+			"spec:\n  schema:\n    values:\n      key: { type: string }\n    provides:\n      key: { type: string, required: true }\n",
+		filepath.Join(catalogDir, "feature-recipes", "identity-compose.yaml"): "apiVersion: aggrega.ai/v1alpha1\n" +
+			"kind: FeatureRecipe\nmetadata:\n  name: conn-identity-compose\n  version: \"1.0.0\"\n" +
+			"spec:\n  capability: compose\n  implements: feature.conn/identity\n  provides:\n    key: \"{{ .values.key }}\"\n",
+		filepath.Join(ws, "manifest.yaml"): string(manifest) + "        feature.conn/identity: conn-identity-compose:1.0.0\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	return ws
+}
+
 // validateDocumentAgainstRelease drives aggrega/validate over one document of the
 // workspace, naming the workspace's Release, and returns the document's content
 // and the diagnostics the reply carries for it.

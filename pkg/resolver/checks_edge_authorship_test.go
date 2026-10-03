@@ -99,10 +99,10 @@ func edgeSizingLocators(
 	t.Helper()
 	na := normalized(t, agg)
 	view := newNormalizedView(na, release, catalog, nil)
-	objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+	objections, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
 		nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
 	if err != nil {
-		t.Fatalf("the connection walk returned an error: %v", err)
+		t.Fatalf("the per-edge walk returned an error: %v", err)
 	}
 	return locatorsOf(objections)
 }
@@ -165,19 +165,19 @@ func TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 			name:  "an entry with neither field set, on the first connection",
 			alias: "primary",
 			body:  "{}\n",
-			want:  []string{".spec.components.api.uses.databases.primary.infra.storage_class"},
+			want:  []string{".spec.boundaries.prod.components.api.uses.databases.primary.infra.storage_class"},
 		},
 		{
 			name:  "the same empty entry on the second connection",
 			alias: "replica",
 			body:  "{}\n",
-			want:  []string{".spec.components.api.uses.databases.replica.infra.storage_class"},
+			want:  []string{".spec.boundaries.prod.components.api.uses.databases.replica.infra.storage_class"},
 		},
 		{
 			name:  "an entry at an alias no connection carries",
 			alias: "spare",
 			body:  "{}\n",
-			want:  []string{".spec.components.api.uses.databases.spare.infra.storage_class"},
+			want:  []string{".spec.boundaries.prod.components.api.uses.databases.spare.infra.storage_class"},
 		},
 		{
 			name:  "an entry authoring the required key",

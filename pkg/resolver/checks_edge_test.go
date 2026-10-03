@@ -232,10 +232,10 @@ func TestTheConnectionSizingRuleIsOptInPerPillarToo(t *testing.T) {
 		release := normalizedReleaseTopLevelEdge(socket, alias, infra)
 		na := normalized(t, agg)
 		view := newNormalizedView(na, release, catalog, nil)
-		objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+		objections, err := constraint.RunOnReleaseEdgeConfigurations[constraint.NormalizedView](
 			nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
 		if err != nil {
-			t.Fatalf("the connection walk returned an error: %v", err)
+			t.Fatalf("the per-edge walk returned an error: %v", err)
 		}
 		return locatorsOf(objections)
 	}

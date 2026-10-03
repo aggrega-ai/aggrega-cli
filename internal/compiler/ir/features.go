@@ -705,9 +705,11 @@ func collectNodeFeatures(
 // An attachment a connection carries is measured at the connection entry the
 // pillar was written on, through connectionSite: it is not in the component's
 // own attachment block, so a finding naming that block would send the author to
-// a key the document does not have. A nil connectionSite measures every
-// attachment at the component's block, which is what a caller holding no
-// authoring documents can name.
+// a key the document does not have. Such a finding also carries the file that
+// entry was written in, as every finding positioned at an authored site does, so
+// a surface placing it inside an open document places it in the one the author
+// wrote. A nil connectionSite measures every attachment at the component's
+// block, which is what a caller holding no authoring documents can name.
 func validateNodeAttachments(
 	nodeID string,
 	feats types.OrderedMap[types.IRFeatureEntry],
@@ -724,17 +726,23 @@ func validateNodeAttachments(
 		}
 		for _, pillar := range []string{pillarValues, pillarInfra} {
 			pillarEntity, prefix := entity, fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
+			file := ""
 			if entry.Connection != nil && connectionSite != nil {
 				var site constraint.ConnectionAttachmentSite
 				pillarEntity, site = connectionSite(name, *entry.Connection, pillar)
 				prefix = site.Locator()
+				file = site.SourceFile
 			}
 			payload := entry.Values
 			if pillar == pillarInfra {
 				payload = entry.Infra
 			}
-			errs = append(errs, resolver.ValidatePillarConformance(
-				compiled, pillar, payload, parameters, pillarEntity, prefix, "the Feature schema")...)
+			found := resolver.ValidatePillarConformance(
+				compiled, pillar, payload, parameters, pillarEntity, prefix, "the Feature schema")
+			for _, f := range found {
+				f.File = file
+			}
+			errs = append(errs, found...)
 		}
 	}
 	return errs
@@ -1432,17 +1440,13 @@ func finalizeAttachmentFacts(
 	for name, entry := range result.Features.All() {
 		declared := declaredFor(entry.Type)
 		set, slot := slotFilled(name, entry)
-		_, slotDeclared := set.slots.Get(slot)
 
 		entry.Labels, entry.CatalogAnnotations = featureCatalogLabelsAndAnnotations(catalogLookup, entry.Type)
-		if set.resolved {
-			entry.Binding = types.AttachmentBindingFree
-			if slotDeclared {
-				entry.Binding = slot
-			}
+		binding, sensitive := set.facts(slot, declared)
+		if binding != "" {
+			entry.Binding = binding
 		}
 
-		sensitive := declared.Any() || set.sensitive[slot]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
 		markedLeaves := derivePayloadSensitiveLeaves(entry.Values, entry.Infra, declared)
 		if sensitive || marked.Len() > 0 || len(markedLeaves) > 0 {

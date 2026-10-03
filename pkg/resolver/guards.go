@@ -314,10 +314,16 @@ type NodeRecipeResolution struct {
 // runs to completion in a way a reader could trust. That order is the whole
 // point: a rule reading the fact sees the same absence an unauthored contract
 // presents, so it cannot distinguish the two and must not be asked to.
+//
+// releaseSource is the workspace-relative file the Release was read from, empty
+// when the caller holds none. A rule asked over an entry the Release wrote
+// records it, so its finding names the document its locator is a path inside;
+// the rules are asked, and positioned, the same either way.
 func RunGuards(
 	cancelled constraint.Cancellation,
 	na types.NormalizedAggregate,
 	release *types.Release,
+	releaseSource string,
 	catalog CatalogLookup,
 	boundaryInfra map[string]*BoundaryInfra,
 	parameters map[string]any,
@@ -328,7 +334,7 @@ func RunGuards(
 	}
 	contracts := newNormalizedView(na, release, catalog, parameters)
 
-	errs, err := runDeclaredRules(cancelled, contracts,
+	errs, err := runDeclaredRules(cancelled, contracts, releaseSource,
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name), releaseDocumentName(release))
 	if err != nil {
 		return nil, err
@@ -428,10 +434,11 @@ func releaseDocumentName(release *types.Release) string {
 func runDeclaredRules(
 	cancelled constraint.Cancellation,
 	view *normalizedView,
+	releaseSource string,
 	developerDocument string,
 	operatorDocument string,
 ) ([]*ResolverError, error) {
-	coordinates := newCoordinateSet(view)
+	coordinates := newCoordinateSet(view).withReleaseSource(releaseSource)
 	facts := constraint.NormalizedView(view)
 
 	var errs []*ResolverError
@@ -487,12 +494,16 @@ func runDeclaredRules(
 		return nil, err
 	}
 
-	// Once per connection.
+	// Once per connection, and once per entry the Release's per-edge surface
+	// writes. The operator's per-edge sizing is judged on the entry the operator
+	// wrote, so its findings name that entry in the Release; it keeps its place
+	// between the developer's per-edge rule and the next, so the order the two
+	// documents' findings reach the author in is unchanged.
 	if err := developerRule(constraint.RunOnEdges(
 		cancelled, coordinates, facts, connectionValuesConformToTheSocket)); err != nil {
 		return nil, err
 	}
-	if err := operatorRule(constraint.RunOnEdges(
+	if err := operatorRule(constraint.RunOnReleaseEdgeConfigurations(
 		cancelled, coordinates, facts, connectionInfraConformsToTheSocket)); err != nil {
 		return nil, err
 	}

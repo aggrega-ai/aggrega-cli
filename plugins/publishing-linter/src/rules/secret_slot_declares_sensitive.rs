@@ -4,15 +4,21 @@
 //! Advise when an attachment slot accepts only secret-kind material but
 //! does not declare that it handles it.
 //!
-//! An entity declares an attachment slot under `spec.featuresSchema`. A
-//! slot may constrain which Feature can fill it with a label selector,
-//! and it may separately declare `sensitive: true` to record that
-//! whatever fills it handles secret material. The two say different
+//! An entity declares an attachment slot in two places. A Component or a
+//! Feature declares the slots of its own attachment block under
+//! `spec.featuresSchema`; a Component's dependency socket declares, under
+//! `spec.usesSchema.<socket>.featuresSchema`, the slots each connection
+//! wired through that socket may fill. A slot takes the same keys in both
+//! places. It may constrain which Feature can fill it with a label
+//! selector, and it may separately declare `sensitive: true` to record
+//! that whatever fills it handles secret material. The two say different
 //! things: the selector states which fills are admissible, and a reader
 //! infers the handling from it; the marker states the handling itself.
 //! So a slot whose selector pins the Feature kind to `secret` while
 //! declaring no marker has a fact about it that every reader has to
-//! re-derive from the selector rather than read.
+//! re-derive from the selector rather than read — wherever the slot is
+//! declared, which is why both places are read and a socket's slot is
+//! reported naming its socket.
 //!
 //! The rule is a standard-catalog convention, not a constraint. It emits
 //! a non-halting `warning`: nothing is rejected, and an enterprise
@@ -20,6 +26,9 @@
 //!
 //! Scope and limits, both deliberate:
 //!
+//!   - Only a Component's sockets declare slots. A Feature's dependency
+//!     socket admits a selector and an `inject` list and nothing else, so
+//!     a Feature is read for its own block alone.
 //!   - It reads the linted entity alone, which suits how slots compose:
 //!     re-declaring a slot on an extending entity replaces the inherited
 //!     slot whole rather than merging it field by field, so an entity
@@ -69,15 +78,46 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         return vec![];
     }
     let proposed = raw::parse(&input.proposed);
-    let Some(slots) = proposed
-        .get("spec")
-        .and_then(|s| s.get("featuresSchema"))
-        .and_then(serde_json::Value::as_object)
-    else {
+    let Some(spec) = proposed.get("spec") else {
         return vec![];
     };
 
+    // The entity's own slots first, then each socket's in socket order, so
+    // the finding order is stable across runs of the same input.
     let mut findings = Vec::new();
+    if let Some(slots) = spec
+        .get("featuresSchema")
+        .and_then(serde_json::Value::as_object)
+    {
+        classify_slots(slots, None, &mut findings);
+    }
+    if input.entity_kind == "Component" {
+        if let Some(sockets) = spec
+            .get("usesSchema")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (socket, entry) in sockets {
+                if let Some(slots) = entry
+                    .get("featuresSchema")
+                    .and_then(serde_json::Value::as_object)
+                {
+                    classify_slots(slots, Some(socket), &mut findings);
+                }
+            }
+        }
+    }
+    findings
+}
+
+/// Reads one declared slot set — the entity's own, or one socket's when
+/// `socket` names it — and appends a finding for each slot whose selector
+/// pins the secret kind while the slot declares no marker. One body serves
+/// both places, so a slot is judged identically wherever it is declared.
+fn classify_slots(
+    slots: &serde_json::Map<String, serde_json::Value>,
+    socket: Option<&str>,
+    findings: &mut Vec<Diagnostic>,
+) {
     for (name, slot) in slots {
         let Some(selector) = slot.get("selector").and_then(serde_json::Value::as_str) else {
             continue;
@@ -88,9 +128,8 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         if sensitivity::slot_declares_sensitive(slot) {
             continue;
         }
-        findings.push(finding(name, selector));
+        findings.push(finding(name, socket, selector));
     }
-    findings
 }
 
 /// `selector_pins_secret_kind` reports whether a slot selector admits
@@ -177,16 +216,26 @@ fn value_set_is_only_secret(rest: &str) -> bool {
     values == [SECRET_KIND]
 }
 
-fn finding(slot_name: &str, selector: &str) -> Diagnostic {
+/// Builds the finding for one slot. A socket's slot is named with its
+/// socket, because the same slot name may be declared on the entity's own
+/// block and on several sockets, and each is a separate declaration to fix.
+fn finding(slot_name: &str, socket: Option<&str>, selector: &str) -> Diagnostic {
+    let slot = match socket {
+        None => format!("attachment slot {slot_name:?}"),
+        Some(socket) => format!(
+            "attachment slot {slot_name:?} of socket {socket:?}, filled by each connection wired \
+             through it,"
+        ),
+    };
     Diagnostic {
         rule_id: RULE_ID.to_string(),
         severity: "warn".to_string(),
         message: format!(
-            "attachment slot {slot_name:?} pins {KIND_LABEL} to {SECRET_KIND:?} in its selector \
-             ({selector:?}) but does not declare sensitive: true. Only a secret-kind Feature can \
-             fill the slot, so the slot handles secret material; the standard-catalog convention \
-             declares sensitive: true on such a slot, which is what makes the handling readable \
-             by inspection and policy tooling rather than only by reading the selector."
+            "{slot} pins {KIND_LABEL} to {SECRET_KIND:?} in its selector ({selector:?}) but does \
+             not declare sensitive: true. Only a secret-kind Feature can fill the slot, so the slot \
+             handles secret material; the standard-catalog convention declares sensitive: true on \
+             such a slot, which is what makes the handling readable by inspection and policy \
+             tooling rather than only by reading the selector."
         ),
         ..Default::default()
     }
