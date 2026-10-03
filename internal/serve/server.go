@@ -468,8 +468,10 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // errors.CodeOf ever reports. On the publishing-conventions layer it is the
 // identity of the rule that produced the finding, which is the same value the
 // structured output of `aggrega lint` carries for that finding, so one rule keeps
-// one identity across the two surfaces; that identity likewise names no
-// registered condition and is not a value errors.CodeOf reports.
+// one identity across the two surfaces. A rule the compiler declares is
+// registered as a condition under that identity, so for such a rule it is also
+// the value errors.CodeOf reports for the rule's condition; a rule from a
+// linter's own rule set names no registered condition.
 //
 // The wire name is the one a machine-matchable code independent of the message
 // already carries on the other structured surfaces here — the publishing linter's
@@ -576,13 +578,16 @@ type Diagnostic struct {
 // does not exist.
 //
 // The codes that are NOT conditions are a class of render advisory and the
-// identity of a conventions rule. Neither is registered, so neither has a short
-// code, and neither is documented on the page the pointer resolves to — a short
-// code minted for them would be an identifier no lookup resolves, and a pointer
-// would resolve to a page that does not describe what the entry reported. Those
-// are the ordinary content of the build and publishing-conventions layers, which
-// is why the layer nearly predicts the keys; the build layer nonetheless carries
-// one entry that does name a registered condition, and it carries all three.
+// identity of a conventions rule no condition is registered under — a rule from
+// a linter's own rule set rather than one the compiler declares. Neither has a
+// short code, and neither is documented on the page the pointer resolves to — a
+// short code minted for them would be an identifier no lookup resolves, and a
+// pointer would resolve to a page that does not describe what the entry
+// reported. Advisory classes are the ordinary content of the build layer, which
+// is why that layer nearly predicts the keys; it nonetheless carries one entry
+// that does name a registered condition, and that entry carries all three. A
+// conventions rule the compiler declares is registered under its own identity,
+// so its entry carries all three as well.
 //
 // So a client tells the three cases apart from the keys alone, and does it without
 // knowing anything about the layers: no code at all, a code that resolves to
@@ -655,7 +660,9 @@ func conditionCodesOf(err error) ConditionCodes {
 
 // classCode returns the identifiers for an entry whose code names a CLASS rather
 // than a registered condition: a render advisory's class, or the identity of a
-// publishing-conventions rule.
+// publishing-conventions rule no condition is registered under. A conventions
+// rule the compiler declares names its condition and takes [conditionCodesOf]
+// instead, so that its entry quotes the short code the command line prints.
 //
 // It carries the descriptive code and nothing else, and the omission is the
 // statement rather than a gap. Such a code names no registered condition, so

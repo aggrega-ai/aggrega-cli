@@ -1082,7 +1082,7 @@ func advisoryLine(f Finding) string {
 	var b strings.Builder
 	b.WriteString(f.Severity)
 	b.WriteString(":")
-	if condition, ok := conditionForRule(f.RuleID); ok {
+	if condition, ok := ConditionForRule(f.RuleID); ok {
 		b.WriteString(" ")
 		b.WriteString(condition.ErrorShortCode())
 	}
@@ -1112,7 +1112,7 @@ func advisoryLine(f Finding) string {
 func raiseFinding(f Finding, entityKind string) error {
 	category, _ := cerrors.ClassifyEntityKind(entityKind)
 	source := findingSource(f)
-	condition, ok := conditionForRule(f.RuleID)
+	condition, ok := ConditionForRule(f.RuleID)
 	if !ok {
 		message := f.Message
 		if f.RuleID != "" {

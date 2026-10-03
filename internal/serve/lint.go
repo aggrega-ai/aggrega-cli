@@ -30,11 +30,9 @@ import (
 // code, because the key is about what the finding is and not about who named it;
 // carrying both would be two keys for one question.
 //
-// It is published as a CLASS code, which is what fixes the entry's other two
-// identifier keys at absent. A rule identity is not a registered halting
-// condition, so there is no short code for a reader to quote and nothing on the
-// halting-conditions page for a pointer to resolve to — see ConditionCodes, where
-// that division is stated for every layer.
+// The entry's other two identifier keys follow from the condition the rule
+// names, which [conventionCodes] decides; see ConditionCodes, where that division
+// is stated for every layer.
 //
 // Position defaults to the head of the file, which is where a finding whose rule
 // located nothing belongs: the rules run over one entity document, so the file is
@@ -50,16 +48,12 @@ import (
 // remedy is the part a reader acts on, so its absence costs the reader a second
 // diagnosis of a finding this surface had already explained.
 func conventionDiagnostic(f lintops.Finding) Diagnostic {
-	identity := f.RuleID
-	if identity == "" {
-		identity = f.Code
-	}
 	d := Diagnostic{
 		Line:           1,
 		Column:         1,
 		Severity:       editorSeverity(f.Severity),
 		Message:        f.Message,
-		ConditionCodes: classCode(identity),
+		ConditionCodes: conventionCodes(f),
 		Classification: f.Classification,
 		Suggest:        f.Suggest,
 	}
@@ -75,6 +69,37 @@ func conventionDiagnostic(f lintops.Finding) Diagnostic {
 		}
 	}
 	return d
+}
+
+// conventionCodes returns the identifiers one conventions finding is published
+// under.
+//
+// A rule the compiler declares is registered as a condition under the rule's own
+// identity, so its finding names a registered condition like any other entry
+// does and carries all three keys: the identity, the condition's short code —
+// the one the command line prints at the head of the same finding's row — and
+// the reference to where every condition is listed. They are decided together by
+// [conditionCodesOf], which is what keeps the reference present exactly when the
+// short code is.
+//
+// Which condition a rule names is read through the lint operation's own lookup
+// rather than through a table here. The command line reads the same lookup to
+// print the row, so the two surfaces cannot name different conditions for one
+// finding.
+//
+// A rule no condition names — one a linter attached by the workspace reports
+// from a rule set of its own — keeps its identity as a class code and nothing
+// else, and so does a finding carrying no rule identity at all, which falls back
+// to the finding's own code. The command line prints no short code for either.
+func conventionCodes(f lintops.Finding) ConditionCodes {
+	if condition, ok := lintops.ConditionForRule(f.RuleID); ok {
+		return conditionCodesOf(condition)
+	}
+	identity := f.RuleID
+	if identity == "" {
+		identity = f.Code
+	}
+	return classCode(identity)
 }
 
 // conventionDiagnosticsFor projects the findings attributed to one file,

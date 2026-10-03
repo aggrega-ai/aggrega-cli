@@ -94,8 +94,7 @@ func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.De
 // carries the quotable code and the pointer as well — which is why the keys are
 // read through the condition-code constructor rather than the class one. The
 // distinction is what underlies the entry and never which layer publishes it: an
-// advisory's class code and a conventions rule's identity have no condition behind
-// them, and this one does.
+// advisory's class code has no condition behind it, and this one does.
 func externalInputDivergenceDiagnostics(declined []string, releasePath string) []Diagnostic {
 	if len(declined) == 0 {
 		return nil

@@ -23,7 +23,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
+	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 )
 
@@ -142,9 +145,10 @@ func conditionShortCodeFor(t *testing.T, code string) (string, bool) {
 	return condition.ShortCode, true
 }
 
-// TestDiagnosticOmitsBothReaderKeysForAClassCode covers the layers whose ordinary
-// content is a code naming a CLASS rather than a registered condition: a render
-// advisory's class, and the identity of a publishing-conventions rule.
+// TestDiagnosticOmitsBothReaderKeysForAClassCode covers the codes that name a
+// CLASS rather than a registered condition: a render advisory's class, and the
+// identity of a publishing-conventions rule no condition is registered under —
+// one from a linter's own rule set.
 //
 // Both keys are absent, and the absence is the statement. A short code minted for
 // such a code would be an identifier no lookup resolves, and a reference would
@@ -153,7 +157,9 @@ func conditionShortCodeFor(t *testing.T, code string) (string, bool) {
 //
 // The two layers are driven separately because they reach the wire through
 // different projections: one maps the compiler's advisory channel, the other one
-// conventions finding. One passing says nothing about the other.
+// conventions finding. One passing says nothing about the other. The conventions
+// row goes through the projection itself, because whether a rule names a
+// condition is decided there.
 func TestDiagnosticOmitsBothReaderKeysForAClassCode(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -170,13 +176,12 @@ func TestDiagnosticOmitsBothReaderKeysForAClassCode(t *testing.T) {
 			},
 		},
 		{
-			layer: "a conventions rule's identity",
-			entry: Diagnostic{
-				Line: 1, Column: 1,
-				Severity:       editorSeverityWarning,
-				Message:        "the entity's name does not follow the naming shape",
-				ConditionCodes: classCode("name-shape"),
-			},
+			layer: "the identity of a conventions rule no condition names",
+			entry: conventionDiagnostic(lintops.Finding{
+				Severity: abi.SeverityWarn,
+				Message:  "the entity's name does not follow this linter's own naming shape",
+				RuleID:   "rule-of-another-linter",
+			}),
 		},
 	} {
 		tc := tc

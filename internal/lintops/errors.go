@@ -277,15 +277,21 @@ func indexRuleConditions(rules []publishingRule) map[string]cerrors.Identity {
 // keep in step.
 func ruleID(condition cerrors.Identity) string { return condition.ErrorCode() }
 
-// conditionForRule returns the condition a finding's rule identifier names, and
+// ConditionForRule returns the condition a finding's rule identifier names, and
 // whether the rule set holds one.
+//
+// It is the one place that correspondence is read, and every surface reporting
+// a finding reads it here rather than keeping a table of its own: a terminal
+// row and a structured entry naming different conditions for one finding is
+// what a second table would eventually produce, and nothing would fail while
+// the two agreed.
 //
 // A finding can legitimately carry an identifier no condition names: the linter
 // socket runs whatever guest the workspace attaches, and a guest of somebody
 // else's carries its own rule set. Such a finding is reported without a code
 // rather than refused — the finding is the guest's answer and stands whether or
 // not this build knows the rule by name.
-func conditionForRule(id string) (cerrors.Identity, bool) {
+func ConditionForRule(id string) (cerrors.Identity, bool) {
 	condition, ok := ruleConditions[id]
 	return condition, ok
 }
