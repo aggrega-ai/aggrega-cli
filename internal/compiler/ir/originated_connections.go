@@ -342,16 +342,14 @@ func attachmentOrigins(
 	if res == nil {
 		return out
 	}
-	if topoNode.SubsystemPath != "" && res.Aggregate != nil {
-		for _, sf := range collectSubsystemFeatures(types.Normalize(res.Aggregate), topoNode.SubsystemPath) {
-			record(sf.name, constraint.ConnectionOrigin{
-				Kind:       constraint.OriginAttachment,
-				Attachment: sf.name,
-				Site:       constraint.AuthoredSite{ScopePath: sf.scopePath},
-				Document:   constraint.AuthoringDocumentAggregate,
-				SourceFile: res.AggregatePath,
-			})
-		}
+	for _, sf := range rootScopeAttachments(topoNode, res.Aggregate) {
+		record(sf.name, constraint.ConnectionOrigin{
+			Kind:       constraint.OriginAttachment,
+			Attachment: sf.name,
+			Site:       constraint.AuthoredSite{ScopePath: sf.scopePath},
+			Document:   constraint.AuthoringDocumentAggregate,
+			SourceFile: res.AggregatePath,
+		})
 	}
 	if res.Release == nil {
 		return out

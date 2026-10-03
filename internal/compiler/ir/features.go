@@ -323,6 +323,22 @@ func (s attachmentScope) outranks(other attachmentScope) bool {
 	return s.reach > other.reach
 }
 
+// moduleContributed reports whether a node is one an imported Aggregate
+// contributed to the composition, rather than one the root Aggregate declares.
+//
+// It is this package's one reading of that distinction. Flattening stamps every
+// component with the prefix of the import that brought its document in and walks
+// the root Aggregate with none, so the prefix is empty exactly for a component
+// the root Aggregate declares. Every question this package answers differently
+// for a module's component — the scope its own attachments rank at, whether the
+// resolver's annotation side-table can hold an entry for it, the document its
+// connection attachments are measured in, and whether the root Aggregate's
+// subsystems reach it — asks it here, so no two of those answers can come to
+// disagree about which nodes are a module's.
+func moduleContributed(topoNode *topology.TopologyNode) bool {
+	return topoNode != nil && topoNode.SourceAggregate != ""
+}
+
 // componentAttachmentScope reports the scope of a node's own
 // component-level features: block. The attachments a node receives at that
 // scope come from exactly ONE aggregate — the one that declares the
@@ -330,7 +346,7 @@ func (s attachmentScope) outranks(other attachmentScope) bool {
 // its composer halts topology construction. So the node's source aggregate
 // decides the scope outright rather than approximating it.
 func componentAttachmentScope(topoNode *topology.TopologyNode) attachmentScope {
-	if topoNode != nil && topoNode.SourceAggregate != "" {
+	if moduleContributed(topoNode) {
 		return scopeComposedComponent
 	}
 	return scopeComponent
@@ -394,10 +410,7 @@ var explicitProvenance = featureProvenance{Origin: types.OriginExplicit}
 //     ".subsystems." joined form, with ".components." + InstanceID
 //     appended at the leaf.
 func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
-	if topoNode == nil {
-		return ""
-	}
-	if topoNode.SourceAggregate != "" {
+	if topoNode == nil || moduleContributed(topoNode) {
 		return ""
 	}
 	if topoNode.SubsystemPath == "" {
@@ -421,8 +434,9 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 //     aggregate — the one that declares the component — so a given node is
 //     a Tier 1 node or a Tier 2 node, never both.
 //   - Tier 3 — Root Aggregate subsystem features (outer-to-inner).
-//     collectSubsystemFeatures walks the subsystem path on the resolved
-//     Aggregate, emitting features at each level in author order.
+//     rootScopeAttachments walks the node's subsystem path on the root
+//     Aggregate, emitting features at each level in author order, for a node
+//     the root Aggregate declares and for no other.
 //   - Tier 4 — Release boundary-wide features (outer-to-inner).
 //     collectBoundaryWideFeatures walks the boundary path on the Release
 //     and reads boundary-level Features. Release contributions to a
@@ -535,22 +549,19 @@ func collectNodeFeatures(
 	// attachments only; annotation cascade from a subsystem propagates
 	// to the subsystem's components, not to the subsystem's own Features
 	// map. Tier 3 stays explicit-only.
-	if topoNode.SubsystemPath != "" {
-		subsystemFeatures := collectSubsystemFeatures(types.Normalize(resolveResult.Aggregate), topoNode.SubsystemPath)
-		for _, sf := range subsystemFeatures {
-			// Recorded before the merge, from the contribution as authored. Each
-			// level of the chain is recorded separately even where two levels
-			// declare the same instance name: the delivery merge adds and replaces
-			// per delivery key and removes no mechanism, so a mechanism any level
-			// contributed survives into the merged attachment, and every level that
-			// contributed an out-of-shape one is a separate edit to make.
-			result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
-			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
-			result.recordContribution(sf.name,
-				contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site))
-			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
-				return nil, err
-			}
+	for _, sf := range rootScopeAttachments(topoNode, resolveResult.Aggregate) {
+		// Recorded before the merge, from the contribution as authored. Each
+		// level of the chain is recorded separately even where two levels
+		// declare the same instance name: the delivery merge adds and replaces
+		// per delivery key and removes no mechanism, so a mechanism any level
+		// contributed survives into the merged attachment, and every level that
+		// contributed an out-of-shape one is a separate edit to make.
+		result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
+		owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
+		result.recordContribution(sf.name,
+			contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site))
+		if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
+			return nil, err
 		}
 	}
 
@@ -763,7 +774,7 @@ func connectionAttachmentSites(
 			}
 		}
 		entity := aggregateEntity
-		if topoNode != nil && topoNode.SourceAggregate != "" {
+		if moduleContributed(topoNode) {
 			entity = resolver.DocumentEntity("Aggregate", topoNode.SourceFile, aggregateEntity)
 		}
 		return entity, constraint.ConnectionAttachmentLocator(node, c.Socket, c.Alias, c.Attachment)
@@ -1579,8 +1590,32 @@ type namedBoundaryFeature struct {
 	connection *types.AttachmentConnection
 }
 
+// rootScopeAttachments is the scope-wide attachments the root Aggregate's
+// subsystems contribute to one node: outer scope first, author order within each
+// scope, each paired with the scope that declared it.
+//
+// It is the one answer to which nodes those scopes reach. The attachment cascade
+// reads it, and so does the record of where each attachment a connection came
+// from was written, so the two cannot disagree about which nodes hold such an
+// attachment.
+//
+// A node an imported Aggregate contributed is reached by none of them. Its
+// subsystem path is relative to the document that declares it — a module's
+// component in the module's own subsystem "tier" carries the path "tier" — so
+// reading that path against the root Aggregate would hand the component whatever
+// the root declares under the same name: an attachment no document declared for
+// it. The node's own document is not read here either, so a scope-wide
+// attachment a module declares inside its own document reaches none of its
+// components through this tier.
+func rootScopeAttachments(topoNode *topology.TopologyNode, root *types.Aggregate) []namedFeature {
+	if topoNode == nil || topoNode.SubsystemPath == "" || root == nil || moduleContributed(topoNode) {
+		return nil
+	}
+	return collectSubsystemFeatures(types.Normalize(root), topoNode.SubsystemPath)
+}
+
 // collectSubsystemFeatures implements the per-subsystem cascade level:
-// for a node sitting inside a subsystem path like "subsys-a/subsys-b",
+// for a node sitting inside a subsystem path like "subsys-a.subsys-b",
 // walk the Aggregate's subsystem tree from root toward the leaf, emitting
 // every subsystem-level Feature attached at each level in OrderedMap
 // author order. Outer subsystems are emitted before inner subsystems, and
