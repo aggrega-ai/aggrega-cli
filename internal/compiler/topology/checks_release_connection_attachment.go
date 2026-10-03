@@ -33,10 +33,10 @@ import (
 // onto it. Each rule halts rather than choosing one, and names both spellings.
 //
 // The two are one rule asked at two scopes, and they share their whole body:
-// connectionAttachmentsWrittenElsewhere decides which of a component's connection
-// attachments the Release also wrote under their composed name, and each
-// declaration supplies only what the Release wrote at its scope and where the
-// finding sits.
+// connectionAttachmentReads.writtenElsewhere decides which of a component's
+// connection attachments the Release also wrote under their composed name, and
+// each declaration supplies only what the Release wrote at its scope and where
+// the finding sits.
 
 // connectionAttachmentSpelling is one attachment a component's connection
 // carries: the socket and alias the connection is written under, the slot the
@@ -45,11 +45,30 @@ type connectionAttachmentSpelling struct {
 	socket, alias, slot, name string
 }
 
-// connectionAttachmentsWrittenElsewhere returns each attachment one node's
-// connections carry whose composed name written reports the Release also wrote
-// at another scope — the developer's connections first, then the operator's,
-// each in author order, and one composed name once whichever documents put an
-// attachment under it.
+// connectionAttachmentReads are the facts the shared body reads about a
+// component's connections, as the accessors of the view the asking check holds.
+//
+// A check hands them over rather than its view, so that every fact a check reads
+// is named in the check's own body: the stage a check is placed at is read off
+// the facts its body names, and a view handed on whole would leave the facts read
+// beyond it unnamed there. Each check names the same four.
+type connectionAttachmentReads struct {
+	// developer is the attachments the developer wrote on a node's connections,
+	// read off the flattened node.
+	developer func(node string) types.OrderedMap[types.OrderedMap[[]string]]
+	// sockets is the sockets the Release writes connection entries under for a
+	// node, in author order.
+	sockets func(node string) types.OrderedMap[int]
+	// aliases is the connection entries the Release writes under one socket.
+	aliases func(node, socket string) []string
+	// slots is the attachments the Release writes on one connection entry.
+	slots func(node, socket, alias string) []string
+}
+
+// writtenElsewhere returns each attachment one node's connections carry whose
+// composed name written reports the Release also wrote at another scope — the
+// developer's connections first, then the operator's, each in author order, and
+// one composed name once whichever documents put an attachment under it.
 //
 // The composed name is built from the connection's alias and slot, which the
 // facts carry as data; nothing is read out of a key the Release wrote. A
@@ -57,8 +76,7 @@ type connectionAttachmentSpelling struct {
 // flattened node, so a component a sub-module contributes answers exactly as one
 // the Aggregate declares, and the operator's off the Release's own entries for
 // the component.
-func connectionAttachmentsWrittenElsewhere(
-	v constraint.TopologyView,
+func (r connectionAttachmentReads) writtenElsewhere(
 	node string,
 	written func(name string) bool,
 ) []connectionAttachmentSpelling {
@@ -75,7 +93,7 @@ func connectionAttachmentsWrittenElsewhere(
 		reported = append(reported, name)
 		out = append(out, connectionAttachmentSpelling{socket: socket, alias: alias, slot: slot, name: name})
 	}
-	developer := v.FlattenedConnectionAttachmentNames(node)
+	developer := r.developer(node)
 	for socket, aliases := range developer.All() {
 		for alias, slots := range aliases.All() {
 			for _, slot := range slots {
@@ -83,10 +101,10 @@ func connectionAttachmentsWrittenElsewhere(
 			}
 		}
 	}
-	operator := v.ReleaseAuthoredUsesSocketConnections(node)
+	operator := r.sockets(node)
 	for _, socket := range operator.Keys() {
-		for _, alias := range v.ReleaseAuthoredUsesSocketEntryAliases(node, socket) {
-			for _, slot := range v.ReleasePerEdgeAttachmentNames(node, socket, alias) {
+		for _, alias := range r.aliases(node, socket) {
+			for _, slot := range r.slots(node, socket, alias) {
 				consider(socket, alias, slot)
 			}
 		}
@@ -133,7 +151,13 @@ var connectionAttachmentIsWrittenOnItsConnection = constraint.Check[
 		if _, held := v.FlattenedNodeComponentType(node); !held {
 			return nil
 		}
-		spelled := connectionAttachmentsWrittenElsewhere(v, node, func(name string) bool {
+		reads := connectionAttachmentReads{
+			developer: v.FlattenedConnectionAttachmentNames,
+			sockets:   v.ReleaseAuthoredUsesSocketConnections,
+			aliases:   v.ReleaseAuthoredUsesSocketEntryAliases,
+			slots:     v.ReleasePerEdgeAttachmentNames,
+		}
+		spelled := reads.writtenElsewhere(node, func(name string) bool {
 			_, written := v.ReleaseAttachmentType(node, name)
 			return written
 		})
@@ -182,9 +206,15 @@ var boundaryAttachmentIsNotAConnectionAttachment = constraint.Check[
 		s constraint.BoundaryAttachmentSubject,
 	) []constraint.Objection {
 		key := s.AttachmentName()
+		reads := connectionAttachmentReads{
+			developer: v.FlattenedConnectionAttachmentNames,
+			sockets:   v.ReleaseAuthoredUsesSocketConnections,
+			aliases:   v.ReleaseAuthoredUsesSocketEntryAliases,
+			slots:     v.ReleasePerEdgeAttachmentNames,
+		}
 		var out []constraint.Objection
 		for _, node := range v.BoundaryAttachmentReachedNodes(s.BoundaryPath(), key) {
-			spelled := connectionAttachmentsWrittenElsewhere(v, node, func(name string) bool {
+			spelled := reads.writtenElsewhere(node, func(name string) bool {
 				return name == key
 			})
 			for _, c := range spelled {
