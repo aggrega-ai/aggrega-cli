@@ -62,13 +62,24 @@ const (
 // transport over, and the positioned findings it raised are published before it
 // is returned.
 //
-// It is the whole of what the daemon's two build methods share: the Release
-// parameter's contract, the lockfile gates, the frozen external-input seam, the
-// gate sequence and the publication. What each method adds is only what it does
-// with the render — one writes it, the other reports what writing it would have
-// produced. Keeping the shared half here is what stops the two coming to
-// disagree about which gates run or in what order, which is the disagreement a
-// reader choosing between them would have no way to see.
+// It is the whole of what the daemon's two build methods share once a request is
+// admitted: the Release parameter's contract, the lockfile gates, the frozen
+// external-input seam, the gate sequence and the publication. What each method
+// adds is only what it does with the render — one writes it, the other reports
+// what writing it would have produced. Keeping the shared half here is what stops
+// the two coming to disagree about which gates run or in what order, which is the
+// disagreement a reader choosing between them would have no way to see.
+//
+// # What each method asks before it
+//
+// A catalog directory the Release reads and nothing can walk is refused by each
+// method at its own head (catalogDirsRefusal), not here. The build may fill its
+// lockfile before it calls this, and a refused build writes nothing, so the
+// refusal has to come ahead of the fill, which this method cannot be: the build
+// hands it what the fill produced. Each method asks once, after refusing a field
+// of its own it cannot accept and before anything else — the order the command
+// line's build reaches the same directory in, loading the stack before it fills
+// or reads a lockfile.
 //
 // # One build renders the Release once
 //

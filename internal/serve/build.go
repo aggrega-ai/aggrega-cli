@@ -228,6 +228,17 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // the write below is never reached. A guest that carried on instead would
 // produce bytes a fully-pinned render would not have, which is why the finding is
 // published rather than left to be inferred from an output directory.
+//
+// # A catalog directory nothing can walk is refused before anything is written
+//
+// `aggrega build` loads the Release's whole catalog stack before it fills a
+// lockfile or renders, so a configured directory that does not exist stops it
+// with the load's own refusal and nothing written. The lookup this daemon
+// resolves through finds what it can, and would build as though the directory
+// were empty. So the stack is asked first (catalogDirsRefusal), after the
+// destination and before the fill — the fill writes the lockfile, which is why
+// the question cannot wait for the shared render — and a build refused there has
+// written no lockfile and no artifact.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
 	// The destination is resolved before anything else runs, so a request naming
 	// one this session may not write to is refused having rendered nothing and,
@@ -236,6 +247,10 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	outRoot, destErr := s.buildOutputRoot(params.OutputParent)
 	if destErr != nil {
 		return buildResult{}, destErr
+	}
+
+	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
+		return buildResult{}, errEnvelope
 	}
 
 	// The fill, before the render, because what it writes is what the render's

@@ -483,8 +483,8 @@ func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs []string, c
 				return serr
 			}
 			if err != nil {
-				// A missing catalog directory is reported; a per-file read error is
-				// surfaced when the file is later read for linting.
+				// Every walk error is passed over and nothing reports it: a catalog
+				// directory that does not exist, or cannot be read, adds no file.
 				if os.IsNotExist(err) {
 					return nil
 				}
