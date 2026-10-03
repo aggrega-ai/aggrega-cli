@@ -111,7 +111,15 @@ var proseOnlyFailureReturns = map[string]int{
 	// refuse before any result is handed back, so at the failure return there is
 	// nothing structured in hand. One entry each refuses a Release path this
 	// session may not name, decided ahead of the preview.
-	"tool_candidates.go":           13,
+	//
+	// The attach candidates for a graph node refuse once more after the preview,
+	// where the Release's reach is asked for the candidacy about to be drawn. The
+	// preview has read that Release, so the reach refuses only a Release file that
+	// went missing or became a directory between the two reads. The candidacy is
+	// not drawn at that return, and the preview's result is a graph this answer
+	// reads one node's labels from and reports nothing else of, so there is
+	// nothing in hand to carry.
+	"tool_candidates.go":           14,
 	"tool_attachment_container.go": 7,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
@@ -137,8 +145,21 @@ var proseOnlyFailureReturns = map[string]int{
 	// Description's lookup by name refuses one more before it looks anything up: a
 	// catalog directory the name would be resolved through that cannot be walked.
 	// It is asked ahead of the lookup, so there is no definition in hand to carry.
-	"tool_validate.go": 18,
-	"tool_describe.go": 12,
+	//
+	// Both tools take a Release beside a single subject — the name description
+	// looks up, the entity validation checks — and each refuses two values of it
+	// before the lookup or the check runs: a Release path this session may not
+	// name, and a value naming no Release file. Description refuses a third from
+	// the arguments alone, ahead of either: a registry reference sent with a
+	// Release, which no Release's catalog directories reach.
+	//
+	// Description's lookup by name refuses a name that resolves to nothing, with
+	// and without a Release, as two returns. The lookup ran and resolved no
+	// definition, so there is none to carry; the account of where that Release
+	// reads local entities from, which is all else the lookup has, is carried in
+	// the refusal's own words.
+	"tool_validate.go": 19,
+	"tool_describe.go": 15,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
@@ -258,8 +279,14 @@ var proseOnlyFailureReturns = map[string]int{
 	// four are read from the arguments alone and ahead of the workspace being
 	// resolved, so at each of them nothing has been walked and no listing exists to
 	// carry.
+	//
+	// The entity listing refuses three values of the Release it is asked to answer
+	// in the terms of, all before the workspace is walked: a blank value, which
+	// names none and is read from the arguments alone; a Release path this session
+	// may not name; and a value naming no Release file. At none of them does a
+	// listing exist to carry.
 	"tool_insertion_point.go": 7,
-	"tool_workspace.go":       6,
+	"tool_workspace.go":       9,
 	"progressive.go":          3,
 	"tools.go":                3,
 }
