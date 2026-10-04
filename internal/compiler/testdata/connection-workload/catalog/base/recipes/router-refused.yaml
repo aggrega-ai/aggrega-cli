@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cw-router-refused-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: cw/router
+  # Two refused entries and one admitted beside them: a connection the router
+  # does not draw, and a slot the socket does not declare.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: router:1.0
+        attachments:
+          MODEL_KEY_GPT:
+            from: credential
+            connection: gpt
+            as: env
+          MODEL_KEY_CLAUDE:
+            from: credential
+            connection: claude
+            as: env
+          MODEL_KEY_NIM:
+            from: token
+            connection: nim
+            as: env

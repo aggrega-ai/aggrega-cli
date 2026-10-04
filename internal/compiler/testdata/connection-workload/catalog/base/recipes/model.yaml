@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cw-model-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: cw/model
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: model:1.0

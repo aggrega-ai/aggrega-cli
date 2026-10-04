@@ -86,7 +86,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 
 	// After B.2 (no workload declared): .workload still nil — sourced-mode
 	// Recipe doesn't trigger workload parsing.
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 	if err := phaseB2(ctx, state, emptySlots); err != nil {
 		t.Fatalf("phaseB2: %v", err)
 	}
@@ -114,7 +114,7 @@ containers:
 `}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	emptyLocals := types.OrderedMap[string]{}
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 
 	if err := phaseB0(ctx, state, emptyLocals); err != nil {
 		t.Fatalf("phaseB0: %v", err)
@@ -160,7 +160,7 @@ containers:
     image: app:1.0
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 
 	// Run prerequisites (B.0, B.1) so the template eval has a complete ctx.
 	emptyLocals := types.OrderedMap[string]{}
@@ -202,7 +202,7 @@ services:
       web: 8080
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 
 	emptyLocals := types.OrderedMap[string]{}
 	_ = phaseB0(ctx, state, emptyLocals)
@@ -233,7 +233,7 @@ containers:
     image: app:1.0
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 
 	emptyLocals := types.OrderedMap[string]{}
 	_ = phaseB0(ctx, state, emptyLocals)
@@ -265,7 +265,7 @@ containers:
     image: ""
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 
 	emptyLocals := types.OrderedMap[string]{}
 	_ = phaseB0(ctx, state, emptyLocals)
@@ -304,7 +304,7 @@ containers:
 	_ = phaseB0(ctx, state, emptyLocals)
 	_ = phaseB1(ctx, state)
 
-	err := phaseB2(ctx, state, slots)
+	err := phaseB2(ctx, state, validator.WorkloadSlots{Own: slots})
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}

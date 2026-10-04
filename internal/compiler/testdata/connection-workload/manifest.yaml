@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: connection-workload-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        cw/router: cw-router-recipe:1.0.0
+        cw/model: cw-model-recipe:1.0.0
+    features:
+      type:
+        feature.cw/secret-ref: cw-secret-ref-helm:1.0.0

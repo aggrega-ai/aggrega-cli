@@ -11,6 +11,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // The proofs in this file cover the two rules declared over the workload library
@@ -124,7 +125,7 @@ func resolvedWorkloadHalt(
 	t.Helper()
 	state := NewPhaseBState(recipe, "api", "default", "recipe.yaml")
 	state.WorkloadLibraries = libs
-	return phaseB2(minimalCtx(), state, types.OrderedMap[types.AttachmentSlot]{})
+	return phaseB2(minimalCtx(), state, validator.WorkloadSlots{})
 }
 
 // workloadImportCase is one authored reference plus the condition each side must

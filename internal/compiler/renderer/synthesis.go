@@ -98,6 +98,14 @@ func dispatchWorkloadSynthesis(
 // orchestrator before Phase B and exposed on the template context. A nil context
 // yields an empty lookup.
 //
+// Every attachment the node holds is in the lookup: the node's own under the
+// names they fill on `.features`, and each one a connection carries under the
+// name the compiler composes for it — the name a workload entry that named the
+// connection carries once it is folded. Both come from the one projection that
+// placed them on the context, so a connection's attachment is found here by the
+// same evaluation its connection view shows, and it is never added to the
+// node's own `.features` to be found.
+//
 // This is a render-context projection, not provider logic: it lives in the
 // renderer so every host-side surface that reads it — the workload-reference
 // validation and the wasmengine adapter that projects a workload onto the
@@ -114,6 +122,9 @@ func AttachmentProvidesFromContext(tmplCtx *types.TemplateContext) map[string]ty
 		return provides
 	}
 	for name, attachment := range tmplCtx.Features.All() {
+		provides[name] = attachment.Provides
+	}
+	for name, attachment := range tmplCtx.ConnectionAttachments.All() {
 		provides[name] = attachment.Provides
 	}
 	return provides

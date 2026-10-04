@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: connection-workload-app
+  version: "1.0.0"
+spec:
+  components:
+    router:
+      type: cw/router
+      features:
+        token:
+          type: feature.cw/secret-ref
+          values:
+            origin: router-token-secret
+            key: token
+      uses:
+        models:
+          # Authored nim first: the connections reach the router in this order.
+          nim:
+            target: nim-model
+            features:
+              credential:
+                type: feature.cw/secret-ref
+                values:
+                  origin: nim-team-secret
+                  key: api-key
+          gpt:
+            target: gpt-model
+            features:
+              credential:
+                type: feature.cw/secret-ref
+                values:
+                  origin: gpt-team-secret
+                  key: api-key
+          # A connection carrying no attachment.
+          plain:
+            target: plain-model
+    nim-model:
+      type: cw/model
+    gpt-model:
+      type: cw/model
+    plain-model:
+      type: cw/model

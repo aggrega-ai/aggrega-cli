@@ -20,17 +20,37 @@ import (
 // where every writer and reader of that spelling gets it. The slot root has no
 // such home and needs none: it names a schema block rather than a pillar, so it
 // is spelled once, here, at the only site that builds a slot coordinate.
+//
+// A slot a socket declares is reached through the socket's own block, so its
+// coordinate is the socket root, the socket's name, and the slot coordinate
+// beneath it — `usesSchema.models.featuresSchema.credential`. Its first segment
+// differs from a Component slot's, so the two cannot collide however the slots
+// are named, which a bare `featuresSchema.<slot>` for both would allow.
 const (
-	declarationRootValues = types.PillarRootValues
-	declarationRootSlots  = "featuresSchema."
+	declarationRootValues  = types.PillarRootValues
+	declarationRootSlots   = "featuresSchema."
+	declarationRootSockets = "usesSchema."
 )
+
+// SocketSlot names one slot a socket of a Component declares: the socket, and
+// the slot's name within it.
+type SocketSlot struct {
+	Socket string
+	Slot   string
+}
+
+// coordinate spells the authored coordinate of the slot's declaration on the
+// Component — the path an author typed to declare it.
+func (s SocketSlot) coordinate() string {
+	return declarationRootSockets + s.Socket + "." + declarationRootSlots + s.Slot
+}
 
 // DeclaredSensitivity carries the sensitivity DECLARATIONS one node's render
 // dispatch needs in order to name a rendered key. It holds declarations only:
 // nothing here is a rendered identity, and nothing here is derived from a
 // template, a value or a name.
 //
-// The three fields are grouped rather than passed as separate arguments because
+// The fields are grouped rather than passed as separate arguments because
 // ValueLeaves is meaningless without ValuesAreDeclaredLeaves, and a caller
 // pairing a leaf set with the wrong gate would mark a key no declaration names.
 //
@@ -67,6 +87,17 @@ type DeclaredSensitivity struct {
 	// one rendered key reads, and spreading it across individual keys would
 	// assert something false about a public one.
 	Slots map[string]bool
+
+	// SocketSlots are the slots the sockets of the node's Component declare
+	// sensitive, keyed by the name a workload attachment entry names one by once
+	// its connection is folded in — the connection's alias and the slot, joined
+	// as the compiler joins every connection attachment's name — each with the
+	// socket and slot that declaration sits at. Two connections wired through one
+	// socket read one declaration, so they share its coordinate.
+	//
+	// It is the slot declaration, read for each connection the node draws, and
+	// the same distinction from the roll-up holds for it as for Slots.
+	SocketSlots map[string]SocketSlot
 }
 
 // SensitiveRenderedKeys joins a node's sensitivity declarations to the
@@ -89,7 +120,11 @@ type DeclaredSensitivity struct {
 //     the rendered workload — the variable name where it delivers as an
 //     environment variable, the entry naming the mount where it delivers as a
 //     file. Either way the entry is what a guest addresses, so the map key is
-//     the rendered identity and the slot declaration governs it.
+//     the rendered identity and the slot declaration governs it. An entry that
+//     named a connection reaches here folded, its `from` the name composed for
+//     that connection's slot, and the socket's declaration of the slot governs
+//     it; its coordinate names the socket, so it is never mistaken for a slot
+//     the Component declares for its own attachments.
 //
 // Everything else stays absent, and absence is a positive statement that no
 // key's identity could be recovered — never that nothing on the payload carries
@@ -131,11 +166,15 @@ func SensitiveRenderedKeys(declared DeclaredSensitivity, values types.OrderedMap
 		}
 	}
 
-	if w != nil && len(declared.Slots) > 0 {
+	if w != nil && (len(declared.Slots) > 0 || len(declared.SocketSlots) > 0) {
 		markContainer := func(c types.ContainerSpec) {
 			for renderedKey, ref := range c.Attachments.All() {
 				if declared.Slots[ref.From] {
 					mark(renderedKey, declarationRootSlots+ref.From)
+					continue
+				}
+				if socketSlot, ok := declared.SocketSlots[ref.From]; ok {
+					mark(renderedKey, socketSlot.coordinate())
 				}
 			}
 		}

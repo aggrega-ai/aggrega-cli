@@ -301,10 +301,18 @@ func (p PortSpec) MarshalJSON() ([]byte, error) {
 // disjunction, not a Go-type constraint). ConfigMap names a ConfigMap source;
 // Secret names a featuresSchema slot whose provides resolve the Secret name.
 // Prefix, when set, is prepended to every imported variable name.
+//
+// Connection, when set beside Secret, names the alias of a connection the
+// owning component draws, and Secret then names a slot that connection's
+// socket declares rather than one the Component declares for its own
+// attachments. The render folds the pair onto the one slot name the compiler
+// composes for that connection's attachment before any check reads the entry,
+// so every reader downstream of the fold sees Secret alone and Connection empty.
 type EnvFromSource struct {
-	ConfigMap string `json:"configMap,omitempty" yaml:"configMap,omitempty"`
-	Secret    string `json:"secret,omitempty" yaml:"secret,omitempty"`
-	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	ConfigMap  string `json:"configMap,omitempty" yaml:"configMap,omitempty"`
+	Secret     string `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Connection string `json:"connection,omitempty" yaml:"connection,omitempty"`
+	Prefix     string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 }
 
 // AttachmentRef references a featuresSchema slot on the entity that owns the
@@ -318,14 +326,23 @@ type EnvFromSource struct {
 // values to consume several keys from one multi-key resource. When empty, the
 // entry reads the slot's single published data key.
 //
+// Connection, when set, names the alias of a connection the owning component
+// draws, and From then names a slot that connection's socket declares rather
+// than one the Component declares for its own attachments. The render folds the
+// pair onto the one slot name the compiler composes for that connection's
+// attachment before any check reads the entry, so the slot checks, the
+// referenceability check and a provider's resolution read From alone, and a
+// folded entry carries Connection empty.
+//
 // Mutual exclusion of env vs file is a schema-validation rule, not a Go-type
 // constraint — both fields can be set simultaneously by programmatic
 // construction. Validate via validator.ValidateWorkload.
 type AttachmentRef struct {
-	From string `json:"from,omitempty" yaml:"from,omitempty"`
-	As   string `json:"as,omitempty" yaml:"as,omitempty"`
-	Key  string `json:"key,omitempty" yaml:"key,omitempty"`
-	Path string `json:"path,omitempty" yaml:"path,omitempty"`
+	From       string `json:"from,omitempty" yaml:"from,omitempty"`
+	As         string `json:"as,omitempty" yaml:"as,omitempty"`
+	Key        string `json:"key,omitempty" yaml:"key,omitempty"`
+	Path       string `json:"path,omitempty" yaml:"path,omitempty"`
+	Connection string `json:"connection,omitempty" yaml:"connection,omitempty"`
 }
 
 // VolumeSpec is a closed disjunction over five variants. Exactly one pointer

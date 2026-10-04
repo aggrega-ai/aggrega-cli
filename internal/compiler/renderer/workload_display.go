@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // renderWorkloadForDisplay evaluates a Recipe's workload template a second time,
@@ -38,10 +39,18 @@ import (
 // The substituted context comes from the one applier that builds one, so the
 // document a reader sees and the pillars printed beside it are substituted by the
 // same code and agree by construction rather than by care.
+//
+// The shown document is folded exactly as the emitted one is: every entry naming
+// a connection is rewritten onto the slot name the compiler composes for it,
+// through the same fold and the same slots. Without it the shown document would
+// carry each such entry in its authored spelling while the emitted one carries the
+// folded spelling — a structural difference at a position no substitution touched.
+// A fold refusal reports false, as any other failure does.
 func renderWorkloadForDisplay(
 	recipeName, tmplText string,
 	ctx *types.TemplateContext,
 	keys redact.Keys,
+	slots validator.WorkloadSlots,
 ) (*types.Workload, bool) {
 	// The template name matches the real evaluation's, so a diagnostic raised
 	// from either names the same authored template. Nothing here surfaces a
@@ -56,6 +65,9 @@ func renderWorkloadForDisplay(
 	}
 	var shown types.Workload
 	if err := parse.TemplateOutput([]byte(output), &shown); err != nil {
+		return nil, false
+	}
+	if _, err := validator.FoldWorkloadConnections(&shown, slots, "", recipeName, ""); err != nil {
 		return nil, false
 	}
 	return &shown, true

@@ -383,10 +383,12 @@ func maximalWorkloadCompute() types.Workload {
 			Attachments: om[types.AttachmentRef](
 				"db", types.AttachmentRef{From: "db", As: "env", Key: "password"},
 				"tls", types.AttachmentRef{From: "tls", As: "file", Path: "/etc/tls/server.crt"},
+				"model", types.AttachmentRef{From: "credential", As: "env", Connection: "gpt"},
 			),
 			EnvFrom: []types.EnvFromSource{
 				{ConfigMap: "api-settings", Prefix: "CFG_"},
 				{Secret: "db", Prefix: "DB_"},
+				{Secret: "credential", Connection: "gpt", Prefix: "GPT_"},
 			},
 			Ports: om[types.PortSpec]("http", types.PortSpec{Port: 8080}),
 			Resources: &types.ResourceSpec{

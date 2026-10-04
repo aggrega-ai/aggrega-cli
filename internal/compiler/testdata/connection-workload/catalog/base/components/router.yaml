@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: cw/router
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  featuresSchema:
+    # The router's own credential slot, filled on its own attachment block.
+    token:
+      sensitive: true
+      inject: [env]
+  usesSchema:
+    models:
+      selector: "component.aggrega.ai/category=model"
+      featuresSchema:
+        # The slot each connection wired through this socket fills with the
+        # credential the router presents on that connection.
+        credential:
+          sensitive: true
+          inject: [env, file]
+          description: The credential the router presents to the model a connection reaches.

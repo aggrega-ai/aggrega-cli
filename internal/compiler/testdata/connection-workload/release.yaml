@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: connection-workload-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        router: {}
+        nim-model: {}
+        gpt-model: {}
+        plain-model: {}

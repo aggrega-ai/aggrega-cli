@@ -1662,10 +1662,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// carries: the roll-up is true whenever the attached entity declares any
 		// sensitive leaf anywhere, which says nothing about the datum one rendered
 		// key reads.
+		//
+		// The slots a Workload entry may name are assembled once, here, and read
+		// twice: by the Workload's fold and checks below, and by the marking's
+		// socket half, so an entry folded onto a connection's slot is joined to the
+		// declaration of the very slot the fold resolved it to.
+		workloadSlots := NodeWorkloadSlots(input.CatalogLookup, node.Component, tmplCtx.Context.Uses)
 		nodeCtx.DeclaredSensitivity = DeclaredSensitivity{
 			ValueLeaves:             declared.Values,
 			ValuesAreDeclaredLeaves: state.ValuesAreDeclaredLeaves,
 			Slots:                   sensitiveSlots(node.Component),
+			SocketSlots:             SensitiveSocketSlots(workloadSlots),
 		}
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
@@ -1843,17 +1850,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			})
 		}
 
-		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadAttachments.
-		// No-op for Recipes that don't declare workload:. The workload-secret
-		// cross-check validates containers.<n>.attachments against the bound
-		// Component's featuresSchema slot allowlist.
-		var slots types.OrderedMap[types.AttachmentSlot]
-		if input.CatalogLookup.Component != nil {
-			if comp, found := input.CatalogLookup.Component(node.Component); found {
-				slots = comp.Spec.FeaturesSchema
-			}
-		}
-		if err := phaseB2(tmplCtx, state, slots); err != nil {
+		// Phase B.2 — workload eval + ValidateWorkload + the connection fold +
+		// ValidateWorkloadAttachments. No-op for Recipes that don't declare
+		// workload:. The workload slot cross-check validates
+		// containers.<n>.attachments against the bound Component's featuresSchema
+		// slot allowlist and, for an entry naming a connection, against the slots
+		// that connection's socket declares.
+		if err := phaseB2(tmplCtx, state, workloadSlots); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 

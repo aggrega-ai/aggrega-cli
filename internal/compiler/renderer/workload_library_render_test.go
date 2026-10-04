@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -33,7 +34,7 @@ func runWorkloadPhaseB(t *testing.T, w types.WorkloadTemplate, wlibs map[string]
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	state.WorkloadLibraries = wlibs
 	emptyLocals := types.OrderedMap[string]{}
-	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+	emptySlots := validator.WorkloadSlots{}
 	if err := phaseB0(ctx, state, emptyLocals); err != nil {
 		t.Fatalf("phaseB0: %v", err)
 	}

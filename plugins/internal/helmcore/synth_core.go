@@ -498,7 +498,7 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, attac
 			})
 		case "file":
 			out.VolumeMounts = append(out.VolumeMounts, VolumeMount{
-				Name:      nodeID + "-secret-" + ref.From,
+				Name:      secretVolumeName(nodeID, ref.From),
 				MountPath: ref.Path,
 				ReadOnly:  true,
 			})
@@ -707,11 +707,11 @@ func translateContainerSecurityContext(s *types.ContainerSecurityContext) *Conta
 // on the StatefulSet, not pod-spec volumes). Author order preserved.
 //
 // Also adds secret-volume entries for container attachments entries that use
-// `as: file` — one volume per (container, secret-key) pair, named per
-// the convention "<instance_id>-secret-<slot>". The volume name stays
-// convention-based (pod-internal); the SecretVolumeSource.SecretName it
-// mounts is the generated Secret's name, read from the slot's resolved
-// provides.
+// `as: file` — one volume per slot, named per the convention
+// "<instance_id>-secret-<slot>" with the slot written out by secretVolumeName.
+// The volume name stays convention-based (pod-internal); the
+// SecretVolumeSource.SecretName it mounts is the generated Secret's name, read
+// from the slot's resolved provides.
 func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string]) []Volume {
 	var out []Volume
 
@@ -759,7 +759,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 			if ref.As != "file" {
 				continue
 			}
-			volName := nodeID + "-secret-" + ref.From
+			volName := secretVolumeName(nodeID, ref.From)
 			if _, seen := seenSecretVolumes[volName]; seen {
 				continue
 			}
@@ -779,7 +779,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 			if ref.As != "file" {
 				continue
 			}
-			volName := nodeID + "-secret-" + ref.From
+			volName := secretVolumeName(nodeID, ref.From)
 			if _, seen := seenSecretVolumes[volName]; seen {
 				continue
 			}

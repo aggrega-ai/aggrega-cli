@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cw-router-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: cw/router
+  # Each connection's credential is delivered by naming the connection beside the
+  # slot its socket declares; the router's own credential by naming its own slot.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: router:1.0
+        attachments:
+          ROUTER_TOKEN:
+            from: token
+            as: env
+          MODEL_KEY_GPT:
+            from: credential
+            connection: gpt
+            as: env
+          MODEL_KEY_NIM:
+            from: credential
+            connection: nim
+            as: env
+        envFrom:
+          - secret: credential
+            connection: gpt
+            prefix: GPT_

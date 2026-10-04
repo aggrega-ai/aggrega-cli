@@ -170,22 +170,28 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //
 //  1. validator.ValidateWorkload — schema validation against the embedded
 //     Workload JSON Schema.
-//  2. validator.ValidateWorkloadAttachments — cross-entity check against the
-//     Component's featuresSchema slot allowlist.
-//  3. validator.ValidateWorkloadResourceReferences — every attachments entry's
+//  2. validator.FoldWorkloadConnections — every entry naming a connection is
+//     folded onto the slot name the compiler composes for that connection's
+//     attachment, refusing a connection the component does not draw and a slot
+//     its socket does not declare. Everything below reads the folded Workload.
+//  3. validator.ValidateWorkloadAttachments — cross-entity check against the
+//     slot allowlist: the Component's featuresSchema, and each connection's
+//     socket slots under their composed names.
+//  4. validator.ValidateWorkloadResourceReferences — every attachments entry's
 //     slot must expose the provides keys (name, key) the synthesizer reads to
 //     resolve the reference; checked against the slot's resolved provides on
-//     the template context (ctx.Features) — the same bag the synthesizer reads,
-//     so the base and FeatureRecipe paths check uniformly.
+//     the template context — the same bag the synthesizer reads, so the base
+//     and FeatureRecipe paths check uniformly.
 //
-// On all pass: state.ParsedWorkload and ctx.Workload populate. Any failure
-// stops the build before B.3 runs; failures carry CATALOG_ERROR-prefixed
-// messages with field paths.
+// On all pass: state.ParsedWorkload and ctx.Workload populate with the folded
+// Workload. Any failure stops the build before B.3 runs; failures carry
+// CATALOG_ERROR-prefixed messages with field paths.
 //
-// slots is the Component's FeaturesSchema (passed by the orchestrator from
-// the catalog lookup). nil/empty slots is acceptable when the Recipe's
-// Workload declares no attachments entries.
-func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.OrderedMap[types.AttachmentSlot]) error {
+// slots carries the owner's own slots (the Component's FeaturesSchema, or the
+// implemented Feature's for an attachment's FeatureRecipe) and the connections
+// the component draws with their sockets' slots. An empty value is acceptable
+// when the Recipe's Workload names no slot.
+func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.WorkloadSlots) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 2
 		return nil
@@ -227,7 +233,14 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
-	if err := validator.ValidateWorkloadAttachments(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	// The fold runs before every check that reads a slot, so those checks — and
+	// the provider that resolves the folded Workload — read an entry naming a
+	// connection's slot exactly as they read one naming the Component's own.
+	checked, err := validator.FoldWorkloadConnections(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion)
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateWorkloadAttachments(&w, checked, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 	// Referenceability reads each slot's resolved provides from the template
@@ -249,7 +262,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	// which is why it runs before ctx.Workload is set: a template reading
 	// .workload would otherwise see a document the real render did not have.
 	if trace.Captures(state.Trace) && workloadReadsWithheld(workloadText, state.Redact) {
-		if shown, produced := renderWorkloadForDisplay(state.Recipe.Metadata.Name, workloadText, ctx, state.Redact); produced {
+		if shown, produced := renderWorkloadForDisplay(state.Recipe.Metadata.Name, workloadText, ctx, state.Redact, slots); produced {
 			state.DisplayWorkload = shown
 			state.Redact.Workload = redact.WorkloadSubstituted
 		} else {
@@ -1286,7 +1299,11 @@ func renderFeatureRecipeFiles(
 		}
 	}
 
-	if err := phaseB2(frCtx, state, slots); err != nil {
+	// The Feature's own slots and no connection: a FeatureRecipe's Workload is
+	// held to the Feature it implements, which draws none of the host
+	// component's connections, so an entry there naming a connection is refused
+	// as naming one the owner does not draw.
+	if err := phaseB2(frCtx, state, validator.WorkloadSlots{Own: slots}); err != nil {
 		return nil, "", err
 	}
 	// Reduce this render's mid-render state to the projection that outlives it, at
