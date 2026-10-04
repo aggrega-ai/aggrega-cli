@@ -67,16 +67,10 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 	// Which parts of the source carry a template is asked of the one walk that
 	// classifies a source's shape — the same walk the evaluation goes through — so
 	// a shape the evaluator learns to evaluate is a shape this reading covers
-	// without a second edit. Nothing is replaced here: the walk's rebuilt value is
-	// discarded and each template's text is returned unchanged, which is what makes
-	// this a read of the same classification rather than a second evaluation.
-	source := map[string]bool{}
-	_, _ = mapRecipeSourceTemplates(recipe.Spec.Source, func(field, tmplText string) (string, error) {
-		if templateReadsWithheld(tmplText, readable) {
-			source[field] = true
-		}
-		return tmplText, nil
-	})
+	// without a second edit. Nothing is replaced: it is a read of the same
+	// classification rather than a second evaluation, and it is the reading a
+	// refusal raised while resolving the source asks too.
+	source := sourcePartsReadingWithheld(recipe.Spec.Source, readable)
 
 	derived := redact.Derived{}
 	if len(withheld) > 0 {
@@ -120,7 +114,10 @@ func derivedLocals(locals types.OrderedMap[string], declaredValues, declaredInfr
 // walk, which is the direction this question needs: a read hidden inside a rebound
 // range or with body, or inside a chained defensive wrapper, has still happened,
 // and a walk that attributed only root-anchored reads would answer "not withheld"
-// for exactly the shapes that most need the conservative answer.
+// for exactly the shapes that most need the conservative answer. A template
+// handing on the whole of its data — `toJson .`, a bare `$`, the dot passed to a
+// template it invokes by name — reads every datum in it, and the census reports
+// that too.
 //
 // Whether a reference reaches a withheld datum is answered by the set itself,
 // in the coordinates a template reads its data by — the same coordinates the
@@ -136,11 +133,11 @@ func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
 	if !keys.AnyWithheld() || tmplText == "" || !strings.Contains(tmplText, "{{") {
 		return false
 	}
-	refs, err := gotmpl.CollectTemplateFieldAccesses(tmplText)
+	root, err := gotmpl.ParseTree(tmplText, "{{", "}}")
 	if err != nil {
 		return true
 	}
-	return keys.ReachedBy(refs)
+	return keys.ReachedBy(gotmpl.TreeDataReads(root))
 }
 
 // workloadReadsWithheld reports whether a Recipe's workload template reads

@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: refusal-artifacts-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/refusal-guarded: refusal-artifacts-recipe:1.0.0

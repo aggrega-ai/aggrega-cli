@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-keyholder-plain-recipe
+  version: "1.0.0"
+  description: Renders the keyholder Component without refusing anything itself, so a refusal comes from its attachment.
+spec:
+  capability: compose
+  implements: core/refusal-keyholder
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: keyholder:1.0

@@ -1,0 +1,15 @@
+# An attachment's values mapping refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-fr-values-mapping-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./keyholder-app.yaml
+  manifest: ./fr-values-mapping-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        keyholder: {}

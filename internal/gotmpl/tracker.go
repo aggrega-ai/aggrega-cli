@@ -60,11 +60,67 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 // execute — or has just executed — so the references it reads are the ones that
 // tree makes, under the delimiters and the function set it was parsed with, rather
 // than those of a second parse that could differ from it.
+//
+// A template handing on the whole of its data — `toJson .`, a bare `$` — names no
+// field, so it contributes nothing to this set; TreeDataReads is the reading that
+// reports it.
 func TreeFieldAccesses(root parse.Node) []string {
-	seen := map[string]bool{}
-	collectFromNode(root, seen)
-	paths := make([]string, 0, len(seen))
-	for p := range seen {
+	return walkCensus(root).fieldPaths()
+}
+
+// dataRoot is how TreeDataReads spells a read of the whole of the data a template
+// was handed: the dot with nothing after it.
+const dataRoot = "."
+
+// TreeDataReads returns what a parsed template reads of the data it was handed,
+// for a reading whose job is to WITHHOLD something: every path TreeFieldAccesses
+// returns, and the data root itself, spelled ".", wherever the template hands on
+// the whole of that data — a bare dot while the dot is still that data, or a bare
+// $ anywhere. `{{ fail (toJson .) }}` reads every datum it was given without
+// naming one, so a reading that answered from the named paths alone would call it
+// harmless.
+//
+// The two readings come from ONE walk and differ only in whether a read naming no
+// field is reported, which is not a choice of direction: both over-collect. The
+// readers of the field-access set ask about named paths — which pillar a reference
+// names, which keys no template reads, which paths a Recipe reads — and an entry
+// naming no path answers none of those questions, so it is reported only to the
+// readings that ask whether a datum can reach what a template produces.
+//
+// A dot rebound by a range or a with body is not the data: it is the value its
+// pipeline named, and every path that pipeline reads is recorded already, so a bare
+// dot there contributes nothing of its own. A defined template's body is walked as
+// its own tree, with its dot standing for whatever an invocation hands it; so the
+// whole data handed to an invocation — `{{ template "name" . }}` — is recorded at
+// the invocation, which covers a reader that walks only the tree it parsed.
+func TreeDataReads(root parse.Node) []string {
+	c := walkCensus(root)
+	paths := c.fieldPaths()
+	if c.wholeData {
+		paths = append([]string{dataRoot}, paths...)
+	}
+	return paths
+}
+
+// census is what one walk of a parsed template records: every dot-qualified field
+// access, and whether the template hands on the whole of the data it was given.
+type census struct {
+	paths     map[string]bool
+	wholeData bool
+}
+
+// walkCensus walks a parsed template from its root, where the dot is the data the
+// template was handed.
+func walkCensus(root parse.Node) *census {
+	c := &census{paths: map[string]bool{}}
+	collectFromNode(root, c, true)
+	return c
+}
+
+// fieldPaths returns the recorded field accesses, sorted.
+func (c *census) fieldPaths() []string {
+	paths := make([]string, 0, len(c.paths))
+	for p := range c.paths {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
@@ -83,7 +139,11 @@ func TreeFieldAccesses(root parse.Node) []string {
 // withhold something cannot let the thing hide inside a rebound body. Neither
 // consumer may be given the under-collecting direction, and this walk must never
 // grow a flag that would let a caller ask for it.
-func collectFromNode(n parse.Node, seen map[string]bool) {
+//
+// dotIsData reports whether the dot at n is still the data the template was handed:
+// true at the root, through an if and every else branch, and in the pipeline a range
+// or a with evaluates; false in a range or with body, where the dot is rebound.
+func collectFromNode(n parse.Node, c *census, dotIsData bool) {
 	if n == nil {
 		return
 	}
@@ -93,28 +153,28 @@ func collectFromNode(n parse.Node, seen map[string]bool) {
 			return
 		}
 		for _, child := range v.Nodes {
-			collectFromNode(child, seen)
+			collectFromNode(child, c, dotIsData)
 		}
 	case *parse.ActionNode:
-		collectFromPipe(v.Pipe, seen)
+		collectFromPipe(v.Pipe, c, dotIsData)
 	case *parse.IfNode:
-		collectFromPipe(v.Pipe, seen)
-		collectFromNode(v.List, seen)
-		collectFromNode(v.ElseList, seen)
+		collectFromPipe(v.Pipe, c, dotIsData)
+		collectFromNode(v.List, c, dotIsData)
+		collectFromNode(v.ElseList, c, dotIsData)
 	case *parse.RangeNode:
-		collectFromPipe(v.Pipe, seen)
-		collectFromNode(v.List, seen)
-		collectFromNode(v.ElseList, seen)
+		collectFromPipe(v.Pipe, c, dotIsData)
+		collectFromNode(v.List, c, false)
+		collectFromNode(v.ElseList, c, dotIsData)
 	case *parse.WithNode:
-		collectFromPipe(v.Pipe, seen)
-		collectFromNode(v.List, seen)
-		collectFromNode(v.ElseList, seen)
+		collectFromPipe(v.Pipe, c, dotIsData)
+		collectFromNode(v.List, c, false)
+		collectFromNode(v.ElseList, c, dotIsData)
 	case *parse.TemplateNode:
-		collectFromPipe(v.Pipe, seen)
+		collectFromPipe(v.Pipe, c, dotIsData)
 	}
 }
 
-func collectFromPipe(p *parse.PipeNode, seen map[string]bool) {
+func collectFromPipe(p *parse.PipeNode, c *census, dotIsData bool) {
 	if p == nil {
 		return
 	}
@@ -123,25 +183,37 @@ func collectFromPipe(p *parse.PipeNode, seen map[string]bool) {
 			continue
 		}
 		for _, arg := range cmd.Args {
-			collectFromArg(arg, seen)
+			collectFromArg(arg, c, dotIsData)
 		}
 	}
 }
 
-func collectFromArg(arg parse.Node, seen map[string]bool) {
+func collectFromArg(arg parse.Node, c *census, dotIsData bool) {
 	switch a := arg.(type) {
+	case *parse.DotNode:
+		// A bare dot hands on whatever the dot is. Where that is still the data the
+		// template was handed, every datum in it is read; where a range or a with
+		// rebound it, the pipeline that named the value is recorded already.
+		if dotIsData {
+			c.wholeData = true
+		}
 	case *parse.FieldNode:
 		if len(a.Ident) > 0 {
-			seen["."+strings.Join(a.Ident, ".")] = true
+			c.paths["."+strings.Join(a.Ident, ".")] = true
 		}
 	case *parse.VariableNode:
 		// $ names the context root under any rebinding, so $.values.x is a read of
 		// the same datum .values.x is and is recorded under the same spelling — the
-		// one spelling every consumer of this census compares against. Any other
-		// variable names a value the template itself declared and reaches no
-		// authored key.
-		if len(a.Ident) > 1 && a.Ident[0] == "$" {
-			seen["."+strings.Join(a.Ident[1:], ".")] = true
+		// one spelling every consumer of this census compares against, and a bare $
+		// hands on the whole of the data. Any other variable names a value the
+		// template itself declared, and what it was bound from is recorded where it
+		// was bound.
+		if len(a.Ident) > 0 && a.Ident[0] == "$" {
+			if len(a.Ident) == 1 {
+				c.wholeData = true
+				return
+			}
+			c.paths["."+strings.Join(a.Ident[1:], ".")] = true
 		}
 	case *parse.ChainNode:
 		// Both halves are recorded. The trailing fields hang off the receiver's
@@ -151,11 +223,11 @@ func collectFromArg(arg parse.Node, seen map[string]bool) {
 		// recorded only the trailing .ca would report that key unread and would
 		// let it hide from a check that must withhold it.
 		if len(a.Field) > 0 {
-			seen["."+strings.Join(a.Field, ".")] = true
+			c.paths["."+strings.Join(a.Field, ".")] = true
 		}
-		collectFromArg(a.Node, seen)
+		collectFromArg(a.Node, c, dotIsData)
 	case *parse.PipeNode:
-		collectFromPipe(a, seen)
+		collectFromPipe(a, c, dotIsData)
 	}
 }
 

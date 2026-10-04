@@ -184,7 +184,8 @@ func (e templateEval) execute(t *template.Template, refs []gotmpl.RootRef, subst
 // the surface's withheld set names. Every template the tree carries is read — the
 // body and any it defines — through the same over-collecting reference census
 // the display's reading uses, answered by the set in the coordinates the data is
-// read by.
+// read by. A template handing on the whole of its data — `toJson .`, a bare `$` —
+// reads every datum in it, so it reaches whatever the set names.
 func (e templateEval) readsWithheld(t *template.Template) bool {
 	if !e.scope.withheld.AnyWithheld() {
 		return false
@@ -194,7 +195,7 @@ func (e templateEval) readsWithheld(t *template.Template) bool {
 		if defined.Tree == nil {
 			continue
 		}
-		refs = append(refs, gotmpl.TreeFieldAccesses(defined.Tree.Root)...)
+		refs = append(refs, gotmpl.TreeDataReads(defined.Tree.Root)...)
 	}
 	return e.scope.withheld.ReachedBy(refs)
 }

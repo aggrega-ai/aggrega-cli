@@ -52,7 +52,7 @@ func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
 		Spec:     types.RecipeSpec{Source: nil},
 	}
-	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("sourceless recipe should not error: %v", err)
 	}
 	if nodeCtx.Source != nil {
@@ -66,7 +66,7 @@ func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
 func TestResolveSourceForNodeNilRecipeBypassesResolver(t *testing.T) {
 	t.Parallel()
 	nodeCtx := NodeRenderContext{}
-	if err := resolveSourceForNode(RendererInput{}, nil, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, nil, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("nil recipe should not error: %v", err)
 	}
 	if nodeCtx.Source != nil || nodeCtx.OriginalSource != nil {
@@ -89,7 +89,7 @@ func TestResolveSourceForNodeLocalSourceBypassesResolver(t *testing.T) {
 		WorkspaceRoot: "/ws",
 		CacheDir:      ".aggrega/cache",
 	}
-	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("local source should not error: %v", err)
 	}
 	if got, _ := nodeCtx.Source.(string); got != "./local-chart" {
@@ -108,7 +108,7 @@ func TestResolveSourceForNodeFallsBackWhenLockfileNil(t *testing.T) {
 		Spec:     types.RecipeSpec{Source: "oci://hub.aggrega.ai/charts/mariadb"},
 	}
 	// Lockfile is nil — orchestrator falls back to verbatim forwarding.
-	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("nil lockfile should fall back, not error: %v", err)
 	}
 	if got, _ := nodeCtx.Source.(string); got != "oci://hub.aggrega.ai/charts/mariadb" {
@@ -171,7 +171,7 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 	}
 
 	nodeCtx := NodeRenderContext{}
-	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("resolveSourceForNode: %v", err)
 	}
 	resolvedPath, _ := nodeCtx.Source.(string)
@@ -237,7 +237,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"url":     "oci://hub.aggrega.ai/charts/tls",
 		"version": "1.2.3",
 	}
-	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "")
+	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "", sourceOrigin{})
 	if err != nil {
 		t.Fatalf("resolveEntitySource (FR remote): %v", err)
 	}
@@ -298,7 +298,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 
 	// The pin recorded for this entity disagrees with the lockfile digest.
 	input.RecordedPins = pinsAt(document, "sha256:deadbeef")
-	_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document)
+	_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document, sourceOrigin{})
 	if err == nil {
 		t.Fatalf("a disagreeing recorded pin resolved without halting")
 	}
@@ -308,7 +308,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 
 	// An agreeing pin resolves cleanly.
 	input.RecordedPins = pinsAt(document, digest)
-	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document); err != nil {
+	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document, sourceOrigin{}); err != nil {
 		t.Fatalf("an agreeing recorded pin should resolve: %v", err)
 	}
 
@@ -317,7 +317,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 	// resolves. Without this leg the two above would pass equally well against a
 	// lookup that ignored its key and answered with whatever single entry it held.
 	input.RecordedPins = pinsAt("/ws/catalog/recipe/helm/other/1.0.0/recipe.yaml", "sha256:deadbeef")
-	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document); err != nil {
+	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document, sourceOrigin{}); err != nil {
 		t.Fatalf("a pin recorded for another document must not be read as this entity's: %v", err)
 	}
 }
@@ -419,8 +419,8 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 			t.Parallel()
 			input, d := fixture(t, tc.pinnedVersion)
 			input.RecordedPins = recipepin.Lookup{document: recipepin.Pins{SourceDigests: tc.recipePin(d)}}
-			_, err := resolveEntitySource(input, source, types.OrderedMap[string]{},
-				"tls-helm:1.0.0", map[string]any{}, map[string]any{}, document)
+			_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document, sourceOrigin{})
+
 			switch {
 			case tc.wantErr == nil && err != nil:
 				t.Fatalf("a pinned identity with an agreeing recipe pin must resolve; got %v", err)
@@ -473,7 +473,7 @@ func TestResolveEntitySource_LocalForwardsTheReferenceItNames(t *testing.T) {
 				WorkspaceRoot: "/ws",
 				CacheDir:      ".aggrega/cache",
 			}
-			resolved, err := resolveEntitySource(input, tc.source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "")
+			resolved, err := resolveEntitySource(input, tc.source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "", sourceOrigin{})
 			if err != nil {
 				t.Fatalf("resolveEntitySource (local): %v", err)
 			}
@@ -502,7 +502,7 @@ func TestResolveSourceForNodeHaltsOnMissingLockfileEntry(t *testing.T) {
 		WorkspaceRoot: root,
 		CacheDir:      ".aggrega/cache",
 	}
-	err := resolveSourceForNode(input, recipe, "", &NodeRenderContext{})
+	err := resolveSourceForNode(input, recipe, "", &NodeRenderContext{}, sourceOrigin{})
 	if !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
 	}

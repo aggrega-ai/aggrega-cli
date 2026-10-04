@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-whole-data-workload-recipe
+  version: "1.0.0"
+  description: >
+    The workload template refuses from inside a range, handing on $ — the whole of
+    its data — while the range iterates nothing an author declared.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0
+    {{- range (list 1) }}{{ fail (printf "%v" $) }}{{ end }}

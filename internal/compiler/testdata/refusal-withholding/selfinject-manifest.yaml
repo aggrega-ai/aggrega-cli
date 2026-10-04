@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: refusal-selfinject-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/refusal-sited: refusal-sited-recipe:1.0.0

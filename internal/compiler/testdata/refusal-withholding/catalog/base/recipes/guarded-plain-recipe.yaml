@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-guarded-plain-recipe
+  version: "1.0.0"
+  description: Renders the guarded Component without refusing anything itself.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

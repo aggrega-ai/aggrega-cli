@@ -683,7 +683,8 @@ func phaseB6(
 			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
 		}
 		frNodeCtx.OriginalSource = evaluatedSource
-		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument)
+		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument,
+			sourceOrigin{authored: fr.Spec.Source, withheld: frKeys})
 		if err != nil {
 			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}

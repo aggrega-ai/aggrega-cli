@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-sited-recipe
+  version: "1.0.0"
+  description: Renders the sited Component without refusing anything itself.
+spec:
+  capability: compose
+  implements: core/refusal-sited
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: sited:1.0

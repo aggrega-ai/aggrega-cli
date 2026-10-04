@@ -20,7 +20,7 @@ import (
 // Whether a Recipe carries a source is asked of recipeSourceDeclared, the one
 // home for that question, so this build's answer and the host build's are one
 // answer rather than two that happen to agree.
-func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPath string, nodeCtx *NodeRenderContext) error {
+func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPath string, nodeCtx *NodeRenderContext, origin sourceOrigin) error {
 	if !recipeSourceDeclared(recipe) {
 		return nil
 	}
@@ -32,8 +32,9 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPat
 // resolveEntitySource forwards the entity's authored source verbatim in the
 // Wasm guest build, mirroring resolveSourceForNode's no-acquisition contract.
 // Carries the same signature as the host implementation for the package's
-// compile-time call graph; the guest render path never invokes it at runtime.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string) (any, error) {
+// compile-time call graph; the guest render path never invokes it at runtime. It
+// looks nothing up, so it raises no refusal for origin to withhold anything from.
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string, origin sourceOrigin) (any, error) {
 	return source, nil
 }
 

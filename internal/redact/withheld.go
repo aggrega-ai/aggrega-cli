@@ -110,7 +110,9 @@ func addAttachment(out map[string]bool, at string, declared AttachmentKeys) {
 // makes `range .values.creds` and `index .values $k` conservative rather than
 // invisible). The covered half is asked of the one home for that question; the
 // ancestor half is this reading's own, because a display shows one leaf at a time
-// and never needs it.
+// and never needs it. A reference spelled as the data root alone — the census's
+// entry for a template handing on the whole of its data — is the ancestor of every
+// coordinate, so it reaches whatever the set names.
 //
 // A set naming nothing reaches nothing, which is what lets a mode that empties the
 // set turn every reading of it off without a second switch.

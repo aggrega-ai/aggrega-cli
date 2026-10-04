@@ -1743,7 +1743,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(nodeContributor, declared)
 		}
-		if err := resolveSourceForNode(input, recipe, state.RecipePath, &nodeCtx); err != nil {
+		// The source as its author wrote it is the catalog's Recipe, which nothing
+		// replaced: the copy in hand carries the value the template produced.
+		var authoredSource any
+		if authored := nodeRecipes[nodeID]; authored != nil {
+			authoredSource = authored.Spec.Source
+		}
+		if err := resolveSourceForNode(input, recipe, state.RecipePath, &nodeCtx,
+			sourceOrigin{authored: authoredSource, withheld: state.Withheld}); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("node %q source resolution", nodeID))
 		}

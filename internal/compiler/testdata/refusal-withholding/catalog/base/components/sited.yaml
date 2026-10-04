@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/refusal-sited
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # The guarded Component's two values, and the one delivery mechanism a
+  # component-level inject block may name, so a self-inject template can read the
+  # declared leaf.
+  inject: ["env"]
+  schema:
+    values:
+      adminPassword: { type: string, sensitive: true }
+      adminNote: { type: string }

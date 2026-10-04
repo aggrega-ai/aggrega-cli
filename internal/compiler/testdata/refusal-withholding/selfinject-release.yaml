@@ -1,0 +1,15 @@
+# A component-level inject entry's template refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-selfinject-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./sited-app.yaml
+  manifest: ./selfinject-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        sited: {}

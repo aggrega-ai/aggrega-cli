@@ -216,26 +216,83 @@ func TestCollectFromNode_AllNodeKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	seen := map[string]bool{}
+	c := &census{paths: map[string]bool{}}
 	root := trees["t"].Root
-	collectFromNode(root, seen)
+	collectFromNode(root, c, true)
 	for _, k := range []string{".alpha", ".beta", ".gamma", ".delta", ".epsilon", ".zeta", ".eta"} {
-		if !seen[k] {
-			t.Errorf("expected %q in seen; got %v", k, seen)
+		if !c.paths[k] {
+			t.Errorf("expected %q in seen; got %v", k, c.paths)
 		}
 	}
 	// Nil ListNode.
-	collectFromNode((*parse.ListNode)(nil), seen)
+	collectFromNode((*parse.ListNode)(nil), c, true)
 	// Nil node.
-	collectFromNode(nil, seen)
+	collectFromNode(nil, c, true)
 }
 
 // TestCollectFromPipe_NilGuard pins the pipe-walker's nil-guard.
 func TestCollectFromPipe_NilGuard(t *testing.T) {
 	t.Parallel()
-	seen := map[string]bool{}
-	collectFromPipe(nil, seen)
-	if len(seen) != 0 {
-		t.Errorf("nil pipe should leave seen empty; got %v", seen)
+	c := &census{paths: map[string]bool{}}
+	collectFromPipe(nil, c, true)
+	if len(c.paths) != 0 || c.wholeData {
+		t.Errorf("nil pipe should record nothing; got %v (whole data %v)", c.paths, c.wholeData)
+	}
+}
+
+// TestTreeDataReads_TheWholeDataHandedOn is the table for the one read that names no
+// field. A row whose want is true must report the data root; a row whose want is
+// false must not, and every row's field paths must be exactly what the field-access
+// census reports, because the two readings come from one walk and differ in that
+// entry alone.
+func TestTreeDataReads_TheWholeDataHandedOn(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"a bare dot handed to a function", `{{ fail (toJson .) }}`, true},
+		{"a bare dot printed", `{{ . }}`, true},
+		{"a bare $ inside a range body", `{{ range .values.list }}{{ fail (printf "%v" $) }}{{ end }}`, true},
+		{"a bare $ inside a with body", `{{ with .values.tls }}{{ toJson $ }}{{ end }}`, true},
+		{"the whole data bound to a variable", `{{ $all := . }}{{ fail (toJson $all) }}`, true},
+		{"the whole data handed to a template invoked by name", `{{ define "x" }}{{ .values.port }}{{ end }}{{ template "x" . }}`, true},
+		{"a bare dot in an else branch", `{{ if .values.on }}on{{ else }}{{ toJson . }}{{ end }}`, true},
+		{"a bare dot as the pipeline a range iterates", `{{ range $k, $v := . }}{{ $k }}{{ end }}`, true},
+		{"a bare dot as the pipeline a with names", `{{ with . }}{{ toJson . }}{{ end }}`, true},
+		{"the dot only as a field root", `{{ fail (printf "port %v" .values.port) }}`, false},
+		{"a range element printed", `{{ range .values.list }}{{ . }}{{ end }}`, false},
+		{"a with body's dot handed on", `{{ with .values.tls }}{{ toJson . }}{{ end }}`, false},
+		{"a variable the template declared from a field", `{{ $p := .values.port }}{{ fail (printf "%v" $p) }}`, false},
+		{"a $-anchored field read", `{{ $.values.port }}`, false},
+		{"no action at all", `plain text`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			root, err := ParseTree(c.text, "{{", "}}")
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			reads := TreeDataReads(root)
+			fields := TreeFieldAccesses(root)
+			got := len(reads) > 0 && reads[0] == dataRoot
+			if got != c.want {
+				t.Errorf("whole data reported = %v, want %v (reads %v)", got, c.want, reads)
+			}
+			rest := reads
+			if got {
+				rest = reads[1:]
+			}
+			if !reflect.DeepEqual(rest, fields) {
+				t.Errorf("the field paths must be the field-access census's own:\nreads:  %v\nfields: %v", rest, fields)
+			}
+			for _, f := range fields {
+				if f == dataRoot {
+					t.Errorf("the field-access census must never report the data root: %v", fields)
+				}
+			}
+		})
 	}
 }

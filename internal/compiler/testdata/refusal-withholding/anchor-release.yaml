@@ -1,0 +1,15 @@
+# A node's rendered Workload fails to read whole.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-anchor-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./guarded-app.yaml
+  manifest: ./anchor-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        guarded: {}

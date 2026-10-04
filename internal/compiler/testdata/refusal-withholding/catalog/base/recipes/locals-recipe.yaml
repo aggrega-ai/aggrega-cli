@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-locals-recipe
+  version: "1.0.0"
+  description: A locals entry refuses, quoting the declared-sensitive leaf.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  locals:
+    greeting: '{{ fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) }}'
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

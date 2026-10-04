@@ -1,0 +1,15 @@
+# A node's source template refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-source-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./guarded-app.yaml
+  manifest: ./source-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        guarded: {}

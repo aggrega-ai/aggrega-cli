@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-whole-data-assert-recipe
+  version: "1.0.0"
+  description: Asserts with a sentence that hands on the whole of its data and names no field.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  assertions:
+    whole-data:
+      '{{- fail (toJson .) -}}'
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

@@ -88,7 +88,7 @@ func TestResolveSourceForNodeTreatsAnEmptySourceAsNone(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
 		Spec:     types.RecipeSpec{Source: ""},
 	}
-	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("an empty source must resolve as sourceless rather than error: %v", err)
 	}
 	if nodeCtx.Source != nil {

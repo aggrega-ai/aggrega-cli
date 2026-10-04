@@ -1,0 +1,15 @@
+# An attachment's source template refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-fr-source-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./keyholder-app.yaml
+  manifest: ./fr-source-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        keyholder: {}

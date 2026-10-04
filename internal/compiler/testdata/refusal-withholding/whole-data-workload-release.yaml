@@ -1,0 +1,15 @@
+# A workload template hands on $ inside a range.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-whole-data-workload-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./guarded-app.yaml
+  manifest: ./whole-data-workload-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        guarded: {}

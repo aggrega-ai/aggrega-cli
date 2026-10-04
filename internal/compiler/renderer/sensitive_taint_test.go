@@ -122,6 +122,13 @@ func TestDerivedSensitiveKeys_PerTemplateShape(t *testing.T) {
 			withheld: `{{ if .values.dbPassword }}set{{ else }}unset{{ end }}`,
 			control:  `{{ if .values.appName }}set{{ else }}unset{{ end }}`,
 		},
+		{
+			// A local computed from the whole data carries every declared value in
+			// it; one computed from a dot a with body rebound carries that value alone.
+			name:     "the whole data handed on",
+			withheld: `{{ toJson . }}`,
+			control:  `{{ with .values.appName }}{{ toJson . }}{{ end }}`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -314,6 +321,26 @@ func TestWorkloadReadsWithheld_PerRootAndDepth(t *testing.T) {
 			// target, so the target's provides declaration does not reach it.
 			withheld: `{{ .context.uses.storeEdge.provides.zzTargetSecret }}`,
 			control:  `{{ .context.uses.storeEdge.values.protocol }}`,
+		},
+		{
+			// The whole data handed on names no field and reads every datum; a dot a
+			// range rebound to an element of an undeclared list reads that list alone.
+			name:     "the whole data handed to a function",
+			withheld: `{{ toJson . }}`,
+			control:  `{{ range .values.tags }}{{ toJson . }}{{ end }}`,
+		},
+		{
+			name:     "a bare $ inside a range body",
+			withheld: `{{ range .values.tags }}{{ toJson $ }}{{ end }}`,
+			control:  `{{ range .values.tags }}{{ $.values.appName }}{{ end }}`,
+		},
+		{
+			// The reading walks the text it parsed, which does not carry a defined
+			// template's body, so the whole data handed to an invocation is what the
+			// body could read.
+			name:     "the whole data handed to a template invoked by name",
+			withheld: `{{ define "pw" }}{{ .values.dbPassword }}{{ end }}{{ template "pw" . }}`,
+			control:  `{{ define "app" }}{{ . }}{{ end }}{{ template "app" .values.appName }}`,
 		},
 	}
 

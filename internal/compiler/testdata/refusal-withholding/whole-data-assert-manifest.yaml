@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: refusal-whole-data-assert-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/refusal-guarded: refusal-whole-data-assert-recipe:1.0.0

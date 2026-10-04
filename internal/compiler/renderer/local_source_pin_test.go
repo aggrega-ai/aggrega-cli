@@ -65,8 +65,8 @@ func TestALocalSourceIsComparedWithItsPinsBeforeItIsForwarded(t *testing.T) {
 					return current, nil
 				}}
 			}
-			got, err := resolveEntitySource(input, "/ws/catalog/recipe/helm/app/1.0.0/chart", types.OrderedMap[string]{},
-				"app:1.0.0", map[string]any{}, map[string]any{}, document)
+			got, err := resolveEntitySource(input, "/ws/catalog/recipe/helm/app/1.0.0/chart", types.OrderedMap[string]{}, "app:1.0.0", map[string]any{}, map[string]any{}, document, sourceOrigin{})
+
 			switch {
 			case tc.wantErr != nil:
 				if !errors.Is(err, tc.wantErr) {

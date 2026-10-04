@@ -1,0 +1,20 @@
+# A boundary-scope FeatureRecipe's locals entry refuses, reading the infra the Release writes.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-boundary-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./guarded-app.yaml
+  manifest: ./boundary-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      features:
+        audit:
+          type: feature.test/refusal-boundary-credential
+          infra:
+            origin: refusal-secret-plaintext
+      components:
+        guarded: {}

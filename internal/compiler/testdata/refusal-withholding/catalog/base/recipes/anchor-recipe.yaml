@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-anchor-recipe
+  version: "1.0.0"
+  description: >
+    Renders a Workload naming an anchor after the declared-sensitive leaf and aliasing
+    it inside its own content, under a key the Workload model does not name, so the
+    document decodes into the model and fails only when read whole.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0
+    strayKey: &{{ .values.adminPassword }} [*{{ .values.adminPassword }}]

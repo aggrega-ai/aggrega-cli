@@ -74,7 +74,7 @@ func TestResolveSourceForNode_MaterializedValuesDriveSource(t *testing.T) {
 		WorkspaceRoot: root, CacheDir: ".aggrega/cache",
 	}
 	nodeCtx := NodeRenderContext{NodeID: "api"}
-	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("resolveSourceForNode: %v", err)
 	}
 	if p, _ := nodeCtx.Source.(string); p == "" {
@@ -86,7 +86,7 @@ func TestResolveSourceForNode_MaterializedValuesDriveSource(t *testing.T) {
 	// Probe: no materialized value → the version template cannot resolve.
 	probe := input
 	probe.Graph = &types.IRGraph{}
-	if err := resolveSourceForNode(probe, recipe, "", &NodeRenderContext{NodeID: "api"}); err == nil {
+	if err := resolveSourceForNode(probe, recipe, "", &NodeRenderContext{NodeID: "api"}, sourceOrigin{}); err == nil {
 		t.Error("without the materialized .values the source must not resolve (non-vacuous probe)")
 	}
 }
@@ -120,7 +120,7 @@ func TestResolveSourceForNode_MaterializedInfraDriveSource(t *testing.T) {
 		WorkspaceRoot: root, CacheDir: ".aggrega/cache",
 	}
 	nodeCtx := NodeRenderContext{NodeID: "api"}
-	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx, sourceOrigin{}); err != nil {
 		t.Fatalf("resolveSourceForNode: %v", err)
 	}
 	if p, _ := nodeCtx.Source.(string); p == "" {
@@ -131,7 +131,7 @@ func TestResolveSourceForNode_MaterializedInfraDriveSource(t *testing.T) {
 
 	probe := input
 	probe.Graph = &types.IRGraph{}
-	if err := resolveSourceForNode(probe, recipe, "", &NodeRenderContext{NodeID: "api"}); err == nil {
+	if err := resolveSourceForNode(probe, recipe, "", &NodeRenderContext{NodeID: "api"}, sourceOrigin{}); err == nil {
 		t.Error("without the materialized .infra the source must not resolve (non-vacuous probe)")
 	}
 }
@@ -160,7 +160,7 @@ func TestResolveEntitySource_PerInstanceValuesResolveDistinctSources(t *testing.
 	source := map[string]any{"kind": "helm-oci-chart", "url": url, "version": "{{ .values.v }}"}
 
 	resolvedVersion := func(values map[string]any) string {
-		got, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "db-fr:1.0.0", values, map[string]any{}, "")
+		got, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "db-fr:1.0.0", values, map[string]any{}, "", sourceOrigin{})
 		if err != nil {
 			t.Fatalf("resolveEntitySource(%v): %v", values, err)
 		}

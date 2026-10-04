@@ -250,6 +250,9 @@ func TestReachedBy_PerRoot(t *testing.T) {
 		{"an own attachment's declared provides key", ".features.admin_key.provides.secret", ".features.admin_key.provides.name"},
 		{"an own attachment, whole", ".features.admin_key", ".features.monitoring"},
 		{"a declared provides key", ".provides.dsn", ".provides.host"},
+		// The census spells a template handing on the whole of its data as the data
+		// root alone; the control is a field of the same depth naming nothing declared.
+		{"the whole data handed on", ".", ".metadata"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -264,6 +267,9 @@ func TestReachedBy_PerRoot(t *testing.T) {
 	}
 	if (Keys{}).ReachedBy([]string{".values.adminPassword"}) {
 		t.Error("an empty set reaches nothing")
+	}
+	if (Keys{}).ReachedBy([]string{"."}) {
+		t.Error("an empty set reaches nothing, not even through the whole data")
 	}
 }
 

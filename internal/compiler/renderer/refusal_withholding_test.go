@@ -9,6 +9,7 @@ package renderer
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -41,6 +42,16 @@ func assertionWithheldContext() AssertionContext {
 			},
 		},
 	}
+}
+
+// jsonEscaped is s as a JSON encoder writes it inside a string, which is how a
+// template's toJson quotes the placeholder.
+func jsonEscaped(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b[1 : len(b)-1])
 }
 
 // assertionWithheldKeys names the two declared values the assertion context
@@ -98,6 +109,28 @@ func TestEvaluateAssertion_WithholdsADeclaredValueFromItsFailure(t *testing.T) {
 		{
 			name:          "a failure quoting a value nobody declared",
 			body:          `{{- fail (printf "the admin note %s must not be inline" .values.admin_note) -}}`,
+			byteIdentical: true,
+		},
+		{
+			// The whole of the data handed to a function names no field, and it
+			// reads every declared value: each is withheld where it stood, and the
+			// undeclared one beside it is quoted as it is.
+			name: "a failure handing the whole data to a function",
+			body: `{{- fail (toJson .) -}}`,
+			want: `"admin_password":"` + jsonEscaped(redact.Placeholder()) + `"`,
+		},
+		{
+			// $ names the whole data under any rebinding, and the range iterates
+			// nothing that reaches a declared value, so the bare $ is the only read.
+			name: "a failure handing $ on inside a range body",
+			body: `{{- range (list 1) }}{{ fail (printf "%v" $) }}{{ end -}}`,
+			want: "admin_password:" + redact.Placeholder(),
+		},
+		{
+			// A dot a with body rebound is the value the pipeline named, so handing
+			// it on reads that value alone, and that value is not declared.
+			name:          "a failure handing on a dot a with body rebound to an undeclared value",
+			body:          `{{- with .values.admin_note }}{{ fail (printf "the admin note %s must not be inline" .) }}{{ end -}}`,
 			byteIdentical: true,
 		},
 	}

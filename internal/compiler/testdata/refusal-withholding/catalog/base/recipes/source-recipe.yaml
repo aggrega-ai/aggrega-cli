@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-source-recipe
+  version: "1.0.0"
+  description: The source template refuses, quoting the declared-sensitive leaf.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  source: '{{ fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) }}'
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

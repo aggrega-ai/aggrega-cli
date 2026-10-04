@@ -61,7 +61,11 @@ import (
 // caller rather than looked up here because the lookup that answers it is the
 // caller's own, and a Recipe resolved from a registry passes the empty string,
 // which records nothing and leaves that comparison with nothing to conclude.
-func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPath string, nodeCtx *NodeRenderContext) error {
+//
+// origin is the source as the Recipe's author wrote it and the set its templates
+// were evaluated against, so a refusal naming a coordinate a template computed from
+// a declared value reports without it.
+func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPath string, nodeCtx *NodeRenderContext, origin sourceOrigin) error {
 	if !recipeSourceDeclared(recipe) {
 		return nil
 	}
@@ -76,7 +80,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPat
 		infra = parse.NodePayloadMap(input.Graph.Spec.InfraMapping, nodeCtx.NodeID)
 	}
 	resolved, err := resolveEntitySource(
-		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra, documentPath,
+		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra, documentPath, origin,
 	)
 	if err != nil {
 		return err
@@ -130,7 +134,14 @@ func localSourceIgnore(input RendererInput, source any, documentPath string) Sou
 //
 // Wrapping fetch errors into the FETCH_ERROR category is the caller's concern via
 // wrapSourceResolutionError, so both call sites surface fetch failures identically.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string) (any, error) {
+//
+// origin is the source as its author wrote it and the set its templates were
+// evaluated against. A refusal raised on the remote path names the coordinates the
+// evaluation produced, so where a template produced one by reading a value an author
+// declared sensitive the refusal is reported without it — see
+// sourceOrigin.withholdRefusal, which every such refusal below passes through. A
+// refusal naming no such coordinate is returned exactly as it was raised.
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string, origin sourceOrigin) (any, error) {
 	if source == nil {
 		return nil, nil
 	}
@@ -157,10 +168,19 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	}
 	spec, err := closure.EvaluateSourceSpecFields(values, infra, source, locals, uri)
 	if err != nil {
-		return nil, err
+		// Raised before any coordinate exists, over whichever part of the source it
+		// could not read — so every identity part is one its text can quote.
+		return nil, origin.withholdRefusal(err, "", "", "", sourceIdentityParts...)
 	}
 	if spec == nil {
 		return nil, nil
+	}
+	// Name the source by whichever coordinate its author actually wrote. A source
+	// declared only at a `ref:` has no version to print, and "@" with nothing after
+	// it reads as a missing value rather than as a source identified a different way.
+	at, atPart := spec.Version, "version"
+	if at == "" {
+		at, atPart = spec.Ref, "ref"
 	}
 	// Build-verify: where the source pin recorded for this entity and the lockfile's
 	// source-artifact record both describe the identity this node just resolved,
@@ -197,7 +217,9 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	srcPins := input.RecordedPins.For(documentPath).SourceDigests
 	if err := recipepin.CheckSourcePin(srcPins, input.Lockfile, recipepin.LockPath(documentPath),
 		spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); err != nil {
-		return nil, err
+		// The disagreement names the source by its url and the coordinate it was
+		// asked at; the digests it states beside them are the records' own.
+		return nil, origin.withholdRefusal(err, spec.URL, at, atPart, "url", atPart)
 	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,
@@ -205,15 +227,10 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 		input.WorkspaceRoot, input.CacheDir,
 	)
 	if err != nil {
-		// Name the source by whichever coordinate its author actually wrote. A
-		// source declared only at a `ref:` has no version to print, and "@" with
-		// nothing after it reads as a missing value rather than as a source
-		// identified a different way.
-		at := spec.Version
-		if at == "" {
-			at = spec.Ref
-		}
-		return nil, fmt.Errorf("source-artifact %s@%s: %w", spec.URL, at, err)
+		// The lookup's own text names every coordinate it looked up, and a cache
+		// path is built from them too, so any identity part is one it can quote.
+		return nil, origin.withholdRefusal(fmt.Errorf("source-artifact %s@%s: %w", spec.URL, at, err),
+			spec.URL, at, atPart, sourceIdentityParts...)
 	}
 	return extracted, nil
 }

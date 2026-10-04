@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: refusal-sited-app
+  version: "1.0.0"
+spec:
+  components:
+    sited:
+      type: core/refusal-sited
+      values:
+        adminPassword: refusal-secret-plaintext
+        adminNote: refusal-note-plaintext
+      # The component's own delivery block: its one entry is a template, and it
+      # refuses quoting the declared-sensitive leaf. The Aggregate is itself read as
+      # a template over its parameters first, so the entry's template is written as
+      # the text that reading produces.
+      inject:
+        env:
+          - in: ADMIN_PASSWORD
+            value: '{{`{{ fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) }}`}}'
