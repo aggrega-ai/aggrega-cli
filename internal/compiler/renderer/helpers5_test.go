@@ -276,7 +276,8 @@ func TestExtractNodeBaseContext_AllBranches(t *testing.T) {
 	if v, _ := got.Infra["size"]; v != "small" {
 		t.Errorf("Infra lost; got %v", got.Infra)
 	}
-	httpEntry, ok := got.Uses["http"].(map[string]any)
+	httpSocket, _ := got.Uses["http"].(map[string]any)
+	httpEntry, ok := httpSocket["a"].(map[string]any)
 	if !ok || httpEntry["target"] != "tgt" || httpEntry["alias"] != "a" || httpEntry["origin_feature"] != "f" {
 		t.Errorf("Uses entry malformed; got %v", got.Uses)
 	}

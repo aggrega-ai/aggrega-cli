@@ -32,13 +32,28 @@ type NodeBaseContext struct {
 // produce same outputs; no side effects. Returns a zero-value
 // NodeBaseContext if the node is not present in the graph.
 //
-// Uses is populated from the IR's outbound edges sourced at this node:
-// each entry's Socket key maps to a small map carrying {target, alias,
-// origin_feature}. Provides values flow only at Step 5b via the
-// per-node allProvides; Step 4b's Uses field carries only the resolved
-// target identity (no provides values), so a Step 4b assertion
-// referencing .uses.<socket>.target works while a Step 4b assertion
-// referencing .uses.<socket>.<provides_key> halts with missingkey=error.
+// Uses is populated from the IR's outbound edges sourced at this node, in
+// the shape the author writes under `uses:`: one entry per socket, and under
+// it one entry per connection on that socket, keyed by the connection's
+// alias. Each connection's entry carries {target, alias, origin_feature},
+// origin_feature only where an attachment drew the connection. A socket
+// carrying several connections therefore shows every one of them, and a
+// socket-presence check (`hasKey .uses "<socket>"`) reads the socket key
+// alone, whatever the count.
+//
+// Every edge on a built graph carries an alias: a list entry's alias is its
+// target, a keyed entry's is the key the author wrote, and an empty one is
+// refused before any assertion runs — the authoring schemas refuse an empty
+// key and the target-existence rule an empty list entry. Two connections on
+// one socket under one alias — a component's own and an attachment's, or one
+// target listed twice — share one entry here, and the later in the graph's
+// edge order fills it.
+//
+// Provides values flow only at Step 5b via the per-node allProvides; this view
+// carries each connection's identity and nothing its target published, so an
+// assertion referencing .uses.<socket>.<alias>.target works while one
+// referencing .uses.<socket>.<alias>.<provides_key> halts with
+// missingkey=error.
 func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext {
 	out := NodeBaseContext{NodeID: nodeID}
 	if graph == nil {
@@ -62,14 +77,16 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 		if e.Source != nodeID || e.Socket == "" {
 			continue
 		}
-		entry := map[string]any{"target": e.Target}
-		if e.Alias != "" {
-			entry["alias"] = e.Alias
+		connections, held := uses[e.Socket].(map[string]any)
+		if !held {
+			connections = make(map[string]any)
+			uses[e.Socket] = connections
 		}
+		entry := map[string]any{"target": e.Target, "alias": e.Alias}
 		if e.OriginFeature != "" {
 			entry["origin_feature"] = e.OriginFeature
 		}
-		uses[e.Socket] = entry
+		connections[e.Alias] = entry
 	}
 	out.Uses = uses
 

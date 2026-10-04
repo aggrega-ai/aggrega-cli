@@ -233,8 +233,9 @@ func TestStep4b_ReferenceToStep5bFieldProducesMissingKeyError(t *testing.T) {
 }
 
 // TestStep4b_UsesTargetReferenceWorks pins the uses-target boundary: a
-// Step 4b assertion checking the resolved socket target works because
-// the IR edge's Target is populated pre-render.
+// Step 4b assertion checking a connection's resolved target works because
+// the IR edge's Target is populated pre-render. The edge carries the alias
+// a list entry takes — its target — as every edge on a built graph does.
 func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -244,18 +245,19 @@ func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes:                nodes,
-			Edges:                []types.IREdge{{Source: "web", Target: "db", Socket: "primary_db"}},
+			Edges:                []types.IREdge{{Source: "web", Target: "db", Socket: "primary_db", Alias: "db"}},
 			ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
 		},
 	}
-	// Assertion references .uses.primary_db.target — populated by ExtractNodeBaseContext
+	// Assertion references .uses.primary_db.db.target — the connection under its
+	// socket and alias, populated by ExtractNodeBaseContext.
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
 				"primary-db-targets-prod",
-				`{{ if ne (index .uses.primary_db "target") "db" }}{{ fail "primary_db must target db" }}{{ end }}`,
+				`{{ if ne (index .uses.primary_db.db "target") "db" }}{{ fail "primary_db must target db" }}{{ end }}`,
 			),
 		},
 	}
@@ -273,7 +275,7 @@ func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 }
 
 // TestStep4b_UsesProvidesReferenceFails pins the boundary: a Step 4b
-// assertion referencing .uses.<socket>.<provides_key> halts with
+// assertion referencing .uses.<socket>.<alias>.<provides_key> halts with
 // missingkey=error because provides values aren't yet evaluated at Step 4b.
 func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	t.Parallel()
@@ -284,7 +286,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes:                nodes,
-			Edges:                []types.IREdge{{Source: "web", Target: "db", Socket: "primary_db"}},
+			Edges:                []types.IREdge{{Source: "web", Target: "db", Socket: "primary_db", Alias: "db"}},
 			ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
@@ -294,7 +296,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
 				"db-host",
-				`{{ if eq .uses.primary_db.host "" }}{{ fail "host required" }}{{ end }}`,
+				`{{ if eq .uses.primary_db.db.host "" }}{{ fail "host required" }}{{ end }}`,
 			),
 		},
 	}
@@ -308,7 +310,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	}
 	err := EvaluateComponentAndFeatureAssertions(graph, cl)
 	if err == nil {
-		t.Fatal("expected missing-key error on .uses.<socket>.<provides_key>; got nil")
+		t.Fatal("expected missing-key error on .uses.<socket>.<alias>.<provides_key>; got nil")
 	}
 	if errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("did not expect ErrAssertionFailed; expected missing-key, got %v", err)
