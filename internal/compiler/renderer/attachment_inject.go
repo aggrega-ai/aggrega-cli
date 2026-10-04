@@ -34,9 +34,12 @@ import (
 // already held when this ran, then each attachment's own claims in the order
 // they were made — so the first claim under a key is the one that holds it, and a
 // claim whose key is already held delivers nothing rather than displacing it. The
-// FeatureRecipe injectMapping interception in Phase A is a later, last-wins
-// overlay and is intentionally not a collision. Attachments are processed in
-// IR (author) order for deterministic emission.
+// FeatureRecipe injectMapping overlay in Phase A comes later and is merged over
+// this pipe; its deliveries join the same record once the mappings render, where a
+// mapping rewriting a key the component's own block or one of its connections
+// delivered is interception, and one writing a key another attachment delivered
+// is refused by the rule over that record. Attachments are processed in IR
+// (author) order for deterministic emission.
 //
 // The attributed record is returned rather than written from here, because the
 // caller is what holds the render's retention and what invokes the rule: this
@@ -61,7 +64,7 @@ func ResolveAttachmentInject(
 	// attachment delivers into it. They are the component's own and its
 	// connections', which this function cannot tell apart and does not need to:
 	// what the record has to say is that they are not an attachment's.
-	deliveries := existingPipeDeliveries(*inject)
+	deliveries := pipeDeliveries(*inject)
 	if recipeLookup.FeatureRecipe == nil {
 		return deliveries, nil
 	}
@@ -89,20 +92,25 @@ func ResolveAttachmentInject(
 	return deliveries, nil
 }
 
-// existingPipeDeliveries reads the deliveries a pipe already carries, in the
-// order the pipe holds them: the three named mechanisms and then the rest in the
-// order the pipe accumulated them.
+// pipeDeliveries reads the deliveries a pipe carries, in the order the pipe holds
+// them: the three named mechanisms and then the rest in the order the pipe
+// accumulated them. It attributes nothing; a caller that knows who made the
+// deliveries stamps them.
 //
-// It is read before any attachment delivers, which is what makes every entry it
-// returns one the component's own injection block or one of its connections
-// made. Neither carries an attachment, and the record does not distinguish the
-// two: a duplicate between an attachment and either of them is one condition with
-// one remedy, and what says the other surface is not an attachment's is the empty
-// attachment on its entry.
+// It reads two pipes. Read from the node's own pipe before any attachment
+// delivers, every entry it returns is one the component's own injection block or
+// one of its connections made. Neither carries an attachment, and the record does
+// not distinguish the two: a duplicate between an attachment and either of them
+// is one condition with one remedy, and what says the other surface is not an
+// attachment's is the empty attachment on its entry. Read from one attachment's
+// rendered mapping overlay, it returns what that mapping delivers, in the order
+// the merge applies it, because the merge visits the mechanisms in this same
+// order — which is why one walk serves both.
 //
 // Every entry reports as delivered, because a pipe holds a key only where a value
-// arrived under it — a reference that resolved to nothing set nothing.
-func existingPipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery {
+// arrived under it — a reference that resolved to nothing set nothing — and the
+// merge sets every key an overlay carries.
+func pipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery {
 	var out []constraint.InjectDelivery
 	record := func(mechanism string, keys types.OrderedMap[string]) {
 		for key := range keys.All() {

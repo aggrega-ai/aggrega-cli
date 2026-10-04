@@ -57,6 +57,20 @@ type InjectMappingDelivery struct {
 	// dictionary, or an output that parsed as nothing — because such an output
 	// makes no claim about the component's declarations to read against.
 	Mechanisms []constraint.InjectMappingMechanism
+
+	// Deliveries are the deliveries this mapping made on the host node's pipe,
+	// each attributed to the attachment and marked as made through its mapping,
+	// in the order the merge applied them: the three named mechanisms and then
+	// every other mechanism in the order the output wrote it.
+	//
+	// They are the keys above, read in order and attributed, and they come from
+	// the same overlay the merge applied, so what the record says this mapping
+	// delivered and what the pipe received cannot disagree. Every one of them
+	// arrived: the merge sets each key the output carries, an empty value
+	// included, so a key is absent from this list only where the output did not
+	// carry it. The order is what a rule asking which delivery came first reads,
+	// which an unordered key set cannot answer.
+	Deliveries []constraint.InjectDelivery
 }
 
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
@@ -187,6 +201,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 				Keys:         overlayDeliveryKeys(overlay),
 				Mechanisms: authoredMechanismsMapped(
 					authored, mapped, ref.FeatureRecipe.Metadata.Name),
+				Deliveries: overlayDeliveries(overlay, ref.InstanceName),
 			})
 		}
 	}
@@ -236,32 +251,45 @@ func authoredMechanismsMapped(
 // overlayDeliveryKeys names the delivery keys one parsed injectMapping overlay
 // puts on a node's pipe, by mechanism and then by key.
 //
-// It walks exactly the mechanisms the merge applies — the three typed ones and any
-// custom mechanism — so a key the report names is a key the pipe received. The
-// union view is deliberately not walked: it is rebuilt from the typed mechanisms
-// after the merge rather than merged from the overlay, so a marking on a typed
-// mechanism already covers the same datum where the union displays it.
+// It is read from [overlayDeliveries], so it walks exactly the mechanisms the
+// merge applies — the three typed ones and any custom mechanism — and a key the
+// report names is a key the pipe received. The union view is deliberately not
+// walked: it is rebuilt from the typed mechanisms after the merge rather than
+// merged from the overlay, so a marking on a typed mechanism already covers the
+// same datum where the union displays it.
 func overlayDeliveryKeys(overlay *types.InjectPipe) redact.DeliveryKeys {
+	var out redact.DeliveryKeys
+	for _, delivery := range overlayDeliveries(overlay, "") {
+		if out == nil {
+			out = redact.DeliveryKeys{}
+		}
+		if out[delivery.Mechanism] == nil {
+			out[delivery.Mechanism] = map[string]bool{}
+		}
+		out[delivery.Mechanism][delivery.DeliveryKey] = true
+	}
+	return out
+}
+
+// overlayDeliveries reads the deliveries one parsed injectMapping overlay makes on
+// a node's pipe, attributed to the attachment whose mapping produced it and
+// marked as made through a mapping, in the order the merge applies them.
+//
+// The overlay is a pipe of its own, so it is read by the one walk every pipe is
+// read by — the walk that records what the component's own block and its
+// connections delivered — rather than by a second one that agrees with it today.
+// That walk visits the mechanisms the merge applies, in the order it applies
+// them, so the order recorded here is the order the pipe received the keys in.
+// Every delivery is marked delivered, because the merge sets each key the overlay
+// carries, an empty value included.
+func overlayDeliveries(overlay *types.InjectPipe, attachment string) []constraint.InjectDelivery {
 	if overlay == nil {
 		return nil
 	}
-	var out redact.DeliveryKeys
-	record := func(mechanism string, deliveries types.OrderedMap[string]) {
-		for key := range deliveries.All() {
-			if out == nil {
-				out = redact.DeliveryKeys{}
-			}
-			if out[mechanism] == nil {
-				out[mechanism] = map[string]bool{}
-			}
-			out[mechanism][key] = true
-		}
+	deliveries := pipeDeliveries(*overlay)
+	for i := range deliveries {
+		deliveries[i].Attachment = attachment
+		deliveries[i].ThroughMapping = true
 	}
-	record("env", overlay.Env)
-	record("file", overlay.File)
-	record("arg", overlay.Arg)
-	for mechanism, deliveries := range overlay.Additional.All() {
-		record(mechanism, deliveries)
-	}
-	return out
+	return deliveries
 }

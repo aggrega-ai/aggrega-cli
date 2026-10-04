@@ -101,6 +101,12 @@ func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 	}
 }
 
+// TestExecutePhaseA_LastWins pins the phase's own merge: a later mapping's key
+// replaces whatever stood under it. That is a property of the phase in isolation
+// and not of a build — two attachments' mappings writing one key are refused by
+// the rule the render asks right after the phase, which this test does not reach.
+// The merge itself stays last-wins because interception of a key the component
+// or a connection delivered relies on it.
 func TestExecutePhaseA_LastWins(t *testing.T) {
 	t.Parallel()
 

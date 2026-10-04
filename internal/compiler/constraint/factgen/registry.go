@@ -334,12 +334,20 @@ var records = []recordDecl{
 			"value under the key, so it leaves the key free for a later " +
 			"delivery to take. A reader given the asked-for set alone could not " +
 			"tell that case from a delivery that landed, and would read a key " +
-			"nobody actually delivered as taken.",
+			"nobody actually delivered as taken.\n\nWhich of an attachment's two " +
+			"routes made the delivery travels with it too, because the two routes " +
+			"are held to different earlier deliveries. A claim an attachment's own " +
+			"injection block makes is held by any earlier delivery under its key, " +
+			"while a claim its FeatureRecipe's injectMapping makes is held only by " +
+			"an earlier delivery another attachment made: a mapping rewriting what " +
+			"the component's own block or one of its connections delivered is " +
+			"interception rather than a second claim.",
 		Fields: []recordField{
 			{Name: "Mechanism", Type: "string", Doc: "Mechanism is the injection mechanism the key is delivered through."},
 			{Name: "DeliveryKey", Type: "string", Doc: "DeliveryKey is the key the value is delivered under, which is what the consumer reads it by."},
-			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment instance whose own injection block asked for the delivery, empty where the component's own block or one of its connections did."},
-			{Name: "Delivered", Type: "bool", Doc: "Delivered reports whether a value arrived under the key, which is false for a delivery whose reference resolved to nothing and for one whose key another delivery already holds."},
+			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment instance that made the delivery — through its own injection block or through its FeatureRecipe's injectMapping — empty where the component's own block or one of its connections did."},
+			{Name: "Delivered", Type: "bool", Doc: "Delivered reports whether a value arrived under the key, which is false for a delivery whose reference resolved to nothing and for one whose key another delivery already holds. A delivery an injectMapping made always arrived: the merge sets every key the rendered output carries, an empty value included, so a key the output does not carry is the only thing such a mapping leaves undelivered, and it makes no delivery at all."},
+			{Name: "ThroughMapping", Type: "bool", Doc: "ThroughMapping reports whether the attachment made the delivery through its FeatureRecipe's injectMapping rather than through its own injection block, which is false for every delivery the component's own block or one of its connections made."},
 		},
 	},
 	{
@@ -5454,30 +5462,44 @@ var facts = []factDecl{
 		Doc: "NodeInjectDeliveries are the deliveries a node's injection pipe " +
 			"carries once every attachment attached to that node has delivered " +
 			"into it, one entry per mechanism and key, each naming whatever " +
-			"attachment asked for it and whether a value arrived — in delivery " +
-			"order, which is the order the deliveries were made in.\n\nThree " +
-			"authoring surfaces deliver into one pipe: the component's own " +
-			"injection block, the blocks on the entries of its dependency " +
-			"block, and the block on each attachment attached to it. The pipe " +
-			"is one keyed space shared between them, so a key two surfaces " +
-			"deliver under is a contradiction rather than a precedence " +
-			"question — and which surface asked is the only thing that says " +
-			"whose authoring has to change. The attribution is therefore part " +
-			"of the fact rather than something a reader could recover: the " +
-			"pipe itself holds values under keys and remembers nothing about " +
-			"where a key came from.\n\nThe first two surfaces are not told " +
-			"apart. A duplicate between an attachment and either of them is " +
-			"one condition with one remedy — remove the attachment's entry or " +
-			"the other one — and the entry that names no attachment is what " +
-			"says the other one is not an attachment's.\n\nDelivery order is " +
-			"the fact and not an incidental property of it. A pipe is filled " +
-			"in a fixed sequence — the component's own block, then its " +
-			"connections, then its attachments in the order they are attached, " +
-			"and within one attachment the three named mechanisms and then the " +
-			"rest in name order — and the first delivery under a key is the one " +
-			"that holds it. So a rule about a key delivered twice is a rule " +
-			"about this order, and answering in any other would name the wrong " +
-			"surface as the one that has to change.\n\nIt is empty for a node " +
+			"attachment asked for it, whether a value arrived and whether an " +
+			"attachment's mapping made it — in delivery order, which is the order " +
+			"the deliveries were made in.\n\nThree authoring surfaces deliver into " +
+			"one pipe through their blocks: the component's own injection block, " +
+			"the blocks on the entries of its dependency block, and the block on " +
+			"each attachment attached to it. An attachment delivers by a second " +
+			"route as well, its FeatureRecipe's injectMapping, whose deliveries " +
+			"exist only once that mapping has rendered — so they join the record " +
+			"after every block's, in the order the mappings ran. A rule asking " +
+			"before the mappings render reads the blocks' deliveries alone, and " +
+			"that is everything a rule about a block's claim needs: every block " +
+			"delivers before any mapping renders, so no mapping delivery can come " +
+			"ahead of a block's claim.\n\nThe pipe is one keyed space shared " +
+			"between them, so a key two of them deliver under is a contradiction " +
+			"rather than a precedence question — with one exception, which is " +
+			"interception: a mapping rewriting a key the component's own block " +
+			"or one of its connections delivered replaces that one entry by " +
+			"design. Which surface asked is the only thing that says whose " +
+			"authoring has to change, and whether a mapping is intercepting or " +
+			"colliding. The attribution is therefore part of the fact rather " +
+			"than something a reader could recover: the pipe itself holds " +
+			"values under keys and remembers nothing about where a key came " +
+			"from.\n\nThe component's own block and its connections are not " +
+			"told apart. A duplicate between an attachment's block and either " +
+			"of them is one condition with one remedy — remove the attachment's " +
+			"entry or the other one — and neither holds a key against a mapping, " +
+			"so the entry that names no attachment is what says the other one is " +
+			"not an attachment's.\n\nDelivery order is the fact and not an " +
+			"incidental property of it. A pipe is filled in a fixed sequence — " +
+			"the component's own block, then its connections, then its " +
+			"attachments' blocks in the order they are attached, and within one " +
+			"block the three named mechanisms and then the rest in name order; " +
+			"then each attachment's mapping in the order the mappings ran, and " +
+			"within one mapping the three named mechanisms and then the rest in " +
+			"the order its output wrote them — and the first delivery under a " +
+			"key is the one that holds it. So a rule about a key delivered twice " +
+			"is a rule about this order, and answering in any other would name " +
+			"the wrong surface as the one that has to change.\n\nIt is empty for a node " +
 			"whose pipe carries nothing, which is the ordinary answer for a " +
 			"component that delivers nothing into its own render context.",
 	},

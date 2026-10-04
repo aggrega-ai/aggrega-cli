@@ -86,6 +86,34 @@ var errAttachmentInjectKeyCollision = cerrors.Register("attachment-inject-key-co
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrAttachmentInjectMappingKeyCollision is the halt raised when one
+// attachment's FeatureRecipe injectMapping writes a delivery key, under one
+// mechanism, that a different attachment attached to the same component already
+// delivered — through that attachment's own mapping, or through its own inject
+// block. Two attachments delivering one key would leave the consumer reading
+// whichever of them happened to be merged last, so one credential could be
+// presented as another with nothing in the build saying so.
+//
+// It is a sibling of ErrAttachmentInjectKeyCollision rather than a widening of
+// it, because the two report different claims. That one is the claim an
+// attachment's own inject block makes, and its registered wording names that
+// block; this one is the claim an attachment's mapping makes, which no inject
+// block wrote. Both are raised by one walk over one record of the component's
+// deliveries, so they cannot disagree about which claim holds a key.
+//
+// A mapping rewriting a key the component's own inject block or one of its
+// connections' inject blocks delivered is not this condition: that is
+// interception, and the mapping's value replaces that one entry.
+// Category: DEVELOPER_ERROR. Match with
+// errors.Is(err, ErrAttachmentInjectMappingKeyCollision()).
+func ErrAttachmentInjectMappingKeyCollision() error { return errAttachmentInjectMappingKeyCollision }
+
+var errAttachmentInjectMappingKeyCollision = cerrors.Register("attachment-inject-mapping-key-collision", cerrors.Meta{
+	ShortCode: "E0318",
+	Message:   "duplicate delivery key across two attachments: an attachment's FeatureRecipe injectMapping writes a key another attachment already delivered",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
 var errUnmappedCustomMechanism = cerrors.Register("custom-mechanism-has-no-mapping", cerrors.Meta{

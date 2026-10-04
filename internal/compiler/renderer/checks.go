@@ -710,19 +710,111 @@ var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
 	},
 }
 
-// AttachmentInjectKeyNotDeliveredByAnotherSource reports each delivery key one
-// attachment attached to a component asks the component's injection pipe for
-// that another source has already delivered under.
+// takenInjectClaim is one claim an attachment made on its component's delivery
+// pipe under a key an earlier delivery already held against it, together with
+// the attachment that delivered first — empty where the component's own block or
+// one of its connections did.
+type takenInjectClaim struct {
+	constraint.InjectDelivery
+
+	// HeldBy is the attachment whose earlier delivery holds the key against this
+	// claim, empty where the component's own block or one of its connections
+	// delivered it.
+	HeldBy string
+}
+
+// takenInjectClaims walks one node's deliveries in delivery order and reports
+// every claim the named attachment made under a key an earlier delivery holds
+// against it, by either of the attachment's two routes.
 //
-// Three authoring surfaces deliver into one pipe: the component's own injection
-// block, the blocks on the entries of its dependency block, and the block on each
-// attachment attached to it. The pipe is one keyed space shared between them, so a
-// key two of them deliver under is ambiguous about which value arrives, and the
-// build halts rather than letting one surface silently displace another. The
-// author resolves it by removing one of the two claims. Presence in both is the
-// whole signal: the rule compares no values and does not treat two sources
-// agreeing as acceptable, because the agreement is a property of one input rather
-// than of the authoring.
+// It is the ONE walk both rules over the record share, so they cannot come to
+// disagree about which claim holds a key. Three things decide a claim, and each
+// holds on both routes:
+//
+//   - The first claim under a key is the one that holds it, so the walk
+//     accumulates what has been delivered as it goes and asks of each claim
+//     whether the key was already held. A search over the whole answer would find
+//     an attachment's claim colliding with a LATER claim and refuse a pair that no
+//     build has a problem with, because the later claim is the one that took
+//     nothing. That is the direction a rule about a shared keyed space is easiest
+//     to get wrong in, since both readings agree on every input where every claim
+//     resolves.
+//   - Presence alone is the signal. No value is compared, and two claims agreeing
+//     on a value still collide, because the agreement is a property of one input
+//     rather than of the authoring.
+//   - A claim that delivered nothing is passed over rather than counted: it left
+//     the key free, so the next claim under it is the first to hold it. On the
+//     inject-block route that is a reference resolving to nothing, or a key
+//     another claim already held. On the mapping route it is a key the rendered
+//     output does not carry — and such a key makes no claim at all, because the
+//     merge sets every key the output carries, an empty value included. A mapping
+//     writing an empty value under a key has therefore delivered under it: the
+//     empty value replaced whatever stood there.
+//
+// What holds a key differs between the two routes, and that difference is the
+// whole of what separates them. Against a claim an attachment's own inject block
+// makes, any earlier delivery holds the key — the component's own block, one of
+// its connections, or another attachment's block. Against a claim an
+// attachment's mapping makes, only an earlier delivery by a DIFFERENT attachment
+// holds it, through that attachment's block or its mapping. A mapping rewriting
+// what the component's own block or one of its connections delivered is
+// interception, which is what a mapping is for; and a mapping rewriting what its
+// own attachment's block delivered is that attachment transforming its own
+// delivery, which displaces nothing anyone else wrote.
+//
+// The attachment that delivered first is reported with the claim because a
+// mapping claim is always held by an attachment, and naming it is what lets the
+// author find the second of the two entries. A key several attachments delivered
+// before the claim is held by the first of them, which is the one that stood
+// there before any displacement began.
+func takenInjectClaims(deliveries []constraint.InjectDelivery, attachment string) []takenInjectClaim {
+	var out []takenInjectClaim
+	held := map[string]bool{}
+	heldBy := map[string][]string{}
+	for _, delivery := range deliveries {
+		slot := delivery.Mechanism + "\x00" + delivery.DeliveryKey
+		if delivery.Attachment == attachment {
+			if !delivery.ThroughMapping && held[slot] {
+				out = append(out, takenInjectClaim{InjectDelivery: delivery, HeldBy: firstOtherThan(heldBy[slot], "")})
+			}
+			if delivery.ThroughMapping {
+				if holder := firstOtherThan(heldBy[slot], attachment); holder != "" {
+					out = append(out, takenInjectClaim{InjectDelivery: delivery, HeldBy: holder})
+				}
+			}
+		}
+		if delivery.Delivered {
+			held[slot] = true
+			if delivery.Attachment != "" {
+				heldBy[slot] = append(heldBy[slot], delivery.Attachment)
+			}
+		}
+	}
+	return out
+}
+
+// firstOtherThan returns the first attachment in delivery order that is not the
+// excluded one, and the empty string where there is none.
+func firstOtherThan(attachments []string, excluded string) string {
+	for _, a := range attachments {
+		if a != excluded {
+			return a
+		}
+	}
+	return ""
+}
+
+// AttachmentInjectKeyNotDeliveredByAnotherSource reports each delivery key one
+// attachment's own inject block asks the component's injection pipe for that
+// another source has already delivered under.
+//
+// Three authoring surfaces deliver into one pipe through their blocks: the
+// component's own injection block, the blocks on the entries of its dependency
+// block, and the block on each attachment attached to it. The pipe is one keyed
+// space shared between them, so a key two of them deliver under is ambiguous
+// about which value arrives, and the build halts rather than letting one surface
+// silently displace another. The author resolves it by removing one of the two
+// claims.
 //
 // It is invoked once per attachment, which is the side the objection is
 // attributed to, and reads one fact — the attributed deliveries the node's pipe
@@ -733,22 +825,11 @@ var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
 // author whose attachment duplicates two keys is told about both rather than
 // about whichever came first.
 //
-// # Why the answer is walked in order rather than searched
-//
-// The fact comes back in delivery order and the first claim under a key is the one
-// that holds it, so the rule accumulates what has been delivered as it walks and
-// asks of its own attachment's claims whether the key was already held. A search
-// over the whole answer would read differently: it would find its own attachment's
-// claim colliding with a LATER claim by another attachment, and refuse a pair that
-// no build has a problem with — the later claim delivers nothing and takes no key,
-// so nothing was displaced. That is the direction a rule about a shared keyed
-// space is easiest to get wrong in, because both readings agree on every input
-// where every claim resolves.
-//
-// A claim that delivered nothing is passed over rather than counted, for the same
-// reason: it left the key free, so the next claim under it is the first to hold
-// it. The fact carries that distinction precisely because it cannot be recovered
-// from the pipe afterwards.
+// Which claims collide is decided by [takenInjectClaims], the walk this rule
+// shares with the rule over an attachment's mapping; this rule reports the claims
+// the attachment's own block made. It is asked before any mapping renders, which
+// is all a block's claim needs: every block delivers before any mapping does, so
+// nothing a mapping delivers can come ahead of a block's claim.
 //
 // # What the detail names
 //
@@ -776,19 +857,83 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 		s constraint.NodeAttachmentSubject,
 	) []constraint.Objection {
 		var out []constraint.Objection
-		held := map[string]bool{}
-		for _, delivery := range v.NodeInjectDeliveries(s.NodeID()) {
-			slot := delivery.Mechanism + "\x00" + delivery.DeliveryKey
-			if delivery.Attachment == s.AttachmentName() && held[slot] {
-				out = append(out, s.RaiseWith(
-					ErrAttachmentInjectKeyCollision(),
-					constraint.Uncaptioned(delivery.DeliveryKey),
-					constraint.Captioned("mechanism", delivery.Mechanism),
-				))
+		for _, claim := range takenInjectClaims(v.NodeInjectDeliveries(s.NodeID()), s.AttachmentName()) {
+			if claim.ThroughMapping {
+				continue
 			}
-			if delivery.Delivered {
-				held[slot] = true
+			out = append(out, s.RaiseWith(
+				ErrAttachmentInjectKeyCollision(),
+				constraint.Uncaptioned(claim.DeliveryKey),
+				constraint.Captioned("mechanism", claim.Mechanism),
+			))
+		}
+		return out
+	},
+}
+
+// AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment reports each
+// delivery key one attachment's FeatureRecipe injectMapping writes that a
+// different attachment attached to the same component already delivered.
+//
+// An attachment delivers into its component's pipe by two routes: its own
+// inject block, and its FeatureRecipe's mapping, whose delivery key is a template
+// rendered against the attachment's own values and infra. Two attachments
+// arriving at one key by any pairing of those routes leave the component reading
+// whichever was merged last, and the merge is last-wins by construction — so a
+// credential one attachment delivered would be presented under another's with
+// nothing in the build saying so. The build halts instead, naming both
+// attachments, and the author resolves it by giving one of them a key of its own
+// or by removing one of them.
+//
+// A mapping rewriting a key the component's own block or one of its connections
+// delivered is not reported. That is interception — a routing Feature qualifying
+// a host, a guard redirecting an upstream — and it is what the mapping mechanism
+// exists for. The rule therefore reads no value and no meaning: what separates a
+// collision from an interception is which surface made the earlier delivery,
+// which the record attributes and the rendered pipe does not.
+//
+// It is invoked once per attachment, the side the finding is positioned at,
+// immediately after every attachment's mapping has rendered and before anything
+// reads the rewritten pipe. The rendered keys exist only from that point, so it
+// is the earliest the question is answerable. Which claims collide is decided by
+// [takenInjectClaims], the one walk this rule shares with the rule over an
+// attachment's own block; this rule reports the claims the attachment's mapping
+// made. Each colliding key is its own objection.
+//
+// # What the detail names
+//
+// The delivery key stands bare, because the registered wording already says a
+// duplicated delivery key is what the finding is about, and the mechanism is
+// captioned for the reason the sibling rule gives. Both attachments are named,
+// captioned, each by the name the build gives it on the component — an
+// attachment a connection carries is named by its alias and its slot. The one the
+// finding is positioned at is named as well as located, because the locator
+// names where it was written and the other is named by what it is called, and a
+// reader comparing the two needs them in one spelling. The other is named because
+// it is written somewhere the locator does not reach, and finding it is half of
+// the remedy.
+var AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrAttachmentInjectMappingKeyCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		for _, claim := range takenInjectClaims(v.NodeInjectDeliveries(s.NodeID()), s.AttachmentName()) {
+			if !claim.ThroughMapping {
+				continue
 			}
+			out = append(out, s.RaiseWith(
+				ErrAttachmentInjectMappingKeyCollision(),
+				constraint.Uncaptioned(claim.DeliveryKey),
+				constraint.Captioned("mechanism", claim.Mechanism),
+				constraint.Captioned("attachment", s.AttachmentName()),
+				constraint.Captioned("delivered first by attachment", claim.HeldBy),
+			))
 		}
 		return out
 	},

@@ -708,8 +708,11 @@ type Derived struct {
 // connection, and then by the target's provides key. Inject is keyed by delivery
 // mechanism and then by delivery key, which is the shape the delivery pipe is
 // displayed in and therefore not alias-keyed; a delivery key identifies exactly
-// one entry within its mechanism on a node, because a key another source already
-// set halts the build.
+// one entry within its mechanism on a node. Two inject blocks claiming one key
+// halt the build, and so does an attachment's injectMapping writing a key another
+// attachment delivered; the one rewrite that does not halt is a mapping writing a
+// key the component's own block or a connection delivered, and that replaces the
+// entry rather than adding a second one.
 //
 // The two are grouped rather than passed as two bare maps for the same reason
 // Derived is: they are read from the same edges by the same declaration lookup,

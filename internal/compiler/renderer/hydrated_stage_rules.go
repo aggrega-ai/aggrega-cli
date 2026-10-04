@@ -595,9 +595,34 @@ func (o oneNodesAttachments) Attachments(node string) []string {
 	return o.attachments.Attachments(node)
 }
 
+// ConnectionAttachmentSite reports where one of the narrowed node's attachments
+// was written when it was written on one of the node's connections, by asking the
+// build's own enumeration, and reports nothing for any other node.
+//
+// The narrowing has to carry this answer through, because the traversal asks it of
+// the value it is handed and of nothing else. A narrowing that dropped it would
+// position an attachment a connection carries at the node's own attachment block,
+// under the composed name the build gives it — a block the component does not
+// have — rather than at the connection entry the author wrote it in. An
+// enumeration that supplies no site leaves every attachment at the node's own
+// block, which is the right answer where nothing was written on a connection.
+func (o oneNodesAttachments) ConnectionAttachmentSite(
+	node, attachment string,
+) (constraint.ConnectionAttachmentSite, bool) {
+	if node != o.node.ID {
+		return constraint.ConnectionAttachmentSite{}, false
+	}
+	sites, ok := o.attachments.(constraint.ConnectionAttachmentSiteEnumerator)
+	if !ok {
+		return constraint.ConnectionAttachmentSite{}, false
+	}
+	return sites.ConnectionAttachmentSite(node, attachment)
+}
+
 var (
-	_ constraint.NodeEnumerator       = oneNodesAttachments{}
-	_ constraint.AttachmentEnumerator = oneNodesAttachments{}
+	_ constraint.NodeEnumerator                     = oneNodesAttachments{}
+	_ constraint.AttachmentEnumerator               = oneNodesAttachments{}
+	_ constraint.ConnectionAttachmentSiteEnumerator = oneNodesAttachments{}
 )
 
 // runNodeInjectDeliveryRule asks the rule declared over one node's attributed
@@ -718,6 +743,50 @@ func runInjectMappingMechanismRule(
 	}
 	return objectionsAsHalt(
 		raised, "attachments whose injectMapping leaves a declared inject mechanism unmapped")
+}
+
+// runNodeInjectMappingDeliveryRule asks the rule declared over one node's
+// attributed deliveries about each attachment attached to that node, once every
+// attachment's mapping has delivered, and returns what it raised as the render's
+// halt.
+//
+// It is called from inside the node walk, immediately after the mappings'
+// deliveries have joined the node's record and the mechanism reading beside it
+// has been asked, and before anything downstream reads the rewritten pipe. That is
+// the earliest point the question is answerable — a mapping's delivery key is a
+// template, so it exists only once the mapping has rendered — and the last point
+// acting on it still saves work, for the reason the reading over the attachments'
+// own blocks gives.
+//
+// It is asked after the mechanism reading rather than before it so that an input
+// that reading refuses is still refused by it: an input carrying both faults
+// reports the one it reported before this rule existed.
+//
+// The halt carries the developer category, as the reading over the attachments'
+// own blocks does: the two report one shared space from its two routes, and the
+// attachments whose keys meet are the author's to change.
+//
+// The two absent inputs are the different questions the sibling readings above
+// keep apart, and each leaves the rule uninvoked for the reason they give. The
+// cancellation signal is the caller's own.
+func runNodeInjectMappingDeliveryRule(
+	cancelled constraint.Cancellation,
+	view constraint.HydratedView,
+	coordinates constraint.AttachmentEnumerator,
+	node constraint.NodeInstance,
+) error {
+	if view == nil || coordinates == nil || node.ID == "" {
+		return nil
+	}
+	subject := oneNodesAttachments{node: node, attachments: coordinates}
+	raised, err := constraint.RunOnNodeAttachments(
+		cancelled, subject, subject, view, AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsDeveloperHalt(
+		raised, "attachments whose injectMapping writes a key another attachment already delivered")
 }
 
 // declaredProvidesContract is the node axis and the provides-key axis for the
@@ -905,8 +974,9 @@ func runProvidesContractRule(
 // declares sends an author to a catalog document, a rule about output the compiler
 // produced to no document at all, a rule about where a boundary's output landed to
 // the Release document — and this one to the Aggregate, because an injection
-// block and the attachment that duplicates its key are both written there and the
-// remedy is to remove one of them.
+// block and the attachment that duplicates its key are both written there, as two
+// attachments whose deliveries meet on one key ordinarily are, and the remedy is
+// to remove or re-key one of them.
 func objectionsAsDeveloperHalt(objections []constraint.Objection, envelope string) error {
 	return objectionsAsCategorisedHalt(objections, cerrors.DeveloperError, envelope)
 }

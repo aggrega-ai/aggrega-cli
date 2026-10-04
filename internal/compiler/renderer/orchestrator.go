@@ -1328,8 +1328,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Attachment-level inject (feature.inject / secret.inject): resolve each
 		// authored delivery key's provides-key reference against the attachment's
-		// own resolved provides and deliver into .context.inject, before Phase A's
-		// FeatureRecipe injectMapping last-wins overlay.
+		// own resolved provides and deliver into .context.inject, before Phase A
+		// merges each FeatureRecipe's injectMapping overlay over it.
 		//
 		// Delivery is also where the sensitive-by-value advisories are collected:
 		// the delivery site is the only place that knows a marked key actually
@@ -1523,25 +1523,39 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// an inject-only FeatureRecipe (no source/workload) rewrites the
 		// component's inject pipe whatever the attachment produces — and the
 		// order is the cascade order the IR recorded, which Phase B.6 walks too.
-		// The Phase A deep-merge is last-writer-wins per delivery key, so on a
-		// collision the later attachment in that one order wins.
+		// The Phase A deep-merge sets each key a mapping's output carries over
+		// whatever stood under it. Where that was the component's own block or
+		// one of its connections, the mapping's value replaces that one entry —
+		// interception. Where another attachment delivered the key, by its own
+		// block or its mapping, the build halts below, naming both attachments,
+		// so the merge never decides between two attachments' deliveries.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		mappedDelivery, err := ExecutePhaseA(tmplCtx, featureRefs)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		// Retain what each attachment's mapping said about the mechanisms this
-		// component declared, then ask the rule declared over that record whether
-		// any attachment left one unmapped. The recording is unconditional and the
-		// reading is immediately after it: this is the point every mapping has
-		// rendered and nothing below has read the rewritten pipe yet, so a
-		// declaration reaching nothing is refused before any output is rendered
-		// against a pipe short of it.
+		// component declared, and what it delivered — the deliveries join the
+		// node's record after every block's, in the order the mappings ran — then
+		// ask the two rules declared over those records. The recording is
+		// unconditional and the readings are immediately after it: this is the
+		// point every mapping has rendered and nothing below has read the
+		// rewritten pipe yet, so a declaration reaching nothing, and a key two
+		// attachments delivered, are refused before any output is rendered
+		// against the pipe. The mechanism reading is asked first, so an input it
+		// refuses is still refused by it.
 		for _, delivery := range mappedDelivery {
 			input.hydrated.recordAttachmentInjectMappingMechanisms(
 				nodeID, delivery.InstanceName, delivery.Mechanisms)
+			injectDeliveries = append(injectDeliveries, delivery.Deliveries...)
 		}
+		input.hydrated.recordNodeInjectDeliveries(nodeID, injectDeliveries)
 		if err := runInjectMappingMechanismRule(
+			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
+		); err != nil {
+			return nil, err
+		}
+		if err := runNodeInjectMappingDeliveryRule(
 			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
 		); err != nil {
 			return nil, err
