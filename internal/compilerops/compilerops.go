@@ -323,11 +323,16 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 	cacheDir := in.WorkspaceConfig.ResolvedArtifactCacheDir()
 	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals, nil, nil)
+	// The two failures below carry the resolution's own text and no head of their
+	// own: that text already says what could not be resolved and where the
+	// reference came from, and the editor's entry opens with the stage in public
+	// words, so a head here would name the stage again in the code's words rather
+	// than the reader's. Stage is what tells a caller which step it was.
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), in.WorkspaceConfig, lookup)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComputeClosure,
-			msg:   fmt.Sprintf("closure compute: %v", err),
+			msg:   err.Error(),
 			err:   err,
 		}
 	}
@@ -340,7 +345,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		if aerr := closure.AugmentClosure(ctx, &cl, in.View, lookup); aerr != nil {
 			return nil, &ClosureError{
 				Stage: ClosureStageComputeClosure,
-				msg:   fmt.Sprintf("closure augment: %v", aerr),
+				msg:   aerr.Error(),
 				err:   aerr,
 			}
 		}

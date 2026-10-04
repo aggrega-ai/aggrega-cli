@@ -540,6 +540,42 @@ func walkCatalogDir(workspaceRoot, dir, cacheDir string, visit func(path string)
 	return nil
 }
 
+// MissingDirectory reports whether err carries the refusal a catalog load gives a
+// catalog directory that does not exist, and returns that directory as the
+// refusal names it. It answers for a whole-catalog load, for
+// LazyLookup.CheckDirectories, and for any wrap of either that adds no catalog
+// frame of its own.
+//
+// It reads the refusal walkCatalogDir composes, by its structure and never by its
+// text: the outermost catalog frame in the chain is the walk's own, whose source
+// is the directory it was asked to walk, and the filesystem's report beneath it
+// says that very path does not exist. Asking the outermost frame rather than any
+// frame is what keeps a document that vanished mid-walk from reading as a missing
+// directory — the walk's frame still names the directory there, while the report
+// beneath it names the document. A directory that exists and cannot be read is
+// not this case either, and reports false.
+//
+// A caller that words a missing directory its own way is told which directory
+// without parsing a message, and every surface that prints the refusal itself
+// prints it unchanged.
+func MissingDirectory(err error) (string, bool) {
+	var notThere *fs.PathError
+	if !errors.As(err, &notThere) || !errors.Is(notThere.Err, fs.ErrNotExist) {
+		return "", false
+	}
+	for cur := err; cur != nil; cur = errors.Unwrap(cur) {
+		frame, ok := cur.(*cerrors.CompilerError)
+		if !ok || frame.Category() != cerrors.CatalogError {
+			continue
+		}
+		if frame.Source().File != notThere.Path {
+			return "", false
+		}
+		return notThere.Path, true
+	}
+	return "", false
+}
+
 // SkipDirIfArtifactCache returns the walk directive for a directory reached at
 // path: fs.SkipDir when that directory IS the workspace's artifact cache, nil
 // otherwise. It is the single decision site for "does a catalog walk step over

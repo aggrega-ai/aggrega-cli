@@ -92,6 +92,14 @@ func walkFailure(t *testing.T, lookup closure.Lookup) error {
 	return err
 }
 
+// walkStageFailure is the failure ResolveClosure returns when the closure walk
+// refuses with err: the walk's stage, carrying err's own text and err itself.
+// The rows below that need a resolution failure without driving a walk start
+// from it, so what they hand the decoration has the shape a command holds.
+func walkStageFailure(err error) error {
+	return &ClosureError{Stage: ClosureStageComputeClosure, msg: err.Error(), err: err}
+}
+
 // refusedFeature is the refusal record a tolerant load keeps for a Feature
 // document it read and refused, declaring the identity given.
 func refusedFeature(path, name, version string) catalog.SkippedEntity {
@@ -172,7 +180,7 @@ func TestLocalCatalogNoteAttachesOnlyWhereItIsTheRemedy(t *testing.T) {
 		{
 			name: "the bare condition, raised by a path that recorded no reference",
 			err: func(*testing.T) error {
-				return fmt.Errorf("validate: %w", fmt.Errorf("closure compute: %w", closure.ErrUnresolvableURI()))
+				return fmt.Errorf("validate: %w", walkStageFailure(closure.ErrUnresolvableURI()))
 			},
 			want: true,
 		},
@@ -185,7 +193,7 @@ func TestLocalCatalogNoteAttachesOnlyWhereItIsTheRemedy(t *testing.T) {
 		},
 		{
 			name: "a version-selection conflict among the requirements the walk accumulated",
-			err:  func(*testing.T) error { return fmt.Errorf("closure compute: %w", closure.ErrMVSConflict()) },
+			err:  func(*testing.T) error { return walkStageFailure(closure.ErrMVSConflict()) },
 			want: false,
 		},
 		{
@@ -293,7 +301,7 @@ func carriedOrNot(b bool) string {
 // both states at once, so one arriving must not displace the other.
 func TestLocalCatalogNoteAndRefusalsBothTravel(t *testing.T) {
 	t.Parallel()
-	failure := fmt.Errorf("closure compute: %w", closure.ErrUnresolvableURI())
+	failure := walkStageFailure(closure.ErrUnresolvableURI())
 	refused := catalog.SkippedEntity{
 		Path: "/cat/recipes/helm/server.yaml",
 		Err:  stderrors.New("the constraint the author has to fix"),
@@ -322,7 +330,7 @@ func TestLocalCatalogNoteAndRefusalsBothTravel(t *testing.T) {
 // would still change which frame a formatter renders from.
 func TestNoNoteAndNoRefusalsLeavesTheFailureAlone(t *testing.T) {
 	t.Parallel()
-	failure := fmt.Errorf("closure compute: %w", closure.ErrUnresolvableURI())
+	failure := walkStageFailure(closure.ErrUnresolvableURI())
 	if got := AnnotateSkipContext(failure, nil, ""); got != failure {
 		t.Errorf("AnnotateSkipContext returned %T; want the failure it was handed, unchanged", got)
 	}

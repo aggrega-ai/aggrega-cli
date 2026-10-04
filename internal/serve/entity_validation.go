@@ -6,12 +6,14 @@ package serve
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
 
 // isSingleEntityDocument reports whether a parsed buffer is a document of a kind
@@ -49,11 +51,12 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // answering as though in the Release's.
 //
 // The check reports one blocking finding at most, at the head of the file, in the
-// check's own words — the same text the tool reports — and the advisory lines it
-// gathers while reading the catalog, which never fail its verdict, at the warning
-// tier ahead of it, the order they were decided in. A clean check reports nothing.
-// A request withdrawn while the check runs reports nothing either, and the caller
-// leaves what the file last showed in place.
+// check's own words — the same text the tool reports, bar the one case
+// entityCheckMessage words itself — and the advisory lines it gathers while
+// reading the catalog, which never fail its verdict, at the warning tier ahead of
+// it, the order they were decided in. A clean check reports nothing. A request
+// withdrawn while the check runs reports nothing either, and the caller leaves
+// what the file last showed in place.
 func (s *Server) runEntityValidation(ctx context.Context, releasePath, file string, content []byte) []Diagnostic {
 	if _, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil); err != nil {
 		return []Diagnostic{{
@@ -78,9 +81,35 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
-			Message:        err.Error(),
+			Message:        s.entityCheckMessage(releasePath, err),
 			ConditionCodes: conditionCodesOf(err),
 		})
 	}
 	return diags
+}
+
+// entityCheckMessage is the text the single-entity check's blocking finding is
+// published with: the check's own words, except where the check stopped because a
+// catalog directory the Release reads does not exist.
+//
+// That refusal's own text names the directory and then only the step it stopped —
+// the reason sits a frame further in, as the filesystem's report — so carried as
+// it is, the entry says where and never what is wrong. It is worded here instead:
+// the directory, that it does not exist, and where the configuration lists it,
+// with what to do about it. The directory is recognised by the refusal's
+// structure (catalog.MissingDirectory) and never by its text.
+//
+// Naming the configuration is true here and is the reason the wording lives on
+// this surface: a stack this daemon resolves takes no command-line directories,
+// and the conventional catalog directory joins it only when it exists, so a
+// directory in it that does not exist is one the configuration lists. The command
+// line and the tools may be handed a directory of their own, so they carry the
+// refusal as it is.
+func (s *Server) entityCheckMessage(releasePath string, err error) string {
+	dir, missing := catalog.MissingDirectory(err)
+	if !missing {
+		return err.Error()
+	}
+	return fmt.Sprintf("catalog load: the directory %s does not exist; it is listed under %s, so create it or remove the entry naming it",
+		dir, s.resolvedWorkspace.CatalogDirsSettingWordsFor(releasePath))
 }

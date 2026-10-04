@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package serve
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
+
+// missingDirWorkspace lays down the shared Release-entity fixture — a Component
+// whose pillar refers to the library Sizing in variant-sized/, the same Component
+// referring to no library in variant-plain/, and a Release file for each — under the
+// workspace configuration given, and opens it the way the daemon opens any
+// workspace a request names.
+func missingDirWorkspace(t *testing.T, config string) (*Server, string) {
+	t.Helper()
+	src, err := filepath.Abs(filepath.Join("..", "compiler", "testdata", "release-entity-check"))
+	if err != nil {
+		t.Fatalf("locate the fixture: %v", err)
+	}
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
+		t.Fatalf("copy the fixture workspace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
+		t.Fatalf("write the workspace configuration: %v", err)
+	}
+	sess := newTestSession(t, root, bytes.NewReader(nil), &bytes.Buffer{})
+	srv, err := sess.workspaceFor(root)
+	if err != nil {
+		t.Fatalf("open the workspace at %s: %v", root, err)
+	}
+	return srv, root
+}
+
+// TestValidateNamesACatalogDirectoryThatDoesNotExistInWords is the invocation
+// proof of the entry a catalog entity file carries when a catalog directory the
+// Release reads does not exist: one request over the real framing per row, and the
+// answer read whole.
+//
+// The entry names the directory, says it does not exist rather than carrying the
+// filesystem's own report, says "catalog load" once, and names where the
+// configuration lists it — the workspace's list, and a Release's own list as well
+// where the configuration gives the Release one, decided for the Release the
+// request named.
+//
+// The first row is the positive control: every directory there, the Component is
+// clean. The last row is the control on the other side: a finding that is not a
+// missing directory keeps the check's own words. Each row in between carries one
+// fault, a missing directory, listed somewhere different.
+func TestValidateNamesACatalogDirectoryThatDoesNotExistInWords(t *testing.T) {
+	t.Parallel()
+	const (
+		workspaceList = "`workspace.catalog_dirs` in .aggrega-config.yaml"
+		releaseList   = "a Release's own `catalog_dirs` under `workspace.releases`"
+	)
+	cases := []struct {
+		name    string
+		config  string
+		release string
+		// clean is a row whose answer carries no entry at all.
+		clean bool
+		// missing is the directory the entry must name as not existing, or empty.
+		missing string
+		// carries are phrases the entry must carry, and lacks phrases it may not.
+		carries []string
+		lacks   []string
+	}{
+		{name: "every directory the Release reads exists, and the Component is clean",
+			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
+			release: "release-sized.yaml", clean: true},
+		{name: "a directory the workspace's list names that does not exist is named, with that list",
+			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
+			release: "release-sized.yaml", missing: "no-such-catalog",
+			carries: []string{workspaceList, "create it or remove the entry naming it"},
+			lacks:   []string{"workspace.releases"}},
+		{name: "a directory the Release's own list names that does not exist names that list as well",
+			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
+			release: "release-sized.yaml", missing: "gone-for-sized",
+			carries: []string{releaseList}},
+		{name: "a Release the configuration gives no list of its own is told the workspace's list alone",
+			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n" +
+				"  releases:\n    release-plain.yaml:\n      catalog_dirs:\n        - variant-plain\n",
+			release: "release-sized.yaml", missing: "no-such-catalog",
+			carries: []string{workspaceList},
+			lacks:   []string{"workspace.releases"}},
+		{name: "a finding that is not a missing directory keeps the check's own words",
+			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n",
+			release: "release-sized.yaml",
+			carries: []string{"SchemaLibrary Sizing not found in catalog"},
+			lacks:   []string{"does not exist"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, root := missingDirWorkspace(t, tc.config)
+			file := filepath.Join(root, "variant-sized", "component", "db.yaml")
+			res := validateContentOverTheWire(t, srv, file, mustRead(t, file), tc.release)
+			messages := diagMessages(res.Diagnostics)
+			if tc.clean {
+				if len(res.Diagnostics) != 0 {
+					t.Fatalf("want a clean answer; got %q", messages)
+				}
+				return
+			}
+			var entry string
+			for _, d := range res.Diagnostics {
+				if d.Severity == editorSeverityError {
+					entry = d.Message
+				}
+			}
+			if entry == "" {
+				t.Fatalf("want an error entry; the answer carries %q", messages)
+			}
+			if tc.missing != "" {
+				if !strings.Contains(entry, string(filepath.Separator)+tc.missing+" does not exist") {
+					t.Errorf("the entry does not say %s does not exist:\n%s", tc.missing, entry)
+				}
+				if n := strings.Count(entry, "catalog load"); n != 1 {
+					t.Errorf("the entry says \"catalog load\" %d times; want once:\n%s", n, entry)
+				}
+				for _, report := range []string{"lstat", "no such file or directory"} {
+					if strings.Contains(entry, report) {
+						t.Errorf("the entry carries the filesystem's report %q rather than words:\n%s", report, entry)
+					}
+				}
+			}
+			for _, phrase := range tc.carries {
+				if !strings.Contains(entry, phrase) {
+					t.Errorf("the entry does not carry %q:\n%s", phrase, entry)
+				}
+			}
+			for _, phrase := range tc.lacks {
+				if strings.Contains(entry, phrase) {
+					t.Errorf("the entry carries %q:\n%s", phrase, entry)
+				}
+			}
+		})
+	}
+}
+
+// TestValidatePublishesADependencyFailureOnlyOnAggregaDocuments is the invocation
+// proof of where a Release whose dependencies cannot be resolved is reported: on
+// the Release's own document and on every document the daemon reads as one of
+// Aggrega's own, and on no YAML it reads as no kind of its own — a file that is
+// not about anything the Release depends on.
+//
+// Every Release in the workspace fails to resolve (it has no Manifest), so each
+// row's answer is decided by which document it names and nothing else. The first
+// rows are the positive controls: the Release, its Aggregate, and the workspace
+// configuration, which the daemon reads by its name, each carry the failure. The
+// foreign rows each send one kind of document the daemon reads as none of its own,
+// and each answer is empty. The last row holds the one exception: the Release's own
+// document keeps the failure while its header, mid-edit, no longer classifies.
+func TestValidatePublishesADependencyFailureOnlyOnAggregaDocuments(t *testing.T) {
+	t.Parallel()
+	srv, root := entityCheckWorkspace(t)
+	at := func(rel string) string { return filepath.Join(root, rel) }
+	const dependencies = "Dependencies: "
+	foreign := map[string]string{
+		".github/workflows/ci.yml": "name: package-and-publish\non:\n  push:\n    tags: [\"v*\"]\n" +
+			"jobs:\n  package:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n",
+		"compose.yaml": "services:\n  web:\n    image: registry.example/web:1.0.0\n    ports: [\"8080:8080\"]\n",
+		"gadget.yaml":  "apiVersion: aggrega.ai/v1alpha1\nkind: Gadget\nmetadata:\n  name: not-a-kind\n",
+	}
+	for rel, content := range foreign {
+		if err := os.MkdirAll(filepath.Dir(at(rel)), 0o755); err != nil {
+			t.Fatalf("create the directory for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(at(rel), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	cases := []struct {
+		name string
+		file string
+		// edit, when set, turns the file's bytes into the buffer the request carries.
+		edit func(string) string
+		// reported is whether the answer carries the dependency failure; a row that
+		// does not must answer nothing at all.
+		reported bool
+	}{
+		{name: "the Release's own document carries it", file: at("release-sized.yaml"), reported: true},
+		{name: "the Release's Aggregate carries it", file: at("aggregate.yaml"), reported: true},
+		{name: "the workspace configuration, read by its name, carries it",
+			file: at(workspaceconfig.ConfigFilename), reported: true},
+		{name: "a continuous-integration workflow carries nothing", file: at(".github/workflows/ci.yml")},
+		{name: "a Compose file carries nothing", file: at("compose.yaml")},
+		{name: "a document naming Aggrega's API group with a kind the daemon does not read carries nothing",
+			file: at("gadget.yaml")},
+		{name: "the Release's own document keeps it while its header does not classify",
+			file:     at("release-sized.yaml"),
+			edit:     func(s string) string { return strings.Replace(s, "kind: Release", "kind: Releas", 1) },
+			reported: true},
+	}
+	// Not parallel: the rows share one daemon, and two name one file.
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := mustRead(t, tc.file)
+			if tc.edit != nil {
+				edited := tc.edit(content)
+				if edited == content {
+					t.Fatal("the edit changed nothing, so the row would send the file as saved")
+				}
+				content = edited
+			}
+			res := validateContentOverTheWire(t, srv, tc.file, content, "release-sized.yaml")
+			messages := diagMessages(res.Diagnostics)
+			if !tc.reported {
+				if len(res.Diagnostics) != 0 {
+					t.Fatalf("a document the daemon reads as no kind of its own carries %q", messages)
+				}
+				return
+			}
+			if !strings.Contains(strings.Join(messages, "\n"), dependencies) {
+				t.Errorf("the dependency failure is not reported here: %q", messages)
+			}
+		})
+	}
+}

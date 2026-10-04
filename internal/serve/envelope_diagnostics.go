@@ -169,6 +169,23 @@ func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 	return "", false
 }
 
+// classifyBuffer is the kind the daemon reads a buffer as: by filename first —
+// the workspace config and the named Release's lockfile, which carry no
+// apiVersion+kind envelope — and then by the document's apiVersion and kind. It
+// reports ok=false for everything else, which is foreign YAML: a document the
+// daemon reads as no kind of its own.
+//
+// It is the one statement of that classification. The envelope leg validates
+// what it reaches, and the Release-scope validation withholds a finding about the
+// Release's dependencies from what it does not, so the two cannot come to
+// disagree about which documents are Aggrega's.
+func classifyBuffer(file, releasePath string, doc *yaml.Node) (envelope.Kind, bool) {
+	if kind, ok := classifyByFilename(file, releasePath); ok {
+		return kind, true
+	}
+	return classifyAggregaDocument(doc)
+}
+
 // envelopeDiagnosticsForBuffer runs the document-envelope gate over the
 // editor BUFFER content for a classifiable aggrega document and returns
 // its findings as per-file diagnostics. Classification is by filename
@@ -194,10 +211,7 @@ func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 // no field path addresses — converted through the same client-encoding index an
 // envelope finding is drawn through.
 func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
-	kind, ok := classifyByFilename(file, releasePath)
-	if !ok {
-		kind, ok = classifyAggregaDocument(doc)
-	}
+	kind, ok := classifyBuffer(file, releasePath, doc)
 	if !ok {
 		return nil, false
 	}

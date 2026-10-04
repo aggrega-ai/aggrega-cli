@@ -63,6 +63,12 @@ import (
 // file and the function returns an empty slice once the closure has resolved —
 // the caller's existing Tier-1 diagnostics for the file already populated stay
 // in place.
+//
+// A closure that does not resolve is reported at the head of the named Release's
+// own document and of every document the daemon reads as one of Aggrega's own —
+// the Aggregate, the Manifest, a library, the workspace configuration — and on no
+// other: YAML the daemon reads as no kind of its own (classifyBuffer) is answered
+// with an empty slice whether the closure resolves or not.
 func (s *Server) runTier4Validation(ctx context.Context, releasePath, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	// Build the per-request catalog view, seeded with the named Release's
 	// lockfile pins, so every Tier-4 resolution read below verifies-on-read
@@ -127,11 +133,33 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		deprecationDiags = append(deprecationDiags, closureAdvisoryDiagnostic(f.Notice()))
 	}
 
+	// The validated file and the named Release's own document, in the
+	// workspace-relative form every comparison below is made in. Both are read off
+	// the request rather than off the resolution, so the failure return below can
+	// ask which of them it is answering. catalog.RelativeToWorkspace is the single
+	// source of truth for the conversion, and the pipeline names the Release by
+	// this same rule — it renders this request's Release path against this
+	// daemon's workspace root — so a finding about what the Release wrote carries
+	// exactly relRelease as its file.
+	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+	relRelease := catalog.RelativeToWorkspace(s.workspaceRoot, releasePath)
+
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
 	// resolution. Drift is surfaced by the graph request, which reconstructs the
 	// closure axes and verifies against them.
 	resolved, envelope := s.resolveReleaseClosure(ctx, view, releasePath)
 	if envelope != nil {
+		// A document the daemon reads as no kind of its own (classifyBuffer) — a
+		// continuous-integration workflow, a Compose file — is about nothing this
+		// Release depends on, so the failure is not published on it, and neither are
+		// the deprecation notices riding with it: placed there, either would
+		// attribute the Release's fault to a file that has none. The Release's own
+		// document is the exception and keeps both whatever its buffer holds, since
+		// it is the document the request named, and one whose header no longer
+		// classifies mid-edit is still the place its dependencies' failure belongs.
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours && relFile != relRelease {
+			return nil
+		}
 		// Closure-level failure (catalog load, Release/Manifest load,
 		// Aggregate read) — Tier-D fall-back at file:1:1. The code comes off
 		// the envelope's cause rather than off its Message: the message is
@@ -148,21 +176,12 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		})
 	}
 
-	// Both the root aggregate's path (passed via Inputs.AggregatePath)
-	// and the validated `file` are rendered in the same workspace-
-	// relative coordinate system the catalog accessors produce for
-	// sub-aggregate paths, so per-node SourceFile and the per-file
-	// comparison sit in one form. catalog.RelativeToWorkspace is the
-	// single source of truth for the conversion; both sides call it.
+	// The root aggregate's path (passed via Inputs.AggregatePath) is rendered in
+	// the same workspace-relative coordinate system as relFile and relRelease
+	// above, the one the catalog accessors produce for sub-aggregate paths, so
+	// per-node SourceFile and the per-file comparison sit in one form.
 	aggPath := resolved.AggregatePath
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
-	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
-	// The named Release's own document, in the same coordinate system. It is the
-	// form the pipeline names the Release by, because the validation below hands
-	// the pipeline this request's Release path and this daemon's workspace root
-	// and the pipeline renders the one against the other by this same rule — so a
-	// finding about what the Release wrote carries exactly this string as its file.
-	relRelease := catalog.RelativeToWorkspace(s.workspaceRoot, releasePath)
 
 	// The Tier-4 branch answers two documents: the named Release's Aggregate,
 	// which carries everything this validation reports bar what is positioned in
