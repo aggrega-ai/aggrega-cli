@@ -33,16 +33,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// countingRegistry is an in-process registry on loopback and the number of
+// publishedRegistry is an in-process registry on loopback and the number of
 // requests it has answered, so a proof can show which registry a call reached.
-type countingRegistry struct {
+type publishedRegistry struct {
 	host     string
 	requests atomic.Int64
 }
 
-func startCountingRegistry(t *testing.T) *countingRegistry {
+func startCountingRegistry(t *testing.T) *publishedRegistry {
 	t.Helper()
-	r := &countingRegistry{}
+	r := &publishedRegistry{}
 	inner := registry.New()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.requests.Add(1)
