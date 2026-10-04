@@ -513,7 +513,7 @@ func baselineIdentities(ids []baselineIdentity) []TrustedIdentity {
 	return out
 }
 
-// WorkspaceConfig is the workspace root marker. Its PRESENCE marks the
+// WorkspaceConfig is the workspace root marker. Its presence alone marks the
 // directory as the workspace root; it carries only the root-defining
 // catalog directories. Settings that are not root-defining
 // (default_registry, offline, auto_pull, artifact_cache_dir) live at the
