@@ -52,6 +52,13 @@ package serve
 // reads one must not have to determine from the error code which of the
 // two it was handed.
 //
+// Unreachable says the refusal is a registry the request named that
+// could not be reached, as oci.Unreachable reads it from the failure
+// itself — so a client names the registry as not reached without
+// matching the words of Message, which follow the machine's resolver as
+// much as the condition. A registry that answered, whatever it answered,
+// leaves it false and so absent from the wire.
+//
 // Every field is additive and omitempty, so a client that does not
 // recognise a field ignores it and one that does consumes it when
 // present.
@@ -61,13 +68,14 @@ package serve
 // positions are known; use a struct literal when the position fields
 // would otherwise be omitted.
 type errorData struct {
-	File      string `json:"file,omitempty"`
-	Line      int    `json:"line,omitempty"`
-	Column    int    `json:"column,omitempty"`
-	EndLine   int    `json:"end_line,omitempty"`
-	EndColumn int    `json:"end_column,omitempty"`
-	Release   string `json:"release,omitempty"`
-	Lockfile  string `json:"lockfile,omitempty"`
+	File        string `json:"file,omitempty"`
+	Line        int    `json:"line,omitempty"`
+	Column      int    `json:"column,omitempty"`
+	EndLine     int    `json:"end_line,omitempty"`
+	EndColumn   int    `json:"end_column,omitempty"`
+	Release     string `json:"release,omitempty"`
+	Lockfile    string `json:"lockfile,omitempty"`
+	Unreachable bool   `json:"unreachable,omitempty"`
 }
 
 // newLockfileErrorData returns a populated *errorData for a

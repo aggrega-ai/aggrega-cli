@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -129,9 +130,18 @@ type AddOptions struct {
 // trusts, and whether the registry was asked and had nothing to give — so both
 // are set where the hub was asked and advertised nothing, and Baseline alone
 // where the offline posture refused the fetch and the hub was never asked.
+//
+// Unreachable tells apart the two cases NotAdvertised covers: it is set beside
+// NotAdvertised where the endpoint could not be reached, as oci.Unreachable
+// reads it from the fetch's own failure, and is absent where the registry
+// answered — with a not-found, or with any other answer. NotAdvertised keeps
+// covering both, because in both the registration proceeds on what was stated
+// and no policy came back; Unreachable is what says the request never reached
+// the registry, so a caller need not read the words of Reason to know it.
 type TrustFetchOutcome struct {
 	Pinned        bool   `json:"pinned"`
 	NotAdvertised bool   `json:"notAdvertised,omitempty"`
+	Unreachable   bool   `json:"unreachable,omitempty"`
 	Baseline      bool   `json:"baseline,omitempty"`
 	Skipped       bool   `json:"skipped,omitempty"`
 	Identities    int    `json:"identities,omitempty"`
@@ -329,10 +339,10 @@ func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client
 // fields onto reg, reporting which outcome happened.
 //
 // A registry that advertises nothing — a not-found mapped to the no-trust
-// sentinel, or an unreachable endpoint reported as a transport error — is
-// tolerated: it leaves reg's policy for the caller's manual flags, or the
-// empty-or-baseline default, to fill, and where baseline says that default is the
-// built-in baseline the outcome says so. A MALFORMED advertised document, one that
+// sentinel, or an unreachable endpoint reported as a transport error, which the
+// outcome marks Unreachable — is tolerated: it leaves reg's policy for the
+// caller's manual flags, or the empty-or-baseline default, to fill, and where
+// baseline says that default is the built-in baseline the outcome says so. A MALFORMED advertised document, one that
 // fetched but did not decode, is a hard error: the endpoint answered with
 // content that is not a usable trust policy, which is a real misconfiguration
 // the operator should see rather than a registry that simply advertises none.
@@ -376,7 +386,12 @@ func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig
 			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %s: %w",
 				host, registrytrust.ErrOfflineRegistrationWithoutTrustPolicy())
 		}
-		return TrustFetchOutcome{NotAdvertised: !neverAsked, Baseline: baseline, Reason: ferr.Error()}, nil
+		return TrustFetchOutcome{
+			NotAdvertised: !neverAsked,
+			Unreachable:   oci.Unreachable(ferr),
+			Baseline:      baseline,
+			Reason:        ferr.Error(),
+		}, nil
 	}
 
 	reg.Signing.Required = adv.RequiresSignatures

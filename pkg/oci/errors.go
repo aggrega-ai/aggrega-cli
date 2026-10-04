@@ -4,7 +4,10 @@
 package oci
 
 import (
+	"context"
+	"crypto/tls"
 	"errors"
+	"net"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -45,6 +48,57 @@ var errFetchNetworkUnreachable = cerrors.Register("fetch-network-unreachable", c
 	RulePlace: cerrors.NotARule("The transport could not be established — name resolution, connection, or handshake. It " +
 		"reports an operation that failed."),
 })
+
+// Unreachable reports whether err shows that the remote origin a request
+// addressed was never reached: its name did not resolve, a connection to it was
+// refused or could not be opened, or a secure connection to it could not be
+// established. It is the structural reading of the condition
+// ErrFetchNetworkUnreachable names — the transport could not be established —
+// and an origin that answered, whatever it answered, is never reported this
+// way.
+//
+// It reads the values the transport itself returned — the resolver's error,
+// the operation the dialer was performing, the handshake's error — and never
+// their wording. The wording is not a contract, and it varies with the machine
+// rather than with the condition: a name one resolver refuses, another resolves
+// through its search domain to an address that then refuses the connection,
+// and both are this condition. Nor is the ErrFetchNetworkUnreachable sentinel
+// on a chain taken as evidence: that sentinel is a classification a fetch
+// chose for its own report, while this reads what the transport did.
+//
+// A secure connection that could not be established is one of three values: a
+// certificate the client refused, a first record that is not a handshake at
+// all, or an alert the origin sent to close the connection, which is how an
+// origin refuses a handshake.
+//
+// A caller that withdrew is not this condition. A connection abandoned because
+// the caller cancelled reports false, so a stopped operation never reads as an
+// unreachable origin. And what the failure does not show, this does not claim:
+// an HTTP client deadline that expires while a connection is still being opened
+// is reported as a timeout carrying no record of which step it interrupted, so
+// it reports false, as does any failure that carries no transport value.
+func Unreachable(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		switch opErr.Op {
+		case "dial", "proxyconnect", "remote error":
+			return true
+		}
+	}
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return true
+	}
+	var recordErr tls.RecordHeaderError
+	return errors.As(err, &recordErr)
+}
 
 // ErrFetchIntegrity is returned when pulled bytes don't match the
 // manifest's claimed digest. Call sites wrap this sentinel with the

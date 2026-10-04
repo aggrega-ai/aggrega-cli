@@ -251,6 +251,13 @@ type DeprecationNote struct {
 // Err carries a host-level failure as text, so a walk over several registries
 // reports which of them failed without the caller having to correlate an error
 // against a list.
+//
+// Unreachable says the failure Err carries is the registry never being reached,
+// as oci.Unreachable reads it from the failure itself. It is set beside Err and
+// nowhere else, so a caller tells a registry that could not be reached from one
+// that answered and failed — a listing that repeated itself, a refusal — by
+// reading a field rather than the words of Err, whose wording follows the
+// machine's resolver as much as the condition.
 type HostUpdate struct {
 	Host                 string            `json:"host"`
 	Indexed              int               `json:"indexed"`
@@ -259,6 +266,7 @@ type HostUpdate struct {
 	Skipped              []SkippedRepo     `json:"skipped"`
 	Deprecations         []DeprecationNote `json:"deprecations"`
 	Err                  string            `json:"error,omitempty"`
+	Unreachable          bool              `json:"unreachable,omitempty"`
 }
 
 // UpdateResult is what a whole index build did, per host.
@@ -336,7 +344,10 @@ type UpdateOptions struct {
 // that has no reader. A caller with nobody watching discards it.
 //
 // The result is returned alongside any error rather than instead of it, so a
-// partial walk is never reported as no walk at all. A stop is reported the same
+// partial walk is never reported as no walk at all. That holds on the
+// single-registry path too: the host whose failure is returned is on the result
+// as its last row, Unreachable included, so a caller refusing the request can
+// still say whether that registry was reached. A stop is reported the same
 // way and for the same reason: the hosts already indexed have been written, so a
 // withdrawn walk reports what it indexed rather than claiming it indexed nothing,
 // and the host it was walking when it stopped is reported as not indexed.
@@ -394,6 +405,7 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 		hu, herr := updateHostIndex(ctx, cfg, root, cacheDir, host, now, opts.Upgrade, notices)
 		if herr != nil {
 			hu.Err = herr.Error()
+			hu.Unreachable = oci.Unreachable(herr)
 			res.Hosts = append(res.Hosts, hu)
 			// A stop that landed inside this host's walk ends the run here, as one
 			// landing between hosts does: the registry did not fail, the caller left.

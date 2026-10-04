@@ -92,8 +92,10 @@ type registryAddParams struct {
 //
 // Trust reports what the advertised-trust fetch did, as distinguished outcomes
 // rather than as a line of prose: pinned, not advertised, the built-in baseline
-// pinned, or skipped. A caller deciding whether the entry it just wrote is usable
-// needs to know which, and a registry that advertises nothing is not a failure.
+// pinned, or skipped — and, beside not advertised, whether the registry could
+// not be reached at all. A caller deciding whether the entry it just wrote is
+// usable needs to know which, and a registry that advertises nothing is not a
+// failure.
 // The value is the shared registration's own, carried unchanged, so the answer
 // reports exactly the outcome the command line prints its notice from.
 type registryAddResult struct {
@@ -143,7 +145,8 @@ type registryUpdateResult struct {
 	// ReachedRegistries is stated because it is the property that separates this
 	// method from every other registry method here: the two inventories answer
 	// from configuration and from an offline snapshot, and this one goes out to
-	// each registry.
+	// each registry. It is therefore true on every answer; whether a given
+	// registry was in fact reached is that host's own Unreachable.
 	ReachedRegistries bool `json:"reachedRegistries"`
 }
 
@@ -294,6 +297,13 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 // response. It is prose written for a person watching a terminal, and this
 // surface answers with the facts themselves: what each host indexed, which
 // repositories it could not read, and which deprecation markers it met.
+//
+// Whether a registry was reached is one of those facts, on both shapes of the
+// answer: each host that failed carries Unreachable where it could not be
+// reached, and a refused request naming one registry carries the same key in
+// its error data. The message is the walk's own error, unchanged, so a client
+// reads the key to name the registry as not reached and shows the message as
+// the reason.
 func (s *Server) dispatchRegistryUpdate(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryUpdateParams
 	if len(req.Params) > 0 {
@@ -317,16 +327,38 @@ func (s *Server) dispatchRegistryUpdate(ctx context.Context, req *jsonRPCRequest
 		// Nothing was answered: the request named one registry and that registry
 		// failed, or the token resolved to nothing at all. There is no partial walk
 		// to hand back, so the failure is the whole response.
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeErrorEnvelope(ctx, req.ID, &jsonRPCError{
+			Code:    jsonRPCInternalError,
+			Message: err.Error(),
+			Data:    registryUpdateRefusalData(params.Registry, res),
+			cause:   err,
+		})
 	}
-	// A walk over every configured registry that reached some of them ANSWERS,
-	// rather than reporting a failure that would take the answer with it. The
-	// reachable registries were indexed and their records written; `failed` names
+	// A walk over every configured registry ANSWERS, whether some of them failed or
+	// all, rather than reporting a failure that would take the answer with it. The
+	// registries refreshed were indexed and their records written; `failed` names
 	// the ones that were not, and each host carries its own error. A caller reads
 	// `failed` to decide what is missing — the command line reports the same walk
 	// as a non-zero exit because a shell has no other channel, and this surface
 	// does.
 	return s.writeResult(ctx, req.ID, registryUpdateResultOf(res))
+}
+
+// registryUpdateRefusalData is the data a refused refresh of one named registry
+// carries: the key saying that registry could not be reached, read off the
+// walk's own row for it rather than worked out again from the error, so the
+// refusal and the row a whole-registry refresh would have answered with cannot
+// disagree. The shared walk keeps that row on its result when it returns the
+// failure, and a request naming one registry walks exactly one.
+//
+// Every other refusal carries no data: a registry that answered and failed, a
+// token naming no configured registry, an offline workspace, and any refusal of
+// a refresh that named no registry.
+func registryUpdateRefusalData(named string, res registryops.UpdateResult) *errorData {
+	if named == "" || len(res.Hosts) != 1 || !res.Hosts[0].Unreachable {
+		return nil
+	}
+	return &errorData{Unreachable: true}
 }
 
 // registryUpdateResultOf projects the shared layer's walk onto the wire shape,
