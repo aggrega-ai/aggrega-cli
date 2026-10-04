@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-plain-recipe
+  version: "1.0.0"
+  description: Renders the asserting Component without refusing anything itself.
+spec:
+  capability: compose
+  implements: core/refusal-asserting
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: asserting:1.0

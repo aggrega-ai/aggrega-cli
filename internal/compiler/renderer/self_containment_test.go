@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -55,7 +57,7 @@ func localsFeatureRecipe(tmpl string) *types.FeatureRecipe {
 func selfInjectValue(tmpl string) error {
 	inject := types.InjectPipe{}
 	si := &types.InjectBlock{Env: map[string]any{"BAD": map[string]any{"value": tmpl}}}
-	err := ExecutePass2a(&inject, si, "api", types.OrderedMap[string]{}, SelfInjectContext{})
+	err := ExecutePass2a(&inject, si, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	return err
 }
 
@@ -78,15 +80,15 @@ func selfContainedSurfaces(t *testing.T) []struct {
 		// Recipe and FeatureRecipe locals: and source: are catalog-authored, so a
 		// diagnostic on them is the catalog author's to act on.
 		{"Recipe locals:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateRecipeLocals(localsRecipe(tmpl), "api", values, infra)
+			_, err := EvaluateRecipeLocals(localsRecipe(tmpl), "api", values, infra, redact.Keys{})
 			return err
 		}},
 		{"FeatureRecipe locals:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "mon", "api", values, infra)
+			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "mon", "api", values, infra, resolver.SensitiveLeaves{})
 			return err
 		}},
 		{"Recipe source:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateRecipeSource(tmpl, "api", values, infra, types.OrderedMap[string]{})
+			_, err := EvaluateRecipeSource(tmpl, "api", values, infra, types.OrderedMap[string]{}, redact.Keys{})
 			return err
 		}},
 		// A component-level inject: block is authored on the Aggregate, so this one

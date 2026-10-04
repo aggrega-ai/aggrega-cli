@@ -77,7 +77,7 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 		},
 	}
 
-	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil)
+	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestEvaluateAllProvides_ProvidesReadsResolvedLocals(t *testing.T) {
 		},
 	}
 
-	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil)
+	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestEvaluateAllProvides_LocalsResolvedWithoutProvides(t *testing.T) {
 		"api": {Metadata: types.RecipeMetadata{Name: "api-recipe"}, Spec: types.RecipeSpec{Locals: locals}},
 	}
 
-	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil)
+	result, resultLocals, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestEvaluateAllProvides_LocalReadingProvidesHalts(t *testing.T) {
 		"db": {Metadata: types.RecipeMetadata{Name: "reverse-recipe"}, Spec: types.RecipeSpec{Locals: locals, Provides: provides}},
 	}
 
-	_, _, err := EvaluateAllProvides(graph, recipes, nil)
+	_, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
@@ -227,7 +227,7 @@ func TestEvaluateAllProvides_ProvidesReadingUnknownLocalHalts(t *testing.T) {
 		"db": {Metadata: types.RecipeMetadata{Name: "postgres-recipe"}, Spec: types.RecipeSpec{Locals: locals, Provides: provides}},
 	}
 
-	_, _, err := EvaluateAllProvides(graph, recipes, nil)
+	_, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err == nil {
 		t.Fatal("expected a halt on the unknown local, got nil")
 	}
@@ -257,7 +257,7 @@ func TestEvaluateAllProvides_ProvidesReadingLocalWithoutLocalsBlockHalts(t *test
 		"db": {Metadata: types.RecipeMetadata{Name: "no-locals-recipe"}, Spec: types.RecipeSpec{Provides: provides}},
 	}
 
-	_, _, err := EvaluateAllProvides(graph, recipes, nil)
+	_, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err == nil {
 		t.Fatal("expected a halt on the unknown local, got nil")
 	}
@@ -292,7 +292,7 @@ func TestEvaluateAllProvides_ProvidesIndirectLocalsReadStillRenders(t *testing.T
 		"db": {Metadata: types.RecipeMetadata{Name: "indirect-recipe"}, Spec: types.RecipeSpec{Locals: locals, Provides: provides}},
 	}
 
-	result, _, err := EvaluateAllProvides(graph, recipes, nil)
+	result, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected halt on an indirect .locals read: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 		},
 	}
 
-	result, _, err := EvaluateAllProvides(graph, map[string]*types.Recipe{}, nil)
+	result, _, err := EvaluateAllProvides(graph, map[string]*types.Recipe{}, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 		},
 	}
 
-	result, _, err := EvaluateAllProvides(graph, recipes, nil)
+	result, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

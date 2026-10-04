@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -80,8 +82,8 @@ func TestLocalsIdentity_PerComponentPath(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateFeatureRecipeLocals(
 		identityLocalsFR(), identityInstanceName, identityHostID,
-		identityLocalsValues(), types.OrderedMap[any]{},
-	)
+		identityLocalsValues(), types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+
 	if err != nil {
 		t.Fatalf("the attachment's locals must resolve: %v", err)
 	}
@@ -120,7 +122,7 @@ func TestLocalsIdentity_PhaseAPath(t *testing.T) {
 	}
 	if _, err := ExecutePhaseA(ctx, []FeatureRecipeRef{
 		{InstanceName: identityInstanceName, FeatureRecipe: fr},
-	}); err != nil {
+	}, hostWithheld{}); err != nil {
 		t.Fatalf("Phase A must resolve the attachment's locals: %v", err)
 	}
 
@@ -148,8 +150,8 @@ func TestLocalsIdentity_BothPathsAgreeOnOneBlock(t *testing.T) {
 	t.Parallel()
 	perComponent, err := EvaluateFeatureRecipeLocals(
 		identityLocalsFR(), identityInstanceName, identityHostID,
-		identityLocalsValues(), types.OrderedMap[any]{},
-	)
+		identityLocalsValues(), types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+
 	if err != nil {
 		t.Fatalf("per-component path: %v", err)
 	}
@@ -178,7 +180,7 @@ func TestLocalsIdentity_BothPathsAgreeOnOneBlock(t *testing.T) {
 	}
 	if _, err := ExecutePhaseA(ctx, []FeatureRecipeRef{
 		{InstanceName: identityInstanceName, FeatureRecipe: fr},
-	}); err != nil {
+	}, hostWithheld{}); err != nil {
 		t.Fatalf("Phase A path: %v", err)
 	}
 	phaseAHost, _ := ctx.Context.Inject.Env.Get("HOST")
@@ -207,8 +209,8 @@ func TestLocalsIdentity_BaseRecipeRefusesAttachmentName(t *testing.T) {
 	// the node id.
 	control := types.OrderedMap[string]{}
 	control.Set("host", `{{ .context.instance_id }}`)
-	got, err := EvaluateRecipeLocals(recipeWith(control), identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateRecipeLocals(recipeWith(control), identityHostID, types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
+
 	if err != nil {
 		t.Fatalf("control: a base local reading .context.instance_id must resolve: %v", err)
 	}
@@ -220,8 +222,8 @@ func TestLocalsIdentity_BaseRecipeRefusesAttachmentName(t *testing.T) {
 	// The refusal.
 	refused := types.OrderedMap[string]{}
 	refused.Set("who", `{{ .attachment_name }}`)
-	_, err = EvaluateRecipeLocals(recipeWith(refused), identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err = EvaluateRecipeLocals(recipeWith(refused), identityHostID, types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
+
 	if err == nil {
 		t.Fatal("a base Recipe local reading .attachment_name must halt, not render empty")
 	}
@@ -236,8 +238,7 @@ func TestLocalsIdentity_BaseRecipeRefusesAttachmentName(t *testing.T) {
 	// A fallback wrapper cannot launder the refused root into an empty value.
 	wrapped := types.OrderedMap[string]{}
 	wrapped.Set("who", `{{ default "x" .attachment_name }}`)
-	if _, err := EvaluateRecipeLocals(recipeWith(wrapped), identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}); !errors.Is(err, ErrTemplateUnknownRoot()) {
+	if _, err := EvaluateRecipeLocals(recipeWith(wrapped), identityHostID, types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{}); !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("a wrapped .attachment_name must halt on the base surface too, got: %v", err)
 	}
 }
@@ -248,8 +249,8 @@ func TestLocalsIdentity_RecipeSourceRefusesAttachmentName(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateRecipeSource(
 		`oci://example.test/charts/{{ .context.instance_id }}:1.0.0`, identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{},
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
+
 	if err != nil {
 		t.Fatalf("control: a source template reading .context.instance_id must resolve: %v", err)
 	}
@@ -259,8 +260,8 @@ func TestLocalsIdentity_RecipeSourceRefusesAttachmentName(t *testing.T) {
 
 	_, err = EvaluateRecipeSource(
 		`oci://example.test/charts/{{ .attachment_name }}:1.0.0`, identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{},
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
+
 	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("a source template reading .attachment_name must halt, got: %v", err)
 	}

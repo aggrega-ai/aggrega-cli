@@ -10,6 +10,7 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -117,10 +118,12 @@ func TestRunNodePipeline_RoutesThroughProviderCodec(t *testing.T) {
 	// build the keyed set.
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		own, nil, false,
-		"marker" /* ownProvider */, "", /* no host */
-		renderctx.RenderContext{}, &types.TemplateContext{},
+		"marker", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+
 		selectCodec(context.Background(), factory, "marker", 2), selectCodec(context.Background(), factory, "", 2),
 		cannedInvoker(t, frp.FRPStepOutput{}), "node")
+
 	if err != nil {
 		t.Fatalf("runNodePipelineWithInvoker: %v", err)
 	}

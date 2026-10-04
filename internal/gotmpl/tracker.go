@@ -51,6 +51,16 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 	if err != nil {
 		return nil, err
 	}
+	return TreeFieldAccesses(root), nil
+}
+
+// TreeFieldAccesses returns the dot-qualified field-access set of a template that
+// is already parsed, by the same over-collecting walk CollectTemplateFieldAccesses
+// runs over authored text. It serves a caller holding the very tree it is about to
+// execute — or has just executed — so the references it reads are the ones that
+// tree makes, under the delimiters and the function set it was parsed with, rather
+// than those of a second parse that could differ from it.
+func TreeFieldAccesses(root parse.Node) []string {
 	seen := map[string]bool{}
 	collectFromNode(root, seen)
 	paths := make([]string, 0, len(seen))
@@ -58,7 +68,7 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
-	return paths, nil
+	return paths
 }
 
 // collectFromNode walks a parse.Node tree and records every field access it

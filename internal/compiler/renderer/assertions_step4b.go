@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -37,6 +38,12 @@ import (
 // Returns nil on pass. Returns a non-nil error wrapping ErrAssertionFailed
 // on the first failure; the error chain carries the failing entity kind,
 // type, instance ID, and assertion name.
+//
+// What each entity declares sensitive is read here, through the catalog this
+// stage already holds, so an assertion whose failure text could carry a declared
+// value reports without it exactly as a Recipe's assertion does: a Component's
+// against what the Component and the Features attached to the node declare, a
+// Feature's against what that Feature declares for the attachment's own pillars.
 func EvaluateComponentAndFeatureAssertions(
 	graph *types.IRGraph,
 	catalogLookup resolver.CatalogLookup,
@@ -46,10 +53,16 @@ func EvaluateComponentAndFeatureAssertions(
 	}
 	nodeIDs := graph.Spec.Nodes.Keys()
 	sort.Strings(nodeIDs)
+	readers := newDeclarationReaders(catalogLookup)
 
 	for _, nodeID := range nodeIDs {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
 		base := ExtractNodeBaseContext(nodeID, graph)
+		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
+		declared := nodeDeclaration{
+			component: readers.component(node.Component),
+			own:       ownAttachmentKeys(attachments, readers.feature),
+		}
 
 		if catalogLookup.Component != nil {
 			if comp, found := catalogLookup.Component(node.Component); found && comp.Spec.Assertions.Len() > 0 {
@@ -60,7 +73,7 @@ func EvaluateComponentAndFeatureAssertions(
 					Features: base.Features,
 					Metadata: base.Metadata,
 				}
-				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx); err != nil {
+				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx, declared.assertionKeys()); err != nil {
 					return err
 				}
 			}
@@ -85,12 +98,24 @@ func EvaluateComponentAndFeatureAssertions(
 				Features: base.Features,
 				Metadata: featureMetadata(base.Metadata, entry, instanceName),
 			}
-			if err := walkAssertions("Feature", entry.Type, nodeID, feat.Spec.Assertions, ctx); err != nil {
+			if err := walkAssertions("Feature", entry.Type, nodeID, feat.Spec.Assertions, ctx,
+				attachmentAssertionKeys(declared, readers.feature(entry.Type))); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// attachmentAssertionKeys is the set for an assertion evaluated against one
+// attachment's own values and infra, with the node's other pillars beside them:
+// the attachment's Feature governs the values and infra, and the node's
+// declarations govern everything else the context carries.
+func attachmentAssertionKeys(node nodeDeclaration, leaves resolver.SensitiveLeaves) redact.Keys {
+	keys := node.assertionKeys()
+	keys.Values = leaves.Values
+	keys.Infra = leaves.Infra
+	return keys
 }
 
 // walkAssertions iterates the OrderedMap entries in author order and
@@ -101,10 +126,11 @@ func walkAssertions(
 	entityKind, entityType, instanceID string,
 	assertions types.OrderedMap[string],
 	ctx AssertionContext,
+	withheld redact.Keys,
 ) error {
 	for name, body := range assertions.All() {
 		qualified := fmt.Sprintf("%s/%s/%s/%s", entityKind, entityType, instanceID, name)
-		if err := EvaluateAssertion(qualified, body, ctx); err != nil {
+		if err := EvaluateAssertion(qualified, body, ctx, withheld); err != nil {
 			return fmt.Errorf("%s %q instance %q assertion %q: %w",
 				entityKind, entityType, instanceID, name, err)
 		}

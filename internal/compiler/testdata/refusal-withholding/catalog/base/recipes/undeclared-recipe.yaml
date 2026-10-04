@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-undeclared-recipe
+  version: "1.0.0"
+  description: Asserts with a sentence quoting the leaf nobody declared sensitive.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  assertions:
+    note-is-not-inline: |
+      {{- fail (printf "the admin note %s must not be written inline" .values.adminNote) -}}
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

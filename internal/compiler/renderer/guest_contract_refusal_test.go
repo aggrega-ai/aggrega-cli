@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -70,7 +71,9 @@ func runNonconformingStep(t *testing.T, violation string) error {
 	}}
 
 	_, err := runNodePipeline(context.Background(), steps, own, nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, "contract-node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+		2, lookup, nil, "contract-node")
+
 	return err
 }
 

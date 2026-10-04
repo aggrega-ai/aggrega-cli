@@ -375,8 +375,8 @@ func TestTheAttachmentLocalsRulesDecideWhatTheEvaluationDecides(t *testing.T) {
 			_, evaluated := EvaluateFeatureRecipeLocals(
 				attachmentLocalsFR(attachmentLocalsRecipeName, tc.locals...),
 				attachmentLocalsInstance, attachmentLocalsNode,
-				types.OrderedMap[any]{}, types.OrderedMap[any]{},
-			)
+				types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+
 			declared := declaredAttachmentLocalsHalt(
 				t, attachmentLocalsFR(attachmentLocalsRecipeName, tc.locals...), nil,
 			)

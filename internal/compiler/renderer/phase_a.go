@@ -111,7 +111,11 @@ type InjectMappingDelivery struct {
 // over the recorded pairing is what refuses it. Reaching the verdict here would
 // put a check inside a phase, where it could be neither placed nor positioned by
 // the framework that computes both.
-func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) ([]InjectMappingDelivery, error) {
+//
+// withheld names what an author declared sensitive in the host's context and in
+// each attachment's own pillars, so a failure evaluating an attachment's locals or
+// its mapping reports without such a value.
+func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef, withheld hostWithheld) ([]InjectMappingDelivery, error) {
 	var authored []string
 	if ctx.InjectRaw != nil {
 		rawBlock, ok := ctx.InjectRaw.(*types.InjectBlock)
@@ -161,13 +165,15 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// own. Only the values and infra pillars depend on that lookup, so they
 		// fall back to the host node's when the attachment carries neither.
 		vals, inf := ctx.Values, ctx.Infra
-		if attachment, ok := ctx.AttachmentPillars(ref.InstanceName); ok {
+		attachment, pillarsFound := ctx.AttachmentPillars(ref.InstanceName)
+		if pillarsFound {
 			vals, inf = attachment.Values, attachment.Infra
 		}
 		featureCtx := attachmentFRContext(ctx, ref.InstanceName, vals, inf)
 		frLocals, err := EvaluateFeatureRecipeLocals(
 			ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID,
 			featureCtx.Values, featureCtx.Infra,
+			withheld.leaves(ref.InstanceName, pillarsFound),
 		)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
@@ -181,6 +187,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			fmt.Sprintf("injectMapping[%s/%s]", ref.InstanceName, ref.FeatureRecipe.Metadata.Name),
 			tmplText,
 			&featureCtx,
+			withheld.forAttachment(ref.InstanceName, pillarsFound, ref.FeatureRecipe.Spec.Locals),
 		)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,

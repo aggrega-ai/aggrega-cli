@@ -262,7 +262,8 @@ func TestPhaseA_ReportedDeliveryReachesTheNodeKeySet(t *testing.T) {
 			secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"))
 		delivered, err := ExecutePhaseA(ctx, []FeatureRecipeRef{
 			{InstanceName: "root-password", FeatureRecipe: dotenvSecretFR()},
-		})
+		}, hostWithheld{})
+
 		if err != nil {
 			t.Fatalf("ExecutePhaseA: %v", err)
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -233,8 +234,8 @@ func TestTheDeclaredLocalsRulesDecideWhatTheEvaluationDecides(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, evaluated := EvaluateRecipeLocals(
-				localsRuleRecipe(tc.locals...), "api", values, types.OrderedMap[any]{},
-			)
+				localsRuleRecipe(tc.locals...), "api", values, types.OrderedMap[any]{}, redact.Keys{})
+
 			declared := declaredLocalsHalt(t, localsRuleRecipe(tc.locals...))
 
 			evaluatedClass := localsFaultClass(evaluated)
@@ -278,8 +279,8 @@ func TestTheLocalsAgreementComparisonCanReportADifference(t *testing.T) {
 	// A forward reference by one entry: the evaluation halts on the ordering class.
 	locals := []string{"derived", "{{ .locals.base }}.internal", "base", "svc"}
 	_, evaluated := EvaluateRecipeLocals(
-		localsRuleRecipe(locals...), "api", localsRuleValues(), types.OrderedMap[any]{},
-	)
+		localsRuleRecipe(locals...), "api", localsRuleValues(), types.OrderedMap[any]{}, redact.Keys{})
+
 	if localsFaultClass(evaluated) != "ordering" {
 		t.Fatalf("the needle's input no longer halts on the ordering class: %v", evaluated)
 	}
@@ -325,8 +326,8 @@ func TestTheDeclaredLocalsRulesReportEveryOffendingEntry(t *testing.T) {
 	}
 
 	_, evaluated := EvaluateRecipeLocals(
-		localsRuleRecipe(locals...), "api", localsRuleValues(), types.OrderedMap[any]{},
-	)
+		localsRuleRecipe(locals...), "api", localsRuleValues(), types.OrderedMap[any]{}, redact.Keys{})
+
 	if got := localsFaultClass(evaluated); got != "ordering" {
 		t.Fatalf("the evaluation reported %s; this input's first offender is the ordering class: %v", got, evaluated)
 	}

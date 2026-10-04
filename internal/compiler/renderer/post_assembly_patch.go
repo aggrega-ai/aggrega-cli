@@ -117,7 +117,7 @@ func replayDeferredPatches(
 			own, host,
 			false, // hostIsAssembler: false — assembly produced discrete documents
 			ownProvider, hostProvider,
-			rec.RenderCtx, rec.WithCtx,
+			rec.RenderCtx, rec.WithCtx, rec.Withheld,
 			codec, codec,
 			invoke,
 			rec.NodeID,

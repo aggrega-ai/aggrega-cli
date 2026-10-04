@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -53,19 +54,20 @@ func ExecutePass2a(
 	nodeID string,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
+	withheld redact.Keys,
 ) error {
 	if selfInject == nil {
 		return nil
 	}
 
 	// Process each mechanism
-	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx); err != nil {
+	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, withheld); err != nil {
 		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
-	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx); err != nil {
+	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, withheld); err != nil {
 		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
-	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx); err != nil {
+	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, withheld); err != nil {
 		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 
@@ -80,7 +82,7 @@ func ExecutePass2a(
 		if !ok {
 			dest = types.OrderedMap[string]{}
 		}
-		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx); err != nil {
+		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, withheld); err != nil {
 			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 		}
 		inject.Additional.Set(mech, dest)
@@ -98,6 +100,7 @@ func processSelfInjectMechanism(
 	raw any,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
+	withheld redact.Keys,
 ) error {
 	if raw == nil {
 		return nil
@@ -116,7 +119,7 @@ func processSelfInjectMechanism(
 
 	for _, key := range keys {
 		entry := entries[key]
-		resolved, err := resolveSelfInjectEntry(key, entry, mechName, ownProvides, siCtx)
+		resolved, err := resolveSelfInjectEntry(key, entry, mechName, ownProvides, siCtx, withheld)
 		if err != nil {
 			return err
 		}
@@ -272,6 +275,7 @@ func resolveSelfInjectEntry(
 	mechName string,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
+	withheld redact.Keys,
 ) (string, error) {
 	// Compact literal
 	if entry.isLiteral {
@@ -293,6 +297,7 @@ func resolveSelfInjectEntry(
 			fmt.Sprintf("self-inject.%s[%s]", mechName, key),
 			entry.value,
 			siCtx,
+			withheld,
 		)
 		if err != nil {
 			return "", cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q] value: template", mechName, key))
@@ -315,11 +320,14 @@ var selfInjectScope = templateScope{data: SelfInjectContext{}}
 // raises is DEVELOPER_ERROR, because a component-level inject: block is authored on
 // the Aggregate. The reference rules, the wording, the sentinel and the
 // missing-key policy are all the shared ones.
-func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext) (string, error) {
+//
+// withheld names what the node's Component declares sensitive among the values and
+// infra the template reads, so a failing template reports without such a value.
+func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext, withheld redact.Keys) (string, error) {
 	return templateEval{
 		name:       name,
 		text:       tmplText,
-		scope:      selfInjectScope.with(siCtx),
+		scope:      selfInjectScope.with(siCtx, withheld),
 		missingKey: missingKeyZero,
 		category:   cerrors.DeveloperError,
 		failed: func(stage templateEvalStage, err error) error {

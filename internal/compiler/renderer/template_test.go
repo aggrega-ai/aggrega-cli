@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 func TestEvalTemplate_Simple(t *testing.T) {
 	t.Parallel()
-	out, err := EvalTemplate("test", `hello {{ .Name }}`, map[string]string{"Name": "world"})
+	out, err := EvalTemplate("test", `hello {{ .Name }}`, map[string]string{"Name": "world"}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,7 +26,7 @@ func TestEvalTemplate_Simple(t *testing.T) {
 
 func TestEvalTemplate_Sprig(t *testing.T) {
 	t.Parallel()
-	out, err := EvalTemplate("test", `{{ "hello" | upper }}`, nil)
+	out, err := EvalTemplate("test", `{{ "hello" | upper }}`, nil, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestEvalTemplate_MissingKeyZero(t *testing.T) {
 	t.Parallel()
 	// .Missing is a one-segment reference — it names a root rather than a key —
 	// so it resolves to nil and the default pipe is what supplies the fallback.
-	out, err := EvalTemplate("test", `value={{ default "" .Missing }}`, map[string]string{})
+	out, err := EvalTemplate("test", `value={{ default "" .Missing }}`, map[string]string{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestEvalTemplate_MissingKeyZero(t *testing.T) {
 
 func TestEvalTemplate_ParseError(t *testing.T) {
 	t.Parallel()
-	_, err := EvalTemplate("bad", `{{ .Invalid }{`, nil)
+	_, err := EvalTemplate("bad", `{{ .Invalid }{`, nil, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -61,7 +62,7 @@ func TestEvalTemplate_JSON(t *testing.T) {
 		"Port": 8080,
 		"Host": "localhost",
 	}
-	out, err := EvalTemplate("json", `{"port": {{ .Port }}, "host": "{{ .Host }}"}`, data)
+	out, err := EvalTemplate("json", `{"port": {{ .Port }}, "host": "{{ .Host }}"}`, data, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestEvalTemplate_MapIterationIsAlphabetical(t *testing.T) {
 
 	data := map[string]any{"values": values}
 
-	out, err := EvalTemplate("iter", `{{ range $k, $v := .values }}{{ $k }},{{ end }}`, data)
+	out, err := EvalTemplate("iter", `{{ range $k, $v := .values }}{{ $k }},{{ end }}`, data, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,8 +251,8 @@ func TestEvalTemplate_OrderedMapKeysPipeline(t *testing.T) {
 	out, err := EvalTemplate(
 		"winner",
 		`{{- $k := keys .uses | sortAlpha | first -}}{{ index .uses $k }}`,
-		data,
-	)
+		data, redact.Keys{})
+
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestEvalTemplate_DnsPatcherPattern(t *testing.T) {
 	// through the Sprig `keys` function (which reflects on the underlying
 	// map — sortAlpha re-orders its output deterministically).
 	for i := 0; i < 10; i++ {
-		out, err := EvalTemplate("dns-patcher", body, data)
+		out, err := EvalTemplate("dns-patcher", body, data, redact.Keys{})
 		if err != nil {
 			t.Fatalf("iteration %d: unexpected error: %v", i, err)
 		}

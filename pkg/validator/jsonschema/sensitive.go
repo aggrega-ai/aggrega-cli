@@ -49,6 +49,7 @@ type Option func(*options)
 // options is what the Options passed to New decided.
 type options struct {
 	withholdSensitive bool
+	withholdEvery     string
 }
 
 // WithholdSensitiveValues makes a Validator report a failure at a position whose
@@ -74,13 +75,37 @@ func WithholdSensitiveValues() Option {
 	return func(o *options) { o.withholdSensitive = true }
 }
 
+// WithholdEveryValue makes a Validator report every failure without reproducing
+// anything of the value it found, whatever the schema declares about it, closing
+// each sentence with notice in place of the notice a schema declaration earns.
+//
+// It is for a caller that knows something about the instances it validates that no
+// schema can say: that a value anywhere in them may have been produced from data an
+// author declared sensitive somewhere else — a document a template rendered from
+// such data, say — so that which of its values carry that data cannot be told
+// position by position. notice says why, and so is the caller's to write; it opens
+// with a space and is wrapped in parentheses as the schema's own notice is.
+//
+// A failure is reported with the sentence WithholdSensitiveValues composes — the
+// keyword that refused the value where the schema names it, that keyword's
+// constraint, and the placeholder — and the finding's path and keyword are kept. A
+// failure whose sentence is composed from the schema and the document's shape alone
+// keeps that sentence: a missing required property, an authored validation message,
+// a refused property name already carried by the finding's path, and a count of
+// elements or properties. A position the schema itself declares sensitive keeps the
+// schema's notice where WithholdSensitiveValues is set as well.
+func WithholdEveryValue(notice string) Option {
+	return func(o *options) { o.withholdEvery = notice }
+}
+
 // withheldNotice closes every sentence a withheld finding carries, so a reader
 // meeting the placeholder is told why the value is not there rather than left to
 // wonder whether it was ever read.
 const withheldNotice = " (the value is withheld because the schema declares it sensitive)"
 
 // withheldFinding returns f carrying the sentence composed for a value withheld at
-// the position node describes, and leaves a finding already withheld as it is.
+// the position node describes, closed by notice, and leaves a finding already
+// withheld as it is.
 //
 // node is the schema at the finding's own position when the caller holds it, and
 // nil when the finding lies beneath the sensitive position the caller is handling.
@@ -90,19 +115,69 @@ const withheldNotice = " (the value is withheld because the schema declares it s
 // A finding withheld once is left alone, so the position closest to a value — the
 // one whose schema describes it — decides the sentence, and an enclosing sensitive
 // position handled afterwards does not replace that sentence with a vaguer one.
-func withheldFinding(f Finding, node *jsonschema.Schema, definition string) Finding {
+func withheldFinding(f Finding, node *jsonschema.Schema, definition, notice string) Finding {
 	if f.withheld {
 		return f
 	}
 	if keyword, constraint, ok := refusedConstraint(f, node, definition); ok {
 		f.Message = nameViolatedDefinition(keyword+": "+redact.Placeholder()+" does not satisfy "+
-			keyword+" "+constraint+withheldNotice, definition)
+			keyword+" "+constraint+notice, definition)
 	} else {
 		f.Message = nameViolatedDefinition(redact.Placeholder()+" does not satisfy the schema declared here"+
-			withheldNotice, definition)
+			notice, definition)
 	}
 	f.withheld = true
 	return f
+}
+
+// shapeOnlyKeywords names the findings whose sentence is composed from the schema
+// and the document's shape alone, quoting no value the document carries: a
+// required property's name, an authored validation message, a refused property
+// whose name the finding's own path already carries, and a count of elements or
+// properties. Withholding every value keeps these sentences as they are.
+var shapeOnlyKeywords = map[string]bool{
+	"required":              true,
+	"x-aggrega-validate":    true,
+	"additionalProperties":  true,
+	"unevaluatedProperties": true,
+	"unevaluatedItems":      true,
+	"contains":              true,
+	"maxContains":           true,
+	"minProperties":         true,
+	"maxProperties":         true,
+}
+
+// withholdEveryRemaining composes, where the validator withholds every value, the
+// value-free sentence for each finding not yet withheld whose sentence could carry
+// a value. It runs once, over the finished report, after the composition each
+// finding received where its schema was in hand, so it reaches the findings that
+// arrived with none and leaves every sentence already composed as it was.
+func (a *googleAdapter) withholdEveryRemaining(rpt *Report) {
+	if a.withholdEvery == "" {
+		return
+	}
+	for i := range rpt.Findings {
+		if shapeOnlyKeywords[rpt.Findings[i].Keyword] {
+			continue
+		}
+		rpt.Findings[i] = withheldFinding(rpt.Findings[i], nil, "", a.withholdEvery)
+	}
+}
+
+// withheldFindingAt returns f as a finding at a position node describes is reported
+// by a validator built with the withholding options: composed with the schema's own
+// notice where the position is declared sensitive and the validator withholds
+// sensitive values, composed with the caller's notice where the validator withholds
+// every value, and as it was otherwise.
+func (a *googleAdapter) withheldFindingAt(f Finding, node *jsonschema.Schema, definition string, sensitive bool) Finding {
+	switch {
+	case sensitive && a.withholdSensitive:
+		return withheldFinding(f, node, definition, withheldNotice)
+	case a.withholdEvery != "":
+		return withheldFinding(f, node, definition, a.withholdEvery)
+	default:
+		return f
+	}
 }
 
 // withhold replaces, in place, every finding at path or beneath it with the
@@ -118,10 +193,10 @@ func withhold(findings []Finding, path string, node *jsonschema.Schema, definiti
 			continue
 		}
 		if at == path {
-			findings[i] = withheldFinding(findings[i], node, definition)
+			findings[i] = withheldFinding(findings[i], node, definition, withheldNotice)
 			continue
 		}
-		findings[i] = withheldFinding(findings[i], nil, "")
+		findings[i] = withheldFinding(findings[i], nil, "", withheldNotice)
 	}
 }
 

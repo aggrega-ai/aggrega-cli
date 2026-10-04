@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-assert-recipe
+  version: "1.0.0"
+  description: Asserts with a sentence quoting the declared-sensitive leaf.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  assertions:
+    password-is-a-reference: |
+      {{- fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) -}}
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0

@@ -56,8 +56,8 @@ func TestStep5b_RecipeAssertionPasses(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
-		NodeLocals{},
-	)
+		NodeLocals{}, refusalDeclarations{})
+
 	if err != nil {
 		t.Errorf("expected nil; got %v", err)
 	}
@@ -81,8 +81,8 @@ func TestStep5b_RecipeAssertionFailsHaltsBuild(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
-		NodeLocals{},
-	)
+		NodeLocals{}, refusalDeclarations{})
+
 	if err == nil || !errors.Is(err, ErrAssertionFailed()) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
 	}
@@ -116,8 +116,7 @@ func TestStep5b_ProvidesAvailableInContext(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		provides,
-		NodeLocals{},
-	); err != nil {
+		NodeLocals{}, refusalDeclarations{}); err != nil {
 		t.Errorf("expected nil (host populated via .provides); got %v", err)
 	}
 }
@@ -140,8 +139,7 @@ func TestStep5b_RecipeMetadataAvailableInContext(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
-		NodeLocals{},
-	); err != nil {
+		NodeLocals{}, refusalDeclarations{}); err != nil {
 		t.Errorf("expected nil; got %v", err)
 	}
 }
@@ -167,7 +165,7 @@ func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 		},
 	}
 	nodeRecipes := map[string]*types.Recipe{"web": recipe}
-	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, nil)
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("Pass 1: %v", err)
 	}
@@ -180,8 +178,7 @@ func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 		nodeRecipes,
 		RecipeLookup{},
 		allProvides,
-		allLocals,
-	); err != nil {
+		allLocals, refusalDeclarations{}); err != nil {
 		t.Errorf("expected nil (locals populated); got %v", err)
 	}
 }
@@ -224,7 +221,7 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 		"web-2": recipe,
 		"web-3": recipe,
 	}
-	err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, RecipeLookup{}, NodeProvides{}, NodeLocals{})
+	err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, RecipeLookup{}, NodeProvides{}, NodeLocals{}, refusalDeclarations{})
 	if err == nil || !strings.Contains(err.Error(), "web-2") {
 		t.Errorf("expected error naming web-2; got %v", err)
 	}
@@ -251,8 +248,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
-		NodeLocals{},
-	); err != nil {
+		NodeLocals{}, refusalDeclarations{}); err != nil {
 		t.Errorf("expected nil (provider populated); got %v", err)
 	}
 }
@@ -295,8 +291,7 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		rl,
 		NodeProvides{},
-		NodeLocals{},
-	); err != nil {
+		NodeLocals{}, refusalDeclarations{}); err != nil {
 		t.Errorf("expected nil (FeatureRecipe provider populated); got %v", err)
 	}
 }
@@ -330,8 +325,8 @@ func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		rl,
 		NodeProvides{},
-		NodeLocals{},
-	)
+		NodeLocals{}, refusalDeclarations{})
+
 	if err == nil || !errors.Is(err, ErrAssertionFailed()) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
 	}

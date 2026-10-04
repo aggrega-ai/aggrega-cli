@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -253,15 +254,14 @@ func TestEvaluateFeatureRecipeSource_RefusesAnUndeclaredLocal(t *testing.T) {
 
 	if _, err := EvaluateFeatureRecipeSource(
 		"{{ .locals.chart_dir }}", "mon", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals,
-	); err != nil {
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{}); err != nil {
 		t.Fatalf("a declared local must resolve: %v", err)
 	}
 
 	_, err := EvaluateFeatureRecipeSource(
 		"{{ .locals.chart_directory }}", "mon", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals,
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{})
+
 	if err == nil {
 		t.Fatal("a FeatureRecipe source naming an undeclared local must halt, not render the key away")
 	}
@@ -276,8 +276,8 @@ func TestEvaluateFeatureRecipeSource_AdmitsTheAttachmentName(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateFeatureRecipeSource(
 		"./charts/{{ .attachment_name }}", "mon", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{},
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
+
 	if err != nil {
 		t.Fatalf("EvaluateFeatureRecipeSource: %v", err)
 	}
@@ -287,8 +287,7 @@ func TestEvaluateFeatureRecipeSource_AdmitsTheAttachmentName(t *testing.T) {
 
 	if _, err := EvaluateRecipeSource(
 		"./charts/{{ .attachment_name }}", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{},
-	); err == nil {
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{}); err == nil {
 		t.Error("a base Recipe source must still refuse .attachment_name — its source resolves for a node, not for an attachment")
 	}
 }

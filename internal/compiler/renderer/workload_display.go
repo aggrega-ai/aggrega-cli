@@ -36,9 +36,12 @@ import (
 // a debugging aid into a build dependency. An evaluation or parse failure reports
 // false and the caller shows the withholding statement instead.
 //
-// The substituted context comes from the one applier that builds one, so the
-// document a reader sees and the pillars printed beside it are substituted by the
-// same code and agree by construction rather than by care.
+// The substitution is the one substitution of a template's data, the same one a
+// failing template's second run goes through, applied at the coordinates the set
+// derives for each datum it names. The pillars printed beside the document reach
+// the same positions through the display's own appliers, which keep the author
+// order the template's data does not; the two are held to one answer by a parity
+// test over one fixture.
 //
 // The shown document is folded exactly as the emitted one is: every entry naming
 // a connection is rewritten onto the slot name the compiler composes for it,
@@ -55,10 +58,11 @@ func renderWorkloadForDisplay(
 	// The template name matches the real evaluation's, so a diagnostic raised
 	// from either names the same authored template. Nothing here surfaces a
 	// diagnostic today; the name is what a future reader would grep for.
-	output, err := EvalTemplate(
+	output, err := evalSubstitutedTemplate(
 		fmt.Sprintf("workload[%s]", recipeName),
 		tmplText,
-		redact.TemplateContext(ctx, keys),
+		ctx,
+		keys,
 	)
 	if err != nil {
 		return nil, false

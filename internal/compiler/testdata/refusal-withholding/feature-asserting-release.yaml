@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-feature-asserting-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./feature-asserting-app.yaml
+  manifest: ./feature-asserting-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        keyholder: {}

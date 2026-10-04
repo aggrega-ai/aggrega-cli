@@ -11,6 +11,7 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -65,7 +66,10 @@ func TestRunNodePipeline_TargetNotEmitted(t *testing.T) {
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownDeployment(), nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+
+		newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+
 	if err == nil {
 		t.Fatalf("expected halt for PATCH to absent token; got nil")
 	}
@@ -91,8 +95,11 @@ func TestRunNodePipeline_HostEmitFromHostlessHalts(t *testing.T) {
 	}}}
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
-		ownDeployment(), nil /* hostless */, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+		ownDeployment(), nil, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+
+		newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+
 	if err == nil {
 		t.Fatalf("expected halt for /host EMIT from a hostless step; got nil")
 	}
@@ -118,8 +125,11 @@ func TestRunNodePipeline_HostPatchFromHostlessHalts(t *testing.T) {
 	}}}
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
-		ownDeployment(), nil /* hostless */, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+		ownDeployment(), nil, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+
+		newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+
 	if err == nil {
 		t.Fatalf("expected halt for /host PATCH from a hostless step; got nil")
 	}
@@ -159,7 +169,10 @@ func TestRunNodePipeline_PatchOpaqueUnitHalts(t *testing.T) {
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownOpaque(), nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+
+		newStockYAMLCodec(2), newStockYAMLCodec(2), cannedInvoker(t, out), "node")
+
 	if err == nil {
 		t.Fatalf("expected halt for PATCH against an opaque unit; got nil")
 	}

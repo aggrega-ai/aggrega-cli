@@ -6,6 +6,8 @@ package renderer
 import (
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -127,14 +129,14 @@ func TestPhaseB1_NilState(t *testing.T) {
 func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
-	got, err := ExecutePhaseBForFeature(tmplCtx, nil, nil)
+	got, err := ExecutePhaseBForFeature(tmplCtx, nil, nil, redact.Keys{})
 	if err != nil || len(got.Resolved) != 0 {
 		t.Errorf("nil fr: (%v, %v)", got.Resolved, err)
 	}
 	// FR with no valuesMapping → returns ctx.Values as-is.
 	fr := &types.FeatureRecipe{}
 	tmplCtx.Values.Set("k", "v")
-	got, err = ExecutePhaseBForFeature(tmplCtx, fr, nil)
+	got, err = ExecutePhaseBForFeature(tmplCtx, fr, nil, redact.Keys{})
 	if err != nil {
 		t.Fatalf("no vm: %v", err)
 	}
@@ -147,12 +149,12 @@ func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 // happy path with self-containment check.
 func TestEvaluateFeatureRecipeLocals_NilAndEmpty(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err != nil || got.Len() != 0 {
 		t.Errorf("nil fr: (%v, %v)", got, err)
 	}
 	emptyFR := &types.FeatureRecipe{}
-	got, err = EvaluateFeatureRecipeLocals(emptyFR, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err = EvaluateFeatureRecipeLocals(emptyFR, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err != nil || got.Len() != 0 {
 		t.Errorf("empty locals: (%v, %v)", got, err)
 	}
@@ -162,7 +164,7 @@ func TestEvaluateFeatureRecipeLocals_NilAndEmpty(t *testing.T) {
 	fr.Spec.Locals.Set("k", "{{ .values.value }}")
 	values := types.OrderedMap[any]{}
 	values.Set("value", "v")
-	got, err = EvaluateFeatureRecipeLocals(fr, "i", "api", values, types.OrderedMap[any]{})
+	got, err = EvaluateFeatureRecipeLocals(fr, "i", "api", values, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err != nil {
 		t.Fatalf("populated: %v", err)
 	}

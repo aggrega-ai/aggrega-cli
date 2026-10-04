@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -64,7 +65,7 @@ func TestEvalTemplate_UnsetValueRendersEmpty(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tmpl, func(t *testing.T) {
 			t.Parallel()
-			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture())
+			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture(), redact.Keys{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -97,7 +98,7 @@ func TestEvalTemplate_UnsetValueKeepsGuardIdiomsWorking(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tmpl, func(t *testing.T) {
 			t.Parallel()
-			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture())
+			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture(), redact.Keys{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -138,7 +139,7 @@ func TestEvalTemplate_IteratedReferenceIsLeftAlone(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := EvalTemplate("t", tc.tmpl, ctx)
+			got, err := EvalTemplate("t", tc.tmpl, ctx, redact.Keys{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -161,7 +162,7 @@ func TestEvalTemplate_AbsentParentStillFails(t *testing.T) {
 	} {
 		t.Run(tmpl, func(t *testing.T) {
 			t.Parallel()
-			if _, err := EvalTemplate("t", tmpl, unsetValueFixture()); err == nil {
+			if _, err := EvalTemplate("t", tmpl, unsetValueFixture(), redact.Keys{}); err == nil {
 				t.Fatal("a read through an absent parent must fail, not render empty")
 			}
 		})
@@ -179,7 +180,7 @@ func TestEvalTemplate_UnsetValueDoesNotAdmitClosedPillarTypo(t *testing.T) {
 	} {
 		t.Run(tmpl, func(t *testing.T) {
 			t.Parallel()
-			_, err := EvalTemplate("t", tmpl, unsetValueFixture())
+			_, err := EvalTemplate("t", tmpl, unsetValueFixture(), redact.Keys{})
 			if err == nil {
 				t.Fatal("an undefined reference must halt")
 			}
@@ -235,7 +236,7 @@ func TestUnsetValue_StrictSurfacesStillHalt(t *testing.T) {
 
 	t.Run("assertion halts on an absent key", func(t *testing.T) {
 		t.Parallel()
-		err := EvaluateAssertion("t", `{{ .values.missing }}`, AssertionContext{Values: map[string]any{"present": "p"}})
+		err := EvaluateAssertion("t", `{{ .values.missing }}`, AssertionContext{Values: map[string]any{"present": "p"}}, redact.Keys{})
 		if err == nil {
 			t.Fatal("an assertion reading an absent key must halt")
 		}
@@ -246,7 +247,7 @@ func TestUnsetValue_StrictSurfacesStillHalt(t *testing.T) {
 
 	t.Run("assertion still reads a present key", func(t *testing.T) {
 		t.Parallel()
-		if err := EvaluateAssertion("t", `{{ .values.present }}`, AssertionContext{Values: map[string]any{"present": "p"}}); err != nil {
+		if err := EvaluateAssertion("t", `{{ .values.present }}`, AssertionContext{Values: map[string]any{"present": "p"}}, redact.Keys{}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -262,7 +263,7 @@ func TestEvalSelfInjectValue_UnsetValueRendersEmpty(t *testing.T) {
 	values.Set("present", "vp")
 	ctx := SelfInjectContext{Values: values, Context: SelfInjectContextBlock{InstanceID: "db"}}
 
-	got, err := evalSelfInjectValue("t", `{{ .values.missing }}`, ctx)
+	got, err := evalSelfInjectValue("t", `{{ .values.missing }}`, ctx, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestEvalSelfInjectValue_UnsetValueRendersEmpty(t *testing.T) {
 		t.Errorf("rendered %q, want empty", got)
 	}
 
-	got, err = evalSelfInjectValue("t", `{{ .values.present }}`, ctx)
+	got, err = evalSelfInjectValue("t", `{{ .values.present }}`, ctx, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -288,10 +289,10 @@ func TestEvalTemplate_UnsetValueDoesNotOutliveOneExecution(t *testing.T) {
 	t.Parallel()
 	ctx := unsetValueFixture()
 
-	if _, err := EvalTemplate("first", `{{ .values.missing }}`, ctx); err != nil {
+	if _, err := EvalTemplate("first", `{{ .values.missing }}`, ctx, redact.Keys{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got, err := EvalTemplate("second", `{{ optional .values "missing" "fb" }}`, ctx)
+	got, err := EvalTemplate("second", `{{ optional .values "missing" "fb" }}`, ctx, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestEvalTemplate_OptionalSeesAKeyTheSameTemplateAlsoReadsAsAChain(t *testin
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture())
+			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture(), redact.Keys{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -349,7 +350,7 @@ func TestEvalTemplate_OptionalSeesAKeyTheSameTemplateAlsoReadsAsAChain(t *testin
 // root this context does not define and is refused rather than rendered empty.
 func TestEvalTemplate_ParametersIsNotAValueTemplateRoot(t *testing.T) {
 	t.Parallel()
-	_, err := EvalTemplate("t", `{{ .parameters.db_size }}`, unsetValueFixture())
+	_, err := EvalTemplate("t", `{{ .parameters.db_size }}`, unsetValueFixture(), redact.Keys{})
 	if err == nil {
 		t.Fatal("a value template reading .parameters must halt")
 	}

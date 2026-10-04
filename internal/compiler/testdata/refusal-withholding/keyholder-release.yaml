@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: refusal-keyholder-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./keyholder-app.yaml
+  manifest: ./keyholder-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        keyholder: {}

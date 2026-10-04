@@ -16,6 +16,7 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -495,7 +496,12 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 	withCtx := &types.TemplateContext{}
 	withCtx.Values.Set("x", "rendered-value")
 
-	_, err := frp.Walk(context.Background(), docs, steps, invoke, withCtx, renderer.RenderContext{}, renderer.EvalTemplate)
+	// The fixture declares nothing sensitive, so the evaluator is bound to an empty
+	// withheld set.
+	eval := func(name, text string, data any) (string, error) {
+		return renderer.EvalTemplate(name, text, data, redact.Keys{})
+	}
+	_, err := frp.Walk(context.Background(), docs, steps, invoke, withCtx, renderer.RenderContext{}, eval)
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}

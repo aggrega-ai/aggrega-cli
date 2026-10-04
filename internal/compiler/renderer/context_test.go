@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -181,7 +182,7 @@ func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 	inject, injectRaw := BuildInjectPipe(nil)
 	ctx := AssembleNodeContext("db", graph, allProvides, nil, inject, injectRaw, nil, nil)
 
-	out, err := EvalTemplate("test-values", `{"dsn":"postgres://{{ .provides.host }}:{{ .provides.port }}"}`, ctx)
+	out, err := EvalTemplate("test-values", `{"dsn":"postgres://{{ .provides.host }}:{{ .provides.port }}"}`, ctx, redact.Keys{})
 	if err != nil {
 		t.Fatalf("EvalTemplate failed: %v", err)
 	}

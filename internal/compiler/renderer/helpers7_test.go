@@ -6,6 +6,7 @@ package renderer
 import (
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -107,7 +108,7 @@ func TestExecutePass2a_LiteralEnvMechanism(t *testing.T) {
 	selfInject := &types.InjectBlock{
 		Env: map[string]string{"K1": "literal-value"},
 	}
-	if err := ExecutePass2a(inject, selfInject, "node-1", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+	if err := ExecutePass2a(inject, selfInject, "node-1", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Fatalf("literal env: %v", err)
 	}
 	if got, _ := inject.Env.Get("K1"); got != "literal-value" {
@@ -120,7 +121,7 @@ func TestExecutePass2a_LiteralEnvMechanism(t *testing.T) {
 func TestProcessSelfInjectMechanism_NilRaw(t *testing.T) {
 	t.Parallel()
 	pipe := &types.OrderedMap[string]{}
-	if err := processSelfInjectMechanism(pipe, "env", nil, types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+	if err := processSelfInjectMechanism(pipe, "env", nil, types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Errorf("nil raw should not error: %v", err)
 	}
 }
@@ -130,21 +131,22 @@ func TestProcessSelfInjectMechanism_NilRaw(t *testing.T) {
 func TestResolveSelfInjectEntry_LiteralAndValueAndFrom(t *testing.T) {
 	t.Parallel()
 	// Literal.
-	got, err := resolveSelfInjectEntry("K", selfInjectEntry{isLiteral: true, value: "literal"}, "env", types.OrderedMap[string]{}, SelfInjectContext{})
+	got, err := resolveSelfInjectEntry("K", selfInjectEntry{isLiteral: true, value: "literal"}, "env", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	if err != nil || got != "literal" {
 		t.Errorf("literal: (%q, %v)", got, err)
 	}
 	// from: → reads from own provides.
 	provides := types.OrderedMap[string]{}
 	provides.Set("host", "internal-host")
-	got, err = resolveSelfInjectEntry("K", selfInjectEntry{from: "host"}, "env", provides, SelfInjectContext{})
+	got, err = resolveSelfInjectEntry("K", selfInjectEntry{from: "host"}, "env", provides, SelfInjectContext{}, redact.Keys{})
 	if err != nil || got != "internal-host" {
 		t.Errorf("from: (%q, %v)", got, err)
 	}
 	// value: as template — minimal context just to drive the eval path.
 	_, _ = resolveSelfInjectEntry("K", selfInjectEntry{value: "literal-tmpl"}, "env", types.OrderedMap[string]{}, SelfInjectContext{
 		Values: types.OrderedMap[any]{},
-	})
+	}, redact.Keys{})
+
 }
 
 // TestBuildInjectAll_AggregatesEnvFileArg pins the consolidation: env
@@ -167,7 +169,7 @@ func TestBuildInjectAll_AggregatesEnvFileArg(t *testing.T) {
 func TestExecutePhaseA_EmptyContext(t *testing.T) {
 	t.Parallel()
 	ctx := &types.TemplateContext{}
-	if _, err := ExecutePhaseA(ctx, nil); err != nil {
+	if _, err := ExecutePhaseA(ctx, nil, hostWithheld{}); err != nil {
 		t.Errorf("empty context + nil FRs should not error: %v", err)
 	}
 }

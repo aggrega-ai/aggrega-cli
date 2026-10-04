@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: refusal-keyholder-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/refusal-keyholder: refusal-keyholder-recipe:1.0.0
+    features:
+      type:
+        feature.test/refusal-credential: refusal-credential-compose:1.0.0

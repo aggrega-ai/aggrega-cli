@@ -35,13 +35,17 @@ import (
 // recipePath / recipeName / recipeVersion are threaded into the
 // error for operator-facing message context; pass "" when not
 // available (e.g., tests that build a Workload directly).
+//
+// opts adjust how the findings are reported; see WithholdRenderedValues.
 func ValidateWorkload(
 	w *types.Workload,
 	recipePath, recipeName, recipeVersion string,
+	opts ...WorkloadValidationOption,
 ) error {
 	if w == nil {
 		return nil
 	}
+	chosen := chooseWorkloadValidation(opts)
 
 	// Marshal the typed Workload to JSON, then unmarshal as a generic
 	// any-typed value. The validator's instance walk handles
@@ -62,7 +66,7 @@ func ValidateWorkload(
 	// (one compile, cached across recipes); engine-level failures —
 	// including an embed regression — surface as a single finding
 	// rather than a panic.
-	findings, err := envelope.ValidateInstance(envelope.KindWorkload, instance)
+	findings, err := chosen.validateInstance(instance)
 	if err != nil {
 		return workloadPipelineError(recipePath, recipeName, recipeVersion,
 			"Workload validation pipeline error: "+err.Error())
@@ -72,7 +76,72 @@ func ValidateWorkload(
 		return nil
 	}
 
-	return workloadSchemaError(recipePath, recipeName, recipeVersion, findings, instance)
+	return workloadSchemaError(recipePath, recipeName, recipeVersion, findings, chosen.adviceInstance(instance))
+}
+
+// WorkloadValidationOption adjusts how a Workload validation reports what it
+// finds.
+type WorkloadValidationOption func(*workloadValidation)
+
+// workloadValidation is what the options passed to a Workload validation decided.
+type workloadValidation struct {
+	withholdValues bool
+}
+
+func chooseWorkloadValidation(opts []WorkloadValidationOption) workloadValidation {
+	var chosen workloadValidation
+	for _, opt := range opts {
+		opt(&chosen)
+	}
+	return chosen
+}
+
+// WithholdRenderedValues reports every finding without the value it found.
+//
+// It is for a Workload a template rendered from a value an author declared
+// sensitive. The rendered document's fields carry no link back to the data the
+// template read, so which of its values carry that data cannot be told field by
+// field — and the Workload schema declares nothing sensitive itself, because the
+// declaration belongs to the entity whose value the template read. So every
+// finding's value is withheld, its sentence composed from the schema alone and
+// closed by a notice naming the template as the reason, and no advice derived
+// from the value is given. A finding at a position no declared datum reached
+// loses its value too, which is the side of that trade that cannot leak.
+func WithholdRenderedValues() WorkloadValidationOption {
+	return func(v *workloadValidation) { v.withholdValues = true }
+}
+
+// renderedValuesWithheldNotice closes the sentence of every finding a Workload
+// validation withholds under WithholdRenderedValues. It names the reason the
+// caller knows — the template reads a declared-sensitive value — and not the one a
+// schema declaration earns, which the Workload schema does not make.
+const renderedValuesWithheldNotice = " (the value is withheld because the template that rendered this document " +
+	"reads a value declared sensitive)"
+
+// validateInstance validates a decoded Workload as the options decided.
+func (v workloadValidation) validateInstance(instance any) ([]jsonvalidator.Finding, error) {
+	if v.withholdValues {
+		return envelope.ValidateInstanceWithholdingEvery(envelope.KindWorkload, instance, renderedValuesWithheldNotice)
+	}
+	return envelope.ValidateInstance(envelope.KindWorkload, instance)
+}
+
+// validateBytes validates a Workload document's bytes as the options decided.
+func (v workloadValidation) validateBytes(data []byte, recipePath string) (any, error) {
+	if v.withholdValues {
+		return envelope.ValidateBytesWithholdingEvery(envelope.KindWorkload, data, recipePath, renderedValuesWithheldNotice)
+	}
+	return envelope.ValidateBytes(envelope.KindWorkload, data, recipePath)
+}
+
+// adviceInstance is the document a finding's advice may be derived from: the
+// decoded document, or nothing where every value is withheld — advice reading a
+// value's type would tell a reader something about the value.
+func (v workloadValidation) adviceInstance(instance any) any {
+	if v.withholdValues {
+		return nil
+	}
+	return instance
 }
 
 // ValidateWorkloadBytes validates a raw Workload document — the bytes as
@@ -91,14 +160,17 @@ func ValidateWorkload(
 //
 // recipePath / recipeName / recipeVersion are threaded into the error for
 // operator-facing message context; pass "" when not available.
-func ValidateWorkloadBytes(data []byte, recipePath, recipeName, recipeVersion string) error {
-	instance, err := envelope.ValidateBytes(envelope.KindWorkload, data, recipePath)
+//
+// opts adjust how the findings are reported; see WithholdRenderedValues.
+func ValidateWorkloadBytes(data []byte, recipePath, recipeName, recipeVersion string, opts ...WorkloadValidationOption) error {
+	chosen := chooseWorkloadValidation(opts)
+	instance, err := chosen.validateBytes(data, recipePath)
 	if err == nil {
 		return nil
 	}
 	var eerr *envelope.Error
 	if errors.As(err, &eerr) {
-		return workloadSchemaError(recipePath, recipeName, recipeVersion, eerr.Findings, instance)
+		return workloadSchemaError(recipePath, recipeName, recipeVersion, eerr.Findings, chosen.adviceInstance(instance))
 	}
 	// Parse and engine failures carry no per-field findings, so they take the
 	// findings-free form rather than an empty Findings slice that would render

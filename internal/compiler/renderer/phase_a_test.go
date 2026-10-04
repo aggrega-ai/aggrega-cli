@@ -49,7 +49,7 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 		},
 	}
 
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestExecutePhaseA_NilRecipe(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseA(ctx, []FeatureRecipeRef{{InstanceName: "nil", FeatureRecipe: nil}})
+	_, err := ExecutePhaseA(ctx, []FeatureRecipeRef{{InstanceName: "nil", FeatureRecipe: nil}}, hostWithheld{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestExecutePhaseA_CustomMechanismFlowsToAdditional(t *testing.T) {
 		},
 	}
 
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -329,7 +329,7 @@ func TestExecutePhaseA_UnmappedCustomMechanismIsRecorded(t *testing.T) {
 		},
 	}
 
-	delivered, err := ExecutePhaseA(ctx, refs)
+	delivered, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("the phase reaches no verdict of its own; got %v", err)
 	}
@@ -389,7 +389,7 @@ func TestExecutePhaseA_MappedCustomMechanismIsRecordedMapped(t *testing.T) {
 		},
 	}
 
-	delivered, err := ExecutePhaseA(ctx, refs)
+	delivered, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("ExecutePhaseA: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestExecutePhaseA_FlatOutputRecordsNoPairing(t *testing.T) {
 		},
 	}
 
-	delivered, err := ExecutePhaseA(ctx, refs)
+	delivered, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err != nil {
 		t.Fatalf("ExecutePhaseA: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestExecutePhaseA_FlatMapFallbackUnchanged(t *testing.T) {
 		},
 	}
 
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("unexpected error from flat-map fallback path: %v", err)
 	}
 	dbURL, _ := ctx.Context.Inject.Env.Get("DB_URL")
@@ -524,7 +524,7 @@ func TestExecutePhaseA_InjectMappingReadsAttachmentName(t *testing.T) {
 	ctx, refs := phaseALocalsFixture(types.OrderedMap[string]{},
 		`{"env": {"HOST": "{{ .context.instance_id }}", "ATTACHMENT": "{{ .attachment_name }}"}}`)
 
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

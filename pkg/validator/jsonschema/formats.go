@@ -342,9 +342,7 @@ func (a *googleAdapter) sweepFormats(s *jsonschema.Schema, instance any, path, d
 	seen[key] = true
 
 	if f, failed := formatFinding(s.Format, instance, path, definition); failed {
-		if sensitive && a.withholdSensitive {
-			f = withheldFinding(f, s, definition)
-		}
+		f = a.withheldFindingAt(f, s, definition, sensitive)
 		appendUniqueFinding(rpt, f)
 	}
 	if s.Ref != "" {

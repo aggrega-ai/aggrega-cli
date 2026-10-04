@@ -200,7 +200,7 @@ func buildArtifactsProjection(
 		}
 		rendered, err := EvalTemplateWithDelims(
 			fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, outputName),
-			tmplText, tmplCtx, leftDelim, rightDelim,
+			tmplText, tmplCtx, leftDelim, rightDelim, state.Withheld,
 		)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: outputName}, fmt.Sprintf("artifact %q template eval", outputName))

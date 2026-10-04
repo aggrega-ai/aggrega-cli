@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -28,7 +29,7 @@ func TestExecutePass2a_LiteralValue(t *testing.T) {
 		Env: map[string]any{"PORT": "8080"},
 	}
 
-	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{})
+	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestExecutePass2a_FromOwnProvides(t *testing.T) {
 	ownProvides := types.OrderedMap[string]{}
 	ownProvides.Set("host", "api.svc.cluster.local")
 
-	err := ExecutePass2a(&inject, selfInject, "api", ownProvides, SelfInjectContext{})
+	err := ExecutePass2a(&inject, selfInject, "api", ownProvides, SelfInjectContext{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestExecutePass2a_ValueTemplate(t *testing.T) {
 		Context: SelfInjectContextBlock{InstanceID: "my-api"},
 	}
 
-	err := ExecutePass2a(&inject, selfInject, "my-api", types.OrderedMap[string]{}, siCtx)
+	err := ExecutePass2a(&inject, selfInject, "my-api", types.OrderedMap[string]{}, siCtx, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestExecutePass2a_ForbiddenReference(t *testing.T) {
 		},
 	}
 
-	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{})
+	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error for forbidden reference")
 	}
@@ -130,7 +131,7 @@ func TestExecutePass2a_NilSelfInject(t *testing.T) {
 		All:  types.OrderedMap[string]{},
 	}
 
-	if err := ExecutePass2a(&inject, nil, "api", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+	if err := ExecutePass2a(&inject, nil, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	existing, _ := inject.Env.Get("EXISTING")
@@ -149,7 +150,7 @@ func TestExecutePass2a_FromMissingProvides(t *testing.T) {
 		},
 	}
 
-	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{})
+	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error for missing provides key")
 	}
@@ -265,7 +266,7 @@ func TestNormalizeSelfInjectEntries_BothFieldsPresent_BlocksTheCaseBeforeResolve
 	ownProvides := types.OrderedMap[string]{}
 	ownProvides.Set("ref.path", "resolved-from-provides")
 
-	resolved, err := resolveSelfInjectEntry("BOTH", entry, "env", ownProvides, SelfInjectContext{})
+	resolved, err := resolveSelfInjectEntry("BOTH", entry, "env", ownProvides, SelfInjectContext{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -317,7 +318,7 @@ func TestAFeatureRecipeOverlayWinsOverAKeyTheComponentInjectedForItself(t *testi
 			},
 		},
 	}
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("attachment overlay: %v", err)
 	}
 
@@ -379,7 +380,7 @@ func TestExecutePass2a_CustomMechanism(t *testing.T) {
 			ownProvides.Set("arn", "arn:aws:rds:eu-west-1:db-main")
 			siCtx := SelfInjectContext{Context: SelfInjectContextBlock{InstanceID: "api"}}
 
-			err := ExecutePass2a(&inject, selfInject, "api", ownProvides, siCtx)
+			err := ExecutePass2a(&inject, selfInject, "api", ownProvides, siCtx, redact.Keys{})
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
@@ -435,7 +436,7 @@ func TestExecutePass2a_CustomMechanismOrderIsSorted(t *testing.T) {
 	selfInject.Additional.Set("azurekv", []any{map[string]any{"in": "A", "value": "a"}})
 	selfInject.Additional.Set("ssm_param", []any{map[string]any{"in": "S", "value": "s"}})
 
-	if err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+	if err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -465,7 +466,7 @@ func TestExecutePass2a_NoCustomMechanismLeavesAdditionalEmpty(t *testing.T) {
 		Arg:  map[string]any{"--port": "8080"},
 	}
 
-	if err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+	if err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if inject.Additional.Len() != 0 {

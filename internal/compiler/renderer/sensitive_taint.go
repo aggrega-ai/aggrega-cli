@@ -61,22 +61,8 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 		return redact.Derived{}
 	}
 
-	// The reading consults exactly the three pillars a locals-or-source template
-	// can read a DECLARED leaf through. The cross-node and delivery-key sets are
-	// left empty here on purpose: identifying a computed value from those would
-	// take the same reading with a wider set, and widening it is a separate
-	// decision about a separate display rather than a side effect of this one.
-	// withheld is carried by reference, so each entry the loop marks is visible to
-	// the entries after it — which is what makes withholding transitive in one
-	// pass.
-	withheld := map[string]bool{}
+	withheld := derivedLocals(recipe.Spec.Locals, declaredValues, declaredInfra)
 	readable := redact.Keys{Values: declaredValues, Infra: declaredInfra, Locals: withheld}
-
-	for key, tmplText := range recipe.Spec.Locals.All() {
-		if templateReadsWithheld(tmplText, readable) {
-			withheld[key] = true
-		}
-	}
 
 	// Which parts of the source carry a template is asked of the one walk that
 	// classifies a source's shape — the same walk the evaluation goes through — so
@@ -102,12 +88,44 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 	return derived
 }
 
+// derivedLocals reads which entries of one locals block were computed from a
+// declared-sensitive datum: an entry whose template reads a declared values or
+// infra leaf, or reads an earlier entry already withheld. It is the locals half of
+// derivedSensitiveKeys, and it is shared because a FeatureRecipe's own block is
+// read the same way against the attachment's declarations.
+//
+// The reading consults exactly the three pillars a locals template can read a
+// DECLARED leaf through. withheld is carried by reference, so each entry the loop
+// marks is visible to the entries after it — which is what makes withholding
+// transitive in one pass, in author order.
+//
+// A block reading nothing declared, or no declaration at all, returns an empty
+// map rather than nil, so a caller can add to it.
+func derivedLocals(locals types.OrderedMap[string], declaredValues, declaredInfra map[string]bool) map[string]bool {
+	withheld := map[string]bool{}
+	if len(declaredValues) == 0 && len(declaredInfra) == 0 {
+		return withheld
+	}
+	readable := redact.Keys{Values: declaredValues, Infra: declaredInfra, Locals: withheld}
+	for key, tmplText := range locals.All() {
+		if templateReadsWithheld(tmplText, readable) {
+			withheld[key] = true
+		}
+	}
+	return withheld
+}
+
 // templateReadsWithheld reports whether one template's references reach anything
 // the given set withholds. The reference set comes from the over-collecting census
 // walk, which is the direction this question needs: a read hidden inside a rebound
 // range or with body, or inside a chained defensive wrapper, has still happened,
 // and a walk that attributed only root-anchored reads would answer "not withheld"
 // for exactly the shapes that most need the conservative answer.
+//
+// Whether a reference reaches a withheld datum is answered by the set itself,
+// in the coordinates a template reads its data by — the same coordinates the
+// substitution of a template's data writes at — so this reading and that
+// substitution cannot disagree about a root.
 //
 // A set that withholds nothing readable short-circuits before the parse, which is
 // what lets a capture mode that empties the set turn this reading off without a
@@ -122,156 +140,7 @@ func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
 	if err != nil {
 		return true
 	}
-	for _, ref := range refs {
-		if referenceReachesWithheld(ref, keys) {
-			return true
-		}
-	}
-	return false
-}
-
-// referenceReachesWithheld decides one reference against the withheld set. The
-// reference is the census spelling — a leading "." then the pillar root then the
-// remaining segments.
-//
-// Every root the set can name is covered, and that completeness is the point: a
-// reading that covered a subset would answer "not withheld" for a template that
-// reads a withheld datum through one of the uncovered roots, which is the
-// under-withholding direction this walk refuses. A root the set cannot name — the
-// node's identity, its labels, its metadata — carries nothing any declaration
-// governs and reports false.
-func referenceReachesWithheld(ref string, keys redact.Keys) bool {
-	root, rest := splitPillarReference(ref)
-	switch root {
-	case "values":
-		return pathReachesWithheld(rest, keys.Values)
-	case "infra":
-		return pathReachesWithheld(rest, keys.Infra)
-	case localsContextRoot:
-		if rest == "" {
-			// A read of the whole pillar reaches every entry in it.
-			return len(keys.Locals) > 0
-		}
-		return keys.Locals[firstPathSegment(rest)]
-	case "source":
-		if rest == "" {
-			// A source declared as a single string is withheld under the
-			// whole-source key, so a bare read reaches it as well as reaching
-			// every field of a structured one.
-			return len(keys.Source) > 0
-		}
-		return keys.Source[firstPathSegment(rest)]
-	case "context":
-		return contextReferenceReachesWithheld(rest, keys)
-	}
-	return false
-}
-
-// contextReferenceReachesWithheld decides a reference below the context root,
-// where the withheld surfaces are the delivery pipe and the uses edges — an edge
-// carrying both its target's provides and the attachments written on the
-// connection.
-//
-// Each is addressed level by level — a mechanism then a delivery key, an alias
-// then a provides key or a slot — so a read that stops short of the leaf reaches
-// every leaf beneath it and withholds on that basis. That is the same ancestor rule
-// the pillar paths use, and it is what makes a dynamic lookup such as
-// `index .context.inject.env $k` conservative rather than invisible.
-func contextReferenceReachesWithheld(rest string, keys redact.Keys) bool {
-	surface, below := splitPillarReference("." + rest)
-	switch surface {
-	case "inject":
-		if below == "" {
-			return keys.AnyDelivery()
-		}
-		mechanism, key := splitPillarReference("." + below)
-		if key == "" {
-			return keys.AnyDeliveryIn(mechanism)
-		}
-		return keys.Delivery(mechanism, firstPathSegment(key))
-	case "uses":
-		if below == "" {
-			return anyMarked(keys.UsesProvides) || len(keys.UsesAttachments) > 0
-		}
-		alias, edgeField := splitPillarReference("." + below)
-		marked := keys.UsesProvides[alias]
-		attached := keys.UsesAttachments[alias]
-		if len(marked) == 0 && len(attached) == 0 {
-			return false
-		}
-		if edgeField == "" {
-			// A read of the whole edge reaches its provides bag and every
-			// attachment written on the connection.
-			return true
-		}
-		field, fieldRest := splitPillarReference("." + edgeField)
-		switch field {
-		case "provides":
-			if len(marked) == 0 {
-				return false
-			}
-			if fieldRest == "" {
-				return true
-			}
-			return marked[firstPathSegment(fieldRest)]
-		case "features":
-			return connectionAttachmentReachesWithheld(fieldRest, attached)
-		}
-		// Every other field on the edge — its target, socket, labels, and the
-		// per-connection values and infra authored on the edge itself — is
-		// governed by none of the declarations the set carries.
-		return false
-	}
-	return false
-}
-
-// connectionAttachmentReachesWithheld decides a reference below one connection's
-// features entry, against what each attached Feature declares. The pillar rule
-// below the attachment is the one a node's own pillars take — equal, ancestor or
-// descendant of a declared path — and a provides key is decided as an edge's is.
-func connectionAttachmentReachesWithheld(rest string, slots map[string]redact.AttachmentKeys) bool {
-	if len(slots) == 0 {
-		return false
-	}
-	if rest == "" {
-		// A read of the whole features entry reaches every attachment on it.
-		return true
-	}
-	slot, below := splitPillarReference("." + rest)
-	declared, ok := slots[slot]
-	if !ok {
-		return false
-	}
-	if below == "" {
-		return declared.Any()
-	}
-	pillar, path := splitPillarReference("." + below)
-	switch pillar {
-	case "values":
-		return pathReachesWithheld(path, declared.Values)
-	case "infra":
-		return pathReachesWithheld(path, declared.Infra)
-	case "provides":
-		if len(declared.Provides) == 0 {
-			return false
-		}
-		if path == "" {
-			return true
-		}
-		return declared.Provides[firstPathSegment(path)]
-	}
-	// The attachment's type, version and labels are catalog metadata no
-	// declaration governs.
-	return false
-}
-
-func anyMarked(sets map[string]map[string]bool) bool {
-	for _, set := range sets {
-		if len(set) > 0 {
-			return true
-		}
-	}
-	return false
+	return keys.ReachedBy(refs)
 }
 
 // workloadReadsWithheld reports whether a Recipe's workload template reads
@@ -577,55 +446,4 @@ func injectMappingWithheld(
 		}
 	}
 	return out
-}
-
-// splitPillarReference splits a census reference into its pillar root and the
-// path below that root. rest is empty for a whole-pillar reference.
-func splitPillarReference(ref string) (root, rest string) {
-	trimmed := strings.TrimPrefix(ref, ".")
-	if i := strings.Index(trimmed, "."); i >= 0 {
-		return trimmed[:i], trimmed[i+1:]
-	}
-	return trimmed, ""
-}
-
-func firstPathSegment(path string) string {
-	if i := strings.Index(path, "."); i >= 0 {
-		return path[:i]
-	}
-	return path
-}
-
-// pathReachesWithheld reports whether one referenced path within a pillar is
-// equal to, an ancestor of, or a descendant of any declared path in that pillar.
-//
-// It is deliberately WIDER than the question a display asks, and the two halves
-// are kept visibly apart because only one of them is shared. The
-// covered-by-a-declaration half — the path itself, or any object containing it
-// — is the same question every display surface asks, so it is asked of the one
-// home for it rather than restated here. The ancestor half is this reading's
-// own: a template that reads a whole object reaches every declared leaf beneath
-// it, which is what makes `range .values.creds` and `index .values $k`
-// conservative rather than invisible. No display needs that half, because a
-// display shows a leaf at a time.
-//
-// The declared set is walked to a boolean and never iterated for emission, so
-// the walk's order cannot reach any displayed byte.
-func pathReachesWithheld(path string, declared map[string]bool) bool {
-	if len(declared) == 0 {
-		return false
-	}
-	if path == "" {
-		// A read of the whole pillar reaches every declared leaf under it.
-		return true
-	}
-	if types.PathCoveredBy(path, declared) {
-		return true
-	}
-	for d := range declared {
-		if strings.HasPrefix(d, path+".") {
-			return true
-		}
-	}
-	return false
 }

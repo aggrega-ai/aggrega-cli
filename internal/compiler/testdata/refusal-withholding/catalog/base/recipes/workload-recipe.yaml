@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-workload-recipe
+  version: "1.0.0"
+  description: >
+    Renders the declared-sensitive leaf into a Workload field the Workload schema
+    constrains, so the rendered document fails its schema at that field.
+spec:
+  capability: compose
+  implements: core/refusal-guarded
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: guarded:1.0
+        imagePullPolicy: '{{ .values.adminPassword }}'

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: refusal-guarded-app
+  version: "1.0.0"
+spec:
+  components:
+    guarded:
+      type: core/refusal-guarded
+      values:
+        adminPassword: refusal-secret-plaintext
+        adminNote: refusal-note-plaintext

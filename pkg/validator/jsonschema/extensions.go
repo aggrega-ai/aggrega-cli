@@ -149,6 +149,7 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 			rpt.Findings = filterOutPath(rpt.Findings, joinPath(wn.instancePath))
 		}
 		a.withholdIndexed(rpt)
+		a.withholdEveryRemaining(rpt)
 		rpt.sort()
 		return rpt, nil
 	}
@@ -219,11 +220,10 @@ nextWhen:
 				// The branch is checked whole, so no position inside it was built
 				// to carry a declaration; the failure's own location chain is read
 				// for one instead.
-				if a.withholdSensitive {
-					if node, sensitive := chainDeclaresSensitive(wn.elseResolved.Schema(), schemaLocations(err)); sensitive {
-						for i := start; i < len(rpt.Findings); i++ {
-							rpt.Findings[i] = withheldFinding(rpt.Findings[i], node, "")
-						}
+				if a.withholdSensitive || a.withholdEvery != "" {
+					node, sensitive := chainDeclaresSensitive(wn.elseResolved.Schema(), schemaLocations(err))
+					for i := start; i < len(rpt.Findings); i++ {
+						rpt.Findings[i] = a.withheldFindingAt(rpt.Findings[i], node, "", sensitive)
 					}
 				}
 			}
@@ -274,8 +274,10 @@ nextValidate:
 	}
 
 	// Step 4: a value the schema declares sensitive is withheld from every
-	// finding at or inside its position, then the deterministic sort.
+	// finding at or inside its position — and, where the caller asked for every
+	// value to be withheld, every remaining value — then the deterministic sort.
 	a.withholdIndexed(rpt)
+	a.withholdEveryRemaining(rpt)
 	rpt.sort()
 	return rpt, nil
 }
@@ -486,10 +488,9 @@ func (a *googleAdapter) libraryFinding(err error, called *jsonschema.Resolved, i
 		Keyword:   "validation",
 		Message:   findingMessage(err, instance, definition),
 	}
-	if a.withholdSensitive && called != nil {
-		if node, sensitive := chainDeclaresSensitive(called.Schema(), schemaLocations(err)); sensitive {
-			f = withheldFinding(f, node, definition)
-		}
+	if (a.withholdSensitive || a.withholdEvery != "") && called != nil {
+		node, sensitive := chainDeclaresSensitive(called.Schema(), schemaLocations(err))
+		f = a.withheldFindingAt(f, node, definition, sensitive)
 	}
 	return f
 }

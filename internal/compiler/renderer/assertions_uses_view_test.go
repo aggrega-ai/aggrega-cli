@@ -207,17 +207,15 @@ func evaluateOnSurface(t *testing.T, surface, body string) error {
 			Metadata: types.RecipeMetadata{Name: "probe-router", Version: "1.0.0"},
 			Spec:     types.RecipeSpec{Assertions: assertions},
 		}
-		return EvaluateRecipeAndFeatureRecipeAssertions(graph,
-			map[string]*types.Recipe{"router": recipe}, RecipeLookup{}, NodeProvides{}, NodeLocals{})
+		return EvaluateRecipeAndFeatureRecipeAssertions(graph, map[string]*types.Recipe{"router": recipe}, RecipeLookup{}, NodeProvides{}, NodeLocals{}, refusalDeclarations{})
+
 	case "FeatureRecipe":
 		fr := types.FeatureRecipe{
 			Metadata: types.FeatureRecipeMetadata{Name: "probe-marker", Version: "1.0.0"},
 			Spec:     types.FeatureRecipeSpec{Assertions: assertions},
 		}
-		return EvaluateRecipeAndFeatureRecipeAssertions(graph,
-			map[string]*types.Recipe{"router": plainRecipe},
-			RecipeLookup{FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return &fr, true }},
-			NodeProvides{}, NodeLocals{})
+		return EvaluateRecipeAndFeatureRecipeAssertions(graph, map[string]*types.Recipe{"router": plainRecipe}, RecipeLookup{FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return &fr, true }}, NodeProvides{}, NodeLocals{}, refusalDeclarations{})
+
 	}
 	t.Fatalf("no assertion surface named %q", surface)
 	return nil

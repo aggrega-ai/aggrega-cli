@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/refusal-guarded
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # One declared leaf beside an undeclared sibling. Each Recipe bound to this type
+  # refuses in its own way while reading one of the two, so a refusal's text is
+  # judged against a value an author declared sensitive and against one nobody did.
+  schema:
+    values:
+      adminPassword: { type: string, sensitive: true }
+      adminNote: { type: string }

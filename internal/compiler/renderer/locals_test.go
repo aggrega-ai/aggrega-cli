@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -44,7 +45,7 @@ func TestEvaluateRecipeLocals_Basic(t *testing.T) {
 	values := omLocalsIface("port", float64(5432))
 	infra := omLocalsIface("tier", "gold")
 
-	got, err := EvaluateRecipeLocals(recipe, "db", values, infra)
+	got, err := EvaluateRecipeLocals(recipe, "db", values, infra, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestEvaluateRecipeLocals_RejectsProvidesRef(t *testing.T) {
 			Locals: omLocals("fqdn", `{{ .provides.host }}.svc`),
 		},
 	}
-	_, err := EvaluateRecipeLocals(recipe, "db", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateRecipeLocals(recipe, "db", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
@@ -83,14 +84,14 @@ func TestEvaluateRecipeLocals_RejectsProvidesRef(t *testing.T) {
 	}
 	// A defensive wrapper must not launder the same reference into an empty value.
 	recipe.Spec.Locals = omLocals("fqdn", `{{ default "x" .provides.host }}`)
-	if _, err := EvaluateRecipeLocals(recipe, "db", types.OrderedMap[any]{}, types.OrderedMap[any]{}); err == nil {
+	if _, err := EvaluateRecipeLocals(recipe, "db", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{}); err == nil {
 		t.Error("a wrapped .provides reference must halt too")
 	}
 }
 
 func TestEvaluateRecipeLocals_NilRecipe(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestEvaluateRecipeLocals_NilRecipe(t *testing.T) {
 func TestEvaluateRecipeLocals_EmptyLocals(t *testing.T) {
 	t.Parallel()
 	recipe := &types.Recipe{Metadata: types.RecipeMetadata{Name: "x"}}
-	got, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestEvaluateRecipeLocals_RejectsInjectRef(t *testing.T) {
 			Locals: omLocals("leak", `{{ .context.inject.env.DB_URL }}`),
 		},
 	}
-	_, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected self-containment error, got nil")
 	}
@@ -139,7 +140,7 @@ func TestEvaluateRecipeLocals_RejectsUsesRef(t *testing.T) {
 			Locals: omLocals("leak", `{{ (index .context.uses "db").provides.host }}`),
 		},
 	}
-	_, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected self-containment error, got nil")
 	}
@@ -155,7 +156,7 @@ func TestEvaluateRecipeLocals_Deterministic(t *testing.T) {
 	}
 	var first types.OrderedMap[string]
 	for i := 0; i < 5; i++ {
-		got, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+		got, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 		if err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
@@ -213,7 +214,7 @@ func TestEvaluateRecipeLocals_SubstrateKeyOrderInvariant(t *testing.T) {
 		},
 	}
 
-	fromAuthorOrder, err := EvaluateRecipeLocals(recipe, "n", authorOrder, infra)
+	fromAuthorOrder, err := EvaluateRecipeLocals(recipe, "n", authorOrder, infra, redact.Keys{})
 	if err != nil {
 		t.Fatalf("author-order substrate: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestEvaluateRecipeLocals_SubstrateKeyOrderInvariant(t *testing.T) {
 		rebuiltInfra.Set(k, flatInfra[k])
 	}
 
-	fromRebuilt, err := EvaluateRecipeLocals(recipe, "n", rebuilt, rebuiltInfra)
+	fromRebuilt, err := EvaluateRecipeLocals(recipe, "n", rebuilt, rebuiltInfra, redact.Keys{})
 	if err != nil {
 		t.Fatalf("alphabetical substrate: %v", err)
 	}

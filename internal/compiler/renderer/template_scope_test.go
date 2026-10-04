@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -149,7 +150,7 @@ func TestClosedRootKeys_InterfaceTypedRootIsOpenAndDoesNotPanic(t *testing.T) {
 	if keys, gated := (templateScope{data: ctx}).admittedKeys("source"); gated {
 		t.Errorf(".source must stay open when it happens to hold a struct; reported gated with keys %v", keys)
 	}
-	if _, err := EvalTemplate("probe", `{{ .source.whatever }}{{ .inject_raw.anything }}`, ctx); err != nil {
+	if _, err := EvalTemplate("probe", `{{ .source.whatever }}{{ .inject_raw.anything }}`, ctx, redact.Keys{}); err != nil {
 		t.Errorf("a reference under an interface-typed pillar must not halt: %v", err)
 	}
 }
@@ -176,7 +177,7 @@ func TestEvalTemplate_MistypedKeyUnderClosedPillarHalts(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			out, err := EvalTemplate("probe", tc.tmpl, ctx)
+			out, err := EvalTemplate("probe", tc.tmpl, ctx, redact.Keys{})
 			if err == nil {
 				t.Fatalf("expected halt, rendered %q at no error", out)
 			}
@@ -220,7 +221,7 @@ func TestEvalTemplate_OpenPillarOptionalityIsUntouched(t *testing.T) {
 		`{{ .metadata.release_name }}`,
 	}
 	for _, tmpl := range forms {
-		if _, err := EvalTemplate("probe", tmpl, ctx); err != nil {
+		if _, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{}); err != nil {
 			t.Errorf("form %q must not halt, got: %v", tmpl, err)
 		}
 	}

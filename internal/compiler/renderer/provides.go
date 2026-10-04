@@ -67,10 +67,15 @@ var providesScope = templateScope{
 // the resolved provides and the resolved locals per node — the locals travel out of
 // this pass rather than being recomputed downstream, so the render passes and the
 // assertion pass read one evaluation.
+//
+// declared answers, per node, what its Component declares sensitive among values
+// and infra and which of its locals are computed from it; a failing locals or
+// provides template reports without such a value. Its zero value declares nothing.
 func EvaluateAllProvides(
 	graph *types.IRGraph,
 	recipes map[string]*types.Recipe, // nodeID → resolved Recipe
 	renderedNames NodeRenderedNames, // nodeID → the name its provider reports; absent where none
+	declared refusalDeclarations,
 ) (NodeProvides, NodeLocals, error) {
 	allProvides := make(NodeProvides)
 	allLocals := make(NodeLocals)
@@ -92,7 +97,8 @@ func EvaluateAllProvides(
 			_ = parse.IRPayload(raw, &infra)
 		}
 
-		nodeLocals, err := EvaluateRecipeLocals(recipe, nodeID, values, infra)
+		withheld := declared.node(nodeID).pillarKeys()
+		nodeLocals, err := EvaluateRecipeLocals(recipe, nodeID, values, infra, withheld)
 		if err != nil {
 			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q locals", nodeID))
 		}
@@ -140,7 +146,7 @@ func EvaluateAllProvides(
 		resolved := types.OrderedMap[string]{}
 		for key, tmplText := range recipe.Spec.Provides.All() {
 			val, err := evalValueTemplate(
-				fmt.Sprintf("provides[%q]", key), tmplText, providesScope.with(pCtx), "{{", "}}")
+				fmt.Sprintf("provides[%q]", key), tmplText, providesScope.with(pCtx, withheld), "{{", "}}")
 			if err != nil {
 				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -195,12 +196,19 @@ type localsRefSite struct {
 // context into it, so a root a surface refuses halts here rather than being left to
 // each caller to guard. Threading the scope is what keeps the narrowing declared
 // once per surface instead of once per surface per pillar it refuses.
+//
+// withheld names what of each entry's context an author declared sensitive — the
+// declared values and infra leaves, and the entries computed from them — so an
+// entry's failure reports without such a value. It is stated for the whole block:
+// an entry's context carries only the entries above it, and a withheld entry not
+// yet resolved is absent from that context and so substitutes nothing.
 func evaluateLocalsInOrder(
 	locals types.OrderedMap[string],
 	scope templateScope,
 	site func(key string) localsRefSite,
 	name func(key string) string,
 	withPrefix func(resolved types.OrderedMap[string]) any,
+	withheld redact.Keys,
 ) (types.OrderedMap[string], error) {
 	resolved := types.OrderedMap[string]{}
 	if locals.Len() == 0 {
@@ -219,7 +227,7 @@ func evaluateLocalsInOrder(
 		if err := checkLocalsReferenceOrder(tmplText, s, resolvedKeys, declared); err != nil {
 			return types.OrderedMap[string]{}, err
 		}
-		val, err := evalValueTemplate(name(key), tmplText, scope.with(withPrefix(resolved)), "{{", "}}")
+		val, err := evalValueTemplate(name(key), tmplText, scope.with(withPrefix(resolved), withheld), "{{", "}}")
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s.File}, s.Where)
 		}
@@ -357,11 +365,16 @@ func localsUnknownRefErr(site localsRefSite, path, referenced string, declared [
 // nodeID is what .context.instance_id resolves to. The surface refuses
 // .attachment_name — no attachment is being resolved here — so a base local
 // reaching for it halts rather than rendering empty.
+//
+// withheld names what the node's Component declares sensitive among values and
+// infra, and the locals computed from it, so a failing entry reports without such
+// a value; a caller rendering data no declaration governs passes an empty set.
 func EvaluateRecipeLocals(
 	recipe *types.Recipe,
 	nodeID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
+	withheld redact.Keys,
 ) (types.OrderedMap[string], error) {
 	if recipe == nil {
 		return types.OrderedMap[string]{}, nil
@@ -385,6 +398,7 @@ func EvaluateRecipeLocals(
 				Locals:  resolved,
 			}
 		},
+		withheld,
 	)
 }
 

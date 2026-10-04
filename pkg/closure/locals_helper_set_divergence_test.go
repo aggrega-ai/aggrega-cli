@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -133,7 +134,7 @@ func renderVerdictForOneEntry(t *testing.T, expr string) localsDivergenceVerdict
 	r := &types.Recipe{}
 	r.Metadata.Name = "helper-axis-recipe"
 	r.Spec.Locals = orderedLocals("derived", expr)
-	_, err := renderer.EvaluateRecipeLocals(r, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := renderer.EvaluateRecipeLocals(r, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	switch {
 	case err == nil:
 		return localsAdmitted

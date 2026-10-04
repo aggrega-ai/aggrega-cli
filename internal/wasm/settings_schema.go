@@ -6,7 +6,10 @@ package wasm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -95,6 +98,49 @@ func ValidateValueAgainstSchema(schema json.RawMessage, value any) error {
 		return err
 	}
 	return compiled.Validate(canonical)
+}
+
+// WithheldValidationFailure describes a failure ValidateValueAgainstSchema
+// returned without reproducing anything of the value it refused: each position
+// in the validated value that failed, and the schema keyword that refused it,
+// read from the failure's structure rather than from its sentence, which quotes
+// the value. It reports false for an error that is not a validation failure — a
+// schema that does not compile, a value that does not encode — which carries no
+// such structure to read.
+//
+// The positions are the value's own keys, so a key a template produced from data
+// appears as produced. The descriptions are sorted, so the same failure reads the
+// same way on every run whatever order the library collected them in.
+func WithheldValidationFailure(err error) (string, bool) {
+	var failure *jsonschema.ValidationError
+	if !errors.As(err, &failure) {
+		return "", false
+	}
+	seen := map[string]bool{}
+	var described []string
+	var collect func(*jsonschema.ValidationError)
+	collect = func(v *jsonschema.ValidationError) {
+		if len(v.Causes) > 0 {
+			for _, cause := range v.Causes {
+				collect(cause)
+			}
+			return
+		}
+		keyword := "the schema"
+		if v.ErrorKind != nil {
+			if path := v.ErrorKind.KeywordPath(); len(path) > 0 {
+				keyword = strings.Join(path, "/")
+			}
+		}
+		line := fmt.Sprintf("at '/%s': %s", strings.Join(v.InstanceLocation, "/"), keyword)
+		if !seen[line] {
+			seen[line] = true
+			described = append(described, line)
+		}
+	}
+	collect(failure)
+	sort.Strings(described)
+	return strings.Join(described, "; "), true
 }
 
 // ValidateSettings validates an operator-supplied settings value against the

@@ -112,6 +112,7 @@ func New(schema *jsonschema.Schema, opts ...Option) (Validator, error) {
 		keywords:              map[string]*positionKeywords{},
 		expanding:             map[string]bool{},
 		withholdSensitive:     chosen.withholdSensitive,
+		withholdEvery:         chosen.withholdEvery,
 		sensitive:             map[string]*jsonschema.Schema{},
 	}
 
@@ -320,6 +321,11 @@ type googleAdapter struct {
 	// withholdSensitive reports that a finding at a position whose value is
 	// sensitive carries no part of that value; see WithholdSensitiveValues.
 	withholdSensitive bool
+
+	// withholdEvery, when not empty, is the notice closing every finding's
+	// sentence, none of which carries any part of the value it found; see
+	// WithholdEveryValue.
+	withholdEvery string
 
 	// sensitive maps the instance path of each position the index built whose
 	// value is sensitive — declared there, or inside a position that declares it

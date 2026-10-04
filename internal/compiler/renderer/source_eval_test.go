@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -21,7 +22,7 @@ func omSrcInfra(pairs ...any) types.OrderedMap[any] {
 
 func TestEvaluateRecipeSource_NilPassesThrough(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateRecipeSource(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestEvaluateRecipeSource_NilPassesThrough(t *testing.T) {
 func TestEvaluateRecipeSource_StringWithInfraRef(t *testing.T) {
 	t.Parallel()
 	infra := omSrcInfra("source_version", "26.0.0")
-	got, err := EvaluateRecipeSource(`{{ .infra.source_version | default "25.0.8" }}`, "api", types.OrderedMap[any]{}, infra, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource(`{{ .infra.source_version | default "25.0.8" }}`, "api", types.OrderedMap[any]{}, infra, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestEvaluateRecipeSource_StringWithInfraRef(t *testing.T) {
 
 func TestEvaluateRecipeSource_StringDefaultWhenInfraMissing(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateRecipeSource(`{{ .infra.source_version | default "25.0.8" }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource(`{{ .infra.source_version | default "25.0.8" }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestEvaluateRecipeSource_StringDefaultWhenInfraMissing(t *testing.T) {
 
 func TestEvaluateRecipeSource_LiteralStringShortCircuits(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateRecipeSource("./charts/my-chart", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource("./charts/my-chart", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestEvaluateRecipeSource_LiteralStringShortCircuits(t *testing.T) {
 
 func TestEvaluateRecipeSource_EmptyStringReturnsEmpty(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateRecipeSource("", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource("", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestEvaluateRecipeSource_StructuredSourcePartialEval(t *testing.T) {
 		"size":     42, // non-string — passes through unchanged
 	}
 	infra := omSrcInfra("v", "1.2.3")
-	got, err := EvaluateRecipeSource(source, "api", types.OrderedMap[any]{}, infra, types.OrderedMap[string]{})
+	got, err := EvaluateRecipeSource(source, "api", types.OrderedMap[any]{}, infra, types.OrderedMap[string]{}, redact.Keys{})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestEvaluateRecipeSource_StructuredSourcePartialEval(t *testing.T) {
 
 func TestEvaluateRecipeSource_RejectsInjectRef(t *testing.T) {
 	t.Parallel()
-	_, err := EvaluateRecipeSource(`{{ .context.inject.env.PATH }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	_, err := EvaluateRecipeSource(`{{ .context.inject.env.PATH }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
@@ -121,7 +122,7 @@ func TestEvaluateRecipeSource_RejectsUsesRef(t *testing.T) {
 	source := map[string]any{
 		"path": `{{ (index .context.uses "db").provides.host }}`,
 	}
-	_, err := EvaluateRecipeSource(source, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	_, err := EvaluateRecipeSource(source, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected self-containment error on structured source sub-field")
 	}
@@ -132,7 +133,7 @@ func TestEvaluateRecipeSource_RejectsUsesRef(t *testing.T) {
 // node's provides, and the shared context type declares no such pillar.
 func TestEvaluateRecipeSource_RejectsProvidesRef(t *testing.T) {
 	t.Parallel()
-	_, err := EvaluateRecipeSource(`{{ .provides.host }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	_, err := EvaluateRecipeSource(`{{ .provides.host }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
@@ -144,7 +145,7 @@ func TestEvaluateRecipeSource_RejectsProvidesRef(t *testing.T) {
 	}
 	// A structured source's string sub-field is checked identically.
 	structured := map[string]any{"version": `{{ .provides.chart_version }}`}
-	if _, err := EvaluateRecipeSource(structured, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}); err == nil {
+	if _, err := EvaluateRecipeSource(structured, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{}); err == nil {
 		t.Error("expected the same halt on a structured source sub-field")
 	}
 }

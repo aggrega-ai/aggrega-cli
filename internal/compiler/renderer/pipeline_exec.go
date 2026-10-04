@@ -17,6 +17,7 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -66,9 +67,12 @@ type pipelineResult struct {
 // the node's position in topology author order, then the pipeline's position in
 // the node's FeatureOrder cascade — so when several deferred pipelines replay
 // they layer in the same deterministic order the per-node cascade uses.
+// Withheld is what of WithCtx an author declared sensitive, captured beside it so
+// the replayed `with` withholds exactly what the per-node pass would have.
 type DeferredPatch struct {
 	Steps             []types.PipelineStep
 	WithCtx           *types.TemplateContext
+	Withheld          redact.Keys
 	RenderCtx         renderctx.RenderContext
 	OwnProvider       string
 	HostProvider      string
@@ -136,6 +140,9 @@ type pipelineFile0 struct {
 //
 // lookup nil disables execution: the steps are validated by their presence but
 // not run, and a validate-only warning is returned (the non-regression path).
+//
+// withheld names what of withCtx an author declared sensitive, so a step's `when`
+// or `with` template that fails reports without such a value.
 func runNodePipeline(
 	ctx context.Context,
 	steps []types.PipelineStep,
@@ -146,6 +153,7 @@ func runNodePipeline(
 	hostProvider string,
 	renderCtx renderctx.RenderContext,
 	withCtx *types.TemplateContext,
+	withheld redact.Keys,
 	yamlIndent int,
 	lookup pluginpath.Lookup,
 	engineFactory EngineFactory,
@@ -179,7 +187,7 @@ func runNodePipeline(
 	// function owns only seam construction (and the empty-steps / nil-lookup
 	// short-circuits above); the executor body is single-sourced in
 	// runNodePipelineWithInvoker, which a test exercises with canned seams.
-	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), nodeID)
+	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, withheld, ownCodec, hostCodec, newStepInvoker(lookup), nodeID)
 }
 
 // selectCodec resolves the codec for the scope rendered by providerName: the
@@ -222,6 +230,7 @@ func runNodePipelineWithInvoker(
 	hostProvider string,
 	renderCtx renderctx.RenderContext,
 	withCtx *types.TemplateContext,
+	withheld redact.Keys,
 	ownCodec frp.Codec,
 	hostCodec frp.Codec,
 	invoke frp.StepInvoker,
@@ -251,8 +260,18 @@ func runNodePipelineWithInvoker(
 	}
 	docs := frp.DocumentSet{Own: ownDocs, Host: hostDocs}
 
-	// 3-4. Walk the steps. EvalTemplate is the injected template seam.
-	walkRes, werr := frp.Walk(ctx, docs, steps, invoke, withCtx, renderCtx, EvalTemplate)
+	// 3-4. Walk the steps. EvalTemplate is the injected template seam, bound to
+	// what of the walk's context an author declared sensitive; a step's `with` is
+	// read through the one decode of a template's output on the same terms, and
+	// its contract refusal worded without the value where the `with` read one.
+	eval := func(name, text string, data any) (string, error) {
+		return EvalTemplate(name, text, data, withheld)
+	}
+	readWith := frp.EvaluateWithThrough(func(name, text string, data any, dst *types.OrderedMap[any]) (error, error) {
+		_, evalErr, decodeErr := EvalTemplateDecoded(name, text, data, withheld, dst)
+		return evalErr, decodeErr
+	})
+	walkRes, werr := frp.Walk(ctx, docs, steps, withholdStepInputRefusal(invoke, withheld), withCtx, renderCtx, eval, readWith)
 	if werr != nil {
 		return pipelineResult{}, mapWalkError(werr, nodeID, len(host) > 0)
 	}
@@ -486,10 +505,65 @@ func validateStepInput(export wasm.PluginExport, payload []byte, step types.Pipe
 		return err
 	}
 	if err := wasm.ValidateValueAgainstSchema(export.Input, in.StepInput); err != nil {
-		return fmt.Errorf("pipeline step %q `with` input does not satisfy the declared input contract: %w: %w",
-			step.ID, err, frp.ErrPipelineContractViolation())
+		return &stepInputRefused{stepID: step.ID, cause: err}
 	}
 	return nil
+}
+
+// stepInputRefused is a step's rendered `with` input refused by the step's
+// declared input contract. It reads, and unwraps, exactly as that refusal reads
+// wherever nothing is withheld; it is a type of its own because the invoker that
+// raises it does not hold what the step's `with` read, and the walk's caller,
+// which does, has to tell this refusal apart from every other step failure to
+// word it without the value.
+type stepInputRefused struct {
+	stepID string
+	cause  error
+}
+
+func (e *stepInputRefused) Error() string {
+	return fmt.Sprintf("pipeline step %q `with` input does not satisfy the declared input contract: %v: %v",
+		e.stepID, e.cause, frp.ErrPipelineContractViolation())
+}
+
+func (e *stepInputRefused) Unwrap() []error {
+	return []error{e.cause, frp.ErrPipelineContractViolation()}
+}
+
+// stepInputWithheldNotice closes a step input refusal worded without the value.
+const stepInputWithheldNotice = " (the value is withheld because the template that rendered this input reads a " +
+	"value declared sensitive)"
+
+// withheld returns the refusal worded without anything the input carried: each
+// failing position and the keyword that refused it, and the notice saying why. It
+// unwraps to the contract-violation condition alone, so the walk still halts on it
+// whatever the step's Optional flag, while the validator's sentence, which quotes
+// the value, is not reachable from it.
+func (e *stepInputRefused) withheld() error {
+	reason, ok := wasm.WithheldValidationFailure(e.cause)
+	if !ok {
+		reason = "the reason is withheld"
+	}
+	return fmt.Errorf("pipeline step %q `with` input does not satisfy the declared input contract: %s%s: %w",
+		e.stepID, reason, stepInputWithheldNotice, frp.ErrPipelineContractViolation())
+}
+
+// withholdStepInputRefusal returns invoke with a step input refusal worded without
+// the value wherever the step's `with` template reads a datum withheld names. A
+// refusal of a step whose `with` reads none, and every other failure, pass through
+// as invoke returned them.
+func withholdStepInputRefusal(invoke frp.StepInvoker, withheld redact.Keys) frp.StepInvoker {
+	if !withheld.AnyWithheld() {
+		return invoke
+	}
+	return func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
+		raw, err := invoke(ctx, step, payload)
+		var refused *stepInputRefused
+		if err != nil && errors.As(err, &refused) && templateReadsWithheld(step.With, withheld) {
+			return raw, refused.withheld()
+		}
+		return raw, err
+	}
 }
 
 // validateStepOutput checks the guest's returned outputs against the export's

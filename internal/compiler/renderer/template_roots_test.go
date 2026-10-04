@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -76,7 +77,7 @@ func TestEvalTemplate_UnknownRootHaltsBareAndShielded(t *testing.T) {
 	}
 	for name, tmpl := range forms {
 		t.Run(name, func(t *testing.T) {
-			out, err := EvalTemplate("probe", tmpl, ctx)
+			out, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{})
 			if err == nil {
 				t.Fatalf("%s: expected halt, rendered %q at no error", name, out)
 			}
@@ -111,7 +112,7 @@ func TestEvalTemplate_OptionalKeyUnderValidRootStillRenders(t *testing.T) {
 		`static text only`,
 	}
 	for _, tmpl := range forms {
-		if _, err := EvalTemplate("probe", tmpl, ctx); err != nil {
+		if _, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{}); err != nil {
 			t.Errorf("optional-key form %q must not halt, got: %v", tmpl, err)
 		}
 	}
@@ -131,7 +132,7 @@ func TestEvalTemplate_OptionalKeyUnderValidRootStillRenders(t *testing.T) {
 func TestEvalTemplate_WholeRootAliasIsCheckedLikeTheDirectSpelling(t *testing.T) {
 	t.Parallel()
 	ctx := populatedTemplateContext(t)
-	direct, err := EvalTemplate("probe", `{{ .metadata.no_such_key }}`, ctx)
+	direct, err := EvalTemplate("probe", `{{ .metadata.no_such_key }}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatalf("the direct spelling must halt; it is the terms every other spelling is held to, rendered %q", direct)
 	}
@@ -147,7 +148,7 @@ func TestEvalTemplate_WholeRootAliasIsCheckedLikeTheDirectSpelling(t *testing.T)
 	for name, tmpl := range aliased {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			out, err := EvalTemplate("probe", tmpl, ctx)
+			out, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{})
 			if err == nil {
 				t.Fatalf("expected a halt, rendered %q", out)
 			}
@@ -176,7 +177,7 @@ func TestEvalTemplate_WholeRootAliasKeepsDeclaredKeysRendering(t *testing.T) {
 		`{{ $m := .metadata }}{{ $n := $m }}{{ $n.release_name }}`,
 	}
 	for _, tmpl := range forms {
-		out, err := EvalTemplate("probe", tmpl, ctx)
+		out, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{})
 		if err != nil {
 			t.Errorf("%q must render, got: %v", tmpl, err)
 			continue
@@ -202,7 +203,7 @@ func TestEvalTemplate_AliasedAbsentKeyUnderOpenRootRendersEmpty(t *testing.T) {
 		`{{ $v := .values }}{{ with $v }}{{ .absentkey }}{{ end }}`,
 	}
 	for _, tmpl := range forms {
-		out, err := EvalTemplate("probe", tmpl, ctx)
+		out, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{})
 		if err != nil {
 			t.Errorf("%q must not halt — an absent key under an open root is normal authoring, got: %v", tmpl, err)
 			continue
@@ -305,7 +306,7 @@ func TestContextRootNames_NarrowSurfacesAdmitLess(t *testing.T) {
 	if strings.Join(sorted, ",") != strings.Join(want, ",") {
 		t.Fatalf("LocalsContext roots = %v, want %v", sorted, want)
 	}
-	if _, err := EvalTemplate("locals-probe", `{{ default dict .features }}`, LocalsContext{}); err == nil {
+	if _, err := EvalTemplate("locals-probe", `{{ default dict .features }}`, LocalsContext{}, redact.Keys{}); err == nil {
 		t.Error("a pillar the locals context does not declare must halt, not render empty")
 	}
 }
@@ -320,7 +321,7 @@ func TestContextRootNames_NonStructIsNotCheckable(t *testing.T) {
 	if _, ok := contextRootNames(nil); ok {
 		t.Error("a nil context must not yield a derived root set")
 	}
-	if _, err := EvalTemplate("map-probe", `{{ .anything.at.all }}`, map[string]any{}); err != nil {
+	if _, err := EvalTemplate("map-probe", `{{ .anything.at.all }}`, map[string]any{}, redact.Keys{}); err != nil {
 		if errors.Is(err, ErrTemplateUnknownRoot()) {
 			t.Errorf("an uncheckable context must not raise an unknown-root halt: %v", err)
 		}
@@ -361,7 +362,7 @@ func TestRootIdentification_ParityAcrossSurfaces(t *testing.T) {
 		if err := providesSelfContainmentHalt(t, tmpl, "r"); err == nil {
 			t.Errorf("provides surface must halt on %q", tmpl)
 		}
-		if _, err := EvalTemplate("probe", tmpl, ctx); err == nil {
+		if _, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{}); err == nil {
 			t.Errorf("general evaluator must halt on %q", tmpl)
 		}
 	}
@@ -377,7 +378,7 @@ func TestRootIdentification_ParityAcrossSurfaces(t *testing.T) {
 		if err := providesSelfContainmentHalt(t, tmpl, "r"); err != nil {
 			t.Errorf("provides surface must accept %q, got: %v", tmpl, err)
 		}
-		if _, err := EvalTemplate("probe", tmpl, ctx); err != nil {
+		if _, err := EvalTemplate("probe", tmpl, ctx, redact.Keys{}); err != nil {
 			t.Errorf("general evaluator must accept %q, got: %v", tmpl, err)
 		}
 	}
@@ -390,7 +391,7 @@ func TestEvalTemplateWithDelims_DownstreamSyntaxIsNotAnAggregaRoot(t *testing.T)
 	t.Parallel()
 	ctx := populatedTemplateContext(t)
 	body := `image: {{ .Values.image.repository }}:[[ .values.port ]]`
-	out, err := EvalTemplateWithDelims("artifacts[chart]", body, ctx, "[[", "]]")
+	out, err := EvalTemplateWithDelims("artifacts[chart]", body, ctx, "[[", "]]", redact.Keys{})
 	if err != nil {
 		t.Fatalf("downstream syntax must stay opaque, got: %v", err)
 	}

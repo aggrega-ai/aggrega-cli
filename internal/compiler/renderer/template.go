@@ -5,12 +5,16 @@ package renderer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"text/template"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -80,10 +84,38 @@ type templateEval struct {
 }
 
 func (e templateEval) run() (string, error) {
-	missingKey := e.missingKey
-	if missingKey == "" {
-		missingKey = missingKeyZero
+	t, refs, err := e.prepare()
+	if err != nil {
+		return "", err
 	}
+	out, err := e.execute(t, refs, false)
+	if err != nil {
+		return "", e.wrap(stageExecute, e.withholdFailure(t, refs, err))
+	}
+	return out, nil
+}
+
+// runSubstituted evaluates the template once, over its data with every datum the
+// surface's withheld set names replaced by the placeholder. It is the evaluation a
+// display shows in place of output it cannot show as rendered, and it is the same
+// parse, the same reference check and the same execution run() performs — only
+// the data differs — so the two cannot disagree about what the template does.
+func (e templateEval) runSubstituted() (string, error) {
+	t, refs, err := e.prepare()
+	if err != nil {
+		return "", err
+	}
+	out, err := e.execute(t, refs, true)
+	if err != nil {
+		return "", e.wrap(stageExecute, err)
+	}
+	return out, nil
+}
+
+// prepare parses the template and checks its references against the surface's
+// scope, returning the tree to execute and the references it makes. A parse
+// failure and a refused reference are returned already named by the surface.
+func (e templateEval) prepare() (*template.Template, []gotmpl.RootRef, error) {
 	category := e.category
 	if category == "" {
 		category = cerrors.CatalogError
@@ -97,12 +129,12 @@ func (e templateEval) run() (string, error) {
 		funcs[name] = fn
 	}
 	t, err := template.New(e.name).
-		Option("missingkey="+string(missingKey)).
+		Option("missingkey="+string(e.missingKeyPolicy())).
 		Delims(e.leftDelim, e.rightDelim).
 		Funcs(funcs).
 		Parse(e.text)
 	if err != nil {
-		return "", e.wrap(stageParse, err)
+		return nil, nil, e.wrap(stageParse, err)
 	}
 	// One walk of the tree serves both consumers: the admission check, and the
 	// absent-leaf seeding the execution data needs. Walking twice would let the
@@ -110,22 +142,234 @@ func (e templateEval) run() (string, error) {
 	refs := gotmpl.CollectRootRefs(t.Tree.Root)
 	if v := e.scope.checkRefs(refs); v != nil {
 		if e.refused != nil {
-			return "", e.refused(v)
+			return nil, nil, e.refused(v)
 		}
-		return "", templateUnknownRootErr(category, e.name, v)
+		return nil, nil, templateUnknownRootErr(category, e.name, v)
 	}
-	// The seeding writes in place, and the tree it writes into is the one the
-	// conversion just allocated — private to this execution, so nothing seeded here
-	// can reach the context the caller holds or another surface's data.
+	return t, refs, nil
+}
+
+// missingKeyPolicy is the surface's missing-key policy, defaulted.
+func (e templateEval) missingKeyPolicy() templateMissingKey {
+	if e.missingKey == "" {
+		return missingKeyZero
+	}
+	return e.missingKey
+}
+
+// execute runs a prepared tree over a fresh private copy of the surface's data,
+// substituted first when substitute is set.
+//
+// The copy is the one the conversion allocates for this execution alone, so the
+// substitution and the seeding below write into nothing the caller holds and
+// nothing another surface reads. The substitution runs before the seeding, so a
+// datum the author left unset is still unset when it is seeded — a template
+// testing whether it was supplied takes the branch it took on the real data.
+func (e templateEval) execute(t *template.Template, refs []gotmpl.RootRef, substitute bool) (string, error) {
 	data := toLowercaseMap(e.scope.data)
-	if missingKey == missingKeyZero {
+	if substitute {
+		e.scope.withheld.SubstituteTree(data)
+	}
+	if e.missingKeyPolicy() == missingKeyZero {
 		gotmpl.SeedAbsentLeafKeys(data, refs)
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
-		return "", e.wrap(stageExecute, err)
+		return "", err
 	}
 	return buf.String(), nil
+}
+
+// readsWithheld reports whether a prepared template's references reach a datum
+// the surface's withheld set names. Every template the tree carries is read — the
+// body and any it defines — through the same over-collecting reference census
+// the display's reading uses, answered by the set in the coordinates the data is
+// read by.
+func (e templateEval) readsWithheld(t *template.Template) bool {
+	if !e.scope.withheld.AnyWithheld() {
+		return false
+	}
+	var refs []string
+	for _, defined := range t.Templates() {
+		if defined.Tree == nil {
+			continue
+		}
+		refs = append(refs, gotmpl.TreeFieldAccesses(defined.Tree.Root)...)
+	}
+	return e.scope.withheld.ReachedBy(refs)
+}
+
+// withholdFailure decides what a failed execution may report. A template whose
+// references reach no withheld datum reports its failure exactly as it failed, so
+// its text is byte-identical to what it would be without any declaration.
+//
+// A template that reads one is run again, the same tree over its data with every
+// withheld datum replaced by the placeholder. When that run fails at the same
+// action with the same condition, its failure is the report: an author's own
+// sentence survives, with the placeholder where the value stood, and a value the
+// template transformed — encoded, quoted, upper-cased — is withheld too, because
+// the substitution happened before the transformation. When it does not — the
+// template took a different branch, or failed elsewhere, because what it did
+// depended on what the value holds — the report is the failing position with a
+// fixed sentence saying the failure text is withheld.
+//
+// Whatever the comparison decides, the text reported is never the real run's once
+// the template reads a withheld datum: it is either a run that never saw the value
+// or a sentence that never quotes it. The comparison only chooses which of the two
+// a reader gets, so an imprecise one costs a reader the author's sentence and never
+// prints a value.
+func (e templateEval) withholdFailure(t *template.Template, refs []gotmpl.RootRef, err error) error {
+	if !e.readsWithheld(t) {
+		return err
+	}
+	if _, substituted := e.execute(t, refs, true); substituted != nil && sameExecutionFailure(err, substituted) {
+		return substituted
+	}
+	return newWithheldFailure(executionPosition(err), templateFailureWithheld, err)
+}
+
+// templateFailureWithheld is the sentence a template failure carries in place of
+// its own text when that text depends on a value an author declared sensitive.
+const templateFailureWithheld = "failure text withheld: this template reads a value declared sensitive, " +
+	"and the failure depends on what that value holds"
+
+// decodeFailureWithheld is the sentence a failure to read a template's output
+// carries in place of its own text when the output was produced from a value an
+// author declared sensitive and the failure depends on it.
+const decodeFailureWithheld = "the reason is withheld: the template producing this output reads a value " +
+	"declared sensitive, and the failure depends on what that value holds"
+
+// withheldFailure is a failure reported without its text: where it happened, as
+// far as that can be said from the template alone, and a fixed sentence. It
+// unwraps to the registered condition the real failure carried and to nothing
+// else, so the condition's codes reach every surface while no text the failure
+// composed from a value does.
+type withheldFailure struct {
+	position  string
+	sentence  string
+	condition error
+}
+
+// newWithheldFailure builds a withheld failure for err. position is the failing
+// position as the template alone spells it, empty where none can be recovered.
+// The registered condition is the first sealed identity in err's chain — a value
+// whose text is the condition's registered sentence and nothing an evaluation
+// composed.
+func newWithheldFailure(position, sentence string, err error) error {
+	f := &withheldFailure{position: position, sentence: sentence}
+	var condition cerrors.Identity
+	if errors.As(err, &condition) {
+		f.condition = condition
+	}
+	return f
+}
+
+func (f *withheldFailure) Error() string {
+	if f.position == "" {
+		return f.sentence
+	}
+	return f.position + ": " + f.sentence
+}
+
+func (f *withheldFailure) Unwrap() error { return f.condition }
+
+// executionPositionEnd closes the position text/template prefixes onto an
+// execution failure: `template: <name>:<line>:<col>: executing "<name>" at
+// <<action>>: `, where the action is the failing node as the template spells it.
+const executionPositionEnd = ">: "
+
+// executionPosition returns the position an execution failure reports — the
+// template, the line and column, and the failing action as the template spells
+// it — and the empty string where the failure carries none.
+//
+// Everything in it is authored template text, never data: the data an evaluation
+// read only appears after it. The position is cut at the FIRST occurrence of the
+// separator that closes it, so an action whose own text carries that separator is
+// cut short inside the action rather than past it, which can shorten the position
+// and can never reach the data that follows.
+func executionPosition(err error) string {
+	msg := err.Error()
+	if !strings.HasPrefix(msg, "template: ") || !strings.Contains(msg, ": executing ") {
+		return ""
+	}
+	end := strings.Index(msg, executionPositionEnd)
+	if end < 0 {
+		return ""
+	}
+	return msg[:end+1]
+}
+
+// sameExecutionFailure reports whether two failures of one template happened at
+// the same action for the same reason: the same position, the same registered
+// condition (or none in both), and the same leading clause after the position —
+// the function a call failed in, or the kind of evaluation fault.
+func sameExecutionFailure(real, substituted error) bool {
+	position := executionPosition(real)
+	if position == "" || position != executionPosition(substituted) {
+		return false
+	}
+	realCode, realCoded := cerrors.CodeOf(real)
+	subCode, subCoded := cerrors.CodeOf(substituted)
+	if realCoded != subCoded || realCode != subCode {
+		return false
+	}
+	return leadingClause(real.Error()[len(position):]) == leadingClause(substituted.Error()[len(position):])
+}
+
+// leadingClause returns the first clause of what follows a failure's position:
+// the text up to the next separator, after the one that closes the position.
+func leadingClause(rest string) string {
+	rest = strings.TrimPrefix(rest, ": ")
+	if i := strings.Index(rest, ": "); i >= 0 {
+		return rest[:i]
+	}
+	return rest
+}
+
+// decodeTemplateOutput reads what a template produced into dst, reporting a
+// failure to read it the way a failure to evaluate it is reported: without any
+// text a value an author declared sensitive could reach.
+//
+// A decoder quotes the text it could not read — a scalar whole when it is short,
+// its first characters when it is long — so a value interpolated where the
+// document wants another type reaches the failure text. When the template's
+// references reach a withheld datum, the template is evaluated again over its
+// substituted data and that output is read instead; a failure there of the same
+// shape is the report, with the placeholder where the value stood. Any other
+// outcome reports a fixed sentence. A template reading no withheld datum reports
+// the decoder's own failure, byte-identical to what it was.
+//
+// e is the evaluation that produced output, so the second evaluation is the same
+// template over the same data with only the substitution between them.
+func decodeTemplateOutput(e templateEval, output string, dst any) error {
+	err := parse.TemplateOutput([]byte(output), dst)
+	if err == nil {
+		return nil
+	}
+	t, _, perr := e.prepare()
+	if perr != nil || !e.readsWithheld(t) {
+		return err
+	}
+	substituted, serr := e.runSubstituted()
+	if serr == nil {
+		fresh := reflect.New(reflect.TypeOf(dst).Elem()).Interface()
+		if derr := parse.TemplateOutput([]byte(substituted), fresh); derr != nil && sameDecodeFailure(err, derr) {
+			return derr
+		}
+	}
+	return newWithheldFailure("", decodeFailureWithheld, err)
+}
+
+// quotedExcerpt matches the text a decoder quotes from the document it could not
+// read, between backquotes.
+var quotedExcerpt = regexp.MustCompile("`[^`]*`")
+
+// sameDecodeFailure reports whether two failures to read one template's output
+// are the same failure apart from the text each quotes from its document: the same
+// lines, the same tags, the same target types.
+func sameDecodeFailure(real, substituted error) bool {
+	return quotedExcerpt.ReplaceAllString(real.Error(), "``") ==
+		quotedExcerpt.ReplaceAllString(substituted.Error(), "``")
 }
 
 func (e templateEval) wrap(stage templateEvalStage, err error) error {
@@ -152,8 +396,35 @@ func (e templateEval) wrap(stage templateEvalStage, err error) error {
 // serialization boundary (IR, --trace, Wasm payloads) lives in
 // OrderedMap.MarshalJSON; the template-iteration layer is intentionally
 // alphabetical to match Helm-community authoring expectations.
-func EvalTemplate(name, tmplText string, data any) (string, error) {
-	return EvalTemplateWithDelims(name, tmplText, data, "{{", "}}")
+//
+// withheld names the data an author declared sensitive, in the coordinates the
+// template reads data by; a failure whose text could carry such a value is
+// reported without it. A caller rendering data no declaration governs passes an
+// empty set.
+func EvalTemplate(name, tmplText string, data any, withheld redact.Keys) (string, error) {
+	return EvalTemplateWithDelims(name, tmplText, data, "{{", "}}", withheld)
+}
+
+// EvalTemplateDecoded evaluates a Go template exactly as EvalTemplate does and
+// reads the YAML it produced into dst, so a caller reading a template's output
+// as a document reports a failure to read it on the same terms a failure to
+// evaluate it is reported. The two errors are returned apart because a caller
+// names them apart: evalErr is a failure to evaluate the template, decodeErr a
+// failure to read what it produced.
+func EvalTemplateDecoded(name, tmplText string, data any, withheld redact.Keys, dst any) (output string, evalErr, decodeErr error) {
+	e := valueTemplate(name, tmplText, templateScope{}.with(data, withheld), "{{", "}}")
+	output, evalErr = e.run()
+	if evalErr != nil {
+		return "", evalErr, nil
+	}
+	return output, nil, decodeTemplateOutput(e, output, dst)
+}
+
+// evalSubstitutedTemplate evaluates a Go template once, over its data with every
+// datum the withheld set names replaced by the placeholder — the evaluation a
+// display shows in place of output it cannot show as rendered.
+func evalSubstitutedTemplate(name, tmplText string, data any, withheld redact.Keys) (string, error) {
+	return valueTemplate(name, tmplText, templateScope{}.with(data, withheld), "{{", "}}").runSubstituted()
 }
 
 // EvalTemplateWithDelims evaluates a Go template with caller-controlled
@@ -173,10 +444,10 @@ func EvalTemplate(name, tmplText string, data any) (string, error) {
 // missingkey=zero — the read renders nothing, so an optional-key idiom keeps
 // working; what cannot happen is a fallback wrapper turning an unknown ROOT into
 // an empty value.
-func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string) (string, error) {
+func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string, withheld redact.Keys) (string, error) {
 	// The value-template surface declares no narrowing: every root the context
 	// type defines is reachable from a template rendered against it.
-	return evalValueTemplate(name, tmplText, templateScope{data: data}, leftDelim, rightDelim)
+	return evalValueTemplate(name, tmplText, templateScope{}.with(data, withheld), leftDelim, rightDelim)
 }
 
 // evalValueTemplate is the value-template evaluation, taking the surface's scope
@@ -186,6 +457,13 @@ func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDel
 // and the same category as every other value template, so a narrowing does not
 // cost the surface its own evaluator.
 func evalValueTemplate(name, tmplText string, scope templateScope, leftDelim, rightDelim string) (string, error) {
+	return valueTemplate(name, tmplText, scope, leftDelim, rightDelim).run()
+}
+
+// valueTemplate is the one construction of a value-template evaluation, shared
+// by the evaluation itself and by the second evaluation a failure to read its
+// output may need, so the two are the same template on the same terms.
+func valueTemplate(name, tmplText string, scope templateScope, leftDelim, rightDelim string) templateEval {
 	return templateEval{
 		name:       name,
 		text:       tmplText,
@@ -197,7 +475,7 @@ func evalValueTemplate(name, tmplText string, scope templateScope, leftDelim, ri
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name},
 				fmt.Sprintf("template %q %s", name, stage))
 		},
-	}.run()
+	}
 }
 
 // pathTemplateDirectoryScope is the reference set a `directory:` path template is
@@ -401,9 +679,12 @@ func classifyPathTemplate(field, text string) pathTemplateRef {
 func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data PathTemplateContext) (string, error) {
 	scope := pathTemplateScopeFor(contextKind)
 	return templateEval{
-		name:       name,
-		text:       tmplText,
-		scope:      scope.with(data),
+		name: name,
+		text: tmplText,
+		// A path template reads a boundary's identity, the Release's parameters and
+		// the bound Recipe's identity — none of it a pillar an entity's schema
+		// declares sensitive — so no declaration governs its data.
+		scope:      scope.with(data, redact.Keys{}),
 		missingKey: missingKeyError,
 		refused: func(v *templateScopeViolation) error {
 			return pathTemplateRefusedErr(boundaryName, v)

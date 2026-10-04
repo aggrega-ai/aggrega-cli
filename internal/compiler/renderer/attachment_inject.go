@@ -59,6 +59,7 @@ func ResolveAttachmentInject(
 	nodeID string,
 	recipeLookup RecipeLookup,
 	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
+	declared func(featureType string) resolver.SensitiveLeaves,
 ) ([]constraint.InjectDelivery, error) {
 	// The deliveries already standing in the pipe are read FIRST, before any
 	// attachment delivers into it. They are the component's own and its
@@ -81,7 +82,7 @@ func ResolveAttachmentInject(
 		if !found {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry, declaredLeavesOf(declared, entry.Type))
 		if err != nil {
 			return deliveries, err
 		}
@@ -253,7 +254,13 @@ func classifyAttachmentTemplateRenderedName(
 // scope carrying the fully resolved block, which is what lets a provides template
 // read .locals and receive resolved values; a provides template naming a local the
 // block does not declare halts through the same shared refusal.
-func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry) (types.OrderedMap[string], error) {
+//
+// leaves is what the attachment's Feature declares sensitive. Both the locals and
+// the provides render against the attachment's own values and infra, so a failure
+// of either reports without a value that Feature declares, or a local computed
+// from one.
+func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry, leaves resolver.SensitiveLeaves) (types.OrderedMap[string], error) {
+	withheld := attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
 		attachmentFRScope,
@@ -274,6 +281,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 				AttachmentName: instanceName,
 			}
 		},
+		withheld,
 	)
 	if err != nil {
 		return types.OrderedMap[string]{}, err
@@ -295,7 +303,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	}
 	provided := types.OrderedMap[string]{}
 	for k, tmplText := range fr.Spec.Provides.All() {
-		out, err := evalValueTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, attachmentFRScope.with(pCtx), "{{", "}}")
+		out, err := evalValueTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, attachmentFRScope.with(pCtx, withheld), "{{", "}}")
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("node %q attachment %q provides[%q]", nodeID, instanceName, k))
 		}
@@ -362,7 +370,11 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 // evaluation and cannot drift. An attachment with no bound FeatureRecipe is
 // skipped; instances are walked in sorted order so the first-reported shortfall
 // is deterministic.
-func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
+//
+// declared answers what each attachment's Feature declares sensitive, so a
+// failure evaluating an attachment's provides reports without a value its Feature
+// declares; nil declares nothing.
+func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup, declared func(featureType string) resolver.SensitiveLeaves) (map[string]types.OrderedMap[string], error) {
 	if recipeLookup.FeatureRecipe == nil || attachments.Len() == 0 {
 		return nil, nil
 	}
@@ -375,7 +387,7 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 		if !found || fr == nil {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry, declaredLeavesOf(declared, entry.Type))
 		if err != nil {
 			return nil, err
 		}

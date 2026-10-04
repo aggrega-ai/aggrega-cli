@@ -1046,10 +1046,37 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		result.Warnings = append(result.Warnings, linkProviderWarnings...)
 	}
 
+	// What each Component type and each Feature type declares sensitive, read once
+	// per type for this render through one memoised reader: the schema compile
+	// behind each answer is uncached, and every node or attachment of one type reads
+	// the same answer. The memo's lifetime is this render, so a catalog change
+	// between builds is never carried over.
+	//
+	// It is read here, ahead of the first template this render evaluates, because a
+	// template's failure is withheld by these declarations: a locals or provides
+	// template, an assertion and every later surface report a failure without a
+	// value an author declared sensitive, so the declarations must be in hand before
+	// the first of them runs.
+	//
+	// The Feature reader is installed on the travelling input rather than kept as a
+	// local, because the same answer is read at sites a long way apart: the
+	// withholding sets assembled below, and every attachment's own render dispatch,
+	// reached from deep inside the per-node walk. One reader answers all of them, so
+	// they cannot come to disagree about what a Feature declares, and one memo serves
+	// them all.
+	readers := newDeclarationReaders(input.CatalogLookup)
+	input.declaredFeatureLeaves = readers.feature
+	// Each node's own declarations — its Component's, those of the Features attached
+	// to it, and which of its Recipe's locals and source parts are computed from a
+	// declared leaf — read from the bound Recipe as the catalog holds it, BEFORE
+	// anything replaces a local copy's source with its resolved value: the reading is
+	// over authored template text, and resolved text carries no reference to read.
+	declarations := readRefusalDeclarations(graph, nodeRecipes, readers)
+
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
 	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
 	// consumes one evaluation rather than repeating it.
-	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, renderedNames)
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, renderedNames, declarations)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "locals and provides evaluation")
 	}
@@ -1141,7 +1168,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	}
 
 	// Step 5b: Recipe / FeatureRecipe assertions.
-	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides, allLocals); err != nil {
+	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides, allLocals, declarations); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Recipe/FeatureRecipe assertions")
 	}
 
@@ -1199,7 +1226,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Phase B.6 dispatch (which renders the FR's files) re-evaluates the same
 	// provides idempotently. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState, readers.feature); err != nil {
 			return nil, err
 		}
 	}
@@ -1213,56 +1240,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	traceWriter := input.Trace
 	if traceWriter == nil {
 		traceWriter = trace.New("", input.TraceMode)
-	}
-
-	// Declared-sensitive leaf paths per Component type, memoised across the node
-	// walk: the schema compile is uncached and every node of the same type reads
-	// the same answer. The memo's lifetime is this render, so a catalog change
-	// between builds is never carried over.
-	declaredByType := map[string]resolver.SensitiveLeaves{}
-	declaredLeaves := func(componentType string) resolver.SensitiveLeaves {
-		// A catalog-less render — the shape several renderer-level callers use —
-		// supplies a zero-value lookup whose accessors are nil. Nothing is
-		// declared in that world, so the question is answered here rather than
-		// asked of a schema reader that has no catalog to read.
-		if input.CatalogLookup.Component == nil || componentType == "" {
-			return resolver.SensitiveLeaves{}
-		}
-		if d, cached := declaredByType[componentType]; cached {
-			return d
-		}
-		var declared resolver.SensitiveLeaves
-		if compiled, ok := resolver.CompileComponentSchema(input.CatalogLookup, componentType); ok {
-			declared = resolver.DeclaredSensitiveLeaves(compiled)
-		}
-		declaredByType[componentType] = declared
-		return declared
-	}
-
-	// Declared-sensitive leaf paths per attachment Feature type, memoised the same
-	// way and for the same reason as the Component reader above. The resolution goes
-	// through the one home for compiling an attachment's schema, so this reader and
-	// the pillar-conformance gate cannot disagree about what a Feature declares.
-	//
-	// Installed on the travelling input rather than kept as a local, because the
-	// same answer is read twice at sites a long way apart: the withholding set
-	// assembled below, and every attachment's own render dispatch, reached from
-	// deep inside the per-node walk. One reader answers both, so the two cannot
-	// come to disagree about what a Feature declares, and one memo serves both.
-	declaredByFeature := map[string]resolver.SensitiveLeaves{}
-	input.declaredFeatureLeaves = func(featureType string) resolver.SensitiveLeaves {
-		if featureType == "" {
-			return resolver.SensitiveLeaves{}
-		}
-		if d, cached := declaredByFeature[featureType]; cached {
-			return d
-		}
-		var declared resolver.SensitiveLeaves
-		if compiled, ok := ir.CompileFeatureSchema(input.CatalogLookup, featureType); ok {
-			declared = resolver.DeclaredSensitiveLeaves(compiled)
-		}
-		declaredByFeature[featureType] = declared
-		return declared
 	}
 
 	// Declared-sensitive attachment slots per Component type, memoised the same
@@ -1301,6 +1278,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	for nodeOrder, nodeID := range nodeIDs {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
 		recipe := nodeRecipes[nodeID]
+		// This node's own declarations, read above for the whole render.
+		nodeDeclared := declarations.node(nodeID)
 
 		// Pass 2a: Self-inject resolution (component-level inject)
 		inject, injectRaw := BuildInjectPipe(node.SelfInject)
@@ -1318,7 +1297,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 					},
 				},
 			}
-			if err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx); err != nil {
+			if err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx, nodeDeclared.pillarKeys()); err != nil {
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 			}
 		}
@@ -1340,7 +1319,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup,
 			func(attachment, mechanism, deliveryKey string) {
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
-			})
+			}, readers.feature)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
 		}
@@ -1369,7 +1348,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// contract. It reads nothing the template context carries, so it runs
 		// first and the context is assembled with the bag already in hand.
 		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
-		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, recipeLookup, input.CatalogLookup)
+		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, recipeLookup, input.CatalogLookup, readers.feature)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
 		}
@@ -1405,14 +1384,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// ride the same edge into the display and are governed by their Features, so
 		// they are read through the one Feature reader every attachment's
 		// declarations come from.
-		declared := declaredLeaves(node.Component)
+		declared := nodeDeclared.component
 		crossNode := usesWithheld(tmplCtx.Context.Uses, func(componentType string) map[string]bool {
-			return declaredLeaves(componentType).Provides
-		}, input.declaredFeatureLeaves)
-		// Read from the bound Recipe as the catalog holds it, BEFORE Phase B.0
-		// replaces the local copy's source with the resolved value: the reading is
-		// over authored template text, and resolved text carries no reference to read.
-		derived := derivedSensitiveKeys(recipe, declared.Values, declared.Infra)
+			return readers.component(componentType).Provides
+		}, readers.feature)
+		// Read from the bound Recipe as the catalog held it, before anything replaced
+		// the local copy's source with the resolved value: the reading is over
+		// authored template text, and resolved text carries no reference to read.
+		derived := nodeDeclared.derived
 		// ONE assembly site for this node, reached twice. The FeatureRecipe route
 		// cannot be read until Phase A has rendered the mappings — a mapping's
 		// delivery key is itself a template — so the set is assembled once for the
@@ -1429,15 +1408,28 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// condition itself rather than an unwired route, so the keys feed the
 		// fail-safe argument rather than a reading that could not exist.
 		untracedKeys := boundaryEnvUntraced(boundaryFRState.ConsumerEnvOverrides[nodeID])
-		nodeRedactKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
-			return input.TraceMode.Keys(redact.NodeKeys(
+		nodeKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
+			return redact.NodeKeys(
 				declared.Values, declared.Infra,
 				attachments,
 				crossNode,
 				injectMapping,
 				selfInjectKeys,
 				untracedKeys,
-				derived))
+				derived)
+		}
+		// Two sets come out of the one assembly, and they differ for a reason each.
+		// The capture's set passes through the trace mode, whose escape hatch empties
+		// it for one invocation. The set a failure's text is withheld by does NOT:
+		// what a refusal says must not change with a switch scoped to the trace. It is
+		// also wider, naming the declarations of the Features attached to the node
+		// itself and the provides its Component declares — pillars a template can read
+		// and fail on, which the capture does not show.
+		nodeRedactKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
+			return input.TraceMode.Keys(nodeKeys(injectMapping))
+		}
+		nodeWithheld := func(injectMapping redact.DeliveryKeys) redact.Keys {
+			return withRefusalDeclarations(nodeKeys(injectMapping), nodeDeclared.own, declared.Provides)
 		}
 		redactKeys := nodeRedactKeys(nil)
 
@@ -1495,6 +1487,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// reading a copy taken earlier would show a document the decision said to
 		// substitute or withhold.
 		state.Redact = redactKeys
+		// The set a failure's text is withheld by, assembled beside the capture's from
+		// the same call and re-assembled beside it after Phase A.
+		state.Withheld = nodeWithheld(nil)
 
 		// Trace points: per-node pre-loop captures.
 		state.capture(trace.PassPillarsInitial, "", tmplCtx)
@@ -1536,7 +1531,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// block or its mapping, the build halts below, naming both attachments,
 		// so the merge never decides between two attachments' deliveries.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
-		mappedDelivery, err := ExecutePhaseA(tmplCtx, featureRefs)
+		attachmentLeaves := func(instanceName string) resolver.SensitiveLeaves {
+			entry, ok := attachments.Get(instanceName)
+			if !ok {
+				return resolver.SensitiveLeaves{}
+			}
+			return readers.feature(entry.Type)
+		}
+		mappedDelivery, err := ExecutePhaseA(tmplCtx, featureRefs, hostWithheld{host: state.Withheld, attachment: attachmentLeaves})
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
@@ -1572,14 +1574,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// overlay, and the marking has to be folded in after the render rather than
 		// beside the node's declarations. Every capture from Phase A onward reads the
 		// state's copy, which is what this replaces.
-		state.Redact = nodeRedactKeys(injectMappingWithheld(mappedDelivery,
-			func(instanceName string) resolver.SensitiveLeaves {
-				entry, ok := attachments.Get(instanceName)
-				if !ok {
-					return resolver.SensitiveLeaves{}
-				}
-				return input.declaredFeatureLeaves(entry.Type)
-			}))
+		mappedKeys := injectMappingWithheld(mappedDelivery, attachmentLeaves)
+		state.Redact = nodeRedactKeys(mappedKeys)
+		state.Withheld = nodeWithheld(mappedKeys)
 		// Boundary->component env channel: apply any per-consumer env overrides
 		// a boundary-scope FR emitted (computed in the pre-loop) over this
 		// consumer's injected env. Gated on map membership, so non-named
@@ -1985,6 +1982,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				recipeOwnDeferred = &DeferredPatch{
 					Steps:             recipe.Spec.Pipeline,
 					WithCtx:           tmplCtx,
+					Withheld:          state.Withheld,
 					RenderCtx:         renderCtx,
 					OwnProvider:       providerName,
 					NodeID:            nodeID,
@@ -1993,7 +1991,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			} else {
 				// own provider is this node's recipe provider; a Recipe step has no
 				// host scope (host nil), so hostProvider is empty.
-				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, state.Withheld, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, perr
 				}

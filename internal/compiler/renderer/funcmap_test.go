@@ -5,6 +5,8 @@ package renderer
 
 import (
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
 // TestOptional_InTemplateContext verifies that optional is registered in the
@@ -51,7 +53,7 @@ func TestOptional_InTemplateContext(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := EvalTemplate("optional-test", tc.tmpl, tc.data)
+			got, err := EvalTemplate("optional-test", tc.tmpl, tc.data, redact.Keys{})
 			if err != nil {
 				t.Fatalf("EvalTemplate returned error: %v", err)
 			}

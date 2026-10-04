@@ -5,6 +5,8 @@ package renderer
 
 import (
 	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
 // AssertionContext is the template data bound to one assertion-evaluation
@@ -70,7 +72,13 @@ type AssertionRecipeContext struct {
 // {{ fail "..." }} invocation. Returns a non-nil error wrapping the
 // template-engine error on parse/execute failures (e.g., missingkey=error
 // halts surface here).
-func EvaluateAssertion(name, body string, ctx AssertionContext) error {
+//
+// withheld names what of ctx an author declared sensitive. An assertion whose
+// body reads such a value and fails reports its own sentence with the
+// placeholder where the value stood, or, where what it did depended on what the
+// value holds, the failing position and a sentence saying the text is withheld —
+// never the value. The condition it reports is unchanged either way.
+func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.Keys) error {
 	// The assertion surface declares no narrowing: every field the context type
 	// defines is readable from an assertion. What it contributes is fail — the one
 	// function that exists only here, because an assertion is the only surface
@@ -78,7 +86,7 @@ func EvaluateAssertion(name, body string, ctx AssertionContext) error {
 	_, err := templateEval{
 		name:       name,
 		text:       body,
-		scope:      templateScope{data: ctx},
+		scope:      templateScope{}.with(ctx, withheld),
 		missingKey: missingKeyError,
 		extraFuncs: map[string]any{
 			"fail": func(msg string) (string, error) {

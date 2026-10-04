@@ -149,20 +149,29 @@ func Kinds() []Kind {
 	return out
 }
 
-// compiled caches one compiled validator per kind. Catalog loads
-// validate hundreds of documents; the lazy lookup path in particular
-// must not recompile per file.
+// compiled caches one compiled validator per kind and per notice withholding
+// every value — the empty notice being the validator that withholds only what the
+// schema declares sensitive. Catalog loads validate hundreds of documents; the
+// lazy lookup path in particular must not recompile per file.
 var (
 	compiledMu sync.Mutex
-	compiled   = map[Kind]jsonvalidator.Validator{}
+	compiled   = map[compiledKey]jsonvalidator.Validator{}
 )
 
-func validatorFor(kind Kind) (jsonvalidator.Validator, error) {
+// compiledKey names one compiled validator: the kind whose schema it holds, and
+// the notice it withholds every value with, empty for none.
+type compiledKey struct {
+	kind          Kind
+	withholdEvery string
+}
+
+func compiledValidator(key compiledKey) (jsonvalidator.Validator, error) {
 	compiledMu.Lock()
 	defer compiledMu.Unlock()
-	if v, ok := compiled[kind]; ok {
+	if v, ok := compiled[key]; ok {
 		return v, nil
 	}
+	kind := key.kind
 	raw, ok := schemaSource[kind]
 	if !ok {
 		return nil, fmt.Errorf("envelope: no embedded schema for kind %q", kind)
@@ -176,11 +185,15 @@ func validatorFor(kind Kind) (jsonvalidator.Validator, error) {
 	// so a finding here never quotes it. Every caller of this gate renders the
 	// findings it returns, the terminal, the editor and the tool protocol alike, so
 	// deciding it once here is what keeps each of them from printing the value.
-	v, err := jsonvalidator.New(s, jsonvalidator.WithholdSensitiveValues())
+	opts := []jsonvalidator.Option{jsonvalidator.WithholdSensitiveValues()}
+	if key.withholdEvery != "" {
+		opts = append(opts, jsonvalidator.WithholdEveryValue(key.withholdEvery))
+	}
+	v, err := jsonvalidator.New(s, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("envelope: compile embedded %s schema: %w", kind, err)
 	}
-	compiled[kind] = v
+	compiled[key] = v
 	return v, nil
 }
 
@@ -310,6 +323,22 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // than a malformed one, so there is nothing to validate and no position to
 // report; depth on its own is never a reason for this refusal.
 func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
+	return validateBytes(compiledKey{kind: kind}, data, path)
+}
+
+// ValidateBytesWithholdingEvery is ValidateBytes for a document any of whose
+// values may have been produced from data an author declared sensitive — a
+// document a template rendered, say — where which of them carry such data cannot
+// be told value by value. Every finding is reported without the value it found,
+// its sentence closed by notice; see jsonschema.WithholdEveryValue for which
+// sentences are kept because they quote no value. A failure to parse the bytes
+// is reported without the parser's own text, which quotes the document.
+func ValidateBytesWithholdingEvery(kind Kind, data []byte, path, notice string) (any, error) {
+	return validateBytes(compiledKey{kind: kind, withholdEvery: notice}, data, path)
+}
+
+func validateBytes(key compiledKey, data []byte, path string) (any, error) {
+	kind := key.kind
 	var instance any
 	if err := yaml.Unmarshal(data, &instance); err != nil {
 		// A generic map decode cannot hold a mapping-shaped key, which is what
@@ -319,6 +348,11 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 		// need no repair; the repair itself is reachable on its own.
 		node, perr := ParseDecodable(data, path)
 		if perr != nil {
+			if key.withholdEvery != "" {
+				// A parser's own text quotes the document it could not read, and
+				// every value in this document may carry declared data.
+				perr = fmt.Errorf("envelope: parse %s: the parser's text is withheld%s", path, key.withholdEvery)
+			}
 			return nil, &envelopeFailure{cause: perr}
 		}
 		instance = nodeToAny(node)
@@ -327,7 +361,7 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 		return nil, &Error{Kind: kind, Path: path, Findings: []jsonvalidator.Finding{{Message: "document is empty"}}}
 	}
 	instance = NormaliseYAML(instance)
-	findings, err := ValidateInstance(kind, instance)
+	findings, err := validateInstance(key, instance)
 	if err != nil {
 		return instance, &envelopeFailure{cause: err}
 	}
@@ -395,7 +429,20 @@ func newSchemaError(kind Kind, path string, data []byte, findings []jsonvalidato
 // findings. Engine-level failures (schema decode/compile/run) are
 // returned as errors distinct from instance findings.
 func ValidateInstance(kind Kind, instance any) ([]jsonvalidator.Finding, error) {
-	v, err := validatorFor(kind)
+	return validateInstance(compiledKey{kind: kind}, instance)
+}
+
+// ValidateInstanceWithholdingEvery is ValidateInstance for an instance any of
+// whose values may have been produced from data an author declared sensitive;
+// every finding is reported without the value it found, its sentence closed by
+// notice. See ValidateBytesWithholdingEvery.
+func ValidateInstanceWithholdingEvery(kind Kind, instance any, notice string) ([]jsonvalidator.Finding, error) {
+	return validateInstance(compiledKey{kind: kind, withholdEvery: notice}, instance)
+}
+
+func validateInstance(key compiledKey, instance any) ([]jsonvalidator.Finding, error) {
+	kind := key.kind
+	v, err := compiledValidator(key)
 	if err != nil {
 		return nil, err
 	}

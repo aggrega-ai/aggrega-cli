@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -90,7 +92,7 @@ func localsParitySurfaces() []localsParitySurface {
 				recipe := &types.Recipe{}
 				recipe.Metadata.Name = "parity-recipe"
 				recipe.Spec.Locals = locals
-				got, err := EvaluateRecipeLocals(recipe, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+				got, err := EvaluateRecipeLocals(recipe, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 				if err != nil {
 					return "", err
 				}
@@ -105,7 +107,7 @@ func localsParitySurfaces() []localsParitySurface {
 				fr := &types.FeatureRecipe{}
 				fr.Metadata.Name = "parity-fr"
 				fr.Spec.Locals = locals
-				got, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+				got, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 				if err != nil {
 					return "", err
 				}
@@ -121,7 +123,7 @@ func localsParitySurfaces() []localsParitySurface {
 				fr.Metadata.Name = "parity-fr"
 				fr.Spec.Locals = locals
 				fr.Spec.Provides.Set("echo", "{{ .locals."+observedKey+" }}")
-				got, err := evalAttachmentFRProvides(fr, "mon", "api", types.IRFeatureEntry{})
+				got, err := evalAttachmentFRProvides(fr, "mon", "api", types.IRFeatureEntry{}, resolver.SensitiveLeaves{})
 				if err != nil {
 					return "", err
 				}
@@ -140,7 +142,7 @@ func localsParitySurfaces() []localsParitySurface {
 				frCtx := &types.TemplateContext{Locals: types.OrderedMap[string]{}}
 				state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
 				key := boundaryFRKey{BoundaryPath: "infra", FRInstance: "mon"}
-				if err := evaluateBoundaryFRTemplates(fr, "mon", frCtx, state, key); err != nil {
+				if err := evaluateBoundaryFRTemplates(fr, "mon", frCtx, state, key, redact.Keys{}); err != nil {
 					return "", err
 				}
 				v, _ := state.Provides[key]["echo"].(string)
@@ -214,8 +216,8 @@ func TestLocalsContract_TwoDiagnosticsCarryTheirOwnRemedy(t *testing.T) {
 		return r
 	}
 
-	_, fwdErr := EvaluateRecipeLocals(recipe(observedKey, "{{ .locals.base }}.internal", "base", "svc"), "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, fwdErr := EvaluateRecipeLocals(recipe(observedKey, "{{ .locals.base }}.internal", "base", "svc"), "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
+
 	if fwdErr == nil {
 		t.Fatal("a forward reference must halt")
 	}
@@ -227,8 +229,8 @@ func TestLocalsContract_TwoDiagnosticsCarryTheirOwnRemedy(t *testing.T) {
 	}
 	t.Logf("forward:  %s", fwd)
 
-	_, unkErr := EvaluateRecipeLocals(recipe("base", "svc", observedKey, "{{ .locals.bass }}.internal"), "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, unkErr := EvaluateRecipeLocals(recipe("base", "svc", observedKey, "{{ .locals.bass }}.internal"), "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
+
 	if unkErr == nil {
 		t.Fatal("an unknown reference must halt")
 	}
@@ -253,7 +255,7 @@ func TestLocalsContract_SelfReferenceIsForwardWithItsOwnRemedy(t *testing.T) {
 	r := &types.Recipe{}
 	r.Metadata.Name = "parity-recipe"
 	r.Spec.Locals = omLocals("loop", "{{ .locals.loop }}-x")
-	_, err := EvaluateRecipeLocals(r, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateRecipeLocals(r, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, redact.Keys{})
 	if err == nil {
 		t.Fatal("a self-reference must halt")
 	}
@@ -322,7 +324,7 @@ func TestLocalsContract_BoundaryScopeChainedLocalsResolve(t *testing.T) {
 	}
 	state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
 	key := boundaryFRKey{BoundaryPath: "prod/edge", FRInstance: "gw"}
-	if err := evaluateBoundaryFRTemplates(fr, "gw", frCtx, state, key); err != nil {
+	if err := evaluateBoundaryFRTemplates(fr, "gw", frCtx, state, key, redact.Keys{}); err != nil {
 		t.Fatalf("chained boundary-scope locals must resolve: %v", err)
 	}
 
@@ -366,7 +368,7 @@ func TestLocalsContract_SiblingCheckReadsTheTreeNotTheText(t *testing.T) {
 		r := &types.Recipe{}
 		r.Metadata.Name = "parity-recipe"
 		r.Spec.Locals = omLocals("k", tmpl)
-		if _, err := EvaluateRecipeLocals(r, "api", values, types.OrderedMap[any]{}); err != nil {
+		if _, err := EvaluateRecipeLocals(r, "api", values, types.OrderedMap[any]{}, redact.Keys{}); err != nil {
 			t.Errorf("%s form %q must render, got: %v", name, tmpl, err)
 		}
 	}
@@ -400,7 +402,7 @@ func TestLocalsContract_ResolvedLocalsReachEveryConsumerByteIdentically(t *testi
 		"artifacts[pin]",
 		"pipeline[pin].with",
 	} {
-		got, err := EvalTemplate(surface, body, ctx)
+		got, err := EvalTemplate(surface, body, ctx, redact.Keys{})
 		if err != nil {
 			t.Fatalf("%s: %v", surface, err)
 		}
@@ -415,7 +417,7 @@ func TestLocalsContract_ResolvedLocalsReachEveryConsumerByteIdentically(t *testi
 
 	// artifacts: may render under an engine's alternate delimiters; the pillar has
 	// to arrive the same way there.
-	altGot, err := EvalTemplateWithDelims("artifacts[pin-alt]", `[[ .locals.host ]]:[[ .locals.port ]]`, ctx, "[[", "]]")
+	altGot, err := EvalTemplateWithDelims("artifacts[pin-alt]", `[[ .locals.host ]]:[[ .locals.port ]]`, ctx, "[[", "]]", redact.Keys{})
 	if err != nil {
 		t.Fatalf("alternate-delimiter artifacts: %v", err)
 	}
@@ -427,12 +429,12 @@ func TestLocalsContract_ResolvedLocalsReachEveryConsumerByteIdentically(t *testi
 	// assertions: read the pillar under its own key from their own context type, and
 	// under missingkey=error rather than the value surfaces' missingkey=zero.
 	actx := AssertionContext{Locals: locals.TemplateAlphabeticalMap()}
-	if err := EvaluateAssertion("pin", `{{ if ne (printf "%s:%s" .locals.host .locals.port) "`+wantBytes+`" }}{{ fail "assertion surface disagrees" }}{{ end }}`, actx); err != nil {
+	if err := EvaluateAssertion("pin", `{{ if ne (printf "%s:%s" .locals.host .locals.port) "`+wantBytes+`" }}{{ fail "assertion surface disagrees" }}{{ end }}`, actx, redact.Keys{}); err != nil {
 		t.Errorf("assertions: %v", err)
 	}
 	// And an undeclared key on that surface halts rather than rendering empty — the
 	// strict missing-key policy is what covers it, not the sibling-order check.
-	if err := EvaluateAssertion("pin-unknown", `{{ .locals.hsot }}`, actx); err == nil {
+	if err := EvaluateAssertion("pin-unknown", `{{ .locals.hsot }}`, actx, redact.Keys{}); err == nil {
 		t.Error("assertions: an undeclared local must halt, not render empty")
 	} else {
 		t.Logf("%-22s -> halts on an undeclared local: %v", "assertions", err)
@@ -448,8 +450,8 @@ func TestLocalsContract_SourceSurfaceReadsResolvedLocalsAndRefusesUnknown(t *tes
 	locals := omLocals("chart_version", "1.4.2")
 	got, err := EvaluateRecipeSource(
 		"oci://example.test/charts/api:{{ .locals.chart_version }}", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals,
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{})
+
 	if err != nil {
 		t.Fatalf("a source template must read the node's resolved locals: %v", err)
 	}
@@ -459,8 +461,8 @@ func TestLocalsContract_SourceSurfaceReadsResolvedLocalsAndRefusesUnknown(t *tes
 
 	_, err = EvaluateRecipeSource(
 		"oci://example.test/charts/api:{{ .locals.chart_vrsion }}", "api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals,
-	)
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{})
+
 	if !errors.Is(err, ErrLocalsUnknownReference()) {
 		t.Errorf("a source template naming an undeclared local must halt with the unknown-reference class, got: %v", err)
 	}

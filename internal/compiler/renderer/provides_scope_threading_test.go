@@ -46,7 +46,7 @@ func baseProvidesInput(key, tmpl string) (*types.IRGraph, map[string]*types.Reci
 func TestEvaluateAllProvides_AttachmentNameHaltsRatherThanRenderingEmpty(t *testing.T) {
 	t.Parallel()
 	graph, recipes := baseProvidesInput("host", `{{ .attachment_name }}`)
-	out, _, err := EvaluateAllProvides(graph, recipes, nil)
+	out, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err == nil {
 		rendered := out["db"]
 		host, _ := rendered.Get("host")
@@ -79,7 +79,7 @@ func TestProvidesAttachmentNameRefusedByBothSurfaces(t *testing.T) {
 	}
 
 	graph, recipes := baseProvidesInput("host", tmpl)
-	if _, _, evaluated := EvaluateAllProvides(graph, recipes, nil); evaluated == nil {
+	if _, _, evaluated := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{}); evaluated == nil {
 		t.Error("the evaluation admitted .attachment_name, so the agreement between the two surfaces rests on which of them runs first")
 	}
 }
@@ -119,7 +119,7 @@ func TestEvaluateAllProvides_AdmittedRootsStillRender(t *testing.T) {
 		},
 	}
 
-	resolved, _, err := EvaluateAllProvides(graph, recipes, nil)
+	resolved, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
 	if err != nil {
 		t.Fatalf("the admitted roots must still render: %v", err)
 	}

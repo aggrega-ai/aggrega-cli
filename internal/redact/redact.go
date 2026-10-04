@@ -6,10 +6,11 @@
 // perform the substitution without changing the shape of what is displayed.
 //
 // The boundary this package sits on is narrow and deliberate: it covers what
-// the tool PRINTS for a human to read — the per-pass trace and the inspect
-// layouts — and never what the tool WRITES. A rendered artifact is emitted
-// verbatim, because it is the deployable and a placeholder inside it would be
-// a broken deployment rather than a protected one.
+// the tool PRINTS for a human to read — the per-pass trace, the inspect layouts
+// and the text of a refusal raised while a template is evaluated — and never what
+// the tool WRITES. A rendered artifact is emitted verbatim, because it is the
+// deployable and a placeholder inside it would break what is deployed rather than
+// protect it.
 //
 // Nothing here decides WHAT is sensitive. The facts it consumes are read from
 // their own single homes upstream — the sensitive-leaf declarations on an
@@ -254,6 +255,15 @@ type DeliveryKeys map[string]map[string]bool
 // the node holds itself — so it is keyed by alias, then by the slot the
 // attachment fills on the connection's socket, which is how the edge displays it.
 //
+// Features names the declarations of the Features attached to the node itself,
+// keyed by the instance name each is attached under — how a template reads one,
+// at .features.<name> — each governed by its own Feature's schema. Provides names
+// the node's own resolved provides keys its Component declares sensitive, read at
+// .provides.<key>. NodeKeys fills neither: the per-pass display does not show
+// either pillar, so a display set leaves both empty. A set governing what a
+// refusal's text may carry fills both, because a template can read either and
+// fail on it.
+//
 // Workload is the one entry that names a whole projection rather than keys
 // within it, and it records what the display DOES with that projection rather
 // than which of its keys are withheld — a rendered workload is a parsed document
@@ -267,6 +277,8 @@ type Keys struct {
 	Source          map[string]bool
 	UsesProvides    map[string]map[string]bool
 	UsesAttachments map[string]map[string]AttachmentKeys
+	Features        map[string]AttachmentKeys
+	Provides        map[string]bool
 	Workload        WorkloadDisplay
 
 	// inject is the delivery marking. See the type's own documentation for why
@@ -301,7 +313,7 @@ func (a AttachmentKeys) Any() bool {
 func (k Keys) AnyWithheld() bool {
 	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.inject) > 0 ||
 		len(k.Locals) > 0 || len(k.Source) > 0 || len(k.UsesProvides) > 0 ||
-		len(k.UsesAttachments) > 0
+		len(k.UsesAttachments) > 0 || len(k.Features) > 0 || len(k.Provides) > 0
 }
 
 // Empty reports whether the set names nothing and no projection is displayed
@@ -610,47 +622,6 @@ func connectionAttachments(in types.OrderedMap[types.TemplateAttachment], slots 
 		out.Set(slot, attachment)
 	}
 	return out
-}
-
-// TemplateContext returns a copy of a render context with every datum the set
-// NAMES replaced by the placeholder, leaving the context's shape and every
-// datum the set does not name exactly as the render sees them.
-//
-// It is the ONE substituted context in the module, and it is the answer for a
-// projection that is not addressable by key. A rendered document's fields carry
-// no link back to the declarations the template read to produce them, so nothing
-// can be substituted inside the finished document — but the CONTEXT the template
-// read is fully key-addressed, so evaluating the same template again against a
-// substituted context yields a document of the same shape with the placeholder
-// standing where the datum stood. Removing the keys instead would change which
-// branches the template takes and the two documents would diverge structurally;
-// substituting keeps a string where a string was.
-//
-// Two ways a document built this way still differs from the emitted one, both of
-// which the display has to announce rather than paper over: a template that
-// branches on a value's CONTENT — an equality test, a length, a hash — takes a
-// different branch against the placeholder, and a datum reaching the template
-// through a root this set cannot name is carried through unchanged.
-//
-// Every applier it composes returns a copy, so the input is never mutated. That
-// is load-bearing rather than incidental: the context handed here is the live one
-// the artifacts render from, and an in-place substitution would put the
-// placeholder into the deployable.
-//
-// A set naming nothing readable returns the input pointer unchanged, so a node
-// with no declared sensitivity pays nothing.
-func TemplateContext(in *types.TemplateContext, keys Keys) *types.TemplateContext {
-	if in == nil || !keys.AnyWithheld() {
-		return in
-	}
-	out := *in
-	out.Values = Pillar(in.Values, keys.Values)
-	out.Infra = Pillar(in.Infra, keys.Infra)
-	out.Locals = Locals(in.Locals, keys.Locals)
-	out.Source = Source(in.Source, keys.Source)
-	out.Context.Inject = keys.InjectPipe(in.Context.Inject)
-	out.Context.Uses = keys.Uses(in.Context.Uses)
-	return &out
 }
 
 // replaceFlat is the ONE substitution over a flat authored-key map, shared by

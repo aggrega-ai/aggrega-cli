@@ -12,6 +12,7 @@ import (
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -115,7 +116,8 @@ func TestNonconformingCodec_PatchedTokenNotCarved(t *testing.T) {
 	}}
 
 	_, err := runNodePipeline(context.Background(), steps, own, nil, false, "diverging", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, factory, "codec-node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+		2, lookup, factory, "codec-node")
 
 	if err == nil {
 		t.Fatal("a patched token the carve did not produce must halt; got no error")
@@ -167,7 +169,9 @@ func TestNonconformingCodec_AgreeingTokensAreAccepted(t *testing.T) {
 	}}
 
 	res, err := runNodePipeline(context.Background(), steps, own, nil, false, "agreeing", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, factory, "codec-node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+		2, lookup, factory, "codec-node")
+
 	if err != nil {
 		t.Fatalf("a codec whose carve and reassembly agree must be accepted; got: %v", err)
 	}

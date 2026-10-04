@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -78,7 +78,7 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 		// template reads the same resolved values every other reader of this node's
 		// locals reads.
 		resolvedSource, err := EvaluateRecipeSource(
-			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, ctx.Locals,
+			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, ctx.Locals, state.Withheld,
 		)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
@@ -144,18 +144,19 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return nil
 	}
 
-	output, err := EvalTemplate(
+	var values map[string]any
+	_, err, decodeErr := EvalTemplateDecoded(
 		fmt.Sprintf("valuesMapping[%s]", state.Recipe.Metadata.Name),
 		tmplText,
 		ctx,
+		state.Withheld,
+		&values,
 	)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping", state.Recipe.Metadata.Name))
 	}
-
-	var values map[string]any
-	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
+	if decodeErr != nil {
+		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 	state.ResolvedValues = values
 	// Trace point: B.1 valuesMapping output (slot 07).
@@ -206,18 +207,33 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 		return nil
 	}
 
-	output, err := EvalTemplate(
+	var w types.Workload
+	output, err, decodeErr := EvalTemplateDecoded(
 		fmt.Sprintf("workload[%s]", state.Recipe.Metadata.Name),
 		workloadText,
 		ctx,
+		state.Withheld,
+		&w,
 	)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template", state.Recipe.Metadata.Name))
 	}
+	if decodeErr != nil {
+		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name))
+	}
 
-	var w types.Workload
-	if err := parse.TemplateOutput([]byte(output), &w); err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name))
+	// Whether the document the checks below judge was produced from a value an
+	// author declared sensitive, asked of the template's references before any
+	// check runs and over the declarations as read — never over the capture's set,
+	// whose escape hatch must not change what a failure says. A rendered document's
+	// fields carry no link back to the data the template read, so which of its
+	// values came from a declared datum cannot be told field by field; where the
+	// template read any, every finding a check reports is worded without the value
+	// it found. That is the fail-safe direction: a finding at a position no
+	// declared datum reached loses its value text too.
+	var validation []validator.WorkloadValidationOption
+	if workloadReadsWithheld(workloadText, state.Withheld) {
+		validation = append(validation, validator.WithholdRenderedValues())
 	}
 
 	// Both checks run, and the near-duplicate is deliberate: they validate two
@@ -227,10 +243,10 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 	// decoded value elides a field whose value is the zero value, so only the
 	// typed check can see a schema-required field the document supplied empty.
 	// Deleting either loses a rejection class the other cannot observe.
-	if err := validator.ValidateWorkloadBytes([]byte(output), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	if err := validator.ValidateWorkloadBytes([]byte(output), state.RecipePath, state.RecipeName, state.RecipeVersion, validation...); err != nil {
 		return err
 	}
-	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion, validation...); err != nil {
 		return err
 	}
 	// The fold runs before every check that reads a slot, so those checks — and
@@ -535,8 +551,22 @@ func phaseB6(
 		// host's context — the one its own Recipe rendered against — without it.
 		frCtx.Context.UsedBy = state.InboundEdges
 
+		// What of this attachment's copy an author declared sensitive: the host's
+		// set for every pillar carried over from the host, the attachment's own
+		// Feature for the values and infra the copy carries in their place. Every
+		// template this attachment evaluates below is withheld by it.
+		_, pillarsFound := tmplCtx.AttachmentPillars(item.Instance)
+		frWithheld := hostWithheld{
+			host: state.Withheld,
+			attachment: func(string) resolver.SensitiveLeaves {
+				return declaredLeavesOf(input.declaredFeatureLeaves, item.FeatureType)
+			},
+		}
+		frKeys := frWithheld.forAttachment(item.Instance, pillarsFound, fr.Spec.Locals)
+
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
+			frWithheld.leaves(item.Instance, pillarsFound),
 		)
 		if err != nil {
 			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
@@ -552,7 +582,7 @@ func phaseB6(
 			frCtx.Provides = *item.Provides
 		}
 
-		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
+		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries, frKeys)
 		if err != nil {
 			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
 		}
@@ -643,7 +673,7 @@ func phaseB6(
 		// were evaluated with, passed through so the two surfaces publish one
 		// denotation of .context.instance_id and .attachment_name.
 		evaluatedSource, err := EvaluateFeatureRecipeSource(
-			fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals,
+			fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
 		)
 		if err != nil {
 			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
@@ -673,7 +703,7 @@ func phaseB6(
 			input.RecordedPins.For(frDocument), item.Identity,
 			ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
-			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
+			nodeAnnotations, input.CatalogLookup.ProviderPlugin, frKeys)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -758,6 +788,7 @@ func phaseB6(
 				deferred = append(deferred, DeferredPatch{
 					Steps:             fr.Spec.Pipeline,
 					WithCtx:           &pipelineCtx,
+					Withheld:          frKeys,
 					RenderCtx:         renderCtx,
 					HostProvider:      hostProvider,
 					NodeID:            nodeID,
@@ -768,7 +799,7 @@ func phaseB6(
 				// own provider is the FR's own engine kind (version pin stripped —
 				// the codec keys on the kind); host provider is the host component's
 				// recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &pipelineCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &pipelineCtx, frKeys, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, nil, perr
 				}
@@ -1131,6 +1162,10 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // that answers them travels on the render input the caller holds. They reach the
 // artifacts walk through the state built below, where an imported file whose
 // current bytes have moved off its recorded pin halts the render.
+//
+// withheld names what of frCtx an author declared sensitive, so a failure of any
+// template this render evaluates — its workload, its artifacts — or of a check of
+// what one produced reports without such a value.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Provider,
@@ -1148,6 +1183,7 @@ func renderFeatureRecipeFiles(
 	artifactsLibs map[string]types.ArtifactLibrary,
 	annotations types.OrderedMap[string],
 	providerPlugin func(ref string) (types.Plugin, bool, error),
+	withheld redact.Keys,
 ) ([]EmittedFile, string, error) {
 	// Every document this render emits names THIS FeatureRecipe as the Recipe that
 	// produced it. The context arrives as a copy of the host component's and so
@@ -1279,6 +1315,11 @@ func renderFeatureRecipeFiles(
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, documentPath)
+	// What of frCtx an author declared sensitive, supplied by the caller because
+	// which entity governs each pillar is the caller's own knowledge: this
+	// attachment's Feature for the values and infra, the host's declarations for
+	// the rest, or the boundary attachment's Feature for a boundary-scope render.
+	state.Withheld = withheld
 	// This attachment's own recorded pins, so the artifacts walk below compares
 	// against what was recorded for the FeatureRecipe's document rather than
 	// against the host component's. They travel on the state and not on the

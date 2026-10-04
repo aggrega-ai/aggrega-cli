@@ -149,12 +149,12 @@ func TestUses_WithholdsAConnectionAttachmentsDeclaredData(t *testing.T) {
 	}
 }
 
-// TestTemplateContext_WithholdsTheConnectionViewAndNothingElse covers the
-// substituted context a re-rendered workload is evaluated against. It reaches the
-// connection view through the same applier the per-pass display uses, and the
-// node's own attachments — which the set names nothing about — pass through as
-// they are.
-func TestTemplateContext_WithholdsTheConnectionViewAndNothingElse(t *testing.T) {
+// TestSubstituteTree_WithholdsTheConnectionViewAndNothingElse covers the
+// substitution a re-rendered workload is evaluated against, over the template data
+// tree of a render context. It reaches the connection view at the coordinates the
+// set derives for it, and the node's own attachments — which a display set names
+// nothing about — pass through as they are.
+func TestSubstituteTree_WithholdsTheConnectionViewAndNothingElse(t *testing.T) {
 	t.Parallel()
 	own := types.OrderedMap[types.TemplateAttachment]{}
 	own.Set("admin_key", types.TemplateAttachment{
@@ -166,18 +166,16 @@ func TestTemplateContext_WithholdsTheConnectionViewAndNothingElse(t *testing.T) 
 		Features: own,
 	}
 
-	out := TemplateContext(ctx, connectionKeys())
+	tree := templateTree(t, ctx)
+	connectionKeys().SubstituteTree(tree)
 
-	edge, _ := out.Context.Uses.Get("gpt")
-	conn, _ := edge.Features.Get("credential")
-	if v, _ := conn.Values.Get("literalPassword"); v != placeholder {
-		t.Errorf("the substituted context must withhold the connection's declared leaf; got %v", v)
+	if v := dig(tree, "context", "uses", "gpt", "features", "credential", "values", "literalPassword"); v != placeholder {
+		t.Errorf("the substitution must withhold the connection's declared leaf; got %v", v)
 	}
-	if v, _ := conn.Values.Get("secretName"); v != "conn-locator-public" {
-		t.Errorf("the substituted context must keep the connection's undeclared leaf; got %v", v)
+	if v := dig(tree, "context", "uses", "gpt", "features", "credential", "values", "secretName"); v != "conn-locator-public" {
+		t.Errorf("the substitution must keep the connection's undeclared leaf; got %v", v)
 	}
-	ownAttachment, _ := out.Features.Get("admin_key")
-	if v, _ := ownAttachment.Values.Get("literalPassword"); v != "own-password-plaintext" {
+	if v := dig(tree, "features", "admin_key", "values", "literalPassword"); v != "own-password-plaintext" {
 		t.Errorf("the connection-view set names nothing about the node's own attachments, so they must pass through; got %v", v)
 	}
 	srcEdge, _ := ctx.Context.Uses.Get("gpt")

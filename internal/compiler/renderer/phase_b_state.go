@@ -169,6 +169,20 @@ type PhaseBState struct {
 	// it never decides what is sensitive. The zero value redacts nothing.
 	Redact redact.Keys
 
+	// Withheld names the data in this render's context an author declared
+	// sensitive, for what a FAILURE may say rather than for what a capture shows:
+	// every template a sub-pass evaluates against the context, and every check of
+	// what such a template produced, reports without a value it names.
+	//
+	// It is kept apart from Redact on purpose. Redact is the capture's set, and the
+	// capture's escape hatch empties it for one invocation; a failure's text must
+	// not depend on that switch, so this set is the declarations as read, never
+	// passed through it. It is also wider: it names the node's own attachments'
+	// declarations and the provides its Component declares, which a template can
+	// read and fail on but which no capture shows. The zero value withholds
+	// nothing.
+	Withheld redact.Keys
+
 	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
 	// lockfile-pinned libraries bridged in at load), keyed by bare name. B.1
 	// resolves a Recipe valuesMapping's bare-name `$import: <Library>#/mappings/<entry>`

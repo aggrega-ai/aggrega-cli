@@ -11,6 +11,7 @@ import (
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -137,16 +138,28 @@ type templateScope struct {
 	// this surface refuses. A root absent from the map keeps the full set its type
 	// declares; a root the type reports open has no depth-2 set to narrow.
 	subGate map[string][]string
+	// withheld names the data in data that an author declared sensitive — or that
+	// was computed from such data — in the coordinates a template reads it by. A
+	// template failure whose text could carry one of those values is reported
+	// without it. Empty for data no declaration governs.
+	withheld redact.Keys
 }
 
-// with returns the scope carrying the value actually being rendered. A scope
-// declared at package level holds a zero value of its context type, because only
-// the type is read to derive what the surface admits; substituting the value at
-// the call site is what lets the surface's declared narrowing and the data the
-// template renders against be the same scope rather than two arguments a caller
-// could pair wrongly.
-func (s templateScope) with(data any) templateScope {
+// with returns the scope carrying the value actually being rendered, and what of
+// that value an author declared sensitive. A scope declared at package level holds
+// a zero value of its context type, because only the type is read to derive what
+// the surface admits; substituting the value at the call site is what lets the
+// surface's declared narrowing and the data the template renders against be the
+// same scope rather than two arguments a caller could pair wrongly.
+//
+// The withheld set is bound here, beside the data, for the same reason: it is
+// spelled in the coordinates of that data and governs nothing else, so a binding
+// site states both at once. Every binding site states a set — an explicit empty
+// one where no declaration governs the data — so a surface cannot omit it by
+// accident and have its failures quote what an author asked to keep out of them.
+func (s templateScope) with(data any, withheld redact.Keys) templateScope {
 	s.data = data
+	s.withheld = withheld
 	return s
 }
 

@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/refusal-asserting
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # The Component itself asserts, at the graph stage, with a sentence quoting its
+  # own declared-sensitive leaf.
+  assertions:
+    password-is-a-reference: |
+      {{- fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) -}}
+  schema:
+    values:
+      adminPassword: { type: string, sensitive: true }

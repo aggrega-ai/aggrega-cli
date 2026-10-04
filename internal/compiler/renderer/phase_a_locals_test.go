@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -77,7 +78,7 @@ func TestExecutePhaseA_FeatureLocalsAreEvaluated(t *testing.T) {
 	ctx, refs := phaseALocalsFixture(frLocals,
 		`{"env": {"SCRAPE_URL": "{{ .locals.scrape_url }}", "SCRAPE_PORT": "{{ .locals.scrape_port }}", "REGION": "{{ .locals.region_tag }}", "DB_HOST": "{{ .locals.db_host }}", "ATTACHED_AS": "{{ .locals.attached_as }}"}}`)
 
-	if _, err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs, hostWithheld{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -106,7 +107,7 @@ func TestExecutePhaseA_FeatureLocalsForwardReferenceHalts(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"X": "{{ .locals.reader }}"}}`)
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err == nil {
 		t.Fatal("expected a halt on a forward sibling reference, got nil")
 	}
@@ -131,7 +132,7 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"MIRROR": "{{ .locals.mirror }}"}}`)
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err == nil {
 		t.Fatal("expected a halt reading a base Recipe local from an attachment local, got nil")
 	}
@@ -140,8 +141,8 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 	}
 
 	// Same block, the attachment render path: the answer must not differ.
-	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api",
-		types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+
 	if !errors.Is(perr, ErrLocalsUnknownReference()) {
 		t.Errorf("the two attachment-locals surfaces disagree: interception halt %v, render path %v", err, perr)
 	}
@@ -157,7 +158,7 @@ func TestExecutePhaseA_FeatureLocalsBrokenTemplateHalts(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"SCRAPE_PORT": "{{ .locals.scrape_port }}"}}`)
 
-	_, err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs, hostWithheld{})
 	if err == nil {
 		t.Fatal("expected a halt on an unevaluable local, got nil")
 	}
@@ -194,7 +195,7 @@ func TestExecutePhaseA_FeatureLocalsScopeMatchesRenderPath(t *testing.T) {
 			frLocals.Set("probe", tc.template)
 
 			ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"P": "{{ .locals.probe }}"}}`)
-			_, interceptErr := ExecutePhaseA(ctx, refs)
+			_, interceptErr := ExecutePhaseA(ctx, refs, hostWithheld{})
 			if (interceptErr == nil) != tc.admitted {
 				t.Errorf("interception surface: admitted=%v, want %v (err: %v)", interceptErr == nil, tc.admitted, interceptErr)
 			}
@@ -203,7 +204,7 @@ func TestExecutePhaseA_FeatureLocalsScopeMatchesRenderPath(t *testing.T) {
 			vals.Set("port", 9090)
 			infra := types.OrderedMap[any]{}
 			infra.Set("region", "eu-west-1")
-			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", vals, infra)
+			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", vals, infra, resolver.SensitiveLeaves{})
 			if (renderErr == nil) != (interceptErr == nil) {
 				t.Errorf("the two attachment-locals surfaces disagree on %q: interception err=%v, render err=%v", tc.template, interceptErr, renderErr)
 			}

@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -190,15 +190,21 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // merged over this result AFTER it returns, so they are not resolved at the point
 // an attachment's local is evaluated, and an attachment local naming a base-Recipe
 // key reports the unknown-reference halt.
+//
+// leaves is what the attachment's Feature declares sensitive — the declarations
+// governing the values and infra the block renders against — so a failing entry
+// reports without such a value, or one computed from it, in its text.
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
 	instanceName, instanceID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
+	leaves resolver.SensitiveLeaves,
 ) (types.OrderedMap[string], error) {
 	if fr == nil {
 		return types.OrderedMap[string]{}, nil
 	}
+	withheld := attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
 	return evaluateLocalsInOrder(
 		fr.Spec.Locals,
 		featureRecipeLocalsScope,
@@ -219,6 +225,7 @@ func EvaluateFeatureRecipeLocals(
 				AttachmentName: instanceName,
 			}
 		},
+		withheld,
 	)
 }
 
@@ -249,7 +256,10 @@ type FeatureValues struct {
 // valuesMapping field carries one of three content-shape-dispatched
 // modes (inline / file $import: / library $import:); this function
 // resolves the mode and returns the templated values output.
-func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary) (FeatureValues, error) {
+//
+// withheld names what of ctx an author declared sensitive, so a failure to
+// evaluate the mapping, or to read what it produced, reports without such a value.
+func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary, withheld redact.Keys) (FeatureValues, error) {
 	if fr == nil {
 		return FeatureValues{Resolved: map[string]any{}}, nil
 	}
@@ -272,18 +282,19 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{Resolved: out, KeysAreDeclaredLeaves: true}, nil
 	}
 
-	output, err := EvalTemplate(
+	var values map[string]any
+	_, err, decodeErr := EvalTemplateDecoded(
 		fmt.Sprintf("fr-valuesMapping[%s]", fr.Metadata.Name),
 		tmplText,
 		ctx,
+		withheld,
+		&values,
 	)
 	if err != nil {
 		return FeatureValues{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping", fr.Metadata.Name))
 	}
-
-	var values map[string]any
-	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return FeatureValues{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
+	if decodeErr != nil {
+		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
 	return FeatureValues{Resolved: values}, nil

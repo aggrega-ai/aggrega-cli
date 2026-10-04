@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -234,7 +235,7 @@ func TestConnectionViewCarriesEachConnectionsAttachments(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := EvalTemplate("connection-view", tc.template, connectionViewContext(t))
+			got, err := EvalTemplate("connection-view", tc.template, connectionViewContext(t), redact.Keys{})
 			if err != nil {
 				t.Fatalf("EvalTemplate: %v", err)
 			}

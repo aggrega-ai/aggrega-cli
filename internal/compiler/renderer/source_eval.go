@@ -36,12 +36,17 @@ import (
 // same refusal a locals entry gets for the same mistake. Passing the resolved map
 // rather than resolving it here keeps one evaluation behind every reader of a
 // node's locals.
+//
+// withheld names what the node's Component declares sensitive among values and
+// infra, and the locals computed from it, so a failing source template reports
+// without such a value.
 func EvaluateRecipeSource(
 	source any,
 	nodeID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 	locals types.OrderedMap[string],
+	withheld redact.Keys,
 ) (any, error) {
 	ctx := LocalsContext{
 		Context: ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
@@ -50,7 +55,7 @@ func EvaluateRecipeSource(
 		Locals:  locals,
 	}
 	surface := sourceTemplateSurface{
-		scope:  recipeLocalsScope.with(ctx),
+		scope:  recipeLocalsScope.with(ctx, withheld),
 		locals: locals.Keys(),
 		kind:   "Recipe",
 	}
@@ -84,12 +89,17 @@ func EvaluateRecipeSource(
 // Recipe's. A reference to a key that set does not carry halts with the same
 // unknown-reference refusal a locals entry gets for the same mistake, rather than
 // rendering the key away.
+//
+// withheld names what the attachment's Feature declares sensitive among the values
+// and infra, and the locals computed from a declared datum, so a failing source
+// template reports without such a value.
 func EvaluateFeatureRecipeSource(
 	source any,
 	instanceName, instanceID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 	locals types.OrderedMap[string],
+	withheld redact.Keys,
 ) (any, error) {
 	ctx := LocalsContext{
 		Context:        ProvidesContextBlock{InstanceID: instanceID},
@@ -99,7 +109,7 @@ func EvaluateFeatureRecipeSource(
 		AttachmentName: instanceName,
 	}
 	surface := sourceTemplateSurface{
-		scope:  featureRecipeLocalsScope.with(ctx),
+		scope:  featureRecipeLocalsScope.with(ctx, withheld),
 		locals: locals.Keys(),
 		kind:   "FeatureRecipe",
 	}
@@ -122,13 +132,16 @@ func EvaluateFeatureRecipeSource(
 // and this surface is checked against the same scope it is, so an author writing
 // `source:` and `locals:` in one boundary-scope FeatureRecipe is admitted and
 // refused the same references on both.
-func EvaluateBoundaryScopeFeatureRecipeSource(source any, frCtx *types.TemplateContext) (any, error) {
+//
+// withheld names what of frCtx an author declared sensitive, so a failing source
+// template reports without such a value.
+func EvaluateBoundaryScopeFeatureRecipeSource(source any, frCtx *types.TemplateContext, withheld redact.Keys) (any, error) {
 	var locals []string
 	if frCtx != nil {
 		locals = frCtx.Locals.Keys()
 	}
 	surface := sourceTemplateSurface{
-		scope:  boundaryScopeFRScope.with(frCtx),
+		scope:  boundaryScopeFRScope.with(frCtx, withheld),
 		locals: locals,
 		kind:   "FeatureRecipe",
 	}

@@ -60,8 +60,10 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -437,9 +439,13 @@ func dispatchBoundaryScopeFR(
 	if err != nil {
 		return err
 	}
+	// What the Feature this attachment names declares, governing the infra this
+	// context carries, and the locals computed from it — the set every template this
+	// render evaluates is withheld by.
+	withheld := boundaryFRKeys(fr, declaredLeavesOf(input.declaredFeatureLeaves, feat.Type))
 
 	// 5. Evaluate FR locals + valuesMapping + provides.
-	if err := evaluateBoundaryFRTemplates(fr, frInstance, frCtx, boundaryFRState, key); err != nil {
+	if err := evaluateBoundaryFRTemplates(fr, frInstance, frCtx, boundaryFRState, key, withheld); err != nil {
 		return err
 	}
 
@@ -531,7 +537,7 @@ func dispatchBoundaryScopeFR(
 	// is the value the template produced, anchored to the document that declared it.
 	// The locals were resolved onto frCtx by evaluateBoundaryFRTemplates above, so
 	// the template reads the same values this FeatureRecipe's other templates read.
-	evaluatedSource, err := EvaluateBoundaryScopeFeatureRecipeSource(fr.Spec.Source, frCtx)
+	evaluatedSource, err := EvaluateBoundaryScopeFeatureRecipeSource(fr.Spec.Source, frCtx, withheld)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("boundary-scope FR %q source", frInstance))
 	}
@@ -572,7 +578,7 @@ func dispatchBoundaryScopeFR(
 	// evaluator the per-component FR path uses (phase_b_subpasses.go), not a parallel
 	// path. A valuesMapping-less FR yields the flattened .values pillar unchanged, so a
 	// boundary FR without a valuesMapping renders byte-identically.
-	frValues, err := ExecutePhaseBForFeature(frCtx, fr, input.MappingLibraries)
+	frValues, err := ExecutePhaseBForFeature(frCtx, fr, input.MappingLibraries, withheld)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q valuesMapping", frInstance))
 	}
@@ -648,7 +654,7 @@ func dispatchBoundaryScopeFR(
 		input.RecordedPins.For(frDocument), attachmentIdentity{},
 		ownerProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
-		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
+		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin, withheld)
 	if err != nil {
 		return err
 	}
@@ -665,7 +671,7 @@ func dispatchBoundaryScopeFR(
 		// own provider is the boundary-scope FR's own engine kind (version pin
 		// stripped — the codec keys on the kind); a boundary-scope FR has no
 		// single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, withheld, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}
@@ -759,6 +765,10 @@ func buildBoundaryFRTemplateContext(
 // provider guest, and a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns. So ending the build ends that
 // crossing rather than leaving it to finish for a render nobody is waiting for.
+//
+// declared answers what each boundary attachment's Feature declares sensitive, so
+// a failing locals or provides template reports without such a value; nil declares
+// nothing.
 func PrepopulateBoundaryScopeProvides(
 	ctx context.Context,
 	graph *types.IRGraph,
@@ -768,6 +778,7 @@ func PrepopulateBoundaryScopeProvides(
 	allProvides NodeProvides,
 	engineFactory EngineFactory,
 	state *BoundaryFRState,
+	declared func(featureType string) resolver.SensitiveLeaves,
 ) error {
 	if graph == nil || state == nil {
 		return nil
@@ -783,7 +794,8 @@ func PrepopulateBoundaryScopeProvides(
 			if err != nil {
 				return err
 			}
-			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key); err != nil {
+			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key,
+				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type))); err != nil {
 				return err
 			}
 			// Generic boundary->component env channel: if the FR's provider
@@ -899,12 +911,16 @@ func mergeConsumerEnvOverrides(state *BoundaryFRState, overrides map[string]map[
 // same evaluator the per-component FR path uses — and its output drives
 // engine.Render. A valuesMapping-less FR resolves to the flattened .values
 // pillar unchanged, so it renders identically either way.
+//
+// withheld names what of frCtx an author declared sensitive, so a failing locals
+// or provides template reports without such a value.
 func evaluateBoundaryFRTemplates(
 	fr *types.FeatureRecipe,
 	frInstance string,
 	frCtx *types.TemplateContext,
 	state *BoundaryFRState,
 	key boundaryFRKey,
+	withheld redact.Keys,
 ) error {
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
@@ -921,6 +937,7 @@ func evaluateBoundaryFRTemplates(
 			frCtx.Locals = resolved
 			return frCtx
 		},
+		withheld,
 	)
 	if err != nil {
 		return err
@@ -941,7 +958,7 @@ func evaluateBoundaryFRTemplates(
 	// missingkey=zero) as per-component FR provides today.
 	provided := map[string]any{}
 	for k, tmplText := range fr.Spec.Provides.All() {
-		out, err := EvalTemplate("fr-provides["+frInstance+"."+k+"]", tmplText, frCtx)
+		out, err := EvalTemplate("fr-provides["+frInstance+"."+k+"]", tmplText, frCtx, withheld)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q provides[%q]", frInstance, k))
 		}

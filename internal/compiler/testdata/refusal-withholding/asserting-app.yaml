@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: refusal-asserting-app
+  version: "1.0.0"
+spec:
+  components:
+    asserting:
+      type: core/refusal-asserting
+      values:
+        adminPassword: refusal-secret-plaintext

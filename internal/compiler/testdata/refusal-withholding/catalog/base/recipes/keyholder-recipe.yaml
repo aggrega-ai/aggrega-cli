@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: refusal-keyholder-recipe
+  version: "1.0.0"
+  description: >
+    Renders the declared leaf of an attachment the node holds itself into a
+    Workload field the Workload schema constrains, so the rendered document fails
+    its schema at that field.
+spec:
+  capability: compose
+  implements: core/refusal-keyholder
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: keyholder:1.0
+        imagePullPolicy: '{{ .features.admin_key.values.origin }}'

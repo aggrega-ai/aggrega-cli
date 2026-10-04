@@ -43,6 +43,32 @@ type StepInvoker func(ctx context.Context, step types.PipelineStep, payload []by
 // exactly. A test supplies a stub.
 type TemplateEvaluator func(name, text string, data any) (string, error)
 
+// WithEvaluator renders a step's `with` template and reads what it produced into
+// dst. It reports a failure to evaluate the template and a failure to read its
+// output apart, because the walk names the second as what it is — the rendered
+// `with` not reading as a map — and passes the first on as the evaluation
+// reported it.
+type WithEvaluator func(name, text string, data any, dst *types.OrderedMap[any]) (evalErr, decodeErr error)
+
+// WalkOption adjusts how Walk reads what a step's templates produce.
+type WalkOption func(*walkOptions)
+
+// walkOptions is what the options passed to Walk decided.
+type walkOptions struct {
+	evalWith WithEvaluator
+}
+
+// EvaluateWithThrough makes Walk render and read every step's `with` through
+// evaluate, in place of rendering it through the walk's evaluator and reading the
+// result itself. It is for a caller whose reading of a template's output has to
+// know more than the output — what of the data the template read, say — so that
+// a failure to read the output can be reported without what the output carried.
+// Without it the walk reads the output as YAML into the step input, and so must
+// evaluate.
+func EvaluateWithThrough(evaluate WithEvaluator) WalkOption {
+	return func(o *walkOptions) { o.evalWith = evaluate }
+}
+
 // WalkResult is the outcome of a successful pipeline walk: the mutated
 // document set, the side effects every step accumulated in order, the
 // warnings raised along the way (non-error guest diagnostics plus the loud
@@ -109,7 +135,8 @@ func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
 // each step's `with` body through — injected as a seam (the caller passes
 // the renderer's EvalTemplate) so this package never imports the renderer
 // and the renderer can call Walk without an import cycle; a test supplies a
-// stub evaluator. Walk does not resolve plugins, construct the document
+// stub evaluator. opts adjust how a step's `with` is read; see
+// EvaluateWithThrough. Walk does not resolve plugins, construct the document
 // set, or enforce provider compatibility — those are the caller's.
 func Walk(
 	ctx context.Context,
@@ -119,7 +146,12 @@ func Walk(
 	withCtx *types.TemplateContext,
 	renderCtx renderctx.RenderContext,
 	eval TemplateEvaluator,
+	opts ...WalkOption,
 ) (WalkResult, error) {
+	var chosen walkOptions
+	for _, opt := range opts {
+		opt(&chosen)
+	}
 	var sideEffects []SideEffect
 	var warnings []renderctx.Diagnostic
 	var preceding []PrecedingStep
@@ -156,7 +188,7 @@ func Walk(
 
 		snap := snapshotDocumentSet(docs)
 
-		stepEffects, stepDiags, stepOps, stepOutputs, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval)
+		stepEffects, stepDiags, stepOps, stepOutputs, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval, chosen)
 
 		// Non-error diagnostics surface regardless of the step's outcome.
 		for _, d := range stepDiags {
@@ -236,8 +268,9 @@ func runStep(
 	withCtx *types.TemplateContext,
 	renderCtx renderctx.RenderContext,
 	eval TemplateEvaluator,
+	opts walkOptions,
 ) ([]SideEffect, []renderctx.Diagnostic, []JSONPatchOp, types.OrderedMap[any], error) {
-	stepInput, err := evalWith(step, withCtx, eval)
+	stepInput, err := evalWith(step, withCtx, eval, opts)
 	if err != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
@@ -315,20 +348,31 @@ func stepEnabled(step types.PipelineStep, index int, withCtx *types.TemplateCont
 // single template primitive without importing the renderer — the walk does
 // not build a second one, so a `with` body sees the same funcmap, Sprig
 // functions, and missing-key policy as every other Recipe template surface.
-func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval TemplateEvaluator) (types.OrderedMap[any], error) {
+// Where opts carry a WithEvaluator, it renders and reads the body instead.
+func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval TemplateEvaluator, opts walkOptions) (types.OrderedMap[any], error) {
 	var stepInput types.OrderedMap[any]
 	if step.With == "" {
 		return stepInput, nil
 	}
-	rendered, err := eval(fmt.Sprintf("pipeline-step[%s].with", step.ID), step.With, withCtx)
-	if err != nil {
-		return stepInput, err
+	name := fmt.Sprintf("pipeline-step[%s].with", step.ID)
+	var decodeErr error
+	if opts.evalWith != nil {
+		var evalErr error
+		if evalErr, decodeErr = opts.evalWith(name, step.With, withCtx, &stepInput); evalErr != nil {
+			return stepInput, evalErr
+		}
+	} else {
+		rendered, err := eval(name, step.With, withCtx)
+		if err != nil {
+			return stepInput, err
+		}
+		// `with` evaluates to a JSON/YAML map; YAML is a JSON superset, so one
+		// unmarshal handles both, and OrderedMap.UnmarshalYAML preserves the
+		// rendered key order onto the wire.
+		decodeErr = yaml.Unmarshal([]byte(rendered), &stepInput)
 	}
-	// `with` evaluates to a JSON/YAML map; YAML is a JSON superset, so one
-	// unmarshal handles both, and OrderedMap.UnmarshalYAML preserves the
-	// rendered key order onto the wire.
-	if err := yaml.Unmarshal([]byte(rendered), &stepInput); err != nil {
-		return stepInput, fmt.Errorf("parse rendered `with` as a map: %w", err)
+	if decodeErr != nil {
+		return stepInput, fmt.Errorf("parse rendered `with` as a map: %w", decodeErr)
 	}
 	return stepInput, nil
 }

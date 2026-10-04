@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: refusal-feature-asserting-app
+  version: "1.0.0"
+spec:
+  components:
+    keyholder:
+      type: core/refusal-keyholder
+      features:
+        admin_key:
+          type: feature.test/refusal-asserting-credential
+          values:
+            origin: refusal-secret-plaintext
+            key: token

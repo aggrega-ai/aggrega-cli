@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -276,7 +277,7 @@ func TestEvaluateBoundaryFRTemplates_LocalsAndProvides(t *testing.T) {
 		Provides: map[boundaryFRKey]map[string]any{},
 	}
 	key := boundaryFRKey{BoundaryPath: "infra", FRInstance: "fr-i"}
-	if err := evaluateBoundaryFRTemplates(fr, "fr-i", frCtx, state, key); err != nil {
+	if err := evaluateBoundaryFRTemplates(fr, "fr-i", frCtx, state, key, redact.Keys{}); err != nil {
 		t.Fatalf("eval: %v", err)
 	}
 	if frCtx.Locals.Len() != 1 {
@@ -297,7 +298,7 @@ func TestEvaluateBoundaryFRTemplates_LocalsError(t *testing.T) {
 	frCtx := &types.TemplateContext{}
 	state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
 	key := boundaryFRKey{BoundaryPath: "p", FRInstance: "i"}
-	err := evaluateBoundaryFRTemplates(fr, "i", frCtx, state, key)
+	err := evaluateBoundaryFRTemplates(fr, "i", frCtx, state, key, redact.Keys{})
 	if err == nil {
 		t.Errorf("expected error from required-fail template")
 	}

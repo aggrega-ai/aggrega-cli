@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
 // TestEvaluateAssertion_PassesOnEmptyTemplate pins the happy path: a
@@ -15,7 +17,7 @@ import (
 func TestEvaluateAssertion_PassesOnEmptyTemplate(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	if err := EvaluateAssertion("rule", `{{- /* noop */ -}}`, ctx); err != nil {
+	if err := EvaluateAssertion("rule", `{{- /* noop */ -}}`, ctx, redact.Keys{}); err != nil {
 		t.Errorf("expected nil; got %v", err)
 	}
 }
@@ -25,7 +27,7 @@ func TestEvaluateAssertion_PassesOnEmptyTemplate(t *testing.T) {
 func TestEvaluateAssertion_FailsWithCustomMessage(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"replicas": 0}}
-	err := EvaluateAssertion("min-replicas", `{{- if lt (.values.replicas | int) 1 -}}{{- fail "replicas must be positive" -}}{{- end -}}`, ctx)
+	err := EvaluateAssertion("min-replicas", `{{- if lt (.values.replicas | int) 1 -}}{{- fail "replicas must be positive" -}}{{- end -}}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
@@ -43,7 +45,7 @@ func TestEvaluateAssertion_FailsWithCustomMessage(t *testing.T) {
 func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{}}
-	err := EvaluateAssertion("rule", `{{ fail "halt" }}`, ctx)
+	err := EvaluateAssertion("rule", `{{ fail "halt" }}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
@@ -58,7 +60,7 @@ func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	err := EvaluateAssertion("typo-catch", `{{ if .values.typo }}{{ fail "should not reach" }}{{ end }}`, ctx)
+	err := EvaluateAssertion("typo-catch", `{{ if .values.typo }}{{ fail "should not reach" }}{{ end }}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected missing-key error; got nil")
 	}
@@ -81,8 +83,8 @@ func TestEvaluateAssertion_IndexFuncWorksAroundMissingKey(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
 	// .values.replicas is absent; index returns nil, default 1 supplies the fallback.
-	err := EvaluateAssertion("optional",
-		`{{ if lt ((index .values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx)
+	err := EvaluateAssertion("optional", `{{ if lt ((index .values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx, redact.Keys{})
+
 	if err != nil {
 		t.Errorf("expected nil (index+default fallback); got %v", err)
 	}
@@ -93,8 +95,8 @@ func TestEvaluateAssertion_IndexFuncWorksAroundMissingKey(t *testing.T) {
 func TestEvaluateAssertion_SprigHasKeyWorksAroundMissingKey(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	err := EvaluateAssertion("optional-haskey",
-		`{{ if and (hasKey .values "replicas") (lt (.values.replicas | int) 1) }}{{ fail "below 1" }}{{ end }}`, ctx)
+	err := EvaluateAssertion("optional-haskey", `{{ if and (hasKey .values "replicas") (lt (.values.replicas | int) 1) }}{{ fail "below 1" }}{{ end }}`, ctx, redact.Keys{})
+
 	if err != nil {
 		t.Errorf("expected nil (hasKey gate); got %v", err)
 	}
@@ -106,7 +108,7 @@ func TestEvaluateAssertion_SprigHasKeyWorksAroundMissingKey(t *testing.T) {
 func TestEvaluateAssertion_NameAppearsInErrorMessage(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{}}
-	err := EvaluateAssertion("specific-rule-name", `{{ fail "x" }}`, ctx)
+	err := EvaluateAssertion("specific-rule-name", `{{ fail "x" }}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
@@ -120,7 +122,7 @@ func TestEvaluateAssertion_NameAppearsInErrorMessage(t *testing.T) {
 func TestEvaluateAssertion_FailMessagePropagates(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{}
-	err := EvaluateAssertion("rule", `{{ fail "the-exact-message-text" }}`, ctx)
+	err := EvaluateAssertion("rule", `{{ fail "the-exact-message-text" }}`, ctx, redact.Keys{})
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
@@ -209,17 +211,17 @@ func TestEvaluateAssertion_ShippedCatalogBodiesEvaluate(t *testing.T) {
 		body := shippedCatalogAssertions()[name]
 		t.Run(name, func(t *testing.T) {
 			// Prerequisite affirmed: the assertion passes.
-			if err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": true}}); err != nil {
+			if err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": true}}, redact.Keys{}); err != nil {
 				t.Errorf("affirmed prerequisite must pass: %v", err)
 			}
 			// Prerequisite denied: the assertion halts with its authored message.
-			err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": false}})
+			err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": false}}, redact.Keys{})
 			if !errors.Is(err, ErrAssertionFailed()) {
 				t.Errorf("denied prerequisite must report ErrAssertionFailed: %v", err)
 			}
 			// Key absent entirely: infra is an open map, so the halt comes from the
 			// surface's missing-key policy rather than from a reference refusal.
-			err = EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{}})
+			err = EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{}}, redact.Keys{})
 			if err == nil {
 				t.Error("an absent prerequisite key must halt under missingkey=error")
 			}
@@ -249,7 +251,7 @@ func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
 		{`{{ if .locals.x }}{{ end }}`, "x"},
 		{`{{ if .recipe.metadata }}{{ end }}`, "metadata"},
 	} {
-		err := EvaluateAssertion("nilphase", tc.body, step4b)
+		err := EvaluateAssertion("nilphase", tc.body, step4b, redact.Keys{})
 		if err == nil {
 			t.Errorf("%s must halt at the Component/Feature phase", tc.body)
 			continue
@@ -261,7 +263,7 @@ func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
 	}
 	// A reference to a name the context does not define at all is refused before
 	// execution, which is a different class from an absent key under a defined one.
-	err := EvaluateAssertion("nilphase", `{{ if .NoSuchRoot }}{{ end }}`, step4b)
+	err := EvaluateAssertion("nilphase", `{{ if .NoSuchRoot }}{{ end }}`, step4b, redact.Keys{})
 	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("an undefined reference must report ErrTemplateUnknownRoot: %v", err)
 	}

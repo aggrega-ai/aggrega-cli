@@ -33,12 +33,19 @@ import (
 //
 // Returns nil on pass. Returns a non-nil error wrapping ErrAssertionFailed
 // on the first failure.
+//
+// declared answers what each node's entities declare sensitive, so an assertion
+// whose failure text could carry a declared value reports without it: a Recipe's
+// against the node's own declarations, a FeatureRecipe's against the attachment's
+// Feature for the values and infra and the node's for the rest. Its zero value
+// declares nothing.
 func EvaluateRecipeAndFeatureRecipeAssertions(
 	graph *types.IRGraph,
 	nodeRecipes map[string]*types.Recipe,
 	recipeLookup RecipeLookup,
 	allProvides NodeProvides,
 	allLocals NodeLocals,
+	declared refusalDeclarations,
 ) error {
 	if graph == nil {
 		return nil
@@ -77,7 +84,8 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Locals:   localsMap,
 				Recipe:   recipeCtx,
 			}
-			if err := walkAssertions("Recipe", recipe.Metadata.Name, nodeID, recipe.Spec.Assertions, ctx); err != nil {
+			if err := walkAssertions("Recipe", recipe.Metadata.Name, nodeID, recipe.Spec.Assertions, ctx,
+				declared.node(nodeID).assertionKeys()); err != nil {
 				return err
 			}
 		}
@@ -112,7 +120,8 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Locals:   localsMap,
 				Recipe:   frRecipeCtx,
 			}
-			if err := walkAssertions("FeatureRecipe", fr.Metadata.Name, nodeID, fr.Spec.Assertions, ctx); err != nil {
+			if err := walkAssertions("FeatureRecipe", fr.Metadata.Name, nodeID, fr.Spec.Assertions, ctx,
+				attachmentAssertionKeys(declared.node(nodeID), declared.attachment(entry.Type))); err != nil {
 				return err
 			}
 		}
