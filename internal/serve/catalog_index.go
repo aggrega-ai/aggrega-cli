@@ -195,9 +195,13 @@ func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 // both questions can line the two answers up. A caller that needs an absolute
 // path joins the root back on, which it supplied.
 //
+// cfg is the workspace's configuration, read for the Releases it names: a file
+// reached through a link leading out of the workspace is read only where the
+// configuration names it as a Release. See WalkReleaseCandidates.
+//
 // The paths are sorted, and the collection is never nil.
-func ReleaseCandidates(root string) []string {
-	return WalkReleaseCandidates(root).Releases
+func ReleaseCandidates(root string, cfg workspaceconfig.Config) []string {
+	return WalkReleaseCandidates(root, cfg).Releases
 }
 
 // ReleaseCandidateWalk is what one walk of a workspace for its Releases reports,
@@ -212,15 +216,28 @@ type ReleaseCandidateWalk struct {
 	// answer carries. The walk does not enter such a directory, so a Release
 	// inside one is not among Releases. Never nil.
 	UnreadLinkedDirs []string
+	// UnreadLinkedFiles are the links the walk met that lead to a YAML file
+	// outside the workspace root which the configuration does not name as a
+	// Release, named and ordered as UnreadLinkedDirs is — the same list the
+	// editor's Release-candidate answer carries beside it. The walk does not read
+	// such a file, so a Release behind one is not among Releases. Never nil.
+	UnreadLinkedFiles []string
 }
 
-// WalkReleaseCandidates is ReleaseCandidates together with the linked
-// directories the same walk did not read, so a caller that reports which
-// Releases a workspace holds can also say why one its reader sees through a link
-// is absent, without walking the workspace a second time.
-func WalkReleaseCandidates(root string) ReleaseCandidateWalk {
-	walked := walkReleases(root)
-	out := ReleaseCandidateWalk{Releases: []string{}, UnreadLinkedDirs: []string{}}
+// WalkReleaseCandidates is ReleaseCandidates together with the links leading out
+// of the workspace that the same walk did not read — to a directory, and to a
+// file — so a caller that reports which Releases a workspace holds can also say
+// why one its reader sees through a link is absent, without walking the
+// workspace a second time.
+//
+// cfg is the workspace's configuration. A link leading to a file outside the
+// workspace is read, and its Release listed, only where cfg names that file as a
+// Release — by build.authoring_release or as a key of workspace.releases —
+// because the configuration has then reached it; every other such link is named
+// in UnreadLinkedFiles instead.
+func WalkReleaseCandidates(root string, cfg workspaceconfig.Config) ReleaseCandidateWalk {
+	walked := walkReleases(root, cfg)
+	out := ReleaseCandidateWalk{Releases: []string{}, UnreadLinkedDirs: []string{}, UnreadLinkedFiles: []string{}}
 	for _, abs := range walked.releases {
 		rel, inside := pathscope.Relative(root, abs)
 		if !inside {
@@ -230,6 +247,7 @@ func WalkReleaseCandidates(root string) ReleaseCandidateWalk {
 	}
 	sort.Strings(out.Releases)
 	out.UnreadLinkedDirs = append(out.UnreadLinkedDirs, walked.unreadLinkedDirs...)
+	out.UnreadLinkedFiles = append(out.UnreadLinkedFiles, walked.unreadLinkedFiles...)
 	return out
 }
 
@@ -245,7 +263,7 @@ func WalkReleaseCandidates(root string) ReleaseCandidateWalk {
 // [workspaceconfig.ResolvedWorkspace.WholeCatalogPasses] for the passes that
 // follow.
 func WholeCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, flagDirs []string) []workspaceconfig.CatalogPass {
-	return rw.WholeCatalogPasses(func() []string { return ReleaseCandidates(rw.Root()) }, flagDirs)
+	return rw.WholeCatalogPasses(func() []string { return ReleaseCandidates(rw.Root(), rw.Config()) }, flagDirs)
 }
 
 // LockfilesFor maps each Release path to the path of its lockfile, placed by

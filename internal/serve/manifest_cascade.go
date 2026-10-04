@@ -184,7 +184,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 	}
 
 	// Step 3: workspace-recursive Release walk; exactly-one wins
-	candidates := walkForReleases(workspaceRoot)
+	candidates := walkForReleases(workspaceRoot, wsCfg)
 	attempt.ReleaseCandidatesFound = len(candidates)
 	if len(candidates) == 1 {
 		rel, err := resolver.LoadRelease(candidates[0])
@@ -219,9 +219,11 @@ func resolveCascadePath(workspaceRoot, p string) string {
 // ignore-set (.git, .aggrega, node_modules, vendor, dist, .trace,
 // hidden dirs) is excluded — Step 3 walks the entire workspace
 // root, not a configured subdirectory, so filtering vendored copies
-// and build outputs is load-bearing for correctness.
-func walkForReleases(workspaceRoot string) []string {
-	return walkReleases(workspaceRoot).releases
+// and build outputs is load-bearing for correctness. wsCfg is the
+// workspace's configuration, read for the Releases it names; see
+// walkReleases.
+func walkForReleases(workspaceRoot string, wsCfg workspaceconfig.Config) []string {
+	return walkReleases(workspaceRoot, wsCfg).releases
 }
 
 // releaseWalk is what one walk of a workspace for its Releases met.
@@ -232,10 +234,16 @@ type releaseWalk struct {
 	// workspace root, each named relative to the root where the link itself
 	// sits, in the order the walk met them.
 	unreadLinkedDirs []string
+	// unreadLinkedFiles are the links met that lead to a YAML file outside the
+	// workspace root which the workspace's configuration does not name as a
+	// Release, each named relative to the root where the link itself sits, in
+	// the order the walk met them.
+	unreadLinkedFiles []string
 }
 
 // walkReleases is the walk walkForReleases answers from, keeping as well each
-// link it met that leads to a directory outside the workspace root.
+// link it met that leads out of the workspace root and was not read: those
+// leading to a directory, and those leading to a YAML file.
 //
 // The walk never enters a link: filepath.WalkDir reports one as an entry of its
 // own and does not descend into it. A link to a directory inside the root needs
@@ -245,31 +253,42 @@ type releaseWalk struct {
 // it, so an answer can name the directories that were not read rather than leave
 // its reader to wonder why a Release their editor shows is not offered.
 //
-// A link is judged as the directory it stands in for. One the walk would leave
-// out as a directory — by where it sits or by its name — is not recorded, just as
-// a directory there would not be read; one inside a directory the walk leaves out
-// is never met at all. And a link is recorded only where resolving it succeeds:
-// one that leads nowhere, or round a loop, has no directory behind it to name, and
-// nothing further is tried to find out where it was meant to go.
+// A link to a directory is judged as the directory it stands in for. One the walk
+// would leave out as a directory — by where it sits or by its name — is not
+// recorded, just as a directory there would not be read; one inside a directory
+// the walk leaves out is never met at all. And a link is recorded only where
+// resolving it succeeds: one that leads nowhere, or round a loop, has no directory
+// behind it to name, and nothing further is tried to find out where it was meant
+// to go.
 //
-// Recording a link changes nothing else about the walk, so the Releases found are
-// exactly those walkForReleases reports.
-func walkReleases(workspaceRoot string) releaseWalk {
+// A link standing where the walk would read a YAML file is judged by the file it
+// leads to, from the same one resolution. One leading to a file outside the root is
+// not read, so what lies outside the workspace is not offered as one of its
+// Releases, and it is recorded where the walk meets it, as a link to a directory
+// is. The kind of that file is not known without reading it, so this holds for
+// every such link, whether or not a Release is what it leads to. The exception is a
+// file the workspace's configuration names as a Release, by build.authoring_release
+// or by a key of workspace.releases: the configuration has reached it, so it is
+// read and listed at the link's place, and not recorded. A link to a file inside
+// the root is read at the link's place, and its file is read where it actually
+// sits as well. A link that cannot be resolved, or that leads to anything but a
+// file, is not read as a file and not recorded among the files, and nothing
+// further is tried. What a followed link is read through is the file its one
+// resolution reported, so the bytes read are those of the file judged.
+func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWalk {
 	var out releaseWalk
-	absRoot, resolvedRoot := "", ""
+	scope := linkScope{root: workspaceRoot, cfg: wsCfg}
 	_ = filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if path != workspaceRoot && d.Type()&fs.ModeSymlink != 0 && !shouldExcludeDir(d.Name(), path, workspaceRoot) {
-			if resolvedRoot == "" {
-				absRoot = absolutePath(workspaceRoot)
-				resolvedRoot = resolvedPath(workspaceRoot)
-			}
-			if linkLeadsOutOfRoot(path, resolvedRoot) {
-				if rel, ok := pathscope.Relative(absRoot, absolutePath(path)); ok {
-					out.unreadLinkedDirs = append(out.unreadLinkedDirs, rel)
-				}
+		var linked linkTarget
+		link := path != workspaceRoot && d.Type()&fs.ModeSymlink != 0
+		if link {
+			scope.resolve()
+			linked = resolveLink(path, scope.resolvedRoot)
+			if linked.dir && linked.outside && !shouldExcludeDir(d.Name(), path, workspaceRoot) {
+				out.unreadLinkedDirs = scope.named(out.unreadLinkedDirs, path)
 			}
 		}
 		if d.IsDir() {
@@ -282,7 +301,18 @@ func walkReleases(workspaceRoot string) releaseWalk {
 		if ext != ".yaml" && ext != ".yml" {
 			return nil
 		}
-		data, rerr := os.ReadFile(path)
+		read := path
+		if link {
+			if !linked.file {
+				return nil
+			}
+			if linked.outside && !scope.configurationNames(linked.target) {
+				out.unreadLinkedFiles = scope.named(out.unreadLinkedFiles, path)
+				return nil
+			}
+			read = linked.target
+		}
+		data, rerr := os.ReadFile(read)
 		if rerr != nil {
 			return nil
 		}
@@ -300,30 +330,107 @@ func walkReleases(workspaceRoot string) releaseWalk {
 	return out
 }
 
-// linkLeadsOutOfRoot reports whether the link at path resolves to a directory
-// outside resolvedRoot, the workspace root with its own links resolved.
+// linkTarget is where a link met by the Release walk leads, as one resolution of
+// the link reports it.
+type linkTarget struct {
+	// target is the place the link leads, made absolute with every link on the
+	// way resolved; empty where the link cannot be resolved.
+	target string
+	// dir and file say what lies there: a directory, or a regular file. Neither
+	// is set where the link cannot be resolved, or leads to anything else.
+	dir, file bool
+	// outside says the target lies outside the workspace root.
+	outside bool
+}
+
+// resolveLink reports where the link at path leads, judged against
+// resolvedRoot, the workspace root with its own links resolved.
 //
 // Where the link goes is read once, by filepath.EvalSymlinks, and that resolution
-// is the whole of what is asked of it. A link it cannot complete — one leading
-// nowhere, or round a loop — reports false, and nothing further is tried. Both
-// sides are compared resolved, so a root reached through a link of its own still
-// counts what lies under it as inside. The root itself is inside, and the
-// containment question for everything else is pathscope.Relative's.
-func linkLeadsOutOfRoot(path, resolvedRoot string) bool {
-	target, err := filepath.EvalSymlinks(path)
+// is the whole of what is asked of it: both the directory a link stands in for and
+// the file it stands in for are judged from it, so the two can never be judged
+// from different readings of one link. A link it cannot complete — one leading
+// nowhere, or round a loop — leads to nothing the walk reads or names, and nothing
+// further is tried to find out where it was meant to go. Both sides are compared
+// resolved, so a root reached through a link of its own still counts what lies
+// under it as inside. The root itself is inside, and the containment question for
+// everything else is pathscope.Relative's.
+func resolveLink(path, resolvedRoot string) linkTarget {
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return false
+		return linkTarget{}
 	}
-	target = absolutePath(target)
-	info, err := os.Stat(target)
-	if err != nil || !info.IsDir() {
-		return false
+	resolved = absolutePath(resolved)
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return linkTarget{}
 	}
-	if target == resolvedRoot {
-		return false
+	_, inside := pathscope.Relative(resolvedRoot, resolved)
+	return linkTarget{
+		target:  resolved,
+		dir:     info.IsDir(),
+		file:    info.Mode().IsRegular(),
+		outside: resolved != resolvedRoot && !inside,
 	}
-	_, inside := pathscope.Relative(resolvedRoot, target)
-	return !inside
+}
+
+// linkScope is what judging a link met by the Release walk is measured against:
+// the workspace root, made absolute and with its own links resolved, and the
+// Releases the workspace's configuration names. Each is worked out once, the
+// first time the walk meets a link, so a workspace holding none pays nothing.
+type linkScope struct {
+	root string
+	cfg  workspaceconfig.Config
+
+	resolved bool
+	// absRoot is the root made absolute, the coordinate a link is named in.
+	absRoot string
+	// resolvedRoot is the root with its own links resolved, the coordinate a
+	// link's target is judged in.
+	resolvedRoot string
+	// authoringRelease is the file build.authoring_release names, resolved as
+	// the active-Release cascade's first step resolves it and then with its
+	// links resolved; empty where the setting is not set.
+	authoringRelease string
+}
+
+// resolve works out the scope's coordinates, once.
+func (l *linkScope) resolve() {
+	if l.resolved {
+		return
+	}
+	l.resolved = true
+	l.absRoot = absolutePath(l.root)
+	l.resolvedRoot = resolvedPath(l.root)
+	if l.cfg.Build.AuthoringRelease != "" {
+		l.authoringRelease = resolvedPath(resolveCascadePath(l.root, l.cfg.Build.AuthoringRelease))
+	}
+}
+
+// named appends to names the link at path, by its own place relative to the
+// root — never by the place it leads to.
+func (l *linkScope) named(names []string, path string) []string {
+	if rel, ok := pathscope.Relative(l.absRoot, absolutePath(path)); ok {
+		return append(names, rel)
+	}
+	return names
+}
+
+// configurationNames reports whether the workspace's configuration names the
+// file at target — an absolute path with its links resolved — as a Release: as
+// build.authoring_release, or as a key of workspace.releases.
+//
+// Both sides are compared resolved, so a setting naming a link and one naming the
+// file it leads to name the same Release. build.authoring_release is resolved the
+// way the cascade's first step reads it; a workspace.releases key is already the
+// resolved path of the file it names, which is how the configuration holds it
+// once loaded, so it is looked up rather than resolved again.
+func (l *linkScope) configurationNames(target string) bool {
+	if l.authoringRelease != "" && l.authoringRelease == target {
+		return true
+	}
+	_, named := l.cfg.Workspace.Releases.Get(target)
+	return named
 }
 
 // resolvedPath is p made absolute with its links resolved, or made absolute and

@@ -158,10 +158,19 @@ type initializeResult struct {
 // field is what lets a client say why, rather than offer fewer Releases than the
 // reader can see with nothing said. It is always an array, empty when the
 // workspace holds no such link.
+//
+// UnreadLinkedFiles names, the same way and beside it, each link standing where
+// the walk would read a YAML file that leads to a file outside the workspace root
+// the workspace's configuration does not name as a Release. Such a file is not
+// read, so a Release behind one of these links is not in Releases either. A link
+// to a file the configuration names — by build.authoring_release, or as a key of
+// workspace.releases — is read and listed instead, and is not named here. It is
+// always an array, empty when the workspace holds no such link.
 type releaseCandidatesResult struct {
-	Releases         []string          `json:"releases"`
-	Lockfiles        map[string]string `json:"lockfiles"`
-	UnreadLinkedDirs []string          `json:"unreadLinkedDirs"`
+	Releases          []string          `json:"releases"`
+	Lockfiles         map[string]string `json:"lockfiles"`
+	UnreadLinkedDirs  []string          `json:"unreadLinkedDirs"`
+	UnreadLinkedFiles []string          `json:"unreadLinkedFiles"`
 }
 
 // dispatchReleaseCandidates returns the Release-candidate set of the workspace
@@ -180,19 +189,24 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 
-	walked := walkReleases(s.workspaceRoot)
+	walked := walkReleases(s.workspaceRoot, s.wsConfig)
 	releases := walked.releases
 	if releases == nil {
 		releases = []string{}
 	}
-	unread := walked.unreadLinkedDirs
-	if unread == nil {
-		unread = []string{}
+	unreadDirs := walked.unreadLinkedDirs
+	if unreadDirs == nil {
+		unreadDirs = []string{}
+	}
+	unreadFiles := walked.unreadLinkedFiles
+	if unreadFiles == nil {
+		unreadFiles = []string{}
 	}
 	return s.writeResult(ctx, req.ID, releaseCandidatesResult{
-		Releases:         releases,
-		Lockfiles:        LockfilesFor(releases),
-		UnreadLinkedDirs: unread,
+		Releases:          releases,
+		Lockfiles:         LockfilesFor(releases),
+		UnreadLinkedDirs:  unreadDirs,
+		UnreadLinkedFiles: unreadFiles,
 	})
 }
 

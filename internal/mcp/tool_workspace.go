@@ -472,10 +472,19 @@ type listReleasesArgs struct {
 // workspace rather than with the documents in it. It is always an array, empty
 // where there is no such link.
 //
+// UnreadLinkedFiles names, beside it and the same way, each link the same walk met
+// that leads to a YAML file outside the workspace root which the workspace's
+// configuration does not name as a Release. The walk does not read such a file, so
+// a Release behind one is absent from Count and Releases too; a link to a file the
+// configuration names — by build.authoring_release, or as a key of
+// workspace.releases — is read and listed instead, and is not named. It describes
+// the whole workspace, as UnreadLinkedDirs does, and is always an array, empty
+// where there is no such link.
+//
 // Each name is the link's own place, relative to the root, and never the place
 // it leads to — the coordinate Releases is reported in, so it reads the same to a
 // caller at this machine and to one reaching a listener, and nothing about the
-// directory outside the workspace is told to either.
+// directory or file outside the workspace is told to either.
 //
 // WorkspaceRoot and its mark carry what they carry on the entity listing, for
 // the same reason.
@@ -483,15 +492,16 @@ type listReleasesResult struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 
-	ResponseFormat   string                  `json:"response_format"`
-	Count            int                     `json:"count"`
-	Directories      []releaseDirectoryCount `json:"directories"`
-	Offset           int                     `json:"offset"`
-	Returned         int                     `json:"returned"`
-	MoreRemaining    bool                    `json:"more_remaining"`
-	Releases         []string                `json:"releases"`
-	Lockfiles        map[string]string       `json:"lockfiles"`
-	UnreadLinkedDirs []string                `json:"unread_linked_dirs"`
+	ResponseFormat    string                  `json:"response_format"`
+	Count             int                     `json:"count"`
+	Directories       []releaseDirectoryCount `json:"directories"`
+	Offset            int                     `json:"offset"`
+	Returned          int                     `json:"returned"`
+	MoreRemaining     bool                    `json:"more_remaining"`
+	Releases          []string                `json:"releases"`
+	Lockfiles         map[string]string       `json:"lockfiles"`
+	UnreadLinkedDirs  []string                `json:"unread_linked_dirs"`
+	UnreadLinkedFiles []string                `json:"unread_linked_files"`
 }
 
 var listReleasesToolSpec = toolSpec{
@@ -506,7 +516,10 @@ var listReleasesToolSpec = toolSpec{
 		"path of that Release's lockfile, in the same coordinate: the file pull writes and build reads, so you never " +
 		"work out where it lives yourself. `unread_linked_dirs`, in both shapes, names each link the listing meets " +
 		"that leads to a directory outside the workspace: no such directory is searched, so a Release inside one is " +
-		"not listed even where an editor shows it under the link. Membership is decided by the file's own kind " +
+		"not listed even where an editor shows it under the link. `unread_linked_files`, in both shapes, names each " +
+		"link the listing meets that leads to a YAML file outside the workspace which the workspace configuration " +
+		"does not name as a Release: no such file is read, so a Release behind one is not listed; one the " +
+		"configuration names is read and listed. Membership is decided by the file's own kind " +
 		"header, never by its name: a Release named without a conventional prefix is included, and a file merely " +
 		"named like one is not. Call this when you need to name a Release and do not know which exist — build, " +
 		"describe and validate each require one named and none can enumerate for you. Feed a returned path straight " +
@@ -560,20 +573,21 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		return errorResult(explainToolError("Could not resolve the workspace to list its Releases.", err, "release"))
 	}
 
-	walked := serve.WalkReleaseCandidates(tw.root)
+	walked := serve.WalkReleaseCandidates(tw.root, tw.cfg)
 	releases := walked.Releases
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(releases))
 	page := releases[from:to]
 	payload := listReleasesResult{
-		ResponseFormat:   format,
-		Count:            len(releases),
-		Directories:      releaseDirectoryCounts(releases),
-		Offset:           from,
-		Returned:         to - from,
-		MoreRemaining:    more,
-		Releases:         page,
-		Lockfiles:        serve.LockfilesFor(page),
-		UnreadLinkedDirs: walked.UnreadLinkedDirs,
+		ResponseFormat:    format,
+		Count:             len(releases),
+		Directories:       releaseDirectoryCounts(releases),
+		Offset:            from,
+		Returned:          to - from,
+		MoreRemaining:     more,
+		Releases:          page,
+		Lockfiles:         serve.LockfilesFor(page),
+		UnreadLinkedDirs:  walked.UnreadLinkedDirs,
+		UnreadLinkedFiles: walked.UnreadLinkedFiles,
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderListReleasesText(payload), payload))
@@ -581,16 +595,22 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 
 // renderListReleasesText renders the human-readable Release listing, closing
 // with one line naming the links to directories outside the workspace the walk
-// did not enter, where there are any — in every shape, the empty listing
-// included, since a workspace whose only Release sits behind such a link is
-// exactly the one whose reader needs to be told why none is listed.
+// did not enter, and one naming the links to files outside it the walk did not
+// read, each where there are any — in every shape, the empty listing included,
+// since a workspace whose only Release sits behind such a link is exactly the one
+// whose reader needs to be told why none is listed.
 func renderListReleasesText(p listReleasesResult) string {
 	text := renderReleasePathsText(p)
-	if len(p.UnreadLinkedDirs) == 0 {
-		return text
+	if len(p.UnreadLinkedDirs) > 0 {
+		text += "\n\nNo Release inside these links is listed, because each leads to a directory outside the " +
+			"workspace and none is searched: " + strings.Join(p.UnreadLinkedDirs, ", ")
 	}
-	return text + "\n\nNo Release inside these links is listed, because each leads to a directory outside the " +
-		"workspace and none is searched: " + strings.Join(p.UnreadLinkedDirs, ", ")
+	if len(p.UnreadLinkedFiles) > 0 {
+		text += "\n\nNo Release behind these links is listed, because each leads to a file outside the workspace " +
+			"that the workspace configuration does not name as a Release, and none is read: " +
+			strings.Join(p.UnreadLinkedFiles, ", ")
+	}
+	return text
 }
 
 // renderReleasePathsText renders the listing itself, and says what an empty one
