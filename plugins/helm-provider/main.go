@@ -35,6 +35,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
@@ -302,6 +303,12 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 // host's pinned external-input channel. The SDK's own live-fetching validator
 // never runs in the guest. Validation only gates — it never alters values —
 // so rendered bytes are byte-identical for any accepted input.
+//
+// A failure never quotes a value the input marks sensitive: the node
+// projection's sensitivity marking names the keys of the values that carry one,
+// and the render core reports a failure over those keys without their values.
+// The host carries this guest's failure text to every surface unchanged, so
+// this guest is the only party able to keep such a value out of it.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.SourceListing == nil {
 		return rendercore.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source listing")
@@ -316,16 +323,13 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 	for _, f := range proj.Files {
 		bufs = append(bufs, &loader.BufferedFile{Name: f.Path, Data: f.Content})
 	}
-	ch, err := loader.LoadFiles(bufs)
-	if err != nil {
-		return rendercore.RenderNodeOutput{}, err
-	}
+	load := func() (*chart.Chart, error) { return loader.LoadFiles(bufs) }
 
 	values := rendercore.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
-	rendered, err := helmcore.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
-		helmcore.NewHermeticValuesValidator(aggrega.FetchExternalInput))
+	rendered, err := helmcore.RenderChartWithholding(context.Background(), load, values, nodeCtx,
+		helmcore.NewHermeticValuesValidator(aggrega.FetchExternalInput), in.Node.SensitiveRenderedKeys)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}

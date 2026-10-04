@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-refusal-quoting-recipe
+  version: "1.0.0"
+  description: A chart that refuses, quoting the declared-sensitive value.
+spec:
+  capability: helm
+  implements: core/helm-refusal-vault
+  # No values mapping: the chart receives the Component's own values, keyed by the
+  # leaves the Component declares, which is the shape the render input marks.
+  source: ./chart

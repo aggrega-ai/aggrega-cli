@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/helm-refusal-vault
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # One declared leaf beside an undeclared sibling. Each chart bound to this type
+  # refuses while quoting one of the two, so a chart's refusal is judged against a
+  # value an author declared sensitive and against one nobody did.
+  schema:
+    values:
+      adminPassword: { type: string, sensitive: true }
+      adminNote: { type: string }

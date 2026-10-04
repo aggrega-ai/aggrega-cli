@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-refusal-vault-app
+  version: "1.0.0"
+spec:
+  components:
+    vault:
+      type: core/helm-refusal-vault
+      values:
+        adminPassword: helm-refusal-secret-plaintext
+        adminNote: helm-refusal-note-plaintext

@@ -8,12 +8,66 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 )
+
+// valuesSchemaFailure is a values-schema validation failure: the text the
+// validator reports, and the identity of every finding behind it — the chart,
+// the location in the values and the keyword that refused it — so two
+// validations of different values can be told to fail on the same findings
+// without comparing their text. An identity names keys and keywords only, never
+// a value. The text is exactly the text the validator reported before it carried
+// identities.
+type valuesSchemaFailure struct {
+	text     string
+	findings []string
+}
+
+func (f *valuesSchemaFailure) Error() string { return f.text }
+
+// sortedFindings returns the failure's finding identities in sorted order, so
+// two failures compare as sets and a report naming them reads the same every
+// time.
+func (f *valuesSchemaFailure) sortedFindings() []string {
+	out := append([]string(nil), f.findings...)
+	sort.Strings(out)
+	return out
+}
+
+// findingsOf returns the identity of every finding err carries for chartName: the
+// identities a failure already carries, one per refusing keyword of a schema
+// validation, and the failure's own text for anything else (a schema that does
+// not compile, a reference that does not resolve), which names schemas and
+// references rather than values.
+func findingsOf(chartName string, err error) []string {
+	var identified *valuesSchemaFailure
+	if errors.As(err, &identified) {
+		return identified.findings
+	}
+	var verr *jsonschema.ValidationError
+	if !errors.As(err, &verr) {
+		return []string{chartName + ": " + err.Error()}
+	}
+	var out []string
+	var walk func(*jsonschema.ValidationError)
+	walk = func(v *jsonschema.ValidationError) {
+		if len(v.Causes) > 0 {
+			for _, c := range v.Causes {
+				walk(c)
+			}
+			return
+		}
+		out = append(out, fmt.Sprintf("%s at '/%s' (%s)", chartName,
+			strings.Join(v.InstanceLocation, "/"), strings.Join(v.ErrorKind.KeywordPath(), "/")))
+	}
+	walk(verr)
+	return out
+}
 
 // SchemaFetchFunc fetches the bytes of a remote schema document named by an
 // http or https URL. The provider Wasm guest backs it with the host's pinned
@@ -49,7 +103,12 @@ func NewHermeticValuesValidator(fetch SchemaFetchFunc) ValuesValidator {
 		if err := validateChartSchemas(ch, vals, fetch); err != nil {
 			// Mirrors the message the SDK wraps its own schema-validation
 			// failures with, so the two strategies surface alike.
-			return fmt.Errorf("values don't meet the specifications of the schema(s) in the following chart(s):\n%s", err.Error())
+			f := &valuesSchemaFailure{text: fmt.Sprintf("values don't meet the specifications of the schema(s) in the following chart(s):\n%s", err.Error())}
+			var inner *valuesSchemaFailure
+			if errors.As(err, &inner) {
+				f.findings = inner.findings
+			}
+			return f
 		}
 		return nil
 	}
@@ -63,10 +122,12 @@ func NewHermeticValuesValidator(fetch SchemaFetchFunc) ValuesValidator {
 // error. Failures aggregate per chart, each prefixed by the chart's name.
 func validateChartSchemas(ch *chart.Chart, values map[string]any, fetch SchemaFetchFunc) error {
 	var sb strings.Builder
+	var findings []string
 	if ch.Schema != nil {
 		if err := validateSingleSchemaHermetic(ch, values, fetch); err != nil {
 			sb.WriteString(fmt.Sprintf("%s:\n", ch.Name()))
 			sb.WriteString(err.Error())
+			findings = append(findings, findingsOf(ch.Name(), err)...)
 		}
 	}
 
@@ -81,15 +142,20 @@ func validateChartSchemas(ch *chart.Chart, values map[string]any, fetch SchemaFe
 				"%s:\ninvalid type for values: expected object (map), got %T\n",
 				dep.Name(), raw,
 			))
+			findings = append(findings, dep.Name()+" at '/' (type)")
 			continue
 		}
 		if err := validateChartSchemas(dep, depValues, fetch); err != nil {
 			sb.WriteString(err.Error())
+			var inner *valuesSchemaFailure
+			if errors.As(err, &inner) {
+				findings = append(findings, inner.findings...)
+			}
 		}
 	}
 
 	if sb.Len() > 0 {
-		return errors.New(sb.String())
+		return &valuesSchemaFailure{text: sb.String(), findings: findings}
 	}
 	return nil
 }
@@ -129,7 +195,7 @@ func validateSingleSchemaHermetic(ch *chart.Chart, values chartutil.Values, fetc
 
 	if err := validator.Validate(values.AsMap()); err != nil {
 		msg := strings.TrimPrefix(err.Error(), "jsonschema validation failed with '"+chartSchemaResourceID+"#'\n")
-		return errors.New(msg + "\n")
+		return &valuesSchemaFailure{text: msg + "\n", findings: findingsOf(ch.Name(), err)}
 	}
 	return nil
 }

@@ -1,0 +1,15 @@
+# The control: the chart refuses, quoting the value nobody declared.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-refusal-note-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./vault-app.yaml
+  manifest: ./note-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        vault: {}

@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-refusal-note-recipe
+  version: "1.0.0"
+  description: A chart that refuses, quoting the value nobody declared.
+spec:
+  capability: helm
+  implements: core/helm-refusal-vault
+  source: ./chart
