@@ -87,8 +87,9 @@ type cacheProvenanceResult struct {
 	SharedBy   int      `json:"sharedBy,omitempty"`
 }
 
-// cacheRemovalResult is one element an operation removed, carrying the reach of
-// the class it came from so a caller reading a single removal is told its scope
+// cacheRemovalResult is one element an operation removed — or, in a held-open
+// list, one it would have removed and had to leave in place — carrying the reach
+// of the class it came from so a caller reading a single entry is told its scope
 // without having to consult the summary.
 type cacheRemovalResult struct {
 	Class    string `json:"class"`
@@ -110,8 +111,14 @@ type cacheShortfallResult struct {
 }
 
 // cachePruneResult is the aggrega/cachePrune response.
+//
+// HeldOpen is the elements the prune would have removed but left in place because
+// another process had them open, which only Windows refuses. It is an array on
+// every platform, empty where that removal is never refused, so a client iterates
+// it unconditionally rather than asking whether the key is there.
 type cachePruneResult struct {
 	Removed              []cacheRemovalResult   `json:"removed"`
+	HeldOpen             []cacheRemovalResult   `json:"heldOpen"`
 	RetainedCount        int                    `json:"retainedCount"`
 	ReclaimedBytes       int64                  `json:"reclaimedBytes"`
 	ReclaimedBytesText   string                 `json:"reclaimedBytesText"`
@@ -134,9 +141,14 @@ type cacheEvictParams struct {
 // CapBytesText closes the loop the cap opened: the cap arrived as text a caller
 // wrote, and it leaves as text in the same vocabulary, so the value a caller
 // reads back is one it could send again unchanged.
+//
+// HeldOpen is the leaves the trim would have removed but left in place because
+// another process had them open, which only Windows refuses; they still count
+// toward RemainingBytes. It is an array on every platform, as on a prune.
 type cacheEvictResult struct {
 	WithinCapBefore    bool                 `json:"withinCapBefore"`
 	Removed            []cacheRemovalResult `json:"removed"`
+	HeldOpen           []cacheRemovalResult `json:"heldOpen"`
 	TotalBefore        int64                `json:"totalBefore"`
 	TotalBeforeText    string               `json:"totalBeforeText"`
 	ReclaimedBytes     int64                `json:"reclaimedBytes"`
@@ -149,11 +161,20 @@ type cacheEvictResult struct {
 }
 
 // cacheClearedResult is one whole subtree a wipe removed.
+//
+// HeldOpenFiles and HeldOpenBytes count the files the wipe had to leave in the
+// subtree because another process had them open, which only Windows refuses, so
+// both are zero everywhere else. Those bytes are not part of Size, which is what
+// the wipe reclaimed. They are carried even at zero, so the answer reads the same
+// on every platform.
 type cacheClearedResult struct {
-	Class    string `json:"class"`
-	Reach    string `json:"reach"`
-	Size     int64  `json:"size"`
-	SizeText string `json:"sizeText"`
+	Class             string `json:"class"`
+	Reach             string `json:"reach"`
+	Size              int64  `json:"size"`
+	SizeText          string `json:"sizeText"`
+	HeldOpenFiles     int    `json:"heldOpenFiles"`
+	HeldOpenBytes     int64  `json:"heldOpenBytes"`
+	HeldOpenBytesText string `json:"heldOpenBytesText"`
 }
 
 // cacheClearResult is the aggrega/cacheClear response.
@@ -164,6 +185,14 @@ type cacheClearResult struct {
 	Scope              cacheScope           `json:"scope"`
 }
 
+// testCacheLocations, when non-nil, replaces every cache root a session
+// addresses; production never sets it. The machine-wide half of those roots is
+// fixed for the whole process when it starts, so without it a test driving a
+// prune, a trim or a wipe through the real dispatch would reclaim the stores
+// every other test process on the machine shares. A test that sets it does not
+// run in parallel and restores it before it returns.
+var testCacheLocations func() cacheops.Locations
+
 // cacheLocations resolves the cache roots this session addresses.
 //
 // The workspace half comes from the workspace the session was opened over; the
@@ -172,6 +201,9 @@ type cacheClearResult struct {
 // machine-wide caches, which is the honest answer rather than a refusal: those
 // caches exist and their contents are reportable.
 func (s *Server) cacheLocations() cacheops.Locations {
+	if testCacheLocations != nil {
+		return testCacheLocations()
+	}
 	var root, cacheDir string
 	if s.resolvedWorkspace != nil {
 		root = s.resolvedWorkspace.Root()
@@ -263,9 +295,8 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 // state-writing operation runs on explicit invocation and never while something
 // is being validated or inspected — and nothing here runs during either.
 //
-// A removal failure part-way through is reported as an error whose data carries
-// the removals that did happen, so a caller is never told a partial prune was no
-// prune at all.
+// A removal failure part-way through is reported as an error naming what failed;
+// the answer does not list the removals that happened before it.
 func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) error {
 	// A method with no parameters of its own still decodes, so a field a caller
 	// sent is refused rather than dropped. See noParams for why an answer that
@@ -284,6 +315,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 	}
 	return s.writeResult(ctx, req.ID, cachePruneResult{
 		Removed:              cacheRemovals(res.Removed),
+		HeldOpen:             cacheRemovals(res.HeldOpen),
 		RetainedCount:        res.RetainedCount,
 		ReclaimedBytes:       res.ReclaimedBytes,
 		ReclaimedBytesText:   cacheops.HumanSize(res.ReclaimedBytes),
@@ -331,6 +363,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 	return s.writeResult(ctx, req.ID, cacheEvictResult{
 		WithinCapBefore:    res.WithinCapBefore,
 		Removed:            cacheRemovals(res.Removed),
+		HeldOpen:           cacheRemovals(res.HeldOpen),
 		TotalBefore:        res.TotalBefore,
 		TotalBeforeText:    cacheops.HumanSize(res.TotalBefore),
 		ReclaimedBytes:     res.ReclaimedBytes,
@@ -370,10 +403,13 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 	cleared := make([]cacheClearedResult, 0, len(res.Cleared))
 	for _, c := range res.Cleared {
 		cleared = append(cleared, cacheClearedResult{
-			Class:    c.Class,
-			Reach:    string(c.Reach),
-			Size:     c.Size,
-			SizeText: cacheops.HumanSize(c.Size),
+			Class:             c.Class,
+			Reach:             string(c.Reach),
+			Size:              c.Size,
+			SizeText:          cacheops.HumanSize(c.Size),
+			HeldOpenFiles:     c.HeldOpenFiles,
+			HeldOpenBytes:     c.HeldOpenBytes,
+			HeldOpenBytesText: cacheops.HumanSize(c.HeldOpenBytes),
 		})
 	}
 	return s.writeResult(ctx, req.ID, cacheClearResult{

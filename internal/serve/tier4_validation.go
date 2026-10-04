@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -267,7 +268,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// The request is on the Release's own document: what is positioned there,
 	// and nothing else.
 	if !onAggregate {
-		return s.releaseDocumentDiagnostics(vr, relFile, content, doc)
+		return s.releaseDocumentDiagnostics(vr.RunErr, vr.Tier4, relFile, content, doc)
 	}
 
 	// Closure-scoped extends — early-warning extends gate. A dangling parent (or
@@ -543,22 +544,27 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 // run before any of these findings could be raised — a gate over the
 // dependencies, say — names no file of the Release's and is published on the
 // Aggregate.
-func (s *Server) releaseDocumentDiagnostics(vr *compilerops.ValidateResult, file string, content []byte, doc *yaml.Node) []Diagnostic {
-	if errors.Is(vr.RunErr, context.Canceled) || errors.Is(vr.RunErr, context.DeadlineExceeded) {
+//
+// It is handed the two parts of the validation outcome it reads — the pipeline's
+// run error, which says whether the run was cancelled, and its result, which
+// holds the findings — rather than the outcome whole, so every part of that
+// outcome the daemon reads is named in the function that called the validation.
+func (s *Server) releaseDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4Result, file string, content []byte, doc *yaml.Node) []Diagnostic {
+	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 		return nil
 	}
-	if vr.Tier4 == nil {
+	if tier4 == nil {
 		return nil
 	}
 	var composition []*resolver.ResolverError
-	for _, ve := range vr.Tier4.ResolveDiagnostics {
+	for _, ve := range tier4.ResolveDiagnostics {
 		if writtenInRelease(ve.File, file) {
 			composition = append(composition, ve)
 		}
 	}
 	var placed []analyzer.AnalysisError
-	if vr.Tier4.Analysis != nil {
-		for _, e := range vr.Tier4.Analysis.Errors {
+	if tier4.Analysis != nil {
+		for _, e := range tier4.Analysis.Errors {
 			if writtenInRelease(e.OriginFile, file) {
 				placed = append(placed, e)
 			}

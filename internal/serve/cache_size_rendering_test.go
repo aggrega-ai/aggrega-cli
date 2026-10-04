@@ -241,12 +241,17 @@ func TestEveryCacheResultCarriesItsRenderedSizes(t *testing.T) {
 			},
 		},
 		{
-			name:  "a cleared subtree",
-			pairs: map[string]string{"size": "sizeText"},
+			name: "a cleared subtree",
+			pairs: map[string]string{
+				"size":          "sizeText",
+				"heldOpenBytes": "heldOpenBytesText",
+			},
 			payload: cacheClearedResult{
-				Class:    "a-class",
-				Size:     n,
-				SizeText: cacheops.HumanSize(n),
+				Class:             "a-class",
+				Size:              n,
+				SizeText:          cacheops.HumanSize(n),
+				HeldOpenBytes:     n,
+				HeldOpenBytesText: cacheops.HumanSize(n),
 			},
 		},
 		{
