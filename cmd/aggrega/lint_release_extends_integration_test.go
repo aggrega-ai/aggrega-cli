@@ -122,7 +122,7 @@ spec:
 	t.Chdir(ws)
 
 	var buf bytes.Buffer
-	err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, compilerops.VerbosityDetailed, false, &buf, io.Discard)
+	err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, compilerops.VerbosityDetailed, false, false, &buf, io.Discard)
 	out := buf.String()
 
 	if err == nil {

@@ -369,7 +369,7 @@ func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
 			var validateErr error
 			var diag, out bytes.Buffer
 			validateStderr := captureStderr(t, func() {
-				validateErr = validateRelease(context.Background(), rw, releasePath, catDirs, compilerops.VerbosityDetailed, false, &diag, &out)
+				validateErr = validateRelease(context.Background(), rw, releasePath, catDirs, compilerops.VerbosityDetailed, false, false, &diag, &out)
 			})
 
 			switch {

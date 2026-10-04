@@ -121,7 +121,7 @@ func TestValidateReleaseRefusesAGateTheConfigurationDropped(t *testing.T) {
 	}
 
 	var diag, out bytes.Buffer
-	verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diag, &out)
+	verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, false, &diag, &out)
 	if verr == nil {
 		t.Fatalf("a record naming a gate the configuration attaches nowhere must refuse; got a clean pass\n out: %s", out.String())
 	}
@@ -149,7 +149,7 @@ func TestValidateReleaseWithAMatchingConfigurationStaysSilent(t *testing.T) {
 	assertRecordedGateIsIdentifiable(t, rw, dirs)
 
 	var diag, out bytes.Buffer
-	if verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diag, &out); verr != nil {
+	if verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, false, &diag, &out); verr != nil {
 		t.Fatalf("a record whose gate is still attached must refuse nothing; got %v\n diagOut: %s", verr, diag.String())
 	}
 }
@@ -195,7 +195,7 @@ func TestValidateReleaseHonoursADisagreeingRecordedDigest(t *testing.T) {
 	dirs := []string{cliFullstackCatalogDir(t)}
 
 	var diag, out bytes.Buffer
-	verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diag, &out)
+	verr := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, false, &diag, &out)
 	if verr == nil {
 		t.Fatalf("a recorded digest the cached manifest contradicts must not resolve; got a clean pass\n out: %s", out.String())
 	}
@@ -232,7 +232,7 @@ func TestValidateReleaseWithTheRecordedDigestResolvesTheGate(t *testing.T) {
 	}
 
 	var diag, out bytes.Buffer
-	verr := validateRelease(context.Background(), rw, releasePath, []string{cliFullstackCatalogDir(t)}, compilerops.VerbosityDetailed, false, &diag, &out)
+	verr := validateRelease(context.Background(), rw, releasePath, []string{cliFullstackCatalogDir(t)}, compilerops.VerbosityDetailed, false, false, &diag, &out)
 	if verr == nil {
 		t.Fatalf("the seeded .wasm is header-only and cannot load, so the A/B would be vacuous; got a clean pass")
 	}

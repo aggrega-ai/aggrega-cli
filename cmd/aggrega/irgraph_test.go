@@ -296,10 +296,10 @@ func TestValidateIRGraph_IsAdditiveAndLeavesTheVerdictAlone(t *testing.T) {
 	dirs := []string{cliFullstackCatalogDir(t)}
 
 	var diagWithout, outWithout bytes.Buffer
-	errWithout := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, false, &diagWithout, &outWithout)
+	errWithout := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, false, false, &diagWithout, &outWithout)
 
 	var diagWith, outWith bytes.Buffer
-	errWith := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, true, &diagWith, &outWith)
+	errWith := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, true, false, &diagWith, &outWith)
 
 	if (errWithout == nil) != (errWith == nil) {
 		t.Fatalf("the flag moved the verdict: without=%v with=%v", errWithout, errWith)
@@ -453,9 +453,9 @@ func TestBuildIRGraph_CombinesWithADryRun(t *testing.T) {
 }
 
 // TestBuildIRGraph_WithholdsDeclaredValues is the build's leg of the same
-// withholding the inspection command carries. It matters more here rather than
-// less: this command has no affordance for revealing them on this stream, so a
-// leak would have no counterpart the reader could have asked for instead.
+// withholding the inspection command carries, held at the writer: its two arms
+// must differ, so the withholding is the writer's doing. The reveal reached
+// through the command's own --unredacted is TestBuildIRGraph_WithholdsUnlessRevealed.
 func TestBuildIRGraph_WithholdsDeclaredValues(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

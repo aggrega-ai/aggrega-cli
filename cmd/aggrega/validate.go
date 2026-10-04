@@ -53,6 +53,7 @@ func newValidateCmd() *cobra.Command {
 	var responseFormat string
 	var noUnsupportedFieldWarnings bool
 	var irGraph bool
+	var unredacted bool
 	c := &cobra.Command{
 		Use:   "validate [entity-path]",
 		Short: "Check correctness across the catalog, a Release, or one entity",
@@ -125,6 +126,11 @@ func newValidateCmd() *cobra.Command {
 					fmt.Sprintf("--%s applies to a Release's dependency closure, and an entity argument checks that one entity in the Release's terms instead, resolving no graph; drop the entity argument to validate the Release's closure", flagIRGraph),
 					nil, nil)
 			}
+			// The reveal reaches the graph and nothing else this command writes,
+			// so without the graph it would change nothing and say nothing.
+			if err := refuseUnpairedUnredacted(irGraph, unredacted); err != nil {
+				return err
+			}
 			// --type declares the plugin type for a binary-only .wasm check and is
 			// meaningful only alongside --plugin; reject it on its own so it never
 			// silently no-ops on a catalog-, release-, or entity-scoped run.
@@ -148,7 +154,7 @@ func newValidateCmd() *cobra.Command {
 				return err
 			}
 			if releasePath != "" && path == "" {
-				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
+				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, unredacted, os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
 				// No entity argument → whole-catalog correctness, one pass for each
@@ -178,6 +184,7 @@ func newValidateCmd() *cobra.Command {
 	// one asks for a second document beside it. Saying so in the help is what
 	// keeps a reader from reading them as two spellings of one knob.
 	c.Flags().BoolVar(&irGraph, flagIRGraph, false, helpIRGraph+". Applies to the --release scope, the one scope that resolves a Release to a graph. It selects a DOCUMENT, where --response-format sets how much of this command's own report is written; neither affects the verdict or the exit code")
+	c.Flags().BoolVar(&unredacted, flagUnredacted, false, helpUnredacted+" Reaches the graph --"+flagIRGraph+" writes and nothing else, so it requires --"+flagIRGraph)
 	return c
 }
 

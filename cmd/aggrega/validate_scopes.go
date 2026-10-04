@@ -171,10 +171,14 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 // before the graph was built has none to hand back, and says so on diagOut
 // rather than emitting an empty document.
 //
+// unredacted is the reader's --unredacted: the graph withholds every value an
+// author declared sensitive unless it is set. It reaches the graph and nothing
+// else this verb writes.
+//
 // ctx is the caller's and reaches both halves of the pass — the closure
 // resolution and the validation that dispatches the operator-attached guests —
 // so a reader who stops the run stops the work rather than only the reply.
-func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph bool, diagOut, out io.Writer) error {
+func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph, unredacted bool, diagOut, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -261,7 +265,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	if irGraph {
 		if vr.Tier4 == nil || vr.Tier4.IRGraph == nil {
 			fmt.Fprintf(diagOut, "  no graph: validation stopped before the graph was resolved, so there is none to hand back\n")
-		} else if err := writeIRGraph(out, "validate", vr.Tier4.IRGraph, false); err != nil {
+		} else if err := writeIRGraph(out, "validate", vr.Tier4.IRGraph, unredacted); err != nil {
 			return err
 		}
 	}

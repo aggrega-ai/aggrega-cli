@@ -37,10 +37,11 @@ const (
 // untouched, so a graph declaring no sensitivity emits the bytes it emitted
 // before this existed.
 //
-// The command line calls it when it prints the graph, and the governance
-// socket calls it when it hands the graph to a policy plugin. Each calls it
-// rather than walking the markings itself, which is what keeps every surface
-// that withholds from the graph withholding the same leaves.
+// The command line calls it when it prints the graph, the daemon when it
+// answers a request for the graph, and the governance socket when it hands the
+// graph to a policy plugin. Each calls it rather than walking the markings
+// itself, which is what keeps every surface that withholds from the graph
+// withholding the same leaves.
 //
 // The input is never mutated. The graph this reads is the one the pipeline
 // produced and hands onward, so an in-place substitution here would reach every

@@ -514,6 +514,36 @@ func TestWireShapeGoToSchema(t *testing.T) {
 	}
 }
 
+// TestIrGraphParamsDeclaresTheRevealTheSchemaPublishes is the schema → Go
+// direction for the one field a client sends to ask for the build graph's
+// withheld values in the clear.
+//
+// The direction above cannot see this field go missing. It builds the Go value
+// and validates it against the schema, so a request shape that stopped declaring
+// the field still validates — the schema merely offers a property nobody sends.
+// The daemon would then refuse that property on every request carrying it,
+// because it accepts exactly the fields its request shape declares, and a client
+// typed through the published binding would be told its reveal does not exist.
+// So the field is read off the schema and looked for in the shape the daemon
+// decodes into: declared, optional, a boolean, and accepted.
+func TestIrGraphParamsDeclaresTheRevealTheSchemaPublishes(t *testing.T) {
+	t.Parallel()
+
+	const def = "#/$defs/IrGraphParams"
+	name := wireOptionalProperty(t, def, "unredacted")
+
+	position, err := resolveSchemaPointer(wireSchemaDocument(t), def+"/properties/"+name)
+	if err != nil {
+		t.Fatalf("%s: %v", def, err)
+	}
+	if position["type"] != "boolean" {
+		t.Errorf("%s declares %q as %v; the reveal is a yes-or-no request and the daemon decodes a boolean", def, name, position["type"])
+	}
+	if !declaredParamFields(irGraphParams{})[name] {
+		t.Errorf("the build-graph request shape declares no %q, so the daemon refuses the field the published contract offers its clients", name)
+	}
+}
+
 // taggedStructFields parses every non-test Go file in dir and returns each
 // named struct declaration carrying at least one json tag, mapped to the Go
 // field names that carry one.

@@ -133,6 +133,11 @@ func TestToolProtocolCarriesTheGraphOnEveryToolThatOffersIt(t *testing.T) {
 	// rather than spelled, so a renamed flag fails here rather than passing on a
 	// literal nobody updated.
 	property := `"` + strings.ReplaceAll(flagIRGraph, "-", "_") + `"`
+	// Every tool that hands the graph out offers the same reveal, on the terms of
+	// the command it mirrors: the graph withholds what an author declared
+	// sensitive unless this property asks. A tool carrying the graph without it
+	// would hand an assistant fewer capabilities than the command line has.
+	reveal := `"` + strings.ReplaceAll(flagUnredacted, "-", "_") + `"`
 
 	for _, tool := range availability.Names {
 		schema, served := schemas[tool]
@@ -143,6 +148,10 @@ func TestToolProtocolCarriesTheGraphOnEveryToolThatOffersIt(t *testing.T) {
 		if !strings.Contains(schema, property) {
 			t.Errorf("%s does not accept %s, so the capability it claims is unreachable through it:\n%s",
 				tool, property, schema)
+		}
+		if !strings.Contains(schema, reveal) {
+			t.Errorf("%s hands out the graph and does not accept %s, so it offers no reveal where its command does:\n%s",
+				tool, reveal, schema)
 		}
 	}
 

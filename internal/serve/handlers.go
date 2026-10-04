@@ -15,10 +15,12 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -856,8 +858,14 @@ func (s *Server) handleDiagnostics(ctx context.Context, params diagnosticsParams
 
 // irGraphParams is the request shape for `aggrega/irGraph`. The
 // release field is a workspace-relative path to the Release YAML.
+//
+// Unredacted asks for the values an author declared sensitive in the clear.
+// Absent or false, the answer withholds them — the default every caller gets
+// without asking, and the same withholding the command line's graph output
+// applies.
 type irGraphParams struct {
-	Release string `json:"release"`
+	Release    string `json:"release"`
+	Unredacted bool   `json:"unredacted,omitempty"`
 }
 
 // resolveReleaseParam turns the `release` request parameter into the
@@ -964,8 +972,9 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // handleIrGraph loads the Release at params.Release, derives the
 // Aggregate and Manifest paths, reads them from disk, and invokes
 // pipeline.RunPipeline to produce the IR graph. The graph is
-// returned as JSON; trace data is discarded (Options.IncludeTrace is
-// false).
+// returned as JSON, with every value an author declared sensitive
+// withheld unless params.Unredacted asks for them (irGraphDocument);
+// trace data is discarded (Options.IncludeTrace is false).
 //
 // Path resolution: params.Release is a path relative to the daemon's
 // workspace root, naming a Release inside it, and resolveReleaseParam
@@ -1068,7 +1077,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 
 	// The graph comes off the finished payload: the refusal above returned, so the
 	// run this marshals from is one that ended.
-	graphBytes, err := json.Marshal(preview.pipeline.Completed().IRGraph)
+	graphBytes, err := irGraphDocument(preview.pipeline.Completed().IRGraph, params.Unredacted)
 	if err != nil {
 		return irGraphResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -1076,6 +1085,27 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		}
 	}
 	return irGraphResult{Graph: graphBytes}, nil
+}
+
+// irGraphDocument serializes the graph a build-graph request is answered with,
+// withholding every value an author declared sensitive unless the request asked
+// for them with unredacted.
+//
+// The withholding is the one every surface handing the graph out applies —
+// redact.Graph, which reads the graph's own per-leaf markings — called rather
+// than restated, so this answer and the command line's graph output withhold
+// exactly the same leaves. Masking is the default because the answer leaves the
+// process for whatever client asked, and a client that never asked for the
+// values has no use for them in the clear.
+//
+// The graph handed in is the pipeline's own and is never mutated: redact.Graph
+// returns a copy, so a later reader of the same run sees the values as compiled.
+func irGraphDocument(graph *types.IRGraph, unredacted bool) (json.RawMessage, error) {
+	subject := graph
+	if !unredacted {
+		subject = redact.Graph(graph)
+	}
+	return json.Marshal(subject)
 }
 
 // releasePreview is everything one preview of a Release produces that a

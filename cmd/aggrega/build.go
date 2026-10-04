@@ -43,6 +43,7 @@ type buildFlags struct {
 	noUnsupportedFieldWarns bool
 	dryRun                  bool
 	irGraph                 bool
+	unredacted              bool
 	assumeYes               bool
 }
 
@@ -112,6 +113,7 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build. It takes no target, so it cannot be narrowed to one dependency: to adopt or drop a single pin, run `aggrega pull --upgrade --release <release> <uri>` instead, which holds every other pin unchanged. Because it drops every recorded pin it asks for confirmation first; --yes answers in advance, and on a non-interactive stdin it refuses rather than waiting for an answer nobody can give")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs behave exactly as they do in an ordinary build — pinned inputs are served from the content-addressed store (and refilled by digest when the blob is missing), and a render that requests an unpinned external URL halts naming it — so what a dry run shows is what a build would write. Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
 	c.Flags().BoolVar(&opts.irGraph, flagIRGraph, false, helpIRGraph+". The artifacts are still written and the summary is still printed; the graph is written ahead of both")
+	c.Flags().BoolVar(&opts.unredacted, flagUnredacted, false, helpUnredacted+" Reaches the graph --"+flagIRGraph+" writes and nothing else, so it requires --"+flagIRGraph+"; the .trace/ files take --trace-unredacted instead")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: a build that does not refresh asks nothing, so passing it changes no behaviour there")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
@@ -124,6 +126,12 @@ the rendered tree reviewable as a diff.`,
 // orchestration in internal/buildops and renders its progress, advisories and
 // completion summary in this command's voice.
 func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
+	// A flag-pairing fault is answered before anything is asked or touched,
+	// the confirmation below included: a question put ahead of a refusal of the
+	// same invocation is a question whose answer is thrown away.
+	if err := refuseUnpairedUnredacted(opts.irGraph, opts.unredacted); err != nil {
+		return err
+	}
 	// Build's --upgrade takes no target, so every use of it is the destructive
 	// form the confirmation guards — the same act `aggrega pull --upgrade` bare
 	// performs, and gated on the same terms. The dry-run leg is not a second copy
@@ -143,20 +151,33 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	// The graph shares the stream the build's own output already uses, named once
 	// here so the two cannot come to write to different places.
 	out := os.Stdout
-	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
-	if opts.irGraph {
-		// The graph goes to the same stream the build's own output goes to, and
-		// through the one writer every command that offers the document shares.
-		// A build has no affordance for revealing the values an author declared
-		// sensitive on this stream — the one it carries reaches the trace files
-		// and nothing else — so the graph is withheld unconditionally here.
-		run.IRGraph = func(graph *types.IRGraph) error {
-			return writeIRGraph(out, "build", graph, false)
-		}
-	}
 	return dispatchBuildWithDiag(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		run, os.Stderr, out)
+		buildRunOptions(opts, out), os.Stderr, out)
+}
+
+// buildRunOptions composes the shared build layer's knobs from this command's
+// flag state, including the graph hand-back when the graph was asked for.
+//
+// The graph goes to out, the stream the build's own output goes to, and through
+// the one writer every command that offers the document shares. Whether it is
+// withheld is the reader's --unredacted, passed through as set: the values an
+// author declared sensitive are withheld unless that flag asks for them. The
+// .trace/ files carry a reveal of their own, which reaches them and nothing else.
+//
+// It is a function of the flag state rather than inline in runBuild so a test
+// can drive the same composition the command performs — the flag reaching the
+// writer is the wiring under test, and a test that assembled the hand-back
+// itself would pass while the command ignored the flag.
+func buildRunOptions(opts *buildFlags, out io.Writer) buildops.RunOptions {
+	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
+	if opts.irGraph {
+		unredacted := opts.unredacted
+		run.IRGraph = func(graph *types.IRGraph) error {
+			return writeIRGraph(out, "build", graph, unredacted)
+		}
+	}
+	return run
 }
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs

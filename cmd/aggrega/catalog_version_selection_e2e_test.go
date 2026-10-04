@@ -439,7 +439,7 @@ spec:
 	// pin and not about a workspace nothing could resolve.
 	var cdiag, cout bytes.Buffer
 	if err := validateRelease(context.Background(), rw, filepath.Join(root, "pin-1.0.0", "release.yaml"), nil,
-		compilerops.VerbosityDetailed, false, &cdiag, &cout); err != nil {
+		compilerops.VerbosityDetailed, false, false, &cdiag, &cout); err != nil {
 		t.Fatalf("control: the satisfiable pin was refused: %v\n%s", err, cdiag.String())
 	}
 
@@ -454,7 +454,7 @@ spec:
 		t.Fatal("the pull accepted test/svc:2.0.0 with only 1.0.0 on disk")
 	}
 	var diag, out bytes.Buffer
-	validateErr := validateRelease(context.Background(), rw, releasePath, nil, compilerops.VerbosityDetailed, false, &diag, &out)
+	validateErr := validateRelease(context.Background(), rw, releasePath, nil, compilerops.VerbosityDetailed, false, false, &diag, &out)
 	if validateErr == nil {
 		t.Fatalf("validate accepted test/svc:2.0.0 with only 1.0.0 on disk; the pull refused it:\n%v", pullErr)
 	}
