@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -412,49 +413,235 @@ func TestManifestCascadePrecedenceStep2MarkerOverStep3SingleRelease(t *testing.T
 	}
 }
 
-func TestCascadeDiagnosticMessageOnExhaustion(t *testing.T) {
+// TestCascadeReasonReadsAsSentences pins the reason an unresolved answer
+// carries, word for word, for every state the attempt records. The first row
+// is the ordinary workspace — two Releases and nothing naming a default — and
+// each later row moves one thing from it, so a row that fails names the state
+// whose sentence changed.
+//
+// The reason is shown to a person as it stands, after a sentence of the
+// client's own, so beyond the exact text every row is held to the shape that
+// makes that work: one line, opening with a capital, closing with a single
+// full stop, and none of the cascade's own vocabulary.
+func TestCascadeReasonReadsAsSentences(t *testing.T) {
 	t.Parallel()
-	// A Step-4 cascade attempt: every step tried, none selected a Release.
-	attempt := cascadeAttempt{
-		ResolvedStep:               0,
-		AuthoringReleaseConfigured: false,
-		ReleaseCandidatesFound:     3,
-		MarkerFilePresent:          false,
+	settingErr := errors.New("the setting's file is missing")
+	markerErr := errors.New("the marker's file is missing")
+	onlyErr := errors.New("the only Release is not a Release document")
+	neither := "Neither the build.authoring_release setting nor an .aggrega/active-release marker names a default Release, "
+
+	cases := []struct {
+		name    string
+		attempt cascadeAttempt
+		want    string
+	}{
+		{
+			name:    "two Releases and nothing naming a default",
+			attempt: cascadeAttempt{ReleaseCandidatesFound: 2},
+			want:    neither + "and the workspace holds 2 Releases.",
+		},
+		{
+			name:    "no Release in the workspace",
+			attempt: cascadeAttempt{ReleaseCandidatesFound: 0},
+			want:    neither + "and the workspace holds no Release.",
+		},
+		{
+			name: "the workspace's only Release does not load",
+			attempt: cascadeAttempt{
+				ReleaseCandidatesFound:     1,
+				SingleReleaseLoadError:     onlyErr,
+				SingleReleaseCandidatePath: "/ws/only.yaml",
+			},
+			want: neither + "and the workspace holds one Release, which does not load: the only Release is not a Release document.",
+		},
+		{
+			name: "the setting names a file that does not load",
+			attempt: cascadeAttempt{
+				AuthoringReleaseConfigured: true,
+				AuthoringReleaseTarget:     "releases/prod.yaml",
+				AuthoringReleasePath:       "/ws/releases/prod.yaml",
+				AuthoringReleaseLoadError:  settingErr,
+				ReleaseCandidatesFound:     2,
+			},
+			want: `The build.authoring_release setting names "releases/prod.yaml", which does not load: the setting's file is missing. ` +
+				"There is no .aggrega/active-release marker. The workspace holds 2 Releases.",
+		},
+		{
+			name: "the marker is empty",
+			attempt: cascadeAttempt{
+				MarkerFilePresent:      true,
+				ReleaseCandidatesFound: 2,
+			},
+			want: "The build.authoring_release setting is not set. " +
+				"The .aggrega/active-release marker is empty, so it names no Release. The workspace holds 2 Releases.",
+		},
+		{
+			name: "the marker names a file that does not load",
+			attempt: cascadeAttempt{
+				MarkerFilePresent:      true,
+				MarkerFileTarget:       "stale.yaml",
+				MarkerResolvedPath:     "/ws/stale.yaml",
+				MarkerFileLoadError:    markerErr,
+				ReleaseCandidatesFound: 2,
+			},
+			want: "The build.authoring_release setting is not set. " +
+				`The .aggrega/active-release marker names "stale.yaml", which does not load: the marker's file is missing. ` +
+				"The workspace holds 2 Releases.",
+		},
+		{
+			name: "the only Release is the file the setting names",
+			attempt: cascadeAttempt{
+				AuthoringReleaseConfigured: true,
+				AuthoringReleaseTarget:     "release.yaml",
+				AuthoringReleasePath:       "/ws/release.yaml",
+				AuthoringReleaseLoadError:  settingErr,
+				ReleaseCandidatesFound:     1,
+				SingleReleaseLoadError:     settingErr,
+				SingleReleaseCandidatePath: "/ws/release.yaml",
+			},
+			want: `The build.authoring_release setting names "release.yaml", which does not load: the setting's file is missing. ` +
+				"There is no .aggrega/active-release marker. " +
+				"The workspace holds one Release, the file the build.authoring_release setting names.",
+		},
+		{
+			name: "the only Release is the file the marker names",
+			attempt: cascadeAttempt{
+				MarkerFilePresent:          true,
+				MarkerFileTarget:           "release.yaml",
+				MarkerResolvedPath:         "/ws/release.yaml",
+				MarkerFileLoadError:        markerErr,
+				ReleaseCandidatesFound:     1,
+				SingleReleaseLoadError:     markerErr,
+				SingleReleaseCandidatePath: "/ws/release.yaml",
+			},
+			want: "The build.authoring_release setting is not set. " +
+				`The .aggrega/active-release marker names "release.yaml", which does not load: the marker's file is missing. ` +
+				"The workspace holds one Release, the file the .aggrega/active-release marker names.",
+		},
+		{
+			name: "a load error running over several lines and closing with a full stop",
+			attempt: cascadeAttempt{
+				ReleaseCandidatesFound:     1,
+				SingleReleaseLoadError:     errors.New("cannot decode the document:\n  line 3: not a mapping."),
+				SingleReleaseCandidatePath: "/ws/only.yaml",
+			},
+			want: neither + "and the workspace holds one Release, which does not load: cannot decode the document: line 3: not a mapping.",
+		},
+		{
+			name:    "a Release resolved, so there is nothing to explain",
+			attempt: cascadeAttempt{ResolvedStep: 2, ReleaseCandidatesFound: 2},
+			want:    "",
+		},
 	}
-	msg := attempt.diagnosticMessage()
-	for _, sub := range []string{
-		"release not resolved",
-		"no authoring_release configured",
-		"3 Release file(s)",
-		"no .aggrega/active-release marker",
-	} {
-		if !strings.Contains(msg, sub) {
-			t.Errorf("diagnostic message missing %q; got: %q", sub, msg)
-		}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tc.attempt.diagnosticMessage()
+			if got != tc.want {
+				t.Errorf("reason:\n got: %q\nwant: %q", got, tc.want)
+			}
+			if got == "" {
+				return
+			}
+			if strings.Contains(got, "\n") {
+				t.Errorf("reason runs over more than one line: %q", got)
+			}
+			if first := got[:1]; first != strings.ToUpper(first) {
+				t.Errorf("reason does not open with a capital: %q", got)
+			}
+			if !strings.HasSuffix(got, ".") || strings.HasSuffix(got, "..") {
+				t.Errorf("reason does not close with a single full stop: %q", got)
+			}
+			for _, word := range []string{"cascade", "step", "resolved", "file(s)", ";"} {
+				if strings.Contains(got, word) {
+					t.Errorf("reason carries %q, which is not a word a person reads here: %q", word, got)
+				}
+			}
+		})
 	}
 }
 
-func TestCascadeDiagnosticMessageWithMarkerLoadError(t *testing.T) {
+// TestCascadeReasonNamesASharedFailureOnce drives the real cascade over a
+// workspace whose only Release does not load and is also the file the setting,
+// or the marker, names. The reason reports that file's load error once, at the
+// sentence about what names it, and the count says it is the same file.
+//
+// It runs through runManifestCascade rather than a hand-built attempt because
+// what it proves is that the path the walk reports and the path the setting or
+// the marker resolves to are the same string for the same file — a hand-built
+// attempt would only restate whichever paths the test wrote.
+func TestCascadeReasonNamesASharedFailureOnce(t *testing.T) {
 	t.Parallel()
-	attempt := cascadeAttempt{
-		ResolvedStep:               0,
-		AuthoringReleaseConfigured: true,
-		AuthoringReleaseLoadError:  os.ErrNotExist,
-		ReleaseCandidatesFound:     2,
-		MarkerFilePresent:          true,
-		MarkerFileTarget:           "stale.yaml",
-		MarkerFileLoadError:        os.ErrNotExist,
+	// A Release header the walk counts, over a body the loader rejects.
+	broken := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nspec: \"not-an-object\"\n"
+
+	cases := []struct {
+		name       string
+		setting    bool
+		names      string
+		loadErr    func(cascadeAttempt) error
+		countClose string
+	}{
+		{
+			name:       "the setting names the only Release",
+			setting:    true,
+			names:      `The build.authoring_release setting names "broken.yaml", which does not load: `,
+			loadErr:    func(a cascadeAttempt) error { return a.AuthoringReleaseLoadError },
+			countClose: "The workspace holds one Release, the file the build.authoring_release setting names.",
+		},
+		{
+			name:       "the marker names the only Release",
+			setting:    false,
+			names:      `The .aggrega/active-release marker names "broken.yaml", which does not load: `,
+			loadErr:    func(a cascadeAttempt) error { return a.MarkerFileLoadError },
+			countClose: "The workspace holds one Release, the file the .aggrega/active-release marker names.",
+		},
 	}
-	msg := attempt.diagnosticMessage()
-	for _, sub := range []string{
-		"release not resolved",
-		"authoring_release configured but failed to load",
-		"2 Release file(s)",
-		`marker target "stale.yaml" failed to load`,
-	} {
-		if !strings.Contains(msg, sub) {
-			t.Errorf("diagnostic message missing %q; got: %q", sub, msg)
-		}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ws := t.TempDir()
+			if err := os.WriteFile(filepath.Join(ws, "broken.yaml"), []byte(broken), 0o644); err != nil {
+				t.Fatalf("write broken release: %v", err)
+			}
+			wsCfg := workspaceconfig.Default()
+			if tc.setting {
+				wsCfg.Build.AuthoringRelease = "broken.yaml"
+			} else {
+				markerDir := filepath.Join(ws, ".aggrega")
+				if err := os.MkdirAll(markerDir, 0o755); err != nil {
+					t.Fatalf("mkdir marker dir: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(markerDir, "active-release"), []byte("broken.yaml\n"), 0o644); err != nil {
+					t.Fatalf("write marker: %v", err)
+				}
+			}
+
+			rel, _, attempt := runManifestCascade(ws, wsCfg, io.Discard)
+			if rel != nil {
+				t.Fatalf("expected no Release from an unloadable workspace; got %v", rel)
+			}
+			if attempt.SingleReleaseLoadError == nil {
+				t.Fatalf("the walk's only candidate loaded; the fixture does not reach the case under test")
+			}
+			loadErr := tc.loadErr(attempt)
+			if loadErr == nil {
+				t.Fatalf("the file named did not fail to load; the fixture does not reach the case under test")
+			}
+
+			got := attempt.diagnosticMessage()
+			if !strings.Contains(got, tc.names+loadFailure(loadErr)+".") {
+				t.Errorf("reason does not report the named file's load error:\n got: %q\nwant it to carry: %q", got, tc.names+loadFailure(loadErr)+".")
+			}
+			if !strings.HasSuffix(got, tc.countClose) {
+				t.Errorf("reason does not close by naming the only Release as that same file:\n got: %q\nwant it to end: %q", got, tc.countClose)
+			}
+			if n := strings.Count(got, loadFailure(loadErr)); n != 1 {
+				t.Errorf("reason reports the one load error %d times; want once: %q", n, got)
+			}
+		})
 	}
 }
 
@@ -486,14 +673,5 @@ func TestCascadeAttemptFullTraceReadsInExecutionOrder(t *testing.T) {
 			t.Errorf("%q appears out of execution order; got:\n%s", want, trace)
 		}
 		prev = at
-	}
-}
-
-func TestCascadeDiagnosticMessageWhenResolved(t *testing.T) {
-	t.Parallel()
-	attempt := cascadeAttempt{ResolvedStep: 1}
-	msg := attempt.diagnosticMessage()
-	if !strings.Contains(msg, "release resolved") {
-		t.Errorf("expected 'release resolved' framing for non-zero ResolvedStep; got: %q", msg)
 	}
 }

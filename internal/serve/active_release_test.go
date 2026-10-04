@@ -139,7 +139,9 @@ func TestDispatchActiveReleaseUnresolvedIsSuccessWithAnEmptyPath(t *testing.T) {
 // trace for a log.
 //
 // Both are asserted for content rather than for presence — a field carrying an
-// empty string would satisfy a presence check while explaining nothing.
+// empty string would satisfy a presence check while explaining nothing. The
+// reason is asserted word for word, as the request returns it, because it is
+// the sentence a client shows a person as it stands.
 func TestDispatchActiveReleaseUnresolvedCarriesTheReasonAndTrace(t *testing.T) {
 	ws := t.TempDir()
 	// Two Releases and no marker: the cascade attempts every step and
@@ -153,8 +155,10 @@ func TestDispatchActiveReleaseUnresolvedCarriesTheReasonAndTrace(t *testing.T) {
 	if result.Release != "" {
 		t.Fatalf("release = %q; want the empty string (two Releases, no marker)", result.Release)
 	}
-	if result.Reason == "" {
-		t.Errorf("reason is empty; an unresolved answer must say why")
+	const wantReason = "Neither the build.authoring_release setting nor an .aggrega/active-release marker names a default Release, " +
+		"and the workspace holds 2 Releases."
+	if result.Reason != wantReason {
+		t.Errorf("reason:\n got: %q\nwant: %q", result.Reason, wantReason)
 	}
 	if result.Trace == "" {
 		t.Errorf("trace is empty; an unresolved answer must carry the per-step account")

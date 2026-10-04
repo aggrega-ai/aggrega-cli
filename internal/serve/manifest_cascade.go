@@ -42,6 +42,12 @@ type cascadeAttempt struct {
 	// attempted).
 	AuthoringReleaseConfigured bool
 
+	// AuthoringReleaseTarget is the value of Build.AuthoringRelease as the
+	// configuration holds it, before it is resolved against the workspace
+	// root, so an account of the attempt can name the file the way the person
+	// who configured it wrote it.
+	AuthoringReleaseTarget string
+
 	// AuthoringReleaseLoadError is non-nil when Step 1 was attempted
 	// but the named file failed to load.
 	AuthoringReleaseLoadError error
@@ -152,6 +158,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 	// Step 1: config field
 	if wsCfg.Build.AuthoringRelease != "" {
 		attempt.AuthoringReleaseConfigured = true
+		attempt.AuthoringReleaseTarget = wsCfg.Build.AuthoringRelease
 		path := resolveCascadePath(workspaceRoot, wsCfg.Build.AuthoringRelease)
 		rel, err := resolver.LoadRelease(path)
 		if err == nil {
@@ -356,51 +363,105 @@ func shouldExcludeDir(name, path, workspaceRoot string) bool {
 	return false
 }
 
-// diagnosticMessage returns a one-line description of what the
-// disambiguation cascade attempted. It is the reason the active-Release
-// query reports alongside an empty path, so a client can say why no
-// Release could be offered as the default rather than only that none was.
+// diagnosticMessage returns the reason the active-Release query reports
+// alongside an empty path: why the workspace names no default Release, in
+// sentences a person reads and acts on. A client shows it as it stands —
+// the editor puts it in the Release row's hover, after a sentence of its
+// own — so it is written as whole sentences on one line, each opening with
+// a capital and closing with a full stop.
 //
-// The returned string names every step that was attempted and what
-// was missing, so the operator's IDE can render a coherent
-// "this is why no Release was selected" message.
+// It says what was looked for in the terms the reader writes: the
+// build.authoring_release setting and the .aggrega/active-release marker,
+// then how many Releases the workspace holds. Where the setting and the
+// marker are both simply absent, which is the ordinary case, the two share
+// one sentence with the count, so the commonest answer reads as one
+// sentence rather than as a list; otherwise each has a sentence of its own,
+// in that order, and the count closes. Where one of them names a file, the
+// file is named as it was written; where a named file, or the workspace's
+// only Release, does not load, its load error follows, so the reader learns
+// which file to repair. The workspace's only Release being the very file
+// the setting or the marker already reported is said as that rather than
+// with the same error twice.
+//
+// The account of every attempt, step by step, is fullTrace's; this is its
+// short form and leaves the cascade's own vocabulary out.
 //
 // It hangs off the attempt log rather than off the daemon because the
 // attempt is what the cascade returns: the daemon keeps no Release and no
 // record of one, so there is no stored attempt for a method to read.
 //
-// Returns "release resolved" when ResolvedStep is non-zero — the
-// helper is intended for the cascade-exhausted case but stays
-// honest when called against a resolved attempt.
+// Returns the empty string when a Release resolved, as fullTrace does:
+// there is nothing to explain, and the answer omits the reason then.
 func (a cascadeAttempt) diagnosticMessage() string {
 	if a.ResolvedStep != 0 {
-		return fmt.Sprintf("release resolved at cascade step %d", a.ResolvedStep)
+		return ""
 	}
 
-	parts := []string{"release not resolved"}
+	count := a.releaseCountPhrase()
+	if !a.AuthoringReleaseConfigured && !a.MarkerFilePresent {
+		return "Neither the build.authoring_release setting nor an " + markerFilePath +
+			" marker names a default Release, and the workspace holds " + count + "."
+	}
 
-	// Step 1 description
+	sentences := make([]string, 0, 3)
 	switch {
 	case !a.AuthoringReleaseConfigured:
-		parts = append(parts, "no authoring_release configured")
+		sentences = append(sentences, "The build.authoring_release setting is not set.")
 	case a.AuthoringReleaseLoadError != nil:
-		parts = append(parts, fmt.Sprintf("authoring_release configured but failed to load (%v)", a.AuthoringReleaseLoadError))
+		sentences = append(sentences, fmt.Sprintf("The build.authoring_release setting names %q, which does not load: %s.",
+			a.AuthoringReleaseTarget, loadFailure(a.AuthoringReleaseLoadError)))
+	default:
+		sentences = append(sentences, fmt.Sprintf("The build.authoring_release setting names %q.", a.AuthoringReleaseTarget))
 	}
 
-	// Step 2 description
 	switch {
 	case !a.MarkerFilePresent:
-		parts = append(parts, "no .aggrega/active-release marker")
+		sentences = append(sentences, "There is no "+markerFilePath+" marker.")
 	case a.MarkerFileTarget == "":
-		parts = append(parts, ".aggrega/active-release marker is empty")
+		sentences = append(sentences, "The "+markerFilePath+" marker is empty, so it names no Release.")
 	case a.MarkerFileLoadError != nil:
-		parts = append(parts, fmt.Sprintf(".aggrega/active-release marker target %q failed to load (%v)", a.MarkerFileTarget, a.MarkerFileLoadError))
+		sentences = append(sentences, fmt.Sprintf("The %s marker names %q, which does not load: %s.",
+			markerFilePath, a.MarkerFileTarget, loadFailure(a.MarkerFileLoadError)))
+	default:
+		sentences = append(sentences, fmt.Sprintf("The %s marker names %q.", markerFilePath, a.MarkerFileTarget))
 	}
 
-	// Step 3 description
-	parts = append(parts, fmt.Sprintf("workspace contains %d Release file(s)", a.ReleaseCandidatesFound))
+	sentences = append(sentences, "The workspace holds "+count+".")
+	return strings.Join(sentences, " ")
+}
 
-	return strings.Join(parts, "; ")
+// releaseCountPhrase is how many Releases the workspace walk found, as the
+// object of "the workspace holds": "no Release", "one Release" or "N
+// Releases". The workspace's only Release that does not load carries its
+// load error, or, where it is the file the setting or the marker names and
+// that failure is already reported, says so instead.
+func (a cascadeAttempt) releaseCountPhrase() string {
+	switch a.ReleaseCandidatesFound {
+	case 0:
+		return "no Release"
+	case 1:
+		if a.SingleReleaseLoadError == nil {
+			return "one Release"
+		}
+		single := a.SingleReleaseCandidatePath
+		switch {
+		case single != "" && a.AuthoringReleaseLoadError != nil && single == a.AuthoringReleasePath:
+			return "one Release, the file the build.authoring_release setting names"
+		case single != "" && a.MarkerFileLoadError != nil && single == a.MarkerResolvedPath:
+			return "one Release, the file the " + markerFilePath + " marker names"
+		}
+		return "one Release, which does not load: " + loadFailure(a.SingleReleaseLoadError)
+	default:
+		return fmt.Sprintf("%d Releases", a.ReleaseCandidatesFound)
+	}
+}
+
+// loadFailure is a load error as it reads at the end of a sentence: its own
+// words on one line, less a closing full stop, so the sentence's own stop is
+// the only one. A decoder's error can run over several indented lines, and
+// the reason is a one-line summary; the error's own layout stays in the trace.
+func loadFailure(err error) string {
+	return strings.TrimSuffix(strings.Join(strings.Fields(err.Error()), " "), ".")
 }
 
 // fullTrace returns the multi-line trace of what each cascade step
