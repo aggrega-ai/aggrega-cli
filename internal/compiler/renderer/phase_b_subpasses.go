@@ -392,6 +392,15 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // carries no render input, so the render passes below emit nothing for it and
 // its pipeline's whole effect is what it patches or emits into the host.
 //
+// The attachment-scoped context is also where the connections made TO the host
+// appear, at .context.used_by, read from state.InboundEdges. They are carried on
+// the templates that produce the attachment's own resources — its valuesMapping,
+// its workload and its artifacts — and on none whose output can land in the host's
+// own: Phase A's injectMapping writes onto the host's delivery pipe, and a pipeline
+// step may rewrite the host's documents, so both read a context without them. That
+// is what keeps the host's rendered bytes independent of who connects to it while
+// an attached Feature that restricts or describes those connections can read them.
+//
 // A FeatureRecipe declaring spec.executionScope: boundary takes the
 // boundary-scope dispatch instead: dedup by (boundary_path, fr_instance),
 // evaluate against the boundary-scope TemplateContext (.boundary.* pillars in
@@ -521,6 +530,10 @@ func phaseB6(
 		}
 
 		frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
+		// The connections made to the host, on this attachment's copy only. The copy
+		// holds its own context block by value, so setting the field here leaves the
+		// host's context — the one its own Recipe rendered against — without it.
+		frCtx.Context.UsedBy = state.InboundEdges
 
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
@@ -725,6 +738,14 @@ func phaseB6(
 		// assembler — handled at the orchestrator, whose own render output IS
 		// assembled. So this branch defers only the host scope.
 		if len(fr.Spec.Pipeline) > 0 {
+			// The steps read this attachment's context without the connections made
+			// to the host. A step may rewrite the host's own documents, and one that
+			// could read who connects would make the host's rendered bytes depend on
+			// it — the one dependency the host's render is kept free of. The copy is
+			// taken after the render above, so the steps still see every pillar the
+			// render resolved.
+			pipelineCtx := frCtx
+			pipelineCtx.Context.UsedBy = nil
 			if hostIsAssembler {
 				// Record the FR's pipeline for post-assembly replay. The host
 				// node and provider are stamped here; the orchestrator adds the
@@ -736,7 +757,7 @@ func phaseB6(
 				// it before this render reaches here.
 				deferred = append(deferred, DeferredPatch{
 					Steps:             fr.Spec.Pipeline,
-					WithCtx:           &frCtx,
+					WithCtx:           &pipelineCtx,
 					RenderCtx:         renderCtx,
 					HostProvider:      hostProvider,
 					NodeID:            nodeID,
@@ -747,7 +768,7 @@ func phaseB6(
 				// own provider is the FR's own engine kind (version pin stripped —
 				// the codec keys on the kind); host provider is the host component's
 				// recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &pipelineCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, nil, perr
 				}
@@ -985,6 +1006,13 @@ func attachmentRenderSequence(
 // cannot diverge between families. Callers overwrite the remaining per-family
 // pillars (locals, and the delivery pipe where a family populates one) after
 // this returns.
+//
+// It leaves .context.used_by as the host's context holds it, which is empty.
+// Whether a surface sees the connections made to the host is decided by what that
+// surface's output can reach, not by the attachment family, so the caller sets
+// it: Phase B.6 does for the templates producing the attachment's own resources,
+// and Phase A's injectMapping, whose output lands on the host's delivery pipe,
+// never does.
 func attachmentFRContext(tmplCtx *types.TemplateContext, instanceName string, values, infra types.OrderedMap[any]) types.TemplateContext {
 	frCtx := *tmplCtx // shallow copy; callers overwrite the per-family pillars
 	frCtx.Values = values

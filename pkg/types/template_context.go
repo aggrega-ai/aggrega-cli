@@ -97,6 +97,50 @@ type ContextBlock struct {
 	Annotations  *AnnotationBuckets       `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 	Inject       InjectPipe               `json:"inject" yaml:"inject"`
 	Uses         OrderedMap[EnrichedEdge] `json:"uses" yaml:"uses"`
+
+	// UsedBy is the connections other nodes make TO this node — one entry per
+	// `uses` edge whose target this node is, in the order the graph records them:
+	// the order the connecting components are written, then the order of each
+	// one's own uses entries. It is the inverse of Uses and carries much less:
+	// who connects, through which socket, and what that caller publishes.
+	//
+	// It is populated only on the context a Feature attached to this node renders
+	// its own resources against, and is empty on the node's own context. That
+	// asymmetry is the point rather than a gap: the node's own render, and every
+	// surface whose output lands in it, stays a function of the node alone, so
+	// wiring a new caller to a component never changes that component's own
+	// rendered bytes. Only an attached Feature, which renders resources of its
+	// own, sees who connects.
+	//
+	// A slice rather than a keyed map, because a template ranges a map in key order
+	// and the order of the callers is the author's.
+	UsedBy []InboundEdge `json:"used_by,omitempty" yaml:"used_by,omitempty"`
+}
+
+// InboundEdge is one connection made TO a node, as an attached Feature's context
+// shows it: the node that connects, the socket it connects through, and what that
+// node publishes for others to read.
+//
+// ComponentID is the connecting node's flattened identity as the graph names it
+// ('frontend', 'data-layer.etl') — the value a path template reads as
+// .component_id and the spelling EnrichedEdge.Target uses for the other direction.
+// It is deliberately not named after the edge's source end: a template reads an
+// entry inside a range, where the dot is the entry, and a field sharing its name
+// with a root pillar of the render context reads, to every analysis that attributes
+// a dotted read to the pillar of that name, as a read of the pillar.
+//
+// Socket is the socket the connection fills on the connecting side. Provides is
+// the connecting node's resolved provides, narrowed to the keys its Component
+// declares, so it is exactly the bag a consumer of that node reads at
+// .context.uses.<alias>.provides: one projection of what one node may read of
+// another, whichever direction the edge is read from. All three are carried as
+// strings and never interpreted.
+//
+// Schema: template-context-v1alpha1.schema.json#/$defs/inbound_edge
+type InboundEdge struct {
+	ComponentID string             `json:"component_id" yaml:"component_id"`
+	Socket      string             `json:"socket" yaml:"socket"`
+	Provides    OrderedMap[string] `json:"provides" yaml:"provides"`
 }
 
 // AnnotationBuckets holds the three cascading annotation origins for a node.

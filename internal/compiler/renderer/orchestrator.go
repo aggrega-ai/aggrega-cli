@@ -1505,6 +1505,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state.WorkloadLibraries = input.WorkloadLibraries
 		state.ArtifactLibraries = input.ArtifactLibraries
 		state.AttachmentProvides = attachmentProvides
+		// The connections made to this node, for the Features attached to it and for
+		// nothing else: it goes onto the state and never onto tmplCtx, the context
+		// this node's own Recipe renders against. Every node's provides were
+		// evaluated above, before this walk began, so each connecting node's bag is
+		// complete here whatever order the nodes render in.
+		state.InboundEdges = AssembleInboundEdges(nodeID, graph, allProvides, declaredProvides)
 
 		// Phase B.0 — publishes the Pass-1 locals and evaluates
 		// source-as-template; populates ctx.Locals + ctx.Source. May replace

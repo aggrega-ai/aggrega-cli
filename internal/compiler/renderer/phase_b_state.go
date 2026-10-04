@@ -301,6 +301,15 @@ type PhaseBState struct {
 	// rendered Secret derive from one evaluation (no drift). nil when no
 	// credential attachment resolves a provides bag.
 	AttachmentProvides map[string]types.OrderedMap[string]
+
+	// InboundEdges is the connections other nodes make to this node, as
+	// AssembleInboundEdges projects them, assembled once by the orchestrator
+	// beside AttachmentProvides. Phase B.6 places it on the render context of each
+	// Feature attached to this node, and only there: it travels on the state
+	// rather than on the node's own context because the node's own context is
+	// what its Recipe renders against, and that render must not depend on who
+	// connects to it. nil when nothing connects to the node.
+	InboundEdges []types.InboundEdge
 }
 
 // capture writes one per-pass display snapshot for this node.

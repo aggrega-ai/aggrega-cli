@@ -22,6 +22,11 @@ import (
 // attachments in author order, and the immutable inject_raw record of what the
 // developer actually authored.
 //
+// It does not fill the connections other nodes make TO this one. Those reach only
+// the context a Feature attached to the node renders its own resources against
+// (see AssembleInboundEdges), so this context — and every byte rendered from it —
+// is the same however many nodes connect to the node.
+//
 // attachmentProvides is the node's attachment bag as ResolveAttachmentProvides
 // resolved it, keyed by attachment name. It is folded onto every projected
 // attachment here — the node's own under .features, and each one a connection

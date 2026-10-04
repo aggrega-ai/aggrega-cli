@@ -99,6 +99,59 @@ func AssembleEnrichedUses(
 	return result
 }
 
+// AssembleInboundEdges builds the connections other nodes make TO nodeID: one
+// entry per edge whose Target is nodeID, carrying the connecting node's identity,
+// the socket it connects through, and its published provides.
+//
+// It is the inverse of AssembleEnrichedUses and deliberately the narrower of the
+// two. An entry carries no per-connection values or infra, no inject mapping and no
+// attachments written on the connection: those belong to the consuming node's
+// context and are kept there, so a per-connection setting still reaches only the
+// node that authored it.
+//
+// The provides an entry carries are the connecting node's own bag narrowed to the
+// keys its Component declares — the same narrowToDeclared reading a consumer of that
+// node meets at .context.uses.<alias>.provides — so one node's view of another is
+// one projection whichever end of the edge it is read from. Every node's provides
+// are evaluated in one pass ahead of any node's render, which is what lets a
+// connecting node's bag be read while the node it connects to is still rendering.
+//
+// 🔴 The result belongs on the render context of a Feature attached to nodeID and
+// nowhere else. The node's own context must not carry it: that context is what the
+// node's own Recipe renders against, and a node whose rendered bytes depended on who
+// connects to it would change every time a consumer was wired to it.
+//
+// The order is the order the graph records the edges in, which is author order.
+// Nothing is sorted: a node connecting twice appears twice, once per connection, in
+// the order its connections were written. An edge whose source the graph does not
+// hold as a node is skipped, on the same terms AssembleEnrichedUses skips an edge
+// whose target it does not hold.
+func AssembleInboundEdges(
+	nodeID string,
+	graph *types.IRGraph,
+	allProvides NodeProvides,
+	declaredProvides NodeDeclaredProvides,
+) []types.InboundEdge {
+	if graph == nil {
+		return nil
+	}
+	var result []types.InboundEdge
+	for _, edge := range graph.Spec.Edges {
+		if edge.Target != nodeID {
+			continue
+		}
+		if _, ok := graph.Spec.Nodes.Get(edge.Source); !ok {
+			continue
+		}
+		result = append(result, types.InboundEdge{
+			ComponentID: edge.Source,
+			Socket:      edge.Socket,
+			Provides:    narrowToDeclared(allProvides[edge.Source], declaredProvides, edge.Source),
+		})
+	}
+	return result
+}
+
 // narrowToDeclared returns the target's produced provides bag restricted to the
 // keys its Component declares, in the producing Recipe's author order.
 //
