@@ -68,7 +68,7 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
 	dirs := rw.ResolveCatalogDirs("", nil)
-	cat, err := catalog.LoadAllWithCacheDir(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs...)
+	cat, err := catalog.LoadAllWithNamedDirs(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), rw.NamedCatalogDirs("", nil), dirs...)
 	if err != nil {
 		return Seam{}, fmt.Errorf("load catalog for import resolution: %w", err)
 	}

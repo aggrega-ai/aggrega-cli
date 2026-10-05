@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -52,10 +53,11 @@ import (
 // NamedDirs are the catalog directories of View's stack that somebody named — the
 // directory of a document named by path, a directory typed on the command line, a
 // directory the configuration lists — as opposed to the workspace's conventional
-// one. A lock beside an entity found beneath a named directory is held to the root
-// that directory picks ([writescope.RootFor]): the workspace root where it lies
-// inside the workspace, and the directory itself where it lies outside it. A lock
-// beside any other entity is held to WorkspaceRoot.
+// one where nobody named it; the same list View was built with. A lock beside an
+// entity found beneath a named directory is held to the root that directory picks
+// ([workspaceconfig.CatalogDirRoot]): the workspace root where it lies inside the
+// workspace, and the directory itself where it lies outside it. A lock beside any
+// other entity is held to WorkspaceRoot.
 type PlanInputs struct {
 	View            *catalog.LazyLookup
 	URIs            []string
@@ -280,8 +282,11 @@ func Compute(in PlanInputs) (Plan, error) {
 }
 
 // lockRoot returns the root the lock beside the entity document at path is held
-// to: the root the first of in.NamedDirs that path lies beneath picks, and the
-// workspace root where it lies beneath none of them.
+// to: the root the first of in.NamedDirs that path lies beneath picks, by the one
+// answer for a catalog directory (workspaceconfig.CatalogDirRoot, handed
+// in.NamedDirs as the named part of the stack) — the same root the lookup that
+// found the entity read it under — and the workspace root where it lies beneath
+// none of them.
 //
 // Which named directory a document lies beneath is a question of its spelling,
 // and rightly so: the catalog walk recorded path by joining the directory it
@@ -291,7 +296,7 @@ func Compute(in PlanInputs) (Plan, error) {
 func lockRoot(in PlanInputs, path string) string {
 	for _, dir := range in.NamedDirs {
 		if _, beneath := pathscope.Relative(dir, path); beneath {
-			return writescope.RootFor(in.WorkspaceRoot, dir)
+			return workspaceconfig.CatalogDirRoot(in.WorkspaceRoot, dir, in.NamedDirs)
 		}
 	}
 	return in.WorkspaceRoot

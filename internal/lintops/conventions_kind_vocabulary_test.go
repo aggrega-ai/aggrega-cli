@@ -57,7 +57,7 @@ func TestCatalogWalkAdmitsEveryConventionsLintedKind(t *testing.T) {
 		want[k] = p
 	}
 
-	files, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, "")
+	files, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, nil, "")
 	if err != nil {
 		t.Fatalf("walkCatalogEntityFiles: %v", err)
 	}

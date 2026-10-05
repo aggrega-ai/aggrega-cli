@@ -127,7 +127,7 @@ spec: {}
 	mustWriteFile(t, filepath.Join(ws, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n")
 	mustWriteFile(t, filepath.Join(ws, "values.yaml"), "replicaCount: 2\nimage:\n  tag: latest\n")
 
-	files, passedOver, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, "")
+	files, passedOver, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, nil, "")
 	if err != nil {
 		t.Fatalf("walkCatalogEntityFiles: %v", err)
 	}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -74,7 +73,7 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 		return emptyCatalogRefusal(perRelease)
 	}
 	if !perRelease {
-		return lintCatalogPass(ctx, rw, passes[0].Dirs, out, diagOut, collect)
+		return lintCatalogPass(ctx, rw, passes[0].Dirs, passes[0].Named, out, diagOut, collect)
 	}
 	for i, pass := range passes {
 		if i > 0 {
@@ -88,7 +87,7 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 		gathered := collect.forPass()
 		var passErr error
 		if len(pass.Dirs) > 0 {
-			passErr = lintCatalogPass(ctx, rw, pass.Dirs, out, diagOut, gathered)
+			passErr = lintCatalogPass(ctx, rw, pass.Dirs, pass.Named, out, diagOut, gathered)
 		}
 		collect.addPass(pass.Releases, pass.Dirs, gathered)
 		if passErr != nil {
@@ -113,9 +112,10 @@ func emptyCatalogRefusal(perRelease bool) error {
 
 // lintCatalogPass is one pass of the whole-catalog conventions check: every
 // catalog entity under dirs, linted against lookups over the same dirs, then the
-// summary and the kinds the walk passed over.
-func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
-	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, rw.Config().ResolvedArtifactCacheDir())
+// summary and the kinds the walk passed over. named is the part of dirs somebody
+// named, handed on to every walk of them.
+func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, out, diagOut io.Writer, collect *FindingCollector) error {
+	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, named, rw.Config().ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	// The release-scoped pass below is the lint path that does hold them to it, and
 	// it is the same path that reads the lockfile beside the Release, so both files
 	// are read from one place.
-	if err := lintConventionsFiles(ctx, rw, dirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+	if err := lintConventionsFiles(ctx, rw, dirs, named, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
 		return err
 	}
 	// This is the pass whose summary claims a corpus — "every catalog entity under
@@ -198,8 +198,9 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
+	named := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
 
-	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	var lockForClosure *lockfile.Lockfile
 	if lfErr == nil {
@@ -277,7 +278,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	// one Release's dependency closure, and the closure decides which files it
 	// reaches; naming the kinds the walk declined would suggest everything else in
 	// the walked tree was checked, when most of it was simply outside the closure.
-	files, _, err := walkCatalogEntityFiles(ctx, wsRoot, dirs, cacheDir)
+	files, _, err := walkCatalogEntityFiles(ctx, wsRoot, dirs, named, cacheDir)
 	if err != nil {
 		return err
 	}
@@ -286,7 +287,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	lintErr := lintConventionsFiles(ctx, rw, dirs, paths, trusted, out, diagOut, collect)
+	lintErr := lintConventionsFiles(ctx, rw, dirs, named, paths, trusted, out, diagOut, collect)
 
 	// A Manifest mapping the catalog contradicts is reported here rather than
 	// halting ahead of the pass, so the conventions report the author came for
@@ -335,7 +336,8 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // dirs are the catalog directories the caller walked to find paths, and the
 // plugin and Component lookups below read exactly those: a whole-catalog pass run
 // for several Releases that share a stack, and a Release's closure pass, are each
-// handed the one stack they read rather than re-deriving it here.
+// handed the one stack they read rather than re-deriving it here — and named, the
+// part of it somebody named, for the same reason.
 //
 // ctx is observed once per entity, at the top of the loop, which is the seam
 // that makes a stop reach the work: this loop is where both passes spend their
@@ -346,9 +348,9 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // summary line claims a corpus — "conventions checked: N entities" — and
 // printing it after a stop would report a partial walk in the words of a complete
 // one, which is the one thing a reader cannot recover from the output.
-func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
+func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
-	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))
 	if err != nil {
@@ -469,33 +471,25 @@ func isLintableCatalogKind(kind string) bool {
 // ctx ends the walk where the caller stops wanting it. The walk reads and parses
 // the YAML header of every file it meets, so over a real catalog it is work in
 // its own right and not merely a directory listing; the stop is returned from
-// the callback, which is how filepath.WalkDir is asked to abandon a traversal,
-// and it is the caller's own reason rather than fs.SkipAll — skipping the rest
-// would return a SHORT file list as though the walk had completed, which is a
-// partial answer wearing a complete one's shape.
-func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
+// the callback, which is how the walk is asked to abandon a traversal, and it is
+// the caller's own reason rather than fs.SkipAll — skipping the rest would
+// return a SHORT file list as though the walk had completed, which is a partial
+// answer wearing a complete one's shape.
+//
+// The walk is the catalog's own (catalog.WalkDocuments), so this check reads
+// exactly the documents a lookup over the same directories reads: every walk error
+// is passed over — a catalog directory that does not exist, or cannot be read,
+// adds no file — and so is a link leading out of the root a directory is held to,
+// which is not read. A compile over the same directories halts on such a link.
+// named is the part of dirs somebody named, handed to the walk unjudged.
+func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
 	var files []catalogEntityFile
 	passedOver := map[string]int{}
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		err := catalog.WalkDocuments(wsRoot, dir, cacheDir, named, func(path string) error {
 			if serr := stopped(ctx); serr != nil {
 				return serr
-			}
-			if err != nil {
-				// Every walk error is passed over and nothing reports it: a catalog
-				// directory that does not exist, or cannot be read, adds no file.
-				if os.IsNotExist(err) {
-					return nil
-				}
-				return nil
-			}
-			if d.IsDir() {
-				return catalog.SkipDirIfArtifactCache(wsRoot, path, cacheDir)
-			}
-			ext := filepath.Ext(path)
-			if ext != ".yaml" && ext != ".yml" {
-				return nil
 			}
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {

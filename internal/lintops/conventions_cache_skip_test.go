@@ -55,7 +55,7 @@ spec:
       size: { type: string, default: "10Gi" }
 `)
 
-	files, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, cacheDir)
+	files, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, nil, cacheDir)
 	if err != nil {
 		t.Fatalf("walkCatalogEntityFiles: %v", err)
 	}
@@ -73,7 +73,7 @@ spec:
 	}
 
 	// --- Non-vacuity canary: same tree, no cache directory configured. ---
-	canary, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, "")
+	canary, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, nil, "")
 	if err != nil {
 		t.Fatalf("canary walkCatalogEntityFiles: %v", err)
 	}

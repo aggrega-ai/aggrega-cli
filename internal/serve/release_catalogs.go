@@ -31,6 +31,11 @@ import (
 // list — every Release in a workspace that gives none its own directories and has
 // no conventional catalog directory the list omits — is answered from exactly the
 // lookup it was answered from before any Release had directories of its own.
+//
+// A stack is its directories together with the part of them somebody named,
+// because the conventional catalog directory is read differently when it is
+// named: two stacks spelling the same directories, one naming the conventional
+// directory and one carrying it unnamed, are two stacks with a lookup each.
 type releaseCatalogs struct {
 	mu      sync.Mutex
 	entries []releaseCatalogEntry
@@ -43,15 +48,15 @@ type releaseCatalogEntry struct {
 }
 
 // newReleaseCatalogs returns a set seeded with session, the lookup already built
-// over the workspace's own directory list.
-func newReleaseCatalogs(sessionDirs []string, session *catalog.LazyLookup) *releaseCatalogs {
-	return &releaseCatalogs{entries: []releaseCatalogEntry{{stack: catalogStackKey(sessionDirs), lookup: session}}}
+// over the workspace's own directory list and its named part.
+func newReleaseCatalogs(sessionDirs, sessionNamed []string, session *catalog.LazyLookup) *releaseCatalogs {
+	return &releaseCatalogs{entries: []releaseCatalogEntry{{stack: catalogStackKey(sessionDirs, sessionNamed), lookup: session}}}
 }
 
-// lookupFor returns the lookup over dirs, building it with build the first time
-// that stack is asked for.
-func (c *releaseCatalogs) lookupFor(dirs []string, build func() *catalog.LazyLookup) *catalog.LazyLookup {
-	key := catalogStackKey(dirs)
+// lookupFor returns the lookup over dirs, whose named part is named, building it
+// with build the first time that stack is asked for.
+func (c *releaseCatalogs) lookupFor(dirs, named []string, build func() *catalog.LazyLookup) *catalog.LazyLookup {
+	key := catalogStackKey(dirs, named)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, e := range c.entries {
@@ -74,12 +79,12 @@ func (c *releaseCatalogs) reset() {
 	}
 }
 
-// catalogStackKey spells a stack as one comparable string. The separator is a
-// byte no path carries, so two different stacks never spell the same key, and a
-// nil and an empty stack — both of which search no directory — spell the same
-// one.
-func catalogStackKey(dirs []string) string {
-	return strings.Join(dirs, "\x00")
+// catalogStackKey spells a stack — its directories and the part of them somebody
+// named — as one comparable string. The separators are bytes no path carries, so
+// two different stacks never spell the same key, and a nil and an empty list —
+// both of which name or search no directory — spell the same one.
+func catalogStackKey(dirs, named []string) string {
+	return strings.Join(dirs, "\x00") + "\x01" + strings.Join(named, "\x00")
 }
 
 // catalogFor returns the session catalog lookup a request naming releasePath is
@@ -99,9 +104,9 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	if s.resolvedWorkspace == nil || s.releaseCatalogs == nil {
 		return s.lazyCatalog
 	}
-	dirs := s.catalogDirsFor(releasePath)
-	return s.releaseCatalogs.lookupFor(dirs, func() *catalog.LazyLookup {
-		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil)
+	dirs, named := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath)
+	return s.releaseCatalogs.lookupFor(dirs, named, func() *catalog.LazyLookup {
+		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil, named...)
 	})
 }
 
@@ -157,6 +162,18 @@ func (s *Server) catalogDirsFor(releasePath string) []string {
 		return s.wsConfig.Workspace.CatalogDirs
 	}
 	return s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
+}
+
+// namedCatalogDirsFor returns the part of catalogDirsFor's stack somebody named,
+// asked of the resolver in the same terms, so every lookup and check built over
+// that stack reads the conventional catalog directory as the resolver says. A
+// Server holding no resolved workspace answers the list its configuration
+// carries, which is the whole of the stack it reads, every entry of it named.
+func (s *Server) namedCatalogDirsFor(releasePath string) []string {
+	if s.resolvedWorkspace == nil {
+		return s.wsConfig.Workspace.CatalogDirs
+	}
+	return s.resolvedWorkspace.NamedCatalogDirs(releasePath, nil)
 }
 
 // releaseTerms is what a request that may name a Release is answered within: the

@@ -79,19 +79,20 @@ type EntityResult struct {
 // naming the kinds it does accept and the scope that checks the refused kind
 // instead.
 //
-// The catalog directories are the already-resolved first-win search stack; the
+// The catalog directories are the already-resolved first-win search stack, and
+// named the part of it somebody named, as the resolver returned both; the
 // workspace root and cache directory are resolved likewise by the caller.
 //
 // ctx is the caller's own. The isolated-render tier drives the real compilation
 // pipeline twice, loading and running provider guests, so ending the caller's
 // run ends that work: a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns.
-func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return EntityResult{Path: path}, fmt.Errorf("read %q: %w", path, err)
 	}
-	return ValidateEntityContent(ctx, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
+	return ValidateEntityContent(ctx, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings)
 }
 
 // ValidateEntityContent runs the checks ValidateEntity runs, over data as the
@@ -107,7 +108,7 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string,
 // It is the one implementation of the single-entity check; ValidateEntity reads
 // the file and calls it, so a check of a saved file and a check of the same
 // bytes held unsaved cannot come to differ.
-func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
 	var res EntityResult
 	res.Path = path
 
@@ -144,13 +145,13 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs []
 	// rendering kinds.
 	switch kind {
 	case envelope.KindComponent:
-		return res, validateComponentEntity(&res, wsRoot, cacheDir, dirs, path, data)
+		return res, validateComponentEntity(&res, wsRoot, cacheDir, dirs, named, path, data)
 	case envelope.KindFeature:
-		return res, validateFeatureEntity(&res, wsRoot, cacheDir, dirs, path, data)
+		return res, validateFeatureEntity(&res, wsRoot, cacheDir, dirs, named, path, data)
 	case envelope.KindWorkload:
 		return res, validateWorkloadEntity(&res, path, data)
 	case envelope.KindRecipe:
-		return res, validateRecipeEntity(ctx, &res, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
+		return res, validateRecipeEntity(ctx, &res, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings)
 	case envelope.KindFeatureRecipe:
 		return res, validateFeatureRecipeEntity(&res, path, data)
 	case envelope.KindPlugin:
@@ -284,8 +285,8 @@ func joinKinds(kinds []string) string {
 // runs best-effort: a broken extends chain on an unrelated entity is surfaced
 // as the returned note and does not fail the load, while the target's own
 // merged shape still resolves.
-func loadResolvedCatalog(wsRoot, cacheDir string, dirs []string) (*catalog.Catalog, string, error) {
-	cat, _, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
+func loadResolvedCatalog(wsRoot, cacheDir string, dirs, named []string) (*catalog.Catalog, string, error) {
+	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return nil, "", fmt.Errorf("catalog load: %w", err)
 	}
@@ -306,12 +307,12 @@ func loadResolvedCatalog(wsRoot, cacheDir string, dirs []string) (*catalog.Catal
 // schema surface is substituted, so a parse of its own would judge the entity the
 // author asked about against a contract it had not read — the one entity where
 // that matters most, since it is the one they named.
-func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte) error {
+func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte) error {
 	comp, err := catalog.ParseComponentEntity(data, path)
 	if err != nil {
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs)
+	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}
@@ -334,12 +335,12 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []
 // validateFeatureEntity runs the Feature pillar check, loading the catalog for
 // the SchemaLibraries map exactly as the Component path does, and reading the
 // entity through the same shared per-entity resolve for the same reason.
-func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte) error {
+func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte) error {
 	feat, err := catalog.ParseFeatureEntity(data, path)
 	if err != nil {
 		return fmt.Errorf("parse Feature at %q: %w", path, err)
 	}
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs)
+	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}
@@ -464,14 +465,14 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Recipe's directory would meet no refusal at all. The render is handed that same
 // document, so a source written as a template is anchored against it once it has
 // a value.
-func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
+func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
 	rec, err := catalog.ParseRecipeEntity(data, path)
 	if err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Shape:  valid")
 
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs)
+	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}

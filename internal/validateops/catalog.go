@@ -42,10 +42,10 @@ type CatalogResult struct {
 // It halts at the first failing category and reports that category's full detail
 // in the result; the categories are checked in order (extends, oci-location,
 // input-kind). A catalog that cannot load at all is returned as an error. The
-// caller supplies the already-resolved workspace root, cache directory, and
-// catalog search directories.
-func ValidateCatalog(wsRoot, cacheDir string, dirs []string) (CatalogResult, error) {
-	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+// caller supplies the already-resolved workspace root, cache directory, catalog
+// search directories, and the part of them somebody named.
+func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResult, error) {
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return CatalogResult{}, err
 	}

@@ -97,7 +97,7 @@ func (s *server) loadWorkspaceCatalog() (*catalog.Catalog, *rpcError) {
 	if err != nil {
 		return nil, &rpcError{Code: codeInternalError, Message: "resolve workspace: " + err.Error()}
 	}
-	cat, _, err := catalog.LoadPassOneTolerant(tw.root, tw.cacheDir, tw.dirs...)
+	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(tw.root, tw.cacheDir, tw.named, tw.dirs...)
 	if err != nil {
 		return nil, &rpcError{Code: codeInternalError, Message: "load catalog: " + err.Error()}
 	}

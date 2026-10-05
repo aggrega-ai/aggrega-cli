@@ -111,7 +111,7 @@ func TestValidateRecipeDeclinesAPresenceMandateAndStillRefusesAMalformedOne(t *t
 			dir, recipe := writeMandatingCatalog(t, tc.annotations...)
 			root := filepath.Dir(dir)
 			res, err := ValidateEntity(context.Background(), root, filepath.Join(root, "cache"),
-				[]string{dir}, recipe, false)
+				[]string{dir}, nil, recipe, false)
 			report := strings.Join(res.Diagnostics, "\n")
 
 			if tc.wantFault == nil {

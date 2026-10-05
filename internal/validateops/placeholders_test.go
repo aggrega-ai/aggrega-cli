@@ -56,7 +56,7 @@ func validateDocument(t *testing.T, doc string) (EntityResult, error) {
 	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
 		t.Fatalf("write the document: %v", err)
 	}
-	return ValidateEntity(context.Background(), dir, filepath.Join(dir, "cache"), nil, path, false)
+	return ValidateEntity(context.Background(), dir, filepath.Join(dir, "cache"), nil, nil, path, false)
 }
 
 const (

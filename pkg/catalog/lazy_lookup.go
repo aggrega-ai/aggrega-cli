@@ -67,12 +67,20 @@ import (
 // use catalog.Load + (*Catalog).CatalogLookup, which loads every
 // entity upfront. The lazy primitive is for long-running consumers
 // where most catalog entities are never referenced.
-func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) *LazyLookup {
+//
+// named is the part of catalogDirs somebody named, exactly as
+// [workspaceconfig.ResolvedWorkspace.NamedCatalogDirs] returns it for the same
+// stack. It decides whether the workspace's conventional catalog directory is read
+// as a directory somebody named — followed where it leads, like any other — or as
+// the workspace's own tree, where a link leading out of the workspace is not read.
+// A caller passing none has the conventional directory read as the workspace's own.
+func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller, named ...string) *LazyLookup {
 	return &LazyLookup{
 		workspaceRoot:     workspaceRoot,
 		cacheDir:          cacheDir,
 		catalogDirs:       catalogDirs,
 		puller:            puller,
+		namedDirs:         named,
 		components:        map[string]types.Component{},
 		features:          map[string]types.Feature{},
 		schemaLibraries:   map[string]types.SchemaLibrary{},
@@ -134,7 +142,7 @@ func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
 	for k, v := range l.featureIndex {
 		featureIndex[k] = v
 	}
-	view := NewLazyLookup(l.workspaceRoot, l.cacheDir, l.catalogDirs, l.puller)
+	view := NewLazyLookup(l.workspaceRoot, l.cacheDir, l.catalogDirs, l.puller, l.namedDirs...)
 	view.componentIndex = componentIndex
 	view.componentIndexBuilt = true
 	view.featureIndex = featureIndex
@@ -306,8 +314,8 @@ func (l *LazyLookup) effectiveSchema(typeURI string) (compactform.Schema, bool) 
 // reset keeps its own copy unaffected.
 //
 // Reset does NOT touch the workspaceRoot / cacheDir / catalogDirs /
-// puller configuration — those came from NewLazyLookup and stay stable
-// across the session.
+// namedDirs / puller configuration — those came from NewLazyLookup and
+// stay stable across the session.
 //
 // Thread-safety: concurrency-safe via the lookup's internal mutex,
 // like every exported method; callers need no external lock.
@@ -340,6 +348,7 @@ func (l *LazyLookup) Reset() {
 	l.plugins = map[string]types.Plugin{}
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
+	l.linkFault = nil
 	l.recipeCat = nil
 	l.announced = map[string]struct{}{}
 	l.entityBytes = map[string][]byte{}
@@ -430,6 +439,13 @@ type LazyLookup struct {
 	catalogDirs   []string
 	puller        OCIPuller
 
+	// namedDirs is the part of catalogDirs somebody named, as NewLazyLookup was
+	// handed it, and handed on unjudged to every walk of a catalog directory: it is
+	// what reads the workspace's conventional directory as named or as the
+	// workspace's own. Like catalogDirs it is session-stable, so Reset keeps it and
+	// ForRequest carries it to the view.
+	namedDirs []string
+
 	// Hot cache populated by successful resolutions. Holds merged
 	// entities (extends chain already applied via validator
 	// primitives).
@@ -516,6 +532,13 @@ type LazyLookup struct {
 	// shadowed by an earlier catalog directory is never recorded here.
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
+
+	// linkFault is the halt for the first link leading out of a catalog
+	// directory's root that the recipe-shell walk met, in the stack's order and
+	// the walk's, or nil where it met none (see CheckLinks). It is a fact about
+	// the directories rather than about the pins, so SetPins keeps it; Reset
+	// clears it, because a changed workspace can hold a different set of links.
+	linkFault error
 
 	// announced holds every notice line this view has printed about a catalog file
 	// it did not place — refused, or shadowed by an earlier catalog directory — so
@@ -1387,20 +1410,13 @@ func (l *LazyLookup) buildFeatureIndex() {
 // broken file surfaces at full-unmarshal time when a specific URI is
 // requested, and a file too malformed for its header to be read is
 // recorded by the recipe-shell walk (buildRecipeIndex), which every
-// catalog file passes through.
+// catalog file passes through. A link leading out of a directory's root
+// is not read, so nothing behind it is indexed; the recipe-shell walk is
+// where it is recorded, and CheckLinks is how a compile halts on it.
 func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]indexedDocument) {
+	w := l.findWhatYouCan()
 	for _, dir := range l.catalogDirs {
-		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
-			}
-			ext := filepath.Ext(path)
-			if ext != ".yaml" && ext != ".yml" {
-				return nil
-			}
+		_ = w.walk(dir, func(path string) error {
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
 				return nil
@@ -1444,11 +1460,40 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]indexedDoc
 // directory walk would stall every resolution through it meanwhile.
 func (l *LazyLookup) CheckDirectories() error {
 	for _, dir := range l.catalogDirs {
-		if err := walkCatalogDir(l.workspaceRoot, dir, l.cacheDir, func(string) error { return nil }); err != nil {
+		if err := walkCatalogDir(l.workspaceRoot, dir, l.cacheDir, l.namedDirs, func(string) error { return nil }); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// CheckLinks returns the halt for the first link leading out of a catalog
+// directory's root that this lookup's walks met, or nil where they met none.
+//
+// Those walks find what they can, so a link leading out — to a document, or to a
+// directory that may hold some — is passed over unread, and nothing behind it is
+// indexed, listed or resolved. A listing may pass over it; a compile may not,
+// because the entity the link stands for might be the one a reference names, and
+// passing over it would let another entity of the same name resolve in its place.
+// So every surface that resolves a Release's closure through this lookup asks here
+// first and halts on the answer, which names the link and where it leads.
+//
+// It answers from the walk every catalog file passes through, running that walk
+// if no resolution has run it yet, so asking costs a walk only where nothing else
+// would have paid for one. Unlike CheckDirectories it passes over a directory the
+// walk cannot enter, which this lookup has always answered as holding nothing.
+func (l *LazyLookup) CheckLinks() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildRecipeIndex()
+	return l.linkFault
+}
+
+// findWhatYouCan is the walk the lookup's own indexes run: an entry it cannot
+// read, and a link leading out of a directory's root, are both passed over, so
+// the lookup holds what it can read and nothing it may not.
+func (l *LazyLookup) findWhatYouCan() catalogWalk {
+	return findingWhatItCan(l.workspaceRoot, l.cacheDir, l.namedDirs)
 }
 
 // buildSchemaLibraries walks the catalog directories once, parses + validates every
@@ -1475,18 +1520,9 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 	}
 	l.schemaLibrariesBuilt = true
 	var firstErr error
+	w := l.findWhatYouCan()
 	for _, dir := range l.catalogDirs {
-		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
-			}
-			ext := filepath.Ext(path)
-			if ext != ".yaml" && ext != ".yml" {
-				return nil
-			}
+		_ = w.walk(dir, func(path string) error {
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
 				return nil
@@ -1655,24 +1691,29 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // entity at all — records nothing. The record is written without a warning line,
 // because the whole-catalog load warns about none of these either: a refused file
 // is reported by the failure it explains, never on its own.
+//
+// A link leading out of a directory's root is the one thing this walk meets and
+// does not read: it is passed over, and the first one met is recorded as the halt
+// CheckLinks answers with.
 func (l *LazyLookup) buildRecipeIndex() {
 	if l.recipeIndexBuilt {
 		return
 	}
 	l.recipeIndexBuilt = true
 	l.shellClaims = map[string]int{}
+	// The links leading out of a directory's root are recorded here rather than by
+	// the two index walks, because every catalog file passes through this walk; the
+	// first one met, in the stack's order and the walk's, is the one CheckLinks
+	// halts a compile on.
+	w := l.findWhatYouCan()
+	w.leadsOut = func(err error) error {
+		if l.linkFault == nil {
+			l.linkFault = err
+		}
+		return nil
+	}
 	for position, dir := range l.catalogDirs {
-		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
-			}
-			ext := filepath.Ext(path)
-			if ext != ".yaml" && ext != ".yml" {
-				return nil
-			}
+		_ = w.walk(dir, func(path string) error {
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
 				return nil

@@ -199,6 +199,12 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // verdict on. Neither is a caller opt-in — every front end reads the same
 // Manifest, so a per-caller gate would leave the rest of them silent.
 //
+// The view's catalog directories are judged before the view is asked anything
+// else: a link leading out of the root one is held to halts the resolution at the
+// closure-walk stage, naming the link, before any name is resolved through the
+// catalog (catalog.LazyLookup.CheckLinks). The Release, its extends chain and its
+// Manifest are read first, because none of them is resolved through the view.
+//
 // On failure the returned *ClosureError names the failing stage and carries the
 // rendered detail; the *ResolvedClosure is nil. On success the error is nil and
 // the caller owes a verdict on ManifestConsistencyFindings.
@@ -252,7 +258,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	rel = folded
-	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest(in.WorkspaceRoot, releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveManifest,
@@ -260,7 +266,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			err:   err,
 		}
 	}
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes)
+	manifest, err := resolver.ResolveManifestExtends(in.WorkspaceRoot, releaseDir, manRes)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComposeManifest,
@@ -280,6 +286,19 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			Stage: ClosureStageManifestReferenceShape,
 			msg:   faults[0].Error(),
 			err:   faults[0],
+		}
+	}
+	// A link leading out of a catalog directory's root halts the resolution here,
+	// where the view is first asked anything, and so before any name is resolved
+	// through it. The view's walks pass such a link over unread, so a reference to
+	// the entity it stands for would otherwise resolve another of the same name, or
+	// report nothing behind a halt that names no link. Every use of the view below
+	// comes after this one, and none of the steps above has any use for it.
+	if err := in.View.CheckLinks(); err != nil {
+		return nil, &ClosureError{
+			Stage: ClosureStageComputeClosure,
+			msg:   err.Error(),
+			err:   err,
 		}
 	}
 	// Mapping-table consistency is judged here too, at the same pre-closure-walk
@@ -302,7 +321,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// Unlike the shape gate, this one produces findings rather than a failure. The
 	// verdict belongs to the caller — see ResolvedClosure.ManifestConsistencyFindings.
 	consistencyFindings := in.View.VerifyManifestImplementsConsistency(manifest, manRes.Path)
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
+	aggRes, err := resolver.ResolveAggregate(in.WorkspaceRoot, releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageLoadAggregate,

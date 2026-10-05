@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // ConventionalCatalogDir is the directory name, relative to the workspace root,
@@ -102,13 +103,68 @@ func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string
 // It is what tells a directory named for the workspace to reach — one typed on
 // the command line, or listed in the configuration, and possibly outside the
 // workspace — from the one the workspace carries by convention, which is part of
-// the workspace's own tree. A file the product composes beneath a named directory
-// is held to the root that directory picks; one composed beneath the conventional
-// directory is the workspace's. The stack itself is a single list, so the
-// distinction is drawn here, where the list is built.
+// the workspace's own tree. The conventional directory is in this list exactly
+// when somebody named it. The stack itself is a single list, so the distinction is
+// drawn here, where the list is built.
+//
+// What it returns is the only way that distinction travels: every reader of the
+// stack is handed it beside the stack, and hands it on to [CatalogDirRoot]
+// unjudged. A reader handed none treats the conventional directory as nobody's
+// naming, so a reader that was not handed it refuses a link there rather than
+// following it.
 func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) []string {
 	dirs, _ := r.namedCatalogDirs(release, flagDirs)
 	return dirs
+}
+
+// CatalogDirRoot returns the root everything read beneath the catalog directory
+// dir, and everything the product composes beneath it, is held to, given the
+// workspace at workspaceRoot and named, the directories of dir's search stack
+// somebody named ([ResolvedWorkspace.NamedCatalogDirs]).
+//
+// The conventional `catalog` directory at the workspace root, where nobody named
+// it, is the workspace's own tree, so it is held to the workspace root: the
+// directory being a link leading out of the workspace is a link inside the
+// workspace, and is refused rather than made a root of its own by where it leads.
+// Every directory somebody named — typed on the command line, or listed in the
+// configuration, the conventional one included — has the root [writescope.RootFor]
+// picks: the workspace root where the directory lies inside the workspace, and the
+// directory itself, followed where it was named, where it lies outside.
+//
+// named is read as it was handed over, never re-derived: whether a directory was
+// named is decided where the stack is built, and nowhere else. Where named is nil
+// the conventional directory is held to the workspace.
+//
+// It is the one answer for a catalog directory, asked by every walk of one and by
+// the pin step placing an entity.lock beneath one, so what a lookup reads beneath
+// a directory and what the pin step writes there are held to the same root.
+func CatalogDirRoot(workspaceRoot, dir string, named []string) string {
+	if workspaceRoot != "" && sameCleanPath(dir, filepath.Join(workspaceRoot, ConventionalCatalogDir)) &&
+		!namesDir(named, dir) {
+		return workspaceRoot
+	}
+	return writescope.RootFor(workspaceRoot, dir)
+}
+
+// namesDir reports whether named spells dir.
+func namesDir(named []string, dir string) bool {
+	for _, n := range named {
+		if sameCleanPath(n, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameCleanPath reports whether a and b spell one path once both are made
+// absolute and cleaned.
+func sameCleanPath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return absA == absB
 }
 
 // namedCatalogDirs builds the named part of the stack, a fresh list, and returns

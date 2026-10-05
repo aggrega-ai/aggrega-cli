@@ -601,7 +601,7 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		return err
 	}
 	dirs := rw.ResolveCatalogDirs(opts.release, catalogDirs)
-	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, rw.NamedCatalogDirs(opts.release, catalogDirs), dirs...)
 	if err != nil {
 		// A load that stopped on one document reports that document's refusal once:
 		// the document and the fault it carries, in the words every other surface
@@ -925,7 +925,8 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// Strict load over this Release's first-win stack (--catalog dirs prepended to
 	// the directories the workspace configuration gives it).
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
-	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+	named := rw.NamedCatalogDirs(releasePath, catalogDirs)
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -960,7 +961,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	//
 	// The view is built with no registry client, so this stays a local read: a slot
 	// the cache does not hold is a clean miss reported as such, never a fetch.
-	catalogLookup.PluginFromCache = catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil).PluginFromCacheByURI
+	catalogLookup.PluginFromCache = catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...).PluginFromCacheByURI
 	// One lookup over this Release's Manifest, read by the graph build for the
 	// Recipes and by the layout for the realization each attachment is bound to,
 	// so the layout names the FeatureRecipe a build of the same documents renders.

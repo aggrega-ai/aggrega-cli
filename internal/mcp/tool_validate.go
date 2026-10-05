@@ -382,7 +382,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	dirs := tw.dirs
+	dirs, named := tw.dirs, tw.named
 	releasePath := ""
 	if release != "" {
 		if releasePath, refusal = tw.workspacePath("validate", "release", release); refusal != "" {
@@ -394,10 +394,10 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		if _, refusal = tw.releaseReach("validate", releasePath); refusal != "" {
 			return errorResult(refusal)
 		}
-		dirs = tw.catalogDirsFor(releasePath)
+		dirs, named = tw.catalogDirsFor(releasePath), tw.namedCatalogDirsFor(releasePath)
 	}
 
-	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, entityPath, false)
+	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false)
 
 	var diags []string
 	if verr != nil {
@@ -487,7 +487,7 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	if len(passes) > 0 && passes[0].NamesReleases() {
 		return validateCatalogPasses(tw, passes)
 	}
-	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs)
+	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named)
 	if cerr != nil {
 		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component")))
 	}
@@ -527,7 +527,7 @@ func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPa
 		}
 		var diags, notices []string
 		if len(pass.Dirs) > 0 {
-			res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, pass.Dirs)
+			res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, pass.Dirs, pass.Named)
 			if cerr != nil {
 				diags = []string{"Catalog validation could not load the catalog: " + cerr.Error()}
 			} else {

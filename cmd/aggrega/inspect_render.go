@@ -221,7 +221,7 @@ func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []stri
 	// An implements target is looked up for an authored file, not for a Release,
 	// so the workspace's own stack is the one read.
 	dirs := rw.ResolveCatalogDirs("", catalogDirs)
-	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, rw.NamedCatalogDirs("", catalogDirs), dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("catalog load: %w", err)
 	}

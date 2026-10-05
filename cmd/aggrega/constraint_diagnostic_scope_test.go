@@ -114,7 +114,7 @@ func TestRefusedEntityNamedInEntityAndCatalogScopes(t *testing.T) {
 
 	t.Run("whole-catalog", func(t *testing.T) {
 		var diag, out bytes.Buffer
-		err := validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, &diag, &out)
+		err := validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, nil, &diag, &out)
 		if err == nil {
 			t.Fatal("the whole-catalog scope must refuse the document")
 		}

@@ -24,6 +24,11 @@ type CatalogPass struct {
 	// returns it. It is empty where nothing is read — an authored empty list, or
 	// no list and no conventional directory — so the pass has nothing to check.
 	Dirs []string
+
+	// Named is the part of Dirs somebody named, exactly as NamedCatalogDirs returns
+	// it for the same Release and flags, handed to whatever reads Dirs so the
+	// conventional directory is read as named or not where the stack was built.
+	Named []string
 }
 
 // NamesReleases reports whether the pass is run for named Releases, which is
@@ -52,14 +57,17 @@ func (p CatalogPass) NamesReleases() bool {
 // report every finding twice. A Release the configuration does not name reads
 // the workspace's own list, as it does everywhere else, so it shares a pass with
 // every other such Release. Where releases reports none, the single workspace
-// pass is the answer, because there is no Release to run a pass for.
+// pass is the answer, because there is no Release to run a pass for. Two stacks
+// spelling the same directories are one stack only where they also agree on which
+// of them somebody named: the conventional directory is read differently when it
+// is named, so a stack naming it and one carrying it unnamed are two passes.
 //
 // releases reports each Release file as a path relative to the workspace root,
 // or as an absolute path, and each pass names its Releases in that spelling.
 // Passes come in the order of the first Release each one names, so identical
 // input yields identical passes.
 func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDirs []string) []CatalogPass {
-	workspace := []CatalogPass{{Dirs: r.ResolveCatalogDirs("", flagDirs)}}
+	workspace := []CatalogPass{{Dirs: r.ResolveCatalogDirs("", flagDirs), Named: r.NamedCatalogDirs("", flagDirs)}}
 	if r.config.Workspace.Releases.Len() == 0 || releases == nil {
 		return workspace
 	}
@@ -69,13 +77,15 @@ func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDir
 		if !filepath.IsAbs(file) {
 			file = filepath.Join(r.root, file)
 		}
-		dirs := r.ResolveCatalogDirs(file, flagDirs)
-		shared := slices.IndexFunc(passes, func(p CatalogPass) bool { return slices.Equal(p.Dirs, dirs) })
+		dirs, named := r.ResolveCatalogDirs(file, flagDirs), r.NamedCatalogDirs(file, flagDirs)
+		shared := slices.IndexFunc(passes, func(p CatalogPass) bool {
+			return slices.Equal(p.Dirs, dirs) && slices.Equal(p.Named, named)
+		})
 		if shared >= 0 {
 			passes[shared].Releases = append(passes[shared].Releases, release)
 			continue
 		}
-		passes = append(passes, CatalogPass{Releases: []string{release}, Dirs: dirs})
+		passes = append(passes, CatalogPass{Releases: []string{release}, Dirs: dirs, Named: named})
 	}
 	if len(passes) == 0 {
 		return workspace

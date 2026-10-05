@@ -48,7 +48,7 @@ func draftThroughTheTool(t *testing.T, s *server, root, kind, name, file string,
 func validateThroughTheTool(t *testing.T, s *server, root, path string) (validateResultPayload, string) {
 	t.Helper()
 	tw := resolvedToolWorkspace(t, s, root, nil)
-	_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs,
+	_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
 		resolvedEntityPath(t, tw, path), false)
 	res := callTool(t, s, "validate", validateArgs{Entity: path, WorkspaceRoot: root})
 	payload := unmarshalValidatePayload(t, res)

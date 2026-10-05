@@ -229,7 +229,7 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// which for a non-Recipe entity on the --plugin path never comes.
 	// This pass names no Release, so it reads the workspace's own stack.
 	dirs := rw.ResolveCatalogDirs("", nil)
-	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
 
 	// Every configured linter URI is a Plugin entity URI; the entity-front derives
 	// each entity's artifact reference from its identity. The --plugin override

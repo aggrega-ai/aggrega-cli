@@ -264,7 +264,19 @@ func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 // `--catalog .` default regardless of whether workspaceRoot is set. cacheDir
 // "" disables the skip — the LoadAll / Load behavior, for callers with no cache.
 func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
-	c, err := loadAllPassOne(workspaceRoot, cacheDir, dirs...)
+	return LoadAllWithNamedDirs(workspaceRoot, cacheDir, nil, dirs...)
+}
+
+// LoadAllWithNamedDirs is LoadAllWithCacheDir for a search stack whose named part
+// the caller holds: named is the part of dirs somebody named, exactly as
+// [workspaceconfig.ResolvedWorkspace.NamedCatalogDirs] returns it for the same
+// stack. It decides one thing — whether the workspace's conventional catalog
+// directory is read as a directory somebody named, followed where it leads like
+// any other, or as the workspace's own tree, where a link leading out of the
+// workspace halts the load. LoadAllWithCacheDir is this with named nil, which
+// reads the conventional directory as the workspace's own.
+func LoadAllWithNamedDirs(workspaceRoot, cacheDir string, named []string, dirs ...string) (*Catalog, error) {
+	c, _, err := loadAllPassOneImpl(workspaceRoot, cacheDir, named, false, dirs...)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +411,7 @@ type ShadowedEntity struct {
 // closure-scoped build / pull paths where an out-of-closure broken entity must
 // not fail an unrelated Release.
 func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
-	c, _, err := loadAllPassOneImpl(workspaceRoot, cacheDir, false, dirs...)
+	c, _, err := loadAllPassOneImpl(workspaceRoot, cacheDir, nil, false, dirs...)
 	return c, err
 }
 
@@ -416,14 +428,21 @@ func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, e
 // The skip is per-file and post-`indexFile`: `indexFile` mutates the catalog
 // only after a successful parse, so a skipped file leaves no partial state.
 func LoadPassOneTolerant(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, []SkippedEntity, error) {
-	return loadAllPassOneImpl(workspaceRoot, cacheDir, true, dirs...)
+	return LoadPassOneTolerantWithNamedDirs(workspaceRoot, cacheDir, nil, dirs...)
+}
+
+// LoadPassOneTolerantWithNamedDirs is LoadPassOneTolerant for a search stack whose
+// named part the caller holds, on the terms LoadAllWithNamedDirs states: named is
+// the part of dirs somebody named, and LoadPassOneTolerant is this with named nil.
+func LoadPassOneTolerantWithNamedDirs(workspaceRoot, cacheDir string, named []string, dirs ...string) (*Catalog, []SkippedEntity, error) {
+	return loadAllPassOneImpl(workspaceRoot, cacheDir, named, true, dirs...)
 }
 
 // loadAllPassOneImpl is the shared indexing walk. When tolerant is false it is
 // fail-fast (the historical loadAllPassOne behavior, byte-identical); when true a
 // per-file read/parse/index failure is recorded and skipped. The returned skip
-// slice is nil in the fail-fast mode.
-func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...string) (*Catalog, []SkippedEntity, error) {
+// slice is nil in the fail-fast mode. named is the part of dirs somebody named.
+func loadAllPassOneImpl(workspaceRoot, cacheDir string, named []string, tolerant bool, dirs ...string) (*Catalog, []SkippedEntity, error) {
 	cacheClean := ""
 	if cacheDir != "" {
 		cacheClean = filepath.Clean(cacheDir)
@@ -443,7 +462,7 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...s
 	var skipped []SkippedEntity
 	for _, dir := range dirs {
 		perDir := newPassOneCatalog(workspaceRoot)
-		dirSkips, err := perDir.walkDirInto(dir, cacheClean, tolerant)
+		dirSkips, err := perDir.walkDirInto(dir, cacheClean, named, tolerant)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -480,14 +499,15 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 }
 
 // walkDirInto indexes one catalog directory into c. cacheClean (when non-empty)
-// is the workspace-relative cache path skipped during the walk. tolerant selects
+// is the workspace-relative cache path skipped during the walk, and named the part
+// of the stack somebody named, which decides the root dir is held to. tolerant selects
 // skip-and-record vs fail-fast for a per-file read/index failure — identical to
 // the historical single-walk behavior, now scoped to one directory so a
 // within-directory duplicate identity is caught here while a cross-directory
 // duplicate is left for the first-win merge.
-func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedEntity, error) {
+func (c *Catalog) walkDirInto(dir, cacheClean string, named []string, tolerant bool) ([]SkippedEntity, error) {
 	var skipped []SkippedEntity
-	if err := walkCatalogDir(c.workspaceRoot, dir, cacheClean, func(path string) error {
+	if err := walkCatalogDir(c.workspaceRoot, dir, cacheClean, named, func(path string) error {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if tolerant {
@@ -522,19 +542,20 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 // refuses without loading anything hands it one that reads nothing, so the two
 // meet a directory they cannot walk in the same walk and refuse it in the same
 // words.
-func walkCatalogDir(workspaceRoot, dir, cacheDir string, visit func(path string) error) error {
-	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
+//
+// A link leading out of the directory's root stops the walk too, with the halt
+// that names it rather than a refusal of the directory: nothing is read through
+// such a link, and a load that passed over it could resolve another entity of the
+// same name in its place. That halt is returned as it was raised, because it
+// already names the link and where it leads, which the directory's own frame
+// would only push down the chain. catalogWalk.walk says how each entry is judged,
+// given named, the part of the stack somebody named.
+func walkCatalogDir(workspaceRoot, dir, cacheDir string, named []string, visit func(path string) error) error {
+	w := catalogWalk{workspaceRoot: workspaceRoot, cacheDir: cacheDir, named: named, unreadable: stopOn, leadsOut: stopOn}
+	if err := w.walk(dir, visit); err != nil {
+		if leadsOutOfCatalog(err) {
 			return err
 		}
-		if d.IsDir() {
-			return SkipDirIfArtifactCache(workspaceRoot, path, cacheDir)
-		}
-		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
-			return nil
-		}
-		return visit(path)
-	}); err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 	}
 	return nil

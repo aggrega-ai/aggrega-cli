@@ -230,8 +230,9 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 		return err
 	}
 	dirs := rw.ResolveCatalogDirs(release, catalogFlagDirs)
+	named := rw.NamedCatalogDirs(release, catalogFlagDirs)
 
-	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
+	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}

@@ -280,7 +280,10 @@ type releaseWalk struct {
 // the walk leaves out is never met at all. And a link is recorded only where
 // resolving it succeeds: one that leads nowhere, or round a loop, has no directory
 // behind it to name, and nothing further is tried to find out where it was meant
-// to go.
+// to go. A link leading to a directory the workspace's configuration lists as a
+// catalog directory is not recorded either: the configuration has reached that
+// directory, and its entities are read through the catalog lookup, as every
+// configured catalog directory's are, rather than as workspace documents.
 //
 // A link standing where the walk would read a YAML file is judged by the file it
 // leads to, from the same one resolution. One leading to a file outside the root is
@@ -289,13 +292,15 @@ type releaseWalk struct {
 // is. The kind of that file is not known without reading it, so this holds for
 // every such link, whether or not a Release is what it leads to. The exception is a
 // file the workspace's configuration names as a Release, by build.authoring_release
-// or by a key of workspace.releases: the configuration has reached it, so it is
-// read and listed at the link's place, and not recorded. A link to a file inside
-// the root is read at the link's place, and its file is read where it actually
-// sits as well. A link that cannot be resolved, or that leads to anything but a
-// file, is not read as a file and not recorded among the files, and nothing
-// further is tried. What a followed link is read through is the file its one
-// resolution reported, so the bytes read are those of the file judged.
+// or by a key of workspace.releases, that declares one: the configuration has
+// reached it, so it is read and listed at the link's place, and not recorded. Both
+// exceptions are one judgement, configurationReaches, which the entity walk and the
+// requests naming a Release ask too. A link to a file inside the root is read at
+// the link's place, and its file is read where it actually sits as well. A link
+// that cannot be resolved, or that leads to anything but a file, is not read as a
+// file and not recorded among the files, and nothing further is tried. What a
+// followed link is read through is the file its one resolution reported, so the
+// bytes read are those of the file judged.
 func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWalk {
 	var out releaseWalk
 	scope := linkScope{root: workspaceRoot, cfg: wsCfg}
@@ -308,7 +313,7 @@ func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWal
 		if link {
 			scope.resolve()
 			linked = resolveLink(path, workspaceRoot)
-			if linked.dir && linked.outside && !shouldExcludeDir(d.Name(), path, workspaceRoot) {
+			if linked.dir && linked.outside && !shouldExcludeDir(d.Name(), path, workspaceRoot) && !scope.configurationReaches(linked) {
 				out.unreadLinkedDirs = scope.named(out.unreadLinkedDirs, path)
 			}
 		}
@@ -327,7 +332,7 @@ func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWal
 			if !linked.file {
 				return nil
 			}
-			if linked.outside && !scope.configurationNames(linked.target) {
+			if linked.outside && !scope.configurationReaches(linked) {
 				out.unreadLinkedFiles = scope.named(out.unreadLinkedFiles, path)
 				return nil
 			}
@@ -412,8 +417,9 @@ func resolveLink(path, root string) linkTarget {
 // release is the workspace's configuration where path names a Release, and nil
 // where it names anything else. A Release the configuration names — as
 // build.authoring_release, or as a key of workspace.releases, judged by the file
-// itself as the Release walk judges a link — is reached through the configuration
-// and is let through wherever it sits. Nothing else has such an exception.
+// itself as the Release walk judges a link, and declaring a Release — is reached
+// through the configuration and is let through wherever it sits. Nothing else a
+// request names has such an exception.
 func leadsOutOfWorkspace(root, path string, release *workspaceconfig.Config) bool {
 	scope := linkScope{root: root}
 	if release != nil {
@@ -423,7 +429,7 @@ func leadsOutOfWorkspace(root, path string, release *workspaceconfig.Config) boo
 }
 
 // leadsOut is leadsOutOfWorkspace measured against this scope, so a caller
-// judging several paths against one root works the configuration's Releases out
+// judging several paths against one root works the configuration's names out
 // once. release says whether path names a Release, which the scope's
 // configuration may let through.
 func (l *linkScope) leadsOut(path string, release bool) bool {
@@ -432,7 +438,7 @@ func (l *linkScope) leadsOut(path string, release bool) bool {
 	if !linked.outside {
 		return false
 	}
-	return !release || !l.configurationNames(linked.target)
+	return !release || !linked.file || !l.configurationReaches(linked)
 }
 
 // LeadsOutOfWorkspace reports whether the file or directory at path — absolute,
@@ -497,10 +503,10 @@ func DestinationLeadsOutOfWorkspace(root, path string) bool {
 // linkScope is what judging a link met by a workspace walk, or a path the daemon
 // is handed, is measured against: the workspace root — judged against by
 // pathscope.ResolvesInside, which resolves it the way it resolves the path — the
-// root made absolute, which is the coordinate a link is named in, and the Releases
-// the workspace's configuration names. The derived coordinates are worked out
-// once, the first time something is judged, so a walk meeting no link pays
-// nothing.
+// root made absolute, which is the coordinate a link is named in, and what the
+// workspace's configuration names outside it: its Releases and its catalog
+// directories. The derived coordinates are worked out once, the first time
+// something is judged, so a walk meeting no link pays nothing.
 type linkScope struct {
 	root string
 	cfg  workspaceconfig.Config
@@ -512,6 +518,10 @@ type linkScope struct {
 	// the active-Release cascade's first step resolves it and then with its
 	// links resolved; empty where the setting is not set.
 	authoringRelease string
+	// catalogDirs are the directories the configuration lists as catalog
+	// directories — the workspace's own, and those it gives a Release under
+	// workspace.releases — each with its links resolved.
+	catalogDirs []string
 }
 
 // resolve works out the scope's coordinates, once.
@@ -524,6 +534,13 @@ func (l *linkScope) resolve() {
 	if l.cfg.Build.AuthoringRelease != "" {
 		l.authoringRelease = resolvedPath(resolveCascadePath(l.root, l.cfg.Build.AuthoringRelease))
 	}
+	listed := append([]string{}, l.cfg.Workspace.CatalogDirs...)
+	for _, entry := range l.cfg.Workspace.Releases.All() {
+		listed = append(append(listed, entry.CatalogDirs...), entry.CatalogDirsAppend...)
+	}
+	for _, dir := range listed {
+		l.catalogDirs = append(l.catalogDirs, resolvedPath(dir))
+	}
 }
 
 // named appends to names the link at path, by its own place relative to the
@@ -535,21 +552,53 @@ func (l *linkScope) named(names []string, path string) []string {
 	return names
 }
 
-// configurationNames reports whether the workspace's configuration names the
-// file at target — an absolute path with its links resolved — as a Release: as
-// build.authoring_release, or as a key of workspace.releases.
+// configurationReaches reports whether the workspace's configuration reaches the
+// place a link leads out of the workspace to, and so whether what lies there is
+// read, or let through, wherever it sits: a file the configuration names as a
+// Release — as build.authoring_release, or as a key of workspace.releases — that
+// declares one, its kind read as every workspace-entity projection reads a
+// document's kind; or a directory the configuration lists as a catalog directory,
+// for the workspace or for a Release.
 //
-// Both sides are compared resolved, so a setting naming a link and one naming the
-// file it leads to name the same Release. build.authoring_release is resolved the
-// way the cascade's first step reads it; a workspace.releases key is already the
-// resolved path of the file it names, which is how the configuration holds it
-// once loaded, so it is looked up rather than resolved again.
-func (l *linkScope) configurationNames(target string) bool {
-	if l.authoringRelease != "" && l.authoringRelease == target {
-		return true
+// It is the one home of the configuration's exception to the workspace boundary,
+// for every walk of the workspace and every request naming a Release, so a Release
+// file and a catalog directory are judged alike: by the place the link leads,
+// compared resolved with what the configuration names, so a setting naming a link
+// and one naming the place it leads to name the same thing.
+// build.authoring_release is resolved the way the cascade's first step reads it; a
+// workspace.releases key is already the resolved path of the file it names, which
+// is how the configuration holds it once loaded, so it is looked up rather than
+// resolved again; a catalog directory is resolved once, by resolve.
+//
+// The configuration is asked first, and the file is opened only where it names
+// it. The settings that name a Release are a Release's, so a file named there that
+// declares anything else is not reached through them.
+func (l *linkScope) configurationReaches(linked linkTarget) bool {
+	l.resolve()
+	switch {
+	case linked.dir:
+		for _, dir := range l.catalogDirs {
+			if dir == linked.target {
+				return true
+			}
+		}
+		return false
+	case linked.file:
+		_, named := l.cfg.Workspace.Releases.Get(linked.target)
+		if !named && (l.authoringRelease == "" || l.authoringRelease != linked.target) {
+			return false
+		}
+		content, err := os.ReadFile(linked.target)
+		if err != nil {
+			return false
+		}
+		var doc yaml.Node
+		if yaml.Unmarshal(content, &doc) != nil {
+			return false
+		}
+		return scalarAtPathOnDoc(&doc, []string{"kind"}) == "Release"
 	}
-	_, named := l.cfg.Workspace.Releases.Get(target)
-	return named
+	return false
 }
 
 // resolvedPath is p made absolute with its links resolved, or made absolute and

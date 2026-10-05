@@ -286,7 +286,7 @@ var acceptanceObservers = map[string]acceptanceObserver{
 func observeSingleEntityValidation(t *testing.T, h *acceptanceHarness, entry entityKindDescriptor) bool {
 	t.Helper()
 	path := filepath.Join(h.root, filepath.FromSlash(h.documents[entry.DocumentKind]))
-	_, err := validateops.ValidateEntity(context.Background(), h.root, t.TempDir(), []string{h.catalogDir}, path, false)
+	_, err := validateops.ValidateEntity(context.Background(), h.root, t.TempDir(), []string{h.catalogDir}, nil, path, false)
 	var refused *validateops.UnacceptedKindError
 	switch {
 	case err == nil:

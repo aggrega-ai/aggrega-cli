@@ -5,12 +5,15 @@ package resolver
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -139,8 +142,10 @@ func IsRelativePathRef(ref string) bool { return isRelativePathRef(ref) }
 // (tier 2, via catLookup); the registry tier (tier 3) is not yet active. The
 // same-directory scan skips unrelated or unparseable files rather than failing
 // the build (see [scanReleaseDir]); a within-tier duplicate identity halts with
-// ErrDuplicateTriadIdentity.
-func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
+// ErrDuplicateTriadIdentity, and a link in the directory leading out of the root
+// it is held to halts with readscope.ErrReadLeadsOutOfWorkspace. workspaceRoot is
+// the workspace the Release is read in, which decides that root.
+func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
 		data, err := os.ReadFile(path)
@@ -153,7 +158,7 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registr
 		}
 		return ResolvedAggregate{Aggregate: agg, Path: path, Bytes: data}, nil
 	}
-	idx, err := scanReleaseDir(releaseDir)
+	idx, err := scanReleaseDir(workspaceRoot, releaseDir)
 	if err != nil {
 		return ResolvedAggregate{}, err
 	}
@@ -188,8 +193,9 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registr
 // ResolveManifest resolves a Release's spec.manifest reference to a Manifest. A
 // Manifest is operator configuration authored beside the Release: it is not
 // catalog-indexed and not publishable, so it has no catalog or registry tier —
-// only an explicit `./` / `../` file or the tolerant same-directory scan.
-func ResolveManifest(releaseDir, ref string) (ResolvedManifest, error) {
+// only an explicit `./` / `../` file or the tolerant same-directory scan, held to
+// the root workspaceRoot picks for releaseDir as [ResolveAggregate]'s is.
+func ResolveManifest(workspaceRoot, releaseDir, ref string) (ResolvedManifest, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
 		data, err := os.ReadFile(path)
@@ -202,7 +208,7 @@ func ResolveManifest(releaseDir, ref string) (ResolvedManifest, error) {
 		}
 		return ResolvedManifest{Manifest: man, Path: path, Bytes: data}, nil
 	}
-	idx, err := scanReleaseDir(releaseDir)
+	idx, err := scanReleaseDir(workspaceRoot, releaseDir)
 	if err != nil {
 		return ResolvedManifest{}, err
 	}
@@ -256,7 +262,18 @@ type triadEnvelope struct {
 // Each file is read once: the bytes parsed for the envelope are reused for the
 // full typed load (via the *FromBytes loaders) and retained on the indexed
 // result, so a resolved entity carries its bytes without a second read.
-func scanReleaseDir(releaseDir string) (*triadIndex, error) {
+//
+// A file the scan would read is held to the root workspaceRoot picks for the
+// directory (writescope.RootFor): the workspace root where the Release's directory
+// lies inside the workspace, and the directory itself where a Release typed on the
+// command line, or named by the configuration, lies outside it. A link among those
+// files leading out of that root is not read, and halts the scan with
+// readscope.ErrReadLeadsOutOfWorkspace naming it — the second loud failure, beside
+// the duplicate identity. Passing over it instead could let the catalog resolve
+// another entity of the name the link stands for, or hide a duplicate of one the
+// scan did index. A link leading inside is read where the scan meets it, as a file
+// is.
+func scanReleaseDir(workspaceRoot, releaseDir string) (*triadIndex, error) {
 	idx := &triadIndex{
 		aggregates: map[string]ResolvedAggregate{},
 		manifests:  map[string]ResolvedManifest{},
@@ -265,6 +282,7 @@ func scanReleaseDir(releaseDir string) (*triadIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan Release directory %q: %w", releaseDir, err)
 	}
+	root := writescope.RootFor(workspaceRoot, releaseDir)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -274,6 +292,11 @@ func scanReleaseDir(releaseDir string) (*triadIndex, error) {
 			continue
 		}
 		path := filepath.Join(releaseDir, base)
+		if e.Type()&fs.ModeSymlink != 0 {
+			if lerr := readscope.CheckRead(root, path); lerr != nil {
+				return nil, lerr
+			}
+		}
 		data, rerr := os.ReadFile(path)
 		if rerr != nil {
 			idx.skipped = append(idx.skipped, skippedFile{path: path, reason: rerr})

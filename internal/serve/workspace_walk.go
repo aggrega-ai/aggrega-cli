@@ -86,17 +86,24 @@ type unreadLinks struct {
 //   - A link to a directory outside the root is not searched, and is recorded,
 //     unless a directory there would be left out — by its name or by a
 //     .gitignore — in which case it is not, just as a directory there would not be
-//     read. A link to a directory inside the root needs nothing more, because
-//     that directory is walked, or left out, where it actually sits.
+//     read. A link to a directory the workspace's configuration lists as a catalog
+//     directory is not searched and not recorded: the configuration has reached it,
+//     and its entities are read through the catalog lookup. A link to a directory
+//     inside the root needs nothing more, because that directory is walked, or
+//     left out, where it actually sits.
 //   - A link named like a YAML file that leads to a file outside the root is not
 //     read, and is recorded, unless a file there would be left out by a
 //     .gitignore. The one exception is a Release the workspace's configuration
-//     names — see readsConfiguredRelease — which the configuration has reached:
-//     it is read at the link's place, through the file the link's resolution
-//     reported, and not recorded, as the Release walk reads it. Every other file
-//     outside the root, whatever it declares, is not read through a link; the
-//     configuration's catalog directories are how other entities outside the
-//     workspace are read.
+//     names, which the configuration has reached: it is read at the link's place,
+//     through the file the link's resolution reported, and not recorded, as the
+//     Release walk reads it. Every other file outside the root, whatever it
+//     declares, is not read through a link; the configuration's catalog
+//     directories are how other entities outside the workspace are read. Both
+//     exceptions are configurationReaches, the one judgement the Release walk and
+//     the requests naming a Release make of the configuration too.
+//   - A .gitignore is read only where it lies inside the root: one that is a link
+//     leading out is not read, and the walk applies no pattern from it, so a file
+//     outside the workspace cannot decide which of the workspace's files are read.
 //   - A link named like a YAML file that leads to a file inside the root is read
 //     at the link's place, through the file its resolution reported, so the bytes
 //     read are those of the file judged; that file is read where it actually sits
@@ -136,7 +143,7 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.C
 			scope.resolve()
 			linked = resolveLink(path, scope.root)
 			if linked.dir {
-				if linked.outside && !excludedDirName(name) && !w.matchesAny(path, true) {
+				if linked.outside && !excludedDirName(name) && !w.matchesAny(path, true) && !scope.configurationReaches(linked) {
 					unread.dirs = scope.named(unread.dirs, path)
 				}
 				return nil
@@ -153,7 +160,7 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.C
 			if !linked.file {
 				return nil
 			}
-			if linked.outside && !readsConfiguredRelease(&scope, linked.target) {
+			if linked.outside && !scope.configurationReaches(linked) {
 				unread.files = scope.named(unread.files, path)
 				return nil
 			}
@@ -162,33 +169,6 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.C
 		return visit(path, read)
 	})
 	return unread, err
-}
-
-// readsConfiguredRelease reports whether the entity walk reads the file at target —
-// a file a link leads to outside the workspace root, absolute with its links
-// resolved — all the same: the workspace's configuration names it as a Release,
-// by configurationNames, the one judgement the Release walk makes of the same
-// link, and the file declares a Release, its kind read as every workspace-entity
-// projection reads a document's kind.
-//
-// Both halves are asked, the configuration first. The configuration naming a file
-// is what reaches it, so a file it does not name is never opened to find out what
-// it declares; and the settings that name it are a Release's, so a file named
-// there that declares anything else is not one of the workspace's documents
-// either, and is recorded as any other file outside the root is.
-func readsConfiguredRelease(scope *linkScope, target string) bool {
-	if !scope.configurationNames(target) {
-		return false
-	}
-	content, err := os.ReadFile(target)
-	if err != nil {
-		return false
-	}
-	var doc yaml.Node
-	if yaml.Unmarshal(content, &doc) != nil {
-		return false
-	}
-	return scalarAtPathOnDoc(&doc, []string{"kind"}) == "Release"
 }
 
 // gitignoreWalker carries the per-directory matcher cache used during
@@ -304,11 +284,19 @@ func (w *gitignoreWalker) ancestorsToRoot(path string) []string {
 // domain and therefore applies tree-wide. Comment lines (`#`) and blank
 // lines are skipped, matching gitignore file conventions, by the one reading
 // of an ignore file's lines the entity walk reads too.
+//
+// A `.gitignore` is read only where it leads to a place inside the walker's root,
+// by pathscope.ResolvesInside, the one definition of inside: one that is a link
+// leading out is not read, and answers as no `.gitignore` there.
 func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	if cached, ok := w.cache[dir]; ok {
 		return cached
 	}
 	path := filepath.Join(dir, ".gitignore")
+	if _, inside := pathscope.ResolvesInside(w.root, path); !inside {
+		w.cache[dir] = nil
+		return nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		w.cache[dir] = nil

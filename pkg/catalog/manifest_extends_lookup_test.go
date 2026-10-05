@@ -58,11 +58,11 @@ spec:
         core/cache: redis-local
 `)
 
-	child, err := resolver.ResolveManifest(dir, "./local.yaml")
+	child, err := resolver.ResolveManifest("", dir, "./local.yaml")
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	composed, err := resolver.ResolveManifestExtends(dir, child)
+	composed, err := resolver.ResolveManifestExtends("", dir, child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}

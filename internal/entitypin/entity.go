@@ -184,10 +184,11 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	root := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// The document's own directory is the one directory the view reads, and it is a
-	// named one: the caller named the document, so its lock is held to the root that
-	// directory picks.
+	// named one: the caller named the document, so it is read, and its lock held, to
+	// the root that directory picks.
 	entityDir := filepath.Dir(abs)
-	view := catalog.NewLazyLookup(root, cacheDir, []string{entityDir}, nil)
+	named := []string{entityDir}
+	view := catalog.NewLazyLookup(root, cacheDir, named, nil, named...)
 
 	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
 	if header.Spec.Capability != "" {
@@ -206,7 +207,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 		CacheDir:        cacheDir,
 		ForWriting:      forWriting,
 		ServingProvider: WorkspaceServingProvider(rw),
-		NamedDirs:       []string{entityDir},
+		NamedDirs:       named,
 	})
 	if err != nil {
 		return Result{}, Plan{}, err
@@ -232,7 +233,8 @@ func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace) func(capabi
 		if view == nil {
 			// Pinning concerns one entity rather than a Release, so the
 			// workspace's own stack is the one read.
-			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs("", nil), nil)
+			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs("", nil), nil,
+				rw.NamedCatalogDirs("", nil)...)
 		}
 		return view.ServingProvider(capability, cfg.Plugins.ProviderTargetURIs())
 	}

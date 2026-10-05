@@ -137,7 +137,7 @@ var commandPlaceholderLine = regexp.MustCompile(`(?m)^\s+(\d+):\d+: (\S+) takes 
 // returns the refusal as well, so a caller can read the identifiers it carries.
 func commandPlaceholders(t *testing.T, root, path string) ([]owedEntry, []int, error) {
 	t.Helper()
-	_, err := validateops.ValidateEntity(context.Background(), root, t.TempDir(), nil, path, false)
+	_, err := validateops.ValidateEntity(context.Background(), root, t.TempDir(), nil, nil, path, false)
 	if err == nil {
 		return nil, nil, nil
 	}

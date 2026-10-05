@@ -115,7 +115,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs,
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
 			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr != nil {
 			t.Fatalf("core rejected the clean fixture: %v", coreErr)
@@ -135,7 +135,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs,
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
 			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a Release as a single-entity target")
@@ -244,7 +244,7 @@ func TestValidateToolCatalogScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs)
+		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named)
 		if coreErr != nil {
 			t.Fatalf("core could not load the clean catalog: %v", coreErr)
 		}
@@ -304,7 +304,7 @@ spec:
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs)
+		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named)
 		if coreErr != nil {
 			t.Fatalf("core could not load the fixture catalog: %v", coreErr)
 		}

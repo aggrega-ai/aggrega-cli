@@ -26,7 +26,7 @@ func TestResolveAggregate_ByFile_RelativePrefix(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: by-file-app\nspec:\n  components: {}\n")
-	r, err := ResolveAggregate(dir, "./aggregate.yaml", nil, nil)
+	r, err := ResolveAggregate("", dir, "./aggregate.yaml", nil, nil)
 	if err != nil {
 		t.Fatalf("by-file resolve: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestResolveAggregate_BareIdentity_SameDirScan(t *testing.T) {
 	dir := t.TempDir()
 	// filename deliberately != metadata.name (the old stem model would fail here).
 	writeTriadFile(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: scanned-app\nspec:\n  components: {}\n")
-	r, err := ResolveAggregate(dir, "scanned-app", nil, nil)
+	r, err := ResolveAggregate("", dir, "scanned-app", nil, nil)
 	if err != nil {
 		t.Fatalf("identity resolve: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestResolveManifest_BareIdentity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "manifest.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  version: \"1.0.0\"\n  name: scanned-manifest\nspec:\n  mappings:\n    components:\n      type: {}\n")
-	r, err := ResolveManifest(dir, "scanned-manifest")
+	r, err := ResolveManifest("", dir, "scanned-manifest")
 	if err != nil {
 		t.Fatalf("manifest resolve: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolveAggregate_SameDirWinsOverCatalog(t *testing.T) {
 		catConsulted = true
 		return ResolvedAggregate{Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "shared"}}}, true
 	}
-	r, err := ResolveAggregate(dir, "shared", catLookup, nil)
+	r, err := ResolveAggregate("", dir, "shared", catLookup, nil)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestResolveAggregate_CatalogTier(t *testing.T) {
 		}
 		return ResolvedAggregate{}, false
 	}
-	r, err := ResolveAggregate(dir, "cat-app", catLookup, nil)
+	r, err := ResolveAggregate("", dir, "cat-app", catLookup, nil)
 	if err != nil {
 		t.Fatalf("catalog-tier resolve: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestResolveAggregate_TolerantScan_StrayBrokenFileSkipped(t *testing.T) {
 	writeTriadFile(t, dir, "good.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: good-app\nspec:\n  components: {}\n")
 	writeTriadFile(t, dir, "broken.yaml", "this: is: not: valid: yaml: : :\n")                                                                                                               // envelope fails
 	writeTriadFile(t, dir, "unrelated.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c\n  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\n") // valid non-triad
-	r, err := ResolveAggregate(dir, "good-app", nil, nil)
+	r, err := ResolveAggregate("", dir, "good-app", nil, nil)
 	if err != nil {
 		t.Fatalf("a stray broken/unrelated file must not fail an unrelated resolve: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestResolveAggregate_Replay_NeededFileBroken_RecoveredName(t *testing.T) {
 	// Envelope parses (kind + metadata.name) but the full typed load fails: spec
 	// is a scalar where the Aggregate type expects a structured block.
 	writeTriadFile(t, dir, "broken.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: needed-app\nspec: \"not a spec block\"\n")
-	_, err := ResolveAggregate(dir, "needed-app", nil, nil)
+	_, err := ResolveAggregate("", dir, "needed-app", nil, nil)
 	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
@@ -177,7 +177,7 @@ func TestResolveAggregate_Replay_NeededAbsent_UnrecoverableName_Hedged(t *testin
 	t.Parallel()
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "broken.yaml", "}{ not yaml at all : : :\n") // envelope unrecoverable
-	_, err := ResolveAggregate(dir, "absent-app", nil, nil)
+	_, err := ResolveAggregate("", dir, "absent-app", nil, nil)
 	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
@@ -197,7 +197,7 @@ func TestResolveAggregate_DuplicateIdentityHalts(t *testing.T) {
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "a.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: dup\nspec:\n  components: {}\n")
 	writeTriadFile(t, dir, "b.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: dup\nspec:\n  components: {}\n")
-	_, err := ResolveAggregate(dir, "dup", nil, nil)
+	_, err := ResolveAggregate("", dir, "dup", nil, nil)
 	if !errors.Is(err, ErrDuplicateTriadIdentity()) {
 		t.Fatalf("err = %v; want ErrDuplicateTriadIdentity", err)
 	}
@@ -212,7 +212,7 @@ func TestResolveAggregate_PlainNotFound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: present\nspec:\n  components: {}\n")
-	_, err := ResolveAggregate(dir, "absent", nil, nil)
+	_, err := ResolveAggregate("", dir, "absent", nil, nil)
 	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
@@ -251,7 +251,7 @@ func TestResolveAggregate_MalformedPin(t *testing.T) {
 				registryAsked = true
 				return ResolvedAggregate{}, false, nil
 			}
-			r, err := ResolveAggregate(t.TempDir(), tc.ref, catLookup, registry)
+			r, err := ResolveAggregate("", t.TempDir(), tc.ref, catLookup, registry)
 			if tc.want == nil {
 				if err != nil || r.Aggregate == nil || r.Aggregate.Metadata.Name != "cat-app" {
 					t.Fatalf("control: %q must resolve through the catalog tier; got (%v, %v)", tc.ref, r.Aggregate, err)

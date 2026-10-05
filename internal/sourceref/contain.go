@@ -27,11 +27,16 @@ import (
 // moment the path is read: as the entity's document is parsed, which every
 // catalog read, pull, build and publication of it goes through, and at render
 // for a source written as a template, once the template has produced the path
-// it names. The verdict is lexical and is the one the containment predicate
-// gives: an interior climb that stays inside ("charts/../values.yaml") is
-// accepted, and a climb that leaves the directory is refused even where it names
-// the directory again by name on the way back, because that name is not part of
-// what travels.
+// it names. The verdict is given twice, and both must keep the path inside. The
+// first is lexical and is the one the containment predicate gives: an interior
+// climb that stays inside ("charts/../values.yaml") is accepted, and a climb that
+// leaves the directory is refused even where it names the directory again by name
+// on the way back, because that name is not part of what travels. The second is
+// on disk, and is the one definition of inside every reader of workspace content
+// is held to: a path spelled inside the directory that leads out of it through a
+// link at any part of it — a directory on the way as well as the file itself — is
+// refused too, naming the link and where it leads, because a publication would
+// otherwise carry the bytes the link points at under a name inside the entity.
 //
 // A path that names another entity rather than content the entity carries is not
 // judged here: a Release's references to its Aggregate, its Manifest and the
@@ -70,11 +75,13 @@ const contentRemediation = "remediation: move the file into the directory holdin
 //
 // It is the one statement of both halves of that rule — what such a path is
 // relative to, and that it may not leave it — for every surface that joins one:
-// a local source, and a file an `$import:` names. The containment verdict is the
-// containment predicate's own, reached rather than restated, so a path this
-// accepts is one that predicate calls inside and a path it refuses is one that
-// predicate calls outside. What this adds is the condition and the sentence the
-// refusal is reported in, which the predicate deliberately does not carry.
+// a local source, and a file an `$import:` names. The containment verdicts are
+// reached rather than restated: the lexical one is the containment predicate's
+// own, and the one on disk is pathscope.ResolvesInside, the one definition of
+// inside, judged against the document's directory, so a path a link on the way
+// carries out of that directory is refused at every component rather than only
+// at its last. What this adds is the condition and the sentence the refusal is
+// reported in, which neither verdict carries.
 //
 // On success the path comes back absolute, so it reads the same whatever
 // directory the build runs from. An empty path names nothing and comes back as
@@ -82,10 +89,11 @@ const contentRemediation = "remediation: move the file into the directory holdin
 // machine it was written on, rather than a place inside the entity.
 //
 // An empty documentPath has no directory of its own, and the path is judged
-// against the directory the process runs in. The verdict does not depend on
-// which directory that is — an absolute path and a climb out are refused, and
+// against the directory the process runs in. The lexical verdict does not depend
+// on which directory that is — an absolute path and a climb out are refused, and
 // anything else is accepted, whatever root is named — so such a caller is held
-// to the same rule as every other.
+// to the same rule as every other. The verdict on disk needs a directory the
+// entity's content sits in, so such a caller is not given one.
 //
 // The refusal is positioned at the declaring document. Callers wrap it with the
 // field it was read from, which the condition's own sentence cannot name.
@@ -96,6 +104,11 @@ func AnchorContent(documentPath, authored string) (string, error) {
 	joined, err := containInDocumentDirectory(documentPath, authored)
 	if err != nil {
 		return "", err
+	}
+	if documentPath != "" {
+		if res, inside := pathscope.ResolvesInside(filepath.Dir(documentPath), joined); !inside && res.Link != "" {
+			return "", contentLeadsOutOfEntityDirectory(documentPath, authored, res)
+		}
 	}
 	return filepath.Abs(joined)
 }
@@ -113,8 +126,34 @@ func containInDocumentDirectory(documentPath, authored string) (string, error) {
 // contentOutsideEntityDirectory composes the refusal: the registered sentence,
 // the path the author wrote, and the remediation.
 func contentOutsideEntityDirectory(documentPath, authored string) error {
+	return raiseContentOutside(documentPath, []string{fmt.Sprintf("%q", authored)}, contentRemediation)
+}
+
+// linkRemediation is what the refusal of a path a link carries out of the
+// entity's directory tells its reader: the link is the thing to replace, since
+// the path itself is spelled inside the directory already.
+const linkRemediation = "remediation: replace the link with a copy of what it leads to, placed inside the " +
+	"directory holding the entity. An entity's content lives in the entity's own directory because every file a " +
+	"publication of it carries is taken from there; a link leading out of it would carry the bytes it points at " +
+	"under a name inside the entity"
+
+// contentLeadsOutOfEntityDirectory composes the refusal of a path spelled inside
+// the entity's directory that leads out of it on disk: the registered sentence,
+// the path the author wrote, the link it meets on the way and where that link
+// leads, and the remediation for a link.
+func contentLeadsOutOfEntityDirectory(documentPath, authored string, res pathscope.Resolution) error {
+	values := []string{
+		fmt.Sprintf("%q", authored),
+		fmt.Sprintf("the link %s leads to %s", res.Link, res.LinkLeadsTo),
+	}
+	return raiseContentOutside(documentPath, values, linkRemediation)
+}
+
+// raiseContentOutside raises the condition at the declaring document, with the
+// values and the remediation the caller composed.
+func raiseContentOutside(documentPath string, values []string, remediation string) error {
 	condition := ErrContentOutsideEntityDirectory()
 	return cerrors.Raise(errContentOutsideEntityDirectory, cerrors.CatalogError,
 		cerrors.SourceLocation{File: documentPath},
-		cerrors.ComposeMessage(condition, []string{fmt.Sprintf("%q", authored)}, contentRemediation), nil)
+		cerrors.ComposeMessage(condition, values, remediation), nil)
 }

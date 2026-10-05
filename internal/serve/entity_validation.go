@@ -68,7 +68,7 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 		}}
 	}
 	res, err := validateops.ValidateEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
-		s.catalogDirsFor(releasePath), file, content, false)
+		s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath), file, content, false)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}

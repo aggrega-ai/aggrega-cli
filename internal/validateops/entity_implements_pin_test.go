@@ -58,7 +58,7 @@ spec:
 				t.Fatalf("write recipe: %v", err)
 			}
 			var res EntityResult
-			err := validateRecipeEntity(context.Background(), &res, t.TempDir(), t.TempDir(), []string{catDir}, recipePath, data, false)
+			err := validateRecipeEntity(context.Background(), &res, t.TempDir(), t.TempDir(), []string{catDir}, nil, recipePath, data, false)
 
 			malformed := errors.Is(err, types.ErrMalformedVersionPin())
 			notFound := err != nil && strings.Contains(err.Error(), "not found in catalog")

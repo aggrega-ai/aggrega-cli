@@ -118,7 +118,7 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	// inspected over the workspace's own stack; --catalog selects another for one
 	// invocation.
 	dirs := rw.ResolveCatalogDirs("", catalogDirs)
-	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, rw.NamedCatalogDirs("", catalogDirs), dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)
 	}

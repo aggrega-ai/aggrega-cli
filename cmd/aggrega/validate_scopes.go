@@ -66,7 +66,7 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 			nil, nil)
 	}
 	if !perRelease {
-		return validateCatalogWide(wsRoot, cacheDir, passes[0].Dirs, os.Stderr, os.Stdout)
+		return validateCatalogWide(wsRoot, cacheDir, passes[0].Dirs, passes[0].Named, os.Stderr, os.Stdout)
 	}
 	return validateCatalogPasses(wsRoot, cacheDir, passes, os.Stderr, os.Stdout)
 }
@@ -95,7 +95,7 @@ func validateCatalogPasses(wsRoot, cacheDir string, passes []workspaceconfig.Cat
 		if len(pass.Dirs) == 0 {
 			continue
 		}
-		if err := validateCatalogWide(wsRoot, cacheDir, pass.Dirs, diagOut, out); err != nil {
+		if err := validateCatalogWide(wsRoot, cacheDir, pass.Dirs, pass.Named, diagOut, out); err != nil {
 			fmt.Fprintf(diagOut, "  %s\n", cerrors.CauseChain(err))
 			failed = append(failed, pass.Releases...)
 		}
@@ -113,9 +113,10 @@ func validateCatalogPasses(wsRoot, cacheDir string, passes []workspaceconfig.Cat
 // Advisory and error diagnostics are written to diagOut (os.Stderr in
 // production); the final success summary is written to out (os.Stdout in
 // production). The count-summary phrasing is composed here at the render seam;
-// the core reports each failing category's full ordered detail.
-func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io.Writer) error {
-	res, err := validateops.ValidateCatalog(wsRoot, cacheDir, dirs)
+// the core reports each failing category's full ordered detail. named is the
+// part of dirs somebody named, as the resolver returned it.
+func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, diagOut, out io.Writer) error {
+	res, err := validateops.ValidateCatalog(wsRoot, cacheDir, dirs, named)
 	if err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
 	}
@@ -188,7 +189,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 
-	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if lfErr == nil {
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))

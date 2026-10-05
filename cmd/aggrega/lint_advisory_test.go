@@ -39,7 +39,7 @@ func TestLintCatalogWide_SurfacesOverlapAdvisory(t *testing.T) {
 	writeFixture(t, filepath.Join(dir, "overlap.yaml"), lintOverlapComponentYAML)
 
 	var buf bytes.Buffer
-	if err := validateCatalogWide("", "", []string{dir}, &buf, io.Discard); err != nil {
+	if err := validateCatalogWide("", "", []string{dir}, nil, &buf, io.Discard); err != nil {
 		t.Fatalf("overlap is advisory; lint must still pass (exit 0): %v", err)
 	}
 	out := buf.String()
@@ -68,7 +68,7 @@ spec:
 `)
 
 	var buf bytes.Buffer
-	if err := validateCatalogWide("", "", []string{dir}, &buf, io.Discard); err != nil {
+	if err := validateCatalogWide("", "", []string{dir}, nil, &buf, io.Discard); err != nil {
 		t.Fatalf("clean catalog must pass: %v", err)
 	}
 	if strings.Contains(buf.String(), "notice:") {
@@ -85,8 +85,8 @@ func TestLintCatalogWide_AdvisoryDeterministicOrder(t *testing.T) {
 	writeFixture(t, filepath.Join(dir, "a.yaml"), strings.Replace(lintOverlapComponentYAML, "core/overlap-srv", "core/aaa-srv", 1))
 
 	var buf1, buf2 bytes.Buffer
-	_ = validateCatalogWide("", "", []string{dir}, &buf1, io.Discard)
-	_ = validateCatalogWide("", "", []string{dir}, &buf2, io.Discard)
+	_ = validateCatalogWide("", "", []string{dir}, nil, &buf1, io.Discard)
+	_ = validateCatalogWide("", "", []string{dir}, nil, &buf2, io.Discard)
 	out1, out2 := buf1.String(), buf2.String()
 	if out1 != out2 {
 		t.Errorf("advisory output not deterministic across runs:\n--run1--\n%s\n--run2--\n%s", out1, out2)

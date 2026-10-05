@@ -31,7 +31,7 @@ import (
 //   - default / --resolved: the tabular text layout over the resolved Manifest.
 //
 // --flat is a no-op (the layout is already tabular).
-func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderManifestFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	// --raw is the as-authored bypass: emit the file verbatim, no extends
 	// resolution, regardless of output format.
 	if opts.mode == modeForcedRaw {
@@ -45,7 +45,11 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	// Resolve the extends chain through the shared build-path funnel so the
 	// inspector's composed mappings cannot drift from the compiler's.
 	child := resolver.ResolvedManifest{Manifest: m, Path: path, Bytes: data}
-	resolved, err := resolver.ResolveManifestExtends(filepath.Dir(path), child)
+	workspaceRoot := ""
+	if rw != nil {
+		workspaceRoot = rw.Root()
+	}
+	resolved, err := resolver.ResolveManifestExtends(workspaceRoot, filepath.Dir(path), child)
 	if err != nil {
 		return fmt.Errorf("resolve extends: %w", err)
 	}
@@ -62,7 +66,7 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	identifier := identifierVersion(resolved.Metadata.Name, resolved.Metadata.Version)
 	renderHeader(opts, "Manifest", identifier)
 
-	if chain := manifestExtendsChain(filepath.Dir(path), child); chain != "" {
+	if chain := manifestExtendsChain(workspaceRoot, filepath.Dir(path), child); chain != "" {
 		fmt.Fprintf(opts.out, "Extends: %s\n", chain)
 	}
 
@@ -102,11 +106,11 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 // decoration on a resolved Manifest, and every path that reaches it has already
 // composed the same chain, so a fault here has already been reported as the
 // command's own failure.
-func manifestExtendsChain(releaseDir string, child resolver.ResolvedManifest) string {
+func manifestExtendsChain(workspaceRoot, releaseDir string, child resolver.ResolvedManifest) string {
 	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return ""
 	}
-	chain, err := resolver.ManifestExtendsChain(releaseDir, child)
+	chain, err := resolver.ManifestExtendsChain(workspaceRoot, releaseDir, child)
 	if err != nil {
 		return ""
 	}

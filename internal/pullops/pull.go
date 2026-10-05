@@ -547,14 +547,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}
-	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest(rw.Root(), releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return Result{}, fmt.Errorf("load manifest: %w", err)
 	}
 	// Compose the Manifest's extends chain so the closure walk and recipe
 	// resolution see the inherited mappings rather than the child's own
 	// entries alone. A Manifest with no extends reference is unchanged.
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes)
+	manifest, err := resolver.ResolveManifestExtends(rw.Root(), releaseDir, manRes)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
 	}
@@ -574,8 +574,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// Effective first-win catalog search stack for this Release: the flag dirs
 	// prepended to the directories the workspace configuration gives it.
 	// Resolved here (not by the caller) so a direct invocation and a build's
-	// automatic fill derive the identical stack under the same config.
+	// automatic fill derive the identical stack under the same config. Its named
+	// part travels beside it to every reader of it, unjudged.
 	dirs := rw.ResolveCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs)
+	namedDirs := rw.NamedCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs)
 	puller := cfg.Puller
 	if puller == nil {
 		// The discovery step consults the local registry index so a version recorded
@@ -599,7 +601,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// puller, because this operation's job is to fetch and cache what no local tier
 	// holds.
 	report.phase(PhaseLoadCatalog)
-	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller)
+	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller, namedDirs...)
+	// A link leading out of a catalog directory's root halts the run before
+	// anything is resolved or pinned, as it halts a build: the view passes such a
+	// link over unread, and pinning around it could record another entity of the
+	// name it stands for.
+	if err := lazyView.CheckLinks(); err != nil {
+		return Result{}, err
+	}
 	// Verify the Manifest's mapping table is consistent before the closure walk,
 	// so the run halts on a mismatched mapping with the same Loud Guardrail the
 	// build does (lock/build parity).
@@ -629,7 +638,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: document, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
 	}
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), registryFetch)
+	aggRes, err := resolver.ResolveAggregate(workspaceRoot, releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), registryFetch)
 	if err != nil {
 		return Result{}, fmt.Errorf("load aggregate: %w", err)
 	}
@@ -1236,7 +1245,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
 				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun,
-				wsCfg.Plugins.ProviderTargetURIs(), rw.NamedCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs))
+				wsCfg.Plugins.ProviderTargetURIs(), namedDirs)
 			if err != nil {
 				return fmt.Errorf("pin sources: %w", err)
 			}

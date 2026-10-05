@@ -58,7 +58,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
 
-	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogDirs)...)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if lfErr == nil {
 		view.SetPins(catalog.PinsFromLockfile(lf))

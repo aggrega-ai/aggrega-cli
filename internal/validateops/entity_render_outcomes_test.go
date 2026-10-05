@@ -172,7 +172,7 @@ func TestValidateRecipeRenderOutcomes(t *testing.T) {
 			dir, recipe := writeProbeCatalog(t, probeRecipe(tc.image, tc.form))
 			root := filepath.Dir(dir)
 			res, err := ValidateEntity(context.Background(), root, filepath.Join(root, "cache"),
-				[]string{dir}, recipe, false)
+				[]string{dir}, nil, recipe, false)
 			report := strings.Join(res.Diagnostics, "\n")
 
 			switch {

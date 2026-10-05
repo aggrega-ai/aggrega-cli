@@ -451,8 +451,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// Effective first-win catalog search stack for this Release: the flag dirs
 	// prepended to the directories the workspace configuration gives it, with
 	// the workspace's conventional catalog directory appended last when it
-	// exists.
+	// exists. Its named part travels beside it to every reader of it, unjudged.
 	dirs := rw.ResolveCatalogDirs(releasePath, cfg.CatalogDirs)
+	namedDirs := rw.NamedCatalogDirs(releasePath, cfg.CatalogDirs)
 
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
 	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
@@ -462,7 +463,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// cross-document $ref pillars, so a reference to a not-yet-resolved remote
 	// library does not fail here.
 	report.phase(PhaseLoadCatalog)
-	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
+	cat, skipped, err := catalog.LoadPassOneTolerantWithNamedDirs(wsRoot, cacheDir, namedDirs, dirs...)
 	if err != nil {
 		return Result{}, fmt.Errorf("catalog load: %w", err)
 	}
@@ -592,7 +593,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// networks. SetPins threads the lockfile pins so a Tier-2 cache hit is
 		// verified-on-read and a miss is a loud halt rather than a silent skip —
 		// byte-identical from the lockfile.
-		lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+		lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, namedDirs...)
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 
 		// The preview computation itself — the gate sequence and the render — runs in

@@ -1387,7 +1387,11 @@ func (s *session) workspaceFor(root string) (*Server, error) {
 func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Server {
 	cfg := resolved.Config()
 	root := resolved.Root()
-	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil)
+	// The session lookup reads the workspace's own configured list, every entry of
+	// which the configuration names; its named part is asked of the resolver like
+	// every other stack's rather than assumed here.
+	sessionNamed := resolved.NamedCatalogDirs("", nil)
+	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil, sessionNamed...)
 	return &Server{
 		session:           s,
 		workspaceRoot:     root,
@@ -1398,7 +1402,7 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 		buildOnInspect:    resolveBuildOnInspect(s.buildOnInspectFlag, cfg.Serve.BuildOnInspect),
 		lintOnValidate:    cfg.Serve.LintOnValidate,
 		lazyCatalog:       sessionCatalog,
-		releaseCatalogs:   newReleaseCatalogs(cfg.Workspace.CatalogDirs, sessionCatalog),
+		releaseCatalogs:   newReleaseCatalogs(cfg.Workspace.CatalogDirs, sessionNamed, sessionCatalog),
 		parseCache:        newCache(cfg.ParseCache.MaxEntries, cfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		renderDiags:       map[string][]Diagnostic{},

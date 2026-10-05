@@ -394,7 +394,7 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 	// CLI plugins belong to the workspace rather than to a Release, so their
 	// entities are read from the workspace's own stack.
 	dirs := rw.ResolveCatalogDirs("", nil)
-	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
 	var pins map[string]string
 	for _, ref := range wsCfg.Plugins.CLI {
 		if ref.URI == "" || ref.Digest == "" {

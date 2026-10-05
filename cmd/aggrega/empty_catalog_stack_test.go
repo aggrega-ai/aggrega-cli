@@ -110,7 +110,7 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 				}
 				// With a stack to scan, the core is driven against buffers so the
 				// summary line does not reach the runner's own output.
-				return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, &diag, &out)
+				return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, rw.NamedCatalogDirs("", nil), &diag, &out)
 			},
 		},
 		{

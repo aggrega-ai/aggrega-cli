@@ -994,6 +994,14 @@ func (p *Plugin) sourceFileReadable(resolved, rel string) error {
 // The code belongs to a closed vocabulary a guest branches on, and most callers
 // asking the same question have no guest to answer, so the shared predicate
 // reports a bare refusal and this wrapper is where it acquires a code.
+//
+// The question is asked twice, and a selection must stay inside both times. The
+// first answer is lexical, about the selection as the guest spelled it. The second
+// is on disk, and is pathscope.ResolvesInside, the one definition of inside every
+// reader of workspace content is held to: a selection spelled inside the root that
+// leads out of it through a link at any part of it — a directory on the way, not
+// only the file named — is the same escape, refused with the same code and naming
+// the link and where it leads, so no byte from beyond the link reaches the guest.
 func (p *Plugin) resolveUnderSourceRoot(rel string) (string, string, error) {
 	// The guest spells the root itself as the empty string; pathscope refuses an
 	// empty relative path, so the meaning is normalised here, where it is held.
@@ -1004,6 +1012,10 @@ func (p *Plugin) resolveUnderSourceRoot(rel string) (string, string, error) {
 	joined, ok := pathscope.Resolve(p.sourceRoot, filepath.FromSlash(sel))
 	if !ok {
 		return "", abi.CodeSourceEscape, fmt.Errorf("selection %q escapes the source root", rel)
+	}
+	if res, inside := pathscope.ResolvesInside(p.sourceRoot, joined); !inside && res.Link != "" {
+		return "", abi.CodeSourceEscape, fmt.Errorf("selection %q escapes the source root: the link %s leads to %s",
+			rel, res.Link, res.LinkLeadsTo)
 	}
 	return joined, "", nil
 }

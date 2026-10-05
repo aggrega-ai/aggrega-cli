@@ -65,7 +65,7 @@ spec:
 	}
 
 	// ...but whole-catalog lint DOES catch it — proving the modes scope differently.
-	if err := validateCatalogWide("", "", []string{composeCatalog}, os.Stderr, os.Stdout); err == nil {
+	if err := validateCatalogWide("", "", []string{composeCatalog}, nil, os.Stderr, os.Stdout); err == nil {
 		t.Error("whole-catalog lint must catch the broken out-of-closure entity (closure-scoping difference unproven)")
 	}
 }

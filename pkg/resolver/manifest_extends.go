@@ -30,8 +30,10 @@ import (
 //
 // ResolveManifestExtends composes exactly this chain. A caller that needs to
 // report the chain rather than fold it reads it here, so no second walk can
-// disagree with the composition about what the chain is.
-func ManifestExtendsChain(releaseDir string, child ResolvedManifest) ([]ResolvedManifest, error) {
+// disagree with the composition about what the chain is. workspaceRoot is the
+// workspace the Release is read in, which [ResolveManifest] holds each
+// reference's same-directory scan to.
+func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManifest) ([]ResolvedManifest, error) {
 	if child.Manifest == nil {
 		return nil, nil
 	}
@@ -50,7 +52,7 @@ func ManifestExtendsChain(releaseDir string, child ResolvedManifest) ([]Resolved
 			Name:       func(m ResolvedManifest) string { return m.Manifest.Metadata.Name },
 			ParentLink: func(m ResolvedManifest) string { return m.Manifest.Spec.Extends },
 			Lookup: func(ref string) (ResolvedManifest, bool) {
-				parent, err := ResolveManifest(releaseDir, ref)
+				parent, err := ResolveManifest(workspaceRoot, releaseDir, ref)
 				if err != nil {
 					resolveFailure = err
 					return ResolvedManifest{}, false
@@ -87,12 +89,12 @@ func ManifestExtendsChain(releaseDir string, child ResolvedManifest) ([]Resolved
 // cannot be resolved, a chain that revisits a file already in the chain, and a
 // chain that exceeds the depth bound each halt with the failure the walk
 // reports.
-func ResolveManifestExtends(releaseDir string, child ResolvedManifest) (*types.Manifest, error) {
+func ResolveManifestExtends(workspaceRoot, releaseDir string, child ResolvedManifest) (*types.Manifest, error) {
 	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return child.Manifest, nil
 	}
 
-	chain, err := ManifestExtendsChain(releaseDir, child)
+	chain, err := ManifestExtendsChain(workspaceRoot, releaseDir, child)
 	if err != nil {
 		return nil, err
 	}

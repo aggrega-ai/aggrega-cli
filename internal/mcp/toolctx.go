@@ -349,6 +349,11 @@ type toolWorkspace struct {
 	// configuration gives its own directories is answered from them.
 	dirs []string
 
+	// named is the part of dirs somebody named, as the resolver returned it beside
+	// dirs, handed to every reader of dirs so the workspace's conventional catalog
+	// directory is read as named or not where the stack was built.
+	named []string
+
 	// flagDirs are the call's own catalog_dirs argument, kept so the stack for a
 	// Release is resolved from the same argument the workspace stack was.
 	flagDirs []string
@@ -398,6 +403,7 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
 		dirs:      rw.ResolveCatalogDirs("", catalogDirs),
+		named:     rw.NamedCatalogDirs("", catalogDirs),
 		flagDirs:  catalogDirs,
 		transport: s.transport,
 	}
@@ -413,6 +419,16 @@ func (tw *toolWorkspace) catalogDirsFor(release string) []string {
 		return tw.dirs
 	}
 	return tw.rw.ResolveCatalogDirs(release, tw.flagDirs)
+}
+
+// namedCatalogDirsFor returns the part of catalogDirsFor's stack for release
+// somebody named, asked of the resolver in the same terms. An empty release is
+// the workspace's own.
+func (tw *toolWorkspace) namedCatalogDirsFor(release string) []string {
+	if release == "" {
+		return tw.named
+	}
+	return tw.rw.NamedCatalogDirs(release, tw.flagDirs)
 }
 
 // releaseReach reports which workspace documents an answer given in the terms of
@@ -452,7 +468,7 @@ func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig
 // hermetic given a filled lockfile however the lockfile came to be filled, which
 // is the same posture the command-line build holds after its own fill.
 func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog.LazyLookup {
-	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.catalogDirsFor(release), nil)
+	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.catalogDirsFor(release), nil, tw.namedCatalogDirsFor(release)...)
 	if lf != nil {
 		v.SetPins(catalog.PinsFromLockfile(lf))
 	}
