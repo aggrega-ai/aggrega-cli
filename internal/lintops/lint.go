@@ -1079,6 +1079,11 @@ func reportFindings(findings []abi.Diagnostic, entityKind, entityPath string, di
 // name carries no code, and a finding carrying no rule identifier at all carries
 // neither — each absent token is omitted rather than stood in for.
 //
+// The colon after the identifiers closes them, so it is written only where at
+// least one was: a finding carrying neither reads as its severity and then its
+// message, and no row holds an empty segment between two colons for a reader to
+// wonder about.
+//
 // The code is the finding's own short code, which [FindingFrom] read off the
 // condition the rule names, so the row and the structured report print the
 // same code for a finding because they print the same field.
@@ -1094,7 +1099,10 @@ func advisoryLine(f Finding) string {
 		b.WriteString(" ")
 		b.WriteString(f.RuleID)
 	}
-	b.WriteString(": ")
+	if f.ShortCode != "" || f.RuleID != "" {
+		b.WriteString(":")
+	}
+	b.WriteString(" ")
 	b.WriteString(f.Message)
 	return b.String()
 }

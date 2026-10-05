@@ -194,6 +194,7 @@ func TestFindingFromCarriesTheShortCodeOfTheConditionItsRuleNames(t *testing.T) 
 
 			// The row the human report prints for the same finding carries the same
 			// code at its head, and none where the structured finding carries none.
+			// A head naming no identifier at all closes on the severity's own colon.
 			head := f.Severity + ":"
 			if want != "" {
 				head += " " + want
@@ -201,8 +202,11 @@ func TestFindingFromCarriesTheShortCodeOfTheConditionItsRuleNames(t *testing.T) 
 			if ruleID != "" {
 				head += " " + ruleID
 			}
-			if row := advisoryLine(f); !strings.HasPrefix(row, head+": ") {
-				t.Errorf("the human row %q does not open with %q", row, head+": ")
+			if want != "" || ruleID != "" {
+				head += ":"
+			}
+			if row := advisoryLine(f); !strings.HasPrefix(row, head+" ") {
+				t.Errorf("the human row %q does not open with %q", row, head+" ")
 			}
 		})
 	}
