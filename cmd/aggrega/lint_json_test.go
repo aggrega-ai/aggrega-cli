@@ -109,9 +109,10 @@ func TestLintJSONEmitsFindingFields(t *testing.T) {
 
 // advisoryRow reconstructs the human report's row for one non-halting finding:
 // the severity it carries, the short code of the condition naming its rule, the
-// rule's own identifier, and the rule's message. A colon closes the identifiers
-// where there is at least one; a finding carrying neither reads as its severity
-// and then its message.
+// finding's identity — the rule's own identifier, or the finding's own code where
+// it names no rule — and the rule's message. A colon closes the identifiers where
+// there is at least one; a finding carrying neither reads as its severity and
+// then its message.
 //
 // 🔴 This is a DELIBERATE near-duplicate of the row the operation renders, and
 // unifying the two would destroy the test: an independently written second
@@ -134,10 +135,14 @@ func advisoryRow(f lintops.Finding) string {
 	if short != "" {
 		row += " " + short
 	}
-	if f.RuleID != "" {
-		row += " " + f.RuleID
+	identity := f.RuleID
+	if identity == "" {
+		identity = f.Code
 	}
-	if short != "" || f.RuleID != "" {
+	if identity != "" {
+		row += " " + identity
+	}
+	if short != "" || identity != "" {
 		row += ":"
 	}
 	return row + " " + f.Message

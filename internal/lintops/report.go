@@ -50,7 +50,8 @@ type Finding struct {
 	// none. [FindingFrom] fills it through [ConditionForRule].
 	ShortCode string `json:"shortCode,omitempty"`
 	// Code is a stable machine-matchable code, independent of Message, when the
-	// producing rule assigns one.
+	// producing rule assigns one. A finding naming no rule is named by it; see
+	// [Finding.Identity].
 	Code string `json:"code,omitempty"`
 	// Classification is the version-impact verdict a finding carries when its
 	// rule assigns one.
@@ -58,6 +59,35 @@ type Finding struct {
 	// Suggest is a remediation hint, when the producing rule offers one.
 	Suggest  string           `json:"suggest,omitempty"`
 	Location *FindingLocation `json:"location,omitempty"`
+}
+
+// Identity returns the one identifier the finding is named by wherever it is
+// reported: the rule that produced it, or, for a finding that names no rule, the
+// code its producer assigned. It is empty for a finding carrying neither.
+//
+// The rule comes first because it is what the rule set names a finding by, and
+// a condition a rule names is registered under it; a code beside it stays
+// readable under its own key in the structured report. A finding naming no rule,
+// which a linter attached beside the declared rule set may raise under a code of
+// its own, is then identified most specifically by that code — a surface dropping
+// it would show a finding it cannot name.
+//
+// It is the one place that choice is made. The command line's row, the halting
+// diagnostic of a finding no condition names, and the language server's entry
+// all read it rather than reading the two fields themselves, so one finding
+// cannot be named one way in a terminal and another in an editor: two readings of
+// the fields would agree until one of them was edited, and nothing would fail
+// when they stopped agreeing.
+//
+// It decides the identity and nothing else. Which condition a finding names is
+// read off its rule alone, through [ConditionForRule], so a code a finding
+// carries without a rule never borrows a registered condition's short code —
+// even where it spells a declared rule's identity.
+func (f Finding) Identity() string {
+	if f.RuleID != "" {
+		return f.RuleID
+	}
+	return f.Code
 }
 
 // Report is the structured result of a lint operation: every finding the run

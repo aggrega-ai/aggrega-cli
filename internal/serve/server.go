@@ -469,12 +469,15 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // entries that report a condition — the refusal a render stopped on, a reference
 // declined for want of a pin — carry its registered code, as the semantic layer's
 // entries do. On the publishing-conventions layer it is the
-// identity of the rule that produced the finding, which is the same value the
-// structured output of `aggrega lint` carries for that finding, so one rule keeps
-// one identity across the two surfaces. A rule the compiler declares is
+// finding's identity — the rule that produced it, or, for a finding naming no
+// rule, the code its producer assigned — which is the identifier the command
+// line's row prints for that finding and the value the structured output of
+// `aggrega lint` carries for it, as ruleId or, naming no rule, as code, so one
+// finding keeps one identity across the surfaces. A rule the compiler declares is
 // registered as a condition under that identity, so for such a rule it is also
 // the value errors.CodeOf reports for the rule's condition; a rule from a
-// linter's own rule set names no registered condition.
+// linter's own rule set names no registered condition, and nor does a finding
+// naming no rule.
 //
 // The wire name is the one a machine-matchable code independent of the message
 // already carries on the other structured surfaces here — the publishing linter's
@@ -581,8 +584,9 @@ type Diagnostic struct {
 // does not exist.
 //
 // The codes that are NOT conditions are a class of render advisory and the
-// identity of a conventions rule no condition is registered under — a rule from
-// a linter's own rule set rather than one the compiler declares. Neither has a
+// identity of a conventions finding no condition is registered under — a rule
+// from a linter's own rule set rather than one the compiler declares, or the code
+// a linter assigned a finding that names no rule. Neither has a
 // short code, and neither is documented on the page the pointer resolves to — a
 // short code minted for them would be an identifier no lookup resolves, and a
 // pointer would resolve to a page that does not describe what the entry
@@ -664,7 +668,7 @@ func conditionCodesOf(err error) ConditionCodes {
 
 // classCode returns the identifiers for an entry whose code names a CLASS rather
 // than a registered condition: a render advisory's class, or the identity of a
-// publishing-conventions rule no condition is registered under. A conventions
+// publishing-conventions finding no condition is registered under. A conventions
 // rule the compiler declares names its condition and takes [conditionCodesOf]
 // instead, so that its entry quotes the short code the command line prints.
 //

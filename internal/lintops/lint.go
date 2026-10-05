@@ -1065,8 +1065,9 @@ func reportFindings(findings []abi.Diagnostic, entityKind, entityPath string, di
 }
 
 // advisoryLine renders one non-halting finding as a report row: the severity it
-// carries, the short code of the condition naming its rule, the rule's own
-// identifier, and the rule's message.
+// carries, the short code of the condition naming its rule, the finding's
+// identity — its rule, or the code its producer assigned where it names no
+// rule — and the rule's message.
 //
 // It opens with the severity rather than with brackets, and that is the whole
 // point of the shape. The bracketed head belongs to a halting diagnostic and
@@ -1074,20 +1075,25 @@ func reportFindings(findings []abi.Diagnostic, entityKind, entityPath string, di
 // on nothing, so it must not be able to be mistaken for one.
 //
 // Both identifiers are carried because the row is scanned rather than read: a
-// report lists many findings and a reader picks out the rule, while the code is
-// what they quote and look up. A finding whose rule this build does not know by
-// name carries no code, and a finding carrying no rule identifier at all carries
-// neither — each absent token is omitted rather than stood in for.
+// report lists many findings and a reader picks out the rule, while the short
+// code is what they quote and look up. A finding whose rule this build does not
+// know by name carries no short code; neither does a finding naming no rule,
+// which the row names by its own code instead; and a finding carrying neither a
+// rule nor a code of its own carries no identifier at all — each absent token is
+// omitted rather than stood in for.
 //
 // The colon after the identifiers closes them, so it is written only where at
 // least one was: a finding carrying neither reads as its severity and then its
 // message, and no row holds an empty segment between two colons for a reader to
 // wonder about.
 //
-// The code is the finding's own short code, which [FindingFrom] read off the
-// condition the rule names, so the row and the structured report print the
-// same code for a finding because they print the same field.
+// The short code is the finding's own, which [FindingFrom] read off the
+// condition the rule names, so the row and the structured report print the same
+// short code because they print the same field. The identity is
+// [Finding.Identity], which the language server's entry reads too, so the row and
+// the editor name a finding alike because they read the same function.
 func advisoryLine(f Finding) string {
+	identity := f.Identity()
 	var b strings.Builder
 	b.WriteString(f.Severity)
 	b.WriteString(":")
@@ -1095,11 +1101,11 @@ func advisoryLine(f Finding) string {
 		b.WriteString(" ")
 		b.WriteString(f.ShortCode)
 	}
-	if f.RuleID != "" {
+	if identity != "" {
 		b.WriteString(" ")
-		b.WriteString(f.RuleID)
+		b.WriteString(identity)
 	}
-	if f.ShortCode != "" || f.RuleID != "" {
+	if f.ShortCode != "" || identity != "" {
 		b.WriteString(":")
 	}
 	b.WriteString(" ")
@@ -1119,16 +1125,18 @@ func advisoryLine(f Finding) string {
 // A finding whose rule this build does not know by name names no condition, and
 // the occurrence says so rather than borrowing one: the linter socket runs
 // whatever guest the workspace attaches, and a guest of somebody else's reports
-// rules this build has never heard of. Such a finding leads with the rule's own
-// identifier, which is then the only thing identifying it.
+// rules this build has never heard of. Such a finding leads with its identity —
+// the rule's own identifier, or the code its producer assigned where it names no
+// rule, read through [Finding.Identity] as the advisory row reads it — which is
+// then the only thing identifying it.
 func raiseFinding(f Finding, entityKind string) error {
 	category, _ := cerrors.ClassifyEntityKind(entityKind)
 	source := findingSource(f)
 	condition, ok := ConditionForRule(f.RuleID)
 	if !ok {
 		message := f.Message
-		if f.RuleID != "" {
-			message = f.RuleID + ": " + f.Message
+		if identity := f.Identity(); identity != "" {
+			message = identity + ": " + f.Message
 		}
 		return cerrors.Unidentified(category, source, message, nil, nil)
 	}

@@ -436,10 +436,7 @@ func TestTheDaemonAndTheLintOperationAgreeOverARealRun(t *testing.T) {
 		}
 	}
 	for _, f := range report.Findings {
-		identity := f.RuleID
-		if identity == "" {
-			identity = f.Code
-		}
+		identity := f.Identity()
 		d, ok := published[identity+"\x00"+f.Message]
 		if !ok {
 			t.Errorf("the lint operation reported [%s] %s and the daemon's answer carries no such entry",

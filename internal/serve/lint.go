@@ -23,12 +23,14 @@ import (
 // introducing a second one, so a client reads one kind of entry however the
 // finding was produced, and Source is what says which question the entry answers.
 //
-// Code carries the identity of the rule that produced the finding. That is the
-// key's own contract on this wire — one key answering "what is this, in terms a
-// machine can match" — and on this layer the rule is that answer. A finding that
-// carries no rule identity but does carry a code of its own falls back to the
-// code, because the key is about what the finding is and not about who named it;
-// carrying both would be two keys for one question.
+// Code carries the finding's identity: the rule that produced it, or, for a
+// finding that carries no rule identity but does carry a code of its own, that
+// code. That is the key's own contract on this wire — one key answering "what is
+// this, in terms a machine can match" — and the code stands in for an absent rule
+// because the key is about what the finding is and not about who named it;
+// carrying both would be two keys for one question. The identity is read through
+// [lintops.Finding.Identity], which the command line's row reads too, so a
+// terminal and an editor name one finding by one identifier.
 //
 // The entry's other two identifier keys follow from the condition the rule
 // names, which [conventionCodes] decides; see ConditionCodes, where that division
@@ -89,17 +91,17 @@ func conventionDiagnostic(f lintops.Finding) Diagnostic {
 //
 // A rule no condition names — one a linter attached by the workspace reports
 // from a rule set of its own — keeps its identity as a class code and nothing
-// else, and so does a finding carrying no rule identity at all, which falls back
-// to the finding's own code. The command line prints no short code for either.
+// else, and so does a finding carrying no rule identity at all, which is named by
+// its own code. Both are the finding's identity as [lintops.Finding.Identity]
+// answers it, the identifier the command line's row prints in the same place,
+// and the command line prints no short code for either. A rule the compiler
+// declares needs no separate reading: its condition is registered under the
+// rule's identity, so the code [conditionCodesOf] reads off it is that identity.
 func conventionCodes(f lintops.Finding) ConditionCodes {
 	if condition, ok := lintops.ConditionForRule(f.RuleID); ok {
 		return conditionCodesOf(condition)
 	}
-	identity := f.RuleID
-	if identity == "" {
-		identity = f.Code
-	}
-	return classCode(identity)
+	return classCode(f.Identity())
 }
 
 // conventionDiagnosticsFor projects the findings attributed to one file,

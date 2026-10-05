@@ -17,7 +17,10 @@ import (
 // rule's own identity. Each one present follows the severity, in that order, and
 // a colon closes them; each one absent is omitted, and where both are absent the
 // closing colon goes with them, so the message follows the severity directly and
-// no row holds an empty segment between two colons.
+// no row holds an empty segment between two colons. A finding's own code stands
+// in the rule's place where it names no rule, which
+// [TestFindingIdentityIsTheRuleElseTheFindingsOwnCode] drives; every finding here
+// carries none, so the rule's place holds the rule or nothing.
 //
 // The expected rows are written out whole rather than assembled the way the
 // renderer assembles them, so a renderer that drifted into another shape fails
