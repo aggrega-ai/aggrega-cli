@@ -31,7 +31,7 @@ func TestPublishRenderDiagnostics_CarriesSensitivityNotConveyedAdvisory(t *testi
 
 	d := rendercore.SensitivityNotConveyedDiagnostic("sens-mapped", "values.dbPassword")
 	d.Location = &renderer.DiagnosticLocation{URI: "mapped", Kind: "helm"}
-	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil)
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil, nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)

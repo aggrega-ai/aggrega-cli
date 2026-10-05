@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: helm-refusal-boundary-mapped-note-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/helm-refusal-keyholder: helm-refusal-keyholder-recipe:1.0.0
+    features:
+      type:
+        feature.test/helm-refusal-boundary-credential: helm-refusal-boundary-mapped-note:1.0.0

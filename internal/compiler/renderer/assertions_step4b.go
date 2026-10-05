@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -73,7 +74,9 @@ func EvaluateComponentAndFeatureAssertions(
 					Features: base.Features,
 					Metadata: base.Metadata,
 				}
-				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx, declared.assertionKeys()); err != nil {
+				// The catalog this stage reads hands back an entity and not the file it
+				// was read from, so a Component's failing assertion names no document.
+				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx, declared.assertionKeys(), ""); err != nil {
 					return err
 				}
 			}
@@ -99,7 +102,7 @@ func EvaluateComponentAndFeatureAssertions(
 				Metadata: featureMetadata(base.Metadata, entry, instanceName),
 			}
 			if err := walkAssertions("Feature", entry.Type, nodeID, feat.Spec.Assertions, ctx,
-				attachmentAssertionKeys(declared, readers.feature(entry.Type))); err != nil {
+				attachmentAssertionKeys(declared, readers.feature(entry.Type)), ""); err != nil {
 				return err
 			}
 		}
@@ -122,21 +125,33 @@ func attachmentAssertionKeys(node nodeDeclaration, leaves resolver.SensitiveLeav
 // evaluates each named assertion. First failing assertion short-circuits.
 // The returned error wraps ErrAssertionFailed with the failing entity
 // kind, type, instance ID, and assertion name.
+//
+// document is the file the entity declaring these assertions was read from, or
+// empty where the caller holds none. Where it is known, a failure also states the
+// failing assertion's own key in that document, for a surface that places a
+// finding where its author edits it; the statement adds nothing to the text the
+// failure prints.
 func walkAssertions(
 	entityKind, entityType, instanceID string,
 	assertions types.OrderedMap[string],
 	ctx AssertionContext,
 	withheld redact.Keys,
+	document string,
 ) error {
 	for name, body := range assertions.All() {
 		qualified := fmt.Sprintf("%s/%s/%s/%s", entityKind, entityType, instanceID, name)
 		if err := EvaluateAssertion(qualified, body, ctx, withheld); err != nil {
-			return fmt.Errorf("%s %q instance %q assertion %q: %w",
-				entityKind, entityType, instanceID, name, err)
+			return cerrors.Locate(fmt.Errorf("%s %q instance %q assertion %q: %w",
+				entityKind, entityType, instanceID, name, err),
+				cerrors.SourceLocation{File: document, Locator: assertionsKey + "." + name})
 		}
 	}
 	return nil
 }
+
+// assertionsKey is the key an entity's assertions are authored under, in every
+// kind that declares them.
+const assertionsKey = ".spec.assertions"
 
 // featureMetadata extends the node-scope metadata with Feature-specific
 // identity (instance name + resolved version) for use in Feature assertion

@@ -90,9 +90,10 @@ func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.De
 // under a different code, at which point the two surfaces would silently
 // disagree about what the reader is looking at.
 //
-// It is the one entry on the build layer that names a REGISTERED condition, so it
-// carries the quotable code and the pointer as well — which is why the keys are
-// read through the condition-code constructor rather than the class one. The
+// It names a REGISTERED condition, as the refusal a render stopped on does, unlike
+// the advisories beside it on the build layer, so it carries the quotable code and
+// the pointer as well — which is why the keys are read through the condition-code
+// constructor rather than the class one. The
 // distinction is what underlies the entry and never which layer publishes it: an
 // advisory's class code has no condition behind it, and this one does.
 func externalInputDivergenceDiagnostics(declined []string, releasePath string) []Diagnostic {

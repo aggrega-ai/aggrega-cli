@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: helm-refusal-boundary-mapped
+  version: "1.0.0"
+  description: A boundary-scope values mapping writes the infra leaf the Feature declares sensitive into a chart value its values schema refuses.
+spec:
+  capability: helm
+  implements: feature.test/helm-refusal-boundary-credential
+  executionScope: boundary
+  source: ./chart
+  valuesMapping: |
+    auth:
+      password: "{{ .infra.origin }}"

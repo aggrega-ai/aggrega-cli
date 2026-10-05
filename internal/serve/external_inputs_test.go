@@ -99,7 +99,7 @@ func TestDivergenceAdvisoryReachesTheEditor(t *testing.T) {
 
 	s.publishRenderDiagnostics(ctx, file,
 		[]renderer.Diagnostic{{Severity: abi.SeverityWarn, Message: "a render advisory"}},
-		externalInputDivergenceDiagnostics([]string{url}, "app-release.yaml"), nil)
+		externalInputDivergenceDiagnostics([]string{url}, "app-release.yaml"), nil, nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)

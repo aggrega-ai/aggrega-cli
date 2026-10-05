@@ -1082,7 +1082,10 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		// the entries on screen belong to the request before this one, and leaving
 		// them standing would show a reader findings that this run could not confirm
 		// with nothing to say which is which.
-		s.publishPreviewAdvisories(ctx, preview)
+		//
+		// A refusal the run stopped on while rendering is one of those findings, and
+		// it travels in the same publication, on the document it points at.
+		s.publishPreviewAdvisories(ctx, preview, errEnvelope.renderRefusal())
 		return irGraphResult{}, errEnvelope
 	}
 
@@ -1110,7 +1113,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    second one, and that is load-bearing: the publication replaces the whole
 	//    layer, so a second call would erase whichever layer the first one wrote.
 	//    One call, one layer, every advisory class.
-	s.publishPreviewAdvisories(ctx, preview)
+	s.publishPreviewAdvisories(ctx, preview, nil)
 
 	// The graph comes off the finished payload: the refusal above returned, so the
 	// run this marshals from is one that ended.
@@ -1337,7 +1340,13 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 // layer: with no Aggregate path there is no file to attribute findings to, and
 // replacing the layer with nothing would clear entries an earlier request wrote
 // while having learned nothing about them.
-func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releasePreview) {
+//
+// refusal is the refusal the run stopped on while rendering, as the failure
+// envelope positioned it, or nil: the success path passes nil, and so does a
+// failure that is not one. It is the one thing the two paths publish
+// differently, and it is the envelope's own entry rather than a second
+// positioning of the same refusal.
+func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releasePreview, refusal *renderRefusalEntry) {
 	if preview == nil || preview.resolved == nil {
 		return
 	}
@@ -1348,7 +1357,7 @@ func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releaseP
 	advisories := preview.pipeline.Advisories()
 	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, advisories,
 		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath),
-		preview.resolved.AggBytes)
+		preview.resolved.AggBytes, refusal)
 }
 
 // MarkupContent matches the LSP shape for hover content.

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-refusal-holder-app
+  version: "1.0.0"
+spec:
+  # One component that renders cleanly and attaches nothing, so the only render that
+  # can refuse is the boundary's own feature.
+  components:
+    holder:
+      type: core/helm-refusal-keyholder

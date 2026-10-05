@@ -12,12 +12,15 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // buildArgs is the build tool's argument shape.
@@ -146,10 +149,18 @@ type buildResultPayload struct {
 	// They are reported for the same reason the deprecation notices are: a caller
 	// with no terminal has no other way to receive them, and a finding nobody is
 	// told about is a finding that was not made. None of them is ever the reason a
-	// build refused — what refused travels in the guidance text instead — and a
-	// refusal carries whichever of them the run had raised before it stopped, for
-	// the reason given on this type.
+	// build refused — what refused travels in the guidance text, and in Refusal
+	// where the render itself refused — and a refusal carries whichever of them the
+	// run had raised before it stopped, for the reason given on this type.
 	Advisories []buildAdvisory `json:"advisories,omitempty"`
+
+	// Refusal is what the render refused on, as one entry a caller reads field by
+	// field: the document it points at, the key there, the position of that key,
+	// the condition's identifiers and the refusal in the compiler's words. It is
+	// present on a build that refused while rendering and absent on every other
+	// answer — a build that succeeded, and one refused by an earlier gate, whose
+	// refusal is the guidance text's alone.
+	Refusal *buildRefusal `json:"refusal,omitempty"`
 
 	// DependencyResolution is what this build's own fill step resolved, in the
 	// shape the pull tool answers with, and it is absent on a build that did not
@@ -180,6 +191,67 @@ type buildAdvisory struct {
 	Message  string `json:"message"`
 	Code     string `json:"code,omitempty"`
 	KeyPath  string `json:"key_path,omitempty"`
+}
+
+// buildRefusal is the refusal a render stopped on, as the build tool reports it.
+//
+// Its fields reuse the names this tool family already gives the same facts about
+// a finding, so a caller that reads one finding reads this one: severity,
+// message, code and key_path as a build advisory carries them, short_code as the
+// explain-error tool names a condition's compact code, file and file_withheld as
+// every answer here tells a place on the server's host, and line and column as a
+// lint finding locates itself.
+//
+// File is the document the refusal points at — the document its own chain names,
+// or the Aggregate where it names none — and KeyPath the key there, when the
+// refusal named one. Line and Column are that key's position, counted from one
+// with the column in the UTF-16 units a session takes when a client negotiates
+// none, and are absent where the refusal named no key or the key was not found in
+// the document: a reader is told a position or none, never a guessed one.
+// Severity is the halting severity, because this is the finding that stopped the
+// build. Message is the refusal with every cause beneath it, exactly as the
+// compiler raised it, so whatever was withheld from it where it was raised stays
+// withheld here.
+type buildRefusal struct {
+	File         *string `json:"file"`
+	FileWithheld bool    `json:"file_withheld,omitempty"`
+	KeyPath      string  `json:"key_path,omitempty"`
+	Line         int     `json:"line,omitempty"`
+	Column       int     `json:"column,omitempty"`
+	Severity     string  `json:"severity"`
+	Code         string  `json:"code,omitempty"`
+	ShortCode    string  `json:"short_code,omitempty"`
+	Message      string  `json:"message"`
+}
+
+// buildRefusalOf maps the refusal a render stopped on onto the tool's wire shape,
+// telling its file and the places its message names the way the rest of this
+// answer tells them.
+//
+// The document and key come from the shared preview, which reads them off the
+// refusal's own chain for every surface that positions it, so this tool and the
+// language server name one place for one refusal. The key is resolved to a
+// position by the one walk every positioned surface resolves a key through.
+func (tw *toolWorkspace) buildRefusalOf(refusal compilerops.RenderRefusal) *buildRefusal {
+	entry := &buildRefusal{
+		KeyPath:  refusal.KeyPath,
+		Severity: abi.SeverityHalt,
+		Message:  tw.reportedText(refusal.Message),
+	}
+	entry.File, entry.FileWithheld = tw.reportedLocationField(refusal.Document)
+	entry.Code, _ = cerrors.CodeOf(refusal.Err)
+	entry.ShortCode, _ = cerrors.ShortCodeOf(refusal.Err)
+	if refusal.KeyPath == "" || len(refusal.Content) == 0 {
+		return entry
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(refusal.Content, &doc); err != nil {
+		return entry
+	}
+	if span, ok := yamlpos.FieldRange(&doc, yamlpos.BuildLineIndex(refusal.Content), refusal.KeyPath); ok {
+		entry.Line, entry.Column = span.Line, span.Column
+	}
+	return entry
 }
 
 // buildAdvisories maps the advisories a run raised onto the tool's wire shape,
@@ -255,7 +327,9 @@ var buildToolSpec = toolSpec{
 		"files by output-relative path. Use it to see exactly what a Release would emit before committing to a real build, " +
 		"or to inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
 		"content is included; the concise format returns just the file paths. A render failure comes back as actionable " +
-		"guidance (route it through explain-error if needed) rather than a partial write. `auto_pull` resolves the " +
+		"guidance rather than a partial write (route it through explain-error if needed): a refusal raised while " +
+		"rendering reads in the compiler's words with every cause, and travels as a structured `refusal` entry naming " +
+		"the document it points at, the key there and that key's position. `auto_pull` resolves the " +
 		"Release's dependencies into the lockfile first, which reaches a registry and writes.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
 	inputSchema: `{
@@ -570,9 +644,20 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// that into the constraint the author has to fix, and it is the annotation
 		// the command line has always applied, through the one home both read.
 		annotated := annotateResolutionWithRefusals(err, rendered, tw, releasePath)
+		kind := refusalKindOr(annotated, previewFailureKind(preview, err))
+		// A refusal raised while rendering is reported in the compiler's words with
+		// every cause beneath it, and as an entry naming where it points: its outer
+		// frame alone names only the node being rendered, which tells a caller that
+		// the render failed and not what to change.
+		if refusal, ok := preview.RenderRefusal(); ok {
+			payload.Refusal = tw.buildRefusalOf(refusal)
+			return tw.answer(structuredErrorResult(
+				explainToolRefusal(previewFailureSummary(preview, deprecationNotices), refusal.Message,
+					refusal.Err, kind),
+				payload))
+		}
 		return tw.answer(structuredErrorResult(
-			explainToolError(previewFailureSummary(preview, deprecationNotices), annotated,
-				refusalKindOr(annotated, previewFailureKind(preview, err))),
+			explainToolError(previewFailureSummary(preview, deprecationNotices), annotated, kind),
 			payload))
 	}
 

@@ -32,7 +32,9 @@ import (
 // map[string]any for the template-render boundary.
 //
 // Returns nil on pass. Returns a non-nil error wrapping ErrAssertionFailed
-// on the first failure.
+// on the first failure. The failure states the file the lookup records for the
+// Recipe or FeatureRecipe and the failing assertion's key in it, so a surface that
+// places a finding where its author edits it lands on that assertion.
 //
 // declared answers what each node's entities declare sensitive, so an assertion
 // whose failure text could carry a declared value reports without it: a Recipe's
@@ -85,7 +87,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Recipe:   recipeCtx,
 			}
 			if err := walkAssertions("Recipe", recipe.Metadata.Name, nodeID, recipe.Spec.Assertions, ctx,
-				declared.node(nodeID).assertionKeys()); err != nil {
+				declared.node(nodeID).assertionKeys(), recipeLookup.recipeDocument(recipe)); err != nil {
 				return err
 			}
 		}
@@ -121,7 +123,8 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Recipe:   frRecipeCtx,
 			}
 			if err := walkAssertions("FeatureRecipe", fr.Metadata.Name, nodeID, fr.Spec.Assertions, ctx,
-				attachmentAssertionKeys(declared.node(nodeID), declared.attachment(entry.Type))); err != nil {
+				attachmentAssertionKeys(declared.node(nodeID), declared.attachment(entry.Type)),
+				recipeLookup.featureRecipeDocument(fr)); err != nil {
 				return err
 			}
 		}

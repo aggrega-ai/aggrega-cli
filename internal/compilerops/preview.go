@@ -542,6 +542,13 @@ type PreviewResult struct {
 	// as well as on Resolved so a caller reaching a non-halting verdict reads it
 	// from the result it already holds.
 	ManifestConsistencyFindings []error
+
+	// renderFailure is the refusal the pipeline run raised, held where the run
+	// raised it, and workspaceRoot the root the run resolved against. Both are
+	// read through [PreviewResult.RenderRefusal] and nothing else, so a caller
+	// cannot pair a refusal with a run other than the one that raised it.
+	renderFailure error
+	workspaceRoot string
 }
 
 // PipelineOutcome returns the pipeline run's outcome. It is nil-receiver safe and
@@ -852,6 +859,8 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	out.pipeline = outcome
 	if err != nil {
 		out.FailedGate = GateRender
+		out.renderFailure = err
+		out.workspaceRoot = in.workspaceRoot
 		return out, err
 	}
 	return out, nil

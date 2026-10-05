@@ -10,6 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -25,19 +26,21 @@ import (
 // when the path resolves nowhere" was stated independently at each caller and is
 // exactly the kind of agreement that holds until one copy is edited.
 //
-// The head of the file is returned in three distinct situations, and the caller
-// cannot tell them apart because it does not need to: no document was available,
-// the finding carried no path, or the path walked somewhere this document does not
-// contain — which is what happens when the finding concerns a different file.
-func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, col, endLine, endCol int) {
+// The head of the file is returned in three distinct situations, and the position
+// alone does not tell them apart: no document was available, the finding carried
+// no path, or the path walked somewhere this document does not contain — which is
+// what happens when the finding concerns a different file. resolved is false in
+// all three, for the caller whose own surface states the absence of a position
+// rather than drawing one, and true only where the path walked to a key.
+func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, col, endLine, endCol int, resolved bool) {
 	line, col = 1, 1
 	if doc == nil || keyPath == "" {
-		return line, col, 0, 0
+		return line, col, 0, 0, false
 	}
 	if span, ok := yamlpos.FieldRange(doc, idx, keyPath); ok {
-		return span.Line, span.Column, span.EndLine, span.EndColumn
+		return span.Line, span.Column, span.EndLine, span.EndColumn, true
 	}
-	return line, col, 0, 0
+	return line, col, 0, 0, false
 }
 
 // advisoryToDiagnostic maps one advisory off the compiler's advisory channel onto
@@ -117,7 +120,7 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 	if d.Location != nil {
 		keyPath = d.Location.KeyPath
 	}
-	line, col, endLine, endCol := keyPathSpan(doc, idx, keyPath)
+	line, col, endLine, endCol, _ := keyPathSpan(doc, idx, keyPath)
 	return Diagnostic{
 		Line:           line,
 		Column:         col,
@@ -176,7 +179,16 @@ func (s *Server) advisoryPositionSource(content []byte) (*yaml.Node, yamlpos.Lin
 // a call of their own because this function REPLACES the whole layer: a second
 // publication would erase this one's entries, so every advisory belonging to the
 // layer arrives in one call or not at all.
-func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic, extra []Diagnostic, content []byte) {
+//
+// refusal is the refusal the run stopped on while rendering, or nil for a run
+// that did not, and it travels in the same call for the same reason. It is filed
+// on the document it points at, which is often not file — a Workload refusal
+// points into its Recipe — and after the advisories the run raised before it
+// stopped, which is the order the run raised them in. A run that does not stop
+// there publishes the layer without it, so the next run that renders clears an
+// entry the last one left. Both files are keyed as the layer keys them, so an
+// entry pointing into file itself joins file's entries rather than replacing them.
+func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic, extra []Diagnostic, content []byte, refusal *renderRefusalEntry) {
 	byFile := map[string][]Diagnostic{}
 	if file != "" && len(diags)+len(extra) > 0 {
 		doc, idx := s.advisoryPositionSource(content)
@@ -185,10 +197,83 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 			mapped = append(mapped, advisoryToDiagnostic(d, doc, idx))
 		}
 		mapped = append(mapped, extra...)
-		byFile[file] = mapped
+		byFile[s.canonicalFile(file)] = mapped
+	}
+	if refusal != nil && refusal.file != "" {
+		key := s.canonicalFile(refusal.file)
+		byFile[key] = append(byFile[key], refusal.diagnostic)
 	}
 	for _, f := range s.setRenderDiagnostics(byFile) {
 		_ = s.publishDiagnostics(ctx, f)
+	}
+}
+
+// renderRefusalEntry is a refusal raised while rendering as the daemon reports
+// it: the document the entry is filed on and the entry itself.
+//
+// It is built once per refusal, by renderRefusalFinding, and both places the
+// daemon reports the refusal read it — the build layer's entry and the error
+// answer's structured position — so the two cannot name different places for
+// one refusal.
+type renderRefusalEntry struct {
+	file       string
+	diagnostic Diagnostic
+	// located reports whether the entry's position is a key the refusal named
+	// rather than the head of the file it falls back to.
+	located bool
+}
+
+// errorData is the structured position the error answer carries for the refusal:
+// the document, and the span of the key it points at where that key was found.
+// Where no key was found the answer names the document alone, the shape every
+// other error answer here takes for a file-level failure — a client reads a
+// position or none, and never the head of the file standing in for one.
+func (e *renderRefusalEntry) errorData() *errorData {
+	if !e.located {
+		return newErrorData(e.file, 0, 0)
+	}
+	d := e.diagnostic
+	return newErrorDataWithRange(e.file, d.Line, d.Column, d.EndLine, d.EndColumn)
+}
+
+// renderRefusalFinding maps the refusal a preview stopped on while rendering onto
+// the editor wire, or returns nil for a preview that did not stop there.
+//
+// It is the ONE mapping from such a refusal to a diagnostic. Every condition the
+// run can raise takes it — a Workload that does not satisfy its checks, a template
+// that fails, an assertion, a realization short of its contract, and any other —
+// so no condition reaches an editor positioned by a route of its own. Where the
+// refusal points is decided by the shared preview, from the refusal's own chain,
+// and only resolved to a position here.
+//
+// The position is the key's span through keyPathSpan, the one place a finding
+// positioned from a document path gets its position and its fall-back, in the
+// encoding this client negotiated. The message is the refusal as the compiler
+// raised it, with every cause — never a sentence composed here from the data the
+// refusal was raised over, so whatever the raising site withheld stays withheld.
+// The identifiers are the ones conditionCodesOf decides together, so the entry
+// carries the short code the command line prints at the head of the same
+// refusal, and the pointer to where that condition is explained.
+func (s *Server) renderRefusalFinding(preview *compilerops.PreviewResult) *renderRefusalEntry {
+	refusal, ok := preview.RenderRefusal()
+	if !ok {
+		return nil
+	}
+	doc, idx := s.advisoryPositionSource(refusal.Content)
+	line, col, endLine, endCol, located := keyPathSpan(doc, idx, refusal.KeyPath)
+	return &renderRefusalEntry{
+		file: refusal.Document,
+		diagnostic: Diagnostic{
+			Line:           line,
+			Column:         col,
+			EndLine:        endLine,
+			EndColumn:      endCol,
+			Severity:       editorSeverityError,
+			Message:        refusal.Message,
+			ConditionCodes: conditionCodesOf(refusal.Err),
+			KeyPath:        refusal.KeyPath,
+		},
+		located: located,
 	}
 }
 

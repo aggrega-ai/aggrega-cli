@@ -504,7 +504,7 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 		if errs[i].OriginFile != file {
 			continue
 		}
-		line, col, endLine, endCol := keyPathSpan(doc, idx, errs[i].Field)
+		line, col, endLine, endCol, _ := keyPathSpan(doc, idx, errs[i].Field)
 		out = append(out, Diagnostic{
 			Line:      line,
 			Column:    col,
@@ -618,7 +618,7 @@ func writtenInRelease(file, release string) bool {
 // constraint framework, its detail values with no sentence at all — while the
 // same failure on a terminal named the condition.
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
-	line, col, endLine, endCol := keyPathSpan(doc, idx, ve.Field)
+	line, col, endLine, endCol, _ := keyPathSpan(doc, idx, ve.Field)
 	return Diagnostic{
 		Line:           line,
 		Column:         col,

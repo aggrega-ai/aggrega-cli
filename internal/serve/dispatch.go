@@ -61,11 +61,28 @@ type jsonRPCResponse struct {
 // toolchain. A site that renders no error, or that holds none, leaves
 // cause nil, and a reader treats nil as nothing to report rather than
 // as an omission.
+//
+// refusal is the same refusal positioned as a build-layer entry, set only
+// on the answer to a run that stopped while rendering. It rides here so the
+// handler that publishes the layer files the very entry the answer's Data
+// was built from, rather than positioning the refusal a second time; it is
+// unexported for the same reason cause is.
 type jsonRPCError struct {
 	Code    int        `json:"code"`
 	Message string     `json:"message"`
 	Data    *errorData `json:"data,omitempty"`
 	cause   error
+	refusal *renderRefusalEntry
+}
+
+// renderRefusal returns the positioned refusal an answer carries, or nil — for
+// an answer that is not a render refusal, and for no answer at all, so a caller
+// holding a possibly absent answer reads it without a guard of its own.
+func (e *jsonRPCError) renderRefusal() *renderRefusalEntry {
+	if e == nil {
+		return nil
+	}
+	return e.refusal
 }
 
 // readMessage parses one Content-Length-framed JSON-RPC message from r.

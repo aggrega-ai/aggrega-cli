@@ -178,7 +178,7 @@ func TestPublishedAdvisoriesRecoverAKeyPathAndFallBackWithoutOne(t *testing.T) {
 			Location: &renderer.DiagnosticLocation{URI: "db", Kind: "helm"},
 		},
 		{Severity: abi.SeverityWarn, Message: "an advisory that named nothing at all"},
-	}, nil, content)
+	}, nil, content, nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)
@@ -404,7 +404,7 @@ func TestPublishedAdvisoriesFallBackWhenTheDocumentDoesNotParse(t *testing.T) {
 		Severity: abi.SeverityWarn,
 		Message:  "an advisory about a document that will not parse",
 		Location: &renderer.DiagnosticLocation{KeyPath: ".spec.components.db"},
-	}}, nil, []byte("spec:\n  components:\n   : : : not yaml\n"))
+	}}, nil, []byte("spec:\n  components:\n   : : : not yaml\n"), nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)

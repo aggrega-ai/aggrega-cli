@@ -251,7 +251,7 @@ func TestPublishRenderDiagnostics_TranslatesRatherThanCopies(t *testing.T) {
 
 	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
 		{Severity: abi.SeverityWarn, Message: "values.legacyPort is deprecated"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)
@@ -279,7 +279,7 @@ func TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory(t *testin
 
 	d := rendercore.UnhonorableAnnotationDiagnostic("helm-chart", "aggrega.ai/namespace", "sourced")
 	d.Location = &renderer.DiagnosticLocation{URI: "frontend", Kind: "helm-chart"}
-	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil)
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil, nil)
 	flush()
 
 	got := s.snapshotDiagnostics(file)
@@ -341,7 +341,7 @@ func TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory(t *
 
 			d := tc.diag
 			d.Location = &renderer.DiagnosticLocation{URI: "backend", Kind: "helm"}
-			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil)
+			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil, nil)
 			flush()
 
 			got := s.snapshotDiagnostics(file)
@@ -409,7 +409,7 @@ func TestPublishRenderDiagnostics_ForwardsTheAdvisoryCodeVerbatim(t *testing.T) 
 			ctx, flush := serializerContext(t, &out)
 			const file = "/w/release.yaml"
 
-			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{tc.diag}, nil, nil)
+			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{tc.diag}, nil, nil, nil)
 			flush()
 
 			got := s.snapshotDiagnostics(file)
@@ -473,7 +473,7 @@ func TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass(t *
 			Message:  "the provider raised this while rendering",
 			Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	got := s.snapshotDiagnostics(file)
 	if len(got) != 2 {
@@ -530,7 +530,7 @@ func TestPublishRenderDiagnostics_OmitsTheKeyWhenTheAdvisoryCarriesNoCode(t *tes
 
 	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
 		{Severity: abi.SeverityWarn, Message: "an advisory naming no class"},
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	got := s.snapshotDiagnostics(file)
 	if len(got) != 1 {
@@ -551,7 +551,7 @@ func TestPublishRenderDiagnostics_OmitsTheKeyWhenTheAdvisoryCarriesNoCode(t *tes
 	// about the way it is being read.
 	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
 		{Severity: abi.SeverityWarn, Message: "an advisory naming a class", Code: "some-class"},
-	}, nil, nil)
+	}, nil, nil, nil)
 	coded, err := json.Marshal(publishDiagnosticsParams{File: file, Diagnostics: s.snapshotDiagnostics(file)})
 	if err != nil {
 		t.Fatalf("marshal coded payload: %v", err)

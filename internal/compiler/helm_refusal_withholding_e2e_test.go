@@ -9,10 +9,10 @@
 // both are driven: per key, where a chart receives the Component's own values
 // keyed by the leaves the Component declares; and as a whole payload, where the
 // template that produced the payload read a declared value — a values mapping,
-// the node's or an attachment's FeatureRecipe's, a workload, an artifact — and no
-// key of its output can be traced to a declaration. Every row quoting the
-// declared value has a control quoting the value nobody declared, which must
-// reach the text unchanged.
+// the node's, an attachment's FeatureRecipe's or a boundary's feature's, a
+// workload, an artifact — and no key of its output can be traced to a
+// declaration. Every row quoting the declared value has a control quoting the
+// value nobody declared, which must reach the text unchanged.
 
 package compiler_test
 
@@ -89,6 +89,21 @@ func TestHelmChartRefusal_WithholdsAMarkedValueThroughTheGuest(t *testing.T) {
 		{
 			name:    "an attachment's values mapping writing its undeclared leaf reports it unchanged",
 			release: "fr-mapped-note-release.yaml",
+			want:    "at '/auth/password': '" + helmRefusalNote + "' does not match pattern '^ref:'",
+		},
+		{
+			// A boundary's feature renders on a context copied from the component whose
+			// render reached it, so the marking it hands the guest is its own mapping's
+			// only where it replaces the one it copied; the component here maps no
+			// values, so the copied marking says nothing was read.
+			name:    "a boundary's feature whose values mapping writes its declared infra leaf reports the placeholder",
+			release: "boundary-mapped-release.yaml",
+			want:    "at '/auth/password': '" + redact.Placeholder() + "' does not match pattern '^ref:'",
+			absent:  helmRefusalSecret,
+		},
+		{
+			name:    "a boundary's feature whose values mapping writes its undeclared infra leaf reports it unchanged",
+			release: "boundary-mapped-note-release.yaml",
 			want:    "at '/auth/password': '" + helmRefusalNote + "' does not match pattern '^ref:'",
 		},
 		{

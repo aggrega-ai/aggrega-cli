@@ -191,7 +191,8 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //
 // On all pass: state.ParsedWorkload and ctx.Workload populate with the folded
 // Workload. Any failure stops the build before B.3 runs; failures carry
-// CATALOG_ERROR-prefixed messages with field paths.
+// CATALOG_ERROR-prefixed messages with field paths, and each states the Recipe's
+// workload entry as where it points (atWorkloadEntry).
 //
 // slots carries the owner's own slots (the Component's FeaturesSchema, or the
 // implemented Feature's for an attachment's FeatureRecipe) and the connections
@@ -205,7 +206,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 
 	workloadText, wlErr := resolveWorkloadText(state.Recipe.Spec.Workload, state.Recipe.Metadata.Name, state.WorkloadLibraries)
 	if wlErr != nil {
-		return wlErr
+		return state.atWorkloadEntry(wlErr)
 	}
 	if workloadText == "" {
 		state.PhaseReached = 2
@@ -221,10 +222,10 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 		&w,
 	)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template", state.Recipe.Metadata.Name))
+		return state.atWorkloadEntry(cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template", state.Recipe.Metadata.Name)))
 	}
 	if decodeErr != nil {
-		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name))
+		return state.atWorkloadEntry(cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name)))
 	}
 
 	// Whether the document the checks below judge was produced from a value an
@@ -253,27 +254,27 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 	// typed check can see a schema-required field the document supplied empty.
 	// Deleting either loses a rejection class the other cannot observe.
 	if err := validator.ValidateWorkloadBytes([]byte(output), state.RecipePath, state.RecipeName, state.RecipeVersion, validation...); err != nil {
-		return err
+		return state.atWorkloadEntry(err)
 	}
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion, validation...); err != nil {
-		return err
+		return state.atWorkloadEntry(err)
 	}
 	// The fold runs before every check that reads a slot, so those checks — and
 	// the provider that resolves the folded Workload — read an entry naming a
 	// connection's slot exactly as they read one naming the Component's own.
 	checked, err := validator.FoldWorkloadConnections(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion)
 	if err != nil {
-		return err
+		return state.atWorkloadEntry(err)
 	}
 	if err := validator.ValidateWorkloadAttachments(&w, checked, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
-		return err
+		return state.atWorkloadEntry(err)
 	}
 	// Referenceability reads each slot's resolved provides from the template
 	// context — the same bag the synthesizer reads to render the reference — so
 	// the base and FeatureRecipe workload paths (the latter renders against a
 	// shallow copy of this context) are checked uniformly.
 	if err := validator.ValidateWorkloadResourceReferences(&w, AttachmentProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
-		return err
+		return state.atWorkloadEntry(err)
 	}
 
 	// What a display SHOWS in place of this document is decided HERE, where the
@@ -301,6 +302,27 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 	state.capture(trace.PassPhaseB2, "", ctx)
 	state.PhaseReached = 2
 	return nil
+}
+
+// workloadKey is the key a Recipe or a FeatureRecipe authors its Workload under.
+const workloadKey = ".spec.workload"
+
+// atWorkloadEntry states, on a refusal about the Workload this state's Recipe
+// produced, the document the Recipe was read from and the key its Workload is
+// authored under, for a surface that places a finding where its author edits it.
+// It adds nothing to the text the refusal prints.
+//
+// The key, and never a line inside the Workload's template. A check judges the
+// template's OUTPUT, and a template renders lines its author never wrote — a loop,
+// a condition, a text imported from a file or a library — so a line of the
+// rendered document does not map to a line of the authored one in general, and a
+// guessed line would point the author somewhere the fault is not. The paths a
+// finding names inside the rendered Workload stay in its text.
+//
+// A state holding no document states nothing, which leaves the refusal exactly as
+// it was raised.
+func (s *PhaseBState) atWorkloadEntry(err error) error {
+	return cerrors.Locate(err, cerrors.SourceLocation{File: s.RecipePath, Locator: workloadKey})
 }
 
 // phaseB3 projects Recipe.Spec.Artifacts — each entry is either inline content

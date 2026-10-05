@@ -142,10 +142,13 @@ const (
 // The advisories that carry a document position are published on the build
 // diagnostic layer, which the graph inspection publishes on as well: one layer,
 // replaced whole, so the newest render's findings are the ones on screen and a
-// finding that stopped firing disappears. The advisories that carry no position
-// are returned on the result instead. Sending those to the same layer would put a
-// second copy of a withdrawn-pin notice beside the one a validation already
-// publishes on the semantic layer, and two copies of one fact read as two facts.
+// finding that stopped firing disappears. A refusal the run stopped on while
+// rendering is published on the same layer, on the document it points at, beside
+// the advisories the run raised before it stopped. The advisories that carry no
+// position are returned on the result instead. Sending those to the same layer
+// would put a second copy of a withdrawn-pin notice beside the one a validation
+// already publishes on the semantic layer, and two copies of one fact read as two
+// facts.
 func (s *Server) artifactPostureRender(ctx context.Context, release string, filled *compilerops.PreviewResult, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
@@ -222,12 +225,21 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 		declined = fetchSeam.Declined()
 	}
 
+	// The answer to a failure is composed before anything is published, because a
+	// refusal raised while rendering is positioned once, by the envelope, and the
+	// publication below files that same entry.
+	var envelope *jsonRPCError
+	if err != nil {
+		envelope = s.previewFailureEnvelope(view, releasePath, preview, err)
+	}
+
 	// The positioned advisories are published from whatever the run reached, and
 	// before the failure is returned rather than after. A gate that halted still
 	// found everything ahead of it, and a reader who loses those findings has to
 	// re-run to see them — so the failure path is the one they are most needed on.
-	// One call carries both classes because the publication replaces the whole
-	// layer: a second call would erase the first one's entries.
+	// One call carries every class because the publication replaces the whole
+	// layer: a second call would erase the first one's entries. The refusal a run
+	// stopped on while rendering travels in it too, on the document it points at.
 	if preview != nil && preview.Resolved != nil {
 		// Read through the accessor that answers on either verdict, so a run that
 		// halted publishes the findings the phases ahead of it raised rather than an
@@ -236,11 +248,11 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 		advisories := preview.PipelineOutcome().Advisories()
 		s.publishRenderDiagnostics(ctx, preview.Resolved.AggregatePath, advisories,
 			externalInputDivergenceDiagnostics(declined, releasePath),
-			preview.Resolved.AggBytes)
+			preview.Resolved.AggBytes, envelope.renderRefusal())
 	}
 
-	if err != nil {
-		return preview, s.previewFailureEnvelope(view, releasePath, preview, err)
+	if envelope != nil {
+		return preview, envelope
 	}
 	return preview, nil
 }

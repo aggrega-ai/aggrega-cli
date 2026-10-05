@@ -461,11 +461,14 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // Source, which already names the layer that raised the entry. On the semantic
 // layer the value is the string the failing condition is registered under, so it
 // is what a Go consumer of the same failure reads with errors.CodeOf. On the
-// build layer it is whatever code the render advisory arrived carrying — assigned
-// wherever that advisory was raised, a rendering plugin or the render itself, so
-// the code names what the finding is and not who found it — and such a code names
-// a class of advisory rather than a registered condition, so it is not a value
-// errors.CodeOf ever reports. On the publishing-conventions layer it is the
+// build layer an advisory's entry carries whatever code the render advisory
+// arrived carrying — assigned wherever that advisory was raised, a rendering
+// plugin or the render itself, so the code names what the finding is and not who
+// found it — and such a code names a class of advisory rather than a registered
+// condition, so it is not a value errors.CodeOf ever reports; the build layer's
+// entries that report a condition — the refusal a render stopped on, a reference
+// declined for want of a pin — carry its registered code, as the semantic layer's
+// entries do. On the publishing-conventions layer it is the
 // identity of the rule that produced the finding, which is the same value the
 // structured output of `aggrega lint` carries for that finding, so one rule keeps
 // one identity across the two surfaces. A rule the compiler declares is
@@ -584,8 +587,9 @@ type Diagnostic struct {
 // short code minted for them would be an identifier no lookup resolves, and a
 // pointer would resolve to a page that does not describe what the entry
 // reported. Advisory classes are the ordinary content of the build layer, which
-// is why that layer nearly predicts the keys; it nonetheless carries one entry
-// that does name a registered condition, and that entry carries all three. A
+// is why that layer nearly predicts the keys; it nonetheless carries entries that
+// do name a registered condition — the refusal a render stopped on, and a
+// reference declined for want of a pin — and those carry all three. A
 // conventions rule the compiler declares is registered under its own identity,
 // so its entry carries all three as well.
 //

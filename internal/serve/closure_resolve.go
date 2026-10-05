@@ -100,7 +100,33 @@ func (s *Server) resolveReleaseClosure(ctx context.Context, view *catalog.LazyLo
 // The failure it was rendered from rides on the envelope as well as the rendered
 // text, because rendering is one-way and a caller that maps the envelope onto a
 // diagnostic needs the failure to report the condition behind it.
+//
+// # A refusal raised while rendering
+//
+// The pipeline run itself refusing is the case an author fixes in a document — a
+// Workload naming a slot its Component does not declare, an assertion, a template
+// that fails — so its answer says what the command line says and where. The
+// message is the refusal with every cause beneath it, not the outermost frame
+// alone, which names only the node being rendered. Data names the document the
+// refusal points at and, where the key it names was found there, that key's span.
+// The code stays the internal-error one, which is what a refusal from inside the
+// pipeline has always answered with.
+//
+// The refusal is positioned once, here, and the positioned entry rides on the
+// envelope for the handler that publishes the build layer, so the entry a client
+// draws and the position this answer carries are one computation. Every other
+// gate that answers through the pipeline arm — a drifted lockfile, a recorded
+// withdrawal and the rest — keeps the answer it has always had.
 func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath string, preview *compilerops.PreviewResult, err error) *jsonRPCError {
+	if refusal := s.renderRefusalFinding(preview); refusal != nil {
+		return &jsonRPCError{
+			Code:    jsonRPCInternalError,
+			Message: refusal.diagnostic.Message,
+			Data:    refusal.errorData(),
+			cause:   err,
+			refusal: refusal,
+		}
+	}
 	gate := compilerops.GateNone
 	if preview != nil {
 		gate = preview.FailedGate

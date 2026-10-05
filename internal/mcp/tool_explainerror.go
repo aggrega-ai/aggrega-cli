@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/explainops"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // docEntityDir is the directory holding the per-kind language-reference pages.
@@ -103,7 +104,14 @@ func conditionNote(message string) string {
 	if !ok {
 		return ""
 	}
-	condition, err := haltref.Resolve(code)
+	return conditionNoteFor(code)
+}
+
+// conditionNoteFor is conditionNote for a short code already in hand, read off a
+// failure's chain rather than out of its printed text. A code no condition
+// resolves adds nothing, for the reason conditionNote gives.
+func conditionNoteFor(shortCode string) string {
+	condition, err := haltref.Resolve(shortCode)
 	if err != nil {
 		return ""
 	}
@@ -120,6 +128,28 @@ func conditionNote(message string) string {
 // code.
 func explainToolError(action string, err error, kind string) string {
 	return explainToolErrorAt(action, err, docPointerFor(kind))
+}
+
+// explainToolRefusal is explainToolError for a refusal raised while rendering,
+// whose text is the refusal with every cause beneath it rather than its outer
+// frame alone, which names only the node being rendered.
+//
+// That text carries no short code — the code prints at the head of a terminal's
+// rendering, not inside any one frame — so the note naming the condition is read
+// off the refusal's own chain instead of out of its words. A caller here is
+// therefore told the condition's descriptive code exactly as it is for a
+// diagnostic whose printed text carries the short code.
+func explainToolRefusal(action, message string, refusal error, kind string) string {
+	var b strings.Builder
+	b.WriteString(action)
+	b.WriteString("\n\n")
+	b.WriteString(strings.TrimSpace(message))
+	if shortCode, ok := cerrors.ShortCodeOf(refusal); ok {
+		b.WriteString(conditionNoteFor(shortCode))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(docPointerLine(docPointerFor(kind)))
+	return b.String()
 }
 
 // explainToolErrorAt is explainToolError for a failure whose fix is taught on a
