@@ -399,20 +399,24 @@ func resolveLink(path, root string) linkTarget {
 }
 
 // leadsOutOfWorkspace reports whether the file or directory at path lies outside
-// the workspace root once every link on the way to it is resolved, and is not let
-// through by the workspace's configuration.
+// the workspace root by the one definition of inside, pathscope.ResolvesInside,
+// and is not let through by the workspace's configuration.
 //
-// It is the judgement a path handed to the daemon from outside its own walk is
-// held to where that path must stay inside the workspace — a document a request
-// names through resolveWorkspacePathParam, the Release the active-Release marker
-// names, and a document an editor holds at a place inside the root — and it is
-// made from the one resolution resolveLink makes, so a path and a walked link are
-// never judged by two readings of one link. A path spelled inside the root that
-// leads out through a link, an absolute path elsewhere and a path climbing out of
-// the root are all outside alike. A path that does not resolve — nothing there yet,
-// or a link leading nowhere or round a loop — is not judged outside: nothing outside
-// is read through it, and whatever reads it next reports the missing file as it
-// always has.
+// It is the judgement every path handed to the daemon from outside its own walk is
+// held to — every path a request names, whether the request reads it or writes
+// it: a document a request names through resolveWorkspacePathParam, a destination
+// a request names through workspacePath, a document an insertion point is located
+// in, a key file a registration names, and the Release the active-Release marker
+// names. A read and a write are judged alike, because the definition already
+// covers a path that is not there yet: the deepest part of it that exists is
+// judged, with its links resolved, against the root resolved the same way. So a
+// path spelled inside the root that leads out through a link, a path not made yet
+// beneath a link leading out, an absolute path elsewhere and a path climbing out of
+// the root are all outside alike, and where the whole path exists the part judged
+// is the path itself. A link leading nowhere, or round a loop, is not existence: it
+// is passed over for the directory holding it, and nothing is followed to find out
+// where it was meant to go, so whatever reads such a path next reports the missing
+// file as it always has.
 //
 // release is the workspace's configuration where path names a Release, and nil
 // where it names anything else. A Release the configuration names — as
@@ -432,20 +436,29 @@ func leadsOutOfWorkspace(root, path string, release *workspaceconfig.Config) boo
 // judging several paths against one root works the configuration's names out
 // once. release says whether path names a Release, which the scope's
 // configuration may let through.
+//
+// A scope with no root holds nothing, as a write with no root holds nothing: there
+// is nothing for a path to lie inside.
 func (l *linkScope) leadsOut(path string, release bool) bool {
-	l.resolve()
-	linked := resolveLink(path, l.root)
-	if !linked.outside {
+	if l.root == "" {
 		return false
 	}
-	return !release || !linked.file || !l.configurationReaches(linked)
+	if _, inside := pathscope.ResolvesInside(l.root, path); inside {
+		return false
+	}
+	if !release {
+		return true
+	}
+	l.resolve()
+	linked := resolveLink(path, l.root)
+	return !linked.file || !l.configurationReaches(linked)
 }
 
-// LeadsOutOfWorkspace reports whether the file or directory at path — absolute,
-// and spelled inside root — lies outside root once every link on the way to it is
-// resolved, by the same judgement the language server holds a path a request names
-// to. A caller confining a path it was sent to one workspace asks it after the
-// lexical containment check, which resolves no link.
+// LeadsOutOfWorkspace reports whether the file or directory at path lies outside
+// root by the one judgement the language server holds every path a request names
+// to, whether the request reads it or writes it (leadsOutOfWorkspace). A surface
+// confining a path it was sent to one workspace asks it, so the language server
+// and the assistant tools judge a path by one rule.
 func LeadsOutOfWorkspace(root, path string) bool {
 	return leadsOutOfWorkspace(root, path, nil)
 }
@@ -457,47 +470,6 @@ func LeadsOutOfWorkspace(root, path string) bool {
 // request names.
 func ReleaseLeadsOutOfWorkspace(root string, cfg workspaceconfig.Config, path string) bool {
 	return leadsOutOfWorkspace(root, path, &cfg)
-}
-
-// destinationLeadsOut reports whether a place the daemon is asked to write — a
-// directory written into, or a document written in place or beside — lies outside
-// the workspace root once the deepest part of it that exists has its links
-// resolved.
-//
-// A destination need not exist yet: the directory a generation or an import
-// creates is named before it is made. Resolving the whole path, as
-// leadsOutOfWorkspace does for a document read, resolves nothing for such a path
-// and so judges nothing, while the directories on the way that do exist are the
-// very ones the write goes through. So the verdict is pathscope.ResolvesInside's,
-// the one definition of inside: the deepest part of the path that exists is
-// judged, with its links resolved, against the root resolved the same way. Where
-// the whole path exists that part is the path itself, and the answer is the one
-// leadsOutOfWorkspace gives a read of it.
-//
-// An entry that exists only as a link leading nowhere, or round a loop, does not
-// count as existing: it is passed over and the directory holding it is judged, and
-// nothing is followed to find out where such a link was meant to go. What a
-// request names as a destination is a directory to write into — nothing is
-// created inside a directory that is not there — or a document the request reads
-// before it writes in its place or beside it, so the write such a link stands in
-// for fails where the link is met.
-//
-// No destination is let through by the workspace's configuration. The exception
-// the configuration makes is for a Release it names, which is read; nothing a
-// request writes is reached through the configuration.
-func destinationLeadsOut(root, path string) bool {
-	_, inside := pathscope.ResolvesInside(root, path)
-	return !inside
-}
-
-// DestinationLeadsOutOfWorkspace reports whether the place at path — absolute,
-// and spelled inside root — that a request names for something to be written lies
-// outside root once the deepest part of it that exists has its links resolved, by
-// the same judgement the language server holds every destination a request names
-// to. A caller confining a destination it was sent asks it after the lexical
-// containment check, which resolves no link.
-func DestinationLeadsOutOfWorkspace(root, path string) bool {
-	return destinationLeadsOut(root, path)
 }
 
 // linkScope is what judging a link met by a workspace walk, or a path the daemon

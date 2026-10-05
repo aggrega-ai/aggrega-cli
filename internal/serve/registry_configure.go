@@ -70,6 +70,10 @@ func registrationRefusal(err error) string {
 // the write-target overrides, and sending both is refused exactly as the command
 // line refuses it.
 //
+// keyPath and trustedRoot name files: an absolute value is one a person picked,
+// read where it names; a relative one is a file inside the workspace this session
+// opened, resolved against its root and held to it (pickedOrWorkspacePath).
+//
 // fetchTrust is a pointer so an absent key and an explicit false are
 // distinguishable. The command line's flag defaults to true, and a request that
 // says nothing about the fetch must get that same default rather than silently
@@ -192,6 +196,20 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 			"the daemon holds no resolved workspace to resolve a registry write target against")
 	}
 
+	// The key file and the trust root are files a person may have picked in a
+	// dialog, or that the request names inside the workspace: a relative value is
+	// anchored to the workspace root and held to it, and an absolute one is read
+	// where it names. The trust root is recorded as resolved, so the entry names the
+	// file the request named whichever directory later reads it.
+	keyPath, err := s.pickedOrWorkspacePath("registry add: keyPath", params.KeyPath)
+	if err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	trustedRoot, err := s.pickedOrWorkspacePath("registry add: trustedRoot", params.TrustedRoot)
+	if err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	// An absent fetchTrust takes the command line's own default rather than the
 	// zero value, so an unqualified registration pins the advertised policy on
 	// both surfaces.
@@ -203,8 +221,8 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 		Host:        params.Host,
 		Name:        params.Name,
 		Identities:  params.Identities,
-		KeyPath:     params.KeyPath,
-		TrustedRoot: params.TrustedRoot,
+		KeyPath:     keyPath,
+		TrustedRoot: trustedRoot,
 		Advisory:    params.Advisory,
 		FetchTrust:  fetchTrust,
 		Global:      params.Global,

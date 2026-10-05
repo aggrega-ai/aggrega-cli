@@ -464,10 +464,11 @@ func TestAnInsertionPointIsNotReportedForADocumentReachedThroughALinkLeadingOut(
 	}
 }
 
-// TestADestinationIsJudgedByTheDeepestPartOfItThatExists holds the destination
-// judgement to its rule over real paths, one shape per row: the deepest part of
-// the path that exists, with its links resolved, against the root resolved the
-// same way. The first row is the control, the root itself.
+// TestADestinationIsJudgedByTheDeepestPartOfItThatExists holds the judgement every
+// path a request names is held to — read or written — to its rule over real paths,
+// one shape per row: the deepest part of the path that exists, with its links
+// resolved, against the root resolved the same way. The first row is the control,
+// the root itself.
 func TestADestinationIsJudgedByTheDeepestPartOfItThatExists(t *testing.T) {
 	t.Parallel()
 
@@ -497,8 +498,8 @@ func TestADestinationIsJudgedByTheDeepestPartOfItThatExists(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			if got := destinationLeadsOut(row.root, row.path); got != row.outside {
-				t.Errorf("destinationLeadsOut(%s) = %t; want %t", row.path, got, row.outside)
+			if got := leadsOutOfWorkspace(row.root, row.path, nil); got != row.outside {
+				t.Errorf("leadsOutOfWorkspace(%s) = %t; want %t", row.path, got, row.outside)
 			}
 		})
 	}

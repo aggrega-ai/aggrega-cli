@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // buildParams is the request shape for `aggrega/build`. The release field is a
@@ -333,7 +334,13 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		}
 	}
 
-	if err := artifactout.WriteBuildOutput(s.workspaceRoot, outRoot, completed.Artifacts); err != nil {
+	// The output directory and every file written beneath it are held to the root
+	// the directory it is composed in picks — the one answer every composed write
+	// asks, as the command line's build asks it — rather than to a root this method
+	// decides. The directory a request names as outputParent has already been held
+	// inside the session's workspace, so the root picked is that workspace's.
+	writeRoot := writescope.RootFor(s.workspaceRoot, filepath.Dir(outRoot))
+	if err := artifactout.WriteBuildOutput(writeRoot, outRoot, completed.Artifacts); err != nil {
 		// A write failure is reported as the workspace-not-resolvable class the
 		// daemon already carries for a workspace it cannot read as expected, and
 		// the wrapped error is kept as the cause so a client matching on the

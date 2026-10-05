@@ -60,8 +60,24 @@ var decidersOfInside = map[string]string{
 	"pkg/resolver:scanReleaseDir":                 "the documents beside a Release that its names resolve against",
 	"internal/sourceref:AnchorContent":            "every component of a content path an entity declares",
 	"internal/wasm:Plugin.resolveUnderSourceRoot": "every component of a selection a plugin asks to read",
-	"internal/serve:resolveLink":                  "a link the language server's walks meet, and a path a request names",
+	"internal/serve:resolveLink":                  "a link the language server's walks meet, and a Release a request names",
 	"internal/serve:gitignoreWalker.matcherFor":   "the ignore file the language server's entity walk reads",
+
+	// Every path a request or a tool call names, on every transport, reaches the one
+	// judgement through these, read or written alike: one request judgement in the
+	// language server, which the assistant tools ask too, and the request resolvers
+	// built on it. A resolver that judges a path for itself — lexically, or with a
+	// second resolution — stops asking, and fails here.
+	"internal/serve:linkScope.leadsOut":           "every path a request names, read or written, and a document the entity walk meets",
+	"internal/serve:leadsOutOfWorkspace":          "every path a request names, with the configuration's Release exception",
+	"internal/serve:LeadsOutOfWorkspace":          "a path an assistant-tool call names",
+	"internal/serve:ReleaseLeadsOutOfWorkspace":   "a Release an assistant-tool call names",
+	"internal/serve:resolveWorkspacePathParam":    "every path a language-server request names for the daemon to read",
+	"internal/serve:Server.workspacePath":         "every path a language-server request names for the daemon to write",
+	"internal/serve:Server.pickedOrWorkspacePath": "a relative key file or trust root a registration names",
+	"internal/serve:insertionPointIn":             "the document an insertion point is located in",
+	"internal/mcp:toolWorkspace.workspacePath":    "every path an assistant-tool call names over the listener",
+	"internal/editops:resolveInside":              "the document an edit reads and writes back, on every surface",
 }
 
 // judgementsOfInside are the calls a decider is found asking.
@@ -69,6 +85,16 @@ var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
 	"readscope":  {"CheckRead"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
+	// The language server's request judgement, which the assistant tools ask.
+	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},
+}
+
+// judgementsWithinAPackage are the judgements built on the one definition that a
+// decider in the same package asks by name — as a function, or as a method of a
+// value it holds — keyed by the package directory. Each is itself a decider above,
+// so the chain from every request resolver to the definition is held link by link.
+var judgementsWithinAPackage = map[string][]string{
+	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath"},
 }
 
 // linkResolvers are the calls that resolve a link.
@@ -141,9 +167,18 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 				if !ok {
 					return true
 				}
+				if ident, isIdent := call.Fun.(*ast.Ident); isIdent {
+					if listed(judgementsWithinAPackage[pkgDir], ident.Name) {
+						asking[key] = true
+					}
+					return true
+				}
 				sel, ok := call.Fun.(*ast.SelectorExpr)
 				if !ok {
 					return true
+				}
+				if listed(judgementsWithinAPackage[pkgDir], sel.Sel.Name) {
+					asking[key] = true
 				}
 				pkg, ok := sel.X.(*ast.Ident)
 				if !ok {
@@ -208,7 +243,12 @@ func funcName(fn *ast.FuncDecl) string {
 
 // names reports whether calls lists pkg.name.
 func names(calls map[string][]string, pkg, name string) bool {
-	for _, n := range calls[pkg] {
+	return listed(calls[pkg], name)
+}
+
+// listed reports whether name is one of names.
+func listed(names []string, name string) bool {
+	for _, n := range names {
 		if n == name {
 			return true
 		}

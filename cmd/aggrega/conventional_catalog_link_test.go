@@ -33,6 +33,12 @@ import (
 //
 // The control is first: the conventional directory a plain directory, named by
 // nobody, builds — which is what makes a halting row's halt the link's doing.
+//
+// A build that fills its lockfile renders as part of the fill, so it never reads
+// through the lookup a build builds for its own render. The row whose lockfile is
+// already filled builds a second time with nothing to fill, which is the build that
+// renders through its own lookup — so that lookup is held to the named part of the
+// stack as well, and a listed `catalog` link is followed there too.
 func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.T) {
 	for _, row := range []struct {
 		name string
@@ -42,8 +48,11 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 		// workspace is the configuration's `workspace:` block.
 		workspace string
 		// flag passes `catalog` with --catalog, from the workspace root.
-		flag  bool
-		halts bool
+		flag bool
+		// refilled builds once to fill the lockfile, then again with auto_pull off,
+		// so the second build renders through its own lookup rather than the fill's.
+		refilled bool
+		halts    bool
 	}{
 		{name: "control: the conventional directory a plain directory, named by nobody, builds",
 			workspace: "workspace: {}"},
@@ -53,6 +62,8 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 			linked: true, workspace: "workspace: {}", halts: true},
 		{name: "passed with --catalog, a link leading out is followed and its entities resolve",
 			linked: true, workspace: "workspace: {}", flag: true},
+		{name: "listed, a link leading out is followed by a build rendering through its own lookup, the lockfile already filled",
+			linked: true, workspace: "workspace:\n  catalog_dirs:\n    - ./catalog", refilled: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -77,6 +88,15 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 
 			var diag bytes.Buffer
 			err := dispatchBuildInRoot(t, rw, releasePath, flags, false, &diag, io.Discard)
+			if row.refilled {
+				if err != nil {
+					t.Fatalf("the build filling the lockfile did not complete: %v\n%s", err, diag.String())
+				}
+				writeWorkspaceConfig(t, root, row.workspace)
+				rw = resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+				diag.Reset()
+				err = dispatchBuildInRoot(t, rw, releasePath, flags, false, &diag, io.Discard)
+			}
 
 			lock, lockErr := os.ReadFile(lockfile.PathFor(releasePath))
 			if !row.halts {

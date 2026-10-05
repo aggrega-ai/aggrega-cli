@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
@@ -63,9 +64,8 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 // overwrite files in a tree it was never opened over, and no request here may
 // name one: each outputDir, the build's outputParent, the entity a pin writes its
 // lock beside and the files the plugin alignment edits in place are judged here.
-// The structured document edit, whose file the edit layer resolves, is held to
-// the same destination judgement before that layer is reached
-// (ApplyDocumentEdit).
+// The structured document edit, whose file the edit layer resolves, is held there
+// by the same judgement, so the edit has one home for it on every surface.
 //
 // A path an operation only READS is a separate question, decided per parameter
 // rather than by one rule over all of them, because a file the person driving the
@@ -82,8 +82,8 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 // than by a comparison written here.
 //
 // That rule is lexical, so a value it accepts is then judged with its links
-// resolved, by the one judgement every destination a request names is held to
-// (destinationLeadsOut): the deepest part of the path that exists is resolved,
+// resolved, by the one judgement every path a request names is held to
+// (leadsOutOfWorkspace): the deepest part of the path that exists is resolved,
 // and a value written inside the root whose deepest existing part lies outside it
 // is refused, so nothing is written outside the workspace through a link — into a
 // linked directory that leads out, or into a directory not made yet beneath one.
@@ -95,7 +95,7 @@ func (s *Server) workspacePath(what, raw string) (string, error) {
 		return "", fmt.Errorf("%s must name a path inside the workspace this session opened (%s), "+
 			"relative to its root; %q is absolute or climbs out of it", what, s.workspaceRoot, raw)
 	}
-	if destinationLeadsOut(s.workspaceRoot, resolved) {
+	if leadsOutOfWorkspace(s.workspaceRoot, resolved, nil) {
 		return "", fmt.Errorf("%s must name a path inside the workspace this session opened (%s), "+
 			"relative to its root; %q leads out of it through a link", what, s.workspaceRoot, raw)
 	}
@@ -130,6 +130,30 @@ func (s *Server) selectedPath(what, raw string) (string, error) {
 			what, s.workspaceRoot, raw)
 	}
 	return resolved, nil
+}
+
+// pickedOrWorkspacePath resolves a path a request names for a file to read that a
+// person may have picked in a dialog, and that a request may equally write
+// relative to the workspace: a registration's public-key file and its trust root.
+//
+// An absolute value is a dialog's pick, and is read where it names, as selectedPath
+// reads one. A relative value is the request's own spelling of a file inside the
+// workspace this session opened, so it is anchored to that workspace's root —
+// never to the directory this process happens to run in, which the request did
+// not name and cannot see — and held there by workspacePath, the one judgement
+// every path a request names is held to: a value climbing out of the root, or
+// leading out of it through a link, is refused before anything is read.
+//
+// An empty value names nothing, and is answered with nothing: these parameters are
+// optional.
+func (s *Server) pickedOrWorkspacePath(what, raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(raw) {
+		return s.selectedPath(what, raw)
+	}
+	return s.workspacePath(what, raw)
 }
 
 // pluginAddParams is what aggrega/pluginAdd takes.

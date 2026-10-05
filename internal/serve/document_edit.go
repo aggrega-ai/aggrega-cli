@@ -5,15 +5,11 @@ package serve
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/editops"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // documentEditParams is what aggrega/editDocument takes.
@@ -152,7 +148,7 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 	}
 
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
-	res, err := ApplyDocumentEdit(ctx, s.workspaceRoot, editops.Options{
+	res, err := editops.Apply(ctx, s.workspaceRoot, editops.Options{
 		File:     params.File,
 		Kind:     editops.Kind(params.Edit),
 		Node:     params.Node,
@@ -203,37 +199,6 @@ func documentEditRefusal(err error) string {
 		return "editDocument: " + short + ": " + err.Error()
 	}
 	return "editDocument: " + err.Error()
-}
-
-// errDocumentEditLeadsOut is the condition on which no edit is applied to a
-// document named inside the workspace that leads out of it through a link. It is
-// an unexported value rather than a registered halting condition, as the edit
-// layer's own refusals are, and it is worded as the edit layer words the document
-// that is not inside the workspace at all, so each surface reports it in its own
-// voice as it reports that one.
-var errDocumentEditLeadsOut = errors.New("the document named leads outside the workspace through a link, and an " +
-	"edit is only applied to a document the workspace carries")
-
-// ApplyDocumentEdit applies the edit opts describes to the document under root, as
-// editops.Apply does, once the document has been held to the judgement every
-// destination a request names is held to.
-//
-// The edit layer confines the document to the root by how its path is written,
-// which resolves no link, so a document named inside the root that leads out of it
-// through a link would be read from outside the workspace and written back there.
-// That judgement is the request surfaces' rather than the edit layer's — the edit
-// command run at a terminal names the file its own user chose — so it is made
-// here, once, for every surface that applies an edit a request asked for: the
-// document, named relative to root or by an absolute path inside it, is refused
-// where the deepest part of it that exists lies outside root once its links are
-// resolved (destinationLeadsOut). A name outside root as written is left to the
-// edit layer's own refusal, so that refusal reads as it always has. Nothing is read
-// or written for a refused document.
-func ApplyDocumentEdit(ctx context.Context, root string, opts editops.Options) (editops.Result, error) {
-	if rel, inside := pathscope.Relative(root, opts.File); inside && destinationLeadsOut(root, filepath.Join(root, rel)) {
-		return editops.Result{}, fmt.Errorf("%w: %q", errDocumentEditLeadsOut, opts.File)
-	}
-	return editops.Apply(ctx, root, opts)
 }
 
 // documentEditContent returns the edited document's content.

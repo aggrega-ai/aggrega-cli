@@ -60,6 +60,9 @@ var (
 	errFileOutsideWorkspace = errors.New("the document named is not inside the workspace, and an edit is " +
 		"only applied to a document the workspace carries")
 
+	errFileLeadsOut = errors.New("the document named leads outside the workspace through a link, and an edit is " +
+		"only applied to a document the workspace carries")
+
 	errFileUnreadable = errors.New("the document named could not be read")
 
 	errFileUnparseable = errors.New("the document named is not well-formed YAML, so it has no structure " +

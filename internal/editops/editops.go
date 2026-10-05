@@ -461,9 +461,17 @@ func checkRequest(opts Options) error {
 // resolveInside resolves the request's file against the workspace root and
 // reports it both absolutely and relative to that root.
 //
-// A path that climbs out of the workspace is refused. The predicate is the one
-// the rest of the product resolves paths with, so a path one surface accepts
-// every other surface accepts identically.
+// A path that climbs out of the workspace as written is refused. A path written
+// inside it is then judged on disk by the one definition of inside,
+// pathscope.ResolvesInside — the deepest part of it that exists, with its links
+// resolved, against the root resolved the same way — and refused where a link on
+// the way leads out of the workspace, because an edit reads the document before
+// it writes it back, and a document reached through such a link is a file the
+// workspace does not carry. Nothing is read or written for a refused document.
+//
+// It is the one home of the edit's confinement, asked by every surface that
+// applies an edit — the command line, the language server and the assistant tools
+// alike — so a path one surface accepts every other surface accepts identically.
 func resolveInside(root, file string) (abs string, rel string, err error) {
 	if strings.TrimSpace(file) == "" {
 		return "", "", errNoFile
@@ -480,6 +488,9 @@ func resolveInside(root, file string) (abs string, rel string, err error) {
 	r, err := filepath.Rel(filepath.Clean(root), abs)
 	if err != nil || !pathscope.IsLocalSlash(filepath.ToSlash(r)) {
 		return "", "", fmt.Errorf("%w: %q", errFileOutsideWorkspace, file)
+	}
+	if _, inside := pathscope.ResolvesInside(root, abs); !inside {
+		return "", "", fmt.Errorf("%w: %q", errFileLeadsOut, file)
 	}
 	return abs, filepath.ToSlash(r), nil
 }

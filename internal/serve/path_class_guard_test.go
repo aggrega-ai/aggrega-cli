@@ -33,6 +33,19 @@ var selectedPathCallSites = map[string]string{
 	"source":                      "aggrega/import converts a description the author selected",
 	"plugin gen-catalog: plugin":  "aggrega/pluginGenCatalog reads a module the author built",
 	"plugin gen-catalog: overlay": "aggrega/pluginGenCatalog reads the overlay authored beside that module",
+	// Reached through pickedOrWorkspacePath, which takes the selected class only for
+	// an absolute value — a file picked in a dialog — and holds a relative one inside
+	// the workspace by workspacePath.
+	"registry add: keyPath":     "aggrega/registryAdd reads a public-key file the author picked in a dialog",
+	"registry add: trustedRoot": "aggrega/registryAdd records a trust-root file the author picked in a dialog",
+}
+
+// selectedPathForwarders are the helpers that reach selectedPath on behalf of a
+// caller, forwarding the caller's label. The label is judged where the forwarder
+// is called, which is where it is a literal, rather than at the forwarder's own
+// call of selectedPath, where it is a variable.
+var selectedPathForwarders = map[string]bool{
+	"pickedOrWorkspacePath": true,
 }
 
 // TestSelectedPathIsReachedOnlyBySanctionedParameters keeps the permissive path
@@ -118,26 +131,30 @@ func TestSelectedPathIsReachedOnlyBySanctionedParameters(t *testing.T) {
 					return true
 				}
 
-				if sel.Sel.Name != "selectedPath" {
+				if sel.Sel.Name != "selectedPath" && !selectedPathForwarders[sel.Sel.Name] {
 					return true
 				}
 				if !called[ast.Expr(sel)] {
-					t.Errorf("%s: selectedPath used as a value rather than called, in %s — call it directly at each site, because a resolver held as a value carries no call site for this guard to read",
-						fset.Position(sel.Pos()), fn.Name.Name)
+					t.Errorf("%s: %s used as a value rather than called, in %s — call it directly at each site, because a resolver held as a value carries no call site for this guard to read",
+						fset.Position(sel.Pos()), sel.Sel.Name, fn.Name.Name)
 					return true
 				}
 				return true
 			})
 
 			// The labels are read off the calls themselves, which is where the
-			// argument list is.
+			// argument list is. A forwarder's own call of selectedPath carries its
+			// caller's label, which is judged at the forwarder's call sites instead.
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
 					return true
 				}
 				sel, isSel := call.Fun.(*ast.SelectorExpr)
-				if !isSel || sel.Sel.Name != "selectedPath" {
+				if !isSel || (sel.Sel.Name != "selectedPath" && !selectedPathForwarders[sel.Sel.Name]) {
+					return true
+				}
+				if sel.Sel.Name == "selectedPath" && selectedPathForwarders[fn.Name.Name] {
 					return true
 				}
 				label, isLiteral := firstStringLiteral(call.Args)
