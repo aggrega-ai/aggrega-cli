@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // VerifyClosureSignatures runs the pull-time signature verification pass over
@@ -57,11 +58,15 @@ import (
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
 // production passes remoteTargetFor (a real remote repository per registry).
 //
+// Each verified bundle is cached beneath workspaceRoot, in the cacheDir the
+// workspace configures, and that write is held to the workspace: see
+// cacheBundleBlob.
+//
 // It is the one home of this pass, and it stays the one home now that it is
 // reachable by name: the primitives it composes are not exported, so a caller
 // outside this package can run the pass and cannot assemble a second copy of it
 // from the parts.
-func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
+func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
 	axes := cl.VerifiableAxes()
 	total := 0
 	for _, axis := range axes {
@@ -159,7 +164,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			row.RecordSignature(nil)
 			continue
 		}
-		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {
+		if err := cacheBundleBlob(workspaceRoot, cacheDir, r.BundleDigest, r.Bundle); err != nil {
 			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
 		row.RecordSignature(pluginfetchverify.SignatureFact(r))
@@ -297,16 +302,24 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 }
 
 // cacheBundleBlob writes bundle to the content-addressed signature-bundle blob
-// named by its digest under cacheDir, creating the `signatures/` subtree as
-// needed. The blob location is spelled once in oci.SignatureBundlePath so the
-// build path re-hashes the same slot this write populated. The write is
-// idempotent: a blob already present (a re-pull of the same signature) is left
-// untouched so the cache stays byte-stable.
-func cacheBundleBlob(cacheDir, bundleDigest string, bundle []byte) error {
+// named by its digest under the workspace's cache, creating the `signatures/`
+// subtree as needed. The blob location is spelled once in
+// oci.SignatureBundlePath so the build path re-hashes the same slot this write
+// populated. The write is idempotent: a blob already present (a re-pull of the
+// same signature) is left untouched so the cache stays byte-stable.
+//
+// The cache sits inside the workspace, so the blob is held to the workspace at
+// workspaceRoot before anything is created: a cache directory, or a directory on
+// the way to the blob, that is a link leading out of the workspace is refused
+// with the halt the write-scope rule declares, rather than written through.
+func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte) error {
 	if bundleDigest == "" || len(bundle) == 0 {
 		return nil
 	}
-	path := oci.SignatureBundlePath(cacheDir, bundleDigest)
+	path := oci.SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest)
+	if err := writescope.CheckWrite(workspaceRoot, path); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

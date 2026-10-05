@@ -105,7 +105,7 @@ func TestEveryHostTheLoadAcceptsIsVerifiedUnderItsOwnPolicy(t *testing.T) {
 					asked = e
 					return store, "1.0.0", nil
 				}
-				err = VerifyClosureSignatures(ctx, lf, cl, cfg, t.TempDir(), io.Discard, targetFor)
+				err = VerifyClosureSignatures(ctx, lf, cl, cfg, t.TempDir(), ".aggrega/cache", io.Discard, targetFor)
 				if !errors.Is(err, signing.ErrNoSignatureFound()) {
 					t.Fatalf("an unsigned artifact from %q under a required signature: got %v, want the pull halted with ErrNoSignatureFound", host, err)
 				}
@@ -193,7 +193,7 @@ func TestEveryPrefixedDefaultIsVerifiedUnderItsHostsPolicy(t *testing.T) {
 					asked = e
 					return store, "1.0.0", nil
 				}
-				err = VerifyClosureSignatures(ctx, lf, cl, cfg, t.TempDir(), io.Discard, targetFor)
+				err = VerifyClosureSignatures(ctx, lf, cl, cfg, t.TempDir(), ".aggrega/cache", io.Discard, targetFor)
 				if !errors.Is(err, signing.ErrNoSignatureFound()) {
 					t.Fatalf("an unsigned artifact from %q/%s under the host's required signature: got %v, want the pull halted with ErrNoSignatureFound", host, path, err)
 				}

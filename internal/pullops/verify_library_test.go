@@ -125,7 +125,7 @@ func TestVerifyClosureLibrarySignatureRecordsFact(t *testing.T) {
 
 	cl, lf := libraryClosureAndLockfile(manifestDg, contentDg)
 
-	if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), io.Discard,
+	if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", io.Discard,
 		pluginTargetFor(store, libTestVersion)); err != nil {
 		t.Fatalf("VerifyClosureSignatures: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestVerifyClosureLibraryUnsignedHalts(t *testing.T) {
 		}},
 	}
 
-	err = VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), io.Discard, pluginTargetFor(store, libTestVersion))
+	err = VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", io.Discard, pluginTargetFor(store, libTestVersion))
 	if err == nil {
 		t.Fatal("an unsigned library under a signature-requiring registry must halt the pull")
 	}
@@ -214,7 +214,7 @@ func TestDiscoverLibraryDeprecationRecordsMarker(t *testing.T) {
 	}
 
 	cl, lf := libraryClosureAndLockfile(manifestDg, contentDg)
-	if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), io.Discard,
+	if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", io.Discard,
 		pluginTargetFor(store, libTestVersion)); err != nil {
 		t.Fatalf("VerifyClosureSignatures: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestVerifyClosureSkipsALibraryWithNoBoundLocation(t *testing.T) {
 	wsCfg.DefaultRegistry = ""
 
 	cl, lf := libraryClosureAndLockfile(manifestDg, contentDg)
-	if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), io.Discard,
+	if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", io.Discard,
 		pluginTargetFor(store, libTestVersion)); err != nil {
 		t.Fatalf("an unbindable library must be skipped, not halted on: %v", err)
 	}

@@ -107,19 +107,23 @@ func IndexRepoPath(workspaceRoot, cacheDir, host, repo string) string {
 }
 
 // SignatureBundlePath returns the content-addressed filesystem path of the
-// cached signature-bundle blob named by bundleDigest under the cache's
-// `signatures/` subtree:
+// cached signature-bundle blob named by bundleDigest under the `signatures/`
+// subtree of the workspace's artifact cache:
 //
-//	<cacheDir>/signatures/<digest>.bundle
+//	<workspaceRoot>/<cacheDir>/signatures/<digest>.bundle
 //
 // The digest is rendered as a single filesystem segment via the shared
 // digest-segment spelling (digest.Segment), so the blob name is a stable
 // single segment. It is the one site that spells the bundle-blob location,
 // shared by the pull path that writes each verified signature bundle and the
 // build path that re-hashes the cached blob against its recorded digest.
-func SignatureBundlePath(cacheDir, bundleDigest string) string {
+//
+// The path is joined to the workspace root the way every sibling subtree of the
+// cache is (see [EntitiesRoot]), so the write and the read land on one file
+// whatever directory each was run from.
+func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 	name := digest.Segment(bundleDigest) + ".bundle"
-	return filepath.Join(cacheDir, "signatures", name)
+	return filepath.Join(workspaceRoot, cacheDir, "signatures", name)
 }
 
 // ReadCached returns the bytes previously stored at the cache slot

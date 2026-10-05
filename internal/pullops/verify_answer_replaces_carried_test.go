@@ -60,7 +60,7 @@ func TestVerifyClosureSignaturesAnswerReplacesACarriedSignature(t *testing.T) {
 			}
 			// No policy for the host: verify-if-present, so an absent signature is not
 			// a halt and the pass returns cleanly either way.
-			if err := VerifyClosureSignatures(ctx, lf, cl, workspaceconfig.Config{}, t.TempDir(), nil, pluginTargetFor(store, "1.0.0")); err != nil {
+			if err := VerifyClosureSignatures(ctx, lf, cl, workspaceconfig.Config{}, t.TempDir(), ".aggrega/cache", nil, pluginTargetFor(store, "1.0.0")); err != nil {
 				t.Fatalf("VerifyClosureSignatures: %v", err)
 			}
 			got := lf.Plugins[0].Signature

@@ -101,12 +101,12 @@ func TestCachePathRefusesAReferenceThatEncodesToADotDirectory(t *testing.T) {
 // TestSignatureBundlePathStem pins the on-disk bundle filename form so routing
 // the digest transform onto the shared digest-segment spelling stays
 // byte-identical: a colon-form digest renders to the dash-form segment under
-// the signatures/ subtree with the .bundle suffix.
+// the signatures/ subtree of the workspace's cache, with the .bundle suffix.
 func TestSignatureBundlePathStem(t *testing.T) {
 	t.Parallel()
 	const hex = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
-	got := oci.SignatureBundlePath(".aggrega/cache", "sha256:"+hex)
-	want := filepath.Join(".aggrega/cache", "signatures", "sha256-"+hex+".bundle")
+	got := oci.SignatureBundlePath("/ws", ".aggrega/cache", "sha256:"+hex)
+	want := filepath.Join("/ws", ".aggrega/cache", "signatures", "sha256-"+hex+".bundle")
 	if got != want {
 		t.Errorf("SignatureBundlePath: got %q; want %q", got, want)
 	}

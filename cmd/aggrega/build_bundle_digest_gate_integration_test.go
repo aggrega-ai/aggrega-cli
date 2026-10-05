@@ -249,7 +249,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf(".wasm row recorded no signature bundle digest; verify-when-signed cannot engage: %+v", row.Signature)
 		}
 		// The cached bundle blob is present at the single-sourced slot the gate reads.
-		bundlePath := oci.SignatureBundlePath(".aggrega/cache", row.Signature.BundleDigest)
+		bundlePath := oci.SignatureBundlePath(ws, ".aggrega/cache", row.Signature.BundleDigest)
 		if _, serr := os.Stat(bundlePath); serr != nil {
 			t.Fatalf("cached signature bundle absent at %s: %v", bundlePath, serr)
 		}
@@ -263,6 +263,28 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 	})
 
+	t.Run("intact_bundle_found_by_a_build_run_from_beneath_the_workspace", func(t *testing.T) {
+		lf, wasmURI, ws := pullSigned(t)
+		row := findLockfilePluginRow(t, lf, wasmURI)
+		if row.Signature == nil || row.Signature.BundleDigest == "" {
+			t.Fatalf(".wasm row recorded no signature bundle digest; verify-when-signed cannot engage: %+v", row.Signature)
+		}
+		// The pull ran from the workspace root and the build runs from a directory
+		// beneath it, so the gate finds the cached bundle only because the pull's
+		// write and the build's read both join the workspace root.
+		sub := filepath.Join(ws, "releases")
+		if merr := os.MkdirAll(sub, 0o755); merr != nil {
+			t.Fatalf("mkdir %s: %v", sub, merr)
+		}
+		t.Chdir(sub)
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), filepath.Join(ws, "release.yaml"), []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+			t.Fatalf("a build run from beneath the workspace must find the bundle the pull cached; got: %v", berr)
+		}
+		if found, tree := distTreeContains(t, "dist", proofMutatorLabel); !found {
+			t.Errorf("rendered output does not carry the mutator label %q; the guest did not run:\n%s", proofMutatorLabel, tree)
+		}
+	})
+
 	t.Run("tampered_bundle_rejected_before_instantiation", func(t *testing.T) {
 		lf, wasmURI, ws := pullSigned(t)
 		row := findLockfilePluginRow(t, lf, wasmURI)
@@ -271,7 +293,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 		// Tamper the CACHED signature bundle blob (the .wasm content pin stays
 		// intact), so the halt is attributable to the bundle-digest gate alone.
-		bundlePath := oci.SignatureBundlePath(".aggrega/cache", row.Signature.BundleDigest)
+		bundlePath := oci.SignatureBundlePath(ws, ".aggrega/cache", row.Signature.BundleDigest)
 		if werr := os.WriteFile(bundlePath, []byte("tampered-signature-bundle-bytes"), 0o644); werr != nil {
 			t.Fatalf("tamper cached bundle %s: %v", bundlePath, werr)
 		}

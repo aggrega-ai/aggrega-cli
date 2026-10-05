@@ -103,12 +103,13 @@ func TestKeylessAirGappedFromPinnedRoot(t *testing.T) {
 	// Cache the bundle as a content-addressed blob and read it back: the
 	// air-gapped cache hop must be byte-stable so a later offline verify sees
 	// exactly the bytes that were attached.
-	cacheDir := t.TempDir()
+	workspaceRoot := t.TempDir()
+	const cacheDir = ".aggrega/cache"
 	const bundleDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	if err := cacheBundleBlob(cacheDir, bundleDigest, fetched); err != nil {
+	if err := cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest, fetched); err != nil {
 		t.Fatalf("cacheBundleBlob: %v", err)
 	}
-	blobPath := oci.SignatureBundlePath(cacheDir, bundleDigest)
+	blobPath := oci.SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest)
 	cached, err := os.ReadFile(blobPath)
 	if err != nil {
 		t.Fatalf("read cached bundle: %v", err)

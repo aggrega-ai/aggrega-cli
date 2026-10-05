@@ -1277,7 +1277,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// than silently passing as unverified; a closure with nothing registry-
 			// resolved needs no fetch and is unaffected.
 			verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
-			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
+			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, workspaceRoot, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)
 			}
 			assembled = lf

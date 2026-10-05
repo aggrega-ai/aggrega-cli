@@ -216,7 +216,7 @@ func TestIntegration_PluginSignedClosure_ManifestSignatureVerifies(t *testing.T)
 		},
 	}
 
-	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("the single manifest signature must verify under the pinned key; got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {
@@ -250,7 +250,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig(t *testing.T) {
 			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
-	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
+	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
 	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("a signature-requiring policy must HALT with ErrNoSignatureFound when the single manifest carries no signature; got: %v", verr)
 	}
@@ -286,7 +286,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnWrongKey(t *testing.T) {
 		},
 	}
 
-	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
+	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
 	if !errors.Is(verr, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("a wrong pinned key must HALT with ErrSignatureVerificationFailed; got: %v", verr)
 	}
@@ -308,7 +308,7 @@ func TestIntegration_PluginUnsignedClosure_NonRequiringNoHalt(t *testing.T) {
 			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: false}, PublicKey: ""},
 		},
 	}
-	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("a non-requiring policy must NOT halt on an unsigned plugin; got: %v", verr)
 	}
 	if lf.Entities[0].Signature != nil || lf.Plugins[0].Signature != nil {

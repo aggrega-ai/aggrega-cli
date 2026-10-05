@@ -411,12 +411,12 @@ type Resolver struct {
 	// bundleDigests maps a plugin URI to the recorded digest of its cached
 	// signature-bundle blob (a "sha256:..." string), present only for a guest
 	// that carried a verified signature fact when it was pulled. When a URI has
-	// an entry, the cached bundle blob under cacheDir is re-hashed and compared
-	// to it before the resolved bytes are returned — an offline byte/hash
-	// integrity check over the cached blob, never a signature re-verification and
-	// never a network touch. nil or a URI absent from the map disables the check
-	// for that URI: an unsigned guest (no signature fact was recorded), or the
-	// publish-time linter path where nothing is pinned yet.
+	// an entry, the cached bundle blob under workspaceRoot and cacheDir is
+	// re-hashed and compared to it before the resolved bytes are returned — an
+	// offline byte/hash integrity check over the cached blob, never a signature
+	// re-verification and never a network touch. nil or a URI absent from the
+	// map disables the check for that URI: an unsigned guest (no signature fact
+	// was recorded), or the publish-time linter path where nothing is pinned yet.
 	bundleDigests map[string]string
 
 	// override is an explicit filesystem path that wins over the cascade
@@ -742,11 +742,13 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 // re-verification, no network, no trust-root — so it holds under the hermetic
 // build. A missing or unreadable blob, or a hash that differs from the recorded
 // digest, halts with a wrapped ErrPluginBundleDigestMismatch naming the plugin.
-// The blob location is spelled once in oci.SignatureBundlePath, so the slot
-// checked here is the slot the pull path wrote; the re-hash uses the single
-// content-address spelling in digest.ContentDigest, so an intact bundle matches.
+// The blob location is spelled once in oci.SignatureBundlePath, and it is read
+// under the same workspace root the cached .wasm is read under, so the slot
+// checked here is the slot the pull path wrote whatever directory either was
+// run from; the re-hash uses the single content-address spelling in
+// digest.ContentDigest, so an intact bundle matches.
 func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
-	path := oci.SignatureBundlePath(r.cacheDir, bundleDigest)
+	path := oci.SignatureBundlePath(r.workspaceRoot, r.cacheDir, bundleDigest)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(

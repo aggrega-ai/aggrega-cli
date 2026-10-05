@@ -133,7 +133,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{{URI: entityURI, Digest: contentDg, ManifestDigest: manifestDigest}},
 	}
-	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("verify against the recorded manifest digest should PASS, got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {
