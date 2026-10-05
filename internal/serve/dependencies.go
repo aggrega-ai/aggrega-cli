@@ -241,7 +241,7 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 	if refusal := verifyConflictParam(request.VerifyConflict()); refusal != nil {
 		return resolveDependenciesResult{}, refusal
 	}
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, params.Release)
 	if paramErr != nil {
 		return resolveDependenciesResult{}, paramErr
 	}

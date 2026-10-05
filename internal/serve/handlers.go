@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -592,7 +593,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	if params.Release == "" {
 		checked = checkedDocument
 	} else {
-		resolved, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
+		resolved, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, params.Release)
 		if paramErr != nil {
 			return validateResult{}, paramErr
 		}
@@ -903,8 +904,14 @@ type irGraphParams struct {
 // containment call below it, which would also refuse an absolute value:
 // it names the specific fault, and a sender told its value is absolute
 // has more to go on than one told it lands outside the root.
-func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) {
-	return resolveWorkspacePathParam("release", "a Release", "the request named no Release", workspaceRoot, release)
+//
+// cfg is the workspace's configuration. A value leading out of the root
+// through a link is refused as resolveWorkspacePathParam refuses one, except
+// where it reaches a Release cfg names — as build.authoring_release, or as a
+// key of workspace.releases — which the configuration has reached and which
+// the workspace's Release listing offers at the link's place too.
+func resolveReleaseParam(workspaceRoot string, cfg workspaceconfig.Config, release string) (string, *jsonRPCError) {
+	return resolveWorkspacePathParam("release", "a Release", "the request named no Release", workspaceRoot, release, &cfg)
 }
 
 // resolveWorkspacePathParam turns any request parameter that names a file into
@@ -924,7 +931,20 @@ func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) 
 // from the containment call below it, which would also refuse an absolute value:
 // it names the specific fault, and a sender told its value is absolute has more to
 // go on than one told it lands outside the root.
-func resolveWorkspacePathParam(field, subject, absentFault, workspaceRoot, value string) (string, *jsonRPCError) {
+//
+// Where the value lands is then judged with its links resolved, by the one
+// judgement leadsOutOfWorkspace makes: a value spelled inside the root that leads
+// out of it through a link — a link to a file, or a link to a directory on the
+// way — is refused too, so a request never reads a file the workspace does not
+// hold by naming a link to it. The refusal quotes the value as it was sent. The
+// path returned is still the one the value spells, so whatever the request reads
+// relative to the file it names is read relative to where the request named it.
+//
+// release is the workspace's configuration where the value names a Release, and
+// nil for every other parameter: a Release the configuration names is reached
+// through it and is not refused for where it sits, and no other parameter has
+// such an exception.
+func resolveWorkspacePathParam(field, subject, absentFault, workspaceRoot, value string, release *workspaceconfig.Config) (string, *jsonRPCError) {
 	refuse := func(fault string) *jsonRPCError {
 		return &jsonRPCError{
 			Code: jsonRPCInvalidParams,
@@ -941,6 +961,9 @@ func resolveWorkspacePathParam(field, subject, absentFault, workspaceRoot, value
 	resolved, ok := pathscope.Resolve(workspaceRoot, value)
 	if !ok {
 		return "", refuse(fmt.Sprintf("%q resolves outside the workspace root", value))
+	}
+	if leadsOutOfWorkspace(workspaceRoot, resolved, release) {
+		return "", refuse(fmt.Sprintf("%q leads outside the workspace root through a link", value))
 	}
 	return resolved, nil
 }
@@ -1205,7 +1228,7 @@ type releasePreview struct {
 // that skip it and never loads a rendering plugin, while the graph query
 // honours its own build-on-inspect dial.
 func (s *Server) previewRelease(ctx context.Context, release string, opts pipeline.Options) (*releasePreview, *jsonRPCError) {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, paramErr
 	}

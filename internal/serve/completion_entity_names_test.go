@@ -108,7 +108,7 @@ func TestEntityNamesDrawOnTheWorkspaceAndTheCatalogDirectories(t *testing.T) {
 			[]string{"buffer/only", "shared/db", "ws/server"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := entityNamesIn(context.Background(), root, tc.view, overlay, tc.kind, workspaceconfig.ReleaseReach{})
+			got := entityNamesIn(context.Background(), root, workspaceconfig.Config{}, tc.view, overlay, tc.kind, workspaceconfig.ReleaseReach{})
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("entityNamesIn(%q) = %q, want %q", tc.kind, got, tc.want)
 			}
@@ -128,10 +128,10 @@ func TestEntityNamesReadNoDirectoryIndexForAWithdrawnRequest(t *testing.T) {
 
 	withdrawn, stop := context.WithCancel(context.Background())
 	stop()
-	if got := entityNamesIn(withdrawn, root, view, nil, "Component", workspaceconfig.ReleaseReach{}); len(got) != 0 {
+	if got := entityNamesIn(withdrawn, root, workspaceconfig.Config{}, view, nil, "Component", workspaceconfig.ReleaseReach{}); len(got) != 0 {
 		t.Errorf("a withdrawn request enumerated %q; it was supposed to read nothing", got)
 	}
-	if got := entityNamesIn(context.Background(), root, view, nil, "Component", workspaceconfig.ReleaseReach{}); !slices.Contains(got, "cat/cache") {
+	if got := entityNamesIn(context.Background(), root, workspaceconfig.Config{}, view, nil, "Component", workspaceconfig.ReleaseReach{}); !slices.Contains(got, "cat/cache") {
 		t.Fatalf("the live control enumerated %q without the catalog's cat/cache, so the withdrawn arm above proves nothing", got)
 	}
 }

@@ -489,6 +489,18 @@ func TestCascadeReasonReadsAsSentences(t *testing.T) {
 				"The workspace holds 2 Releases.",
 		},
 		{
+			name: "the marker names a file outside the workspace the configuration does not name",
+			attempt: cascadeAttempt{
+				MarkerFilePresent:      true,
+				MarkerFileTarget:       "linked-release.yaml",
+				MarkerFileOutside:      true,
+				ReleaseCandidatesFound: 0,
+			},
+			want: "The build.authoring_release setting is not set. " +
+				`The .aggrega/active-release marker names "linked-release.yaml", which lies outside the workspace and is ` +
+				"not a Release the workspace configuration names, so it is not read. The workspace holds no Release.",
+		},
+		{
 			name: "the only Release is the file the setting names",
 			attempt: cascadeAttempt{
 				AuthoringReleaseConfigured: true,

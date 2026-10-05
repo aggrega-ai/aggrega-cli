@@ -124,7 +124,7 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 // reader, and with no document attached: a directory is not a document a position
 // could be given in.
 func (s *Server) catalogDirsRefusal(release string) *jsonRPCError {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return paramErr
 	}
@@ -198,7 +198,7 @@ func (s *Server) termsFor(release string) (releaseTerms, *jsonRPCError) {
 	if release == "" {
 		return s.workspaceTerms(), nil
 	}
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return releaseTerms{}, paramErr
 	}

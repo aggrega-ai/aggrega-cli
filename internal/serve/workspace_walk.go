@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // walkWorkspaceYAML invokes visit once per YAML file under the
@@ -38,23 +39,78 @@ import (
 // IDE's expectation that the workspace tree is a finite acyclic
 // search domain.
 //
+// visit is handed two paths for each file: path, the file's place in the
+// workspace, which is how it is named; and read, the file whose bytes are
+// read for it. They differ only for a link to a file inside the root, which
+// is read through the file its one resolution reported — see
+// walkWorkspaceYAMLIn for what the walk does with a link.
+//
 // The walk checks ctx.Err() at each directory entry so a shutdown
 // cancellation interrupts a long workspace traversal between files
 // rather than running it to completion.
-func (s *Server) walkWorkspaceYAML(ctx context.Context, visit func(path string) error) error {
-	return walkWorkspaceYAMLIn(ctx, s.workspaceRoot, visit)
+func (s *Server) walkWorkspaceYAML(ctx context.Context, visit func(path, read string) error) error {
+	_, err := walkWorkspaceYAMLIn(ctx, s.workspaceRoot, s.wsConfig, visit)
+	return err
 }
 
-// walkWorkspaceYAMLIn is the whole of walkWorkspaceYAML with the root supplied
-// rather than read off a session.
+// unreadLinks are the links a walk of the workspace met that lead out of the
+// workspace root and that it therefore did not read, each named relative to the
+// root where the link itself sits — never by the place it leads to — in the order
+// the walk met them.
+type unreadLinks struct {
+	// dirs are the links leading to a directory outside the root.
+	dirs []string
+	// files are the links named like a YAML file leading to a file outside the
+	// root other than a Release the workspace's configuration names.
+	files []string
+}
+
+// walkWorkspaceYAMLIn is the whole of walkWorkspaceYAML with the root and the
+// workspace's configuration supplied rather than read off a session, together
+// with the links leading out of the workspace the walk met and did not read.
 //
 // The split is what lets a caller holding no session run the same traversal.
-// The session-bound form above is a one-line delegation passing its own root, so
-// there is one walk rather than two that agree until one of them learns about an
-// exclusion the other does not.
-func walkWorkspaceYAMLIn(ctx context.Context, root string, visit func(path string) error) error {
+// The session-bound form above is a one-line delegation passing its own root and
+// configuration, so there is one walk rather than two that agree until one of
+// them learns about an exclusion the other does not.
+//
+// cfg is read for the Releases it names, and for nothing else.
+//
+// # A link is judged where the walk meets it
+//
+// The walk never enters a link. A link is judged by the one resolution
+// resolveLink makes of it, against the root resolved the same way — the same
+// judgement the Release walk applies — and nothing outside the workspace root is
+// read through one but a Release the workspace's configuration names:
+//
+//   - A link to a directory outside the root is not searched, and is recorded,
+//     unless a directory there would be left out — by its name or by a
+//     .gitignore — in which case it is not, just as a directory there would not be
+//     read. A link to a directory inside the root needs nothing more, because
+//     that directory is walked, or left out, where it actually sits.
+//   - A link named like a YAML file that leads to a file outside the root is not
+//     read, and is recorded, unless a file there would be left out by a
+//     .gitignore. The one exception is a Release the workspace's configuration
+//     names — see readsConfiguredRelease — which the configuration has reached:
+//     it is read at the link's place, through the file the link's resolution
+//     reported, and not recorded, as the Release walk reads it. Every other file
+//     outside the root, whatever it declares, is not read through a link; the
+//     configuration's catalog directories are how other entities outside the
+//     workspace are read.
+//   - A link named like a YAML file that leads to a file inside the root is read
+//     at the link's place, through the file its resolution reported, so the bytes
+//     read are those of the file judged; that file is read where it actually sits
+//     as well.
+//   - A link that cannot be resolved — leading nowhere, or round a loop — or that
+//     leads to anything but a directory or a regular file, is neither read nor
+//     recorded, and nothing further is tried to find out where it was meant to go.
+//
+// A link inside a directory the walk leaves out is never met at all.
+func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.Config, visit func(path, read string) error) (unreadLinks, error) {
 	w := newGitignoreWalker(root)
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	scope := linkScope{root: root, cfg: cfg}
+	var unread unreadLinks
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -74,14 +130,65 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, visit func(path strin
 			}
 			return nil
 		}
+		var linked linkTarget
+		link := d.Type()&fs.ModeSymlink != 0
+		if link {
+			scope.resolve()
+			linked = resolveLink(path, scope.resolvedRoot)
+			if linked.dir {
+				if linked.outside && !excludedDirName(name) && !w.matchesAny(path, true) {
+					unread.dirs = scope.named(unread.dirs, path)
+				}
+				return nil
+			}
+		}
 		if !isYAMLFile(name) {
 			return nil
 		}
 		if w.matchesAny(path, false) {
 			return nil
 		}
-		return visit(path)
+		read := path
+		if link {
+			if !linked.file {
+				return nil
+			}
+			if linked.outside && !readsConfiguredRelease(&scope, linked.target) {
+				unread.files = scope.named(unread.files, path)
+				return nil
+			}
+			read = linked.target
+		}
+		return visit(path, read)
 	})
+	return unread, err
+}
+
+// readsConfiguredRelease reports whether the entity walk reads the file at target —
+// a file a link leads to outside the workspace root, absolute with its links
+// resolved — all the same: the workspace's configuration names it as a Release,
+// by configurationNames, the one judgement the Release walk makes of the same
+// link, and the file declares a Release, its kind read as every workspace-entity
+// projection reads a document's kind.
+//
+// Both halves are asked, the configuration first. The configuration naming a file
+// is what reaches it, so a file it does not name is never opened to find out what
+// it declares; and the settings that name it are a Release's, so a file named
+// there that declares anything else is not one of the workspace's documents
+// either, and is recorded as any other file outside the root is.
+func readsConfiguredRelease(scope *linkScope, target string) bool {
+	if !scope.configurationNames(target) {
+		return false
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		return false
+	}
+	var doc yaml.Node
+	if yaml.Unmarshal(content, &doc) != nil {
+		return false
+	}
+	return scalarAtPathOnDoc(&doc, []string{"kind"}) == "Release"
 }
 
 // gitignoreWalker carries the per-directory matcher cache used during
@@ -269,12 +376,29 @@ type workspaceDoc struct {
 // before delivery, because the cache's own iteration is map-ordered,
 // and the walk pass visits lexically.
 //
+// Neither pass delivers a document whose place in the workspace leads out
+// of it but a Release the workspace configuration names. The walk pass reads
+// nothing else through a link leading out of the root, as walkWorkspaceYAMLIn
+// describes. The cache pass holds the same line for a document the editor
+// has open: one at a path inside the root
+// that leads out of it once its links are resolved — a link to a file
+// outside, or a file inside a linked directory outside — is not delivered,
+// so a document the walk refuses to read is not offered either because
+// its editor happens to have it open. The judgement is leadsOutOfWorkspace's,
+// the one resolution every other path is held to. Such a document is left to
+// the walk pass, which reads it only where the walk reads the file it stands
+// for — a Release the workspace configuration names, read from disk — so the
+// two passes never judge one place two ways. A document the cache
+// holds at a path outside the root is delivered as before, for each visitor
+// to judge: it is not the workspace's at all, and the visitors that report
+// workspace documents already leave it out.
+//
 // Cancellation is honored between files during the walk pass. The cache
 // pass snapshots under the cache lock and invokes visit after releasing
 // it, so a visitor is never running while the lock is held and may be
 // as expensive as it needs to be.
 func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspaceDoc) bool) {
-	rangeWorkspaceDocsIn(ctx, s.workspaceRoot, s.overlayDocs(), visit)
+	rangeWorkspaceDocsIn(ctx, s.workspaceRoot, s.wsConfig, s.overlayDocs(), visit)
 }
 
 // overlayDocs snapshots the session's parse cache as the fresher-than-disk
@@ -294,16 +418,23 @@ func (s *Server) overlayDocs() []workspaceDoc {
 	return out
 }
 
-// rangeWorkspaceDocsIn is the whole of rangeWorkspaceDocs with the root and the
-// fresher-than-disk overlay supplied rather than read off a session.
+// rangeWorkspaceDocsIn is the whole of rangeWorkspaceDocs with the root, the
+// workspace's configuration and the fresher-than-disk overlay supplied rather
+// than read off a session.
 //
 // The overlay is the first pass and the on-disk walk the second, exactly as
 // described above. A caller holding no editor supplies no overlay, and the
 // traversal is then the walk alone — which is the same answer the session-bound
 // form gives when nothing is open, rather than a second reading of what counts
-// as a workspace document.
-func rangeWorkspaceDocsIn(ctx context.Context, root string, overlay []workspaceDoc, visit func(doc workspaceDoc) bool) {
+// as a workspace document. cfg is read for the Releases it names, as
+// walkWorkspaceYAMLIn reads it.
+//
+// It returns the links leading out of the workspace the walk pass met and did
+// not read. A traversal a visitor stopped early returns what the walk had met
+// by then, which is none where it stopped in the cache pass.
+func rangeWorkspaceDocsIn(ctx context.Context, root string, cfg workspaceconfig.Config, overlay []workspaceDoc, visit func(doc workspaceDoc) bool) unreadLinks {
 	seen := map[string]bool{}
+	scope := linkScope{root: root, cfg: cfg}
 
 	cached := append([]workspaceDoc(nil), overlay...)
 	sort.Slice(cached, func(i, j int) bool { return cached[i].path < cached[j].path })
@@ -311,14 +442,20 @@ func rangeWorkspaceDocsIn(ctx context.Context, root string, overlay []workspaceD
 		if seen[doc.path] {
 			continue
 		}
+		// Left unmarked, so the walk below meets the file and judges it as it
+		// judges every link: what it reads is the file on disk, never the editor's
+		// copy of a document leading out.
+		if _, inside := pathscope.Relative(root, doc.path); inside && scope.leadsOut(doc.path, false) {
+			continue
+		}
 		seen[doc.path] = true
 		if !visit(doc) {
-			return
+			return unreadLinks{}
 		}
 	}
 
 	stopped := false
-	_ = walkWorkspaceYAMLIn(ctx, root, func(path string) error {
+	unread, _ := walkWorkspaceYAMLIn(ctx, root, cfg, func(path, read string) error {
 		if stopped {
 			return filepath.SkipAll
 		}
@@ -327,7 +464,7 @@ func rangeWorkspaceDocsIn(ctx context.Context, root string, overlay []workspaceD
 			return nil
 		}
 		seen[clean] = true
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(read)
 		if err != nil {
 			return nil
 		}
@@ -341,6 +478,7 @@ func rangeWorkspaceDocsIn(ctx context.Context, root string, overlay []workspaceD
 		}
 		return nil
 	})
+	return unread
 }
 
 // entityOrderLess is the total order every workspace-entity projection

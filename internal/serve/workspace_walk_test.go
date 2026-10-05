@@ -327,7 +327,7 @@ func TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName(t *testing.T) {
 	srv.stderr = drainStderr()
 
 	var seen []string
-	err := srv.walkWorkspaceYAML(context.Background(), func(path string) error {
+	err := srv.walkWorkspaceYAML(context.Background(), func(path, _ string) error {
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
 			return relErr

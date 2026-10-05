@@ -147,7 +147,7 @@ const (
 // second copy of a withdrawn-pin notice beside the one a validation already
 // publishes on the semantic layer, and two copies of one fact read as two facts.
 func (s *Server) artifactPostureRender(ctx context.Context, release string, filled *compilerops.PreviewResult, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, paramErr
 	}

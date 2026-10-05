@@ -5,6 +5,7 @@ package serve
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -75,8 +76,26 @@ type catalogIndexParams struct {
 // The collection is always an array on the wire, empty when the
 // workspace declares no entities, so a client iterates the result
 // without a null check.
+//
+// UnreadLinkedDirs and UnreadLinkedFiles name the links leading out of the
+// workspace that the walk reading its documents met and did not read — to a
+// directory outside the root, and named like a YAML file to a file outside
+// it — each relative to the root where the link itself sits, in the order the
+// walk met them. No document behind such a link is read, so an entity whose
+// document an editor's file tree shows under one is not among Entities as the
+// workspace's own; the fields are what let a client say why. This holds whatever
+// the document declares. The one exception is a Release the workspace
+// configuration names — as build.authoring_release, or as a key of
+// workspace.releases — which is read and listed at the link's place, as the
+// Release-candidate answer lists it, and not named; a file those settings name
+// that declares anything else is not listed, and is named. The configured catalog
+// directories are how other entities outside the workspace are read. An answer given in a Release's terms names only
+// the links whose place that Release's answer holds. Each is always an array,
+// empty where there is no such link.
 type catalogIndexResult struct {
-	Entities []CatalogEntity `json:"entities"`
+	Entities          []CatalogEntity `json:"entities"`
+	UnreadLinkedDirs  []string        `json:"unreadLinkedDirs"`
+	UnreadLinkedFiles []string        `json:"unreadLinkedFiles"`
 }
 
 // dispatchCatalogIndex returns the entity index of the workspace the request
@@ -107,7 +126,12 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
-	return s.writeResult(ctx, req.ID, catalogIndexResult{Entities: s.catalogIndexIn(ctx, terms)})
+	index := s.catalogIndexIn(ctx, terms)
+	return s.writeResult(ctx, req.ID, catalogIndexResult{
+		Entities:          index.Entities,
+		UnreadLinkedDirs:  index.UnreadLinkedDirs,
+		UnreadLinkedFiles: index.UnreadLinkedFiles,
+	})
 }
 
 // catalogIndex projects the workspace document traversal down to the
@@ -150,19 +174,40 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // ahead of a workspace document sharing its kind and name rather than
 // landing in an order that depends on where the daemon happened to read it.
 func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
-	return s.catalogIndexIn(ctx, s.workspaceTerms())
+	return s.catalogIndexIn(ctx, s.workspaceTerms()).Entities
 }
 
 // catalogIndexIn is catalogIndex given in the terms supplied: the Features come
 // from the terms' lookup, and the workspace documents are the ones the terms'
-// reach holds.
-func (s *Server) catalogIndexIn(ctx context.Context, terms releaseTerms) []CatalogEntity {
-	return workspaceEntityIndex(ctx, s.workspaceRoot, terms.lookup, s.overlayDocs(), terms.reach)
+// reach holds. It answers with the links leading out of the workspace the walk
+// did not read as well.
+func (s *Server) catalogIndexIn(ctx context.Context, terms releaseTerms) EntityIndex {
+	return workspaceEntityIndex(ctx, s.workspaceRoot, s.wsConfig, terms.lookup, s.overlayDocs(), terms.reach)
+}
+
+// EntityIndex is what one reading of a workspace's entities reports: the entities,
+// and the links leading out of the workspace the reading met and did not follow.
+type EntityIndex struct {
+	// Entities are the entities, in the shared workspace-entity order. Never nil.
+	Entities []CatalogEntity
+	// UnreadLinkedDirs are the links the walk met that lead to a directory
+	// outside the workspace root, each named relative to the root where the link
+	// itself sits and in the order the walk met them — the list the editor's
+	// entity index answer carries. No such directory is searched, so no document
+	// inside one is among Entities as the workspace's own. Never nil.
+	UnreadLinkedDirs []string
+	// UnreadLinkedFiles are the links the walk met that are named like a YAML
+	// file and lead to a file outside the workspace root other than a Release the
+	// workspace configuration names, named and ordered as UnreadLinkedDirs is. No such file is read, so the entity it declares is not
+	// among Entities as the workspace's own. Never nil.
+	UnreadLinkedFiles []string
 }
 
 // WorkspaceEntityIndex reports every entity a workspace holds — each one's kind,
 // name, apiVersion, description, labels and source file — for a caller that
-// holds a workspace root and a catalog lookup rather than an open session.
+// holds a workspace root and a catalog lookup rather than an open session, with
+// the links leading out of the workspace that the walk reading its documents did
+// not read.
 //
 // It is the same projection the daemon answers with, over the same traversal and
 // the same rule for what counts as an entity, so two surfaces reporting a
@@ -175,12 +220,20 @@ func (s *Server) catalogIndexIn(ctx context.Context, terms releaseTerms) []Catal
 // every one, and a Release's reach holds the ones an answer in that Release's
 // terms holds. view is then the lookup over the same Release's stack, so the
 // Features it contributes and the documents the reach holds are one Release's.
+// The links named are the ones whose place reach holds, since a document at any
+// other place would not be in the answer whatever it read.
+//
+// cfg is the workspace's configuration, read for the Releases it names: a file
+// reached through a link leading out of the workspace is read, and listed, only
+// where cfg names it as a Release — by build.authoring_release or as a key of
+// workspace.releases — and it declares one, as WalkReleaseCandidates reads such a
+// Release; every other such link is named in UnreadLinkedFiles instead.
 //
 // Read-only: it resolves nothing, writes nothing, and reaches no registry or
-// network. The collection is never nil, so a caller iterates it without a nil
+// network. Every collection is never nil, so a caller iterates it without a nil
 // check.
-func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, reach workspaceconfig.ReleaseReach) []CatalogEntity {
-	return workspaceEntityIndex(ctx, root, view, nil, reach)
+func WorkspaceEntityIndex(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup, reach workspaceconfig.ReleaseReach) EntityIndex {
+	return workspaceEntityIndex(ctx, root, cfg, view, nil, reach)
 }
 
 // ReleaseCandidates reports every Release-kind document under root, decided by
@@ -288,13 +341,14 @@ func LockfilesFor(releases []string) map[string]string {
 }
 
 // workspaceEntityIndex is the whole of the entity index with the root, the
-// catalog lookup, the fresher-than-disk overlay and the reach supplied rather
-// than read off a session, so the session-bound method and the sessionless entry
-// point above are one implementation rather than two that agree today.
-func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, reach workspaceconfig.ReleaseReach) []CatalogEntity {
+// workspace's configuration, the catalog lookup, the fresher-than-disk overlay and
+// the reach supplied rather than read off a session, so the session-bound method
+// and the sessionless entry point above are one implementation rather than two
+// that agree today.
+func workspaceEntityIndex(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup, overlay []workspaceDoc, reach workspaceconfig.ReleaseReach) EntityIndex {
 	out := []CatalogEntity{}
 	workspaceFeatures := map[string]bool{}
-	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
+	unread := rangeWorkspaceDocsIn(ctx, root, cfg, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true
@@ -357,6 +411,23 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		a, b := out[i], out[j]
 		return entityOrderLess(a.Kind, a.Name, a.File, b.Kind, b.Name, b.File)
 	})
+	return EntityIndex{
+		Entities:          out,
+		UnreadLinkedDirs:  heldLinks(unread.dirs, reach),
+		UnreadLinkedFiles: heldLinks(unread.files, reach),
+	}
+}
+
+// heldLinks is the links, named relative to the workspace root, whose place reach
+// holds, in the order given — the ones an answer in reach's terms would have read
+// a document from had they led anywhere it reads. Never nil.
+func heldLinks(links []string, reach workspaceconfig.ReleaseReach) []string {
+	out := []string{}
+	for _, link := range links {
+		if reach.Holds(filepath.FromSlash(link)) {
+			out = append(out, link)
+		}
+	}
 	return out
 }
 

@@ -204,17 +204,31 @@ type listEntitiesArgs struct {
 // WorkspaceRoot is absent, and WorkspaceRootWithheld set, where the caller is not
 // told where the workspace sits on this host; the mark is omitted otherwise, so an
 // answer that keeps nothing back carries no trace of the rule.
+//
+// UnreadLinkedDirs and UnreadLinkedFiles name the links leading out of the
+// workspace that the walk reading its documents met and did not read — to a
+// directory outside the root, and named like a YAML file to a file outside it —
+// the same lists the editor's entity index answer carries, from the same walk. No
+// document behind such a link is read, so an entity whose document an editor's
+// file tree shows under one is absent from Count and Entities as the workspace's
+// own; these are what let a caller say why. Like Kinds they describe the whole
+// workspace rather than the page, so both shapes carry them whole. Each name is
+// the link's own place, relative to the root, and never the place it leads to, so
+// it reads the same to a caller at this machine and to one reaching a listener.
+// Each is always an array, empty where there is no such link.
 type listEntitiesResult struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
 
-	ResponseFormat string                `json:"response_format"`
-	Count          int                   `json:"count"`
-	Kinds          []entityKindCount     `json:"kinds"`
-	Offset         int                   `json:"offset"`
-	Returned       int                   `json:"returned"`
-	MoreRemaining  bool                  `json:"more_remaining"`
-	Entities       []serve.CatalogEntity `json:"entities"`
+	ResponseFormat    string                `json:"response_format"`
+	Count             int                   `json:"count"`
+	Kinds             []entityKindCount     `json:"kinds"`
+	Offset            int                   `json:"offset"`
+	Returned          int                   `json:"returned"`
+	MoreRemaining     bool                  `json:"more_remaining"`
+	Entities          []serve.CatalogEntity `json:"entities"`
+	UnreadLinkedDirs  []string              `json:"unread_linked_dirs"`
+	UnreadLinkedFiles []string              `json:"unread_linked_files"`
 }
 
 var listEntitiesToolSpec = toolSpec{
@@ -235,7 +249,10 @@ var listEntitiesToolSpec = toolSpec{
 		"returns one) for the listing in that Release's terms: the Features the catalog directories the workspace " +
 		"configuration gives that Release declare, and no document under a catalog directory only other Releases " +
 		"read — so a workspace keeping variants of one entity side by side, one per Release, is listed with the " +
-		"variant that Release builds with.",
+		"variant that Release builds with. `unread_linked_dirs` and `unread_linked_files`, in both shapes, name each " +
+		"link the listing meets that leads out of the workspace — to a directory, which is not searched, and to a " +
+		"YAML file other than a Release the workspace configuration names, which is not read — so a document an " +
+		"editor shows behind one is not listed as the workspace's own.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
@@ -322,31 +339,52 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 			return tw.answer(errorResult(refusal))
 		}
 	}
-	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView(releasePath, nil), reach)
+	index := serve.WorkspaceEntityIndex(ctx, tw.root, tw.cfg, tw.newView(releasePath, nil), reach)
+	entities := index.Entities
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(entities))
 	payload := listEntitiesResult{
-		ResponseFormat: format,
-		Count:          len(entities),
-		Kinds:          entityKindCounts(entities),
-		Offset:         from,
-		Returned:       to - from,
-		MoreRemaining:  more,
-		Entities:       entities[from:to],
+		ResponseFormat:    format,
+		Count:             len(entities),
+		Kinds:             entityKindCounts(entities),
+		Offset:            from,
+		Returned:          to - from,
+		MoreRemaining:     more,
+		Entities:          entities[from:to],
+		UnreadLinkedDirs:  index.UnreadLinkedDirs,
+		UnreadLinkedFiles: index.UnreadLinkedFiles,
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderListEntitiesText(payload), payload))
 }
 
-// renderListEntitiesText renders the human-readable entity listing: a heading
-// carrying the total, the breakdown of what that total is made of, then one line
-// per entity record this answer carries giving the coordinates a caller addresses
-// it by.
+// renderListEntitiesText renders the human-readable entity listing, closing with
+// one line naming the links to directories outside the workspace the walk did not
+// enter, and one naming the links to files outside it the walk did not read, each
+// where there are any — in every shape, the empty listing included, since a
+// workspace whose entities sit behind such links is exactly the one whose reader
+// needs to be told why they are not listed.
+func renderListEntitiesText(p listEntitiesResult) string {
+	text := renderEntityRecordsText(p)
+	if len(p.UnreadLinkedDirs) > 0 {
+		text += "\n\nNo document inside these links is listed as the workspace's own, because each leads to a " +
+			"directory outside the workspace and none is searched: " + strings.Join(p.UnreadLinkedDirs, ", ")
+	}
+	if len(p.UnreadLinkedFiles) > 0 {
+		text += "\n\nNo document behind these links is listed as the workspace's own, because each leads to a file " +
+			"outside the workspace and none is read: " + strings.Join(p.UnreadLinkedFiles, ", ")
+	}
+	return text
+}
+
+// renderEntityRecordsText renders the listing itself: a heading carrying the
+// total, the breakdown of what that total is made of, then one line per entity
+// record this answer carries giving the coordinates a caller addresses it by.
 //
 // The breakdown is printed in both shapes. It is what the summary is, and on a
 // page it is what says where that page sits in the whole — a reader handed fifty
 // records out of two thousand otherwise has to infer the shape of the rest from
 // the fifty.
-func renderListEntitiesText(p listEntitiesResult) string {
+func renderEntityRecordsText(p listEntitiesResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Entities in %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), p.Count)
 	for _, k := range p.Kinds {

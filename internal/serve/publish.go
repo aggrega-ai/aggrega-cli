@@ -317,14 +317,14 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		}
 	}
 	entityPath, paramErr := resolveWorkspacePathParam("entity", "an entity document",
-		"the request named no entity", s.workspaceRoot, params.Entity)
+		"the request named no entity", s.workspaceRoot, params.Entity, nil)
 	if paramErr != nil {
 		return publishops.PushConfig{}, paramErr
 	}
 	pluginPath := ""
 	if params.Plugin != "" {
 		resolved, perr := resolveWorkspacePathParam("plugin", "a plugin executable",
-			"the request named no plugin executable", s.workspaceRoot, params.Plugin)
+			"the request named no plugin executable", s.workspaceRoot, params.Plugin, nil)
 		if perr != nil {
 			return publishops.PushConfig{}, perr
 		}
@@ -442,7 +442,7 @@ func (s *Server) publishArtifactConfig(params publishArtifactParams, progressOut
 		}
 	}
 	filePath, paramErr := resolveWorkspacePathParam("file", "the artifact file",
-		"the request named no file", s.workspaceRoot, params.File)
+		"the request named no file", s.workspaceRoot, params.File, nil)
 	if paramErr != nil {
 		return publishops.PushArtifactConfig{}, paramErr
 	}
@@ -652,7 +652,7 @@ func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams, progres
 				"deprecateArtifact: from and reference are alternatives; send a batch file or a single reference, not both")
 		}
 		resolved, perr := resolveWorkspacePathParam("from", "a batch file",
-			"the request named no batch file", s.workspaceRoot, params.From)
+			"the request named no batch file", s.workspaceRoot, params.From, nil)
 		if perr != nil {
 			return publishops.DeprecateConfig{}, perr
 		}

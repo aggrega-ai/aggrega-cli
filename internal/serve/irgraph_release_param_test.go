@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestIrGraphRefusesReleaseOutsideTheContract drives aggrega/irGraph
@@ -156,7 +158,7 @@ func TestReleaseParamRefusalNamesTheContractOnTheWire(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 
-	_, envelope := resolveReleaseParam(tmp, filepath.Join(tmp, "release.yaml"))
+	_, envelope := resolveReleaseParam(tmp, workspaceconfig.Config{}, filepath.Join(tmp, "release.yaml"))
 	if envelope == nil {
 		t.Fatalf("expected an absolute release to be refused")
 	}
@@ -177,7 +179,7 @@ func TestReleaseParamAcceptsLeadingDoubleDotName(t *testing.T) {
 	tmp := t.TempDir()
 
 	for _, release := range []string{"..staging/release.yaml", "..release.yaml"} {
-		resolved, envelope := resolveReleaseParam(tmp, release)
+		resolved, envelope := resolveReleaseParam(tmp, workspaceconfig.Config{}, release)
 		if envelope != nil {
 			t.Errorf("release=%q was refused: %s — a name beginning with two dots is inside the root like any other", release, envelope.Message)
 			continue
@@ -197,12 +199,12 @@ func TestReleaseParamRefusesEscape(t *testing.T) {
 	tmp := t.TempDir()
 
 	for _, release := range []string{"../elsewhere/release.yaml", "..", "sub/../../release.yaml"} {
-		if _, envelope := resolveReleaseParam(tmp, release); envelope == nil {
+		if _, envelope := resolveReleaseParam(tmp, workspaceconfig.Config{}, release); envelope == nil {
 			t.Errorf("release=%q escapes the workspace root and must be refused", release)
 		}
 	}
 
-	_, absEnvelope := resolveReleaseParam(tmp, filepath.Join(tmp, "release.yaml"))
+	_, absEnvelope := resolveReleaseParam(tmp, workspaceconfig.Config{}, filepath.Join(tmp, "release.yaml"))
 	if absEnvelope == nil {
 		t.Fatal("an absolute release must be refused")
 	}

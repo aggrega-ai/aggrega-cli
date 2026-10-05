@@ -183,7 +183,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 
 	switch {
 	case a.Labels != nil:
-		result, answered := serve.AttachCandidatesForLabels(ctx, tw.root, view, a.Labels)
+		result, answered := serve.AttachCandidatesForLabels(ctx, tw.root, tw.cfg, view, a.Labels)
 		if !answered {
 			return errorResult("attach-candidates: the workspace read was interrupted before it completed, so there " +
 				"is no answer to report. Call it again.")
@@ -192,7 +192,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 	case a.GraphNode != "":
 		return s.attachCandidatesForGraphNode(ctx, tw, a)
 	default:
-		result, found := serve.AttachCandidatesForNode(ctx, tw.root, view, a.Node)
+		result, found := serve.AttachCandidatesForNode(ctx, tw.root, tw.cfg, view, a.Node)
 		if !found {
 			return errorResult(explainDiagnostic(fmt.Sprintf(
 				"No workspace entity is named %q, so there is nothing to report attach candidates for. Call "+
@@ -265,7 +265,7 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, view, reach,
+	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, tw.cfg, view, reach,
 		preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
@@ -417,7 +417,7 @@ func connectionCandidatesInvoke(s *server, ctx context.Context, args json.RawMes
 		return errorResult(explainToolError("Could not resolve the workspace to report connection candidates.", err, "component"))
 	}
 
-	result, found := serve.ConnectionCandidates(ctx, tw.root, a.Node, a.Socket)
+	result, found := serve.ConnectionCandidates(ctx, tw.root, tw.cfg, a.Node, a.Socket)
 	if !found {
 		return errorResult(explainDiagnostic(fmt.Sprintf(
 			"No workspace entity is named %q, so there is nothing to report connection candidates for. Call "+

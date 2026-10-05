@@ -165,11 +165,11 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, reference string, t
 	// Workspace-walk pass. Skip paths already captured by the parse-cache
 	// pass (a parse-cached file would be re-read from disk and possibly
 	// produce a duplicate; dedup by absolute path).
-	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path, read string) error {
 		if seen[path] || !terms.reach.Holds(path) {
 			return nil
 		}
-		content, readErr := os.ReadFile(path)
+		content, readErr := os.ReadFile(read)
 		if readErr != nil {
 			return nil
 		}
@@ -423,11 +423,11 @@ func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri strin
 	}
 	var out []yamlpos.Location
 	var selfDefinitions []string
-	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path, read string) error {
 		if !reach.Holds(path) {
 			return nil
 		}
-		content, readErr := os.ReadFile(path)
+		content, readErr := os.ReadFile(read)
 		if readErr != nil {
 			return nil
 		}
@@ -480,11 +480,11 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 		return []yamlpos.Location{}, nil
 	}
 	var out []yamlpos.Location
-	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path, read string) error {
 		if !reach.Holds(path) {
 			return nil
 		}
-		content, readErr := os.ReadFile(path)
+		content, readErr := os.ReadFile(read)
 		if readErr != nil {
 			return nil
 		}

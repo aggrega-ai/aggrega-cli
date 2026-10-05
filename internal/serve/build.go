@@ -401,7 +401,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 // that render is held to what the fill actually wrote and halts naming what is
 // missing.
 func (s *Server) fillDependencies(ctx context.Context, release string) ([]string, *dependencyResolutionReport, *compilerops.PreviewResult, *jsonRPCError) {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, nil, nil, paramErr
 	}

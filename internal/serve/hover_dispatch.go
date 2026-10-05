@@ -153,11 +153,11 @@ func (s *Server) findEntityForHover(reqCtx context.Context, reference string, te
 	// the walk is running reaches it here.
 	var foundDoc *yaml.Node
 	var foundContent []byte
-	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
+	_ = s.walkWorkspaceYAML(reqCtx, func(path, read string) error {
 		if foundDoc != nil || !terms.reach.Holds(path) {
 			return nil
 		}
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(read)
 		if err != nil {
 			return nil
 		}

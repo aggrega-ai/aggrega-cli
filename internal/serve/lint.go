@@ -319,7 +319,7 @@ type lintPass struct {
 // the daemon reads, under the contract every document parameter on this surface
 // shares: a path relative to the workspace root, naming a document inside it.
 func resolveEntityParam(workspaceRoot, entity string) (string, *jsonRPCError) {
-	return resolveWorkspacePathParam("entity", "a catalog entity", "the request named no entity", workspaceRoot, entity)
+	return resolveWorkspacePathParam("entity", "a catalog entity", "the request named no entity", workspaceRoot, entity, nil)
 }
 
 // dispatchLint answers with the publishing-conventions findings for the subject
@@ -382,7 +382,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 			Collect:    collect,
 		})
 	case release != "":
-		abs, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+		abs, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 		if paramErr != nil {
 			return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 		}

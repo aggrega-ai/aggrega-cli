@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -521,7 +522,14 @@ func catalogDirsGuidance(action string, refusal error) string {
 // serves and reaches nothing beyond it. The containment judgement is
 // [pathscope.Resolve]'s, which is the one home for whether a path stays inside a
 // root; nothing here re-derives it, and the refusal below is this surface's own
-// sentence attached to that verdict.
+// sentence attached to that verdict. That judgement is lexical, so a path it
+// accepts is then judged with its links resolved, by the judgement the language
+// server holds a path a request names to ([serve.LeadsOutOfWorkspace]): a value
+// spelled inside the root that leads out of it through a link is refused too. A
+// 'release' argument naming a Release the workspace configuration names is
+// reached through the configuration and is let through, as the language server
+// lets it through ([serve.ReleaseLeadsOutOfWorkspace]); no other argument has
+// such an exception.
 //
 // tool and argument are the caller's own words for what is being resolved — the
 // tool's advertised name and the argument's — so the refusal names what to
@@ -544,7 +552,18 @@ func (tw *toolWorkspace) workspacePath(tool, argument, raw string) (string, stri
 		return filepath.Join(tw.root, rel), ""
 	}
 	if resolved, ok := pathscope.Resolve(tw.root, rel); ok {
-		return resolved, ""
+		leadsOut := serve.LeadsOutOfWorkspace(tw.root, resolved)
+		if argument == "release" {
+			leadsOut = serve.ReleaseLeadsOutOfWorkspace(tw.root, tw.cfg, resolved)
+		}
+		if !leadsOut {
+			return resolved, ""
+		}
+		// The caller's own spelling is quoted back, as for a value climbing above
+		// the root, and nothing is said of where the link leads.
+		return "", fmt.Sprintf("%s's '%s' must name a path inside the workspace this server serves, written "+
+			"relative to that workspace's root; %q leads outside that root through a link. This server serves one "+
+			"workspace, fixed when it was started, and reads nothing beyond it.", tool, argument, raw)
 	}
 	// Neither refusal names the workspace root or any location the value resolves
 	// to. Both are places on this host, and a caller reaching a listener is told

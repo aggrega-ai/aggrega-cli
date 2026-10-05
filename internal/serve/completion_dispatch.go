@@ -199,12 +199,13 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 // it between files; the dispatcher's entry check answers only the request that
 // had already been withdrawn when it arrived.
 func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string, terms releaseTerms) []string {
-	return entityNamesIn(reqCtx, s.workspaceRoot, terms.lookup, s.overlayDocs(), kind, terms.reach)
+	return entityNamesIn(reqCtx, s.workspaceRoot, s.wsConfig, terms.lookup, s.overlayDocs(), kind, terms.reach)
 }
 
-// entityNamesIn is the whole of enumerateEntityNames with the root, the catalog
-// lookup, the fresher-than-disk overlay and the reach supplied rather than read
-// off a session.
+// entityNamesIn is the whole of enumerateEntityNames with the root, the
+// workspace's configuration, the catalog lookup, the fresher-than-disk overlay
+// and the reach supplied rather than read off a session. cfg is read for the
+// Releases it names, as the traversal reads it.
 //
 // It reads the two sources every other candidate surface reads, and no third:
 // the workspace document traversal, of which only the documents reach holds,
@@ -219,7 +220,7 @@ func (s *Server) enumerateEntityNames(reqCtx context.Context, kind string, terms
 // hold rather than of the order either delivered it in. An empty kind matches
 // every workspace document and no catalog entity. A request withdrawn during
 // the traversal does not go on to read the directory index.
-func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc, kind string, reach workspaceconfig.ReleaseReach) []string {
+func entityNamesIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup, overlay []workspaceDoc, kind string, reach workspaceconfig.ReleaseReach) []string {
 	var names []string
 	seen := map[string]bool{}
 	offer := func(name string) {
@@ -229,7 +230,7 @@ func entityNamesIn(ctx context.Context, root string, view *catalog.LazyLookup, o
 		seen[name] = true
 		names = append(names, name)
 	}
-	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, cfg, overlay, func(doc workspaceDoc) bool {
 		if kind != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kind {
 			return true
 		}
@@ -294,11 +295,11 @@ func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFil
 	seen := map[string]bool{}
 	// The walk runs under the request's own context, so a withdrawal that lands
 	// while it is reading the workspace ends it between files.
-	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
+	_ = s.walkWorkspaceYAML(reqCtx, func(path, read string) error {
 		if !reach.Holds(path) {
 			return nil
 		}
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(read)
 		if err != nil {
 			return nil
 		}

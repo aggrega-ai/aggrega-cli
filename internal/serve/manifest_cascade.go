@@ -87,6 +87,12 @@ type cascadeAttempt struct {
 	// the marker's target file failed to load.
 	MarkerFileLoadError error
 
+	// MarkerFileOutside records that the marker's target lies outside the
+	// workspace root — written as an absolute path elsewhere, climbing out of
+	// the root, or reached through a link leading out — and is not a Release
+	// the workspace's configuration names, so Step 2 did not load it.
+	MarkerFileOutside bool
+
 	// MarkerResolvedPath is the resolved path the marker target pointed
 	// at, kept so a found-but-invalid marker target can be squiggled on
 	// the file (MarkerFileTarget is the raw, possibly relative, target).
@@ -140,6 +146,16 @@ func (a cascadeAttempt) failedReleaseCandidates() []failedReleaseCandidate {
 // marker selected a loadable Release, so a marker whose target cannot
 // be loaded falls through to Step 3 rather than to the fallback.
 //
+// The marker is held to the workspace's containment. A target lying
+// outside the workspace root — an absolute path elsewhere, a path
+// climbing out of the root, or a path reached through a link leading out,
+// judged by the one resolution leadsOutOfWorkspace makes — is not loaded
+// unless the workspace's configuration names it as a Release, and the
+// cascade falls through exactly as it does for a marker whose target
+// cannot be loaded. The configuration is the way to reach a Release
+// outside the workspace; the marker, written by hand or by an editor from
+// its selection, is not.
+//
 // The marker's presence and target are recorded before Step 1 runs,
 // so the attempt log states what the workspace declared even when an
 // earlier step wins.
@@ -173,14 +189,19 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 	// Step 2: the operator's marker file
 	if attempt.MarkerFilePresent && attempt.MarkerFileTarget != "" {
 		resolved := resolveCascadePath(workspaceRoot, attempt.MarkerFileTarget)
-		rel, err := resolver.LoadRelease(resolved)
-		if err == nil {
-			attempt.ResolvedStep = 2
-			return rel, resolved, attempt
+		if leadsOutOfWorkspace(workspaceRoot, resolved, &wsCfg) {
+			attempt.MarkerFileOutside = true
+			fmt.Fprintf(stderr, "  cascade: step 2 marker target %q lies outside the workspace root and is not loaded\n", resolved)
+		} else {
+			rel, err := resolver.LoadRelease(resolved)
+			if err == nil {
+				attempt.ResolvedStep = 2
+				return rel, resolved, attempt
+			}
+			attempt.MarkerFileLoadError = err
+			attempt.MarkerResolvedPath = resolved
+			fmt.Fprintf(stderr, "  cascade: step 2 marker target %q failed to load: %v\n", resolved, err)
 		}
-		attempt.MarkerFileLoadError = err
-		attempt.MarkerResolvedPath = resolved
-		fmt.Fprintf(stderr, "  cascade: step 2 marker target %q failed to load: %v\n", resolved, err)
 	}
 
 	// Step 3: workspace-recursive Release walk; exactly-one wins
@@ -330,8 +351,8 @@ func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWal
 	return out
 }
 
-// linkTarget is where a link met by the Release walk leads, as one resolution of
-// the link reports it.
+// linkTarget is where a link met by a workspace walk — or a path with links on the
+// way to it — leads, as one resolution of it reports it.
 type linkTarget struct {
 	// target is the place the link leads, made absolute with every link on the
 	// way resolved; empty where the link cannot be resolved.
@@ -374,10 +395,71 @@ func resolveLink(path, resolvedRoot string) linkTarget {
 	}
 }
 
-// linkScope is what judging a link met by the Release walk is measured against:
-// the workspace root, made absolute and with its own links resolved, and the
-// Releases the workspace's configuration names. Each is worked out once, the
-// first time the walk meets a link, so a workspace holding none pays nothing.
+// leadsOutOfWorkspace reports whether the file or directory at path lies outside
+// the workspace root once every link on the way to it is resolved, and is not let
+// through by the workspace's configuration.
+//
+// It is the judgement a path handed to the daemon from outside its own walk is
+// held to where that path must stay inside the workspace — a document a request
+// names through resolveWorkspacePathParam, the Release the active-Release marker
+// names, and a document an editor holds at a place inside the root — and it is
+// made from the one resolution resolveLink makes, against the root resolved the
+// same way, so a path and a walked link are never judged by two readings of one
+// link. A path spelled inside the root that
+// leads out through a link, an absolute path elsewhere and a path climbing out of
+// the root are all outside alike. A path that does not resolve — nothing there yet,
+// or a link leading nowhere or round a loop — is not judged outside: nothing outside
+// is read through it, and whatever reads it next reports the missing file as it
+// always has.
+//
+// release is the workspace's configuration where path names a Release, and nil
+// where it names anything else. A Release the configuration names — as
+// build.authoring_release, or as a key of workspace.releases, judged by the file
+// itself as the Release walk judges a link — is reached through the configuration
+// and is let through wherever it sits. Nothing else has such an exception.
+func leadsOutOfWorkspace(root, path string, release *workspaceconfig.Config) bool {
+	scope := linkScope{root: root}
+	if release != nil {
+		scope.cfg = *release
+	}
+	return scope.leadsOut(path, release != nil)
+}
+
+// leadsOut is leadsOutOfWorkspace measured against this scope, so a caller
+// judging several paths against one root works the root out once. release says
+// whether path names a Release, which the scope's configuration may let through.
+func (l *linkScope) leadsOut(path string, release bool) bool {
+	l.resolve()
+	linked := resolveLink(path, l.resolvedRoot)
+	if !linked.outside {
+		return false
+	}
+	return !release || !l.configurationNames(linked.target)
+}
+
+// LeadsOutOfWorkspace reports whether the file or directory at path — absolute,
+// and spelled inside root — lies outside root once every link on the way to it is
+// resolved, by the same judgement the language server holds a path a request names
+// to. A caller confining a path it was sent to one workspace asks it after the
+// lexical containment check, which resolves no link.
+func LeadsOutOfWorkspace(root, path string) bool {
+	return leadsOutOfWorkspace(root, path, nil)
+}
+
+// ReleaseLeadsOutOfWorkspace is LeadsOutOfWorkspace for a path naming a Release:
+// a Release cfg names — as build.authoring_release, or as a key of
+// workspace.releases — is reached through the workspace's configuration and does
+// not lead out, wherever it sits, as the language server judges a Release a
+// request names.
+func ReleaseLeadsOutOfWorkspace(root string, cfg workspaceconfig.Config, path string) bool {
+	return leadsOutOfWorkspace(root, path, &cfg)
+}
+
+// linkScope is what judging a link met by a workspace walk, or a path the daemon
+// is handed, is measured against: the workspace root, made absolute and with its
+// own links resolved, and the Releases the workspace's configuration names. Each
+// is worked out once, the first time something is judged, so a walk meeting no
+// link pays nothing.
 type linkScope struct {
 	root string
 	cfg  workspaceconfig.Config
@@ -486,7 +568,9 @@ func shouldExcludeDir(name, path, workspaceRoot string) bool {
 // in that order, and the count closes. Where one of them names a file, the
 // file is named as it was written; where a named file, or the workspace's
 // only Release, does not load, its load error follows, so the reader learns
-// which file to repair. The workspace's only Release being the very file
+// which file to repair; and where the marker names a file outside the
+// workspace that the configuration does not name, the sentence says it is not
+// read for that reason. The workspace's only Release being the very file
 // the setting or the marker already reported is said as that rather than
 // with the same error twice.
 //
@@ -526,6 +610,9 @@ func (a cascadeAttempt) diagnosticMessage() string {
 		sentences = append(sentences, "There is no "+markerFilePath+" marker.")
 	case a.MarkerFileTarget == "":
 		sentences = append(sentences, "The "+markerFilePath+" marker is empty, so it names no Release.")
+	case a.MarkerFileOutside:
+		sentences = append(sentences, fmt.Sprintf("The %s marker names %q, which lies outside the workspace and is not "+
+			"a Release the workspace configuration names, so it is not read.", markerFilePath, a.MarkerFileTarget))
 	case a.MarkerFileLoadError != nil:
 		sentences = append(sentences, fmt.Sprintf("The %s marker names %q, which does not load: %s.",
 			markerFilePath, a.MarkerFileTarget, loadFailure(a.MarkerFileLoadError)))
@@ -603,6 +690,9 @@ func (a cascadeAttempt) fullTrace() string {
 		lines = append(lines, "  step 2 (.aggrega/active-release marker): not present")
 	case a.MarkerFileTarget == "":
 		lines = append(lines, "  step 2 (.aggrega/active-release marker): present but empty")
+	case a.MarkerFileOutside:
+		lines = append(lines, fmt.Sprintf("  step 2 (.aggrega/active-release marker): target %q lies outside the workspace root "+
+			"and the workspace configuration does not name it as a Release, so it was not loaded", a.MarkerFileTarget))
 	case a.MarkerFileLoadError != nil:
 		lines = append(lines, fmt.Sprintf("  step 2 (.aggrega/active-release marker): target %q failed to load — %v", a.MarkerFileTarget, a.MarkerFileLoadError))
 	default:

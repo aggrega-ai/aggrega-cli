@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // SocketCandidacy is one socket in the aggrega/connectionCandidates
@@ -217,12 +218,14 @@ func (s *Server) dispatchConnectionCandidates(ctx context.Context, req *jsonRPCR
 // response bytes a function of the workspace content rather than of its
 // file names.
 func (s *Server) connectionCandidates(ctx context.Context, node, socket string) (ConnectionCandidatesResult, bool) {
-	return connectionCandidatesIn(ctx, s.workspaceRoot, s.overlayDocs(), node, socket)
+	return connectionCandidatesIn(ctx, s.workspaceRoot, s.wsConfig, s.overlayDocs(), node, socket)
 }
 
-// ConnectionCandidates is the whole of connectionCandidates with the root
-// supplied rather than read off a session, so the session-bound method and a
-// caller holding no session are one walk rather than two that agree today.
+// ConnectionCandidates is the whole of connectionCandidates with the root and the
+// workspace's configuration supplied rather than read off a session, so the
+// session-bound method and a caller holding no session are one walk rather than
+// two that agree today. cfg is read for the Releases it names, as the workspace
+// documents are read for every surface; see WorkspaceEntityIndex.
 //
 // It takes no catalog lookup, and that is a property of the answer rather than an
 // omission: the target set is the workspace-local Components, and the sockets are
@@ -231,13 +234,13 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 // What a caller without a session does not supply is the overlay of documents an
 // editor is holding unsaved; with none, the answer is read from what is on disk,
 // which is what such a caller can see anyway.
-func ConnectionCandidates(ctx context.Context, root, node, socket string) (ConnectionCandidatesResult, bool) {
-	return connectionCandidatesIn(ctx, root, nil, node, socket)
+func ConnectionCandidates(ctx context.Context, root string, cfg workspaceconfig.Config, node, socket string) (ConnectionCandidatesResult, bool) {
+	return connectionCandidatesIn(ctx, root, cfg, nil, node, socket)
 }
 
 // connectionCandidatesIn is the whole of ConnectionCandidates with the
 // fresher-than-disk overlay supplied, which only a caller holding a session has.
-func connectionCandidatesIn(ctx context.Context, root string, overlay []workspaceDoc, node, socket string) (ConnectionCandidatesResult, bool) {
+func connectionCandidatesIn(ctx context.Context, root string, cfg workspaceconfig.Config, overlay []workspaceDoc, node, socket string) (ConnectionCandidatesResult, bool) {
 	// A workspace may declare the requested name on more than one document
 	// — two kinds may each carry it. Every match is collected and the total
 	// order below picks between them, so the answer does not depend on
@@ -251,7 +254,7 @@ func connectionCandidatesIn(ctx context.Context, root string, overlay []workspac
 	}
 	var components []componentDecl
 
-	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, cfg, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true

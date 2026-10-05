@@ -366,7 +366,7 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 	if termsErr != nil {
 		return AttachCandidatesResult{}, termsErr
 	}
-	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, terms.lookup, terms.reach, s.overlayDocs(),
+	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, s.wsConfig, terms.lookup, terms.reach, s.overlayDocs(),
 		preview.pipeline.Completed().IRGraph, node)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
@@ -411,15 +411,18 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 // What a caller without a session does not supply is the overlay of documents an
 // editor is holding unsaved; with none, the candidate population is read from
 // what is on disk, which is what such a caller can see anyway.
-func AttachCandidatesForGraphNode(ctx context.Context, root string, view *catalog.LazyLookup,
+//
+// cfg is the workspace's configuration, read for the Releases it names, as the
+// workspace documents are read for every surface; see WorkspaceEntityIndex.
+func AttachCandidatesForGraphNode(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	reach workspaceconfig.ReleaseReach, graph *types.IRGraph, node string) (AttachCandidatesResult, bool) {
-	return attachCandidatesForGraphNodeIn(ctx, root, view, reach, nil, graph, node)
+	return attachCandidatesForGraphNodeIn(ctx, root, cfg, view, reach, nil, graph, node)
 }
 
 // attachCandidatesForGraphNodeIn is the whole of AttachCandidatesForGraphNode
 // with the fresher-than-disk overlay supplied, which only a caller holding a
 // session has.
-func attachCandidatesForGraphNodeIn(ctx context.Context, root string, view *catalog.LazyLookup,
+func attachCandidatesForGraphNodeIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	reach workspaceconfig.ReleaseReach, overlay []workspaceDoc, graph *types.IRGraph, node string) (AttachCandidatesResult, bool) {
 	if graph == nil {
 		return AttachCandidatesResult{}, false
@@ -438,7 +441,7 @@ func attachCandidatesForGraphNodeIn(ctx context.Context, root string, view *cata
 		Node:        node,
 		NodeLabels:  labels,
 		LabelSource: NodeLabelsResolved,
-		Candidates:  matchingFeaturesIn(ctx, root, view, reach, overlay, irNode.Labels),
+		Candidates:  matchingFeaturesIn(ctx, root, cfg, view, reach, overlay, irNode.Labels),
 	}, true
 }
 
@@ -493,28 +496,30 @@ func attachCandidatesForGraphNodeIn(ctx context.Context, root string, view *cata
 // carries no such ambiguity. A malformed request is still refused, before any
 // of this runs.
 func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[string]string) (AttachCandidatesResult, bool) {
-	return attachCandidatesForLabelsIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), labels)
+	return attachCandidatesForLabelsIn(ctx, s.workspaceRoot, s.wsConfig, s.lazyCatalog, s.overlayDocs(), labels)
 }
 
 // AttachCandidatesForLabels is the whole of attachCandidatesForLabels with the
-// root and the catalog lookup supplied rather than read off a session.
+// root, the workspace's configuration and the catalog lookup supplied rather than
+// read off a session. cfg is read for the Releases it names, as
+// AttachCandidatesForGraphNode reads it.
 //
 // It is the shape underneath the two name-addressed coordinates: both obtain a
 // label set and then perform this identical match, so a caller that already holds
 // one has nothing to name, nothing to be refused for mistyping, and no lookup to
 // wait on. That makes it the coordinate needing no coordinate — the one a caller
 // holding labels reaches for first — rather than an advanced form of the others.
-func AttachCandidatesForLabels(ctx context.Context, root string, view *catalog.LazyLookup,
+func AttachCandidatesForLabels(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	labels map[string]string) (AttachCandidatesResult, bool) {
-	return attachCandidatesForLabelsIn(ctx, root, view, nil, labels)
+	return attachCandidatesForLabelsIn(ctx, root, cfg, view, nil, labels)
 }
 
 // attachCandidatesForLabelsIn is the whole of AttachCandidatesForLabels with the
 // fresher-than-disk overlay supplied, which only a caller holding a session has.
-func attachCandidatesForLabelsIn(ctx context.Context, root string, view *catalog.LazyLookup,
+func attachCandidatesForLabelsIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	overlay []workspaceDoc, labels map[string]string) (AttachCandidatesResult, bool) {
 	// A label set names no Release, so every workspace document is in its terms.
-	candidates := matchingFeaturesIn(ctx, root, view, workspaceconfig.ReleaseReach{}, overlay, orderedLabels(labels))
+	candidates := matchingFeaturesIn(ctx, root, cfg, view, workspaceconfig.ReleaseReach{}, overlay, orderedLabels(labels))
 	if ctx.Err() != nil {
 		// The traversal yields nothing under a cancelled context, and on this
 		// path that would surface as a SUCCESSFUL response carrying an empty
@@ -588,24 +593,26 @@ func attachCandidatesForLabelsIn(ctx context.Context, root string, view *catalog
 // order is not that order, so the sort is what makes the response bytes a
 // function of the workspace content rather than of its file names.
 func (s *Server) attachCandidates(ctx context.Context, node string) (AttachCandidatesResult, bool) {
-	return attachCandidatesForNodeIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), node)
+	return attachCandidatesForNodeIn(ctx, s.workspaceRoot, s.wsConfig, s.lazyCatalog, s.overlayDocs(), node)
 }
 
-// AttachCandidatesForNode is the whole of attachCandidates with the root and the
-// catalog lookup supplied rather than read off a session.
+// AttachCandidatesForNode is the whole of attachCandidates with the root, the
+// workspace's configuration and the catalog lookup supplied rather than read off
+// a session. cfg is read for the Releases it names, as
+// AttachCandidatesForGraphNode reads it.
 //
 // It answers about a workspace document addressed by its metadata.name, over the
 // labels that document declares — which is what a read over source can see, and
 // is weaker than what a build evaluates. The result says so through its label
 // source, so the difference reaches the caller instead of being smoothed over.
-func AttachCandidatesForNode(ctx context.Context, root string, view *catalog.LazyLookup,
+func AttachCandidatesForNode(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	node string) (AttachCandidatesResult, bool) {
-	return attachCandidatesForNodeIn(ctx, root, view, nil, node)
+	return attachCandidatesForNodeIn(ctx, root, cfg, view, nil, node)
 }
 
 // attachCandidatesForNodeIn is the whole of AttachCandidatesForNode with the
 // fresher-than-disk overlay supplied, which only a caller holding a session has.
-func attachCandidatesForNodeIn(ctx context.Context, root string, view *catalog.LazyLookup,
+func attachCandidatesForNodeIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	overlay []workspaceDoc, node string) (AttachCandidatesResult, bool) {
 	// A workspace may declare the requested name on more than one
 	// document — two kinds may each carry it. Every match is collected and
@@ -616,7 +623,7 @@ func attachCandidatesForNodeIn(ctx context.Context, root string, view *catalog.L
 
 	// A workspace document named by its metadata.name names no Release, so every
 	// workspace document is in its terms.
-	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, overlay, workspaceconfig.ReleaseReach{}, func(doc workspaceDoc, entity AttachCandidate) {
+	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, cfg, overlay, workspaceconfig.ReleaseReach{}, func(doc workspaceDoc, entity AttachCandidate) {
 		if entity.Name == node {
 			named = append(named, entity)
 			namedLabels[entity.File] = stringMapAtPathOnDoc(doc.node, []string{"metadata", "labels"})
@@ -673,24 +680,24 @@ type featureDecl struct {
 // directories, which is a common enough layout that the collision is the
 // normal case rather than an edge one.
 func (s *Server) workspaceFeatureDecls(ctx context.Context, visit func(workspaceDoc, AttachCandidate)) ([]featureDecl, map[string]bool) {
-	return workspaceFeatureDeclsIn(ctx, s.workspaceRoot, s.overlayDocs(), workspaceconfig.ReleaseReach{}, visit)
+	return workspaceFeatureDeclsIn(ctx, s.workspaceRoot, s.wsConfig, s.overlayDocs(), workspaceconfig.ReleaseReach{}, visit)
 }
 
 // workspaceFeatureDeclsIn is the whole of workspaceFeatureDecls with the root, the
-// fresher-than-disk overlay and the reach supplied rather than read off a session,
-// so the session-bound form above and the sessionless entry points below are one
-// walk rather than two that agree today.
+// workspace's configuration, the fresher-than-disk overlay and the reach supplied
+// rather than read off a session, so the session-bound form above and the
+// sessionless entry points below are one walk rather than two that agree today.
 //
 // Only the documents reach holds are visited and reported, so an answer given in a
 // Release's terms neither offers nor counts toward its name set a Feature kept
 // under a catalog directory only another Release reads. Leaving such a name out of
 // the set is what lets the Release's own catalog lookup still answer for it.
-func workspaceFeatureDeclsIn(ctx context.Context, root string, overlay []workspaceDoc, reach workspaceconfig.ReleaseReach,
+func workspaceFeatureDeclsIn(ctx context.Context, root string, cfg workspaceconfig.Config, overlay []workspaceDoc, reach workspaceconfig.ReleaseReach,
 	visit func(workspaceDoc, AttachCandidate)) ([]featureDecl, map[string]bool) {
 	var features []featureDecl
 	names := map[string]bool{}
 
-	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, cfg, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true
@@ -821,17 +828,18 @@ func matchFeatures(decls []featureDecl, labels types.OrderedMap[string]) []Attac
 // each needs the candidate population without the subject lookup the
 // name-addressed path performs in the same walk.
 func (s *Server) matchingFeatures(ctx context.Context, labels types.OrderedMap[string]) []AttachCandidate {
-	return matchingFeaturesIn(ctx, s.workspaceRoot, s.lazyCatalog, workspaceconfig.ReleaseReach{}, s.overlayDocs(), labels)
+	return matchingFeaturesIn(ctx, s.workspaceRoot, s.wsConfig, s.lazyCatalog, workspaceconfig.ReleaseReach{}, s.overlayDocs(), labels)
 }
 
-// matchingFeaturesIn is the whole of matchingFeatures with the root, the catalog
-// lookup, the reach and the fresher-than-disk overlay supplied rather than read
-// off a session. The workspace documents are those reach holds, and the
-// catalog-directory Features are those view's directories declare, so the two
-// populations are read in one Release's terms or both in the workspace's.
-func matchingFeaturesIn(ctx context.Context, root string, view *catalog.LazyLookup,
+// matchingFeaturesIn is the whole of matchingFeatures with the root, the
+// workspace's configuration, the catalog lookup, the reach and the
+// fresher-than-disk overlay supplied rather than read off a session. The
+// workspace documents are those reach holds, and the catalog-directory Features
+// are those view's directories declare, so the two populations are read in one
+// Release's terms or both in the workspace's.
+func matchingFeaturesIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	reach workspaceconfig.ReleaseReach, overlay []workspaceDoc, labels types.OrderedMap[string]) []AttachCandidate {
-	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, overlay, reach, nil)
+	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, cfg, overlay, reach, nil)
 	features = append(features, catalogFeatureDeclsFrom(view, workspaceNames)...)
 	return matchFeatures(features, labels)
 }
