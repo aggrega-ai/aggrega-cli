@@ -254,7 +254,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: ent.Content})
 			continue
 		}
-		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent)
+		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent, ent.SensitiveContent)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}

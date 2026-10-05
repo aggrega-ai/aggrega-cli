@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-refusal-keyholder-app
+  version: "1.0.0"
+spec:
+  components:
+    keyholder:
+      type: core/helm-refusal-keyholder
+      features:
+        admin_key:
+          type: feature.test/helm-refusal-credential
+          values:
+            origin: helm-refusal-secret-plaintext
+            key: helm-refusal-note-plaintext

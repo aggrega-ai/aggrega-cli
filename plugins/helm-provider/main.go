@@ -266,20 +266,24 @@ func renderedName() int32 {
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's rendered
 // manifests carry the whole aggrega.ai label and annotation set, so identical
-// input produces byte-identical output.
+// input produces byte-identical output. The markings over the values and over
+// the workload as a whole are rebuilt too: the render core reads them to keep a
+// value the input marks out of a failure's text, and they change no output byte.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
-		NodeID:           in.Node.ID,
-		Annotations:      mergeAnnotations(in.Context.Annotations),
-		BoundaryPath:     in.Node.BoundaryPath,
-		SyncWave:         in.Node.SyncWave,
-		RecipeName:       in.Node.RecipeName,
-		RecipeVersion:    in.Node.RecipeVersion,
-		LabelComponentID: in.Node.LabelComponentID,
-		DerivedNameBasis: in.Node.DerivedNameBasis,
-		OutputLabels:     in.Node.OutputLabels,
-		ProviderName:     in.Node.Provenance.ProviderName,
-		ProviderVersion:  in.Node.Provenance.ProviderVersion,
+		NodeID:            in.Node.ID,
+		SensitiveValues:   in.Node.SensitiveValues,
+		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
+		Annotations:       mergeAnnotations(in.Context.Annotations),
+		BoundaryPath:      in.Node.BoundaryPath,
+		SyncWave:          in.Node.SyncWave,
+		RecipeName:        in.Node.RecipeName,
+		RecipeVersion:     in.Node.RecipeVersion,
+		LabelComponentID:  in.Node.LabelComponentID,
+		DerivedNameBasis:  in.Node.DerivedNameBasis,
+		OutputLabels:      in.Node.OutputLabels,
+		ProviderName:      in.Node.Provenance.ProviderName,
+		ProviderVersion:   in.Node.Provenance.ProviderVersion,
 		Provenance: rendercore.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,
@@ -306,7 +310,8 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 //
 // A failure never quotes a value the input marks sensitive: the node
 // projection's sensitivity marking names the keys of the values that carry one,
-// and the render core reports a failure over those keys without their values.
+// or marks the values as a whole where a values mapping that read one produced
+// them, and the render core reports a failure over those values without them.
 // The host carries this guest's failure text to every surface unchanged, so
 // this guest is the only party able to keep such a value out of it.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
@@ -381,7 +386,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 	indent := in.Context.YAMLIndent
 	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
-		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent, ent.SensitiveContent)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}

@@ -35,7 +35,7 @@ type RenderNodeInput struct {
 	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty" cbor:"artifacts_projection,omitempty"`
 }
 
-// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, the sensitivity marking over its rendered keys, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, derived-name basis, and build provenance. The identity and the derived-name basis are two carries because they answer two questions — what a resource belongs to, and what an author's own source renders against — and a Feature attachment delivering source its author wrote is where the two answers differ. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values and the sensitivity marking in sorted key order — so the wire payload is byte-identical across runs of identical input.
+// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, the sensitivity marking over its rendered keys and over the values as a whole, outbound uses edges, boundary path, sync wave, Recipe identity, component-id override, derived-name basis, and build provenance. The identity and the derived-name basis are two carries because they answer two questions — what a resource belongs to, and what an author's own source renders against — and a Feature attachment delivering source its author wrote is where the two answers differ. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values and the sensitivity marking in sorted key order — so the wire payload is byte-identical across runs of identical input.
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -47,8 +47,10 @@ type IRNodeProjection struct {
 	Values types.OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty" cbor:"values,omitempty"`
 	// Features The node's feature attachments keyed by feature alias, carrying the same per-node feature-attachment shape the IR carries. Each entry carries the attachment's values, infra and inject mapping alongside its derived sensitivity marking, so a guest reads whether an attachment handles declared-sensitive material from the payload alone. Preserves author order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads the feature-entry shape through the IR wire contract.
 	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty,omitzero" yaml:"features,omitempty" cbor:"features,omitempty"`
-	// SensitiveRenderedKeys Rendered keys whose identity is recovered from a datum an author declared sensitive, each mapped to the declaration it inherited that sensitivity from. Travels host to guest on the render input — the opposite direction from the names a guest declares on the render output. What a key names follows the shape this payload carries: on a payload carrying the node's values it is one of that map's keys; on a payload carrying a workload it names an entry in the workload's own attachment maps, where the node's values are empty. A key is present only where the recovery is exact, joining a declaration to a rendered identity with nothing read out of the key's own text and no per-node or per-attachment marking spread across individual keys. A key a template invented is therefore absent, because no declaration names it: the output keys of a recipe's valuesMapping, and the content of an artifact, are template-authored, so neither yields a key here. Absence therefore states that no key's identity could be recovered, never that nothing on this payload carries sensitive material — a guest that reads an absent key as permission to display or emit a value in the clear has read it backwards. Keys arrive in sorted order, which is what makes the payload byte-identical across runs of identical input.
+	// SensitiveRenderedKeys Rendered keys whose identity is recovered from a datum an author declared sensitive, each mapped to the declaration it inherited that sensitivity from. Travels host to guest on the render input — the opposite direction from the names a guest declares on the render output. What a key names follows the shape this payload carries: on a payload carrying the node's values it is one of that map's keys; on a payload carrying a workload it names an entry in the workload's own attachment maps, where the node's values are empty. A key is present only where the recovery is exact, joining a declaration to a rendered identity with nothing read out of the key's own text and no per-node or per-attachment marking spread across individual keys. A key a template invented is therefore absent, because no declaration names it: the output keys of a recipe's valuesMapping, and the content of an artifact, are template-authored, so neither yields a key here — whether such a payload was produced from a value declared sensitive is carried instead by sensitive_values, and by an artifact entry's own sensitive_content. Absence therefore states that no key's identity could be recovered, never that nothing on this payload carries sensitive material — a guest that reads an absent key as permission to display or emit a value in the clear has read it backwards. Keys arrive in sorted order, which is what makes the payload byte-identical across runs of identical input.
 	SensitiveRenderedKeys map[string]string `json:"sensitive_rendered_keys,omitempty" yaml:"sensitive_rendered_keys,omitempty" cbor:"sensitive_rendered_keys,omitempty"`
+	// SensitiveValues True when the values this payload carries were produced by a template that reads a value an author declared sensitive, or a value traced to one: a Recipe's or a FeatureRecipe's valuesMapping, a single template whose output keys and values are its own invention, so no key of that output can be traced back to the datum it came from and the whole map is marked instead. It is read from the template's own references against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from a value's content or a key's name. A guest composing text a person reads, a refusal or a warning, keeps every value of the node's values out of that text when this is true, and keeps out the value under any key sensitive_rendered_keys names whether or not it is: the two compose, one naming the keys whose identity is recovered exactly and this one covering the map where none can be. Absent when no such template read such a value, which includes values that are the declared leaves themselves, marked per key in sensitive_rendered_keys instead, and absent on a payload carrying no values. Absence never states that no value is sensitive.
+	SensitiveValues bool `json:"sensitive_values,omitempty" yaml:"sensitive_values,omitempty" cbor:"sensitive_values,omitempty"`
 	// Uses Declared and deliberately withheld: the host never populates this, so the map is absent from every render payload. An outbound edge is consumed before dispatch — the edge's published values are rehydrated into the node's own inject pipe, which the Recipe has already evaluated into the values and workload the guest receives — and a guest assembling a boundary receives the edge list on its own input instead. Were it populated it would key the node's outbound uses edges by socket alias, each carrying that socket's ordered target node ids in author order.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
@@ -201,6 +203,8 @@ type FetchExternalInputResponse struct {
 type WorkloadProjection struct {
 	// Workload The host-evaluated, post-validation Workload the guest synthesizes; opaque at this schema layer so the socket schema does not rebind the Workload entity contract.
 	Workload types.Workload `json:"workload" yaml:"workload" cbor:"workload"`
+	// SensitiveWorkload True when the template that produced workload reads a value an author declared sensitive, or a value traced to one. It is read from the template's own references against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from the content of any field. A rendered workload's fields carry no link back to the data its template read, so this marks the whole document: a guest composing text a person reads, a refusal or a warning, keeps every value the workload carries out of that text when this is true, while the document's shape — its keys and where a value sits — stays readable. The attachment entries the node projection's sensitive_rendered_keys names are marked there whether or not this is set. Absent when the template reads no such value; absence never states that no field is sensitive.
+	SensitiveWorkload bool `json:"sensitive_workload,omitempty" yaml:"sensitive_workload,omitempty" cbor:"sensitive_workload,omitempty"`
 	// AttachmentProvides Every attachment on the node, projected to its resolved provides and keyed by the attachment instance name a workload attachment reference carries; absent when the node carries no attachments. The host copies the strings through without interpreting them, so the guest reads whichever entries of an attachment's provides it needs to resolve a reference to the resource that attachment produced. Whether an attachment handles declared-sensitive material is not repeated here: it travels on the node projection's matching feature entry, which a guest reads by the same instance name.
 	AttachmentProvides map[string]types.OrderedMap[string] `json:"attachment_provides,omitempty" yaml:"attachment_provides,omitempty" cbor:"attachment_provides,omitempty"`
 }
@@ -211,7 +215,7 @@ type ArtifactsProjection struct {
 	Entries []ArtifactProjectionEntry `json:"entries" yaml:"entries" cbor:"entries"`
 }
 
-// ArtifactProjectionEntry One pre-evaluated artifact entry the host hands a Provider guest to place: its host-resolved output name, its origin, the already-template-evaluated content bytes, and the build-provenance label and annotation key sets the host computed for the node. The guest decides how to place the provenance (splicing it into a manifest's metadata, prepending it as a comment, or emitting a companion file) and where the file lands.
+// ArtifactProjectionEntry One pre-evaluated artifact entry the host hands a Provider guest to place: its host-resolved output name, its origin, the already-template-evaluated content bytes, whether the template those bytes came from reads a value declared sensitive, and the build-provenance label and annotation key sets the host computed for the node. The guest decides how to place the provenance (splicing it into a manifest's metadata, prepending it as a comment, or emitting a companion file) and where the file lands.
 type ArtifactProjectionEntry struct {
 	// Name The host-resolved output name for the entry: the author-declared map key, with a file supplied by a library bundle nested under that key. The guest places the entry at this name or under a provider-specific sub-path derived from it.
 	Name string `json:"name" yaml:"name" cbor:"name"`
@@ -219,6 +223,8 @@ type ArtifactProjectionEntry struct {
 	Origin string `json:"origin" yaml:"origin" cbor:"origin"`
 	// Content The already-template-evaluated content bytes the host produced from the entry's inline content or imported file, evaluated against the render context using the guest's declared artifact-template delimiter pair. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Content []byte `json:"content" yaml:"content" cbor:"content"`
+	// SensitiveContent True when the template this entry's content was evaluated from reads a value an author declared sensitive, or a value traced to one. It is read from the template's own references against the declarations, with the delimiter pair the content was evaluated with — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from the content itself. The content is that template's output, so nothing in it can be traced back to the datum it came from: a guest composing text a person reads, a refusal or a warning, keeps every part of the content out of that text when this is true, a parser's own message about the content included. It is set per entry, so one entry's template reading such a value says nothing about another's. Absent when the template reads no such value; absence never states that the content is not sensitive.
+	SensitiveContent bool `json:"sensitive_content,omitempty" yaml:"sensitive_content,omitempty" cbor:"sensitive_content,omitempty"`
 	// Labels The Kubernetes-label-safe build-provenance key set the host computed for the node, keyed by label name. A guest that stamps provenance into a manifest's metadata.labels splices these; a guest whose output is not Kubernetes YAML ignores them.
 	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty" cbor:"labels,omitempty"`
 	// Annotations The build-provenance key set the host computed for the node that a Kubernetes label cannot represent, keyed by annotation name. A guest that stamps provenance into a manifest's metadata.annotations splices these; a guest whose output is not Kubernetes YAML ignores them.
@@ -709,6 +715,18 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 			buf.WriteByte('}')
 		}
 	}
+	if t.SensitiveValues != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sensitive_values\":")
+		if t.SensitiveValues {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	if !t.Uses.IsZero() {
 		if !first {
 			buf.WriteByte(',')
@@ -881,6 +899,12 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 			if err := expectDelim(dec, '}'); err != nil {
 				return err
 			}
+		case "sensitive_values":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.SensitiveValues = v
+			}
 		case "uses":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
@@ -975,7 +999,7 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *IRNodeProjection) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -2301,6 +2325,18 @@ func (t WorkloadProjection) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if t.SensitiveWorkload != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sensitive_workload\":")
+		if t.SensitiveWorkload {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	if len(t.AttachmentProvides) != 0 {
 		if !first {
 			buf.WriteByte(',')
@@ -2358,6 +2394,12 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "sensitive_workload":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.SensitiveWorkload = v
+			}
 		case "attachment_provides":
 			t.AttachmentProvides = make(map[string]types.OrderedMap[string])
 			if err := expectDelim(dec, '{'); err != nil {
@@ -2402,7 +2444,7 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *WorkloadProjection) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "workload", "attachment_provides"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "workload", "sensitive_workload", "attachment_provides"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -2518,6 +2560,18 @@ func (t ArtifactProjectionEntry) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"content\":")
 	writeJSONBytes(&buf, t.Content)
+	if t.SensitiveContent != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sensitive_content\":")
+		if t.SensitiveContent {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	if len(t.Labels) != 0 {
 		if !first {
 			buf.WriteByte(',')
@@ -2604,6 +2658,12 @@ func (t *ArtifactProjectionEntry) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Content = v
 			}
+		case "sensitive_content":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.SensitiveContent = v
+			}
 		case "labels":
 			t.Labels = make(map[string]string)
 			if err := expectDelim(dec, '{'); err != nil {
@@ -2665,7 +2725,7 @@ func (t *ArtifactProjectionEntry) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ArtifactProjectionEntry) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "name", "origin", "content", "labels", "annotations"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "name", "origin", "content", "sensitive_content", "labels", "annotations"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -5756,6 +5816,9 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	if t.RecipeVersion != "" {
 		n++
 	}
+	if t.SensitiveValues != false {
+		n++
+	}
 	if t.DerivedNameBasis != "" {
 		n++
 	}
@@ -5860,6 +5923,10 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	dst = appendCBORTextString(dst, "resolved_recipe")
 	dst = appendCBORTextString(dst, t.ResolvedRecipe)
+	if t.SensitiveValues != false {
+		dst = appendCBORTextString(dst, "sensitive_values")
+		dst = appendCBORBool(dst, t.SensitiveValues)
+	}
 	if t.DerivedNameBasis != "" {
 		dst = appendCBORTextString(dst, "derived_name_basis")
 		dst = appendCBORTextString(dst, t.DerivedNameBasis)
@@ -5997,6 +6064,12 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 				}
 				t.SensitiveRenderedKeys = m
 			}
+		case "sensitive_values":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.SensitiveValues = v
+			}
 		case "uses":
 			{
 				mn, err := dec.readMapHeader()
@@ -6109,7 +6182,7 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRNodeProjection) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -7421,6 +7494,9 @@ func (t WorkloadProjection) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t WorkloadProjection) appendCBOR(dst []byte) ([]byte, error) {
 	n := 1
+	if t.SensitiveWorkload != false {
+		n++
+	}
 	if len(t.AttachmentProvides) != 0 {
 		n++
 	}
@@ -7430,6 +7506,10 @@ func (t WorkloadProjection) appendCBOR(dst []byte) ([]byte, error) {
 		return nil, mErr
 	} else {
 		dst = appendCBORByteString(dst, raw)
+	}
+	if t.SensitiveWorkload != false {
+		dst = appendCBORTextString(dst, "sensitive_workload")
+		dst = appendCBORBool(dst, t.SensitiveWorkload)
 	}
 	if len(t.AttachmentProvides) != 0 {
 		dst = appendCBORTextString(dst, "attachment_provides")
@@ -7487,6 +7567,12 @@ func (t *WorkloadProjection) decodeCBOR(dec *cborDec) error {
 					return err
 				}
 			}
+		case "sensitive_workload":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.SensitiveWorkload = v
+			}
 		case "attachment_provides":
 			{
 				mn, err := dec.readMapHeader()
@@ -7541,7 +7627,7 @@ func (t *WorkloadProjection) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *WorkloadProjection) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "workload", "attachment_provides"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "workload", "sensitive_workload", "attachment_provides"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -7644,6 +7730,9 @@ func (t ArtifactProjectionEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if len(t.Annotations) != 0 {
 		n++
 	}
+	if t.SensitiveContent != false {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "name")
 	dst = appendCBORTextString(dst, t.Name)
@@ -7683,6 +7772,10 @@ func (t ArtifactProjectionEntry) appendCBOR(dst []byte) ([]byte, error) {
 			}
 		}
 	}
+	if t.SensitiveContent != false {
+		dst = appendCBORTextString(dst, "sensitive_content")
+		dst = appendCBORBool(dst, t.SensitiveContent)
+	}
 	return dst, nil
 }
 
@@ -7721,6 +7814,12 @@ func (t *ArtifactProjectionEntry) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.Content = v
+			}
+		case "sensitive_content":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.SensitiveContent = v
 			}
 		case "labels":
 			{
@@ -7782,7 +7881,7 @@ func (t *ArtifactProjectionEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ArtifactProjectionEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "name", "origin", "content", "labels", "annotations"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "name", "origin", "content", "sensitive_content", "labels", "annotations"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

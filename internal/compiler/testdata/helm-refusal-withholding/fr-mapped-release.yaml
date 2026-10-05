@@ -1,0 +1,15 @@
+# An attachment's values mapping writes the declared leaf into a chart value its schema refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-refusal-fr-mapped-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./keyholder-app.yaml
+  manifest: ./fr-mapped-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        keyholder: {}

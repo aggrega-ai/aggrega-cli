@@ -62,7 +62,7 @@ func TestBuildArtifactsProjection_FlatHappyPath(t *testing.T) {
 // unchanged.
 func TestSpliceArtifactProvenance_NoMetadataMappingHappyPath(t *testing.T) {
 	t.Parallel()
-	body, warning, err := SpliceArtifactProvenance("f.yaml", []byte("kind: Pod\n"), nil, nil, true, 2)
+	body, warning, err := SpliceArtifactProvenance("f.yaml", []byte("kind: Pod\n"), nil, nil, true, 2, false)
 	if err != nil {
 		t.Fatalf("happy: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestSpliceArtifactProvenance_NoMetadataMappingHappyPath(t *testing.T) {
 // blank content returns as-is with no warning.
 func TestSpliceArtifactProvenance_EmptyOutput(t *testing.T) {
 	t.Parallel()
-	body, warning, err := SpliceArtifactProvenance("f", []byte("   \n\n  "), nil, nil, true, 2)
+	body, warning, err := SpliceArtifactProvenance("f", []byte("   \n\n  "), nil, nil, true, 2, false)
 	if err != nil {
 		t.Fatalf("empty: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSpliceArtifactProvenance_AlternateDelimsNoMetadataIsByteFaithful(t *tes
 	t.Parallel()
 	// Content already evaluated by the host under [[ ]]; the Helm {{ }} survives.
 	src := []byte("kind: Pod\nname: n\nvalueFrom: {{ .Values.x }}\n")
-	body, warning, err := SpliceArtifactProvenance("f", src, nil, nil, false, 2)
+	body, warning, err := SpliceArtifactProvenance("f", src, nil, nil, false, 2, false)
 	if err != nil {
 		t.Fatalf("non-default: %v", err)
 	}
@@ -118,8 +118,8 @@ func TestSpliceArtifactProvenance_AlternateDelimsNoMetadataIsByteFaithful(t *tes
 // path for default delimiters: a non-YAML result is a hard error.
 func TestSpliceArtifactProvenance_DefaultDelimsParseError(t *testing.T) {
 	t.Parallel()
-	_, _, err := SpliceArtifactProvenance("f", []byte("this: is: malformed yaml: [unclosed"),
-		map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2)
+	_, _, err := SpliceArtifactProvenance("f", []byte("this: is: malformed yaml: [unclosed"), map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2, false)
+
 	if err == nil {
 		t.Errorf("malformed YAML at default-delims should fail")
 	}

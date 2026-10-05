@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: helm-refusal-fr-mapped-note
+  version: "1.0.0"
+  description: Its values mapping writes the leaf nobody declared into a chart value its values schema refuses.
+spec:
+  capability: helm
+  implements: feature.test/helm-refusal-credential
+  source: ./chart
+  valuesMapping: |
+    auth:
+      password: "{{ .values.key }}"

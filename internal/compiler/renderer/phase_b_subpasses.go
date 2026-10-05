@@ -159,6 +159,11 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 	state.ResolvedValues = values
+	// Whether the mapping read a value an author declared sensitive, asked of its
+	// references over the same set its failure is withheld by. The output's keys are
+	// the mapping's own invention, so this is the only marking its values can carry
+	// to the provider guest.
+	state.SensitiveValues = templateReadsWithheld(tmplText, state.Withheld)
 	// Trace point: B.1 valuesMapping output (slot 07).
 	state.capture(trace.PassPhaseB1, "", ctx)
 	state.PhaseReached = 1
@@ -231,8 +236,12 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 	// template read any, every finding a check reports is worded without the value
 	// it found. That is the fail-safe direction: a finding at a position no
 	// declared datum reached loses its value text too.
+	//
+	// The same answer is recorded for the provider guest, which synthesizes from
+	// this document and words its own refusals over it on the same terms.
+	state.SensitiveWorkload = workloadReadsWithheld(workloadText, state.Withheld)
 	var validation []validator.WorkloadValidationOption
-	if workloadReadsWithheld(workloadText, state.Withheld) {
+	if state.SensitiveWorkload {
 		validation = append(validation, validator.WithholdRenderedValues())
 	}
 
@@ -366,6 +375,9 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	if state.Recipe != nil {
 		providerName = state.Recipe.Spec.Capability
 	}
+	// The context is this dispatch's own copy, so the workload's marking travels
+	// with this synthesis alone and never onto a render that carries no workload.
+	nodeCtx.SensitiveWorkload = state.SensitiveWorkload
 	files, err := dispatchWorkloadSynthesis(ctx, engine, tmplCtx, state.ParsedWorkload, nodeCtx, providerName)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q workload synthesis", state.NodeID))
@@ -608,6 +620,10 @@ func phaseB6(
 		// applies, and two statements of it would agree on the day they were
 		// written and be free to diverge afterwards.
 		frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, item.FeatureType, input, frValues.KeysAreDeclaredLeaves)
+		// The host's marking over its own values is overwritten for the same reason:
+		// it describes the host Recipe's mapping, and this render carries the values
+		// this attachment's own mapping produced.
+		frNodeCtx.SensitiveValues = frValues.Sensitive
 		// This attachment is a contributor of its own, so the names its render
 		// derives are declared under its own label rather than the host node's.
 		// The sink is rewired for the same reason the boundary-scope render

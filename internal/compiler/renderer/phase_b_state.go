@@ -70,6 +70,21 @@ type PhaseBState struct {
 	// declines the join rather than making it on an unproven spelling.
 	ValuesAreDeclaredLeaves bool
 
+	// SensitiveValues reports that the values mapping that produced ResolvedValues
+	// reads a value Withheld names — the static reading of the mapping's
+	// references, never of what it produced. Recorded by the sub-pass that
+	// evaluates the mapping, which is the one place holding both the mapping's text
+	// and the set, and carried from here to the provider guest on the node
+	// projection. False where no mapping ran: the values are then the declared
+	// leaves, which are marked per key instead.
+	SensitiveValues bool
+
+	// SensitiveWorkload reports that the workload template that produced
+	// ParsedWorkload reads a value Withheld names. It is the same answer that
+	// decides how the checks of that workload word their findings, recorded once
+	// where it is taken so the provider guest is told exactly what the checks were.
+	SensitiveWorkload bool
+
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
 	// + validator.ValidateWorkload + validator.ValidateWorkloadAttachments all
 	// succeed. nil before B.2 and for Recipes that don't declare workload:.

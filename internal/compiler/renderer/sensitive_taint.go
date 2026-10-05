@@ -130,10 +130,26 @@ func derivedLocals(locals types.OrderedMap[string], declaredValues, declaredInfr
 // template with no actions likewise reads nothing. A template that fails to parse
 // yields no reference set, and the unresolvable case is withheld.
 func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
-	if !keys.AnyWithheld() || tmplText == "" || !strings.Contains(tmplText, "{{") {
+	return templateReadsWithheldDelims(tmplText, "{{", "}}", keys)
+}
+
+// templateReadsWithheldDelims is templateReadsWithheld for a template evaluated
+// with its own delimiter pair — an artifact entry, which a provider may have the
+// host evaluate with a pair its own target syntax does not collide with. The
+// reading is the same one; only the actions it finds depend on the pair, so a
+// template is read with the pair it is evaluated with, never the default.
+func templateReadsWithheldDelims(tmplText, leftDelim, rightDelim string, keys redact.Keys) bool {
+	// An empty delimiter is text/template's own default, as the evaluation reads it.
+	if leftDelim == "" {
+		leftDelim = "{{"
+	}
+	if rightDelim == "" {
+		rightDelim = "}}"
+	}
+	if !keys.AnyWithheld() || tmplText == "" || !strings.Contains(tmplText, leftDelim) {
 		return false
 	}
-	root, err := gotmpl.ParseTree(tmplText, "{{", "}}")
+	root, err := gotmpl.ParseTree(tmplText, leftDelim, rightDelim)
 	if err != nil {
 		return true
 	}

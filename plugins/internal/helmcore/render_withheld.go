@@ -24,12 +24,17 @@ type ChartLoader func() (*chart.Chart, error)
 // keeps out of a failure's text every value the node's input marks sensitive.
 //
 // marked is the node's sensitivity marking over its values: the keys of values the
-// render input names as carrying a datum an author declared sensitive. A render
-// that succeeds, and a render whose values carry no marked key, are
-// RenderLoadedChart's own — one run, its output, its failure, byte for byte.
+// render input names as carrying a datum an author declared sensitive. The
+// context's SensitiveValues is the marking over the values as a whole: the
+// template that produced them — a values mapping — reads such a datum, and since
+// no key of its output can be traced to the datum it came from, every value is
+// treated as marked. A render that succeeds, and a render whose values carry no
+// marked value, are RenderLoadedChart's own — one run, its output, its failure,
+// byte for byte.
 //
-// A render that fails while its values carry a marked key is run again on a fresh
-// chart, every marked value replaced by the placeholder. When that run fails the
+// A render that fails while its values carry a marked value is run again on a
+// fresh chart, every marked value replaced by the placeholder — under the marking
+// over the whole map, every value at every depth, while the keys stay as they are. When that run fails the
 // same way — at the same stage, for the same registered condition, and at the same
 // template position or on the same values-schema findings — its failure is the
 // report: a chart's own sentence survives, with the placeholder where the value
@@ -59,7 +64,11 @@ func RenderChartWithholding(
 	if err == nil {
 		return out, nil
 	}
-	substituted, ok := substituteMarked(values, marked)
+	substitute := func() (map[string]any, bool) { return substituteMarked(values, marked) }
+	if nodeCtx.SensitiveValues {
+		substitute = func() (map[string]any, bool) { return substituteEveryValue(values) }
+	}
+	substituted, ok := substitute()
 	if !ok {
 		return nil, err
 	}
@@ -91,6 +100,39 @@ func substituteMarked(values map[string]any, marked map[string]string) (map[stri
 		out[key] = redact.Placeholder()
 	}
 	return out, out != nil
+}
+
+// substituteEveryValue returns a copy of values with every value at every depth
+// replaced by the placeholder, and whether there was any value to replace. The
+// shape stays as it was — every key, every list's length, every absent value still
+// absent — so a chart testing whether a value was supplied takes the branch it
+// took, and only what a value holds is gone. values is never written to.
+func substituteEveryValue(values map[string]any) (map[string]any, bool) {
+	replaced := false
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case nil:
+			return nil
+		case map[string]any:
+			out := make(map[string]any, len(t))
+			for k, child := range t {
+				out[k] = walk(child)
+			}
+			return out
+		case []any:
+			out := make([]any, len(t))
+			for i, child := range t {
+				out[i] = walk(child)
+			}
+			return out
+		default:
+			replaced = true
+			return redact.Placeholder()
+		}
+	}
+	out := walk(values).(map[string]any)
+	return out, replaced
 }
 
 // chartFailureWithheld is the sentence a chart render's failure carries in place

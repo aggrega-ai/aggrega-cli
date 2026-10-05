@@ -140,8 +140,8 @@ func TestC3_ProvenanceSpliceAfterBlockScalarAnnotation(t *testing.T) {
 		"      {\"a\":1}\n" +
 		"      {\"b\":2}\n"
 
-	out, warn, err := SpliceArtifactProvenance("cm.yaml", []byte(body),
-		nil, map[string]string{"aggrega.ai/provenance": "stamp"}, true, 2)
+	out, warn, err := SpliceArtifactProvenance("cm.yaml", []byte(body), nil, map[string]string{"aggrega.ai/provenance": "stamp"}, true, 2, false)
+
 	if err != nil {
 		t.Fatalf("splice error: %v", err)
 	}

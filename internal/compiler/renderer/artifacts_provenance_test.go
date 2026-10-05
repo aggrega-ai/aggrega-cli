@@ -19,7 +19,7 @@ func spliceArtifact(t *testing.T, content string) (string, []string) {
 	_, state, nodeCtx := newArtifactsCtx()
 	labels := BuildAggregaProvenanceLabels(nodeCtx)
 	annotations := BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI(state))
-	body, warning, err := SpliceArtifactProvenance("art.yaml", []byte(content), labels, annotations, false, nodeCtx.YAMLIndent)
+	body, warning, err := SpliceArtifactProvenance("art.yaml", []byte(content), labels, annotations, false, nodeCtx.YAMLIndent, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}

@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-refusal-compose-artifact-note-recipe
+  version: "1.0.0"
+  description: A compose fragment template writes the value nobody declared where its output stops being YAML.
+spec:
+  capability: compose
+  implements: core/helm-refusal-vault
+  artifacts:
+    sidecar.yaml: |
+      services:
+        sidecar: *{{ .values.adminNote }}
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: vault:1.0

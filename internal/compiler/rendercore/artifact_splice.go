@@ -4,6 +4,7 @@
 package rendercore
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,7 +54,13 @@ func ArtifactProvenanceSkippedDiagnostic(warning string) renderctx.Diagnostic {
 //
 // A non-empty warning is advisory (the guest raises it as a diagnostic); a
 // non-nil err is a hard render failure the guest surfaces as such.
-func SpliceArtifactProvenance(name string, rendered []byte, labels, annotations map[string]string, defaultDelims bool, indent int) (body []byte, warning string, err error) {
+//
+// sensitiveContent is the entry's own marking: the template the content was
+// evaluated from reads a value an author declared sensitive. The parser quotes
+// the content it could not read, so with the marking set a parse failure reports
+// which artifact did not parse and withholds the parser's text — see
+// [ArtifactNotYAML]. Nothing else this placer reports quotes the content.
+func SpliceArtifactProvenance(name string, rendered []byte, labels, annotations map[string]string, defaultDelims bool, indent int, sensitiveContent bool) (body []byte, warning string, err error) {
 	r := string(rendered)
 	if strings.TrimSpace(r) == "" {
 		return rendered, "", nil
@@ -76,10 +83,37 @@ func SpliceArtifactProvenance(name string, rendered []byte, labels, annotations 
 		}
 		return b, "", nil
 	case artifactParseFailDefault:
-		return nil, "", cerrors.Wrap(rtErr, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("artifact %q template output is not valid YAML", name))
+		return nil, "", ArtifactNotYAML("", name, rtErr, sensitiveContent)
 	default: // artifactSkip
 		return rendered, ProvenanceSkipWarning(name), nil
 	}
+}
+
+// artifactParseWithheld is the cause a parse failure carries in place of the
+// parser's own text when the artifact's content was produced by a template that
+// reads a value an author declared sensitive.
+const artifactParseWithheld = "the parser's text is withheld because the template that produced this artifact reads a value declared sensitive"
+
+// ArtifactNotYAML is the refusal an artifact placer raises when an entry's
+// evaluated content does not parse as YAML, under the frame every placer shares:
+// the artifact's name, prefixed by the provider's own word where it has one.
+//
+// A YAML parser quotes what it could not read — a scalar, an anchor, a tag — so
+// its message can carry any part of the content. Where sensitiveContent is set the
+// content came from a template reading a declared value, the placer cannot re-run
+// that template, and so nothing of the parser's message is kept: the refusal names
+// the artifact and says the parser's text is withheld. Where it is not set the
+// parser's message is the cause, exactly as it was raised.
+func ArtifactNotYAML(provider, name string, parseErr error, sensitiveContent bool) error {
+	frame := fmt.Sprintf("artifact %q template output is not valid YAML", name)
+	if provider != "" {
+		frame = provider + ": " + frame
+	}
+	cause := parseErr
+	if sensitiveContent {
+		cause = errors.New(artifactParseWithheld)
+	}
+	return cerrors.Wrap(cause, cerrors.CatalogError, cerrors.SourceLocation{File: name}, frame)
 }
 
 // ProvenanceSkipWarning is the user-facing message emitted when a

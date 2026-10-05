@@ -577,7 +577,8 @@ metadata:
     author: alice
 spec:
   replicas: 1
-`), labels, annotations, true, nodeCtx.YAMLIndent)
+`), labels, annotations, true, nodeCtx.YAMLIndent, false)
+
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}
@@ -629,7 +630,8 @@ metadata:
   name: api
 spec:
   replicas: 1
-`), labels, annotations, true, nodeCtx.YAMLIndent)
+`), labels, annotations, true, nodeCtx.YAMLIndent, false)
+
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}
@@ -666,7 +668,8 @@ metadata:
   labels:
     - foo
     - bar
-`), labels, annotations, true, nodeCtx.YAMLIndent)
+`), labels, annotations, true, nodeCtx.YAMLIndent, false)
+
 	if err == nil {
 		t.Fatal("expected CATALOG_ERROR for malformed metadata.labels (sequence under labels)")
 	}
@@ -689,8 +692,8 @@ func TestSpliceArtifactProvenance_DefaultDelimsParseFailIsError(t *testing.T) {
 	// A structural Helm action does not parse as YAML. With the default-delimiter
 	// policy (the guest's target syntax was Aggrega's own {{ }}, already resolved),
 	// a non-YAML result is an authoring bug and halts.
-	_, _, err := SpliceArtifactProvenance("bad.yaml", []byte("metadata:\n  labels:\n    {{- include \"x\" . }}\n"),
-		map[string]string{"aggrega.ai/component-id": "api"}, nil, true, 2)
+	_, _, err := SpliceArtifactProvenance("bad.yaml", []byte("metadata:\n  labels:\n    {{- include \"x\" . }}\n"), map[string]string{"aggrega.ai/component-id": "api"}, nil, true, 2, false)
+
 	if err == nil {
 		t.Fatal("expected CATALOG_ERROR for non-YAML output under the default-delimiter policy")
 	}
@@ -710,8 +713,8 @@ metadata:
   labels:
     {{- include "common.labels" . | nindent 4 }}
 `)
-	body, warning, err := SpliceArtifactProvenance("with-include.yaml", content,
-		map[string]string{"aggrega.ai/component-id": "api"}, nil, false, 2)
+	body, warning, err := SpliceArtifactProvenance("with-include.yaml", content, map[string]string{"aggrega.ai/component-id": "api"}, nil, false, 2, false)
+
 	if err != nil {
 		t.Fatalf("expected no error for a non-round-trippable alternate-delims file, got %v", err)
 	}
@@ -739,7 +742,8 @@ metadata:
   namespace: "{{ .Release.Namespace }}"
 spec:
   podSelector: {}
-`), labels, annotations, false, nodeCtx.YAMLIndent)
+`), labels, annotations, false, nodeCtx.YAMLIndent, false)
+
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}
@@ -768,7 +772,8 @@ metadata:
 data:
   quoted: "{{ .Values.shared }}"
   unquoted: {{ .Values.shared }}
-`), labels, annotations, false, nodeCtx.YAMLIndent)
+`), labels, annotations, false, nodeCtx.YAMLIndent, false)
+
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}
@@ -788,8 +793,8 @@ data:
 func TestSpliceArtifactProvenance_NoMetadataIsNoOp(t *testing.T) {
 	t.Parallel()
 	content := []byte("services:\n  sidecar:\n    image: busybox:1.36\n")
-	body, warning, err := SpliceArtifactProvenance("extra-services.yaml", content,
-		map[string]string{"aggrega.ai/component-id": "api"}, nil, true, 2)
+	body, warning, err := SpliceArtifactProvenance("extra-services.yaml", content, map[string]string{"aggrega.ai/component-id": "api"}, nil, true, 2, false)
+
 	if err != nil {
 		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}

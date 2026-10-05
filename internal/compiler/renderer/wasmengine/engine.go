@@ -385,7 +385,9 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 //
 // Whether an attachment handles declared-sensitive material is not projected
 // here. It rides the node projection's feature entry for the same attachment,
-// under the same instance name, which is where a guest reads it.
+// under the same instance name, which is where a guest reads it. Whether the
+// workload's own template read a value declared sensitive is projected here,
+// beside the workload it describes, from the context the synthesis was handed.
 //
 // Each emitted file carries the Intermediate marking classified from the guest's
 // boundary-assembly self-report (renderer.RenderIsIntermediate): a fragment-merging
@@ -407,6 +409,7 @@ func (e *Engine) SynthesizeWorkload(
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
 			Workload:           *w,
+			SensitiveWorkload:  nodeCtx.SensitiveWorkload,
 			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}

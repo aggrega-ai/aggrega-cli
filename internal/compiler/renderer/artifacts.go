@@ -219,11 +219,16 @@ func buildArtifactsProjection(
 		}
 		seen[outputName] = struct{}{}
 		entry := ArtifactProjectionEntry{
-			Name:        outputName,
-			Origin:      origin,
-			Content:     []byte(rendered),
-			Labels:      labels,
-			Annotations: annotations,
+			Name:    outputName,
+			Origin:  origin,
+			Content: []byte(rendered),
+			// Whether this entry's template read a value its failure is withheld by,
+			// asked of the text just evaluated with the pair it was evaluated with.
+			// The content is the template's output, so the guest placing it has no
+			// other way to know which of it came from a declared value.
+			SensitiveContent: templateReadsWithheldDelims(tmplText, leftDelim, rightDelim, state.Withheld),
+			Labels:           labels,
+			Annotations:      annotations,
 		}
 		proj.Entries = append(proj.Entries, entry)
 		// The evaluated bytes are retained here rather than beside the recorded

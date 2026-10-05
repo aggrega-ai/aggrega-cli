@@ -1,0 +1,15 @@
+# The compose workload carries the undeclared value where the guest wants a quantity.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-refusal-compose-workload-note-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./vault-app.yaml
+  manifest: ./compose-workload-note-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        vault: {}

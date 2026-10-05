@@ -4,12 +4,15 @@
 package quantity
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
 // Shape describes the accepted grammar in one sentence, for a refusal to quote
@@ -34,6 +37,40 @@ type SyntaxError struct {
 // Error renders the refusal as one sentence naming the value and the reason.
 func (e *SyntaxError) Error() string {
 	return fmt.Sprintf("%q is not a quantity: %s", e.Value, e.Reason)
+}
+
+// ValueWithheld is the clause a refusal carries in place of a quantity it must not
+// quote. A core checking a workload's quantities is told when the template that
+// produced the workload reads a value an author declared sensitive, and from then
+// on any part of any field may be one, the quantity included.
+const ValueWithheld = "the value is withheld because the template that produced this workload reads a value declared sensitive"
+
+// Withhold rewords a refusal [Parse] gave so that nothing of the refused value
+// reaches its text, on the terms a failure over a sensitive value is reported
+// everywhere: the placeholder is parsed in the value's place, and when it is
+// refused for the same reason that refusal is the report — the placeholder quoted
+// where the value stood, the reason intact. Otherwise the reason depended on what
+// the value holds, and the report says only that it is not a quantity and that
+// the value and the reason are withheld. Any other error is reported the same way,
+// so nothing reaches the text unread.
+func Withhold(err error) error {
+	var refused *SyntaxError
+	if errors.As(err, &refused) {
+		_, again := Parse(redact.Placeholder())
+		var substituted *SyntaxError
+		if errors.As(again, &substituted) && substituted.Reason == refused.Reason {
+			return substituted
+		}
+	}
+	return withheldSyntaxError{}
+}
+
+// withheldSyntaxError is a refusal of a quantity reported without the quantity or
+// the reason it was refused.
+type withheldSyntaxError struct{}
+
+func (withheldSyntaxError) Error() string {
+	return "not a quantity; " + ValueWithheld + ", and so is what made it not one"
 }
 
 // Quantity is a parsed quantity. Its value is exactly

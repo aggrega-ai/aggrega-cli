@@ -33,14 +33,19 @@ import (
 // so a quantity that arrived through a template is judged on the value it
 // rendered to. It judges the grammar only — never whether a cluster can
 // schedule the value.
-func checkEmittedQuantities(w *types.Workload, nodeID string) error {
+//
+// withhold is the input's marking over the workload as a whole: the template that
+// produced it reads a value an author declared sensitive. With it set, a refusal
+// carries no part of the value it refused (see [quantity.Withhold]); the field
+// path still names where the value sits.
+func checkEmittedQuantities(w *types.Workload, nodeID string, withhold bool) error {
 	for name, c := range w.Containers.All() {
-		if err := checkResourceQuantities(c.Resources, "containers."+name+".resources", nodeID); err != nil {
+		if err := checkResourceQuantities(c.Resources, "containers."+name+".resources", nodeID, withhold); err != nil {
 			return err
 		}
 	}
 	for i, c := range w.InitContainers {
-		if err := checkResourceQuantities(c.Resources, fmt.Sprintf("initContainers[%d].resources", i), nodeID); err != nil {
+		if err := checkResourceQuantities(c.Resources, fmt.Sprintf("initContainers[%d].resources", i), nodeID, withhold); err != nil {
 			return err
 		}
 	}
@@ -48,15 +53,15 @@ func checkEmittedQuantities(w *types.Workload, nodeID string) error {
 		path := "volumes." + name
 		switch {
 		case v.Ephemeral != nil && v.Ephemeral.SizeLimit != "":
-			if err := checkQuantity(v.Ephemeral.SizeLimit, path+".ephemeral.sizeLimit", nodeID); err != nil {
+			if err := checkQuantity(v.Ephemeral.SizeLimit, path+".ephemeral.sizeLimit", nodeID, withhold); err != nil {
 				return err
 			}
 		case v.Persistent != nil:
-			if err := checkQuantity(v.Persistent.Size, path+".persistent.size", nodeID); err != nil {
+			if err := checkQuantity(v.Persistent.Size, path+".persistent.size", nodeID, withhold); err != nil {
 				return err
 			}
 		case v.PersistentTemplate != nil:
-			if err := checkQuantity(v.PersistentTemplate.Size, path+".persistentTemplate.size", nodeID); err != nil {
+			if err := checkQuantity(v.PersistentTemplate.Size, path+".persistentTemplate.size", nodeID, withhold); err != nil {
 				return err
 			}
 		}
@@ -67,7 +72,7 @@ func checkEmittedQuantities(w *types.Workload, nodeID string) error {
 // checkResourceQuantities checks one container's requests and limits, each in
 // the order translateResources emits them: cpu, memory, then the extended
 // resources in author order.
-func checkResourceQuantities(r *types.ResourceSpec, resourcesPath, nodeID string) error {
+func checkResourceQuantities(r *types.ResourceSpec, resourcesPath, nodeID string, withhold bool) error {
 	if r == nil {
 		return nil
 	}
@@ -83,17 +88,17 @@ func checkResourceQuantities(r *types.ResourceSpec, resourcesPath, nodeID string
 			continue
 		}
 		if l.list.CPU != "" {
-			if err := checkQuantity(l.list.CPU, l.path+".cpu", nodeID); err != nil {
+			if err := checkQuantity(l.list.CPU, l.path+".cpu", nodeID, withhold); err != nil {
 				return err
 			}
 		}
 		if l.list.Memory != "" {
-			if err := checkQuantity(l.list.Memory, l.path+".memory", nodeID); err != nil {
+			if err := checkQuantity(l.list.Memory, l.path+".memory", nodeID, withhold); err != nil {
 				return err
 			}
 		}
 		for key, value := range l.list.Extended.All() {
-			if err := checkQuantity(value, l.path+"."+key, nodeID); err != nil {
+			if err := checkQuantity(value, l.path+"."+key, nodeID, withhold); err != nil {
 				return err
 			}
 		}
@@ -104,9 +109,13 @@ func checkResourceQuantities(r *types.ResourceSpec, resourcesPath, nodeID string
 // checkQuantity refuses a value outside the quantity grammar under the
 // value-not-representable condition — the manifests' quantity fields have no
 // representation for it — with a sentence naming the node, the authored field
-// path and the value, and quoting the grammar.
-func checkQuantity(value, path, nodeID string) error {
+// path and the value, and quoting the grammar. With withhold set the sentence
+// carries no part of the value in its place.
+func checkQuantity(value, path, nodeID string, withhold bool) error {
 	if _, err := quantity.Parse(value); err != nil {
+		if withhold {
+			err = quantity.Withhold(err)
+		}
 		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("helm: node %q: %s: %v; %s", nodeID, path, err, quantity.Shape))

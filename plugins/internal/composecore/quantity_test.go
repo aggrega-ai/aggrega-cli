@@ -113,7 +113,7 @@ func TestTranslateComposeResources(t *testing.T) {
 		Requests: &types.ResourceList{CPU: "250m", Memory: "128Mi"},
 		Limits:   &types.ResourceList{CPU: "1", Memory: "256Mi"},
 	}
-	deploy, err := translateComposeResources(r, "containers.main.resources", "node")
+	deploy, err := translateComposeResources(r, "containers.main.resources", "node", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,10 +128,10 @@ func TestTranslateComposeResources(t *testing.T) {
 	}
 
 	// nil spec and empty spec produce no deploy block.
-	if d, _ := translateComposeResources(nil, "containers.main.resources", "node"); d != nil {
+	if d, _ := translateComposeResources(nil, "containers.main.resources", "node", false); d != nil {
 		t.Error("nil spec should produce nil deploy")
 	}
-	if d, _ := translateComposeResources(&types.ResourceSpec{}, "containers.main.resources", "node"); d != nil {
+	if d, _ := translateComposeResources(&types.ResourceSpec{}, "containers.main.resources", "node", false); d != nil {
 		t.Error("empty spec should produce nil deploy")
 	}
 }
@@ -149,7 +149,7 @@ func TestTranslateComposeResourcesRefusals(t *testing.T) {
 			Limits:   &types.ResourceList{CPU: "1", Memory: "256Mi"},
 		}
 	}
-	if _, err := translateComposeResources(valid(), "containers.main.resources", "node"); err != nil {
+	if _, err := translateComposeResources(valid(), "containers.main.resources", "node", false); err != nil {
 		t.Fatalf("positive control: the valid spec halted: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestTranslateComposeResourcesRefusals(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := valid()
 			c.set(r)
-			_, err := translateComposeResources(r, "containers.main.resources", "node")
+			_, err := translateComposeResources(r, "containers.main.resources", "node", false)
 			if err == nil {
 				t.Fatal("the faulty quantity converted")
 			}

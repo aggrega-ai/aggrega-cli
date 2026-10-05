@@ -15,8 +15,8 @@ func TestSpliceArtifactProvenance_NonDefaultDelimsParseFailWarns(t *testing.T) {
 	t.Parallel()
 	// Content that yaml.Unmarshal will reject: a bare double-colon scalar.
 	src := []byte("key: : double-colon-error")
-	body, warning, err := SpliceArtifactProvenance("f", src,
-		map[string]string{"aggrega.ai/component-id": "n"}, nil, false, 2)
+	body, warning, err := SpliceArtifactProvenance("f", src, map[string]string{"aggrega.ai/component-id": "n"}, nil, false, 2, false)
+
 	if err != nil {
 		t.Fatalf("non-default + parse-fail should warn-and-emit: %v", err)
 	}
@@ -33,8 +33,8 @@ func TestSpliceArtifactProvenance_NonDefaultDelimsParseFailWarns(t *testing.T) {
 // without provenance injection or error.
 func TestSpliceArtifactProvenance_EmptyDocumentNode(t *testing.T) {
 	t.Parallel()
-	body, _, err := SpliceArtifactProvenance("f", []byte("---\n"),
-		map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2)
+	body, _, err := SpliceArtifactProvenance("f", []byte("---\n"), map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2, false)
+
 	if err != nil {
 		t.Fatalf("empty doc: %v", err)
 	}

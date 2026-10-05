@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-refusal-mapped-recipe
+  version: "1.0.0"
+  description: A values mapping writes the value the Component declares sensitive into a chart value its values schema refuses.
+spec:
+  capability: helm
+  implements: core/helm-refusal-vault
+  source: ./chart
+  # The mapping invents the chart's keys, so no declaration names any of them and
+  # the render input marks the values as a whole rather than key by key.
+  valuesMapping: |
+    auth:
+      password: "{{ .values.adminPassword }}"

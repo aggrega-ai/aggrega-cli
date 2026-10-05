@@ -58,18 +58,21 @@ import (
 // entry's content reached here already evaluated against Aggrega's own default
 // delimiter pair, so nothing downstream is waiting to rewrite it and a
 // non-parsing body is an authoring fault rather than a shape to pass through.
+// sensitiveContent is the entry's own marking — its template reads a value an
+// author declared sensitive — and with it set that refusal withholds the parser's
+// text, which quotes the content, through the one refusal every artifact placer
+// raises for it.
 //
 // indent is the YAML indentation width the re-marshal uses. Empty content is
 // returned unchanged with no warning.
-func SpliceArtifactServiceProvenance(name string, rendered []byte, labels, annotations map[string]string, indent int) (body []byte, warning string, err error) {
+func SpliceArtifactServiceProvenance(name string, rendered []byte, labels, annotations map[string]string, indent int, sensitiveContent bool) (body []byte, warning string, err error) {
 	if strings.TrimSpace(string(rendered)) == "" {
 		return rendered, "", nil
 	}
 
 	docs, decErr := rendercore.DecodeAllYAMLDocs(string(rendered))
 	if decErr != nil {
-		return nil, "", cerrors.Wrap(decErr, cerrors.CatalogError, cerrors.SourceLocation{File: name},
-			fmt.Sprintf("compose: artifact %q template output is not valid YAML", name))
+		return nil, "", rendercore.ArtifactNotYAML("compose", name, decErr, sensitiveContent)
 	}
 
 	provenance := foldComposeProvenanceSet(labels, annotations)

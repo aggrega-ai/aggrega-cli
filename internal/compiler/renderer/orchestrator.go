@@ -1691,6 +1691,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			Slots:                   sensitiveSlots(node.Component),
 			SocketSlots:             SensitiveSocketSlots(workloadSlots),
 		}
+		// Whether the values mapping read a declared value, as the values pass
+		// recorded it. It travels beside the declarations rather than inside them
+		// because it is read from a template, which a declaration set never is.
+		nodeCtx.SensitiveValues = state.SensitiveValues
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
 		// drains into result.Warnings at the end of the per-node sequence. Set once

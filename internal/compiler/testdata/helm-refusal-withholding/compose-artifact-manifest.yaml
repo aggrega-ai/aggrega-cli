@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: helm-refusal-compose-artifact-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/helm-refusal-vault: helm-refusal-compose-artifact-recipe:1.0.0

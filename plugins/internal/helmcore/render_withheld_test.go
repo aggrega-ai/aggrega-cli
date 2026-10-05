@@ -56,6 +56,14 @@ func withheldFixtureFiles(extra map[string]string) map[string]string {
 	return files
 }
 
+// nestedValues is a values map the way a values mapping writes one — keys of the
+// mapping's own invention, nested — carrying the value the input marks; and
+// nestedPasswordSchema refuses that value where it sits.
+const (
+	nestedValues         = `{"auth":{"password":"` + withheldMarkedValue + `"},"replicas":1}`
+	nestedPasswordSchema = `{"type":"object","properties":{"auth":{"type":"object","properties":{"password":{"type":"string","pattern":"^ref:"}}}}}`
+)
+
 // configMapTemplate is a template emitting one ConfigMap named name, carrying
 // body under data.
 func configMapTemplate(name, body string) string {
@@ -83,6 +91,9 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 		files  map[string]string
 		values string
 		marked map[string]string
+		// sensitiveValues: the input marks the values as a whole — a values mapping
+		// that read a declared value produced them.
+		sensitiveValues bool
 		// renders: the render succeeds and its output is the plain render's.
 		renders bool
 		// identical: the failure's text is the plain render's, byte for byte.
@@ -167,12 +178,52 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 			values: values, marked: map[string]string{"absentKey": "values.absentKey"}, identical: true,
 			want: []string{withheldMarkedValue},
 		},
+		{
+			name: "a values-schema finding on a nested value of a map marked whole carries the placeholder",
+			files: map[string]string{
+				"values.schema.json": nestedPasswordSchema,
+				"templates/a.yaml":   configMapTemplate("cm", "  ready: \"true\"\n"),
+			},
+			values: nestedValues, sensitiveValues: true, plainQuotes: true,
+			want: []string{"at '/auth/password': '" + redact.Placeholder() + "' does not match pattern '^ref:'"},
+		},
+		{
+			name:   "a fail quoting a nested value of a map marked whole keeps the chart's sentence with the placeholder",
+			files:  map[string]string{"templates/a.yaml": `{{ fail (printf "the password %s must be a reference" .Values.auth.password) }}`},
+			values: nestedValues, sensitiveValues: true, plainQuotes: true,
+			want: []string{"the password " + redact.Placeholder() + " must be a reference", "execution error at (vault/templates/a.yaml:"},
+		},
+		{
+			name: "a schema finding a map marked whole changes under the placeholder is withheld with its location",
+			files: map[string]string{
+				"values.schema.json": `{"type":"object","properties":{"replicas":{"type":"integer","minimum":1}}}`,
+				"templates/a.yaml":   configMapTemplate("cm", "  ready: \"true\"\n"),
+			},
+			values: `{"auth":{"password":"` + withheldMarkedValue + `"},"replicas":0}`, sensitiveValues: true,
+			want: []string{"failure text withheld", "values do not meet the chart's schema at vault at '/replicas' (minimum)"},
+		},
+		{
+			name: "a rendered document a nested value of a map marked whole breaks is withheld",
+			files: map[string]string{"templates/a.yaml": configMapTemplate("cm",
+				"  password: *{{ .Values.auth.password }}\n")},
+			values: nestedValues, sensitiveValues: true, plainQuotes: true,
+			want: []string{"failure text withheld"},
+		},
+		{
+			name: "a map the input does not mark leaves the plain render's failure",
+			files: map[string]string{
+				"values.schema.json": nestedPasswordSchema,
+				"templates/a.yaml":   configMapTemplate("cm", "  ready: \"true\"\n"),
+			},
+			values: nestedValues, identical: true,
+			want: []string{withheldMarkedValue},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			nodeCtx := rendercore.NodeRenderContext{NodeID: "api"}
+			nodeCtx := rendercore.NodeRenderContext{NodeID: "api", SensitiveValues: tc.sensitiveValues}
 			load := chartLoaderFor(withheldFixtureFiles(tc.files))
 
 			plainChart, err := load()

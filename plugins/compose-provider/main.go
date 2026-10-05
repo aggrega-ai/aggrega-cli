@@ -325,7 +325,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 	indent := in.Context.YAMLIndent
 	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
-		body, warning, err := composecore.SpliceArtifactServiceProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, indent)
+		body, warning, err := composecore.SpliceArtifactServiceProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, indent, ent.SensitiveContent)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
@@ -386,20 +386,24 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's fragments carry
 // the whole aggrega.ai label set, so identical input produces byte-identical
-// output.
+// output. The markings over the values and over the workload as a whole are
+// rebuilt too: the render core reads them to keep a value the input marks out of
+// a failure's text, and they change no output byte.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
-		NodeID:           in.Node.ID,
-		Annotations:      mergeAnnotations(in.Context.Annotations),
-		BoundaryPath:     in.Node.BoundaryPath,
-		SyncWave:         in.Node.SyncWave,
-		RecipeName:       in.Node.RecipeName,
-		RecipeVersion:    in.Node.RecipeVersion,
-		LabelComponentID: in.Node.LabelComponentID,
-		DerivedNameBasis: in.Node.DerivedNameBasis,
-		OutputLabels:     in.Node.OutputLabels,
-		ProviderName:     in.Node.Provenance.ProviderName,
-		ProviderVersion:  in.Node.Provenance.ProviderVersion,
+		NodeID:            in.Node.ID,
+		SensitiveValues:   in.Node.SensitiveValues,
+		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
+		Annotations:       mergeAnnotations(in.Context.Annotations),
+		BoundaryPath:      in.Node.BoundaryPath,
+		SyncWave:          in.Node.SyncWave,
+		RecipeName:        in.Node.RecipeName,
+		RecipeVersion:     in.Node.RecipeVersion,
+		LabelComponentID:  in.Node.LabelComponentID,
+		DerivedNameBasis:  in.Node.DerivedNameBasis,
+		OutputLabels:      in.Node.OutputLabels,
+		ProviderName:      in.Node.Provenance.ProviderName,
+		ProviderVersion:   in.Node.Provenance.ProviderVersion,
 		Provenance: rendercore.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,

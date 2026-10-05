@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-refusal-keyholder-recipe
+  version: "1.0.0"
+  description: The host component renders one plain document, so only its attachment can refuse.
+spec:
+  capability: helm
+  implements: core/helm-refusal-keyholder
+  artifacts:
+    holder.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: holder
+      data:
+        ready: "true"

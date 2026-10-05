@@ -109,8 +109,9 @@ func SynthesizeWorkloadCore(
 	// Every resource quantity the translation below copies into the manifests
 	// is checked against the quantity grammar before any of it is translated,
 	// so a value the cluster would refuse halts the build instead of reaching
-	// the chart.
-	if err := checkEmittedQuantities(w, nodeCtx.NodeID); err != nil {
+	// the chart. A workload the input marks as produced from a declared value
+	// is refused without quoting the value.
+	if err := checkEmittedQuantities(w, nodeCtx.NodeID, nodeCtx.SensitiveWorkload); err != nil {
 		return nil, err
 	}
 

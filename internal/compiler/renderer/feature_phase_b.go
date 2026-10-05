@@ -247,6 +247,11 @@ type FeatureValues struct {
 	// mapping is one whole-document template and its output keys are the
 	// template's own invention: a declaration names none of them.
 	KeysAreDeclaredLeaves bool
+
+	// Sensitive reports that the values mapping that produced Resolved reads a
+	// value the evaluation's withheld set names — the reading the base Recipe's
+	// own values pass records for the same fact. False where no mapping ran.
+	Sensitive bool
 }
 
 // ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and
@@ -297,7 +302,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return FeatureValues{Resolved: values}, nil
+	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld)}, nil
 }
 
 // featureRecipeDeclaredSensitivity assembles the sensitivity declarations one

@@ -42,16 +42,18 @@ const quantityUnconvertible = "resources quantity cannot be converted to a compo
 //
 // resourcesPath is the authored path to the container's resources block —
 // `containers.<name>.resources` or `initContainers[<i>].resources` — and reaches
-// the refusal sentences and nothing else.
-func translateComposeResources(r *types.ResourceSpec, resourcesPath, nodeID string) (*Deploy, error) {
+// the refusal sentences and nothing else. withhold is the input's marking over the
+// workload as a whole — its template reads a value an author declared sensitive —
+// and with it set neither refusal quotes the value it refused.
+func translateComposeResources(r *types.ResourceSpec, resourcesPath, nodeID string, withhold bool) (*Deploy, error) {
 	if r == nil {
 		return nil, nil
 	}
-	limits, err := composeQuantities(r.Limits, resourcesPath+".limits", "limit", nodeID)
+	limits, err := composeQuantities(r.Limits, resourcesPath+".limits", "limit", nodeID, withhold)
 	if err != nil {
 		return nil, err
 	}
-	reservations, err := composeQuantities(r.Requests, resourcesPath+".requests", "request", nodeID)
+	reservations, err := composeQuantities(r.Requests, resourcesPath+".requests", "request", nodeID, withhold)
 	if err != nil {
 		return nil, err
 	}
@@ -65,14 +67,14 @@ func translateComposeResources(r *types.ResourceSpec, resourcesPath, nodeID stri
 // compose cpus/memory pair. Returns nil when both fields are empty. listPath is
 // the authored path to the list and role names it for a reader — "request" or
 // "limit".
-func composeQuantities(rl *types.ResourceList, listPath, role, nodeID string) (*ResourceQuantities, error) {
+func composeQuantities(rl *types.ResourceList, listPath, role, nodeID string, withhold bool) (*ResourceQuantities, error) {
 	if rl == nil {
 		return nil, nil
 	}
 	out := &ResourceQuantities{}
 	if rl.CPU != "" {
 		cpus, err := convertQuantity(rl.CPU, composeCPUs, "cpu", role, listPath+".cpu", nodeID,
-			"a compose cpus value is a core count from 0 to 9223372036.854775807 with at most nine decimal places")
+			"a compose cpus value is a core count from 0 to 9223372036.854775807 with at most nine decimal places", withhold)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +82,7 @@ func composeQuantities(rl *types.ResourceList, listPath, role, nodeID string) (*
 	}
 	if rl.Memory != "" {
 		mem, err := convertQuantity(rl.Memory, composeMemory, "memory", role, listPath+".memory", nodeID,
-			"a compose memory value is a whole number of bytes from 0 to 9223372036854775807")
+			"a compose memory value is a whole number of bytes from 0 to 9223372036854775807", withhold)
 		if err != nil {
 			return nil, err
 		}
@@ -98,15 +100,30 @@ func composeQuantities(rl *types.ResourceList, listPath, role, nodeID string) (*
 // the authored path and the value: one when the value is not a quantity at all,
 // and one when it is a quantity compose has no exact form for — the sentence
 // then states compose's range, which is what the author repairs against.
-func convertQuantity(value string, convert func(quantity.Quantity) (string, bool), resource, role, path, nodeID, composeRange string) (string, error) {
+//
+// With withhold set neither sentence quotes the value. The first carries the
+// grammar's own withheld refusal ([quantity.Withhold]). The second cannot be
+// asked again of the placeholder — the placeholder is not a quantity at all, so it
+// would fail the other way — so it says which of the two failures this was, that
+// the value is withheld, and still states compose's range.
+func convertQuantity(value string, convert func(quantity.Quantity) (string, bool), resource, role, path, nodeID, composeRange string, withhold bool) (string, error) {
 	q, err := quantity.Parse(value)
 	if err != nil {
+		if withhold {
+			err = quantity.Withhold(err)
+		}
 		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: the %s %s at %s: %v; %s: %s",
 				resource, role, path, err, quantity.Shape, quantityUnconvertible))
 	}
 	converted, ok := convert(q)
+	if !ok && withhold {
+		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: the %s %s at %s is a quantity compose cannot represent exactly; %s; %s: %s",
+				resource, role, path, quantity.ValueWithheld, composeRange, quantityUnconvertible))
+	}
 	if !ok {
 		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},

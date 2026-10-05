@@ -99,7 +99,7 @@ func TestSpliceArtifactServiceProvenance_StampsEveryServiceWithTheFoldedSet(t *t
   db-backup:
     image: postgres-backup:latest
 `)
-	body, warning, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2)
+	body, warning, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestSpliceArtifactServiceProvenance_ServicelessFragmentWarnsRatherThanPassi
   db-archive:
     driver: local
 `)
-	body, warning, err := SpliceArtifactServiceProvenance("db-volume.yaml", src, hostLabels(), hostAnnotations(), 2)
+	body, warning, err := SpliceArtifactServiceProvenance("db-volume.yaml", src, hostLabels(), hostAnnotations(), 2, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
@@ -156,7 +156,7 @@ services:
   second:
     image: b:1
 `)
-	body, warning, err := SpliceArtifactServiceProvenance("multi.yaml", src, hostLabels(), hostAnnotations(), 2)
+	body, warning, err := SpliceArtifactServiceProvenance("multi.yaml", src, hostLabels(), hostAnnotations(), 2, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestSpliceArtifactServiceProvenance_AuthorLabelsSurviveAndProvenanceWins(t 
       tier: backend
       aggrega.ai/provider: hand-written
 `)
-	body, warning, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2)
+	body, warning, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSpliceArtifactServiceProvenance_SequenceLabelsAreRefusedNotDiscarded(t 
     labels:
       - tier=backend
 `)
-	_, _, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2)
+	_, _, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", src, hostLabels(), hostAnnotations(), 2, false)
 	if err == nil {
 		t.Fatal("expected a refusal for a sequence-form labels block rather than a silent overwrite")
 	}
@@ -231,7 +231,7 @@ func TestSpliceArtifactServiceProvenance_SequenceLabelsAreRefusedNotDiscarded(t 
 // non-parsing body is an authoring fault rather than a shape to pass through.
 func TestSpliceArtifactServiceProvenance_NonYAMLIsAHardError(t *testing.T) {
 	t.Parallel()
-	_, _, err := SpliceArtifactServiceProvenance("broken.yaml", []byte("this: is: malformed: [unclosed"), hostLabels(), nil, 2)
+	_, _, err := SpliceArtifactServiceProvenance("broken.yaml", []byte("this: is: malformed: [unclosed"), hostLabels(), nil, 2, false)
 	if err == nil {
 		t.Fatal("expected a hard error for a fragment that is not valid YAML")
 	}
@@ -245,7 +245,7 @@ func TestSpliceArtifactServiceProvenance_NonYAMLIsAHardError(t *testing.T) {
 // which is not the service-less case — there is no fragment at all.
 func TestSpliceArtifactServiceProvenance_EmptyContentIsUnchanged(t *testing.T) {
 	t.Parallel()
-	body, warning, err := SpliceArtifactServiceProvenance("empty.yaml", []byte("  \n\n "), hostLabels(), hostAnnotations(), 2)
+	body, warning, err := SpliceArtifactServiceProvenance("empty.yaml", []byte("  \n\n "), hostLabels(), hostAnnotations(), 2, false)
 	if err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
@@ -264,8 +264,7 @@ func TestSpliceArtifactServiceProvenance_EmptyContentIsUnchanged(t *testing.T) {
 func TestSpliceArtifactServiceProvenance_DoesNotWriteThroughTheHostSets(t *testing.T) {
 	t.Parallel()
 	labels, annotations := hostLabels(), hostAnnotations()
-	if _, _, err := SpliceArtifactServiceProvenance("db-sidecar.yaml",
-		[]byte("services:\n  db-metrics:\n    image: a:1\n"), labels, annotations, 2); err != nil {
+	if _, _, err := SpliceArtifactServiceProvenance("db-sidecar.yaml", []byte("services:\n  db-metrics:\n    image: a:1\n"), labels, annotations, 2, false); err != nil {
 		t.Fatalf("SpliceArtifactServiceProvenance: %v", err)
 	}
 	assertKeySet(t, "caller's label set after the splice", labels, hostLabels())

@@ -616,6 +616,10 @@ func dispatchBoundaryScopeFR(
 	// by the evaluation immediately above, and nothing between the copy and this
 	// line hands this context to a crossing.
 	frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, feat.Type, input, frValues.KeysAreDeclaredLeaves)
+	// The copied marking over the values as a whole is replaced on the same reading:
+	// it described whichever component dispatched this FR, and this render carries
+	// the values this FR's own mapping produced.
+	frNodeCtx.SensitiveValues = frValues.Sensitive
 
 	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
 	// use — the central gate, then sourced engine.Render / synthesized workload

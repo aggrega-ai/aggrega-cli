@@ -1,0 +1,15 @@
+# An artifact carries the undeclared value where its YAML breaks.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-refusal-artifact-note-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./vault-app.yaml
+  manifest: ./artifact-note-manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        vault: {}
