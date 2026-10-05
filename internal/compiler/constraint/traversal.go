@@ -590,6 +590,26 @@ func connectionSite(
 	return origin.SourceFile, origin.Document, authoredSiteSegments(nesting, origin.Site, tail...)
 }
 
+// ConnectionLocation returns the file and the locator a connection's own entry
+// is positioned at — the ones a check raised over that connection carries — for
+// a producer that records the place beside the connection rather than presenting
+// the connection as a subject.
+//
+// It is assembled by the rule [connectionSite] states and by the one locator
+// assembly, so a place a fact records and the position a subject over the same
+// connection carries cannot come to spell one entry two ways. A finding naming a
+// second connection beside the one it is positioned at names that second one by
+// this, which is what lets a reader find both entries the same way.
+func ConnectionLocation(
+	node NodeInstance,
+	origin ConnectionOrigin,
+	socket, alias string,
+	synthesizedAlias bool,
+) (file, locator string) {
+	file, _, segments := connectionSite(node, origin, socket, alias, synthesizedAlias)
+	return file, authoredLocator(segments...)
+}
+
 // RunOnOriginatedConnections invokes check once per connection together with the
 // origin that drew it, in the order the enumerator returns them.
 //

@@ -88,7 +88,11 @@ func AssembleEnrichedUses(
 			}
 		}
 
-		// Key by alias (developer's local name for this edge)
+		// Keyed by alias alone — the developer's local name for the connection —
+		// whatever socket it is wired into. No two connections of a built node
+		// share an alias, on one socket or on two: the build refuses such a pair
+		// once the graph is final, before anything renders, so no entry here
+		// replaces another.
 		alias := edge.Alias
 		if alias == "" {
 			alias = edge.Target

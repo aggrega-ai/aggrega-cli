@@ -76,11 +76,13 @@ type graphView struct {
 	sites AttachmentSites
 
 	// connections holds, per origin-keyed connection, the delivery that
-	// connection dictates as the author wrote it. It is held for the same class
-	// of reason the sites are: the conversion into the graph stores a delivery
-	// as one string per delivery key, so the authored distinction between a
-	// literal and a reference to a published key is gone by the time anything
-	// here could read it back.
+	// connection dictates as the author wrote it, and per node every connection
+	// drawn there with the place its entry was written. It is held for the same
+	// class of reason the sites are: the conversion into the graph stores a
+	// delivery as one string per delivery key, so the authored distinction
+	// between a literal and a reference to a published key is gone by the time
+	// anything here could read it back, and the graph never records which
+	// surface declared the attachment that drew an edge.
 	connections *OriginatedConnections
 }
 
@@ -295,6 +297,18 @@ func (v *graphView) OriginatedConnectionAuthoredDelivery(
 	target string,
 ) []types.OrderedMap[any] {
 	return v.connections.deliveryOf(node, origin, attachment, socket, alias, target)
+}
+
+// NodeDrawnConnections returns every connection the composition drew on a node,
+// one entry per connection, in the order the composition drew them, each with
+// the surface that drew it and the file and key path its entry was written at.
+//
+// It is answered from the product that recorded each connection as it was drawn
+// rather than from the graph's edges, because the graph records which attachment
+// instance drew an edge and never which surface declared that attachment — and
+// where the entry was written is what the record carries.
+func (v *graphView) NodeDrawnConnections(node string) []constraint.NodeConnection {
+	return v.connections.drawnOn(node)
 }
 
 // UsesInjectDeliverySockets returns the dependency sockets through which a

@@ -60,9 +60,11 @@ type ConnectionOriginKey struct {
 // # What it holds, and what bounds it
 //
 // One entry per distinct origin key, in the order the composition drew the
-// connections, plus the authored delivery payloads under each key. It holds no
-// authoring document and no edge: the entries are coordinate values and small
-// sites, and the payloads are the delivery blocks alone.
+// connections, plus the authored delivery payloads under each key, plus one
+// record per connection drawn on each node with the file and key path its entry
+// was written at. It holds no authoring document and no edge: the entries and
+// records are coordinate values and small sites, and the payloads are the
+// delivery blocks alone.
 //
 // A key naming more than one connection is possible and is answered completely
 // rather than partially. One attachment instance name declared at two scopes
@@ -85,6 +87,24 @@ type OriginatedConnections struct {
 	// and alias and so cannot address the key above. Addressed by key only and
 	// never iterated.
 	byOrigin map[originIdentity]constraint.ConnectionOrigin
+
+	// drawn is every connection drawn on each node, one record per connection
+	// rather than one per origin key, in the order the composition drew them.
+	// It is held beside the enumeration because the enumeration collapses two
+	// connections sharing an origin key into one entry — a list naming one
+	// target twice is two connections and one key — and a rule counting the
+	// connections a node holds under one alias has to see both. Addressed by
+	// the node only and never iterated.
+	drawn map[string][]constraint.NodeConnection
+}
+
+// blockSocket is one drawing block's socket on one node: the connections an
+// origin's block wires on that socket, in the order the block lists them.
+type blockSocket struct {
+	node       string
+	kind       string
+	attachment string
+	socket     string
 }
 
 // originIdentity is one origin on one node, without the connection it drew.
@@ -149,6 +169,15 @@ func (c *OriginatedConnections) deliveryOf(node, kind, attachment, socket, alias
 	}]
 }
 
+// drawnOn is every connection drawn on one node, in the order the composition
+// drew them, and nil for a node the product holds none for.
+func (c *OriginatedConnections) drawnOn(node string) []constraint.NodeConnection {
+	if c == nil {
+		return nil
+	}
+	return c.drawn[node]
+}
+
 // originOfEdge is the origin recorded for one finalised edge, addressed by the
 // coordinates that edge carries.
 //
@@ -197,12 +226,15 @@ func NewOriginatedConnections(
 	out := &OriginatedConnections{
 		delivery: map[ConnectionOriginKey][]types.OrderedMap[any]{},
 		byOrigin: map[originIdentity]constraint.ConnectionOrigin{},
+		drawn:    map[string][]constraint.NodeConnection{},
 	}
 	// One site table per node, folded on first sight, because the edge walk
 	// below reaches a node's connections in composition order and several of
 	// them routinely share an origin.
 	origins := map[string]map[string]constraint.ConnectionOrigin{}
+	shared := map[string]map[string]bool{}
 	seen := map[ConnectionOriginKey]bool{}
+	positions := map[blockSocket]int{}
 
 	for _, edge := range topo.Edges {
 		topoNode, held := topo.Nodes.Get(edge.Source)
@@ -214,7 +246,7 @@ func NewOriginatedConnections(
 			continue
 		}
 		if _, folded := origins[edge.Source]; !folded {
-			origins[edge.Source] = attachmentOrigins(edge.Source, topoNode, topo, res)
+			origins[edge.Source], shared[edge.Source] = attachmentTiers(edge.Source, topoNode, topo, res)
 		}
 		origin := originOf(edge, edge.Source, topoNode, origins[edge.Source], res)
 		key := ConnectionOriginKey{
@@ -230,6 +262,7 @@ func NewOriginatedConnections(
 			Kind:       origin.Kind,
 			Attachment: origin.Attachment,
 		}] = origin
+		synthesized := aliasIsDerived(graph, edge.Source, edge.Socket, origin.Kind)
 		if !seen[key] {
 			seen[key] = true
 			out.entries = append(out.entries, OriginatedConnectionEntry{
@@ -238,12 +271,59 @@ func NewOriginatedConnections(
 				Socket:           edge.Socket,
 				Alias:            edge.Alias,
 				Target:           edge.Target,
-				SynthesizedAlias: aliasIsDerived(graph, edge.Source, edge.Socket, origin.Kind),
+				SynthesizedAlias: synthesized,
 			})
 		}
 		out.delivery[key] = append(out.delivery[key], resolver.InjectMechanismPayloads(edge.Inject))
+
+		// Every connection is counted against its block's socket whether or not a
+		// record is kept for it, so a position is the entry's place among
+		// everything that block drew rather than among what this product kept.
+		block := blockSocket{node: edge.Source, kind: origin.Kind, attachment: origin.Attachment, socket: edge.Socket}
+		positions[block]++
+		irNode, inGraph := graph.Spec.Nodes.Get(edge.Source)
+		if !inGraph {
+			// The place an entry was written is named relative to the node's own
+			// block in the graph, for the reason the enumeration over the graph
+			// skips such an edge: there is nothing to name it relative to.
+			continue
+		}
+		file, locator := constraint.ConnectionLocation(
+			NodeInstanceOf(edge.Source, irNode), origin, edge.Socket, edge.Alias, synthesized)
+		out.drawn[edge.Source] = append(out.drawn[edge.Source], constraint.NodeConnection{
+			Socket:     edge.Socket,
+			Alias:      edge.Alias,
+			Target:     edge.Target,
+			Origin:     origin.Kind,
+			Attachment: origin.Attachment,
+			SourceFile: file,
+			Locator:    locator,
+			Position:   blockPosition(origin, shared[edge.Source], positions[block]),
+		})
 	}
 	return out
+}
+
+// blockPosition is a connection's place among the connections its drawing block
+// wires on its socket, given its count so far, or zero where that count does not
+// name a place in one block.
+//
+// Two origins are the zero case, and each for a reason of its own. The Release's
+// edge surface draws a connection only for an entry naming a target at a
+// coordinate nothing else drew, so its count skips the entries that configure
+// rather than draw and is no entry's place. And an attachment instance name
+// declared at more than one tier draws from every declaring block while the
+// composition stamps each connection with the name alone, so the count runs on
+// across blocks it cannot tell apart.
+func blockPosition(origin constraint.ConnectionOrigin, shared map[string]bool, count int) int {
+	switch {
+	case origin.Kind == constraint.OriginRelease:
+		return 0
+	case origin.Kind == constraint.OriginAttachment && shared[origin.Attachment]:
+		return 0
+	default:
+		return count
+	}
 }
 
 // originOf is the surface one connection was drawn from, with the site that
@@ -270,9 +350,17 @@ func originOf(
 ) constraint.ConnectionOrigin {
 	switch {
 	case edge.OriginRelease:
+		// A boundary normalization synthesized is not one any file spells: it
+		// holds the components a Release wrote at its top level, so an entry
+		// placed in one was written at that top level and its site names no
+		// scope.
+		scope := topoNode.BoundaryPath
+		if topoNode.SynthesizedBoundary {
+			scope = ""
+		}
 		return constraint.ConnectionOrigin{
 			Kind:       constraint.OriginRelease,
-			Site:       constraint.AuthoredSite{ScopePath: topoNode.BoundaryPath, Component: nodeID},
+			Site:       constraint.AuthoredSite{ScopePath: scope, Component: nodeID},
 			Document:   constraint.AuthoringDocumentRelease,
 			SourceFile: releasePathOf(res),
 		}
@@ -319,12 +407,31 @@ func attachmentOrigins(
 	topo *topology.TopologyResult,
 	res *resolver.ResolveResult,
 ) map[string]constraint.ConnectionOrigin {
+	origins, _ := attachmentTiers(nodeID, topoNode, topo, res)
+	return origins
+}
+
+// attachmentTiers is [attachmentOrigins] together with the instance names more
+// than one tier declares — the names whose recorded site is one of several real
+// declaring blocks rather than the only one.
+//
+// It is the one walk of the tiers; [attachmentOrigins] delegates to it, so the
+// site recorded for a name and the report that the name was declared more than
+// once come from one reading and cannot disagree about which tiers were read.
+func attachmentTiers(
+	nodeID string,
+	topoNode *topology.TopologyNode,
+	topo *topology.TopologyResult,
+	res *resolver.ResolveResult,
+) (map[string]constraint.ConnectionOrigin, map[string]bool) {
 	out := map[string]constraint.ConnectionOrigin{}
+	shared := map[string]bool{}
 	record := func(instance string, origin constraint.ConnectionOrigin) {
 		if instance == "" {
 			return
 		}
 		if _, held := out[instance]; held {
+			shared[instance] = true
 			return
 		}
 		out[instance] = origin
@@ -340,7 +447,7 @@ func attachmentOrigins(
 		})
 	}
 	if res == nil {
-		return out
+		return out, shared
 	}
 	for _, sf := range rootScopeAttachments(topoNode, res.Aggregate) {
 		record(sf.name, constraint.ConnectionOrigin{
@@ -352,7 +459,7 @@ func attachmentOrigins(
 		})
 	}
 	if res.Release == nil {
-		return out
+		return out, shared
 	}
 	if topoNode.BoundaryPath != "" {
 		for _, bf := range collectBoundaryWideFeatures(res.Release.Spec.Boundaries, topoNode.BoundaryPath) {
@@ -374,7 +481,7 @@ func attachmentOrigins(
 			SourceFile: res.ReleasePath,
 		})
 	}
-	return out
+	return out, shared
 }
 
 // releasePathOf is the Release's file, empty when no resolve result is in

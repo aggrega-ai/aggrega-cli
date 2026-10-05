@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -217,6 +218,22 @@ func TestEachOriginOnOneSocketAndAliasIsRefusedSeparately(t *testing.T) {
 	if strings.Contains(refusal, "OWN_HOST") {
 		t.Errorf("the refusal names the component's own delivery, which is legal; got: %s", refusal)
 	}
+	// The same pass refuses the three connections sharing one alias, once per
+	// attachment-drawn connection and each at its own block. That finding stands
+	// beside the delivery findings above rather than in place of them: every rule
+	// over the finalised graph reports in one build.
+	aliasFindings := pipelinetest.Findings(err, topology.ErrDuplicateConnectionAlias())
+	var aliasAt []string
+	for _, finding := range aliasFindings {
+		aliasAt = append(aliasAt, finding.Source().Locator)
+	}
+	wantAliasAt := []string{
+		".spec.components.api.features.sb_one.uses.backend.primary",
+		".spec.components.api.features.sb_two.uses.backend.primary",
+	}
+	if strings.Join(aliasAt, "|") != strings.Join(wantAliasAt, "|") {
+		t.Errorf("the alias refusals are positioned at %q; want %q", aliasAt, wantAliasAt)
+	}
 }
 
 // TestTwoOriginsNamingDifferentTargetsAreEachJudgedAgainstTheirOwn closes the
@@ -228,28 +245,36 @@ func TestEachOriginOnOneSocketAndAliasIsRefusedSeparately(t *testing.T) {
 // one origin's delivery against the other's published set — refusing legal
 // authoring, or approving a mistake, depending on which way the mismatch fell.
 //
-// Both deliveries here are legal against their own target and neither is legal
-// against the other's, which is what makes the green discriminating.
+// Two connections under one alias are refused, so the build halts — and the
+// refusal is the whole of the evidence. It carries the alias finding, at the
+// attachment's block and naming the component's own, and it carries NO delivery
+// finding: both deliveries here are legal against their own target and neither is
+// legal against the other's, and every rule over the finalised graph reports in
+// the one pass, so a delivery rule reading one origin's target for the other would
+// stand beside the alias finding in this same refusal.
 func TestTwoOriginsNamingDifferentTargetsAreEachJudgedAgainstTheirOwn(t *testing.T) {
 	t.Parallel()
 
-	artifacts, err := buildDeliveryOrigin(t, "split-target")
-	if err != nil {
-		t.Fatalf("the build halted on legal authoring: %v", err)
+	_, err := buildDeliveryOrigin(t, "split-target")
+	if err == nil {
+		t.Fatal("the build succeeded over two connections of one component under one alias")
 	}
-	// Both deliveries reached the output, each carrying the component its own
-	// connection named — which is what says the two connections were kept apart
-	// all the way through rather than collapsed onto one.
-	var carriesBoth bool
-	for _, body := range artifacts {
-		text := string(body)
-		if strings.Contains(text, "OWN_HOST=db;") && strings.Contains(text, "ONE_HOST=db2;") {
-			carriesBoth = true
+	findings := pipelinetest.Findings(err, topology.ErrDuplicateConnectionAlias())
+	if len(findings) != 1 {
+		t.Fatalf("the refusal carries %d alias finding(s); want 1, at the later connection; got: %v",
+			len(findings), err)
+	}
+	if got, want := findings[0].Source().Locator, ".spec.components.api.features.sb_one.uses.backend.primary"; got != want {
+		t.Errorf("the alias finding is positioned at %q; want %q, the later connection's own entry", got, want)
+	}
+	for _, want := range []string{`".spec.components.api.uses.backend.primary"`, `with target "db"`, `with target "db2"`} {
+		if !strings.Contains(findings[0].Error(), want) {
+			t.Errorf("the alias finding does not name %s; got: %s", want, findings[0].Error())
 		}
 	}
-	if !carriesBoth {
-		t.Error("the two connections did not each deliver their own target's value, so the case proves " +
-			"nothing about which target each was judged against")
+	if errors.Is(err, resolver.ErrInvalidInjectKey()) {
+		t.Errorf("a legal delivery was refused, so one origin's delivery was measured against the other "+
+			"origin's target; got: %v", err)
 	}
 }
 
@@ -263,26 +288,44 @@ func TestTwoOriginsNamingDifferentTargetsAreEachJudgedAgainstTheirOwn(t *testing
 // them, and the fact keyed by that origin answers with EVERY payload the key
 // names rather than the first.
 //
-// The fixture writes a legal delivery in each block. Both reaching the output is
-// what says both were carried; the build staying green is what says neither was
-// refused.
+// Two connections under one alias are refused, so the build halts, and the
+// refusal states the bound of that sameness rather than hiding it: one finding,
+// for the second connection, positioned at the block the composition recorded —
+// the component's own attachment, which the attachment cascade reads first — and
+// naming that same block for the connection already holding the alias, with no
+// list position, because no position separates two blocks recorded as one. The
+// fixture writes a legal delivery in each block, and no delivery finding beside
+// the alias finding is what says neither was refused.
 func TestOneAttachmentNameAtTwoScopesLeavesNoDeliveryUnexamined(t *testing.T) {
 	t.Parallel()
 
-	artifacts, err := buildDeliveryOrigin(t, "samename")
-	if err != nil {
-		t.Fatalf("the build halted on legal authoring: %v", err)
+	_, err := buildDeliveryOrigin(t, "samename")
+	if err == nil {
+		t.Fatal("the build succeeded over two connections of one component under one alias")
 	}
-	var carriesBoth bool
-	for _, body := range artifacts {
-		text := string(body)
-		if strings.Contains(text, "OWN_HOST=db;") && strings.Contains(text, "SCOPE_HOST=db;") {
-			carriesBoth = true
-		}
+	findings := pipelinetest.Findings(err, topology.ErrDuplicateConnectionAlias())
+	if len(findings) != 1 {
+		t.Fatalf("the refusal carries %d alias finding(s); want 1, for the second connection; got: %v",
+			len(findings), err)
 	}
-	if !carriesBoth {
-		t.Error("the two blocks did not both deliver, so the case is not the two-connections-one-key shape " +
-			"it exists to cover")
+	const recorded = ".spec.subsystems.tier.components.api.features.shared_backend.uses.backend.primary"
+	if got := findings[0].Source().Locator; got != recorded {
+		t.Errorf("the alias finding is positioned at %q; want %q, the block the composition recorded", got, recorded)
+	}
+	if got := strings.Count(findings[0].Error(), `"`+recorded+`"`); got != 2 {
+		t.Errorf("the alias finding names the recorded block %d time(s); want 2, once for each connection, "+
+			"since the composition records both at it; got: %s", got, findings[0].Error())
+	}
+	// A list position is spelled as its caption and the opening quote of its
+	// value. The bare words are not the needle: the advice every finding of the
+	// condition carries explains what a list entry is, so they appear whether or
+	// not a position is named.
+	if strings.Contains(findings[0].Error(), `list entry "`) {
+		t.Errorf("the alias finding names a list position for two blocks recorded as one; got: %s",
+			findings[0].Error())
+	}
+	if errors.Is(err, resolver.ErrInvalidInjectKey()) {
+		t.Errorf("a legal delivery was refused, so one block's delivery was left unexamined or misread; got: %v", err)
 	}
 }
 

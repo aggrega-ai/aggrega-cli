@@ -2436,6 +2436,12 @@ func (DescribedViewBase) OriginatedConnectionAuthoredDelivery(node string, origi
 	panic("this view does not carry originated-connection-authored-delivery, which is read from ir.OriginatedConnections")
 }
 
+// NodeDrawnConnections panics. This view does not carry
+// node-drawn-connections, which is read from ir.OriginatedConnections.
+func (DescribedViewBase) NodeDrawnConnections(node string) []NodeConnection {
+	panic("this view does not carry node-drawn-connections, which is read from ir.OriginatedConnections")
+}
+
 // HydratedViewBase is a base for an implementation of HydratedView.
 //
 // It declares a refusing method for every fact complete before the
@@ -3311,6 +3317,7 @@ type GraphStageFacts interface {
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
 	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
+	NodeDrawnConnections(node string) []NodeConnection
 }
 
 // DescribedStageFacts are the facts the described stage declares itself,

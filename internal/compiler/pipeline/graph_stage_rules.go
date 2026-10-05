@@ -122,6 +122,27 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// One alias names one connection of a component, evaluated once per
+	// connection the composition drew together with the surface that drew it.
+	// The alias is what a component's Recipe and its assertions read a
+	// connection by, so a second connection under it — on the same socket or
+	// another, drawn by any surface — would leave one of the two out of what
+	// they see. It is asked here because the place each connection's entry was
+	// written is settled only once the attachment cascade has folded, and the
+	// finding is positioned at the later connection's own entry, so the axis is
+	// the one carrying each connection's origin. Every offending connection is
+	// reported in one build rather than the first.
+	violations, err = constraint.RunOnOriginatedConnections(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		topology.ConnectionAliasNamesOneConnection,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// No Release entry redirects a connection the document that drew it
 	// already targeted, evaluated once per connection. Both targets are read as
 	// written rather than as resolved: a connection naming a module's published

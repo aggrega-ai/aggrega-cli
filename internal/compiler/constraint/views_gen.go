@@ -133,6 +133,59 @@ type AttachmentConnection struct {
 	Slot string
 }
 
+// NodeConnection is one connection the composition drew on a node, as the
+// coordinates that identify it and the place it was written: the socket
+// and alias it is wired under, the node it resolves to, the surface that
+// drew it, and the file and key path of that surface's entry.
+//
+// It is one fact rather than several because no part of it names a
+// connection alone. A socket carries many connections and an alias may be
+// written on more than one socket, so neither locates one; the surface
+// says which block drew the connection and not where that block sits; and
+// a key path without the file it is a path into names nothing. A reader
+// handed the parts as separate answers would have to re-pair them by
+// position, which is the re-derivation a declared fact exists to close.
+type NodeConnection struct {
+	// Socket is the dependency socket the connection is wired into.
+	Socket string
+
+	// Alias names the connection within its consumer, carried whether or not
+	// the author wrote it as a key: a list entry takes its target's own name.
+	Alias string
+
+	// Target is the node the connection resolves to, by the identity every
+	// keyed fact takes.
+	Target string
+
+	// Origin is which surface drew the connection: one of [OriginComponent],
+	// [OriginAttachment] or [OriginRelease].
+	Origin string
+
+	// Attachment is the attachment instance name the connection was drawn
+	// from, empty for every origin but [OriginAttachment].
+	Attachment string
+
+	// SourceFile is the workspace-relative file the drawing surface's entry
+	// was written in, empty where no single file can be named.
+	SourceFile string
+
+	// Locator is the key path naming that entry inside SourceFile, in the
+	// dotted dialect every finding is positioned by, and empty where no
+	// authored segment can be named. It is the path a finding raised on the
+	// connection itself is positioned at, assembled by the same rule, so the
+	// two cannot name one entry differently.
+	Locator string
+
+	// Position is the connection's place, counted from one, among the
+	// connections the drawing block wires on its socket — for a socket
+	// written as a list, the entry's position in the list. It is zero where no
+	// single block can be named: a connection the Release's edge surface drew,
+	// whose entries do not all draw one, and a connection drawn by an
+	// attachment instance name declared at more than one scope, whose blocks
+	// the composition records as one.
+	Position int
+}
+
 // DerivedNameDeclaration is one contributor's declaration that it derived
 // one name into one of its own key spaces: the space, the name, every
 // coordinate that identifies the contributor, whether a single one of that
@@ -3365,10 +3418,12 @@ type TopologyView interface {
 	// the resolved target for one of them would report a disagreement between
 	// two documents that named the very same alias.
 	//
-	// It is keyed by the connection rather than by the surface that drew it,
-	// because a connection is drawn once: where two surfaces write one node,
-	// socket and alias, the composition keeps one connection and this names
-	// the target that connection carries.
+	// It is keyed by the connection rather than by the surface that drew it.
+	// Where two surfaces write one node, socket and alias, the composition
+	// draws a connection from each, and this names the target of the first one
+	// drawn. Such a pair never reaches a build that passes: one alias names
+	// one connection of a node, and two connections under one alias are
+	// refused once the graph is final.
 	//
 	// Keyed by edge; read from topology.NormalizedEdge.AuthoredTarget.
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
@@ -3930,6 +3985,41 @@ type GraphView interface {
 	//
 	// Keyed by originated-connection; read from ir.OriginatedConnections.
 	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
+
+	// NodeDrawnConnections is every connection the composition drew on a node,
+	// one entry per connection drawn, in the order they were drawn, each with
+	// the surface that drew it and the file and key path that surface's entry
+	// was written at.
+	//
+	// It answers per connection DRAWN rather than per origin, and the
+	// difference is the fact. Two connections can share every coordinate an
+	// origin is keyed by — a list naming one target twice draws one from
+	// each entry — and a rule asking how many connections a node holds under
+	// one alias has to see both, where a set keyed by origin holds one entry
+	// for the pair. It is keyed by the node and answers for the whole of the
+	// node's connections because the question it serves spans sockets: an
+	// alias names a connection to the consuming component, whatever socket the
+	// connection is wired into.
+	//
+	// The order is the order the graph holds the connections in, which is the
+	// order every view of a node's connections is built in — so the first
+	// entry under an alias is the one those views would have shown had a later
+	// one not been written beside it.
+	//
+	// It is placed here rather than one stage earlier for the reason the
+	// authored delivery is: the connection set is complete once the
+	// composition finishes, but the surface an attachment-drawn connection was
+	// declared on is settled by the reading that folds the attachment cascade,
+	// and the place each entry was written is taken from that settlement. One
+	// shape it cannot separate is stated rather than left to be found: one
+	// attachment instance name declared at more than one scope draws a
+	// connection from each declaring block and the composition records them as
+	// one, so each such connection names the declaring block the cascade reads
+	// first — the component's own attachment block wherever the name is
+	// declared there — and carries no position.
+	//
+	// Keyed by node; read from ir.OriginatedConnections.
+	NodeDrawnConnections(node string) []NodeConnection
 }
 
 // DescribedView exposes the facts complete at the described stage: a

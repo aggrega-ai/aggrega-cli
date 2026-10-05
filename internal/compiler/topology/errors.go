@@ -179,6 +179,34 @@ var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Met
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrDuplicateConnectionAlias fires when two connections of one component are
+// wired under one alias, whatever the sockets they are wired into, whatever
+// surfaces drew them and whatever their targets.
+//
+// An alias is the name a component reads a connection by: a Recipe template
+// reads a node's connections keyed by alias alone, and an assertion reads them
+// keyed by socket and then by alias. Two connections under one alias share one
+// slot in at least one of those views, and the later one fills it — so the
+// other would be absent from what a template or an assertion sees, with nothing
+// said. The pair arises from authoring that is each legal on its own surface: a
+// component's own entry and an attachment's on one socket and alias, a list
+// naming one target twice, one alias written on two sockets, or a Release entry
+// drawing a connection under an alias the Aggregate already used. So the build
+// halts instead, naming both connections (Invariant 4).
+//
+// It is raised by [ConnectionAliasNamesOneConnection], the rule declared over the
+// finalised graph, and by nothing else. The diagnostic names the alias and the
+// component, then each connection's socket, its target, and the file and key
+// path its entry was written at, and it is positioned at the later connection's
+// own entry, in the document that entry was written in.
+func ErrDuplicateConnectionAlias() error { return errDuplicateConnectionAlias }
+
+var errDuplicateConnectionAlias = cerrors.Register("duplicate-connection-alias", cerrors.Meta{
+	ShortCode: "E0319",
+	Message:   "connection alias is already used by another connection of the same component",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrSubAggregateNameCollision fires from flattenAggregate when merging a
 // loaded module's nodes into the accumulating set would overwrite an entry
 // already there. It has exactly one raise site, the merge itself, and the

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 )
 
 // The delivery-allowlist grid, driven through the real build.
@@ -435,11 +436,42 @@ func TestBuildUsesInjectAllowlistSeparatesEveryOriginOnOneSocketAndAlias(t *test
 		}
 	}
 	// The component's own block dictates `env`, which the Component's own `open`
-	// socket permits. Reporting it would mean the rule measured one origin's
-	// dictation against another origin's declaration.
-	if strings.Contains(err.Error(), ".spec.components.api.uses.open.primary") {
-		t.Errorf("the halt names the component's own dependency block, whose dictation its own socket "+
-			"permits; got %q", err.Error())
+	// socket permits. A delivery finding naming it would mean the rule measured
+	// one origin's dictation against another origin's declaration. The question is
+	// asked of this rule's findings alone, because the same build also refuses the
+	// three connections for sharing one alias, and that finding names the
+	// component's own entry as the connection already holding it.
+	deliveryFindings := pipelinetest.Findings(err, ir.ErrUsesInjectForbidden())
+	if len(deliveryFindings) != 2 {
+		t.Errorf("the halt carries %d delivery finding(s); want 2, one per attachment; got %q",
+			len(deliveryFindings), err.Error())
+	}
+	for _, finding := range deliveryFindings {
+		if strings.Contains(finding.Error(), ".spec.components.api.uses.open.primary") {
+			t.Errorf("a delivery finding names the component's own dependency block, whose dictation its own "+
+				"socket permits; got %q", finding.Error())
+		}
+	}
+	// The alias refusal stands beside them, once per attachment-drawn connection,
+	// each at its own block and each naming the component's own entry as the one
+	// already holding the alias.
+	aliasFindings := pipelinetest.Findings(err, topology.ErrDuplicateConnectionAlias())
+	wantAliasAt := []string{
+		".spec.components.api.features.sb_one.uses.open.primary",
+		".spec.components.api.features.sb_two.uses.open.primary",
+	}
+	if len(aliasFindings) != len(wantAliasAt) {
+		t.Fatalf("the halt carries %d alias finding(s); want %d; got %q",
+			len(aliasFindings), len(wantAliasAt), err.Error())
+	}
+	for i, finding := range aliasFindings {
+		if got := finding.Source().Locator; got != wantAliasAt[i] {
+			t.Errorf("alias finding %d is positioned at %q; want %q", i, got, wantAliasAt[i])
+		}
+		if !strings.Contains(finding.Error(), `".spec.components.api.uses.open.primary"`) {
+			t.Errorf("alias finding %d does not name the component's own entry as the connection already "+
+				"holding the alias; got %q", i, finding.Error())
+		}
 	}
 }
 

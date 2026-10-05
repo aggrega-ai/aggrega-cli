@@ -44,10 +44,10 @@ type NodeBaseContext struct {
 // Every edge on a built graph carries an alias: a list entry's alias is its
 // target, a keyed entry's is the key the author wrote, and an empty one is
 // refused before any assertion runs — the authoring schemas refuse an empty
-// key and the target-existence rule an empty list entry. Two connections on
-// one socket under one alias — a component's own and an attachment's, or one
-// target listed twice — share one entry here, and the later in the graph's
-// edge order fills it.
+// key and the target-existence rule an empty list entry. No two connections of
+// a built node share an alias, on one socket or on two: the build refuses such
+// a pair once the graph is final, before any assertion runs, so every
+// connection the node holds has an entry of its own here.
 //
 // Provides values flow only at Step 5b via the per-node allProvides; this view
 // carries each connection's identity and nothing its target published, so an
