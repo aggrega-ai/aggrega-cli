@@ -544,6 +544,21 @@ type Outcome struct {
 	// payload is handed out as a Result, because artifacts and a graph are
 	// meaningful only from a run that produced them.
 	finished bool
+
+	// reachedRender records that the run began its render step, whether or not
+	// it finished it.
+	reachedRender bool
+}
+
+// ReachedRender reports whether the run began its render step — the step that
+// loads the rendering plugins and renders each node — whether or not it finished
+// it. A run that stopped ahead of the render (in the composition of its graph, or
+// at the assertions a Component or a Feature declares) reports false, and so does
+// a run told to skip the render. It is how a surface reporting a refusal says
+// truthfully whether the refusal was raised while rendering, without reading the
+// refusal's text. The zero Outcome reports false.
+func (o Outcome) ReachedRender() bool {
+	return o.reachedRender
 }
 
 // Completed returns the finished payload, or nil when the run stopped before it
@@ -1769,6 +1784,9 @@ func RunPipeline(
 	// advisories.
 	inputs.AdvisoryLog = &AdvisoryLog{}
 	var result *Result
+	// Set where Step 5 begins, so a run that stops reports whether it stopped in
+	// its render or ahead of it — see Outcome.ReachedRender.
+	reachedRender := false
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup.Recipe, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Step 4: convert analyzer errors to the joined-error shape that
 		// pre-extraction RunPipeline returned. Preserves the first-error-fatal
@@ -1838,6 +1856,7 @@ func RunPipeline(
 		// otherwise. The trace close runs as this continuation unwinds
 		// (deferred here) and the resolve scope closes after it, so render
 		// reads live parameters throughout.
+		reachedRender = true
 		// The capture mode is constructed once and handed to both the writer that
 		// stamps the header and the renderer that empties the withheld-key set, so
 		// the announcement and the withholding cannot disagree.
@@ -2022,7 +2041,7 @@ func RunPipeline(
 		// accessor on a run that did not finish, so carrying them would be data
 		// nothing can read; a consumer that later needs the graph a stopped run
 		// reached gets an accessor added for it, with the reader that wanted it.
-		return Outcome{result: &Result{Advisories: inputs.AdvisoryLog.Entries()}}, err
+		return Outcome{result: &Result{Advisories: inputs.AdvisoryLog.Entries()}, reachedRender: reachedRender}, err
 	}
-	return Outcome{result: result, finished: true}, nil
+	return Outcome{result: result, finished: true, reachedRender: reachedRender}, nil
 }

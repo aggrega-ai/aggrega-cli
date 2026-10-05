@@ -178,7 +178,7 @@ func TestGraphRefusalRepublishesTheLayerFromWhatTheRunReached(t *testing.T) {
 	pushCtx, flushPush := serializerContext(t, &out)
 	for _, f := range srv.setRenderDiagnostics(map[string][]Diagnostic{
 		aggPath: {{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: staleEntry}},
-	}) {
+	}, nil) {
 		_ = srv.publishDiagnostics(pushCtx, f)
 	}
 	flushPush()

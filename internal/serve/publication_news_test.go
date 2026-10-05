@@ -68,7 +68,7 @@ func TestPublishDiagnostics_ARepeatCarryingNoNewsIsNotSent(t *testing.T) {
 	const file = "/w/aggregate.yaml"
 
 	for turn := 0; turn < 2; turn++ {
-		for _, f := range s.setRenderDiagnostics(advisory(file, "a socket name is a near miss")) {
+		for _, f := range s.setRenderDiagnostics(advisory(file, "a socket name is a near miss"), nil) {
 			_ = s.publishDiagnostics(ctx, f)
 		}
 	}
@@ -87,7 +87,7 @@ func TestPublishDiagnostics_ARepeatCarryingNoNewsIsNotSent(t *testing.T) {
 	// so the single frame is the publication declining rather than the layer
 	// having gone quiet. Without this the test would pass just as well against a
 	// build that stopped raising the advisory at all.
-	if got := s.setRenderDiagnostics(advisory(file, "a socket name is a near miss")); len(got) != 1 || got[0] != file {
+	if got := s.setRenderDiagnostics(advisory(file, "a socket name is a near miss"), nil); len(got) != 1 || got[0] != file {
 		t.Fatalf("the layer no longer names %s on a recomputation (%v), so the single frame "+
 			"above measures the layer rather than the publication", file, got)
 	}
@@ -103,10 +103,10 @@ func TestPublishDiagnostics_AChangedStateIsAlwaysSent(t *testing.T) {
 	ctx, flush := serializerContext(t, &out)
 	const file = "/w/aggregate.yaml"
 
-	for _, f := range s.setRenderDiagnostics(advisory(file, "the first finding")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "the first finding"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
-	for _, f := range s.setRenderDiagnostics(advisory(file, "a different finding")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "a different finding"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	flush()
@@ -136,12 +136,12 @@ func TestPublishDiagnostics_AClearingIsAlwaysSent(t *testing.T) {
 	ctx, flush := serializerContext(t, &out)
 	const file = "/w/aggregate.yaml"
 
-	for _, f := range s.setRenderDiagnostics(advisory(file, "the finding the author then fixed")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "the finding the author then fixed"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	// The run that raises nothing: the layer empties, and its returned set names
 	// the file it used to hold so the retraction reaches the client.
-	for _, f := range s.setRenderDiagnostics(nil) {
+	for _, f := range s.setRenderDiagnostics(nil, nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	flush()
@@ -171,7 +171,7 @@ func TestPublishDiagnostics_AnotherLayerMovingIsNews(t *testing.T) {
 	ctx, flush := serializerContext(t, &out)
 	const file = "/w/aggregate.yaml"
 
-	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	// A validation writes the semantic layer for the same file. The build layer
@@ -179,7 +179,7 @@ func TestPublishDiagnostics_AnotherLayerMovingIsNews(t *testing.T) {
 	s.setDiagnostics(file, []Diagnostic{
 		{Line: 7, Column: 3, Severity: editorSeverityError, Message: "a semantic violation"},
 	})
-	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	flush()
@@ -214,7 +214,7 @@ func TestPublishDiagnostics_AFreshClientIsToldEverythingAgain(t *testing.T) {
 	ctx, flush := serializerContext(t, &out)
 	const file = "/w/aggregate.yaml"
 
-	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory")) {
+	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory"), nil) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 	// The control, in the same run and against the same state: without the

@@ -391,7 +391,11 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	// has an empty problem list whatever an earlier one was told. A workspace
 	// entry outlives the connection that filled it, so without this the flush
 	// would conclude it had already reported every file and send nothing at all.
+	// The dependency refusals earlier answers carried are forgotten with it: the
+	// client in front of us was answered none of them, so none stands in for a
+	// document's own finding.
 	declared.forgetPublished()
+	declared.forgetOperationRefusals()
 	for _, file := range declared.diagnosticsFiles() {
 		if err := declared.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
@@ -624,17 +628,16 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
-		// One slice for both the store and the response, so the source the
-		// store stamps is the source the caller receives. Two slices built
-		// from the same value would leave the returned one unstamped.
-		diags := []Diagnostic{yamlErrorToDiagnostic(err)}
-		s.setDiagnostics(file, diags)
+		s.setDiagnostics(file, []Diagnostic{yamlErrorToDiagnostic(err)})
 		// A buffer no parser will read is not a catalog entity the conventions rules
 		// can be asked about, so whatever they last said about this file is cleared
 		// rather than left standing beside a parse failure.
 		s.setConventionDiagnostics(file, nil)
 		s.parseCache.Drop(file)
-		return validateResult{Diagnostics: diags, Checked: checked}, nil
+		// The composed view, as every answer below gives: a client replaces each
+		// layer it holds for this file from the reply, and a validation that stopped
+		// at the parse learned nothing about what a build found here.
+		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
 	s.parseCache.Put(file, &doc, []byte(params.Content))
 	if s.testValidateGateHook != nil {
@@ -659,7 +662,9 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// and reporting it here would bury the first. The layer is cleared rather
 		// than left standing.
 		s.setConventionDiagnostics(file, nil)
-		return validateResult{Diagnostics: diags, Checked: checked}, nil
+		// The composed view, for the reason the parse failure above answers with
+		// it: the envelope stopped this validation, not what a build found here.
+		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
 	// The publishing-conventions layer, refreshed on every validation of this file
 	// — including the ones that find nothing, since an author who corrected a name
@@ -985,6 +990,7 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 		// dispatcher exits via the drain timer.
 		return nil
 	}
+	s.noteOperationAnswer(ctx, params.Release, errEnvelope)
 	if errEnvelope != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
@@ -1344,9 +1350,9 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 // refusal is the refusal the run stopped on while rendering, as the failure
 // envelope positioned it, or nil: the success path passes nil, and so does a
 // failure that is not one. It is the one thing the two paths publish
-// differently, and it is the envelope's own entry rather than a second
+// differently, and it is the envelope's own entries rather than a second
 // positioning of the same refusal.
-func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releasePreview, refusal *renderRefusalEntry) {
+func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releasePreview, refusal *renderRefusalReport) {
 	if preview == nil || preview.resolved == nil {
 		return
 	}

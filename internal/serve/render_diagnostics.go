@@ -180,15 +180,21 @@ func (s *Server) advisoryPositionSource(content []byte) (*yaml.Node, yamlpos.Lin
 // publication would erase this one's entries, so every advisory belonging to the
 // layer arrives in one call or not at all.
 //
-// refusal is the refusal the run stopped on while rendering, or nil for a run
-// that did not, and it travels in the same call for the same reason. It is filed
-// on the document it points at, which is often not file — a Workload refusal
-// points into its Recipe — and after the advisories the run raised before it
-// stopped, which is the order the run raised them in. A run that does not stop
+// refusal is the refusal the pipeline run stopped on, while rendering or ahead of
+// it, or nil for a run that did not, and it travels in the same call for the same
+// reason. Each finding
+// it states is filed on the document that finding points at, which is often not
+// file — a Workload refusal points into its Recipe, a refusal over the graph into
+// the Release that wrote the edge — and after the advisories the run raised before
+// it stopped, which is the order the run raised them in. A run that does not stop
 // there publishes the layer without it, so the next run that renders clears an
-// entry the last one left. Both files are keyed as the layer keys them, so an
-// entry pointing into file itself joins file's entries rather than replacing them.
-func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic, extra []Diagnostic, content []byte, refusal *renderRefusalEntry) {
+// entry the last one left. Every file is keyed as the layer keys it, so an entry
+// pointing into file itself joins file's entries rather than replacing them.
+//
+// The refusal's entries are handed to the layer as refusals as well as entries,
+// because a document's own validation does not report again what one of them
+// already reports — see snapshotDiagnostics.
+func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic, extra []Diagnostic, content []byte, refusal *renderRefusalReport) {
 	byFile := map[string][]Diagnostic{}
 	if file != "" && len(diags)+len(extra) > 0 {
 		doc, idx := s.advisoryPositionSource(content)
@@ -199,82 +205,119 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 		mapped = append(mapped, extra...)
 		byFile[s.canonicalFile(file)] = mapped
 	}
-	if refusal != nil && refusal.file != "" {
-		key := s.canonicalFile(refusal.file)
-		byFile[key] = append(byFile[key], refusal.diagnostic)
+	refusals := map[string][]Diagnostic{}
+	for _, entry := range refusal.entriesOrNone() {
+		if entry.file == "" {
+			continue
+		}
+		key := s.canonicalFile(entry.file)
+		byFile[key] = append(byFile[key], entry.diagnostic)
+		refusals[key] = append(refusals[key], entry.diagnostic)
 	}
-	for _, f := range s.setRenderDiagnostics(byFile) {
+	for _, f := range s.setRenderDiagnostics(byFile, refusals) {
 		_ = s.publishDiagnostics(ctx, f)
 	}
 }
 
-// renderRefusalEntry is a refusal raised while rendering as the daemon reports
-// it: the document the entry is filed on and the entry itself.
+// renderRefusalReport is a refusal raised while rendering as the daemon reports
+// it: one entry for each finding the refusal states, each with the document it is
+// filed on.
 //
 // It is built once per refusal, by renderRefusalFinding, and both places the
-// daemon reports the refusal read it — the build layer's entry and the error
-// answer's structured position — so the two cannot name different places for
-// one refusal.
-type renderRefusalEntry struct {
+// daemon reports the refusal read it — the build layer's entries and the error
+// answer's structured position — so the two cannot name different places for one
+// refusal.
+type renderRefusalReport struct {
+	// message is the refusal as a whole in the compiler's words, every finding
+	// and every cause beneath each, which is what the error answer carries.
+	message string
+
+	// entries holds one entry per finding, in the order the refusal states them,
+	// and never none.
+	entries []refusalEntry
+}
+
+// refusalEntry is one finding of a refusal raised while rendering, as the build
+// layer carries it.
+type refusalEntry struct {
 	file       string
 	diagnostic Diagnostic
-	// located reports whether the entry's position is a key the refusal named
+	// located reports whether the entry's position is a key the finding named
 	// rather than the head of the file it falls back to.
 	located bool
 }
 
-// errorData is the structured position the error answer carries for the refusal:
-// the document, and the span of the key it points at where that key was found.
-// Where no key was found the answer names the document alone, the shape every
-// other error answer here takes for a file-level failure — a client reads a
-// position or none, and never the head of the file standing in for one.
-func (e *renderRefusalEntry) errorData() *errorData {
-	if !e.located {
-		return newErrorData(e.file, 0, 0)
+// entriesOrNone returns the report's entries, or none for no report, so a caller
+// holding a possibly absent report reads it without a guard of its own.
+func (r *renderRefusalReport) entriesOrNone() []refusalEntry {
+	if r == nil {
+		return nil
 	}
-	d := e.diagnostic
-	return newErrorDataWithRange(e.file, d.Line, d.Column, d.EndLine, d.EndColumn)
+	return r.entries
+}
+
+// errorData is the structured position the error answer carries for the refusal:
+// the place its first finding points at — the document, and the span of the key
+// there where that key was found. Where no key was found the answer names the
+// document alone, the shape every other error answer here takes for a file-level
+// failure — a client reads a position or none, and never the head of the file
+// standing in for one. A refusal stating several findings names the first, the
+// one the answer's message opens with; every finding is on the build layer.
+func (r *renderRefusalReport) errorData() *errorData {
+	first := r.entries[0]
+	if !first.located {
+		return newErrorData(first.file, 0, 0)
+	}
+	d := first.diagnostic
+	return newErrorDataWithRange(first.file, d.Line, d.Column, d.EndLine, d.EndColumn)
 }
 
 // renderRefusalFinding maps the refusal a preview stopped on while rendering onto
-// the editor wire, or returns nil for a preview that did not stop there.
+// the editor wire, one entry per finding it states, or returns nil for a preview
+// that did not stop there.
 //
 // It is the ONE mapping from such a refusal to a diagnostic. Every condition the
 // run can raise takes it — a Workload that does not satisfy its checks, a template
-// that fails, an assertion, a realization short of its contract, and any other —
-// so no condition reaches an editor positioned by a route of its own. Where the
-// refusal points is decided by the shared preview, from the refusal's own chain,
-// and only resolved to a position here.
+// that fails, an assertion, a realization short of its contract, a composition the
+// graph refuses, and any other — so no condition reaches an editor positioned by a
+// route of its own. How many findings a refusal states and where each points are
+// decided by the shared preview, from the refusal's own chain, and only resolved
+// to a position here.
 //
 // The position is the key's span through keyPathSpan, the one place a finding
 // positioned from a document path gets its position and its fall-back, in the
-// encoding this client negotiated. The message is the refusal as the compiler
+// encoding this client negotiated. The message is the finding as the compiler
 // raised it, with every cause — never a sentence composed here from the data the
 // refusal was raised over, so whatever the raising site withheld stays withheld.
-// The identifiers are the ones conditionCodesOf decides together, so the entry
-// carries the short code the command line prints at the head of the same
-// refusal, and the pointer to where that condition is explained.
-func (s *Server) renderRefusalFinding(preview *compilerops.PreviewResult) *renderRefusalEntry {
+// The identifiers are the ones conditionCodesOf decides together, read off the
+// finding's own chain, so each entry carries the short code the command line
+// prints at the head of the same finding, and the pointer to where that condition
+// is explained.
+func (s *Server) renderRefusalFinding(preview *compilerops.PreviewResult) *renderRefusalReport {
 	refusal, ok := preview.RenderRefusal()
-	if !ok {
+	if !ok || len(refusal.Findings) == 0 {
 		return nil
 	}
-	doc, idx := s.advisoryPositionSource(refusal.Content)
-	line, col, endLine, endCol, located := keyPathSpan(doc, idx, refusal.KeyPath)
-	return &renderRefusalEntry{
-		file: refusal.Document,
-		diagnostic: Diagnostic{
-			Line:           line,
-			Column:         col,
-			EndLine:        endLine,
-			EndColumn:      endCol,
-			Severity:       editorSeverityError,
-			Message:        refusal.Message,
-			ConditionCodes: conditionCodesOf(refusal.Err),
-			KeyPath:        refusal.KeyPath,
-		},
-		located: located,
+	report := &renderRefusalReport{message: refusal.Message}
+	for _, finding := range refusal.Findings {
+		doc, idx := s.advisoryPositionSource(finding.Content)
+		line, col, endLine, endCol, located := keyPathSpan(doc, idx, finding.KeyPath)
+		report.entries = append(report.entries, refusalEntry{
+			file: finding.Document,
+			diagnostic: Diagnostic{
+				Line:           line,
+				Column:         col,
+				EndLine:        endLine,
+				EndColumn:      endCol,
+				Severity:       editorSeverityError,
+				Message:        finding.Message,
+				ConditionCodes: conditionCodesOf(finding.Err),
+				KeyPath:        finding.KeyPath,
+			},
+			located: located,
+		})
 	}
+	return report
 }
 
 // editorSeverity translates a plugin-wire diagnostic severity into the editor

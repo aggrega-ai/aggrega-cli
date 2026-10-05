@@ -69,7 +69,7 @@ func TestDiagnosticLayers_ComposeAndSurviveEachOther(t *testing.T) {
 	s.setDiagnostics(file, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render"}},
-	})
+	}, nil)
 
 	if got, want := messages(s.snapshotDiagnostics(file)), []string{"semantic", "render"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("composed snapshot = %v, want %v", got, want)
@@ -84,7 +84,7 @@ func TestDiagnosticLayers_ComposeAndSurviveEachOther(t *testing.T) {
 	// A fresh render rewrites the render layer; the semantic finding stands.
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render-2"}},
-	})
+	}, nil)
 	if got, want := messages(s.snapshotDiagnostics(file)), []string{"semantic-2", "render-2"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("after render rewrite = %v, want %v", got, want)
 	}
@@ -102,14 +102,14 @@ func TestSetRenderDiagnostics_ClearsAndReportsTouchedFiles(t *testing.T) {
 
 	touched := s.setRenderDiagnostics(map[string][]Diagnostic{
 		a: {{Line: 1, Column: 1, Severity: "warning", Message: "one"}},
-	})
+	}, nil)
 	if !reflect.DeepEqual(touched, []string{a}) {
 		t.Fatalf("first publish touched %v, want %v", touched, []string{a})
 	}
 
 	touched = s.setRenderDiagnostics(map[string][]Diagnostic{
 		b: {{Line: 1, Column: 1, Severity: "warning", Message: "two"}},
-	})
+	}, nil)
 	if !reflect.DeepEqual(touched, []string{a, b}) {
 		t.Errorf("second publish touched %v, want the union %v", touched, []string{a, b})
 	}
@@ -120,7 +120,7 @@ func TestSetRenderDiagnostics_ClearsAndReportsTouchedFiles(t *testing.T) {
 		t.Errorf("file b = %v, want %v", got, want)
 	}
 
-	touched = s.setRenderDiagnostics(nil)
+	touched = s.setRenderDiagnostics(nil, nil)
 	if !reflect.DeepEqual(touched, []string{b}) {
 		t.Errorf("clearing publish touched %v, want %v", touched, []string{b})
 	}
@@ -139,7 +139,7 @@ func TestDiagnosticsFiles_WalksBothLayers(t *testing.T) {
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		"/w/a.yaml": {{Message: "render"}},
 		"/w/b.yaml": {{Message: "render-only"}},
-	})
+	}, nil)
 	if got, want := s.diagnosticsFiles(), []string{"/w/a.yaml", "/w/b.yaml"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("diagnosticsFiles = %v, want %v", got, want)
 	}
@@ -163,7 +163,7 @@ func TestDiagnosticSource_BothLayersInOnePayload(t *testing.T) {
 	s.setDiagnostics(file, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render"}},
-	})
+	}, nil)
 
 	composed := s.snapshotDiagnostics(file)
 	if len(composed) != 2 {
@@ -185,7 +185,7 @@ func TestDiagnosticSource_BothLayersInOnePayload(t *testing.T) {
 	// mislabel which layer a finding came from.
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render", Source: "something-else"}},
-	})
+	}, nil)
 	for _, d := range s.snapshotDiagnostics(file) {
 		if d.Message == "render" && d.Source != "aggrega-build" {
 			t.Errorf("render-layer source = %q, want aggrega-build (the layer overrides)", d.Source)

@@ -154,12 +154,14 @@ type buildResultPayload struct {
 	// run had raised before it stopped, for the reason given on this type.
 	Advisories []buildAdvisory `json:"advisories,omitempty"`
 
-	// Refusal is what the render refused on, as one entry a caller reads field by
-	// field: the document it points at, the key there, the position of that key,
-	// the condition's identifiers and the refusal in the compiler's words. It is
-	// present on a build that refused while rendering and absent on every other
-	// answer — a build that succeeded, and one refused by an earlier gate, whose
-	// refusal is the guidance text's alone.
+	// Refusal is what the pipeline run refused on, as one entry a caller reads
+	// field by field: the document it points at, the key there, the position of
+	// that key, the condition's identifiers and the refusal in the compiler's
+	// words. It is present on a build the run itself refused — while rendering, or
+	// ahead of the render where the graph is composed or a Component's or a
+	// Feature's assertions are checked — and absent on every other answer: a build
+	// that succeeded, and one refused by an earlier gate, whose refusal is the
+	// guidance text's alone.
 	Refusal *buildRefusal `json:"refusal,omitempty"`
 
 	// DependencyResolution is what this build's own fill step resolved, in the
@@ -193,14 +195,16 @@ type buildAdvisory struct {
 	KeyPath  string `json:"key_path,omitempty"`
 }
 
-// buildRefusal is the refusal a render stopped on, as the build tool reports it.
+// buildRefusal is the refusal a pipeline run stopped on, as the build tool
+// reports it.
 //
 // Its fields reuse the names this tool family already gives the same facts about
 // a finding, so a caller that reads one finding reads this one: severity,
 // message, code and key_path as a build advisory carries them, short_code as the
 // explain-error tool names a condition's compact code, file and file_withheld as
-// every answer here tells a place on the server's host, and line and column as a
-// lint finding locates itself.
+// every answer here tells a place on the server's host, line and column as a lint
+// finding locates itself, and findings as the lint tool names its list of
+// positioned findings.
 //
 // File is the document the refusal points at — the document its own chain names,
 // or the Aggregate where it names none — and KeyPath the key there, when the
@@ -212,43 +216,64 @@ type buildAdvisory struct {
 // build. Message is the refusal with every cause beneath it, exactly as the
 // compiler raised it, so whatever was withheld from it where it was raised stays
 // withheld here.
+//
+// Findings is present only where the refusal joins several findings — the
+// composition of a graph refuses with every violation it found — and holds one
+// entry per finding, in the order the refusal states them, each in this same
+// shape: its own document, key, position, identifiers and words. The refusal's
+// own place is then its first finding's, and its message carries every one.
 type buildRefusal struct {
-	File         *string `json:"file"`
-	FileWithheld bool    `json:"file_withheld,omitempty"`
-	KeyPath      string  `json:"key_path,omitempty"`
-	Line         int     `json:"line,omitempty"`
-	Column       int     `json:"column,omitempty"`
-	Severity     string  `json:"severity"`
-	Code         string  `json:"code,omitempty"`
-	ShortCode    string  `json:"short_code,omitempty"`
-	Message      string  `json:"message"`
+	File         *string        `json:"file"`
+	FileWithheld bool           `json:"file_withheld,omitempty"`
+	KeyPath      string         `json:"key_path,omitempty"`
+	Line         int            `json:"line,omitempty"`
+	Column       int            `json:"column,omitempty"`
+	Severity     string         `json:"severity"`
+	Code         string         `json:"code,omitempty"`
+	ShortCode    string         `json:"short_code,omitempty"`
+	Message      string         `json:"message"`
+	Findings     []buildRefusal `json:"findings,omitempty"`
 }
 
-// buildRefusalOf maps the refusal a render stopped on onto the tool's wire shape,
-// telling its file and the places its message names the way the rest of this
-// answer tells them.
+// buildRefusalOf maps the refusal a pipeline run stopped on onto the tool's wire
+// shape, telling each file and the places each message names the way the rest of
+// this answer tells them.
 //
-// The document and key come from the shared preview, which reads them off the
-// refusal's own chain for every surface that positions it, so this tool and the
-// language server name one place for one refusal. The key is resolved to a
-// position by the one walk every positioned surface resolves a key through.
+// The findings, their documents and their keys come from the shared preview,
+// which reads them off the refusal's own chain for every surface that positions
+// it, so this tool and the language server name one place for each finding of one
+// refusal. Each key is resolved to a position by the one walk every positioned
+// surface resolves a key through.
 func (tw *toolWorkspace) buildRefusalOf(refusal compilerops.RenderRefusal) *buildRefusal {
-	entry := &buildRefusal{
-		KeyPath:  refusal.KeyPath,
-		Severity: abi.SeverityHalt,
-		Message:  tw.reportedText(refusal.Message),
+	entry := tw.refusalEntryAt(refusal.Findings[0], refusal.Message, refusal.Err)
+	if len(refusal.Findings) > 1 {
+		for _, finding := range refusal.Findings {
+			found := tw.refusalEntryAt(finding, finding.Message, finding.Err)
+			entry.Findings = append(entry.Findings, *found)
+		}
 	}
-	entry.File, entry.FileWithheld = tw.reportedLocationField(refusal.Document)
-	entry.Code, _ = cerrors.CodeOf(refusal.Err)
-	entry.ShortCode, _ = cerrors.ShortCodeOf(refusal.Err)
-	if refusal.KeyPath == "" || len(refusal.Content) == 0 {
+	return entry
+}
+
+// refusalEntryAt is one entry in the refusal's shape, placed where finding points
+// and worded and identified by message and err.
+func (tw *toolWorkspace) refusalEntryAt(finding compilerops.RefusalFinding, message string, err error) *buildRefusal {
+	entry := &buildRefusal{
+		KeyPath:  finding.KeyPath,
+		Severity: abi.SeverityHalt,
+		Message:  tw.reportedText(message),
+	}
+	entry.File, entry.FileWithheld = tw.reportedLocationField(finding.Document)
+	entry.Code, _ = cerrors.CodeOf(err)
+	entry.ShortCode, _ = cerrors.ShortCodeOf(err)
+	if finding.KeyPath == "" || len(finding.Content) == 0 {
 		return entry
 	}
 	var doc yaml.Node
-	if err := yaml.Unmarshal(refusal.Content, &doc); err != nil {
+	if yerr := yaml.Unmarshal(finding.Content, &doc); yerr != nil {
 		return entry
 	}
-	if span, ok := yamlpos.FieldRange(&doc, yamlpos.BuildLineIndex(refusal.Content), refusal.KeyPath); ok {
+	if span, ok := yamlpos.FieldRange(&doc, yamlpos.BuildLineIndex(finding.Content), finding.KeyPath); ok {
 		entry.Line, entry.Column = span.Line, span.Column
 	}
 	return entry
@@ -327,9 +352,10 @@ var buildToolSpec = toolSpec{
 		"files by output-relative path. Use it to see exactly what a Release would emit before committing to a real build, " +
 		"or to inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
 		"content is included; the concise format returns just the file paths. A render failure comes back as actionable " +
-		"guidance rather than a partial write (route it through explain-error if needed): a refusal raised while " +
-		"rendering reads in the compiler's words with every cause, and travels as a structured `refusal` entry naming " +
-		"the document it points at, the key there and that key's position. `auto_pull` resolves the " +
+		"guidance rather than a partial write (route it through explain-error if needed): a refusal the compiler raises " +
+		"while compiling the Release reads in the compiler's words with every cause, and travels as a structured " +
+		"`refusal` entry naming the document it points at, the key there and that key's position, with each finding " +
+		"listed under `findings` where it joins several. `auto_pull` resolves the " +
 		"Release's dependencies into the lockfile first, which reaches a registry and writes.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
 	inputSchema: `{
@@ -752,6 +778,13 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 	case compilerops.GateAxisReconstruction:
 		return "The build could not reconstruct the Release's pinned dependency set from the lockfile."
 	case compilerops.GateRender:
+		// The run itself refused, and whether it was rendering when it did is a fact
+		// the run reports rather than one read off the refusal's words: the
+		// composition of the graph and the assertions a Component or a Feature
+		// declares refuse before anything renders.
+		if !preview.PipelineOutcome().ReachedRender() {
+			return "The build refused before rendering anything; nothing was written to disk."
+		}
 		return "The build failed during rendering; nothing was written to disk."
 	default:
 		return "The build could not resolve the Release closure."

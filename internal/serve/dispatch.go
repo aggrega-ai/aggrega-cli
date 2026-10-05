@@ -62,23 +62,23 @@ type jsonRPCResponse struct {
 // cause nil, and a reader treats nil as nothing to report rather than
 // as an omission.
 //
-// refusal is the same refusal positioned as a build-layer entry, set only
-// on the answer to a run that stopped while rendering. It rides here so the
-// handler that publishes the layer files the very entry the answer's Data
-// was built from, rather than positioning the refusal a second time; it is
-// unexported for the same reason cause is.
+// refusal is the same refusal positioned as build-layer entries, one per
+// finding it states, set only on the answer to a run the pipeline itself
+// refused. It rides here so the handler that publishes the layer files the
+// very entries the answer's Data was built from, rather than positioning the
+// refusal a second time; it is unexported for the same reason cause is.
 type jsonRPCError struct {
 	Code    int        `json:"code"`
 	Message string     `json:"message"`
 	Data    *errorData `json:"data,omitempty"`
 	cause   error
-	refusal *renderRefusalEntry
+	refusal *renderRefusalReport
 }
 
 // renderRefusal returns the positioned refusal an answer carries, or nil — for
 // an answer that is not a render refusal, and for no answer at all, so a caller
 // holding a possibly absent answer reads it without a guard of its own.
-func (e *jsonRPCError) renderRefusal() *renderRefusalEntry {
+func (e *jsonRPCError) renderRefusal() *renderRefusalReport {
 	if e == nil {
 		return nil
 	}

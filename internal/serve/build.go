@@ -138,6 +138,7 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 		// exits via the drain timer.
 		return nil
 	}
+	s.noteOperationAnswer(ctx, params.Release, errEnvelope)
 	if errEnvelope != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}

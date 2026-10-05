@@ -13,16 +13,23 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
+// place is where one finding of a refusal must point: a document and a key there.
+type place struct {
+	doc, key string
+}
+
 // TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints is the one route from a
-// refusal raised while rendering to the document and key every positioned surface
-// reports it at: one shape of chain per row, the control first.
+// refusal the pipeline run raised to the findings it states and the document and
+// key each one points at: one shape of chain per row, the control first.
 func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 	ws := t.TempDir()
 	aggregate := filepath.Join(ws, "aggregate.yaml")
+	release := filepath.Join(ws, "release.yaml")
 	recipe := filepath.Join(ws, "catalog", "recipe.yaml")
 	directory := filepath.Join(ws, "catalog")
 	for path, body := range map[string]string{
 		aggregate: "kind: Aggregate\n",
+		release:   "kind: Release\nspec:\n  components:\n    app:\n      uses:\n        models:\n          local:\n            target: nosuch\n",
 		recipe:    "kind: Recipe\nspec:\n  workload: |\n    kind: Workload\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -37,13 +44,22 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 		return fmt.Errorf("rendering: %w",
 			cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: "router"}, "rendering node \"router\""))
 	}
+	// A finding the graph raises: an envelope naming the document that wrote the key
+	// relative to the workspace, with the key beside it — the shape the composition
+	// of a graph joins one of per violation.
+	written := func(document, key, text string) error {
+		return cerrors.Wrap(stderrors.New(text), cerrors.OpsError, cerrors.SourceLocation{File: document, Locator: key}, "edge")
+	}
+	dangling := written("release.yaml", ".spec.components.app.uses.models.local", "uses edge target does not exist (\"nosuch\")")
+	other := written("release.yaml", ".spec.components.app.uses.models.other", "uses edge target does not exist (\"nowhere\")")
+	inAggregate := written("aggregate.yaml", ".spec.components.app", "connection alias is already used")
+	appKey := ".spec.components.app.uses.models.local"
 
 	for _, tc := range []struct {
 		name     string
 		gate     PreviewGate
 		err      error
-		wantDoc  string
-		wantKey  string
+		want     []place
 		reported bool
 	}{
 		{
@@ -55,8 +71,7 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			name:     "a raising site stated the document and the key",
 			gate:     GateRender,
 			err:      node(cerrors.Locate(cause, cerrors.SourceLocation{File: recipe, Locator: ".spec.workload"})),
-			wantDoc:  recipe,
-			wantKey:  ".spec.workload",
+			want:     []place{{recipe, ".spec.workload"}},
 			reported: true,
 		},
 		{
@@ -64,14 +79,14 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate: GateRender,
 			err: node(cerrors.Wrap(cause, cerrors.CatalogError, cerrors.SourceLocation{File: recipe},
 				"recipe \"r\" workload template")),
-			wantDoc:  recipe,
+			want:     []place{{recipe, ""}},
 			reported: true,
 		},
 		{
 			name:     "every pointer names a node, not a document",
 			gate:     GateRender,
 			err:      node(cause),
-			wantDoc:  aggregate,
+			want:     []place{{aggregate, ""}},
 			reported: true,
 		},
 		{
@@ -79,8 +94,7 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate: GateRender,
 			err: node(cerrors.Wrap(cause, cerrors.CatalogError,
 				cerrors.SourceLocation{File: filepath.Join("catalog", "recipe.yaml"), Locator: ".spec.workload"}, "frame")),
-			wantDoc:  recipe,
-			wantKey:  ".spec.workload",
+			want:     []place{{recipe, ".spec.workload"}},
 			reported: true,
 		},
 		{
@@ -88,7 +102,7 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate: GateRender,
 			err: node(cerrors.Locate(cerrors.Wrap(cause, cerrors.CatalogError, cerrors.SourceLocation{File: recipe}, "frame"),
 				cerrors.SourceLocation{File: filepath.Join(ws, "gone.yaml"), Locator: ".spec.workload"})),
-			wantDoc:  recipe,
+			want:     []place{{recipe, ""}},
 			reported: true,
 		},
 		{
@@ -96,7 +110,7 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate: GateRender,
 			err: node(cerrors.Wrap(cause, cerrors.CatalogError, cerrors.SourceLocation{File: directory},
 				"catalog directory")),
-			wantDoc:  aggregate,
+			want:     []place{{aggregate, ""}},
 			reported: true,
 		},
 		{
@@ -104,7 +118,52 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate: GateRender,
 			err: node(cerrors.Wrap(cause, cerrors.CatalogError,
 				cerrors.SourceLocation{File: filepath.Join("..", "elsewhere.yaml"), Locator: ".spec"}, "frame")),
-			wantDoc:  aggregate,
+			want:     []place{{aggregate, ""}},
+			reported: true,
+		},
+		{
+			name:     "a refusal joining one finding the graph raised points where that finding points",
+			gate:     GateRender,
+			err:      stderrors.Join(dangling),
+			want:     []place{{release, appKey}},
+			reported: true,
+		},
+		{
+			name:     "a refusal joining two findings states each where it points",
+			gate:     GateRender,
+			err:      stderrors.Join(dangling, other),
+			want:     []place{{release, appKey}, {release, ".spec.components.app.uses.models.other"}},
+			reported: true,
+		},
+		{
+			name:     "a join reached through a wrap that adds context is read through it",
+			gate:     GateRender,
+			err:      fmt.Errorf("graph: %w", stderrors.Join(dangling, inAggregate)),
+			want:     []place{{release, appKey}, {aggregate, ".spec.components.app"}},
+			reported: true,
+		},
+		{
+			name:     "a join inside a join is read to its findings",
+			gate:     GateRender,
+			err:      stderrors.Join(stderrors.Join(dangling, other), inAggregate),
+			want:     []place{{release, appKey}, {release, ".spec.components.app.uses.models.other"}, {aggregate, ".spec.components.app"}},
+			reported: true,
+		},
+		{
+			name:     "a joined finding naming no document is placed on the Aggregate",
+			gate:     GateRender,
+			err:      stderrors.Join(dangling, cause),
+			want:     []place{{release, appKey}, {aggregate, ""}},
+			reported: true,
+		},
+		{
+			// The terminal prints the envelope as the refusal's head and the join as its
+			// causes, so the join is that envelope's detail and the refusal states one
+			// finding, placed by the envelope's own route.
+			name:     "a join beneath an envelope stays that envelope's detail",
+			gate:     GateRender,
+			err:      cerrors.Wrap(stderrors.Join(dangling, other), cerrors.OpsError, cerrors.SourceLocation{}, "recipe resolution"),
+			want:     []place{{aggregate, ""}},
 			reported: true,
 		},
 	} {
@@ -123,22 +182,34 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			if !ok {
 				return
 			}
-			if got.Document != tc.wantDoc || got.KeyPath != tc.wantKey {
-				t.Errorf("the refusal points at %s %q; want %s %q", got.Document, got.KeyPath, tc.wantDoc, tc.wantKey)
-			}
 			if got.Message != cerrors.CauseChain(tc.err) {
 				t.Errorf("the message is not the refusal with its causes:\ngot:  %q\nwant: %q",
 					got.Message, cerrors.CauseChain(tc.err))
 			}
-			want, err := os.ReadFile(tc.wantDoc)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got.Content) != string(want) {
-				t.Errorf("the content is not the bytes of %s: %q", tc.wantDoc, got.Content)
-			}
 			if got.Err != tc.err {
 				t.Error("the refusal handed back is not the one the run raised")
+			}
+			if len(got.Findings) != len(tc.want) {
+				t.Fatalf("the refusal states %d finding(s); want %d: %+v", len(got.Findings), len(tc.want), got.Findings)
+			}
+			for i, want := range tc.want {
+				finding := got.Findings[i]
+				if finding.Document != want.doc || finding.KeyPath != want.key {
+					t.Errorf("finding %d points at %s %q; want %s %q", i, finding.Document, finding.KeyPath, want.doc, want.key)
+				}
+				if finding.Message != cerrors.CauseChain(finding.Err) {
+					t.Errorf("finding %d's message is not its own chain: %q", i, finding.Message)
+				}
+				if _, kind := LeadingFrame(tc.err); kind != FrameMulti && (finding.Err != tc.err || finding.Message != got.Message) {
+					t.Errorf("a refusal that joins nothing is its own one finding; got %q", finding.Message)
+				}
+				content, err := os.ReadFile(want.doc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(finding.Content) != string(content) {
+					t.Errorf("finding %d's content is not the bytes of %s: %q", i, want.doc, finding.Content)
+				}
 			}
 		})
 	}

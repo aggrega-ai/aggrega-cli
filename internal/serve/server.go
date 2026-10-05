@@ -1130,6 +1130,23 @@ type Server struct {
 	// other's findings. Reads compose every layer; writes only ever touch one.
 	renderDiags map[string][]Diagnostic
 
+	// renderRefusals holds, per file and guarded by the same diagMu, the entries
+	// of renderDiags that are a refusal's findings rather than advisories. It is
+	// replaced in the same call and under the same lock as renderDiags, so the two
+	// never describe different builds. It is read only by the composition, which
+	// does not report a document's own finding again where one of these already
+	// reports it — see snapshotDiagnostics.
+	renderRefusals map[string][]Diagnostic
+
+	// operationRefusals holds, per Release and guarded by the same diagMu, the
+	// refusal the latest answer to a build, a preview or a graph request for that
+	// Release carried when it refused because a dependency does not resolve — the
+	// one refusal of those requests a client files on a document itself, because
+	// it is answered and never published. Each answer for the Release replaces it,
+	// and it is forgotten with what the client was told at the handshake. Like
+	// renderRefusals it is read only by the composition.
+	operationRefusals map[string]operationRefusal
+
 	// validations records which of this workspace's files are being validated
 	// right now, so a diagnostics request naming one of them waits for the
 	// validation and is answered with its findings rather than from a store that
@@ -1525,9 +1542,10 @@ func (s *Server) setConventionDiagnostics(file string, diags []Diagnostic) {
 // diagMu: the semantic layer first, then the render layer, then the
 // publishing-conventions layer. The copy is what callers marshal or return on
 // the wire, so the marshal runs off the lock and never races a concurrent
-// writer's whole-slice reassignment. Composition happens here, at the single
-// read entry point, so no caller can publish one layer and silently drop
-// another. Every layer empty returns nil.
+// writer's whole-slice reassignment. It is the single read entry point for what
+// reaches the wire, so no caller can publish one layer and silently drop
+// another; the composition itself is composedLocked's. Every layer empty returns
+// nil.
 //
 // The layers are read at the one key canonicalFile fixes, so they are looked up
 // in a single coordinate system. That matters here more than at any other site:
@@ -1535,11 +1553,37 @@ func (s *Server) setConventionDiagnostics(file string, diags []Diagnostic) {
 // layers by a validation, the render layer by an inspection — and each request
 // names the file in whatever spelling its sender chose, so a key carrying a
 // per-request spelling would compose one layer with nothing.
+//
+// # A fault is reported once
+//
+// A document's own validation and a build can both report one fault about one
+// document: the single-entity check renders a Recipe the build renders too, the
+// validation composes the graph the build composes, and a Release whose
+// dependencies do not resolve fails both. Reported by both, the one fault reads as
+// two entries, at two places, in two sets of words. So the composition omits a
+// semantic-layer entry that restates a build refusal standing on the same document
+// (restatesRefusal) — a refusal's finding on the build layer, or the refusal the
+// latest build, preview or graph answer for a Release carried because a
+// dependency does not resolve, which a client files itself. The build's report is
+// the one kept: it is the better placed, and an answer cannot be withdrawn.
+//
+// It is an omission at composition and never a write: the semantic layer keeps
+// what the validation found, so the moment no build reports the fault the
+// document's own entry is composed again, and where no build has run nothing is
+// omitted at all.
 func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	key := s.canonicalFile(file)
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	semantic := s.diagnostics[key]
+	return s.composedLocked(key)
+}
+
+// composedLocked composes the layers standing on the file keyed key, as
+// snapshotDiagnostics describes, into a fresh slice. diagMu must be held. It is
+// the one composition, so a document compared on either side of a change made
+// under the same hold is compared in exactly the terms a publication carries.
+func (s *Server) composedLocked(key string) []Diagnostic {
+	semantic := withoutRestatedFaults(s.diagnostics[key], s.buildRefusalsOnLocked(key))
 	render := s.renderDiags[key]
 	conventions := s.conventionDiags[key]
 	if len(semantic)+len(render)+len(conventions) == 0 {
@@ -1578,7 +1622,10 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 // therefore in the canonical spelling too, which is what the caller publishes —
 // the notification's file identifier and the store's key are then the same
 // string, rather than two spellings of one document.
-func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
+//
+// refusals names, per file, which of byFile's entries are a refusal's findings,
+// and replaces the record of them in the same step — see renderRefusals.
+func (s *Server) setRenderDiagnostics(byFile, refusals map[string][]Diagnostic) []string {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
 	touched := map[string]bool{}
@@ -1595,6 +1642,14 @@ func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 		touched[key] = true
 	}
 	s.renderDiags = next
+	nextRefusals := make(map[string][]Diagnostic, len(refusals))
+	for f, d := range refusals {
+		if len(d) == 0 {
+			continue
+		}
+		nextRefusals[s.canonicalFile(f)] = stampSource(d, DiagnosticSourceBuild)
+	}
+	s.renderRefusals = nextRefusals
 	files := make([]string, 0, len(touched))
 	for f := range touched {
 		files = append(files, f)

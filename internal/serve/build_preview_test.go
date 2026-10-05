@@ -147,7 +147,7 @@ func TestBuildPreviewReplacesTheBuildDiagnosticLayer(t *testing.T) {
 	stale := filepath.Join(ws, "app-agg.yaml")
 	srv.setRenderDiagnostics(map[string][]Diagnostic{
 		stale: {{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: "an advisory from an earlier render"}},
-	})
+	}, nil)
 	if got := srv.snapshotDiagnostics(stale); len(got) != 1 {
 		t.Fatalf("precondition: the seeded advisory is not on the layer; got %d", len(got))
 	}
