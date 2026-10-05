@@ -37,6 +37,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // DigestPrefixLen is the number of hex characters of the digest used
@@ -182,7 +183,15 @@ const ManifestFile = "manifest"
 // metadata stays byte-identical for kinds that identify by URL alone.
 //
 // PulledAt is set to time.Now().UTC() at write time.
-func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
+//
+// workspaceRoot is the workspace the cache belongs to. The slot is held to it
+// before anything is written, so a cache directory — or a directory on the way to
+// the slot — that is a link leading out of the workspace is refused with the halt
+// the write-scope rule declares, rather than written through.
+func WriteBlobAndMetadata(workspaceRoot, slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
+	if err := writescope.CheckWrite(workspaceRoot, slotDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {
 		return fmt.Errorf("cacheslot: mkdir %s: %w", slotDir, err)
 	}

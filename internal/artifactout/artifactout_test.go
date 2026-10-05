@@ -22,7 +22,7 @@ func TestWriteArtifacts_HappyPath(t *testing.T) {
 		"top.txt":       []byte("top-content"),
 		"e/nested.json": []byte("e-content"),
 	}
-	if err := WriteAll(tmp, files); err != nil {
+	if err := WriteAll(tmp, tmp, files); err != nil {
 		t.Fatalf("WriteAll: %v", err)
 	}
 	for rel, want := range files {
@@ -41,7 +41,7 @@ func TestWriteArtifacts_HappyPath(t *testing.T) {
 func TestWriteArtifacts_RejectsEmptyPath(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := WriteAll(tmp, map[string][]byte{"": []byte("x")})
+	err := WriteAll(tmp, tmp, map[string][]byte{"": []byte("x")})
 	if err == nil {
 		t.Errorf("empty path should error")
 	}
@@ -54,7 +54,7 @@ func TestWriteArtifacts_RejectsEmptyPath(t *testing.T) {
 func TestWriteArtifacts_RejectsTraversal(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := WriteAll(tmp, map[string][]byte{"../escape.yaml": []byte("x")})
+	err := WriteAll(tmp, tmp, map[string][]byte{"../escape.yaml": []byte("x")})
 	if err == nil {
 		t.Errorf("traversal path should error")
 	}
@@ -62,7 +62,7 @@ func TestWriteArtifacts_RejectsTraversal(t *testing.T) {
 		t.Errorf("error should mention invalid; got %v", err)
 	}
 	// Pure ".." should also fail.
-	err = WriteAll(tmp, map[string][]byte{"..": []byte("x")})
+	err = WriteAll(tmp, tmp, map[string][]byte{"..": []byte("x")})
 	if err == nil {
 		t.Errorf("pure .. path should error")
 	}
@@ -107,7 +107,7 @@ func TestWriteArtifactsEmitsInDeterministicOrder(t *testing.T) {
 	const runs = 64
 	for i := 0; i < runs; i++ {
 		tmp := t.TempDir()
-		if err := WriteAll(tmp, files); err != nil {
+		if err := WriteAll(tmp, tmp, files); err != nil {
 			t.Fatalf("run %d: WriteAll: %v", i, err)
 		}
 		for dest, want := range wantLastWriter {
@@ -134,7 +134,7 @@ func TestWriteArtifactsAcceptsLeadingDoubleDotName(t *testing.T) {
 		"..shared/values.yaml": []byte("shared"),
 		"..README":             []byte("readme"),
 	}
-	if err := WriteAll(tmp, files); err != nil {
+	if err := WriteAll(tmp, tmp, files); err != nil {
 		t.Fatalf("WriteAll: %v", err)
 	}
 	for rel, want := range files {
@@ -159,7 +159,7 @@ func TestWriteArtifactsAcceptsLeadingDoubleDotName(t *testing.T) {
 func TestWriteArtifactsRefusesAbsoluteName(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := WriteAll(tmp, map[string][]byte{"/etc/config.yaml": []byte("x")})
+	err := WriteAll(tmp, tmp, map[string][]byte{"/etc/config.yaml": []byte("x")})
 	if err == nil {
 		t.Fatal("WriteAll accepted an absolute artifact name; an absolute name is not a name relative to the output root")
 	}
@@ -185,7 +185,7 @@ func TestWriteBuildOutputClearsTheBoundariesSubtree(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 
-	if err := WriteBuildOutput(tmp, map[string][]byte{
+	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{
 		"boundaries/prod/old.yaml": []byte("from the previous variant"),
 	}); err != nil {
 		t.Fatalf("first WriteBuildOutput: %v", err)
@@ -195,7 +195,7 @@ func TestWriteBuildOutputClearsTheBoundariesSubtree(t *testing.T) {
 		t.Fatalf("precondition: the first build left nothing to clear: %v", err)
 	}
 
-	if err := WriteBuildOutput(tmp, map[string][]byte{
+	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{
 		"boundaries/dev/new.yaml": []byte("from this variant"),
 	}); err != nil {
 		t.Fatalf("second WriteBuildOutput: %v", err)
@@ -224,7 +224,7 @@ func TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := WriteBuildOutput(tmp, map[string][]byte{"boundaries/prod/app.yaml": []byte("x")}); err != nil {
+	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{"boundaries/prod/app.yaml": []byte("x")}); err != nil {
 		t.Fatalf("WriteBuildOutput: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone(t *testing.T) {
 func TestWriteBuildOutputRefusesAnEscapingName(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := WriteBuildOutput(tmp, map[string][]byte{"../escape.yaml": []byte("x")})
+	err := WriteBuildOutput(tmp, tmp, map[string][]byte{"../escape.yaml": []byte("x")})
 	if err == nil {
 		t.Fatal("WriteBuildOutput accepted a name that escapes the output root")
 	}

@@ -33,6 +33,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // Phase names a stage of the resolution a caller's progress surface can display.
@@ -1345,6 +1346,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 
 	report.phase(PhaseLockfile)
+	// The lockfile is a file this run composes beside the Release, so it is held to
+	// the workspace before it is written — and before it is reported, so a report
+	// halts where the write would.
+	if err := writescope.CheckWrite(workspaceRoot, lockfilePath); err != nil {
+		return Result{}, fmt.Errorf("write lockfile: %w", err)
+	}
 	if cfg.DryRun {
 		// The bytes come from the write's own serializer, through the timestamp rule
 		// the write applies, so what is reported here is what the write would put
@@ -1372,7 +1379,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// detached plugin is precisely the case with an entry and no resolution.
 	var trustedCount int
 	if cfg.DryRun {
-		count, trustFile, terr := reportVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
+		count, trustFile, terr := reportVerdictPluginTrust(workspaceRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
 		if terr != nil {
 			return Result{}, terr
 		}
@@ -1381,7 +1388,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			reported = append(reported, *trustFile)
 		}
 	} else {
-		count, terr := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
+		count, terr := recordVerdictPluginTrust(workspaceRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
 		if terr != nil {
 			return Result{}, terr
 		}

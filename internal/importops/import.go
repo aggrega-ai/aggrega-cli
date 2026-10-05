@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // EscapingPathError reports a scaffold path the importer returned that does not
@@ -137,9 +138,9 @@ func (r Result) Halted() bool {
 // would leave the contained prefix on disk from a run that was refused, which is
 // a partial result nobody asked for.
 //
-// The containment analysis is purely lexical and resolves no symbolic link, so a
-// caller whose output root can contain a link out of the tree needs a
-// filesystem-level check as well as this one.
+// That containment analysis is lexical and resolves no symbolic link, so every
+// drafted path is also held to the workspace with its links resolved (checkFiles),
+// before anything is written and before a reporting delivery answers.
 //
 // A halt-severity diagnostic is reported in the Result rather than returned as an
 // error, and any files the importer produced alongside it are still written — an
@@ -177,6 +178,11 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		Files:       imported.Files,
 		Diagnostics: imported.Diagnostics,
 	}
+	// Every drafted path is judged before anything is written and before anything
+	// is reported, so a reporting delivery refuses exactly what the write refuses.
+	if err := checkFiles(rw.Root(), opts.OutputDir, imported.Files); err != nil {
+		return Result{}, err
+	}
 	if opts.Delivery.Reports() {
 		return res, nil
 	}
@@ -187,6 +193,21 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	}
 	res.Written = written
 	return res, nil
+}
+
+// checkFiles judges every drafted file before any is written: the place it would
+// be written at must not lead out of the workspace at workspaceRoot through a
+// link. The drafts are files the product writes inside the workspace on the
+// caller's behalf, so a link standing in the output directory, or in a directory
+// on the way to a draft, would otherwise turn an import into writing files
+// elsewhere on the machine.
+func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error {
+	for _, f := range files {
+		if err := writescope.CheckWrite(workspaceRoot, filepath.Join(outputDir, filepath.FromSlash(f.Path))); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeFiles writes each drafted file under root at its own path, creating

@@ -307,7 +307,7 @@ func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWal
 		link := path != workspaceRoot && d.Type()&fs.ModeSymlink != 0
 		if link {
 			scope.resolve()
-			linked = resolveLink(path, scope.resolvedRoot)
+			linked = resolveLink(path, workspaceRoot)
 			if linked.dir && linked.outside && !shouldExcludeDir(d.Name(), path, workspaceRoot) {
 				out.unreadLinkedDirs = scope.named(out.unreadLinkedDirs, path)
 			}
@@ -364,34 +364,32 @@ type linkTarget struct {
 	outside bool
 }
 
-// resolveLink reports where the link at path leads, judged against
-// resolvedRoot, the workspace root with its own links resolved.
+// resolveLink reports where the link at path leads, judged against the
+// workspace root by pathscope.ResolvesInside, the one definition of inside.
 //
-// Where the link goes is read once, by filepath.EvalSymlinks, and that resolution
-// is the whole of what is asked of it: both the directory a link stands in for and
-// the file it stands in for are judged from it, so the two can never be judged
-// from different readings of one link. A link it cannot complete — one leading
-// nowhere, or round a loop — leads to nothing the walk reads or names, and nothing
-// further is tried to find out where it was meant to go. Both sides are compared
-// resolved, so a root reached through a link of its own still counts what lies
-// under it as inside. The root itself is inside, and the containment question for
-// everything else is pathscope.Relative's.
-func resolveLink(path, resolvedRoot string) linkTarget {
-	resolved, err := filepath.EvalSymlinks(path)
+// Where the link goes is read once, by that judgement, and its reading is the
+// whole of what is asked of it: both the directory a link stands in for and the
+// file it stands in for are judged from it, so the two can never be judged from
+// different readings of one link. A link the judgement cannot follow to anything
+// — one leading nowhere, or round a loop — is not existence, so the judgement
+// passes it over for the directory holding it; such a link leads to nothing the
+// walk reads or names, and nothing further is tried to find out where it was
+// meant to go. The root is resolved the same way, so a root reached through a
+// link of its own still counts what lies under it as inside.
+func resolveLink(path, root string) linkTarget {
+	judged, inside := pathscope.ResolvesInside(root, path)
+	if judged.Met != absolutePath(path) {
+		return linkTarget{}
+	}
+	info, err := os.Stat(judged.LeadsTo)
 	if err != nil {
 		return linkTarget{}
 	}
-	resolved = absolutePath(resolved)
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return linkTarget{}
-	}
-	_, inside := pathscope.Relative(resolvedRoot, resolved)
 	return linkTarget{
-		target:  resolved,
+		target:  judged.LeadsTo,
 		dir:     info.IsDir(),
 		file:    info.Mode().IsRegular(),
-		outside: resolved != resolvedRoot && !inside,
+		outside: !inside,
 	}
 }
 
@@ -403,9 +401,8 @@ func resolveLink(path, resolvedRoot string) linkTarget {
 // held to where that path must stay inside the workspace — a document a request
 // names through resolveWorkspacePathParam, the Release the active-Release marker
 // names, and a document an editor holds at a place inside the root — and it is
-// made from the one resolution resolveLink makes, against the root resolved the
-// same way, so a path and a walked link are never judged by two readings of one
-// link. A path spelled inside the root that
+// made from the one resolution resolveLink makes, so a path and a walked link are
+// never judged by two readings of one link. A path spelled inside the root that
 // leads out through a link, an absolute path elsewhere and a path climbing out of
 // the root are all outside alike. A path that does not resolve — nothing there yet,
 // or a link leading nowhere or round a loop — is not judged outside: nothing outside
@@ -426,11 +423,12 @@ func leadsOutOfWorkspace(root, path string, release *workspaceconfig.Config) boo
 }
 
 // leadsOut is leadsOutOfWorkspace measured against this scope, so a caller
-// judging several paths against one root works the root out once. release says
-// whether path names a Release, which the scope's configuration may let through.
+// judging several paths against one root works the configuration's Releases out
+// once. release says whether path names a Release, which the scope's
+// configuration may let through.
 func (l *linkScope) leadsOut(path string, release bool) bool {
 	l.resolve()
-	linked := resolveLink(path, l.resolvedRoot)
+	linked := resolveLink(path, l.root)
 	if !linked.outside {
 		return false
 	}
@@ -464,11 +462,11 @@ func ReleaseLeadsOutOfWorkspace(root string, cfg workspaceconfig.Config, path st
 // creates is named before it is made. Resolving the whole path, as
 // leadsOutOfWorkspace does for a document read, resolves nothing for such a path
 // and so judges nothing, while the directories on the way that do exist are the
-// very ones the write goes through. So the path is walked up to the deepest part
-// of it that exists, and that part is judged by the one resolution resolveLink
-// makes, against the root resolved the same way. Where the whole path exists that
-// part is the path itself, and the answer is the one leadsOutOfWorkspace gives a
-// read of it.
+// very ones the write goes through. So the verdict is pathscope.ResolvesInside's,
+// the one definition of inside: the deepest part of the path that exists is
+// judged, with its links resolved, against the root resolved the same way. Where
+// the whole path exists that part is the path itself, and the answer is the one
+// leadsOutOfWorkspace gives a read of it.
 //
 // An entry that exists only as a link leading nowhere, or round a loop, does not
 // count as existing: it is passed over and the directory holding it is judged, and
@@ -482,9 +480,8 @@ func ReleaseLeadsOutOfWorkspace(root string, cfg workspaceconfig.Config, path st
 // the configuration makes is for a Release it names, which is read; nothing a
 // request writes is reached through the configuration.
 func destinationLeadsOut(root, path string) bool {
-	scope := linkScope{root: root}
-	scope.resolve()
-	return resolveLink(deepestExisting(absolutePath(path)), scope.resolvedRoot).outside
+	_, inside := pathscope.ResolvesInside(root, path)
+	return !inside
 }
 
 // DestinationLeadsOutOfWorkspace reports whether the place at path — absolute,
@@ -497,26 +494,13 @@ func DestinationLeadsOutOfWorkspace(root, path string) bool {
 	return destinationLeadsOut(root, path)
 }
 
-// deepestExisting returns path where something is there once its links are
-// followed, and otherwise the nearest directory above it that is.
-func deepestExisting(path string) string {
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-		parent := filepath.Dir(path)
-		if parent == path {
-			return path
-		}
-		path = parent
-	}
-}
-
 // linkScope is what judging a link met by a workspace walk, or a path the daemon
-// is handed, is measured against: the workspace root, made absolute and with its
-// own links resolved, and the Releases the workspace's configuration names. Each
-// is worked out once, the first time something is judged, so a walk meeting no
-// link pays nothing.
+// is handed, is measured against: the workspace root — judged against by
+// pathscope.ResolvesInside, which resolves it the way it resolves the path — the
+// root made absolute, which is the coordinate a link is named in, and the Releases
+// the workspace's configuration names. The derived coordinates are worked out
+// once, the first time something is judged, so a walk meeting no link pays
+// nothing.
 type linkScope struct {
 	root string
 	cfg  workspaceconfig.Config
@@ -524,9 +508,6 @@ type linkScope struct {
 	resolved bool
 	// absRoot is the root made absolute, the coordinate a link is named in.
 	absRoot string
-	// resolvedRoot is the root with its own links resolved, the coordinate a
-	// link's target is judged in.
-	resolvedRoot string
 	// authoringRelease is the file build.authoring_release names, resolved as
 	// the active-Release cascade's first step resolves it and then with its
 	// links resolved; empty where the setting is not set.
@@ -540,7 +521,6 @@ func (l *linkScope) resolve() {
 	}
 	l.resolved = true
 	l.absRoot = absolutePath(l.root)
-	l.resolvedRoot = resolvedPath(l.root)
 	if l.cfg.Build.AuthoringRelease != "" {
 		l.authoringRelease = resolvedPath(resolveCascadePath(l.root, l.cfg.Build.AuthoringRelease))
 	}

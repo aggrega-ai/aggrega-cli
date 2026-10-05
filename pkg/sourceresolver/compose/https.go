@@ -118,7 +118,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}
 	// An HTTPS-fetched compose fragment has no OCI manifest; the archive is
 	// verified against the recorded content digest alone.
-	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
+	if err := cacheslot.WriteBlobAndMetadata(spec.WorkspaceRoot, slot, archiveBytes,
 		Kind, spec.URL, spec.Version, digest, MediatypeYAML, "", nil); err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}

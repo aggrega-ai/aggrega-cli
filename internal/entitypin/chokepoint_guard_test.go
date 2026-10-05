@@ -176,7 +176,10 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 		},
 		{
 			// The writer is the preview plus one write, so it is a caller too — and it
-			// is the one allowed, since it is reached only through the plan above.
+			// is the one allowed, since it is reached only through the plan above. The
+			// write is held to the workspace by asking the report, so a hold that read
+			// the preview again would be a third reading here, free to judge locks the
+			// report does not name.
 			callee: "recipepin.PreviewLock",
 			why:    "a report of what the step would write reads the same plan the write reads",
 			want:   []string{"entitypin.Plan.Report", "recipepin.WriteLock"},

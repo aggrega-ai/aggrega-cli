@@ -36,7 +36,7 @@ import (
 // one workspace whatever directory the caller is standing in.
 func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf))
+	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf)))
 }
 
 // NewFrozen constructs the transport-free variant of the consumption posture: a
@@ -68,7 +68,7 @@ func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, 
 // artifact cache directory together, which is what makes it the same store for
 // one workspace whatever directory the caller is standing in.
 func NewFrozen(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *Service {
-	return NewService(StoreRoot(workspaceRoot, cacheDir), false, nil, pinnedFrom(lf))
+	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), false, nil, pinnedFrom(lf)))
 }
 
 // NewAcquiring constructs the service for the acquisition moment: a pinned
@@ -91,7 +91,16 @@ func NewFrozen(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *Service {
 // was run from.
 func NewAcquiring(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return NewService(StoreRoot(workspaceRoot, cacheDir), true, client, pinnedFrom(lf))
+	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), true, client, pinnedFrom(lf)))
+}
+
+// inWorkspace records that s stores into the artifact cache of the workspace at
+// workspaceRoot, so every blob it writes is held to that workspace. Each
+// composition above is over a workspace's own cache, which is why each passes
+// through here.
+func inWorkspace(workspaceRoot string, s *Service) *Service {
+	s.workspaceRoot = workspaceRoot
+	return s
 }
 
 // pinnedFrom reads the pinned view out of a lockfile, tolerating the absence of

@@ -199,7 +199,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}
 	// A git-cloned working tree has no OCI manifest; the archive is verified
 	// against the recorded content digest alone.
-	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
+	if err := cacheslot.WriteBlobAndMetadata(spec.WorkspaceRoot, slot, archiveBytes,
 		Kind, spec.URL, commitSHA, digest, MediatypeTarGz, "", nil); err != nil {
 		return nil, fmt.Errorf("git-repository: %w", err)
 	}

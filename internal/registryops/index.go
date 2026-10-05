@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // RepoLister enumerates the repository names a registry serves. It is the one
@@ -936,6 +937,15 @@ func recordFromAnnotations(host, repo, version string, ann map[string]string) (r
 // agree with it until the day the layout changed.
 func WriteHostIndex(workspaceRoot, cacheDir string, idx HostIndex, now time.Time) error {
 	hostDir := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
+	// The index sits in the workspace's artifact cache, so the directory rebuilt
+	// and the freshness file beside it are held to the workspace before anything
+	// is removed or written.
+	if err := writescope.CheckDelete(workspaceRoot, hostDir); err != nil {
+		return err
+	}
+	if err := writescope.CheckWrite(workspaceRoot, hostDir+".updated"); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(hostDir); err != nil {
 		return fmt.Errorf("index reset %s: %w", hostDir, err)
 	}

@@ -161,7 +161,7 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 	// An HTTPS-distributed chart has no OCI manifest; the archive is verified
 	// against the recorded content digest alone. The slot and metadata are keyed
 	// on the authored URL (spec.URL); the resolved .tgz is recorded as provenance.
-	if err := cacheslot.WriteBlobAndMetadata(slot, body,
+	if err := cacheslot.WriteBlobAndMetadata(spec.WorkspaceRoot, slot, body,
 		KindHTTPS, spec.URL, spec.Version, digest, MediatypeHelmChart, resolvedURL, nil); err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}

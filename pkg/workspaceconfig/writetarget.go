@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // ConfigNature classifies a config-mutating operation by the kind of setting it
@@ -117,7 +119,33 @@ func WriteDestination(op ConfigOperation, global, workspace bool, root string, l
 		}
 		return path, nil
 	}
-	return filepath.Join(root, ConfigFilename), nil
+	return workspaceConfigDestination(root)
+}
+
+// workspaceConfigDestination is the workspace configuration file at root as a
+// place a configuration write goes: the file, held to the workspace before
+// anything is written to it.
+//
+// The file is one the product composes inside the workspace, so a link standing
+// in its place and leading out of the workspace would turn a configuration write
+// into rewriting a file elsewhere on the machine; such a destination is refused
+// rather than returned. The global file is not held to anything, because it is
+// the machine's own configuration rather than the workspace's.
+func workspaceConfigDestination(root string) (string, error) {
+	path := filepath.Join(root, ConfigFilename)
+	if err := writescope.CheckWrite(root, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// WorkspaceConfigDestination is the workspace configuration file of THIS
+// resolution as a place a configuration write goes, for an operation that writes
+// that file whatever the operation's nature — the capture of the build-critical
+// configuration. It is held to the workspace exactly as [ResolvedWorkspace.WriteDestination]
+// holds a workspace destination.
+func (r *ResolvedWorkspace) WorkspaceConfigDestination() (string, error) {
+	return workspaceConfigDestination(r.root)
 }
 
 // WriteDestination resolves the config file a mutating operation writes to,

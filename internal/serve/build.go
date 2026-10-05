@@ -333,7 +333,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		}
 	}
 
-	if err := artifactout.WriteBuildOutput(outRoot, completed.Artifacts); err != nil {
+	if err := artifactout.WriteBuildOutput(s.workspaceRoot, outRoot, completed.Artifacts); err != nil {
 		// A write failure is reported as the workspace-not-resolvable class the
 		// daemon already carries for a workspace it cannot read as expected, and
 		// the wrapped error is kept as the cause so a client matching on the

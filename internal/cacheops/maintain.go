@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // errPruneNeedsWorkspace is returned when a prune runs with no resolvable
@@ -118,6 +119,9 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	if err != nil {
 		return res, err
 	}
+	if err := holdWorkspaceClassRoots(loc, classes, true); err != nil {
+		return res, err
+	}
 	ax, _ := attribindex.Load(loc.AttribIndexPath)
 	res.MachineWide = MachineWideClasses(classes)
 
@@ -176,6 +180,9 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 				res.RetainedCount++
 				continue
 			}
+			if err := holdRemoval(loc, cl, el.Path); err != nil {
+				return res, err
+			}
 			held, rmErr := removeAllLeavingHeldOpen(el.Path)
 			if rmErr != nil {
 				return res, fmt.Errorf("cache prune: remove %s: %w", el.Path, rmErr)
@@ -214,6 +221,38 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 		res.NotPruneEligible = append(res.NotPruneEligible, s)
 	}
 	return res, nil
+}
+
+// holdWorkspaceClassRoots holds every class root an operation would remove from
+// or clear to the workspace the cache belongs to, before anything is removed.
+//
+// The workspace's cache classes sit under the workspace's own cache directory, so
+// a cache directory — or a class root — that is a link leading out of the
+// workspace would turn a clear into deleting directories elsewhere on the
+// machine. One class root leading out halts the operation with every class left as
+// it was. The machine-wide classes are the machine's own stores and are not held
+// to any workspace. prunableOnly narrows the set to the classes a prune reclaims
+// from, which are the only ones a prune removes anything under.
+func holdWorkspaceClassRoots(loc Locations, classes []Class, prunableOnly bool) error {
+	for _, cl := range classes {
+		if prunableOnly && !cl.Prunable {
+			continue
+		}
+		if err := holdRemoval(loc, cl, cl.Root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// holdRemoval holds one removal from class cl — its root, or one element of it —
+// to the workspace at loc.WorkspaceRoot. A machine-wide class, and a path in a run
+// that resolved no workspace, are held to nothing.
+func holdRemoval(loc Locations, cl Class, path string) error {
+	if cl.Reach != ReachWorkspace || cl.Root == "" {
+		return nil
+	}
+	return writescope.CheckDelete(loc.WorkspaceRoot, path)
 }
 
 // anyReferrerInSet reports whether any of a compiled leaf's referrer digests is
@@ -346,6 +385,9 @@ func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 	var res ClearResult
 	classes, err := Collect(ctx, loc)
 	if err != nil {
+		return res, err
+	}
+	if err := holdWorkspaceClassRoots(loc, classes, false); err != nil {
 		return res, err
 	}
 	for _, cl := range classes {

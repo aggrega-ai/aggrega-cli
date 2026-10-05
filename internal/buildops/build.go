@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // The external-input store is what the build injects as the wasm
@@ -676,6 +677,20 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if outDir == "" {
 		outDir = artifactout.DefaultOutputDir
 	}
+	traceDir := run.TraceDir
+	if traceDir == "" {
+		traceDir = DefaultTraceDir
+	}
+
+	// The trace directory is cleared and written below the output, so it is held
+	// to the workspace before the output is written: a trace directory leading out
+	// of the workspace halts the build before anything of it lands on disk, rather
+	// than after the artifacts have been replaced.
+	if cfg.TraceEnabled && len(result.Trace) > 0 {
+		if err := writescope.CheckDelete(wsRoot, traceDir); err != nil {
+			return Result{}, fmt.Errorf("write trace: %w", err)
+		}
+	}
 
 	// A dry run reports the render and leaves the output directory alone —
 	// including the clean, which is itself a write: a dry run that emptied
@@ -683,13 +698,18 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// output in order to show what the next one would contain.
 	var summary string
 	if run.DryRun {
+		// The judgement the write would make is made here too, so a dry run halts
+		// where the build would rather than reporting a write that would not happen.
+		if err := artifactout.CheckBuildOutput(wsRoot, outDir, result.Artifacts); err != nil {
+			return Result{}, fmt.Errorf("write output: %w", err)
+		}
 		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
 		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
 	} else {
 		// Write output. The boundaries subtree from a prior build of a different
 		// variant is cleared as part of the write, so GitOps consumers see exactly
 		// what the compiler just produced.
-		if err := artifactout.WriteBuildOutput(outDir, result.Artifacts); err != nil {
+		if err := artifactout.WriteBuildOutput(wsRoot, outDir, result.Artifacts); err != nil {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
 		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
@@ -707,14 +727,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// keeps the two coupled is a test asserting the pairing refuses, so removing
 	// the refusal fails loudly rather than quietly re-opening this write.
 	if cfg.TraceEnabled && len(result.Trace) > 0 {
-		traceDir := run.TraceDir
-		if traceDir == "" {
-			traceDir = DefaultTraceDir
-		}
-		if err := os.RemoveAll(traceDir); err != nil {
-			return Result{}, fmt.Errorf("clean %s: %w", traceDir, err)
-		}
-		if err := artifactout.WriteAll(traceDir, result.Trace); err != nil {
+		if err := artifactout.ReplaceAll(wsRoot, traceDir, result.Trace); err != nil {
 			return Result{}, fmt.Errorf("write trace: %w", err)
 		}
 	}

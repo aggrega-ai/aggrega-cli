@@ -145,7 +145,7 @@ func TestVerdictTrustDeclinesWhatTheBinaryCarries(t *testing.T) {
 	releasePath := filepath.Join(root, "release.yaml")
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath,
+	recorded, err := recordVerdictPluginTrust("", releasePath,
 		attachingVerdictPlugins(carried, "linter/acquired-probe"),
 		[]verdictPluginResolution{
 			{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
@@ -176,7 +176,7 @@ func TestVerdictTrustDeclinesEverythingCarriedWritesNoFile(t *testing.T) {
 	releasePath := filepath.Join(root, "release.yaml")
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath,
+	recorded, err := recordVerdictPluginTrust("", releasePath,
 		attachingVerdictPlugins(carried),
 		[]verdictPluginResolution{
 			{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
@@ -208,7 +208,7 @@ func TestVerdictTrustDeclineAgreesWithTheBinary(t *testing.T) {
 	_, carriedByBinary := embedded.Lookup(embedded.PublishingLinterURI)
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath,
+	recorded, err := recordVerdictPluginTrust("", releasePath,
 		attachingVerdictPlugins(embedded.PublishingLinterURI),
 		[]verdictPluginResolution{{
 			BareURI:    embedded.PublishingLinterURI,
@@ -249,7 +249,7 @@ func TestVerdictTrustFillsAMissingEntryAndHoldsAPresentOne(t *testing.T) {
 	}
 
 	var diag bytes.Buffer
-	if _, err := recordVerdictPluginTrust(releasePath,
+	if _, err := recordVerdictPluginTrust("", releasePath,
 		attachingVerdictPlugins("linter/held-probe", "linter/added-probe"),
 		[]verdictPluginResolution{
 			{BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh},
@@ -332,7 +332,7 @@ func TestVerdictTrustRewritesOnlyWhenTheRunReresolves(t *testing.T) {
 				t.Fatalf("seed record: %v", err)
 			}
 
-			if _, err := recordVerdictPluginTrust(releasePath,
+			if _, err := recordVerdictPluginTrust("", releasePath,
 				attachingVerdictPlugins("linter/held-probe"),
 				[]verdictPluginResolution{{
 					BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh,
@@ -365,7 +365,7 @@ func TestVerdictTrustCreationNoticeFiresOnceAndSaysWhatToDo(t *testing.T) {
 
 	var first bytes.Buffer
 	attached := attachingVerdictPlugins("linter/notice-probe")
-	if _, err := recordVerdictPluginTrust(releasePath, attached, resolutions, catalog.PinReuseMode{}, &first); err != nil {
+	if _, err := recordVerdictPluginTrust("", releasePath, attached, resolutions, catalog.PinReuseMode{}, &first); err != nil {
 		t.Fatalf("first record: %v", err)
 	}
 	notice := first.String()
@@ -382,7 +382,7 @@ func TestVerdictTrustCreationNoticeFiresOnceAndSaysWhatToDo(t *testing.T) {
 	}
 
 	var second bytes.Buffer
-	if _, err := recordVerdictPluginTrust(releasePath, attached, resolutions, catalog.PinReuseMode{}, &second); err != nil {
+	if _, err := recordVerdictPluginTrust("", releasePath, attached, resolutions, catalog.PinReuseMode{}, &second); err != nil {
 		t.Fatalf("second record: %v", err)
 	}
 	if second.Len() != 0 {
@@ -403,7 +403,7 @@ func TestVerdictTrustRefusesAnUnreadableRecord(t *testing.T) {
 		t.Fatalf("write invalid record: %v", err)
 	}
 
-	_, err := recordVerdictPluginTrust(releasePath,
+	_, err := recordVerdictPluginTrust("", releasePath,
 		attachingVerdictPlugins("linter/probe"),
 		[]verdictPluginResolution{{
 			BareURI: "linter/probe", Coordinate: "linter/probe", Version: "1.0.0",
@@ -876,7 +876,7 @@ func TestVerdictTrustPrunesOnlyOnAnExplicitUpgrade(t *testing.T) {
 
 			// Nothing attached and nothing resolved: the entry is accounted for by
 			// nothing, which is the condition every row shares.
-			if _, err := recordVerdictPluginTrust(releasePath, nil, nil, tc.mode, io.Discard); err != nil {
+			if _, err := recordVerdictPluginTrust("", releasePath, nil, nil, tc.mode, io.Discard); err != nil {
 				t.Fatalf("recordVerdictPluginTrust: %v", err)
 			}
 
@@ -915,7 +915,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 
 		// Attached and resolved, but declined from the record because the binary
 		// carries it — so it appears in the resolutions and not in the recordable set.
-		if _, err := recordVerdictPluginTrust(releasePath,
+		if _, err := recordVerdictPluginTrust("", releasePath,
 			attachingVerdictPlugins(carried),
 			[]verdictPluginResolution{{
 				BareURI: carried, Coordinate: carried, Version: "1.0.0",
@@ -946,7 +946,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 		// this attachment unidentified, the answer incomplete, and the prune inert — so
 		// every workspace attaching a plugin the binary carries would keep its dead end
 		// while every test asserting an entry SURVIVES still passed.
-		if _, err := recordVerdictPluginTrust(releasePath,
+		if _, err := recordVerdictPluginTrust("", releasePath,
 			attachingVerdictPlugins(carried),
 			[]verdictPluginResolution{{
 				BareURI: carried, Coordinate: carried, Version: "1.0.0",
@@ -971,7 +971,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 
 		// One attachment configured and no resolution for it: the plugin could not be
 		// identified, so it MIGHT be the one accounting for the entry.
-		if _, err := recordVerdictPluginTrust(releasePath,
+		if _, err := recordVerdictPluginTrust("", releasePath,
 			attachingVerdictPlugins("linter/unreadable-probe"), nil,
 			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
@@ -983,7 +983,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 		// The discriminator: with that attachment removed the answer is complete
 		// again and the identical entry goes — so the row above is earned by the
 		// unreadable attachment rather than by a prune that never runs.
-		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+		if _, err := recordVerdictPluginTrust("", releasePath, nil, nil,
 			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
@@ -1008,7 +1008,7 @@ func TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne(t *testing.T) {
 		releasePath := filepath.Join(root, "release.yaml")
 		seedTrustRecord(t, releasePath, "linter/only-probe")
 
-		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+		if _, err := recordVerdictPluginTrust("", releasePath, nil, nil,
 			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
@@ -1027,7 +1027,7 @@ func TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne(t *testing.T) {
 		releasePath := filepath.Join(root, "release.yaml")
 
 		var diag bytes.Buffer
-		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+		if _, err := recordVerdictPluginTrust("", releasePath, nil, nil,
 			catalog.PinReuseMode{Upgrade: true}, &diag); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
@@ -1209,7 +1209,7 @@ func TestVerdictTrustAnnouncesEveryChangeAndOnlyAChange(t *testing.T) {
 			}
 
 			var diag bytes.Buffer
-			if _, err := recordVerdictPluginTrust(releasePath,
+			if _, err := recordVerdictPluginTrust("", releasePath,
 				attachingVerdictPlugins(tc.attachments...), tc.resolutions, tc.mode, &diag); err != nil {
 				t.Fatalf("recordVerdictPluginTrust: %v", err)
 			}

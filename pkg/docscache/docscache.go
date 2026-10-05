@@ -40,6 +40,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // ErrFetchNotFound is re-exported from pkg/oci so a caller can errors.Is a
@@ -172,6 +173,12 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	}
 
 	slot := slotPath(workspaceRoot, cacheDir, ref, version)
+	// The cache sits inside the workspace, so the slot is held to the workspace
+	// before anything is written: a cache directory that is a link leading out of
+	// the workspace is refused rather than written through.
+	if err := writescope.CheckWrite(workspaceRoot, filepath.Join(slot, blobFile)); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		return "", fmt.Errorf("docscache: cache mkdir %s: %w", slot, err)
 	}

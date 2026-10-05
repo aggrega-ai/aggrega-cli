@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // CachePath returns the cache slot for the given URI + version under
@@ -151,17 +152,35 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 // creating parent directories as needed. The blob filename is
 // "blob"; callers wanting a multi-file layout should use the
 // directory-aware variants that future implementations introduce.
+//
+// The slot is held to the workspace first: see [WriteCachedFile].
 func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) error {
+	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "blob", data)
+}
+
+// WriteCachedFile stores data under name in the cache slot for uri@version,
+// creating the slot as needed. It is the one write every file a slot holds goes
+// through, so the slot is held to the workspace in one place.
+//
+// The artifact cache sits inside the workspace, so the slot is held to the
+// workspace at workspaceRoot before anything is written: a cache directory, or a
+// directory on the way to the slot, that is a link leading out of the workspace
+// is refused with the halt the write-scope rule declares, rather than written
+// through.
+func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []byte) error {
 	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
 	if err != nil {
+		return err
+	}
+	file := filepath.Join(dir, name)
+	if err := writescope.CheckWrite(workspaceRoot, file); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("oci: cache mkdir %s: %w", dir, err)
 	}
-	blob := filepath.Join(dir, "blob")
-	if err := os.WriteFile(blob, data, 0o644); err != nil {
-		return fmt.Errorf("oci: cache write %s: %w", blob, err)
+	if err := os.WriteFile(file, data, 0o644); err != nil {
+		return fmt.Errorf("oci: cache write %s: %w", file, err)
 	}
 	return nil
 }
@@ -196,18 +215,7 @@ func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, e
 // read re-derive the manifest digest from a stored artifact rather than trusting
 // a recorded value with nothing to check it against.
 func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestBytes []byte) error {
-	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("oci: manifest cache mkdir %s: %w", dir, err)
-	}
-	blob := filepath.Join(dir, "manifest")
-	if err := os.WriteFile(blob, manifestBytes, 0o644); err != nil {
-		return fmt.Errorf("oci: manifest cache write %s: %w", blob, err)
-	}
-	return nil
+	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "manifest", manifestBytes)
 }
 
 // ContentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI

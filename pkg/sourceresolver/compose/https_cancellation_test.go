@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,6 +104,33 @@ const fetchReturnCeiling = 30 * time.Second
 // would pass, while the download runs on and the server never moves.
 func TestStoppingAComposeResolutionEndsTheFetchOnTheWire(t *testing.T) {
 	release := make(chan struct{})
+
+	// Each resolution runs on its own goroutine and writes under the temp
+	// workspace taken for it below, which the framework removes once this body
+	// returns. The control one is still inside its fetch when the comparison
+	// ends, which is exactly what the comparison asserts, so it resumes the
+	// instant the servers are released — its server answers with an empty
+	// fragment — and writes that fragment's slot into a directory the removal may
+	// already be walking. The removal then fails on a non-empty directory and
+	// reports as a failure of this test, having measured nothing this test is
+	// about.
+	//
+	// So the body waits for both resolutions to return before it hands back. The
+	// two defers below are registered in this order so that they run in the
+	// opposite one — the release first, the wait second — and both run ahead of
+	// every registered cleanup. Registering them before the goroutines start is
+	// what keeps the pair on every exit path, a fatal assertion included.
+	var inFlight sync.WaitGroup
+	defer func() {
+		settled := make(chan struct{})
+		go func() { inFlight.Wait(); close(settled) }()
+		select {
+		case <-settled:
+		case <-time.After(fetchReturnCeiling):
+			t.Errorf("a resolution was still running after both servers were released, so " +
+				"the workspace it writes into is about to be removed underneath it")
+		}
+	}()
 	defer close(release)
 
 	controlURL, controlEntered := parkingFragmentServer(t, parkedControlFragmentFetch, release)
@@ -125,12 +153,20 @@ func TestStoppingAComposeResolutionEndsTheFetchOnTheWire(t *testing.T) {
 		return err
 	}
 
+	inFlight.Add(2)
+
 	controlDone := make(chan error, 1)
-	go func() { controlDone <- resolve(context.Background(), controlURL, controlRoot) }()
+	go func() {
+		defer inFlight.Done()
+		controlDone <- resolve(context.Background(), controlURL, controlRoot)
+	}()
 
 	stopCtx, stop := context.WithCancel(context.Background())
 	stoppedDone := make(chan error, 1)
-	go func() { stoppedDone <- resolve(stopCtx, stoppedURL, stoppedRoot) }()
+	go func() {
+		defer inFlight.Done()
+		stoppedDone <- resolve(stopCtx, stoppedURL, stoppedRoot)
+	}()
 
 	// Both fetches are now in flight, with both servers inside their handlers.
 	// Until this point there is nothing to compare: a frame that has not been

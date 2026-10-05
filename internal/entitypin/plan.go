@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // PlanInputs is what one run of the pin step reads.
@@ -414,9 +415,19 @@ func (p Plan) Unpinned(remedy recipepin.Remedy) error {
 // An entity whose lock already holds exactly what the step would write is left
 // byte-identical, and an entity that reads nothing a lock records a pin for has
 // its lock removed rather than emptied.
+//
+// Before any lock is written or removed, the write asks [Plan.Report] for what it
+// would do, and halts where the report halts: a lock that would move and leads out
+// of the workspace through a link stops the step with every lock left as it was.
+// The write is held by the report itself rather than by a second reading of the
+// plan, so a run that reports and a run that writes halt on the same locks by
+// construction.
 func (p Plan) Write() ([]Outcome, error) {
 	if !p.forWriting {
 		return nil, errPlanNotForWriting
+	}
+	if _, _, err := p.Report(); err != nil {
+		return nil, err
 	}
 	out := make([]Outcome, 0, len(p.entities))
 	for _, e := range p.entities {
@@ -440,6 +451,12 @@ func (p Plan) Write() ([]Outcome, error) {
 // them name one lock. The report is still keyed by lock path, naming each lock's
 // final content, so that what it shows is what a writing run leaves behind
 // without that depending on the directory rule having held.
+//
+// Every lock that would move is held to the workspace: one the step would write
+// must not lead out of it through a link, and nor may one it would remove. A lock
+// leading out halts the report, as it halts [Plan.Write], which is held by this
+// report. A lock the step would leave byte-identical is not judged, because
+// nothing would be written to it.
 func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 	if !p.forWriting {
 		return nil, nil, errPlanNotForWriting
@@ -456,8 +473,13 @@ func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		outcomes = append(outcomes, e.outcome(moves))
 		lock := recipepin.LockPath(e.path)
+		if moves {
+			if err := p.holdLock(lock, content); err != nil {
+				return nil, nil, err
+			}
+		}
+		outcomes = append(outcomes, e.outcome(moves))
 		if _, seen := final[lock]; !seen {
 			locks = append(locks, lock)
 		}
@@ -471,6 +493,16 @@ func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return outcomes, files, nil
+}
+
+// holdLock holds one lock the step would move to the workspace, given the bytes
+// the step would leave there: no bytes is a removal, judged as one, and anything
+// else is a write.
+func (p Plan) holdLock(lock string, content []byte) error {
+	if len(content) == 0 {
+		return writescope.CheckDelete(p.workspaceRoot, lock)
+	}
+	return writescope.CheckWrite(p.workspaceRoot, lock)
 }
 
 // outcome describes this entity's lock after a step that did, or would, move it

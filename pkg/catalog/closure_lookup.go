@@ -1871,14 +1871,7 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 		return nil
 	}
 	if isLibraryMediaType(result.MediaType) {
-		slot, err := oci.CachePath(workspaceRoot, cacheDir, uri, version)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(slot, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(slot, "library.yaml"), result.Bytes, 0o644); err != nil {
+		if err := oci.WriteCachedFile(workspaceRoot, cacheDir, uri, version, "library.yaml", result.Bytes); err != nil {
 			return err
 		}
 	} else {
@@ -1982,16 +1975,16 @@ func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) (str
 // what was published, exactly as it resolves beside the entity in a catalog
 // directory; and the rule refusing a content path that leaves the entity's own
 // directory holds over the layout unchanged, since that directory is the layout.
-func unpackEntitySlot(slot string, published []byte) (string, []byte, error) {
+func unpackEntitySlot(workspaceRoot, slot string, published []byte) (string, []byte, error) {
 	name, document, err := oci.EntityFile(published)
 	if err != nil {
 		return "", nil, err
 	}
 	var dir string
 	if oci.IsTarGzBundle(published) {
-		dir, err = sourcecache.RegenerateExtracted(slot, published)
+		dir, err = sourcecache.RegenerateExtracted(workspaceRoot, slot, published)
 	} else {
-		dir, err = sourcecache.RegenerateExtractedDocument(slot, name, published)
+		dir, err = sourcecache.RegenerateExtractedDocument(workspaceRoot, slot, name, published)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("catalog: lay out the cached entity at %s: %w", slot, err)

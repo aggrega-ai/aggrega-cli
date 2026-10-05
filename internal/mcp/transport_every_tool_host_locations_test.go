@@ -383,7 +383,7 @@ func (fx *hostLocationFixture) sourceSlotLabel(t *testing.T, slot hostLocationSo
 func (fx *hostLocationFixture) seedSourceArtifactSlots(t *testing.T) {
 	t.Helper()
 	for _, slot := range fx.sourceSlots() {
-		if err := cacheslot.WriteBlobAndMetadata(fx.sourceSlotDir(t, slot), slot.archive, gitrepo.Kind, slot.url,
+		if err := cacheslot.WriteBlobAndMetadata("", fx.sourceSlotDir(t, slot), slot.archive, gitrepo.Kind, slot.url,
 			slot.version, slot.digest(), gitrepo.MediatypeTarGz, "", nil); err != nil {
 			t.Fatalf("write the slot for %s: %v", slot.url, err)
 		}

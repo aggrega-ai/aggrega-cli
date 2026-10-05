@@ -13,16 +13,26 @@
 //
 // # The primitives are unexported on purpose
 //
-// [WriteBuildOutput], [WriteAll] and [WriteDryRunReport] are the only entry
-// points. The path arithmetic and the iteration order behind them are
-// unexported, so a caller cannot reach the raw join and skip the containment
-// check [WriteAll] owes — the bypass does not compile rather than being caught
-// in review.
+// The exported functions are the only entry points. The path arithmetic and the
+// iteration order behind them are unexported, so a caller cannot reach the raw
+// join and skip the containment check every write owes — the bypass does not
+// compile rather than being caught in review.
 //
-// [WriteBuildOutput] is what a surface performing a build calls;
-// [WriteAll] is the bare write, for a set that is not a build's output — the
-// per-step intermediate files a traced build collects, whose own directory is
-// cleared by whoever asked for it.
+// [WriteBuildOutput] is what a surface performing a build calls, and
+// [CheckBuildOutput] is its judgement alone, for a surface that reports a build
+// instead of writing it; [ReplaceAll] is the write for a set that is not a build's
+// output — the per-step intermediate files a traced build collects, which replace
+// whatever their own directory held; [WriteAll] is the bare write beneath them;
+// [WriteDryRunReport] prints what a write would have produced.
+//
+// # Every write is held to the workspace first
+//
+// Every writing entry point takes the workspace root and holds every path it is
+// about to write or delete to it, through [writescope], before anything on disk
+// moves. An output directory that is a link leading out of the workspace would
+// otherwise turn a rebuild into deleting and writing a directory elsewhere on the
+// machine. The judgement runs over the whole set first, so a set with one path
+// leading out writes none of it.
 package artifactout
 
 import (
@@ -35,6 +45,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // DefaultOutputDir is the directory a build writes its rendered artifacts to
@@ -71,13 +82,34 @@ const boundariesDir = "boundaries"
 // boundaries subtree is theirs, and a write that emptied the root would destroy
 // content this package never produced.
 //
+// root is the workspace the build runs in. The subtree to clear and every file to
+// write are held to it before the clear, so an output directory leading out of
+// the workspace through a link halts the build with nothing removed and nothing
+// written; see the package documentation.
+//
 // Errors from either half are returned wrapped and name the path they concern.
-func WriteBuildOutput(outRoot string, files map[string][]byte) error {
+func WriteBuildOutput(root, outRoot string, files map[string][]byte) error {
+	if err := CheckBuildOutput(root, outRoot, files); err != nil {
+		return err
+	}
 	boundaries := filepath.Join(filepath.Clean(outRoot), boundariesDir)
 	if err := os.RemoveAll(boundaries); err != nil {
 		return fmt.Errorf("clean %q: %w", boundaries, err)
 	}
-	return WriteAll(outRoot, files)
+	return writeChecked(filepath.Clean(outRoot), files)
+}
+
+// CheckBuildOutput is the judgement [WriteBuildOutput] makes before it removes or
+// writes anything, and nothing else: the boundaries subtree it would clear and
+// every file it would write, held to the workspace at root, and every name held
+// to the output root. A surface that reports a build instead of writing it asks
+// it, so a report says a build would halt where the build would.
+func CheckBuildOutput(root, outRoot string, files map[string][]byte) error {
+	boundaries := filepath.Join(filepath.Clean(outRoot), boundariesDir)
+	if err := writescope.CheckDelete(root, boundaries); err != nil {
+		return err
+	}
+	return checkAll(root, filepath.Clean(outRoot), files)
 }
 
 // WriteAll writes the rendered file map to disk under outRoot,
@@ -89,6 +121,9 @@ func WriteBuildOutput(outRoot string, files map[string][]byte) error {
 //   - Names that escape outRoot are rejected. The check defends
 //     against a malicious or buggy renderer engine emitting a name
 //     that lands outside the output root.
+//   - A file whose place leads out of the workspace at root through a
+//     link is refused, before any file is written; see the package
+//     documentation.
 //
 // An artifact name is a slash-separated logical name rather than a
 // path in the host's own spelling, so containment is judged in slash
@@ -110,8 +145,38 @@ func WriteBuildOutput(outRoot string, files map[string][]byte) error {
 // caller is responsible for any cleanup in the partial-write case.
 // Sorting also makes that partial prefix reproducible: the same
 // failing input stops after the same set of files.
-func WriteAll(outRoot string, files map[string][]byte) error {
+func WriteAll(root, outRoot string, files map[string][]byte) error {
 	outRoot = filepath.Clean(outRoot)
+	if err := checkAll(root, outRoot, files); err != nil {
+		return err
+	}
+	return writeChecked(outRoot, files)
+}
+
+// ReplaceAll makes dir hold exactly files: whatever dir held is removed, then the
+// set is written by the rules [WriteAll] states.
+//
+// dir and every file are held to the workspace at root before dir is removed, so a
+// directory leading out of the workspace through a link halts the write with
+// nothing removed and nothing written.
+func ReplaceAll(root, dir string, files map[string][]byte) error {
+	dir = filepath.Clean(dir)
+	if err := writescope.CheckDelete(root, dir); err != nil {
+		return err
+	}
+	if err := checkAll(root, dir, files); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("clean %s: %w", dir, err)
+	}
+	return writeChecked(dir, files)
+}
+
+// checkAll judges every entry of files before any is written: its name must be a
+// local logical name, and the host path it occupies under outRoot must stay in
+// the workspace at root once the links on the way to it are resolved.
+func checkAll(root, outRoot string, files map[string][]byte) error {
 	for _, name := range sortedNames(files) {
 		if name == "" {
 			return fmt.Errorf("empty artifact path")
@@ -119,6 +184,17 @@ func WriteAll(outRoot string, files map[string][]byte) error {
 		if !pathscope.IsLocalSlash(name) {
 			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
 		}
+		if err := writescope.CheckWrite(root, hostPath(outRoot, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeChecked writes files under outRoot in sorted name order. Every entry has
+// already passed checkAll.
+func writeChecked(outRoot string, files map[string][]byte) error {
+	for _, name := range sortedNames(files) {
 		full := hostPath(outRoot, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return fmt.Errorf("mkdir %q: %w", filepath.Dir(full), err)

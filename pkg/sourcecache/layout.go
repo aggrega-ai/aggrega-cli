@@ -18,6 +18,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // extractedDirName is the directory inside a cache slot that holds the files the
@@ -71,8 +72,13 @@ func ExtractedTree(slot, contentDigest string) string {
 // link, a device) is not, and whatever the tree holds in its place is removed.
 // A directory is created 0755 before the process umask and a file is written 0644;
 // the archive's own modes, owners and times are not carried.
-func RegenerateExtracted(slot string, archive []byte) (string, error) {
-	return regenerate(slot, archive, tarGzEntries(archive))
+//
+// workspaceRoot is the workspace the cache belongs to. The tree is held to it
+// before anything is laid out, so a cache directory — or a directory on the way to
+// the slot — that is a link leading out of the workspace is refused with the halt
+// the write-scope rule declares rather than written through.
+func RegenerateExtracted(workspaceRoot, slot string, archive []byte) (string, error) {
+	return regenerate(workspaceRoot, slot, archive, tarGzEntries(archive))
 }
 
 // RegenerateExtractedDocument is [RegenerateExtracted] for an artifact that is a
@@ -80,14 +86,17 @@ func RegenerateExtracted(slot string, archive []byte) (string, error) {
 // under name, rebuilt the same way on every call. name must be a plain relative file
 // name; one that would land outside the tree is refused with a wrapped
 // ErrFetchIntegrity.
-func RegenerateExtractedDocument(slot, name string, document []byte) (string, error) {
-	return regenerate(slot, document, documentEntry(name, document))
+func RegenerateExtractedDocument(workspaceRoot, slot, name string, document []byte) (string, error) {
+	return regenerate(workspaceRoot, slot, document, documentEntry(name, document))
 }
 
 // regenerate lays out what entries yields in the tree ExtractedTree names for
-// artifact.
-func regenerate(slot string, artifact []byte, entries entrySource) (string, error) {
+// artifact, once the tree is held to the workspace.
+func regenerate(workspaceRoot, slot string, artifact []byte, entries entrySource) (string, error) {
 	tree := ExtractedTree(slot, digest.ContentDigest(artifact))
+	if err := writescope.CheckWrite(workspaceRoot, tree); err != nil {
+		return "", err
+	}
 	if err := layOut(slot, tree, entries); err != nil {
 		return "", fmt.Errorf("extract into %s: %w", tree, err)
 	}

@@ -5,7 +5,6 @@ package configops
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -86,7 +85,10 @@ func Capture(rw *workspaceconfig.ResolvedWorkspace, opts CaptureOptions) (Captur
 		return res, err
 	}
 
-	dest := filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)
+	dest, err := rw.WorkspaceConfigDestination()
+	if err != nil {
+		return res, fmt.Errorf("aggrega config capture: %w", err)
+	}
 	effective := rw.Config()
 
 	if err := workspaceconfig.CaptureBuildCritical(dest, effective, opts.AllPlugins); err != nil {

@@ -473,12 +473,13 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // resolves a path a person chose and confines nothing, Relative answers with the
 // name a path has relative to a root rather than the location to open it at — the
 // question a caller about to report a path asks, where the first three serve a
-// caller about to use one — and ReportedName answers the question after that one,
+// caller about to use one — ReportedName answers the question after that one,
 // which spelling to put in an answer, for a caller that owes its reader a path
-// either way. A further export is either one of those five wearing a second name
-// or a class nobody named — and if a genuinely new class is being added, this
-// count moves in the same change that names it, which is exactly the deliberation
-// the pin exists to force.
+// either way — and ResolvesInside answers where a path leads on disk once its
+// links are followed, the one question here a spelling cannot settle. A further
+// export is either one of those six wearing a second name or a class nobody named
+// — and if a genuinely new class is being added, this count moves in the same
+// change that names it, which is exactly the deliberation the pin exists to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
@@ -513,8 +514,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 5 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly five entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName), so a sixth is either a mode in disguise or a class nobody named", exported)
+	if exported != 6 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly six entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside), so a seventh is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package pathscope is the one home for deciding a path's scope. Two questions
-// live here: does a path stay inside the directory it is relative to, and where
-// does a path somebody chose for themselves land.
+// Package pathscope is the one home for deciding a path's scope. Three questions
+// live here: does a path stay inside the directory it is relative to as it is
+// written, where does a path somebody chose for themselves land, and does a path
+// lead inside a directory once the links on the way to it are followed.
 //
 // Containment is the first question. A path that escapes its root is a defect
 // wherever it appears: a rendered artifact name that writes outside the output
@@ -17,7 +18,13 @@
 // dialog. Such a path names wherever they pointed, so it has no root to stay
 // inside, and containment is the wrong question of it rather than a relaxed one.
 //
-// # The five entry points, and why they are five
+// Where a path leads on disk is the third, and it is a different question from
+// the first rather than a stricter form of it. A path written inside a workspace
+// can lead anywhere through a symbolic link on the way to it, so a verdict on the
+// spelling says nothing about which file is read, written or removed. [ResolvesInside]
+// answers it, and it is the only entry point here that reads the filesystem.
+//
+// # The entry points, and why they are separate
 //
 // [Resolve] and [IsLocalSlash] answer containment, in the two path algebras the
 // compiler actually uses. Resolve works in operating-system path arithmetic, for
@@ -61,20 +68,30 @@
 // the tree; written as three names, a reader of a call site sees which class was
 // chosen.
 //
+// [ResolvesInside] answers the third question. It is the one definition of
+// "inside" for a path on disk — for a path read, for a path written, and for a
+// path not yet created — and every check that asks whether a path leads out of a
+// workspace asks it, so no layer derives the answer for itself. It is separate
+// from the lexical entry points because it answers about the filesystem as it is
+// at the moment of asking, while they answer about a spelling and give the same
+// answer on every machine.
+//
 // # What this package deliberately does not do
 //
-// It carries no diagnostic. A refusal is reported as a bare false, because the
-// callers differ in what a refusal means to their own reader and in the
-// vocabulary they say it in: one answers a plugin across a reply envelope,
-// another rejects a request, another skips a file silently. Each attaches its
-// own condition and its own message at its own call site.
+// It carries no diagnostic. A refusal is reported as a bare false, beside the
+// facts a caller needs to word its own refusal, because the callers differ in
+// what a refusal means to their own reader and in the vocabulary they say it in:
+// one answers a plugin across a reply envelope, another rejects a request,
+// another skips a file silently, another halts an operation before it writes.
+// Each attaches its own condition and its own message at its own call site.
 //
-// The analysis is purely lexical, exactly as [path.Clean] is. It resolves no
-// symbolic link, so a caller whose root can contain a link out of the tree needs
-// a filesystem-level check as well as this one.
+// Every entry point but [ResolvesInside] is purely lexical, exactly as
+// [path.Clean] is. Those resolve no symbolic link, so a caller whose root can
+// contain a link out of the tree asks [ResolvesInside] as well.
 package pathscope
 
 import (
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -162,9 +179,8 @@ func Resolve(root, rel string) (string, bool) {
 // An interior climb is not a climb out — "a/../b" resolves to "b" and is
 // accepted — and a name that merely begins with two dots is an ordinary name.
 //
-// The analysis is lexical, as everything here is: it resolves no symbolic link,
-// so a root that can contain a link out of the tree needs a filesystem-level
-// check as well as this one.
+// The analysis is lexical: it resolves no symbolic link, so a root that can
+// contain a link out of the tree asks [ResolvesInside] as well as this.
 func Relative(root, path string) (string, bool) {
 	if root == "" || path == "" {
 		return "", false
@@ -299,6 +315,158 @@ func ResolveSelected(root, selected string) (string, bool) {
 // join.
 func IsLocalSlash(name string) bool {
 	return staysInside(name)
+}
+
+// Resolution is what [ResolvesInside] found on the way to its verdict: the part
+// of the path it judged, where that part leads, and — for a path that leads out —
+// the link it leaves through.
+//
+// Every path in it is absolute and cleaned. It is facts rather than a refusal,
+// for the reason the package carries no diagnostic: the caller that asked is the
+// one that knows what a path leading out means to its own reader.
+type Resolution struct {
+	// Met is the deepest part of the path that exists, spelled as the path spells
+	// it. It is the path itself where the path exists.
+	Met string
+	// LeadsTo is Met with its links resolved: the place the judgement was made on.
+	LeadsTo string
+	// Link is set only for a path that leads out while being spelled inside the
+	// root: it is the shortest leading part of the path, spelled as the path spells
+	// it, whose links resolved lead outside the root — the link a reader removes or
+	// repoints. It is empty for a path inside, and for a path whose spelling
+	// already lies outside the root, where no link is what carries it out.
+	Link string
+	// LinkLeadsTo is where Link leads with its links resolved, and empty where
+	// Link is.
+	LinkLeadsTo string
+}
+
+// ResolvesInside reports whether path is inside root on disk: whether the
+// deepest part of path that exists, with its links resolved once, is root or lies
+// beneath it, root resolved the same way.
+//
+// "Exists" means a stat succeeds, so a link that leads nowhere, or round a loop,
+// is not existence: it is passed over and the directory holding it is judged
+// instead. Nothing is followed to find out where such a link was meant to go.
+//
+// The deepest existing part is what makes one verdict serve a path that exists
+// and one that does not yet. A write names a file about to be created, beneath
+// directories that may themselves be links, and those directories are the ones
+// the write goes through. Where the whole path exists the part judged is the path
+// itself, so the verdict is the one resolving the whole path would give.
+//
+// root is resolved the same way: its deepest existing part with its links
+// resolved, and the part of it that does not exist yet written beneath that. A
+// root reached through a link of its own therefore still counts what lies under
+// it as inside, and a root that does not exist has nothing inside it.
+//
+// A relative root or path is made absolute against the process working
+// directory, which is where the operating system opens it. An empty root or an
+// empty path names nothing to judge and is reported outside, with an empty
+// Resolution.
+//
+// It judges where a path leads on disk and nothing else: it reads no value and
+// infers nothing from a name, and it is a verdict at the moment of asking rather
+// than a lock on the filesystem. It reports facts and no diagnostic, so a caller
+// names the link and where it leads in its own words — see [Resolution].
+func ResolvesInside(root, path string) (Resolution, bool) {
+	if root == "" || path == "" {
+		return Resolution{}, false
+	}
+	absRoot := absolute(root)
+	resolvedRoot := resolveDeepest(absRoot)
+	absPath := absolute(path)
+
+	met := deepestExisting(absPath)
+	res := Resolution{Met: met, LeadsTo: resolveExisting(met)}
+	if within(resolvedRoot, res.LeadsTo) {
+		return res, true
+	}
+
+	// Leading out. Where the path is spelled inside the root, some part of it on
+	// the way to what was judged is a link that carries it out; find the shortest
+	// such part so the caller can name the link rather than only the path.
+	base := ""
+	switch {
+	case within(absRoot, met):
+		base = absRoot
+	case within(resolvedRoot, met):
+		base = resolvedRoot
+	}
+	if base != "" {
+		res.Link, res.LinkLeadsTo = met, res.LeadsTo
+		rel, err := filepath.Rel(base, met)
+		if err == nil && rel != "." {
+			prefix := base
+			for _, part := range strings.Split(rel, string(filepath.Separator)) {
+				prefix = filepath.Join(prefix, part)
+				if leadsTo := resolveExisting(prefix); !within(resolvedRoot, leadsTo) {
+					res.Link, res.LinkLeadsTo = prefix, leadsTo
+					break
+				}
+			}
+		}
+	}
+	return res, false
+}
+
+// within reports whether p is root or lies beneath it. Both are absolute and
+// cleaned; containment below the root is the lexical question [Relative] owns.
+func within(root, p string) bool {
+	if p == root {
+		return true
+	}
+	_, ok := Relative(root, p)
+	return ok
+}
+
+// absolute is p made absolute against the working directory and cleaned, or p
+// cleaned where the working directory cannot be read.
+func absolute(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return filepath.Clean(p)
+}
+
+// deepestExisting returns p where a stat of it succeeds, and otherwise the
+// nearest directory above it where one does. A link leading nowhere, or round a
+// loop, fails the stat and so is passed over for the directory holding it.
+func deepestExisting(p string) string {
+	for {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return p
+		}
+		p = parent
+	}
+}
+
+// resolveExisting is p, which exists, with its links resolved; p itself where the
+// resolution fails, which only a change racing the call can cause.
+func resolveExisting(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
+}
+
+// resolveDeepest is p with its deepest existing part's links resolved and the
+// part that does not exist yet written beneath it.
+func resolveDeepest(p string) string {
+	met := deepestExisting(p)
+	resolved := resolveExisting(met)
+	if met == p {
+		return resolved
+	}
+	rest, err := filepath.Rel(met, p)
+	if err != nil {
+		return p
+	}
+	return filepath.Join(resolved, rest)
 }
 
 // staysInside is the predicate both entry points decide with, over a

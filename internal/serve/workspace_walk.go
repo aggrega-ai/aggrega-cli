@@ -134,7 +134,7 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.C
 		link := d.Type()&fs.ModeSymlink != 0
 		if link {
 			scope.resolve()
-			linked = resolveLink(path, scope.resolvedRoot)
+			linked = resolveLink(path, scope.root)
 			if linked.dir {
 				if linked.outside && !excludedDirName(name) && !w.matchesAny(path, true) {
 					unread.dirs = scope.named(unread.dirs, path)
