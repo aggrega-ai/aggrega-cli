@@ -105,13 +105,11 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 //
 // The single-*ResolverError surface preserves errors.As(*ResolverError)
 // at the CLI's display layer (formatCompilerError at
-// cmd/aggrega/error_format.go) which threads through fmt.Errorf
-// wrapping and renders via ResolverError.ToCompilerError(). An
-// errors.Join chain wrapped via fmt.Errorf would defeat the renderer's
-// multi-error detection (Unwrap() error from the wrapping layer
-// shadows the joined error's Unwrap() []error), so the aggregated-
-// single-error shape is the load-bearing choice for end-to-end
-// multi-violation display.
+// cmd/aggrega/error_format.go), which threads through fmt.Errorf
+// wrapping and renders via ResolverError.ToCompilerError() — one report
+// carrying the count line and every violation. That is a presentation
+// choice rather than a workaround: the display layer also reaches an
+// errors.Join beneath a plain wrap and renders every joined element.
 //
 // Caller invariant: never called with an empty slice; the call site
 // gates on len(verrs) > 0.

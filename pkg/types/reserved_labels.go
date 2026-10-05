@@ -8,16 +8,13 @@ package types
 // Recipe output-label validator and the Manifest annotation-binding loader —
 // so the reserved keyspace is spelled once.
 //
-// Two other representations of the same keyspace exist deliberately and are NOT
-// duplicates to be folded in here:
-//   - pkg/catalog carries an anchored *regexp* form of aggrega.ai/ for the
-//     publishing-linter cross-runtime (Go vs Wasm) parity contract; a regex is
-//     the shape that surface needs, not a bare prefix.
-//   - the Terraform provenance-comment formatter filters on the aggrega.ai/
-//     prefix inline while building an HCL comment, a different consumer.
+// One other representation of the same keyspace exists deliberately and is NOT
+// a duplicate to be folded in here: the Terraform provenance-comment formatter
+// filters on the aggrega.ai/ prefix inline while building an HCL comment, a
+// different consumer.
 //
 // Fold a new plain-prefix HasPrefix consumer onto these constants; leave the
-// regex and comment-filter forms as they are.
+// comment-filter form as it is.
 const (
 	// ReservedLabelPrefixAggregaAI is the platform-native provenance keyspace.
 	// Keys under it (e.g. aggrega.ai/component-id) are stamped by the compiler's
