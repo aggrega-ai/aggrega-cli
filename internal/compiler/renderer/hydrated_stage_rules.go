@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -787,6 +788,102 @@ func runNodeInjectMappingDeliveryRule(
 	}
 	return objectionsAsDeveloperHalt(
 		raised, "attachments whose injectMapping writes a key another attachment already delivered")
+}
+
+// oneNodesEnvOverrideProducers is the boundary axis and the boundary-attachment
+// axis for the rule asked about the environment overrides one component received,
+// narrowed to the boundary-scope attachments whose override names the component
+// the walk has just reached.
+//
+// It is narrowed for the reason [oneNodesAttachments] is, and it narrows to the
+// producers rather than to every attachment the Release declares: an attachment
+// whose override names this component is the only one that can have written over
+// a key on its pipe, so asking any other would be asking about nothing.
+//
+// The producers come from the record the overrides were merged with, and each
+// boundary appears once with its producers in the order they ran, which is the
+// order the traversal asks them in. A boundary coordinate carries the Release's
+// file, because a boundary-scope attachment is declared there and nowhere else; an
+// empty file leaves a finding unpositioned rather than mispositioned.
+type oneNodesEnvOverrideProducers struct {
+	// boundaries are the boundaries holding the producers, each once, in the
+	// order its first producer ran.
+	boundaries []constraint.AuthoredCoordinate
+
+	// attachments are the producers at each boundary, in the order they ran.
+	attachments map[string][]string
+}
+
+// newOneNodesEnvOverrideProducers narrows the axes to the producers of one
+// component's overrides.
+func newOneNodesEnvOverrideProducers(releaseFile string, overrides []consumerEnvOverride) oneNodesEnvOverrideProducers {
+	o := oneNodesEnvOverrideProducers{attachments: map[string][]string{}}
+	for _, override := range overrides {
+		boundary, attachment := override.producer.BoundaryPath, override.producer.FRInstance
+		held, seen := o.attachments[boundary]
+		if !seen {
+			o.boundaries = append(o.boundaries, constraint.AuthoredCoordinate{Value: boundary, SourceFile: releaseFile})
+		}
+		if !slices.Contains(held, attachment) {
+			o.attachments[boundary] = append(held, attachment)
+		}
+	}
+	return o
+}
+
+// Boundaries yields the boundaries holding the producers.
+func (o oneNodesEnvOverrideProducers) Boundaries() []constraint.AuthoredCoordinate {
+	return o.boundaries
+}
+
+// BoundaryAttachments yields the producers one boundary holds, and nothing for a
+// boundary holding none.
+func (o oneNodesEnvOverrideProducers) BoundaryAttachments(boundary string) []string {
+	return o.attachments[boundary]
+}
+
+var (
+	_ constraint.BoundaryEnumerator           = oneNodesEnvOverrideProducers{}
+	_ constraint.BoundaryAttachmentEnumerator = oneNodesEnvOverrideProducers{}
+)
+
+// runBoundaryEnvOverrideDeliveryRule asks the rule declared over the environment
+// overrides one component received about each boundary-scope attachment that
+// produced one, and returns what it raised as the render's halt.
+//
+// It is called from inside the node walk, immediately after the overrides'
+// deliveries have joined the component's record and before the overrides are
+// applied to its pipe. That is the earliest point the question is answerable —
+// the deliveries an override can write over are complete only once every mapping
+// has rendered — and the last point acting on it still saves work, for the reason
+// the reading over the attachments' own blocks gives.
+//
+// A component no override names leaves the rule uninvoked, which is the honest
+// outcome rather than a silent skip: no boundary-scope attachment delivered into
+// its pipe by this route, so there is no claim to ask about. An absent presentation
+// leaves it uninvoked too, for the reason the sibling readings above give.
+//
+// The halt carries the operations category, because the finding is positioned at
+// the attachment's entry in the Release, which is where an operator removes it or
+// changes what it reaches. The cancellation signal is the caller's own.
+func runBoundaryEnvOverrideDeliveryRule(
+	cancelled constraint.Cancellation,
+	view constraint.HydratedView,
+	releaseFile string,
+	overrides []consumerEnvOverride,
+) error {
+	if view == nil || len(overrides) == 0 {
+		return nil
+	}
+	subject := newOneNodesEnvOverrideProducers(releaseFile, overrides)
+	raised, err := constraint.RunOnBoundaryAttachments(
+		cancelled, subject, subject, view, BoundaryAttachmentEnvOverrideKeyNotDeliveredByAnotherAttachment,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsOpsHalt(
+		raised, "boundary attachments whose environment override writes a key another attachment already delivered")
 }
 
 // declaredProvidesContract is the node axis and the provides-key axis for the

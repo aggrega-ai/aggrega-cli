@@ -58,6 +58,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -196,10 +197,66 @@ type BoundaryFRState struct {
 	// ConsumerEnvOverrides carries per-consumer environment overrides a
 	// boundary-scope FeatureRecipe's resource-gen emits, keyed
 	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
-	// consumer's entries to that consumer's injected env after Phase A,
-	// superseding the uniform injectMapping for those keys. The channel is
-	// generic: it carries opaque string values and does not interpret them.
+	// consumer's entries to that consumer's injected env after Phase A, over
+	// whatever the component's own block or one of its connections delivered
+	// under those keys. The channel is generic: it carries opaque string values
+	// and does not interpret them.
+	//
+	// It is the merged answer and keeps no producer; which attachment wrote each
+	// key is ConsumerEnvOverrideProducers, written beside it by the same merge.
 	ConsumerEnvOverrides map[string]map[string]string
+
+	// ConsumerEnvOverrideProducers carries, per consumer node, every
+	// boundary-scope attachment whose override names that node — in the order
+	// the overrides were produced — with the keys each one overrides there.
+	//
+	// It exists because the merged map above cannot say who wrote a key, and that
+	// is the whole of what decides whether an override is interception or a
+	// collision: rewriting a key the component's own block or a connection
+	// delivered is the channel's purpose, while rewriting a key another attachment
+	// delivered would silently replace that attachment's delivery. Recording it at
+	// the merge, rather than recovering it afterwards, is what keeps the
+	// attribution the answer the merge actually applied.
+	ConsumerEnvOverrideProducers map[string][]consumerEnvOverride
+}
+
+// consumerEnvOverride is one boundary-scope attachment's override of one
+// consumer's environment: the attachment that produced it, and the keys it
+// overrides there in the order they are applied.
+type consumerEnvOverride struct {
+	// producer is the attachment, as the boundary it is declared on and the name
+	// it is declared under.
+	producer boundaryFRKey
+
+	// envVars are the keys the override names, sorted — the order the overrides
+	// are applied in, since the channel carries no author order of its own.
+	envVars []string
+}
+
+// consumerEnvOverrideDeliveries reads the deliveries the boundary-scope overrides
+// of one consumer make on its pipe, each attributed to the attachment that
+// produced it and marked as made through an environment override, in production
+// order and then in the order each override's keys are applied.
+//
+// Each override is read as a pipe of its own through the one walk every pipe is
+// read by, as a mapping's overlay is, rather than by a second walk that agrees
+// with it today. Every delivery is marked delivered, because the override sets
+// every key it names.
+func consumerEnvOverrideDeliveries(overrides []consumerEnvOverride) []constraint.InjectDelivery {
+	var out []constraint.InjectDelivery
+	for _, override := range overrides {
+		var overlay types.InjectPipe
+		for _, envVar := range override.envVars {
+			overlay.Env.Set(envVar, "")
+		}
+		deliveries := pipeDeliveries(overlay)
+		for i := range deliveries {
+			deliveries[i].Attachment = override.producer.FRInstance
+			deliveries[i].ThroughBoundaryEnvOverride = true
+		}
+		out = append(out, deliveries...)
+	}
+	return out
 }
 
 // NewBoundaryFRState returns a fresh state instance ready for population.
@@ -213,6 +270,8 @@ func NewBoundaryFRState() *BoundaryFRState {
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
+
+		ConsumerEnvOverrideProducers: map[string][]consumerEnvOverride{},
 	}
 }
 
@@ -811,7 +870,10 @@ func PrepopulateBoundaryScopeProvides(
 			// engine returns; it does not interpret them. Production lives in the
 			// provider guest, not here: the host projects the edge context and the
 			// guest computes the overrides. The host still applies each named
-			// consumer's overrides into that consumer's render context below.
+			// consumer's overrides into that consumer's render context, once the
+			// rule over that consumer's deliveries has found no key another
+			// attachment delivered — which is why the merge is told which
+			// attachment produced them.
 			if engineFactory != nil && frCtx.Boundary != nil {
 				eng, engErr := engineFactory(fr.Spec.Capability)
 				if engErr != nil {
@@ -822,7 +884,7 @@ func PrepopulateBoundaryScopeProvides(
 					if ovErr != nil {
 						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
 					}
-					mergeConsumerEnvOverrides(state, overrides)
+					mergeConsumerEnvOverrides(state, key, overrides)
 				}
 			}
 		}
@@ -835,7 +897,8 @@ func PrepopulateBoundaryScopeProvides(
 // edges and the driving feature's resolved infra, it returns per-consumer
 // environment overrides keyed consumer-nodeID -> {envVar: value}. The channel
 // applies each named consumer's entries to that consumer's injected env after
-// Phase A. The contract is provider-agnostic: the values are opaque strings the
+// Phase A, and halts instead where an entry names a key a different attachment
+// on that consumer delivered. The contract is provider-agnostic: the values are opaque strings the
 // orchestrator carries without interpretation, and a provider whose guest does
 // not advertise the channel returns an empty map. The computation lives in the
 // provider guest; the host projects the edge context in and applies the returned
@@ -850,10 +913,13 @@ type BoundaryEnvOverrider interface {
 // sorted-key application here is the determinism mechanism for any genuinely-new
 // Env key (Invariant 8), NOT a substitution for an OrderedMap order that exists
 // upstream (there is none to drive from). An existing key is updated in place
-// (OrderedMap.Set preserves position). It is a targeted last-wins on exactly
+// (OrderedMap.Set preserves position). It is a targeted overwrite of exactly
 // the override keys — other Env keys, and inject.File / inject.Arg, are left
-// byte-identical. A nil/empty override map is a no-op (non-named consumers are
-// untouched). Rebuilding inject.All matches the inject-rehydrate tail.
+// byte-identical. What stood under an override key is the component's own or a
+// connection's delivery: a key another attachment delivered halts the build
+// before this runs, by the rule over the consumer's deliveries. A nil/empty
+// override map is a no-op (non-named consumers are untouched). Rebuilding
+// inject.All matches the inject-rehydrate tail.
 func applyConsumerEnvOverrides(inject *types.InjectPipe, overrides map[string]string) {
 	if inject == nil || len(overrides) == 0 {
 		return
@@ -869,11 +935,22 @@ func applyConsumerEnvOverrides(inject *types.InjectPipe, overrides map[string]st
 	inject.All = buildInjectAll(*inject)
 }
 
-// mergeConsumerEnvOverrides merges a producer's per-consumer env-override map
-// into state.ConsumerEnvOverrides. Per (nodeID, envVar) the later writer wins;
-// callers iterate boundary FRs in graph.Spec.BoundaryFeatures order, which is
-// deterministic, so the merge result is deterministic.
-func mergeConsumerEnvOverrides(state *BoundaryFRState, overrides map[string]map[string]string) {
+// mergeConsumerEnvOverrides merges one producer's per-consumer env-override map
+// into state.ConsumerEnvOverrides, and records beside it which attachment the
+// producer is and which keys it overrides on each consumer.
+//
+// Per (nodeID, envVar) the later writer stands in the merged map. That is a
+// precedence only between two overrides one attachment produced — an attachment
+// declared under one name at two nested boundaries reaches each component as one
+// attachment — because two different attachments overriding one key on one
+// consumer is refused before the merged map is applied. The record is what that
+// refusal reads, so the producer is taken here rather than recovered later.
+//
+// Callers iterate boundary FRs in graph.Spec.BoundaryFeatures order, which is
+// deterministic, so both the merged map and each consumer's list of producers are
+// deterministic; a producer's own keys are recorded sorted, the order they are
+// applied in.
+func mergeConsumerEnvOverrides(state *BoundaryFRState, producer boundaryFRKey, overrides map[string]map[string]string) {
 	if state == nil || len(overrides) == 0 {
 		return
 	}
@@ -883,9 +960,17 @@ func mergeConsumerEnvOverrides(state *BoundaryFRState, overrides map[string]map[
 			dest = map[string]string{}
 			state.ConsumerEnvOverrides[nodeID] = dest
 		}
+		envVars := make([]string, 0, len(envs))
 		for k, v := range envs {
 			dest[k] = v
+			envVars = append(envVars, k)
 		}
+		if len(envVars) == 0 {
+			continue
+		}
+		sort.Strings(envVars)
+		state.ConsumerEnvOverrideProducers[nodeID] = append(state.ConsumerEnvOverrideProducers[nodeID],
+			consumerEnvOverride{producer: producer, envVars: envVars})
 	}
 }
 

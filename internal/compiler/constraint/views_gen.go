@@ -271,13 +271,14 @@ type DerivedNameDeclaration struct {
 // tell that case from a delivery that landed, and would read a key nobody
 // actually delivered as taken.
 //
-// Which of an attachment's two routes made the delivery travels with it
-// too, because the two routes are held to different earlier deliveries. A
-// claim an attachment's own injection block makes is held by any earlier
-// delivery under its key, while a claim its FeatureRecipe's injectMapping
-// makes is held only by an earlier delivery another attachment made: a
-// mapping rewriting what the component's own block or one of its
-// connections delivered is interception rather than a second claim.
+// Which route an attachment delivered by travels with the delivery too,
+// because the routes are held to different earlier deliveries. A claim an
+// attachment's own injection block makes is held by any earlier delivery
+// under its key, while a claim its FeatureRecipe's injectMapping makes,
+// and one the environment override a boundary-scope attachment computes
+// for the component makes, is held only by an earlier delivery another
+// attachment made: a rewrite of what the component's own block or one of
+// its connections delivered is interception rather than a second claim.
 type InjectDelivery struct {
 	// Mechanism is the injection mechanism the key is delivered through.
 	Mechanism string
@@ -287,7 +288,9 @@ type InjectDelivery struct {
 	DeliveryKey string
 
 	// Attachment is the attachment instance that made the delivery — through
-	// its own injection block or through its FeatureRecipe's injectMapping —
+	// its own injection block, through its FeatureRecipe's injectMapping, or,
+	// for an attachment a boundary declares, through the environment override
+	// its FeatureRecipe's rendering plugin computed for the component —
 	// empty where the component's own block or one of its connections did.
 	Attachment string
 
@@ -296,14 +299,26 @@ type InjectDelivery struct {
 	// another delivery already holds. A delivery an injectMapping made always
 	// arrived: the merge sets every key the rendered output carries, an empty
 	// value included, so a key the output does not carry is the only thing
-	// such a mapping leaves undelivered, and it makes no delivery at all.
+	// such a mapping leaves undelivered, and it makes no delivery at all. A
+	// delivery an environment override made always arrived as well, because
+	// the override sets every key it names.
 	Delivered bool
 
 	// ThroughMapping reports whether the attachment made the delivery through
 	// its FeatureRecipe's injectMapping rather than through its own injection
-	// block, which is false for every delivery the component's own block or
-	// one of its connections made.
+	// block or an environment override, which is false for every delivery the
+	// component's own block or one of its connections made.
 	ThroughMapping bool
+
+	// ThroughBoundaryEnvOverride reports whether the attachment made the
+	// delivery through the environment override a boundary-scope
+	// FeatureRecipe's rendering plugin computed for the component, rather than
+	// through its own injection block or its injectMapping. Such an attachment
+	// is declared on a boundary that holds the component, and the override is
+	// applied after every injectMapping has rendered, so its deliveries are
+	// the last the record carries. It is false for every delivery the
+	// component's own block or one of its connections made.
+	ThroughBoundaryEnvOverride bool
 }
 
 // InjectMappingMechanism is one delivery mechanism the host component's
@@ -5171,7 +5186,7 @@ type HydratedView interface {
 	// NodeInjectDeliveries are the deliveries a node's injection pipe carries
 	// once every attachment attached to that node has delivered into it, one
 	// entry per mechanism and key, each naming whatever attachment asked for
-	// it, whether a value arrived and whether an attachment's mapping made it
+	// it, whether a value arrived and which of an attachment's routes made it
 	// — in delivery order, which is the order the deliveries were made in.
 	//
 	// Three authoring surfaces deliver into one pipe through their blocks: the
@@ -5180,26 +5195,34 @@ type HydratedView interface {
 	// attachment delivers by a second route as well, its FeatureRecipe's
 	// injectMapping, whose deliveries exist only once that mapping has
 	// rendered — so they join the record after every block's, in the order
-	// the mappings ran. A rule asking before the mappings render reads the
-	// blocks' deliveries alone, and that is everything a rule about a block's
-	// claim needs: every block delivers before any mapping renders, so no
-	// mapping delivery can come ahead of a block's claim.
+	// the mappings ran. An attachment a boundary declares has a third: the
+	// environment override its FeatureRecipe's rendering plugin computes for
+	// each component it names, applied after every mapping — so those
+	// deliveries join last, in the order the boundary-scope FeatureRecipes
+	// ran. A rule asking before the mappings render reads the blocks'
+	// deliveries alone, and that is everything a rule about a block's claim
+	// needs: every block delivers before any mapping renders, so no mapping
+	// delivery can come ahead of a block's claim; a rule about a mapping's
+	// claim asked before the overrides join reads everything that can come
+	// ahead of it in the same way.
 	//
 	// The pipe is one keyed space shared between them, so a key two of them
 	// deliver under is a contradiction rather than a precedence question —
-	// with one exception, which is interception: a mapping rewriting a key the
-	// component's own block or one of its connections delivered replaces that
-	// one entry by design. Which surface asked is the only thing that says
-	// whose authoring has to change, and whether a mapping is intercepting or
-	// colliding. The attribution is therefore part of the fact rather than
-	// something a reader could recover: the pipe itself holds values under
-	// keys and remembers nothing about where a key came from.
+	// with one exception, which is interception: a mapping or an override
+	// rewriting a key the component's own block or one of its connections
+	// delivered replaces that one entry by design. Which surface asked is the
+	// only thing that says whose authoring has to change, and whether a
+	// rewrite is intercepting or colliding. The attribution is therefore part
+	// of the fact rather than something a reader could recover: the pipe
+	// itself holds values under keys and remembers nothing about where a key
+	// came from.
 	//
 	// The component's own block and its connections are not told apart. A
 	// duplicate between an attachment's block and either of them is one
 	// condition with one remedy — remove the attachment's entry or the other
-	// one — and neither holds a key against a mapping, so the entry that
-	// names no attachment is what says the other one is not an attachment's.
+	// one — and neither holds a key against a mapping or an override, so the
+	// entry that names no attachment is what says the other one is not an
+	// attachment's.
 	//
 	// Delivery order is the fact and not an incidental property of it. A pipe
 	// is filled in a fixed sequence — the component's own block, then its
@@ -5207,10 +5230,12 @@ type HydratedView interface {
 	// attached, and within one block the three named mechanisms and then the
 	// rest in name order; then each attachment's mapping in the order the
 	// mappings ran, and within one mapping the three named mechanisms and then
-	// the rest in the order its output wrote them — and the first delivery
-	// under a key is the one that holds it. So a rule about a key delivered
-	// twice is a rule about this order, and answering in any other would name
-	// the wrong surface as the one that has to change.
+	// the rest in the order its output wrote them; then each boundary-scope
+	// attachment's environment override in the order those FeatureRecipes ran,
+	// each in the order its keys are applied — and the first delivery under
+	// a key is the one that holds it. So a rule about a key delivered twice is
+	// a rule about this order, and answering in any other would name the wrong
+	// surface as the one that has to change.
 	//
 	// It is empty for a node whose pipe carries nothing, which is the ordinary
 	// answer for a component that delivers nothing into its own render

@@ -121,7 +121,9 @@ func runDispatchedStageRules(
 // A rule about what an entity declares sends an author to a catalog document; a
 // rule about a marker the host stamped has no such document; a rule about where a
 // boundary's output landed sends an operator to the Release document, which is
-// the only place a directory declaration can be changed.
+// the only place a directory declaration can be changed — and so does a rule
+// about what an attachment a boundary declares delivered, since that attachment
+// is written there and nowhere else.
 func objectionsAsOpsHalt(objections []constraint.Objection, envelope string) error {
 	return objectionsAsCategorisedHalt(objections, cerrors.OpsError, envelope)
 }

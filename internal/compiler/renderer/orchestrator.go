@@ -1577,10 +1577,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		mappedKeys := injectMappingWithheld(mappedDelivery, attachmentLeaves)
 		state.Redact = nodeRedactKeys(mappedKeys)
 		state.Withheld = nodeWithheld(mappedKeys)
-		// Boundary->component env channel: apply any per-consumer env overrides
-		// a boundary-scope FR emitted (computed in the pre-loop) over this
-		// consumer's injected env. Gated on map membership, so non-named
-		// consumers are untouched; targeted last-wins on exactly the named keys.
+		// Boundary->component env channel. The overrides a boundary-scope FR
+		// emitted for this consumer (computed in the pre-loop) are a third route
+		// by which an attachment delivers: they join the node's record after every
+		// mapping's, attributed to the attachment that produced them, and the rule
+		// declared over that record is asked before they are applied — so an
+		// override writing a key another attachment delivered halts, naming both,
+		// while one writing a key the component's own block or a connection
+		// delivered rewrites that one entry. Gated on map membership, so
+		// non-named consumers are untouched; a targeted overwrite of exactly the
+		// named keys.
+		producers := boundaryFRState.ConsumerEnvOverrideProducers[nodeID]
+		injectDeliveries = append(injectDeliveries, consumerEnvOverrideDeliveries(producers)...)
+		input.hydrated.recordNodeInjectDeliveries(nodeID, injectDeliveries)
+		if err := runBoundaryEnvOverrideDeliveryRule(
+			ctx.Err, result.HydratedView, releaseFileOf(input.ResolveResult), producers,
+		); err != nil {
+			return nil, err
+		}
 		applyConsumerEnvOverrides(&tmplCtx.Context.Inject, boundaryFRState.ConsumerEnvOverrides[nodeID])
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.

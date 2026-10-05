@@ -470,10 +470,10 @@ func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]boo
 // every unmarked entry.
 //
 // The mapping onto a typed mechanism is exact rather than approximate: that
-// mechanism's pillar is one flat merged map across self-inject, uses-inject and
-// attachment-inject, and a delivery key already present when another source
-// tries to set it halts the build, so a delivery key identifies exactly one
-// entry within its mechanism on a node.
+// mechanism's pillar is one flat merged map across every route that delivers into
+// it, and a second source setting a key already present either halts the build or
+// replaces that one entry, so a delivery key identifies exactly one entry within
+// its mechanism on a node.
 //
 // The input is never mutated. When marked is empty the input is returned
 // as-is.
@@ -680,10 +680,10 @@ type Derived struct {
 // mechanism and then by delivery key, which is the shape the delivery pipe is
 // displayed in and therefore not alias-keyed; a delivery key identifies exactly
 // one entry within its mechanism on a node. Two inject blocks claiming one key
-// halt the build, and so does an attachment's injectMapping writing a key another
-// attachment delivered; the one rewrite that does not halt is a mapping writing a
-// key the component's own block or a connection delivered, and that replaces the
-// entry rather than adding a second one.
+// halt the build, and so does an attachment's injectMapping, or a boundary-scope
+// attachment's environment override, writing a key another attachment delivered;
+// the rewrites that do not halt are those writing a key the component's own block
+// or a connection delivered, and they replace the entry rather than add a second.
 //
 // The two are grouped rather than passed as two bare maps for the same reason
 // Derived is: they are read from the same edges by the same declaration lookup,
