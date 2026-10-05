@@ -292,7 +292,7 @@ func TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates(t *testing.T) {
 		coords []string
 		want   string
 	}{
-		{"examples/ai-agent-and-model-router", []string{"router", "master_key"}, "router--master-zukey--"},
+		{"examples/ai-agent-and-model-router", []string{"router", "api_key"}, "router--api-zukey--"},
 		{"examples/ai-agent-and-model-router", []string{"router", "provider_key"}, "router--provider-zukey--"},
 		{"examples/ai-agent-and-model-router", []string{"router", "published"}, "router--published--"},
 		{"examples/ai-agent-and-model-router", []string{"router", "metrics"}, "router--metrics--"},
