@@ -184,12 +184,16 @@ const ManifestFile = "manifest"
 //
 // PulledAt is set to time.Now().UTC() at write time.
 //
-// workspaceRoot is the workspace the cache belongs to. The slot is held to it
-// before anything is written, so a cache directory — or a directory on the way to
-// the slot — that is a link leading out of the workspace is refused with the halt
-// the write-scope rule declares, rather than written through.
-func WriteBlobAndMetadata(workspaceRoot, slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
-	if err := writescope.CheckWrite(workspaceRoot, slotDir); err != nil {
+// workspaceRoot and cacheDir are the workspace the cache belongs to and its
+// artifact cache directory, as [Slot] was given them. The slot is held, before
+// anything is written, to the root that cache directory picks
+// (writescope.RootForCache): the workspace, or the cache directory itself where the
+// configuration names one outside the workspace. A cache directory — or a
+// directory on the way to the slot — that is a link leading out of that root is
+// refused with the halt the write-scope rule declares, rather than written
+// through.
+func WriteBlobAndMetadata(workspaceRoot, cacheDir, slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
+	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), slotDir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {

@@ -636,6 +636,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	aggregate := aggRes.Aggregate
 
 	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
+	// The lockfile and the plugin trust record are composed beside the Release, so
+	// both are held to the root the Release's directory picks: the workspace root
+	// where the Release lies inside the workspace, and its own directory where a
+	// Release typed on the command line, or named by the configuration, lies
+	// outside it.
+	releaseRoot := writescope.RootFor(workspaceRoot, releaseDir)
 	if cfg.Verify {
 		// Verify-only: a missing lockfile is fatal — the flag
 		// presumes one exists. The no-lockfile case is what the
@@ -1230,7 +1236,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
 				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun,
-				wsCfg.Plugins.ProviderTargetURIs())
+				wsCfg.Plugins.ProviderTargetURIs(), rw.NamedCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs))
 			if err != nil {
 				return fmt.Errorf("pin sources: %w", err)
 			}
@@ -1347,9 +1353,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 
 	report.phase(PhaseLockfile)
 	// The lockfile is a file this run composes beside the Release, so it is held to
-	// the workspace before it is written — and before it is reported, so a report
-	// halts where the write would.
-	if err := writescope.CheckWrite(workspaceRoot, lockfilePath); err != nil {
+	// its root before it is written — and before it is reported, so a report halts
+	// where the write would.
+	if err := writescope.CheckWrite(releaseRoot, lockfilePath); err != nil {
 		return Result{}, fmt.Errorf("write lockfile: %w", err)
 	}
 	if cfg.DryRun {
@@ -1379,7 +1385,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// detached plugin is precisely the case with an entry and no resolution.
 	var trustedCount int
 	if cfg.DryRun {
-		count, trustFile, terr := reportVerdictPluginTrust(workspaceRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
+		count, trustFile, terr := reportVerdictPluginTrust(releaseRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
 		if terr != nil {
 			return Result{}, terr
 		}
@@ -1388,7 +1394,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			reported = append(reported, *trustFile)
 		}
 	} else {
-		count, terr := recordVerdictPluginTrust(workspaceRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
+		count, terr := recordVerdictPluginTrust(releaseRoot, cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
 		if terr != nil {
 			return Result{}, terr
 		}

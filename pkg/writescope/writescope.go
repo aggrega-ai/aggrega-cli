@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package writescope holds a write or a delete the product works out for itself
-// inside a workspace to that workspace.
+// Package writescope holds a write or a delete the product works out for itself to
+// the root it is composed beneath: the workspace, or a directory outside it that
+// the owner typed or the workspace configuration named.
 //
-// The product composes many paths of its own beneath the workspace it is working
-// in: the build output directory and every file it writes there, the trace, the
-// lockfile and the plugin trust record beside a Release, the entity.lock beside an
-// entity, the workspace configuration file, the artifact cache and each subtree of
-// it, and the drafts an import writes. The person who started the operation named
-// the operation, not those paths. A link inside the workspace can lead any of them
-// anywhere the user can write, so "rebuild the output" becomes deleting a
-// directory elsewhere on the machine and "record the pins" becomes overwriting a
-// file nobody meant the workspace to reach.
+// The product composes many paths of its own: the build output directory and every
+// file it writes there, the trace, the lockfile and the plugin trust record beside
+// a Release, the entity.lock beside an entity, the workspace configuration file,
+// the artifact cache and each subtree of it, the drafts an import writes, and the
+// Plugin entities a catalog generation writes. The person who started the
+// operation named the operation, or the directory it writes under, not those
+// paths. A link beneath that directory can lead any of them anywhere the user can
+// write, so "rebuild the output" becomes deleting a directory elsewhere on the
+// machine and "record the pins" becomes overwriting a file nobody meant the
+// workspace to reach.
 //
 // [CheckWrite] and [CheckDelete] are the judgement every such write and delete is
 // held to before it happens. Each asks [pathscope.ResolvesInside], which is the
@@ -21,13 +23,36 @@
 // anything itself: the caller performs the operation it was about to perform,
 // once the judgement has let it through.
 //
+// # Which root holds a write
+//
+// Every path the product composes, it composes beneath some directory: the
+// directory a command was run in, an output directory the owner typed, the
+// directory of the Release a lockfile sits beside, the catalog directory an
+// entity was found in. [RootFor] is the one answer to which root that directory
+// holds its writes to. Where it lies inside the workspace, the root is the
+// workspace root. Where it is a directory the owner typed on the command line, or
+// one the workspace configuration names, and it lies outside the workspace, it is
+// a root of its own: it is honoured where it was named — followed, if it is a
+// link — and every file composed beneath it is held to it, so a link beneath it
+// leading out of it is refused as a link inside the workspace is. Deciding which
+// directory a write is composed beneath is the writer's, because only the writer
+// knows; deciding which root that directory holds the write to is never a
+// writer's.
+//
+// The artifact cache has an answer of its own, [RootForCache], asked by every
+// writer and clearer of the cache. The cache directory the configuration spells
+// inside the workspace — the default among them — is a path the product works out
+// inside the workspace, held to the workspace root; one the configuration spells
+// climbing out of the workspace is a directory it named outside, and a root of its
+// own.
+//
 // # Which paths it holds
 //
-// A path written inside the workspace root, as its spelling places it. A path the
-// product composes outside the root — beside a file the owner typed on the command
-// line, or beside one the workspace configuration names — is not a path inside the
-// workspace and is left as it was; so is every path when there is no workspace
-// root to hold it to.
+// A path that reaches the root on its way — spelled beneath it, or entering it
+// through a link — is judged. A path that never reaches the root passes: one
+// written beneath a root that does not exist yet, where nothing beneath the root
+// exists for a link to stand in, or one spelled elsewhere entirely. With no root
+// at all, nothing is held.
 package writescope
 
 import (
@@ -40,33 +65,98 @@ import (
 )
 
 // ErrWriteLeadsOutOfWorkspace is the halt raised when a path an operation is
-// about to write or delete inside the workspace leads out of it through a link:
-// the build output directory, a file composed beneath it, the trace, the
-// lockfile, the plugin trust record, an entity.lock, the workspace configuration
-// file, the artifact cache or a subtree of it, or an imported draft.
+// about to write or delete leads, through a link, out of the root it is held to —
+// the workspace, or a directory outside it the owner typed or the configuration
+// named ([RootFor]): the build output directory, a file composed beneath it, the
+// trace, the lockfile, the plugin trust record, an entity.lock, the workspace
+// configuration file, the artifact cache or a subtree of it, an imported draft, or
+// a generated Plugin entity.
 //
-// The write or delete does not happen. The refusal names the path, the link it
-// meets on the way and the place that link leads to, so a reader knows which link
-// to remove or repoint.
+// The write or delete does not happen. The refusal names the path, the root it
+// must stay inside, the link it meets on the way and the place that link leads to,
+// so a reader knows which link to remove or repoint.
 //
-// Category: none. The fault is in the workspace's layout on disk rather than in
-// any document an author wrote, so there is no authoring surface to route the
-// reader to. Match with errors.Is(err, ErrWriteLeadsOutOfWorkspace()).
+// Category: none. The fault is in the layout on disk rather than in any document
+// an author wrote, so there is no authoring surface to route the reader to. Match
+// with errors.Is(err, ErrWriteLeadsOutOfWorkspace()).
 func ErrWriteLeadsOutOfWorkspace() error { return errWriteLeadsOutOfWorkspace }
 
 var errWriteLeadsOutOfWorkspace = cerrors.Register("write-leads-out-of-workspace", cerrors.Meta{
 	ShortCode: "E0320",
-	Message:   "a path this operation writes or deletes inside the workspace leads out of it through a link",
+	Message:   "a path this operation writes or deletes leads through a link out of the directory it must stay inside",
 	RulePlace: cerrors.RuleNoStageReaches("The rule is evaluated at the moment the product writes or deletes a path " +
-		"of its own inside the workspace — a build writing its output, a pull writing the lockfile and the cache, " +
-		"a pin writing an entity.lock, a configuration write, a cache clear or prune, an import writing its " +
-		"drafts. None of those moments is a declared stage of a compilation, and what the rule reads is the " +
-		"filesystem under the workspace rather than a document a compilation holds."),
+		"of its own, inside the workspace or beneath a directory named outside it — a build writing its output, a " +
+		"pull writing the lockfile and the cache, a pin writing an entity.lock, a configuration write, a cache " +
+		"clear or prune, an import writing its drafts, a catalog generation writing its entities. None of those " +
+		"moments is a declared stage of a compilation, and what the rule reads is the filesystem rather than a " +
+		"document a compilation holds."),
 })
 
-// remedy is what the refusal tells its reader, in terms of what they can change.
-const remedy = "nothing was written to or removed from that path. Remove the link, or make it lead to a " +
-	"place inside the workspace, and run the operation again"
+// remedyFor is what the refusal tells its reader, in terms of what they can change,
+// for a path that must stay inside root.
+func remedyFor(root string) string {
+	return "nothing was written to or removed from that path. Remove the link, or make it lead to a place inside " +
+		root + ", and run the operation again"
+}
+
+// RootFor returns the root a write the product composes beneath anchor is held
+// to, given the workspace at workspaceRoot: anchor itself where it lies outside
+// the workspace, and workspaceRoot where it lies inside it.
+//
+// anchor is the directory the writer composes beneath, and it is the writer's to
+// name: a directory the owner typed or the configuration named, the directory
+// such a file sits in, or the directory a command was run in. Which side of the
+// workspace it lies on is the one judgement of where a path leads on disk
+// ([pathscope.ResolvesInside]), not its spelling, so an anchor that is a link
+// leading out of the workspace is outside it and is honoured where it was named.
+// A directory nobody named — one the product found inside the workspace — is not
+// an anchor; a writer composing beneath one passes the workspace root, or an
+// empty anchor, which is the same answer.
+//
+// An empty anchor holds the write to the workspace root, and with no workspace
+// root the anchor is the root, so a composed path is held to some root whenever
+// there is anything to hold it to.
+func RootFor(workspaceRoot, anchor string) string {
+	if anchor == "" {
+		return workspaceRoot
+	}
+	if _, inside := pathscope.ResolvesInside(workspaceRoot, anchor); inside {
+		return workspaceRoot
+	}
+	return anchor
+}
+
+// RootForCache returns the root a write or a removal beneath the workspace's
+// artifact cache directory is held to, given the workspace at workspaceRoot and the
+// cache directory cacheDir as the configuration spells it: relative to the
+// workspace root, which is how every writer and clearer of the cache joins it.
+//
+// A cache directory whose spelling stays beneath the workspace root — the default,
+// or a configured one that does not climb out — is a directory the product works
+// out inside the workspace, and its writes are held to workspaceRoot: the cache
+// directory, or a directory beneath it, being a link leading out of the workspace
+// is refused. A configured cache directory that climbs out of the workspace is a
+// directory the configuration named outside it, and [RootFor] picks its root: the
+// directory itself, honoured where it was named — followed, if it is a link — so
+// a link beneath it leading out of it is refused.
+//
+// Which of the two a cache directory is, is read from its spelling, unlike
+// [RootFor]'s anchor, and that is deliberate: the default directory is nobody's
+// naming, so a link standing at it is a link inside the workspace, refused, rather
+// than a root of its own made so by where it leads.
+//
+// It is the one answer every writer and clearer of the cache asks, so no two of
+// them can come to hold the cache to different roots. With no workspace root
+// nothing is held, and the answer is empty.
+func RootForCache(workspaceRoot, cacheDir string) string {
+	if workspaceRoot == "" {
+		return ""
+	}
+	if _, beneath := pathscope.Relative(workspaceRoot, cacheDir); beneath {
+		return workspaceRoot
+	}
+	return RootFor(workspaceRoot, filepath.Join(workspaceRoot, cacheDir))
+}
 
 // maxLinkHops bounds how far CheckWrite follows a chain of links that lead
 // nowhere to find where a write would create its file. It is the limit an
@@ -75,8 +165,8 @@ const remedy = "nothing was written to or removed from that path. Remove the lin
 const maxLinkHops = 40
 
 // CheckWrite reports whether path, a file or directory the operation is about to
-// create or write inside the workspace at root, may be written: nil when it may,
-// and the [ErrWriteLeadsOutOfWorkspace] halt when it leads out.
+// create or write beneath root, may be written: nil when it may, and the
+// [ErrWriteLeadsOutOfWorkspace] halt when it leads out of root.
 //
 // The path is judged by [pathscope.ResolvesInside]: the deepest part of it that
 // exists, with its links resolved, must be root or lie beneath it.
@@ -87,8 +177,9 @@ const maxLinkHops = 40
 // creating a file through it creates the file the link points at, wherever that
 // is. So where the last part is such a link, where it points is judged as well.
 //
-// A path the root does not hold — its spelling outside the root, or an empty root
-// — passes; see the package documentation.
+// root is the root the write is held to, as [RootFor] answers it. A path the root
+// does not hold — one that never reaches the root on its way, or an empty root —
+// passes; see the package documentation.
 func CheckWrite(root, path string) error {
 	held, err := check(verbWrite, root, path)
 	if err != nil || !held {
@@ -100,18 +191,18 @@ func CheckWrite(root, path string) error {
 		return nil
 	}
 	if _, inside := pathscope.ResolvesInside(root, landing); !inside {
-		return refusal(verbWrite, abs, abs, landing)
+		return refusal(verbWrite, root, abs, abs, landing)
 	}
 	return nil
 }
 
 // CheckDelete reports whether path, a file or directory the operation is about
-// to remove inside the workspace at root, may be removed: nil when it may, and the
-// [ErrWriteLeadsOutOfWorkspace] halt when it leads out.
+// to remove beneath root, may be removed: nil when it may, and the
+// [ErrWriteLeadsOutOfWorkspace] halt when it leads out of root.
 //
 // It is the judgement [CheckWrite] makes, without the second look at a last part
 // that is a link leading nowhere: removing such a link removes the link itself,
-// which sits inside the workspace.
+// which sits beneath root.
 func CheckDelete(root, path string) error {
 	_, err := check(verbDelete, root, path)
 	return err
@@ -134,10 +225,11 @@ func check(verb, root, path string) (bool, error) {
 	case inside:
 		return true, nil
 	case res.Link == "":
-		// Spelled outside the root: not a path inside the workspace.
+		// The path never reaches the root on its way, so no link carries it out of
+		// the root: the root does not hold it.
 		return false, nil
 	}
-	return true, refusal(verb, absolute(path), res.Link, res.LinkLeadsTo)
+	return true, refusal(verb, root, absolute(path), res.Link, res.LinkLeadsTo)
 }
 
 // landingOf follows a chain of links at the last part of p that lead nowhere,
@@ -170,15 +262,17 @@ func landingOf(p string) (string, bool) {
 	return cur, true
 }
 
-// refusal composes the halt for path, which meets link on the way and is led by
-// it to leadsTo.
-func refusal(verb, path, link, leadsTo string) error {
+// refusal composes the halt for path, which must stay inside root and meets link
+// on the way, which leads it to leadsTo.
+func refusal(verb, root, path, link, leadsTo string) error {
+	inside := absolute(root)
 	values := []string{
 		verb + " " + path,
+		"which must stay inside " + inside,
 		fmt.Sprintf("the link %s leads to %s", link, leadsTo),
 	}
 	return cerrors.Raise(errWriteLeadsOutOfWorkspace, "", cerrors.SourceLocation{File: link},
-		cerrors.ComposeMessage(ErrWriteLeadsOutOfWorkspace(), values, remedy), nil)
+		cerrors.ComposeMessage(ErrWriteLeadsOutOfWorkspace(), values, remedyFor(inside)), nil)
 }
 
 // absolute is p made absolute against the working directory and cleaned, the

@@ -89,6 +89,100 @@ func TestClearAndPruneHoldTheWorkspaceCacheToTheWorkspace(t *testing.T) {
 	}
 }
 
+// TestClearAndPruneHoldACacheDirectoryOutsideTheWorkspaceToItself drives a clear
+// and a prune over a cache directory the configuration names climbing out of the
+// workspace, and over one inside it whose class root links elsewhere inside the
+// workspace, each holding one slot no lockfile references. One shape per row beside
+// a control clearing and one pruning plainly beneath the directory outside.
+//
+// The directory outside is a root of its own: a class root beneath it that is a
+// link leading out of it is refused, by a clear and by a prune, and the place the
+// link leads to holds afterwards exactly what it held before; the directory itself
+// being a link is honoured where it was named, and the clear empties the place it
+// leads to. A cache directory inside the workspace is held to the workspace root,
+// so a class root linked elsewhere inside the workspace is followed.
+func TestClearAndPruneHoldACacheDirectoryOutsideTheWorkspaceToItself(t *testing.T) {
+	const outsideCache = "../shared-cache"
+	slot := filepath.Join("entities", "zz-unreferenced", "1.0.0")
+	rows := []struct {
+		name     string
+		cacheDir string
+		prune    bool
+		// layout lays the cache out, given the cache directory as the writers spell
+		// it, the workspace root and a directory outside both.
+		layout  func(t *testing.T, cache, ws, elsewhere string)
+		refused bool
+	}{
+		{name: "control: clear a cache outside the workspace", cacheDir: outsideCache, layout: func(t *testing.T, cache, _, _ string) {
+			seedSlot(t, filepath.Join(cache, slot))
+		}},
+		{name: "control: prune a cache outside the workspace", cacheDir: outsideCache, prune: true, layout: func(t *testing.T, cache, _, _ string) {
+			seedSlot(t, filepath.Join(cache, slot))
+		}},
+		{name: "clear through a class root beneath a cache outside that is a link leading out of it", cacheDir: outsideCache, refused: true,
+			layout: func(t *testing.T, cache, _, elsewhere string) {
+				seedSlot(t, filepath.Join(elsewhere, "zz-unreferenced", "1.0.0"))
+				linkInto(t, elsewhere, filepath.Join(cache, "entities"))
+			}},
+		{name: "prune through a class root beneath a cache outside that is a link leading out of it", cacheDir: outsideCache, prune: true, refused: true,
+			layout: func(t *testing.T, cache, _, elsewhere string) {
+				seedSlot(t, filepath.Join(elsewhere, "zz-unreferenced", "1.0.0"))
+				linkInto(t, elsewhere, filepath.Join(cache, "entities"))
+			}},
+		{name: "clear a cache outside that is itself a link, honoured where it was named", cacheDir: outsideCache,
+			layout: func(t *testing.T, cache, _, elsewhere string) {
+				seedSlot(t, filepath.Join(elsewhere, slot))
+				linkInto(t, elsewhere, cache)
+			}},
+		{name: "clear a cache inside whose class root links elsewhere inside the workspace", cacheDir: ".aggrega/cache",
+			layout: func(t *testing.T, cache, ws, _ string) {
+				kept := filepath.Join(ws, "kept-entities")
+				seedSlot(t, filepath.Join(kept, "zz-unreferenced", "1.0.0"))
+				linkInto(t, kept, filepath.Join(cache, "entities"))
+			}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			ws := filepath.Join(t.TempDir(), "ws")
+			elsewhere := t.TempDir()
+			if err := os.MkdirAll(ws, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := lockfile.WriteLockfile(filepath.Join(ws, "release.lock"), &lockfile.Lockfile{
+				Version: 1, Release: "release.yaml", GeneratedAt: "2026-01-01T00:00:00Z",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			cache := filepath.Join(ws, row.cacheDir)
+			row.layout(t, cache, ws, elsewhere)
+			before := tree(t, elsewhere)
+			loc := Locations{WorkspaceRoot: ws, CacheDir: row.cacheDir}
+
+			var err error
+			if row.prune {
+				_, err = Prune(t.Context(), loc)
+			} else {
+				_, err = Clear(t.Context(), loc)
+			}
+			if !row.refused {
+				if err != nil {
+					t.Fatalf("refused a cache its root holds: %v", err)
+				}
+				if _, serr := os.Stat(filepath.Join(cache, slot)); !os.IsNotExist(serr) {
+					t.Errorf("the unreferenced slot survived: %v", serr)
+				}
+				return
+			}
+			if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
+				t.Fatalf("want the write-leads-out-of-workspace halt, got %v", err)
+			}
+			if after := tree(t, elsewhere); !reflect.DeepEqual(before, after) {
+				t.Errorf("the directory the link leads to changed:\nbefore %v\nafter  %v", before, after)
+			}
+		})
+	}
+}
+
 func seedSlot(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

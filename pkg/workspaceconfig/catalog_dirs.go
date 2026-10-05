@@ -82,16 +82,7 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // paths are anchored, which keeps the resolved set identical across
 // build/pull/inspect for the same flags and CWD.
 func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string) []string {
-	configured := r.configuredCatalogDirs(release)
-	dirs := make([]string, 0, len(flagDirs)+len(configured)+1)
-	for _, d := range flagDirs {
-		if abs, err := filepath.Abs(d); err == nil {
-			dirs = append(dirs, abs)
-		} else {
-			dirs = append(dirs, d)
-		}
-	}
-	dirs = append(dirs, configured...)
+	dirs, configured := r.namedCatalogDirs(release, flagDirs)
 	if authoredEmpty(configured) {
 		return dirs
 	}
@@ -100,6 +91,40 @@ func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string
 		dirs = append(dirs, conventional)
 	}
 	return dirs
+}
+
+// NamedCatalogDirs returns the part of the catalog search stack
+// [ResolvedWorkspace.ResolveCatalogDirs] returns for release that somebody named:
+// the `--catalog` flag directories and the directories the configuration lists,
+// in the stack's own order and spelling, without the conventional `catalog`
+// directory the stack appends unasked.
+//
+// It is what tells a directory named for the workspace to reach — one typed on
+// the command line, or listed in the configuration, and possibly outside the
+// workspace — from the one the workspace carries by convention, which is part of
+// the workspace's own tree. A file the product composes beneath a named directory
+// is held to the root that directory picks; one composed beneath the conventional
+// directory is the workspace's. The stack itself is a single list, so the
+// distinction is drawn here, where the list is built.
+func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) []string {
+	dirs, _ := r.namedCatalogDirs(release, flagDirs)
+	return dirs
+}
+
+// namedCatalogDirs builds the named part of the stack, a fresh list, and returns
+// it with the configured directories it was built from, whose nil-ness
+// [authoredEmpty] reads.
+func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) (dirs, configured []string) {
+	configured = r.configuredCatalogDirs(release)
+	dirs = make([]string, 0, len(flagDirs)+len(configured)+1)
+	for _, d := range flagDirs {
+		if abs, err := filepath.Abs(d); err == nil {
+			dirs = append(dirs, abs)
+		} else {
+			dirs = append(dirs, d)
+		}
+	}
+	return append(dirs, configured...), configured
 }
 
 // authoredEmpty reports whether the merged catalog-directory list is the

@@ -61,7 +61,7 @@ func writeSourceSlot(t *testing.T, wsRoot, kind, srcURL, version, dg string, blo
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
-	if err := cacheslot.WriteBlobAndMetadata("", slot, blob, kind, srcURL, version, dg, "application/x-yaml", "", nil); err != nil {
+	if err := cacheslot.WriteBlobAndMetadata("", "", slot, blob, kind, srcURL, version, dg, "application/x-yaml", "", nil); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)
 	}
 	return slot

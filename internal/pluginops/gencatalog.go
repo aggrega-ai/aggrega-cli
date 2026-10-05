@@ -27,12 +27,17 @@ import (
 // there — where it is visible before it is saved, and can be amended or undone.
 // It changes nothing else: the same guests are read, the same overlays matched,
 // and every refusal a write performs is performed here too.
+//
+// WorkspaceRoot is the workspace the generation runs in, which decides the root
+// every generated entity is held to: the workspace root where OutputDir lies
+// inside the workspace, and OutputDir itself where it lies outside it.
 type GenCatalogOptions struct {
-	FromEmbedded bool
-	PluginPath   string
-	OutputDir    string
-	OverlayPath  string
-	DryRun       bool
+	FromEmbedded  bool
+	PluginPath    string
+	OutputDir     string
+	OverlayPath   string
+	DryRun        bool
+	WorkspaceRoot string
 }
 
 // GenCatalogResult is what a catalog generation produced.
@@ -69,11 +74,12 @@ type GenCatalogResult struct {
 func GenCatalog(ctx context.Context, opts GenCatalogOptions, out io.Writer) (GenCatalogResult, error) {
 	var emitted bytes.Buffer
 	err := gencatalog.Run(ctx, gencatalog.Options{
-		FromEmbedded: opts.FromEmbedded,
-		PluginPath:   opts.PluginPath,
-		OutputDir:    opts.OutputDir,
-		OverlayPath:  opts.OverlayPath,
-		Delivery:     authoredcontent.DeliveryFor(opts.DryRun),
+		FromEmbedded:  opts.FromEmbedded,
+		PluginPath:    opts.PluginPath,
+		OutputDir:     opts.OutputDir,
+		OverlayPath:   opts.OverlayPath,
+		Delivery:      authoredcontent.DeliveryFor(opts.DryRun),
+		WorkspaceRoot: opts.WorkspaceRoot,
 	}, &emitted)
 
 	// The emitted bytes are handed on even when the generation failed part way, so

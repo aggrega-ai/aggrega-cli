@@ -138,11 +138,15 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 		return errorResult(refusal)
 	}
 
+	// The generation holds every entity it writes to the root the output directory
+	// picks against this call's workspace, so a link beneath that directory cannot
+	// carry an entity out of it.
 	opts := gencatalog.Options{
-		FromEmbedded: a.FromEmbedded,
-		PluginPath:   pluginPath,
-		OutputDir:    outputDir,
-		OverlayPath:  overlayPath,
+		FromEmbedded:  a.FromEmbedded,
+		PluginPath:    pluginPath,
+		OutputDir:     outputDir,
+		OverlayPath:   overlayPath,
+		WorkspaceRoot: tw.root,
 	}
 	run := s.runGenCatalog
 	if run == nil {

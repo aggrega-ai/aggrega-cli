@@ -64,6 +64,59 @@ func TestEntitySlotWritesAreHeldToTheWorkspace(t *testing.T) {
 	}
 }
 
+// TestEntitySlotWritesBeneathACacheDirectoryOutsideTheWorkspaceAreHeldToIt drives
+// the same write over a cache directory the configuration names climbing out of
+// the workspace, one shape per row beside a control writing plainly beneath it.
+//
+// The directory is a root of its own: an entities subtree beneath it that is a
+// link leading out of it is refused, and the place the link leads to is left as it
+// was; the directory itself being a link is honoured where it was named, and the
+// slot is written where it leads.
+func TestEntitySlotWritesBeneathACacheDirectoryOutsideTheWorkspaceAreHeldToIt(t *testing.T) {
+	const cacheDir = "../shared-cache"
+	const uri = "oci://hub.example.invalid/component/demo/api"
+	rows := []struct {
+		name    string
+		layout  func(t *testing.T, cache, elsewhere string)
+		refused bool
+	}{
+		{name: "control: a cache directory outside the workspace", layout: func(*testing.T, string, string) {}},
+		{name: "an entities subtree that is a link leading out of it is refused", refused: true, layout: func(t *testing.T, cache, elsewhere string) {
+			linkCacheDir(t, elsewhere, filepath.Join(cache, "entities"))
+		}},
+		{name: "the cache directory itself a link is honoured where it was named", layout: func(t *testing.T, cache, elsewhere string) {
+			linkCacheDir(t, elsewhere, cache)
+		}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			ws := filepath.Join(t.TempDir(), "ws")
+			elsewhere := t.TempDir()
+			if err := os.MkdirAll(ws, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			row.layout(t, filepath.Join(ws, cacheDir), elsewhere)
+
+			err := WriteCached(ws, cacheDir, uri, "1.0.0", []byte("blob"))
+			if row.refused {
+				if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
+					t.Fatalf("want the write-leads-out-of-workspace halt, got %v", err)
+				}
+				if entries, rerr := os.ReadDir(elsewhere); rerr != nil || len(entries) != 0 {
+					t.Errorf("something was written where the link leads: %v (%v)", entries, rerr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("refused a slot its root holds: %v", err)
+			}
+			if got, rerr := ReadCached(ws, cacheDir, uri, "1.0.0"); rerr != nil || string(got) != "blob" {
+				t.Errorf("the slot does not hold what was written: %q (%v)", got, rerr)
+			}
+		})
+	}
+}
+
 func linkCacheDir(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {

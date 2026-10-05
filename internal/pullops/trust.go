@@ -450,7 +450,10 @@ func (o verdictTrustOutcome) Changed() bool { return len(o.Changes) > 0 }
 // A light binary carries no plugin bytes, so nothing is declined there and a
 // configured attachment is recorded like any other. That falls out of asking the
 // binary what it carries rather than deciding it from a build flag.
-func recordVerdictPluginTrust(workspaceRoot, releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
+//
+// root is the root the record is held to — the one the Release's directory picks
+// (writescope.RootFor) — because the record is a file composed beside the Release.
+func recordVerdictPluginTrust(root, releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
 	outcome, err := verdictTrustAfterPull(releasePath, attachments, resolutions, mode)
 	if err != nil {
 		return 0, err
@@ -460,8 +463,8 @@ func recordVerdictPluginTrust(workspaceRoot, releasePath string, attachments []w
 	}
 	path := pluginstrust.PathFor(releasePath)
 	// The record is a file this run composes beside the Release, so it is held to
-	// the workspace at workspaceRoot before it is written.
-	if err := writescope.CheckWrite(workspaceRoot, path); err != nil {
+	// root before it is written.
+	if err := writescope.CheckWrite(root, path); err != nil {
 		return 0, err
 	}
 	if err := pluginstrust.Write(path, outcome.Trust); err != nil {
@@ -542,7 +545,7 @@ func announceVerdictTrustChanges(diagOut io.Writer, path string, outcome verdict
 // undergone none. The record's own path appears in the report instead, which is
 // where a reader of a preview looks for it. That this half holds no writer at all
 // is what keeps the distinction from resting on anyone remembering it.
-func reportVerdictPluginTrust(workspaceRoot, releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) (int, *dryrunreport.File, error) {
+func reportVerdictPluginTrust(root, releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) (int, *dryrunreport.File, error) {
 	outcome, err := verdictTrustAfterPull(releasePath, attachments, resolutions, mode)
 	if err != nil {
 		return 0, nil, err
@@ -550,7 +553,7 @@ func reportVerdictPluginTrust(workspaceRoot, releasePath string, attachments []w
 	if !outcome.Changed() {
 		return outcome.Recordable, nil, nil
 	}
-	if err := writescope.CheckWrite(workspaceRoot, pluginstrust.PathFor(releasePath)); err != nil {
+	if err := writescope.CheckWrite(root, pluginstrust.PathFor(releasePath)); err != nil {
 		return 0, nil, err
 	}
 	out, merr := pluginstrust.CanonicalBytes(outcome.Trust)

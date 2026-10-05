@@ -73,12 +73,15 @@ func ExtractedTree(slot, contentDigest string) string {
 // A directory is created 0755 before the process umask and a file is written 0644;
 // the archive's own modes, owners and times are not carried.
 //
-// workspaceRoot is the workspace the cache belongs to. The tree is held to it
-// before anything is laid out, so a cache directory — or a directory on the way to
-// the slot — that is a link leading out of the workspace is refused with the halt
-// the write-scope rule declares rather than written through.
-func RegenerateExtracted(workspaceRoot, slot string, archive []byte) (string, error) {
-	return regenerate(workspaceRoot, slot, archive, tarGzEntries(archive))
+// workspaceRoot and cacheDir are the workspace the cache belongs to and its
+// artifact cache directory, the two the slot was composed from. The tree is held,
+// before anything is laid out, to the root that cache directory picks
+// (writescope.RootForCache): the workspace, or the cache directory itself where the
+// configuration names one outside the workspace. A cache directory — or a
+// directory on the way to the slot — that is a link leading out of that root is
+// refused with the halt the write-scope rule declares rather than written through.
+func RegenerateExtracted(workspaceRoot, cacheDir, slot string, archive []byte) (string, error) {
+	return regenerate(workspaceRoot, cacheDir, slot, archive, tarGzEntries(archive))
 }
 
 // RegenerateExtractedDocument is [RegenerateExtracted] for an artifact that is a
@@ -86,15 +89,15 @@ func RegenerateExtracted(workspaceRoot, slot string, archive []byte) (string, er
 // under name, rebuilt the same way on every call. name must be a plain relative file
 // name; one that would land outside the tree is refused with a wrapped
 // ErrFetchIntegrity.
-func RegenerateExtractedDocument(workspaceRoot, slot, name string, document []byte) (string, error) {
-	return regenerate(workspaceRoot, slot, document, documentEntry(name, document))
+func RegenerateExtractedDocument(workspaceRoot, cacheDir, slot, name string, document []byte) (string, error) {
+	return regenerate(workspaceRoot, cacheDir, slot, document, documentEntry(name, document))
 }
 
 // regenerate lays out what entries yields in the tree ExtractedTree names for
-// artifact, once the tree is held to the workspace.
-func regenerate(workspaceRoot, slot string, artifact []byte, entries entrySource) (string, error) {
+// artifact, once the tree is held to the root the cache directory picks.
+func regenerate(workspaceRoot, cacheDir, slot string, artifact []byte, entries entrySource) (string, error) {
 	tree := ExtractedTree(slot, digest.ContentDigest(artifact))
-	if err := writescope.CheckWrite(workspaceRoot, tree); err != nil {
+	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), tree); err != nil {
 		return "", err
 	}
 	if err := layOut(slot, tree, entries); err != nil {

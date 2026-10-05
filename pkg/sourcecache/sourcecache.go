@@ -185,7 +185,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
 	}
 
-	return RegenerateExtracted(workspaceRoot, slot, blobBytes)
+	return RegenerateExtracted(workspaceRoot, cacheDir, slot, blobBytes)
 }
 
 // SlotPath returns the cache-slot directory for the given lockfile

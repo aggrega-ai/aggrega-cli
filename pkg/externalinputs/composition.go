@@ -7,6 +7,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // NewRefilling constructs the service for the consumption moment: a pinned
@@ -36,7 +37,7 @@ import (
 // one workspace whatever directory the caller is standing in.
 func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf)))
+	return inWorkspace(workspaceRoot, cacheDir, NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf)))
 }
 
 // NewFrozen constructs the transport-free variant of the consumption posture: a
@@ -68,7 +69,7 @@ func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, 
 // artifact cache directory together, which is what makes it the same store for
 // one workspace whatever directory the caller is standing in.
 func NewFrozen(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *Service {
-	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), false, nil, pinnedFrom(lf)))
+	return inWorkspace(workspaceRoot, cacheDir, NewService(StoreRoot(workspaceRoot, cacheDir), false, nil, pinnedFrom(lf)))
 }
 
 // NewAcquiring constructs the service for the acquisition moment: a pinned
@@ -91,15 +92,17 @@ func NewFrozen(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *Service {
 // was run from.
 func NewAcquiring(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return inWorkspace(workspaceRoot, NewService(StoreRoot(workspaceRoot, cacheDir), true, client, pinnedFrom(lf)))
+	return inWorkspace(workspaceRoot, cacheDir, NewService(StoreRoot(workspaceRoot, cacheDir), true, client, pinnedFrom(lf)))
 }
 
-// inWorkspace records that s stores into the artifact cache of the workspace at
-// workspaceRoot, so every blob it writes is held to that workspace. Each
+// inWorkspace records that s stores into the artifact cache directory cacheDir of
+// the workspace at workspaceRoot, so every blob it writes is held to the root that
+// cache directory picks (writescope.RootForCache): the workspace, or the cache
+// directory itself where the configuration names one outside the workspace. Each
 // composition above is over a workspace's own cache, which is why each passes
 // through here.
-func inWorkspace(workspaceRoot string, s *Service) *Service {
-	s.workspaceRoot = workspaceRoot
+func inWorkspace(workspaceRoot, cacheDir string, s *Service) *Service {
+	s.heldTo = writescope.RootForCache(workspaceRoot, cacheDir)
 	return s
 }
 

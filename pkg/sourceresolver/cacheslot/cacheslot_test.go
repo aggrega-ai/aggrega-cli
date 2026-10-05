@@ -234,7 +234,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	}
 
 	body := []byte("archive-bytes-here")
-	if err := cacheslot.WriteBlobAndMetadata("", slot, body,
+	if err := cacheslot.WriteBlobAndMetadata("", "", slot, body,
 		"compose-https-fragment", "https://example.com/fragment.yaml",
 		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml", "", nil); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)

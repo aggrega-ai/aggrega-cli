@@ -61,13 +61,13 @@ type Service struct {
 	root    string
 	acquire bool
 	client  *http.Client
-	// workspaceRoot is the workspace the store belongs to, where the service was
-	// composed over a workspace's own artifact cache. Every blob written is held
-	// to it before the write, so a cache directory that is a link leading out of
-	// the workspace is refused rather than written through. It is empty for a
-	// service constructed over a bare store root, which holds no write to any
+	// heldTo is the root every blob written is held to, where the service was
+	// composed over a workspace's own artifact cache: the root that workspace's
+	// cache directory picks (writescope.RootForCache). A cache directory that is a
+	// link leading out of it is refused rather than written through. It is empty for
+	// a service constructed over a bare store root, which holds no write to any
 	// workspace.
-	workspaceRoot string
+	heldTo string
 
 	mu sync.Mutex
 	// records holds every known pin keyed by URL: the pinned view passed at
@@ -407,7 +407,7 @@ func (s *Service) blobPath(hexDigest string) string {
 // concurrent reader never observes a partial blob under a digest name.
 func (s *Service) writeBlob(hexDigest string, b []byte) error {
 	dir := filepath.Join(s.root, "sha256")
-	if err := writescope.CheckWrite(s.workspaceRoot, filepath.Join(dir, hexDigest)); err != nil {
+	if err := writescope.CheckWrite(s.heldTo, filepath.Join(dir, hexDigest)); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {

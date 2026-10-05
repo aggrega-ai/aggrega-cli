@@ -308,16 +308,18 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 // populated. The write is idempotent: a blob already present (a re-pull of the
 // same signature) is left untouched so the cache stays byte-stable.
 //
-// The cache sits inside the workspace, so the blob is held to the workspace at
-// workspaceRoot before anything is created: a cache directory, or a directory on
-// the way to the blob, that is a link leading out of the workspace is refused
-// with the halt the write-scope rule declares, rather than written through.
+// The blob is held, before anything is created, to the root the cache directory
+// picks (writescope.RootForCache): the workspace at workspaceRoot, or the cache
+// directory itself where the configuration names one outside the workspace. A
+// cache directory, or a directory on the way to the blob, that is a link leading
+// out of that root is refused with the halt the write-scope rule declares, rather
+// than written through.
 func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte) error {
 	if bundleDigest == "" || len(bundle) == 0 {
 		return nil
 	}
 	path := oci.SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest)
-	if err := writescope.CheckWrite(workspaceRoot, path); err != nil {
+	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), path); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

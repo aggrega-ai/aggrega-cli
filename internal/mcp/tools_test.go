@@ -368,9 +368,10 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 		t.Fatalf("gen-catalog reported error: %s", res.Content[0].Text)
 	}
 	wantEmbedded := gencatalog.Options{
-		FromEmbedded: true,
-		OutputDir:    filepath.Join(ws.root, "out"),
-		OverlayPath:  filepath.Join(ws.root, "overlays"),
+		FromEmbedded:  true,
+		OutputDir:     filepath.Join(ws.root, "out"),
+		OverlayPath:   filepath.Join(ws.root, "overlays"),
+		WorkspaceRoot: ws.root,
 	}
 	if gotOpts != wantEmbedded {
 		t.Fatalf("gen-catalog options = %+v, want %+v", gotOpts, wantEmbedded)
@@ -385,9 +386,10 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 		t.Fatalf("gen-catalog (single) reported error: %s", res.Content[0].Text)
 	}
 	wantSingle := gencatalog.Options{
-		PluginPath:  filepath.Join(ws.root, "p.wasm"),
-		OutputDir:   filepath.Join(ws.root, "out"),
-		OverlayPath: filepath.Join(ws.root, "o.yaml"),
+		PluginPath:    filepath.Join(ws.root, "p.wasm"),
+		OutputDir:     filepath.Join(ws.root, "out"),
+		OverlayPath:   filepath.Join(ws.root, "o.yaml"),
+		WorkspaceRoot: ws.root,
 	}
 	if gotOpts != wantSingle {
 		t.Fatalf("gen-catalog single options = %+v, want %+v", gotOpts, wantSingle)

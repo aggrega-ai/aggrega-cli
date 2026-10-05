@@ -139,8 +139,9 @@ func (r Result) Halted() bool {
 // a partial result nobody asked for.
 //
 // That containment analysis is lexical and resolves no symbolic link, so every
-// drafted path is also held to the workspace with its links resolved (checkFiles),
-// before anything is written and before a reporting delivery answers.
+// drafted path is also held, with its links resolved, to the root the output
+// directory picks (checkFiles), before anything is written and before a reporting
+// delivery answers.
 //
 // A halt-severity diagnostic is reported in the Result rather than returned as an
 // error, and any files the importer produced alongside it are still written — an
@@ -196,14 +197,17 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 }
 
 // checkFiles judges every drafted file before any is written: the place it would
-// be written at must not lead out of the workspace at workspaceRoot through a
-// link. The drafts are files the product writes inside the workspace on the
-// caller's behalf, so a link standing in the output directory, or in a directory
-// on the way to a draft, would otherwise turn an import into writing files
-// elsewhere on the machine.
+// be written at must not lead, through a link, out of the root the output
+// directory picks against the workspace at workspaceRoot — the workspace root
+// where the output directory lies inside the workspace, and the output directory
+// itself, the directory a command was run in, say, where it lies outside it. The
+// drafts are files the product writes on the caller's behalf, so a link standing
+// in the output directory, or in a directory on the way to a draft, would
+// otherwise turn an import into writing files elsewhere on the machine.
 func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error {
+	root := writescope.RootFor(workspaceRoot, outputDir)
 	for _, f := range files {
-		if err := writescope.CheckWrite(workspaceRoot, filepath.Join(outputDir, filepath.FromSlash(f.Path))); err != nil {
+		if err := writescope.CheckWrite(root, filepath.Join(outputDir, filepath.FromSlash(f.Path))); err != nil {
 			return err
 		}
 	}

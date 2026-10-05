@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // genCatalogHeader is the two-part banner every generated Plugin entity
@@ -50,12 +51,20 @@ const genCatalogPluginFilename = "plugin.yaml"
 // Delivery selects whether the generated entities are written under OutputDir or
 // reported as content for the caller to place. The zero value writes, so a
 // caller that says nothing about delivery generates exactly as before.
+//
+// WorkspaceRoot is the workspace the generation runs in. Every entity is composed
+// beneath OutputDir, and is held to the root that directory picks
+// ([writescope.RootFor]): the workspace root where OutputDir lies inside the
+// workspace, and OutputDir itself where it lies outside it — the directory the
+// caller named, honoured where it was named. An empty WorkspaceRoot holds every
+// entity to OutputDir.
 type Options struct {
-	FromEmbedded bool
-	PluginPath   string
-	OutputDir    string
-	OverlayPath  string
-	Delivery     authoredcontent.Delivery
+	FromEmbedded  bool
+	PluginPath    string
+	OutputDir     string
+	OverlayPath   string
+	Delivery      authoredcontent.Delivery
+	WorkspaceRoot string
 }
 
 // Run validates the option combination, composes an entity for every selected
@@ -68,6 +77,11 @@ type Options struct {
 // hands it back rather than putting it on disk behind their back; composing the
 // whole set first is also what lets an authoring halt on the fifth guest leave
 // none of the first four on disk.
+//
+// Every entity's place is then held to the root the output directory picks (see
+// [Options]) before either delivery: a link beneath the output directory leading
+// out of that root halts the generation with nothing written, and the reporting
+// delivery halts where the write would.
 func Run(ctx context.Context, opts Options, out io.Writer) error {
 	switch {
 	case opts.FromEmbedded && opts.PluginPath != "":
@@ -92,11 +106,25 @@ func Run(ctx context.Context, opts Options, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := checkEntities(writescope.RootFor(opts.WorkspaceRoot, opts.OutputDir), docs); err != nil {
+		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+	}
 
 	if opts.Delivery.Reports() {
 		return authoredcontent.Report(out, docs)
 	}
 	return writeEntities(docs, out)
+}
+
+// checkEntities holds the place of every composed entity to root before any is
+// written, so a set with one place leading out of root writes none of it.
+func checkEntities(root string, docs []authoredcontent.Document) error {
+	for _, doc := range docs {
+		if err := writescope.CheckWrite(root, doc.Path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeEntities puts each composed entity at its own path, creating the

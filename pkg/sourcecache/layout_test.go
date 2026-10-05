@@ -93,14 +93,14 @@ func TestRegenerateExtractedDiscardsWhatWasPlanted(t *testing.T) {
 			slot := t.TempDir()
 			outside := t.TempDir()
 			archive := buildTGZ(t, layoutChart)
-			tree, err := sourcecache.RegenerateExtracted("", slot, archive)
+			tree, err := sourcecache.RegenerateExtracted("", "", slot, archive)
 			if err != nil {
 				t.Fatalf("first regeneration: %v", err)
 			}
 			row.plant(t, tree, outside)
 			before := treeFiles(t, outside)
 
-			again, err := sourcecache.RegenerateExtracted("", slot, archive)
+			again, err := sourcecache.RegenerateExtracted("", "", slot, archive)
 			if err != nil {
 				t.Fatalf("regeneration after the plant: %v", err)
 			}

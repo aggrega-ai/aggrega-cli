@@ -183,7 +183,11 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	wsCfg := rw.Config()
 	root := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	view := catalog.NewLazyLookup(root, cacheDir, []string{filepath.Dir(abs)}, nil)
+	// The document's own directory is the one directory the view reads, and it is a
+	// named one: the caller named the document, so its lock is held to the root that
+	// directory picks.
+	entityDir := filepath.Dir(abs)
+	view := catalog.NewLazyLookup(root, cacheDir, []string{entityDir}, nil)
 
 	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
 	if header.Spec.Capability != "" {
@@ -202,6 +206,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 		CacheDir:        cacheDir,
 		ForWriting:      forWriting,
 		ServingProvider: WorkspaceServingProvider(rw),
+		NamedDirs:       []string{entityDir},
 	})
 	if err != nil {
 		return Result{}, Plan{}, err

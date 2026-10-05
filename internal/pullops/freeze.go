@@ -78,9 +78,16 @@ import (
 // same resolution the rest of the run binds providers by — and the author's
 // .aggregaignore, and records them with the pins. A run that only holds the locks
 // applies the rules they record and asks no plugin.
+//
+// # Where each lock is held
+//
+// namedDirs are the catalog directories of lazyView's stack somebody named (see
+// workspaceconfig.ResolvedWorkspace.NamedCatalogDirs). A lock beside an entity
+// found beneath one of them is held to the root that directory picks — itself,
+// where it lies outside the workspace — and every other lock to the workspace root.
 func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
 	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool,
-	providerBindings map[string]string) (map[string]string, []dryrunreport.File, error) {
+	providerBindings map[string]string, namedDirs []string) (map[string]string, []dryrunreport.File, error) {
 	var uris []string
 	for _, ent := range entities {
 		if len(used[ent.URI]) == 0 {
@@ -98,6 +105,7 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 		ServingProvider: func(capability string) (catalog.ServingProvider, bool, error) {
 			return lazyView.ServingProvider(capability, providerBindings)
 		},
+		NamedDirs: namedDirs,
 	})
 	if err != nil {
 		return nil, nil, err

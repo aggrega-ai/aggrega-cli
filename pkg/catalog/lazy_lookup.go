@@ -1128,7 +1128,7 @@ func (l *LazyLookup) localComponentTiers(uri string) (types.Component, bool, boo
 	case tier2Use:
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
-		if path, doc, ok := registryDocument(l.workspaceRoot, slot, bytes, uri); ok {
+		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return comp, true, true
@@ -1184,12 +1184,12 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, pu
 // The caller keeps the bytes it was given. The retained entityBytes entry is the
 // whole artifact, because that is what the pinned digest covers; only the parse
 // takes the document.
-func registryDocument(workspaceRoot, slot string, published []byte, label string) (string, []byte, bool) {
+func registryDocument(workspaceRoot, cacheDir, slot string, published []byte, label string) (string, []byte, bool) {
 	if slot == "" {
 		document, err := oci.EntityYAML(published)
 		return label, document, err == nil
 	}
-	path, document, err := unpackEntitySlot(workspaceRoot, slot, published)
+	path, document, err := unpackEntitySlot(workspaceRoot, cacheDir, slot, published)
 	return path, document, err == nil
 }
 
@@ -1202,7 +1202,7 @@ func registryDocumentAt(workspaceRoot, cacheDir, uri string, res closure.Resolut
 	if err != nil {
 		return "", nil, false
 	}
-	return registryDocument(workspaceRoot, slot, published, uri)
+	return registryDocument(workspaceRoot, cacheDir, slot, published, uri)
 }
 
 // resolveFeature mirrors resolveComponent for the Feature surface.
@@ -1221,7 +1221,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 		return feat, true
 	}
 	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if path, doc, ok := registryDocument(l.workspaceRoot, slot, bytes, uri); ok {
+		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return feat, true
@@ -1748,7 +1748,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 	local := slot == ""
 	switch kind {
 	case "Recipe":
-		docPath, lerr := contentAnchor(l.workspaceRoot, src, slot, rawBytes)
+		docPath, lerr := contentAnchor(l.workspaceRoot, l.cacheDir, src, slot, rawBytes)
 		if lerr != nil {
 			l.recordRecipeSkip(src, lerr)
 			return
@@ -1776,7 +1776,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			},
 			func() error { return fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key) })
 	case "FeatureRecipe":
-		docPath, lerr := contentAnchor(l.workspaceRoot, src, slot, rawBytes)
+		docPath, lerr := contentAnchor(l.workspaceRoot, l.cacheDir, src, slot, rawBytes)
 		if lerr != nil {
 			l.recordRecipeSkip(src, lerr)
 			return
@@ -2071,11 +2071,11 @@ func unwrapRefusal(err error) bool {
 // entity's content paths at: src itself for a catalog-directory file, which slot
 // is empty for, and otherwise the entity's document in the layout of the slot's
 // verified artifact, rebuilt from rawBytes by unpackEntitySlot.
-func contentAnchor(workspaceRoot, src, slot string, rawBytes []byte) (string, error) {
+func contentAnchor(workspaceRoot, cacheDir, src, slot string, rawBytes []byte) (string, error) {
 	if slot == "" {
 		return src, nil
 	}
-	path, _, err := unpackEntitySlot(workspaceRoot, slot, rawBytes)
+	path, _, err := unpackEntitySlot(workspaceRoot, cacheDir, slot, rawBytes)
 	return path, err
 }
 
@@ -3095,7 +3095,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution,
 		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if path, doc, ok := registryDocument(l.workspaceRoot, slot, bytes, uri); ok {
+		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				res, rerr := cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest)
@@ -3114,7 +3114,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, b
 		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if path, doc, ok := registryDocument(l.workspaceRoot, slot, bytes, uri); ok {
+		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				res, rerr := cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest)

@@ -224,15 +224,16 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 }
 
 // holdWorkspaceClassRoots holds every class root an operation would remove from
-// or clear to the workspace the cache belongs to, before anything is removed.
+// or clear to the root the workspace's cache directory picks, before anything is
+// removed.
 //
 // The workspace's cache classes sit under the workspace's own cache directory, so
-// a cache directory — or a class root — that is a link leading out of the
-// workspace would turn a clear into deleting directories elsewhere on the
-// machine. One class root leading out halts the operation with every class left as
-// it was. The machine-wide classes are the machine's own stores and are not held
-// to any workspace. prunableOnly narrows the set to the classes a prune reclaims
-// from, which are the only ones a prune removes anything under.
+// a cache directory — or a class root — that is a link leading out of that root
+// would turn a clear into deleting directories elsewhere on the machine. One class
+// root leading out halts the operation with every class left as it was. The
+// machine-wide classes are the machine's own stores and are not held to any
+// workspace. prunableOnly narrows the set to the classes a prune reclaims from,
+// which are the only ones a prune removes anything under.
 func holdWorkspaceClassRoots(loc Locations, classes []Class, prunableOnly bool) error {
 	for _, cl := range classes {
 		if prunableOnly && !cl.Prunable {
@@ -246,13 +247,16 @@ func holdWorkspaceClassRoots(loc Locations, classes []Class, prunableOnly bool) 
 }
 
 // holdRemoval holds one removal from class cl — its root, or one element of it —
-// to the workspace at loc.WorkspaceRoot. A machine-wide class, and a path in a run
-// that resolved no workspace, are held to nothing.
+// to the root the cache directory loc.CacheDir picks for the workspace at
+// loc.WorkspaceRoot (writescope.RootForCache): the workspace, or the cache
+// directory itself where the configuration names one outside the workspace. A
+// machine-wide class, and a path in a run that resolved no workspace, are held to
+// nothing.
 func holdRemoval(loc Locations, cl Class, path string) error {
 	if cl.Reach != ReachWorkspace || cl.Root == "" {
 		return nil
 	}
-	return writescope.CheckDelete(loc.WorkspaceRoot, path)
+	return writescope.CheckDelete(writescope.RootForCache(loc.WorkspaceRoot, loc.CacheDir), path)
 }
 
 // anyReferrerInSet reports whether any of a compiled leaf's referrer digests is

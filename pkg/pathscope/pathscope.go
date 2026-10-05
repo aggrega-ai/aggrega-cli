@@ -330,11 +330,12 @@ type Resolution struct {
 	Met string
 	// LeadsTo is Met with its links resolved: the place the judgement was made on.
 	LeadsTo string
-	// Link is set only for a path that leads out while being spelled inside the
-	// root: it is the shortest leading part of the path, spelled as the path spells
-	// it, whose links resolved lead outside the root — the link a reader removes or
-	// repoints. It is empty for a path inside, and for a path whose spelling
-	// already lies outside the root, where no link is what carries it out.
+	// Link is set only for a path that leads out after reaching the root on the
+	// way — spelled inside it, or entering it through a link earlier on the way: it
+	// is the shortest part of the path beyond where it reaches the root, spelled as
+	// the path spells it, whose links resolved lead outside the root — the link a
+	// reader removes or repoints. It is empty for a path inside, and for a path that
+	// never reaches the root on the way, where no link is what carries it out.
 	Link string
 	// LinkLeadsTo is where Link leads with its links resolved, and empty where
 	// Link is.
@@ -383,15 +384,18 @@ func ResolvesInside(root, path string) (Resolution, bool) {
 		return res, true
 	}
 
-	// Leading out. Where the path is spelled inside the root, some part of it on
-	// the way to what was judged is a link that carries it out; find the shortest
-	// such part so the caller can name the link rather than only the path.
+	// Leading out. Where the path reaches the root on the way — spelled inside it,
+	// or entering it through a link of its own — some part of it beyond that point
+	// is a link that carries it out; find the shortest such part so the caller can
+	// name the link rather than only the path.
 	base := ""
 	switch {
 	case within(absRoot, met):
 		base = absRoot
 	case within(resolvedRoot, met):
 		base = resolvedRoot
+	default:
+		base = entersRoot(resolvedRoot, met)
 	}
 	if base != "" {
 		res.Link, res.LinkLeadsTo = met, res.LeadsTo
@@ -418,6 +422,26 @@ func within(root, p string) bool {
 	}
 	_, ok := Relative(root, p)
 	return ok
+}
+
+// entersRoot returns the shortest leading part of p whose links resolved lie at
+// or beneath resolvedRoot, spelled as p spells it, or "" where no leading part of
+// p does. p exists, so every leading part of it does too. It is asked only for a
+// path spelled outside the root, which can still reach the root through a link on
+// the way: a directory outside that leads into the workspace.
+func entersRoot(resolvedRoot, p string) string {
+	prefix := filepath.VolumeName(p) + string(filepath.Separator)
+	rest := strings.TrimPrefix(p[len(filepath.VolumeName(p)):], string(filepath.Separator))
+	if rest == "" {
+		return ""
+	}
+	for _, part := range strings.Split(rest, string(filepath.Separator)) {
+		prefix = filepath.Join(prefix, part)
+		if within(resolvedRoot, resolveExisting(prefix)) {
+			return prefix
+		}
+	}
+	return ""
 }
 
 // absolute is p made absolute against the working directory and cleaned, or p

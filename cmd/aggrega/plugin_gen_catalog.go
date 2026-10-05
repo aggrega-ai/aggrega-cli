@@ -64,6 +64,15 @@ same overlays matched — so a selection gen-catalog would refuse is refused und
 terminal has nowhere better to put them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The workspace is resolved so the output directory can be placed against
+			// it: one inside the workspace holds what is written beneath it to the
+			// workspace, and one outside it — named here, on the command line — is
+			// honoured where it was named and holds what is written beneath it to
+			// itself.
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			// The generation copies every byte it emits to the writer handed in
 			// below, so this command has the whole output already. Both halves of
 			// the result are a second form of those same bytes — the notices are
@@ -71,12 +80,13 @@ terminal has nowhere better to put them.`,
 			// that answers with values instead of prose — so projecting either
 			// would print in full what the terminal has just been shown.
 			// projection-omits GenCatalogResult: the generation already wrote every byte of it to this command's own writer, so both halves are a second form of output the terminal has in full
-			_, err := pluginops.GenCatalog(cmd.Context(), pluginops.GenCatalogOptions{
-				FromEmbedded: opts.fromEmbedded,
-				PluginPath:   opts.pluginPath,
-				OutputDir:    opts.outputDir,
-				OverlayPath:  opts.overlayPath,
-				DryRun:       opts.dryRun,
+			_, err = pluginops.GenCatalog(cmd.Context(), pluginops.GenCatalogOptions{
+				FromEmbedded:  opts.fromEmbedded,
+				PluginPath:    opts.pluginPath,
+				OutputDir:     opts.outputDir,
+				OverlayPath:   opts.overlayPath,
+				DryRun:        opts.dryRun,
+				WorkspaceRoot: rw.Root(),
 			}, cmd.OutOrStdout())
 			return err
 		},

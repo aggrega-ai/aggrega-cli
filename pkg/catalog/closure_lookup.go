@@ -1975,16 +1975,16 @@ func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) (str
 // what was published, exactly as it resolves beside the entity in a catalog
 // directory; and the rule refusing a content path that leaves the entity's own
 // directory holds over the layout unchanged, since that directory is the layout.
-func unpackEntitySlot(workspaceRoot, slot string, published []byte) (string, []byte, error) {
+func unpackEntitySlot(workspaceRoot, cacheDir, slot string, published []byte) (string, []byte, error) {
 	name, document, err := oci.EntityFile(published)
 	if err != nil {
 		return "", nil, err
 	}
 	var dir string
 	if oci.IsTarGzBundle(published) {
-		dir, err = sourcecache.RegenerateExtracted(workspaceRoot, slot, published)
+		dir, err = sourcecache.RegenerateExtracted(workspaceRoot, cacheDir, slot, published)
 	} else {
-		dir, err = sourcecache.RegenerateExtractedDocument(workspaceRoot, slot, name, published)
+		dir, err = sourcecache.RegenerateExtractedDocument(workspaceRoot, cacheDir, slot, name, published)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("catalog: lay out the cached entity at %s: %w", slot, err)

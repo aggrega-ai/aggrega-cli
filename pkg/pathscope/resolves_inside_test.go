@@ -55,6 +55,8 @@ func TestResolvesInside(t *testing.T) {
 		{name: "a link leading nowhere is passed over for its directory", root: root, path: filepath.Join(root, "dangling"), inside: true},
 		{name: "links round a loop are passed over for their directory", root: root, path: filepath.Join(root, "loop-a", "x"), inside: true},
 		{name: "a root reached through a link of its own", root: rootLink, path: filepath.Join(rootLink, "real", "file.txt"), inside: true},
+		{name: "a path entering the root through a link", root: root, path: filepath.Join(rootLink, "real", "file.txt"), inside: true},
+		{name: "a path entering the root through a link and leaving it through another", root: root, path: filepath.Join(rootLink, "out-link", "new", "x.yaml"), wantLink: filepath.Join(rootLink, "out-link"), wantTo: resolvedOutside},
 		{name: "a directory link leading out", root: root, path: filepath.Join(root, "out-link"), wantLink: filepath.Join(root, "out-link"), wantTo: resolvedOutside},
 		{name: "a path not made yet beneath a link leading out", root: root, path: filepath.Join(root, "out-link", "new", "x.yaml"), wantLink: filepath.Join(root, "out-link"), wantTo: resolvedOutside},
 		{name: "a file link leading out", root: root, path: filepath.Join(root, "out-file"), wantLink: filepath.Join(root, "out-file"), wantTo: filepath.Join(resolvedOutside, "file.txt")},

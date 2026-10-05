@@ -166,18 +166,19 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 // creating the slot as needed. It is the one write every file a slot holds goes
 // through, so the slot is held to the workspace in one place.
 //
-// The artifact cache sits inside the workspace, so the slot is held to the
-// workspace at workspaceRoot before anything is written: a cache directory, or a
-// directory on the way to the slot, that is a link leading out of the workspace
-// is refused with the halt the write-scope rule declares, rather than written
-// through.
+// The slot is held, before anything is written, to the root the cache directory
+// picks ([writescope.RootForCache]): the workspace at workspaceRoot, or the cache
+// directory itself where the configuration names one outside the workspace. A
+// cache directory, or a directory on the way to the slot, that is a link leading
+// out of that root is refused with the halt the write-scope rule declares, rather
+// than written through.
 func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []byte) error {
 	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
 	if err != nil {
 		return err
 	}
 	file := filepath.Join(dir, name)
-	if err := writescope.CheckWrite(workspaceRoot, file); err != nil {
+	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), file); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {

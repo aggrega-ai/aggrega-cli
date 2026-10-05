@@ -131,6 +131,64 @@ func TestASignatureBundleIsCachedBeneathTheWorkspaceAndHeldToIt(t *testing.T) {
 	}
 }
 
+// TestASignatureBundleBeneathACacheDirectoryOutsideTheWorkspaceIsHeldToIt drives
+// the same write over a cache directory the configuration names climbing out of
+// the workspace, one shape per row beside a control writing plainly beneath it.
+//
+// The directory is a root of its own: a signatures subtree beneath it that is a
+// link leading out of it is refused, and the place the link leads to is left
+// exactly as it was; the directory itself being a link is honoured where it was
+// named, and the bundle is written where it leads.
+func TestASignatureBundleBeneathACacheDirectoryOutsideTheWorkspaceIsHeldToIt(t *testing.T) {
+	const cacheDir = "../shared-cache"
+	bundle := []byte(`{"signature-bundle":"held-to-the-cache-directory"}`)
+	bundleDigest := digest.ContentDigest(bundle)
+	rows := []struct {
+		name    string
+		layout  func(t *testing.T, cache, elsewhere string)
+		refused bool
+	}{
+		{name: "control: a cache directory outside the workspace", layout: func(*testing.T, string, string) {}},
+		{name: "a signatures subtree that is a link leading out of it is refused", refused: true,
+			layout: func(t *testing.T, cache, elsewhere string) {
+				mustMkdirBundle(t, cache)
+				symlinkOrSkipTrust(t, elsewhere, filepath.Join(cache, "signatures"))
+			}},
+		{name: "the cache directory itself a link is honoured where it was named",
+			layout: func(t *testing.T, cache, elsewhere string) {
+				symlinkOrSkipTrust(t, elsewhere, cache)
+			}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			ws := filepath.Join(t.TempDir(), "ws")
+			elsewhere := t.TempDir()
+			mustMkdirBundle(t, ws)
+			cache := filepath.Join(ws, cacheDir)
+			row.layout(t, cache, elsewhere)
+			before := entriesBeneath(t, elsewhere)
+
+			err := cacheBundleBlob(ws, cacheDir, bundleDigest, bundle)
+			if row.refused {
+				if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
+					t.Fatalf("want the write-leads-out-of-workspace halt, got %v", err)
+				}
+				if after := entriesBeneath(t, elsewhere); !slices.Equal(before, after) {
+					t.Errorf("the place the link leads to changed:\n before %q\n after  %q", before, after)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("refused a bundle its root holds: %v", err)
+			}
+			got, rerr := os.ReadFile(filepath.Join(cache, "signatures", strings.Replace(bundleDigest, ":", "-", 1)+".bundle"))
+			if rerr != nil || !bytes.Equal(got, bundle) {
+				t.Errorf("the bundle is not beneath the cache directory: %q (%v)", got, rerr)
+			}
+		})
+	}
+}
+
 // TestTheBuildReadsTheSignatureBundleThePullCachedFromAnyDirectory caches a
 // plugin's bytes and its signature bundle the way a pull does, then resolves the
 // plugin the way a build does — through the cascade, holding the bundle to its

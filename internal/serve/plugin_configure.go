@@ -708,8 +708,9 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 	}
 
 	opts := pluginops.GenCatalogOptions{
-		FromEmbedded: params.FromEmbedded,
-		DryRun:       params.DryRun,
+		FromEmbedded:  params.FromEmbedded,
+		DryRun:        params.DryRun,
+		WorkspaceRoot: s.workspaceRoot,
 	}
 	// The three paths are resolved by TWO rules, and which rule a path takes
 	// follows from whether the generation reads it or writes to it. The module and

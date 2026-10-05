@@ -41,7 +41,7 @@ func TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir, err := sourcecache.RegenerateExtracted("", slot, archive)
+	dir, err := sourcecache.RegenerateExtracted("", "", slot, archive)
 	if err != nil {
 		t.Fatalf("RegenerateExtracted: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestRegenerateExtractedRefusesAnEntryLeavingTheDirectory(t *testing.T) {
 	_ = tw.Close()
 	_ = gz.Close()
 
-	_, err := sourcecache.RegenerateExtracted("", slot, buf.Bytes())
+	_, err := sourcecache.RegenerateExtracted("", "", slot, buf.Bytes())
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Fatalf("an entry leaving the directory must be refused as an integrity failure; got %v", err)
 	}
@@ -122,7 +122,7 @@ func TestRegenerateExtractedDocumentLaysOutTheOneFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir, err := sourcecache.RegenerateExtractedDocument("", slot, "entity.yaml", document)
+	dir, err := sourcecache.RegenerateExtractedDocument("", "", slot, "entity.yaml", document)
 	if err != nil {
 		t.Fatalf("RegenerateExtractedDocument: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestRegenerateExtractedDocumentLaysOutTheOneFile(t *testing.T) {
 func TestRegenerateExtractedDocumentRefusesANameLeavingTheTree(t *testing.T) {
 	t.Parallel()
 	slot := t.TempDir()
-	_, err := sourcecache.RegenerateExtractedDocument("", slot, "../entity.yaml", []byte("kind: Component\n"))
+	_, err := sourcecache.RegenerateExtractedDocument("", "", slot, "../entity.yaml", []byte("kind: Component\n"))
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Fatalf("a document name leaving the tree must be refused as an integrity failure; got %v", err)
 	}

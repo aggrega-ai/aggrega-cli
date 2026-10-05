@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -47,6 +48,14 @@ import (
 // only to be checked applies the rules the lock already records and asks no
 // plugin, so a binding changed or a binary upgraded since the pin moves nothing it
 // compares. Nil records no plugin and composes the author's rules alone.
+//
+// NamedDirs are the catalog directories of View's stack that somebody named — the
+// directory of a document named by path, a directory typed on the command line, a
+// directory the configuration lists — as opposed to the workspace's conventional
+// one. A lock beside an entity found beneath a named directory is held to the root
+// that directory picks ([writescope.RootFor]): the workspace root where it lies
+// inside the workspace, and the directory itself where it lies outside it. A lock
+// beside any other entity is held to WorkspaceRoot.
 type PlanInputs struct {
 	View            *catalog.LazyLookup
 	URIs            []string
@@ -55,6 +64,7 @@ type PlanInputs struct {
 	CacheDir        string
 	ForWriting      bool
 	ServingProvider func(capability string) (catalog.ServingProvider, bool, error)
+	NamedDirs       []string
 }
 
 // Plan is what the pin step would record for each entity it was given, computed
@@ -93,13 +103,15 @@ var errPlanNotForWriting = errors.New("internal: the pin step's plan was compute
 // entityPlan is one entity the step would pin: the document it was read from,
 // the kind and name that identify it to a reader, the pins its inputs need now
 // and the pins its lock records for them — a lock's local source pins only where
-// the entity declares a local source for them to pin.
+// the entity declares a local source for them to pin — and the root its lock is
+// held to.
 type entityPlan struct {
 	path     string
 	kind     string
 	name     string
 	want     recipepin.Pins
 	recorded recipepin.Pins
+	lockRoot string
 }
 
 // Outcome reports what the step did, or would do, to one entity's lock.
@@ -193,7 +205,8 @@ func Compute(in PlanInputs) (Plan, error) {
 			kindHint:   kindHint,
 			capability: capability,
 			artifacts:  artifacts,
-			plan:       entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path)},
+			plan: entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path),
+				lockRoot: lockRoot(in, path)},
 		})
 	}
 	// One refusal is returned as itself, so the diagnostic a reader meets is the
@@ -264,6 +277,24 @@ func Compute(in PlanInputs) (Plan, error) {
 	}
 	sort.Slice(plan.entities, func(i, j int) bool { return plan.entities[i].path < plan.entities[j].path })
 	return plan, nil
+}
+
+// lockRoot returns the root the lock beside the entity document at path is held
+// to: the root the first of in.NamedDirs that path lies beneath picks, and the
+// workspace root where it lies beneath none of them.
+//
+// Which named directory a document lies beneath is a question of its spelling,
+// and rightly so: the catalog walk recorded path by joining the directory it
+// walked with the names beneath it, so the directory that spells it is the one
+// the entity was found in. The stack is first-win in the order NamedDirs keeps,
+// so the first directory that spells it is the one whose walk read it.
+func lockRoot(in PlanInputs, path string) string {
+	for _, dir := range in.NamedDirs {
+		if _, beneath := pathscope.Relative(dir, path); beneath {
+			return writescope.RootFor(in.WorkspaceRoot, dir)
+		}
+	}
+	return in.WorkspaceRoot
 }
 
 // sourcePinsByEntity routes each resolved source to the entities whose own
@@ -475,7 +506,7 @@ func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 		}
 		lock := recipepin.LockPath(e.path)
 		if moves {
-			if err := p.holdLock(lock, content); err != nil {
+			if err := holdLock(e.lockRoot, lock, content); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -495,14 +526,14 @@ func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
 	return outcomes, files, nil
 }
 
-// holdLock holds one lock the step would move to the workspace, given the bytes
-// the step would leave there: no bytes is a removal, judged as one, and anything
-// else is a write.
-func (p Plan) holdLock(lock string, content []byte) error {
+// holdLock holds one lock the step would move to root, given the bytes the step
+// would leave there: no bytes is a removal, judged as one, and anything else is a
+// write.
+func holdLock(root, lock string, content []byte) error {
 	if len(content) == 0 {
-		return writescope.CheckDelete(p.workspaceRoot, lock)
+		return writescope.CheckDelete(root, lock)
 	}
-	return writescope.CheckWrite(p.workspaceRoot, lock)
+	return writescope.CheckWrite(root, lock)
 }
 
 // outcome describes this entity's lock after a step that did, or would, move it
