@@ -59,6 +59,9 @@ var (
 	errInsertionFileOutsideWorkspace = errors.New("the document named is not inside the workspace, and a " +
 		"position is only reported for a document the workspace carries")
 
+	errInsertionFileLeadsOut = errors.New("the document named leads outside the workspace through a link, and a " +
+		"position is only reported for a document the workspace carries")
+
 	errInsertionFileUnreadable = errors.New("the document named could not be read")
 
 	errInsertionFileUnparseable = errors.New("the document named is not well-formed YAML, so it has no " +
@@ -174,6 +177,15 @@ func insertionPointIn(root, file string, container []string, enc yamlpos.Positio
 		return InsertionPointResult{}, errInsertionFileOutsideWorkspace
 	}
 	abs := filepath.Join(root, rel)
+
+	// That judgement is lexical, so the document is then judged with its links
+	// resolved, by the judgement every path a request names for the daemon to read
+	// is held to: a file named inside the root that leads out of it through a link
+	// is refused, whichever of the three spellings named it, and whether or not an
+	// editor holds a copy of it.
+	if leadsOutOfWorkspace(root, abs, nil) {
+		return InsertionPointResult{}, errInsertionFileLeadsOut
+	}
 
 	var content []byte
 	if overlay != nil {

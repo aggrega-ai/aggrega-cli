@@ -61,8 +61,11 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 // 🔴 What this confines without exception is where an operation WRITES. A
 // destination of the request's own choosing would let a session create or
 // overwrite files in a tree it was never opened over, and no request here may
-// name one: every destination a request carries — each outputDir, the build's
-// outputParent, and every file a method edits in place — is judged here.
+// name one: each outputDir, the build's outputParent, the entity a pin writes its
+// lock beside and the files the plugin alignment edits in place are judged here.
+// The structured document edit, whose file the edit layer resolves, is held to
+// the same destination judgement before that layer is reached
+// (ApplyDocumentEdit).
 //
 // A path an operation only READS is a separate question, decided per parameter
 // rather than by one rule over all of them, because a file the person driving the
@@ -77,11 +80,24 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 // absolute value, a value climbing out of the root, and an empty value are all
 // refused by the same rule every other workspace-scoped path is judged by, rather
 // than by a comparison written here.
+//
+// That rule is lexical, so a value it accepts is then judged with its links
+// resolved, by the one judgement every destination a request names is held to
+// (destinationLeadsOut): the deepest part of the path that exists is resolved,
+// and a value written inside the root whose deepest existing part lies outside it
+// is refused, so nothing is written outside the workspace through a link — into a
+// linked directory that leads out, or into a directory not made yet beneath one.
+// The refusal quotes the value as it was sent and says nothing of where the link
+// leads. The path returned is still the one the value spells.
 func (s *Server) workspacePath(what, raw string) (string, error) {
 	resolved, ok := pathscope.Resolve(s.workspaceRoot, raw)
 	if !ok {
 		return "", fmt.Errorf("%s must name a path inside the workspace this session opened (%s), "+
 			"relative to its root; %q is absolute or climbs out of it", what, s.workspaceRoot, raw)
+	}
+	if destinationLeadsOut(s.workspaceRoot, resolved) {
+		return "", fmt.Errorf("%s must name a path inside the workspace this session opened (%s), "+
+			"relative to its root; %q leads out of it through a link", what, s.workspaceRoot, raw)
 	}
 	return resolved, nil
 }

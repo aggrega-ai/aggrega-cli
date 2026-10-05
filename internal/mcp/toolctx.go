@@ -497,6 +497,22 @@ func catalogDirsGuidance(action string, refusal error) string {
 	return explainToolErrorAt(action, errors.New(cerrors.CauseChain(refusal)), docServerReference)
 }
 
+// destinationArguments are the path arguments naming where a tool WRITES, keyed as
+// "<tool>: <argument>": a directory written into, a document written back in
+// place, and a document a lock is written beside. Over a listener each is judged
+// as a destination rather than as a document read — by the deepest part of it
+// that exists — because a destination may name a directory not made yet, which a
+// judgement of the whole path would let through beneath a link leading out.
+//
+// It is a decision about each argument, and a guard holds it to the arguments the
+// path guard's inventory describes as written, in both directions, so an argument
+// renamed or newly written cannot fall out of it unnoticed.
+var destinationArguments = map[string]bool{
+	"edit-document: file":     true,
+	"gen-catalog: output_dir": true,
+	"pin: entity":             true,
+}
+
 // workspacePath resolves a path a tool call named, in the way the transport this
 // session speaks allows, and reports the corrective text for a path that
 // transport does not let the call name. An empty refusal means the resolved path
@@ -529,7 +545,11 @@ func catalogDirsGuidance(action string, refusal error) string {
 // 'release' argument naming a Release the workspace configuration names is
 // reached through the configuration and is let through, as the language server
 // lets it through ([serve.ReleaseLeadsOutOfWorkspace]); no other argument has
-// such an exception.
+// such an exception. An argument naming where a tool WRITES (destinationArguments)
+// is judged as the language server judges every destination a request names
+// ([serve.DestinationLeadsOutOfWorkspace]): by the deepest part of it that exists,
+// so a directory not made yet beneath a link leading out is refused as the link
+// itself is.
 //
 // tool and argument are the caller's own words for what is being resolved — the
 // tool's advertised name and the argument's — so the refusal names what to
@@ -553,7 +573,10 @@ func (tw *toolWorkspace) workspacePath(tool, argument, raw string) (string, stri
 	}
 	if resolved, ok := pathscope.Resolve(tw.root, rel); ok {
 		leadsOut := serve.LeadsOutOfWorkspace(tw.root, resolved)
-		if argument == "release" {
+		switch {
+		case destinationArguments[tool+": "+argument]:
+			leadsOut = serve.DestinationLeadsOutOfWorkspace(tw.root, resolved)
+		case argument == "release":
 			leadsOut = serve.ReleaseLeadsOutOfWorkspace(tw.root, tw.cfg, resolved)
 		}
 		if !leadsOut {

@@ -313,6 +313,55 @@ func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {
 	}
 }
 
+// TestEveryWrittenPathArgumentIsJudgedAsADestination keeps the arguments judged as
+// destinations the same set as the arguments this guard's inventory describes as
+// WRITTEN, in both directions.
+//
+// The two are one decision held in two places, and the failure this guards is the
+// two drifting apart in silence: an argument the inventory says a tool writes
+// through that is judged as a document read lets a directory not made yet beneath
+// a link leading out through, and an entry in the destination set naming no
+// sanctioned argument — a renamed tool or argument — judges nothing while reading
+// as though it did. The inventory's descriptions mark a written argument with the
+// word WRITTEN, which is the convention its own comment states, so the comparison
+// reads that word rather than a second list.
+func TestEveryWrittenPathArgumentIsJudgedAsADestination(t *testing.T) {
+	var written []string
+	for label, names := range workspacePathArguments {
+		if strings.Contains(names, "WRITTEN") {
+			written = append(written, label)
+		}
+	}
+	sort.Strings(written)
+	if len(written) == 0 {
+		t.Fatal("the inventory describes no argument as WRITTEN — the comparison below would pass over nothing")
+	}
+
+	var judged []string
+	for label, isDestination := range destinationArguments {
+		if isDestination {
+			judged = append(judged, label)
+		}
+	}
+	sort.Strings(judged)
+
+	for _, label := range written {
+		if !destinationArguments[label] {
+			t.Errorf("%q is described as WRITTEN but is not judged as a destination — add it to destinationArguments", label)
+		}
+	}
+	for _, label := range judged {
+		names, sanctioned := workspacePathArguments[label]
+		if !sanctioned {
+			t.Errorf("%q is judged as a destination but names no sanctioned path argument — a renamed tool or argument?", label)
+			continue
+		}
+		if !strings.Contains(names, "WRITTEN") {
+			t.Errorf("%q is judged as a destination but the inventory does not describe it as WRITTEN: %q", label, names)
+		}
+	}
+}
+
 // stringConstants collects the package's string constants by name, so a call
 // naming its tool through the constant that already holds that name is judged
 // against the same value a literal would be.

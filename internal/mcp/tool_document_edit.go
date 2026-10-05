@@ -10,6 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/editops"
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -212,7 +213,7 @@ func editDocumentInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 	}
 
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
-	res, err := editops.Apply(ctx, tw.root, editops.Options{
+	res, err := serve.ApplyDocumentEdit(ctx, tw.root, editops.Options{
 		File:     file,
 		Kind:     editops.Kind(a.Edit),
 		Node:     a.Node,

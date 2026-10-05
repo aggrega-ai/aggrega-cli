@@ -455,6 +455,63 @@ func ReleaseLeadsOutOfWorkspace(root string, cfg workspaceconfig.Config, path st
 	return leadsOutOfWorkspace(root, path, &cfg)
 }
 
+// destinationLeadsOut reports whether a place the daemon is asked to write — a
+// directory written into, or a document written in place or beside — lies outside
+// the workspace root once the deepest part of it that exists has its links
+// resolved.
+//
+// A destination need not exist yet: the directory a generation or an import
+// creates is named before it is made. Resolving the whole path, as
+// leadsOutOfWorkspace does for a document read, resolves nothing for such a path
+// and so judges nothing, while the directories on the way that do exist are the
+// very ones the write goes through. So the path is walked up to the deepest part
+// of it that exists, and that part is judged by the one resolution resolveLink
+// makes, against the root resolved the same way. Where the whole path exists that
+// part is the path itself, and the answer is the one leadsOutOfWorkspace gives a
+// read of it.
+//
+// An entry that exists only as a link leading nowhere, or round a loop, does not
+// count as existing: it is passed over and the directory holding it is judged, and
+// nothing is followed to find out where such a link was meant to go. What a
+// request names as a destination is a directory to write into — nothing is
+// created inside a directory that is not there — or a document the request reads
+// before it writes in its place or beside it, so the write such a link stands in
+// for fails where the link is met.
+//
+// No destination is let through by the workspace's configuration. The exception
+// the configuration makes is for a Release it names, which is read; nothing a
+// request writes is reached through the configuration.
+func destinationLeadsOut(root, path string) bool {
+	scope := linkScope{root: root}
+	scope.resolve()
+	return resolveLink(deepestExisting(absolutePath(path)), scope.resolvedRoot).outside
+}
+
+// DestinationLeadsOutOfWorkspace reports whether the place at path — absolute,
+// and spelled inside root — that a request names for something to be written lies
+// outside root once the deepest part of it that exists has its links resolved, by
+// the same judgement the language server holds every destination a request names
+// to. A caller confining a destination it was sent asks it after the lexical
+// containment check, which resolves no link.
+func DestinationLeadsOutOfWorkspace(root, path string) bool {
+	return destinationLeadsOut(root, path)
+}
+
+// deepestExisting returns path where something is there once its links are
+// followed, and otherwise the nearest directory above it that is.
+func deepestExisting(path string) string {
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return path
+		}
+		path = parent
+	}
+}
+
 // linkScope is what judging a link met by a workspace walk, or a path the daemon
 // is handed, is measured against: the workspace root, made absolute and with its
 // own links resolved, and the Releases the workspace's configuration names. Each
