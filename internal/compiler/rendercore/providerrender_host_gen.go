@@ -85,12 +85,14 @@ type NodeProvenance struct {
 	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty" cbor:"provider_version,omitempty"`
 }
 
-// RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, the names it derived into each of its own key spaces, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
+// RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, the names it derived into each of its own key spaces, the facts it reports about what it emitted, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type RenderNodeOutput struct {
 	// Files The output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
 	Files []RenderedFile `json:"files" yaml:"files" cbor:"files"`
 	// DerivedKeys The names the guest derived while rendering this node, keyed by the key space it derived them into, each space carrying its names in derivation order. A guest that derives the name its output addresses a resource by has put that name inside the file bytes the host writes verbatim, where the host cannot see it; declaring it here is how the guest asks the host to confirm no two derivations landed on one name. The host compares declared names for equality within one declared space and does nothing else — it does not parse a name, does not learn what a space or a name means, and never derives one itself. Two contributors to the same assembled output that declare the same name in the same space halt the build, and the halt names the space, the name, and both contributors. Both the space names and the names within them are the guest's own vocabulary: a guest wanting uniqueness across a narrower or wider scope than one assembled output expresses that scope in the space name it declares. Preserves declaration order so the payload is byte-identical across runs of identical input. Absent when the guest derives no names it wants checked, which leaves the check inert for that guest.
 	DerivedKeys types.OrderedMap[[]string] `json:"derived_keys,omitempty,omitzero" yaml:"derived_keys,omitempty" cbor:"derived_keys,omitempty"`
+	// RenderFacts Facts the guest reports about what it emitted for this node, in the order the guest lists them. Each fact pairs a name with a value, and both are the guest's own vocabulary: which facts a provider reports, what each name means and what shape each value takes are part of that provider's documented contract, not of this socket's. The host carries the list verbatim and in order — it reads no name, parses no value and never derives a fact itself — so a provider can report something only its own format knowledge can see, such as a property of the documents it wrote, without the host learning that format. Reporting facts never changes what is written: the files the host writes are the files the guest returned, whether or not facts accompany them. The guest lists its facts in a fixed order so the payload is byte-identical across runs of identical input. Absent when the guest reports nothing, which is a complete answer rather than a missing one.
+	RenderFacts []RenderFact `json:"render_facts,omitempty" yaml:"render_facts,omitempty" cbor:"render_facts,omitempty"`
 	// Diagnostics Diagnostics the guest raised while rendering. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
@@ -121,6 +123,14 @@ type RenderedFile struct {
 	Content []byte `json:"content" yaml:"content" cbor:"content"`
 	// Format The format the guest declares the emitted file was rendered in, so the host can route the file to a matching parser. Absent when the guest declares no format, in which case the host infers the format from the file extension.
 	Format string `json:"format,omitempty" yaml:"format,omitempty" cbor:"format,omitempty"`
+}
+
+// RenderFact One fact a Provider guest reports about what it emitted for a node: a name and a value, both defined and documented by the provider. The host carries the fact exactly as the guest wrote it and reads neither half.
+type RenderFact struct {
+	// Name The fact's name, from the provider's own documented vocabulary.
+	Name string `json:"name" yaml:"name" cbor:"name"`
+	// Value The fact's value: any JSON value — an object, an array, a string, a number, a boolean — in the shape the provider documents for that name. It is carried as the JSON document the guest wrote, byte for byte, so the order of an object's keys and of an array's items is the guest's own.
+	Value json.RawMessage `json:"value" yaml:"value" cbor:"value"`
 }
 
 // SourceFile One file of a pre-packaged source projection: its chart-root-relative path and its raw bytes, exactly as the host read them from the local source at compile time.
@@ -251,7 +261,7 @@ type AssembleBoundaryInput struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 }
 
-// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its deployment wave, the values the compiler resolved for it where those are the compiler's to supply, and the render output the render_node export produced for it.
+// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its sync wave, the values the compiler resolved for it where those are the compiler's to supply, and the files the render_node export produced for it — carried in the render output's shape, with every member of that shape other than its files left absent.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph. A contributor that is not one of the graph's nodes — a Feature attached at a boundary rather than at a component — carries the compiler's own dispatch identity for it here instead, which is the same identity the render_node call for that contributor carried; it distinguishes one contributor from another and is not a name any target accepts. What such a contributor derives names from inside the assembled artifact is a separate carry, derived_name_basis.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -1160,6 +1170,26 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
+	if len(t.RenderFacts) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"render_facts\":")
+		buf.WriteByte('[')
+		for i := range t.RenderFacts {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.RenderFacts[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
 	if len(t.Diagnostics) != 0 {
 		if !first {
 			buf.WriteByte(',')
@@ -1251,6 +1281,25 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "render_facts":
+			t.RenderFacts = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem RenderFact
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.RenderFacts = append(t.RenderFacts, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
 		case "diagnostics":
 			t.Diagnostics = nil
 			if err := expectDelim(dec, '['); err != nil {
@@ -1309,7 +1358,7 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderNodeOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "files", "derived_keys", "diagnostics", "error", "condition_code", "condition_short_code"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "files", "derived_keys", "render_facts", "diagnostics", "error", "condition_code", "condition_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -1529,6 +1578,79 @@ func (t *RenderedFile) UnmarshalJSON(data []byte) error {
 // check reads the object's own keys and does not descend.
 func (t *RenderedFile) UnmarshalJSONStrict(data []byte) error {
 	if err := refuseUndeclaredJSONKeys(data, "path", "content", "format"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes RenderFact in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t RenderFact) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"name\":")
+	writeJSONString(&buf, t.Name)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"value\":")
+	buf.Write(t.Value)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes RenderFact with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *RenderFact) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "value":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				t.Value = raw
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes RenderFact exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *RenderFact) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "name", "value"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -6328,6 +6450,9 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.DerivedKeys.IsZero() {
 		n++
 	}
+	if len(t.RenderFacts) != 0 {
+		n++
+	}
 	if t.ConditionCode != "" {
 		n++
 	}
@@ -6374,6 +6499,16 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 					ev := mv[i]
 					dst = appendCBORTextString(dst, ev)
 				}
+			}
+		}
+	}
+	if len(t.RenderFacts) != 0 {
+		dst = appendCBORTextString(dst, "render_facts")
+		dst = appendCBORHead(dst, 4, uint64(len(t.RenderFacts)))
+		for i := range t.RenderFacts {
+			ev := t.RenderFacts[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -6456,6 +6591,22 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 				}
 				t.DerivedKeys = om
 			}
+		case "render_facts":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderFact, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderFact
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.RenderFacts = s
+			}
 		case "diagnostics":
 			{
 				sn, err := dec.readArrayHeader()
@@ -6512,7 +6663,7 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderNodeOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "files", "derived_keys", "diagnostics", "error", "condition_code", "condition_short_code"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "files", "derived_keys", "render_facts", "diagnostics", "error", "condition_code", "condition_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -6728,6 +6879,77 @@ func (t *RenderedFile) decodeCBOR(dec *cborDec) error {
 // check reads the map's own keys and does not descend.
 func (t *RenderedFile) DecodeCBORStrict(data []byte) error {
 	if err := refuseUndeclaredCBORKeys(data, "path", "content", "format"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes RenderFact as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderFact) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderFact's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderFact) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	dst = appendCBORTextString(dst, "value")
+	dst = appendCBORByteString(dst, t.Value)
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderFact from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderFact) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderFact) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "value":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Value = json.RawMessage(v)
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes RenderFact exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderFact) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "name", "value"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

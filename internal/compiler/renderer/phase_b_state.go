@@ -169,6 +169,26 @@ type PhaseBState struct {
 	// nothing, which leaves the check inert for it.
 	DerivedKeys derivedKeyLedger
 
+	// RenderFacts are the facts the node's provider guest reported about what the
+	// node's OWN render emitted: each crossing's report in the order the guest
+	// listed it, and the crossings in the order they ran. They are carried exactly
+	// as the guest wrote them — no name is read and no value is parsed — on the
+	// state the attachment pass is handed. Empty for a node whose guest reports
+	// nothing.
+	//
+	// An attachment's render never adds to this: what an attachment emitted is
+	// recorded beside it, in AttachmentRenderFacts, so this stays a statement about
+	// the host's own render alone.
+	RenderFacts []RenderFact
+
+	// AttachmentRenderFacts are the facts each Feature attachment's guest reported
+	// about what that attachment's render emitted, keyed by the instance name the
+	// author attached it under, in the order the attachments rendered. Within one
+	// attachment the facts keep the order they arrived in, exactly as
+	// RenderFacts does for the node's own render. An attachment whose guest
+	// reports nothing has no entry.
+	AttachmentRenderFacts types.OrderedMap[[]RenderFact]
+
 	// Trace is the per-node trace.Writer threaded from the orchestrator.
 	// nil-safe: a no-op writer when --trace is off, an async fs writer
 	// when --trace is on. Sub-passes call state.Trace.Write directly to
@@ -339,6 +359,20 @@ type PhaseBState struct {
 	// what its Recipe renders against, and that render must not depend on who
 	// connects to it. nil when nothing connects to the node.
 	InboundEdges []types.InboundEdge
+}
+
+// recordRenderFacts appends one crossing's report of what the node's own render
+// emitted, in the order the guest listed it. It is the node's render-fact sink.
+func (s *PhaseBState) recordRenderFacts(reported []RenderFact) {
+	s.RenderFacts = append(s.RenderFacts, reported...)
+}
+
+// recordAttachmentRenderFacts appends one crossing's report of what the named
+// attachment's render emitted, under that attachment's own instance name, so a
+// fact an attachment's guest reported is never read as one its host reported.
+func (s *PhaseBState) recordAttachmentRenderFacts(instance string, reported []RenderFact) {
+	prior, _ := s.AttachmentRenderFacts.Get(instance)
+	s.AttachmentRenderFacts.Set(instance, append(prior, reported...))
 }
 
 // capture writes one per-pass display snapshot for this node.

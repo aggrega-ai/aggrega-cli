@@ -203,6 +203,24 @@ type NodeRenderContext struct {
 	// byte-identical whether or not a sink is attached. Host-only: not part of any
 	// wire projection sent to a guest.
 	DerivedKeySink func(types.OrderedMap[[]string])
+	// RenderFactSink, when non-nil, receives the facts a provider engine's guest
+	// reports about what it emitted while rendering this node, in the order the
+	// guest listed them. Each fact is a name and a value, and both are the guest's
+	// own vocabulary: a provider engine forwards the report verbatim, the host reads
+	// no name and parses no value, and nothing a provider's format means is learned
+	// here. A node may render across more than one crossing, so the sink is called
+	// once per crossing that reports anything; a crossing whose guest reports
+	// nothing costs it no call.
+	//
+	// The orchestrator wires it to the node's own record of what its render
+	// reported. A Feature attachment's render carries a copy of this context and
+	// rewires the sink to a record of its own, because what an attachment emitted
+	// is not what its host rendered.
+	//
+	// Like DerivedKeySink it never affects emitted bytes: the files written are the
+	// files the guest returned, whether or not facts accompany them. Host-only: not
+	// part of any wire projection sent to a guest.
+	RenderFactSink func([]RenderFact)
 }
 
 // SourceIgnore is the recorded ignore rule list a render applies to an entity's

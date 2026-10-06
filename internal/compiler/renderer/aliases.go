@@ -92,6 +92,7 @@ type (
 	RenderEdge                 = rendercore.RenderEdge
 	RenderNodeInput            = rendercore.RenderNodeInput
 	RenderNodeOutput           = rendercore.RenderNodeOutput
+	RenderFact                 = rendercore.RenderFact
 	RenderedFile               = rendercore.RenderedFile
 	RenderedNameInput          = rendercore.RenderedNameInput
 	RenderedNameOutput         = rendercore.RenderedNameOutput

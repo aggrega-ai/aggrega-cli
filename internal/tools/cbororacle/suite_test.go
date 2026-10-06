@@ -227,6 +227,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.PolicyOutput](t, "PolicyOutput", false)
 	vec[abi.RenderNodeInput](t, "RenderNodeInput", false)
 	vec[abi.RenderNodeOutput](t, "RenderNodeOutput", false)
+	// A render output carrying a populated fact list. Each value crosses as a byte
+	// string of the JSON bytes the guest wrote — a raw-message field, which the
+	// reference encoder writes as a byte string too — so it stays anchored.
+	vec[abi.RenderNodeOutput](t, "RenderNodeOutputRenderFacts", false)
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
 	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitivePayloadLeaves", false)
 	vec[abi.IRSpec](t, "IRSpecConnectionAttachment", false)

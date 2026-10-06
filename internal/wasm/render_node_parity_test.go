@@ -265,4 +265,30 @@ func TestRenderSocketParity_RustTypeScript(t *testing.T) {
 	if !reflect.DeepEqual(rustNodeEcho, tsNodeEcho) {
 		t.Fatalf("render-socket parity mismatch between Rust and TypeScript:\n rust = %q\n ts   = %q", rustNodeEcho, tsNodeEcho)
 	}
+
+	// The render facts each fixture reports are compared byte for byte, unlike the
+	// attachment echo above: a fact's value crosses as the JSON its guest wrote, so
+	// two guests writing the same value produce the same bytes whatever their
+	// language's map container does — which is what lets a provider fix the order
+	// of a value's keys itself. Both fixtures list their facts out of name order and
+	// write the echoed node's keys out of key order, so a decode that sorted either
+	// would fail here.
+	wantFacts := []struct{ name, value string }{
+		{"emitted_paths", `["parity.txt","attachments.txt"]`},
+		{"echoed_node", `{"prefix":"rendered-node:","id":"parity-node-01"}`},
+	}
+	for _, tc := range []struct {
+		name string
+		out  renderer.RenderNodeOutput
+	}{{"rust", rustOut}, {"typescript", tsOut}} {
+		if len(tc.out.RenderFacts) != len(wantFacts) {
+			t.Fatalf("%s: reported %d render facts, want %d", tc.name, len(tc.out.RenderFacts), len(wantFacts))
+		}
+		for i, want := range wantFacts {
+			got := tc.out.RenderFacts[i]
+			if got.Name != want.name || string(got.Value) != want.value {
+				t.Errorf("%s: render fact %d = %s=%s, want %s=%s", tc.name, i, got.Name, got.Value, want.name, want.value)
+			}
+		}
+	}
 }

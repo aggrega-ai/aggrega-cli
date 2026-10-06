@@ -363,6 +363,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
+	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
 
 	seen := make(map[string]struct{}, len(out.Files))
 	for _, f := range out.Files {
@@ -421,6 +422,7 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
+	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
 
 	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
@@ -469,6 +471,7 @@ func (e *Engine) EmitArtifacts(
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
+	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
 
 	origins := renderer.NewArtifactOriginIndex(proj)
 
@@ -691,6 +694,27 @@ func (e *Engine) surfaceDerivedKeys(nodeCtx renderer.NodeRenderContext, declared
 		return
 	}
 	nodeCtx.DerivedKeySink(declared)
+}
+
+// surfaceRenderFacts forwards the facts a guest reports about what it emitted to
+// the node's render-fact sink (nil-safe), verbatim and in the guest's own order.
+// It is the one place a provider engine hands that report to the host, so every
+// render crossing reports through the same seam.
+//
+// Nothing here reads a name or looks inside a value. The JSON decode already
+// copies each value out of the guest's reply; the forward copies it again so the
+// sink never depends on how a reply was decoded, because that reply also holds
+// every file the guest emitted and a fact kept after the crossing must not keep
+// them alive. A guest that reports nothing costs the sink no call.
+func (e *Engine) surfaceRenderFacts(nodeCtx renderer.NodeRenderContext, reported []renderer.RenderFact) {
+	if nodeCtx.RenderFactSink == nil || len(reported) == 0 {
+		return
+	}
+	forwarded := make([]renderer.RenderFact, len(reported))
+	for i, fact := range reported {
+		forwarded[i] = renderer.RenderFact{Name: fact.Name, Value: bytes.Clone(fact.Value)}
+	}
+	nodeCtx.RenderFactSink(forwarded)
 }
 
 // advertisesExport reports whether the guest's describe() self-report declares an

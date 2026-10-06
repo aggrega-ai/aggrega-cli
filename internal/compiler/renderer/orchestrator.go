@@ -1761,6 +1761,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(nodeContributor, declared)
 		}
+		// The facts the node's provider guest reports about what this render
+		// emitted accumulate on the node's state, in the order they arrive, so the
+		// attachment pass below is handed them with the rest of the state. Attached
+		// before any crossing runs, for the reason the two sinks above are. An
+		// attachment's render rewires its copy to a record of its own.
+		nodeCtx.RenderFactSink = state.recordRenderFacts
 		// The source as its author wrote it is the catalog's Recipe, which nothing
 		// replaced: the copy in hand carries the value the template produced.
 		var authoredSource any

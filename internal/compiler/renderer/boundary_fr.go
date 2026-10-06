@@ -621,6 +621,11 @@ func dispatchBoundaryScopeFR(
 		boundaryFRState.DerivedKeys[key] = merged
 		boundaryFRState.DerivedKeyRepeats[key] = append(boundaryFRState.DerivedKeyRepeats[key], repeated...)
 	}
+	// The facts this FR's guest reports are not recorded. The copied context's
+	// sink records the consumer node's own render, and this render is not that
+	// node's — it belongs to the boundary, and no node's record of what it rendered
+	// includes it.
+	frNodeCtx.RenderFactSink = nil
 	// The boundary-scope FR's source resolves through the shared
 	// resolve+extract helper against the boundary's own infra — the SAME
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —

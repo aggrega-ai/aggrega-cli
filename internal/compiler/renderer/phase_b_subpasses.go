@@ -695,6 +695,13 @@ func phaseB6(
 		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(attachmentContributor, declared)
 		}
+		// The facts this attachment's guest reports are rewired for the same reason:
+		// the copied sink records the host's OWN render, and a fact arriving there
+		// would read as something the host emitted. They are recorded under this
+		// attachment's instance name instead, beside the host's.
+		frNodeCtx.RenderFactSink = func(reported []RenderFact) {
+			state.recordAttachmentRenderFacts(item.Instance, reported)
+		}
 		// The document this attachment's FeatureRecipe was declared in: what a
 		// relative source its template produces is resolved against, and what a
 		// diagnostic raised inside its render names as its location. An entity
