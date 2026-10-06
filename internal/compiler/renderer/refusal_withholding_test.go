@@ -310,6 +310,45 @@ func TestEvalTemplateDecoded_WithholdsADeclaredValueFromADecodeFailure(t *testin
 	}
 }
 
+// TestSameDecodeFailure_ComparesEverythingOutsideTheQuotes pins which two decode
+// failures count as one: the text a decoder quotes between backquotes may differ,
+// and nothing else may — not the text around the quotes, not the number of them,
+// and not the text after a backquote that opens no quote.
+func TestSameDecodeFailure_ComparesEverythingOutsideTheQuotes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name              string
+		real, substituted string
+		want              bool
+	}{
+		{name: "no quotes, the same text", real: "yaml: line 1: did not find expected key", substituted: "yaml: line 1: did not find expected key", want: true},
+		{name: "no quotes, different text", real: "yaml: line 1: did not find expected key", substituted: "yaml: line 2: did not find expected key"},
+		{name: "only the quoted text differs", real: "yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `long-de...` into int", substituted: "yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `<withh...` into int", want: true},
+		{name: "the target type differs", real: "line 1: cannot unmarshal !!str `a` into int", substituted: "line 1: cannot unmarshal !!str `a` into bool"},
+		{name: "the line differs", real: "line 1: cannot unmarshal !!str `a` into int", substituted: "line 2: cannot unmarshal !!str `b` into int"},
+		{name: "every quote differs", real: "line 1: `a` into int; line 2: `b` into int", substituted: "line 1: `x` into int; line 2: `y` into int", want: true},
+		{name: "an empty quote against a filled one", real: "line 1: cannot unmarshal !!str `` into int", substituted: "line 1: cannot unmarshal !!str `x` into int", want: true},
+		{name: "a different number of quotes", real: "line 1: `a` into int", substituted: "line 1: `a` into int; line 2: `b` into int"},
+		{name: "a quote on one side only", real: "line 1: cannot unmarshal into int", substituted: "line 1: cannot unmarshal `` into int"},
+		{name: "after an unpartnered backquote, the same text", real: "line 1: `a` into int `rest", substituted: "line 1: `b` into int `rest", want: true},
+		{name: "after an unpartnered backquote, different text", real: "line 1: `a` into int `rest", substituted: "line 1: `a` into int `other"},
+		{name: "a third backquote after a closed quote, the same text between", real: "x `a`mid` y", substituted: "x `b`mid` y", want: true},
+		{name: "a third backquote after a closed quote, different text between", real: "x `a`mid` y", substituted: "x `a`other` y"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sameDecodeFailure(errors.New(c.real), errors.New(c.substituted)); got != c.want {
+				t.Errorf("sameDecodeFailure(%q, %q) = %v, want %v", c.real, c.substituted, got, c.want)
+			}
+			if got := sameDecodeFailure(errors.New(c.substituted), errors.New(c.real)); got != c.want {
+				t.Errorf("the verdict must not depend on the order of the two failures: (%q, %q) = %v, want %v",
+					c.substituted, c.real, got, c.want)
+			}
+		})
+	}
+}
+
 // TestRenderWorkloadForDisplay_SubstitutesThroughTheOneWalker pins the display's
 // re-render to the substitution of the template's data: the document it shows
 // carries the placeholder where the declared value stood, and an evaluation

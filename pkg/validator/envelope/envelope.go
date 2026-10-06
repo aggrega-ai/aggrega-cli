@@ -351,7 +351,7 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 			if key.withholdEvery != "" {
 				// A parser's own text quotes the document it could not read, and
 				// every value in this document may carry declared data.
-				perr = fmt.Errorf("envelope: parse %s: the parser's text is withheld%s", path, key.withholdEvery)
+				perr = fmt.Errorf("parse %s: the parser's text is withheld%s", path, key.withholdEvery)
 			}
 			return nil, &envelopeFailure{cause: perr}
 		}

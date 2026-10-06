@@ -185,7 +185,7 @@ func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []
 		return fmt.Errorf("oci: cache mkdir %s: %w", dir, err)
 	}
 	if err := os.WriteFile(file, data, 0o644); err != nil {
-		return fmt.Errorf("oci: cache write %s: %w", file, err)
+		return fmt.Errorf("cache write %s: %w", file, err)
 	}
 	return nil
 }

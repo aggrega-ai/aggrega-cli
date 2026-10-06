@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 	"text/template"
 
@@ -361,16 +360,29 @@ func decodeTemplateOutput(e templateEval, output string, dst any) error {
 	return newWithheldFailure("", decodeFailureWithheld, err)
 }
 
-// quotedExcerpt matches the text a decoder quotes from the document it could not
-// read, between backquotes.
-var quotedExcerpt = regexp.MustCompile("`[^`]*`")
-
 // sameDecodeFailure reports whether two failures to read one template's output
 // are the same failure apart from the text each quotes from its document: the same
 // lines, the same tags, the same target types.
+//
+// A decoder quotes what it could not read between backquotes, so the two messages
+// are compared piece by piece around them: the same number of backquotes, and the
+// same text outside every closed pair. The text inside a closed pair is the quote
+// and is not compared. A backquote left without a partner opens no quote, so the
+// text after it is compared like the rest.
 func sameDecodeFailure(real, substituted error) bool {
-	return quotedExcerpt.ReplaceAllString(real.Error(), "``") ==
-		quotedExcerpt.ReplaceAllString(substituted.Error(), "``")
+	r := strings.Split(real.Error(), "`")
+	s := strings.Split(substituted.Error(), "`")
+	if len(r) != len(s) {
+		return false
+	}
+	last := len(r) - 1
+	for i := range r {
+		quoted := i%2 == 1 && i < last
+		if !quoted && r[i] != s[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (e templateEval) wrap(stage templateEvalStage, err error) error {

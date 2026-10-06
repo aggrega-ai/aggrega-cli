@@ -43,6 +43,7 @@ import (
 // findings and the terminal did not — and they are equal now because both
 // resolve the path here.
 var fieldPathCallers = []string{
+	"internal/mcp/tool_build.go",
 	"internal/serve/closure_resolve.go",
 	"internal/serve/envelope_diagnostics.go",
 	"internal/serve/render_diagnostics.go",
