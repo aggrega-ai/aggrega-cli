@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -35,13 +36,14 @@ type CatalogLookup struct {
 	Plugin func(uri string) (types.Plugin, bool)
 	// PluginColocatedDirs maps a Plugin entity's bare-identity artifact reference
 	// to the catalog directory its entity was indexed from — the directory a
-	// co-located .wasm sits in beside its plugin.yaml. The build-time plugin
+	// co-located .wasm sits in beside its plugin.yaml — with the root a read there
+	// is held to, the one that catalog directory picks. The build-time plugin
 	// cascade's co-located tier reads it: a binary that embeds no core guests
 	// resolves them from beside their catalog entities. Keyed by artifact
 	// reference so the cascade's entity → artifact translation leaves the tier's
 	// lookup unchanged. May be nil or empty in catalog-less paths or when no
 	// catalog directory holds a co-located .wasm, which disables the tier.
-	PluginColocatedDirs map[string]string
+	PluginColocatedDirs map[string]pluginpath.ColocatedDir
 	// PluginFromCache resolves a Plugin entity from the pull-populated cache by its
 	// entity URI WITHOUT a lockfile pin — the cache-not-pin read a verdict socket
 	// (policy / linter) falls back to when the pinned / Tier-1 path does not

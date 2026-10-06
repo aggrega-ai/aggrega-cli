@@ -218,7 +218,7 @@ func stageColocatedStepPlugin(t *testing.T, catalogPath, pluginURI, artifactFixt
 		t.Fatalf("the copied catalog indexes no plugin entity for %q (indexed: %v)", pluginURI, dirs)
 	}
 	if err := os.WriteFile(
-		filepath.Join(dir, artifact), wasmtest.EnsureFixtureBytes(t, artifactFixture), 0o644,
+		filepath.Join(dir.Dir, artifact), wasmtest.EnsureFixtureBytes(t, artifactFixture), 0o644,
 	); err != nil {
 		t.Fatalf("stage %q beside its entity: %v", artifactFixture, err)
 	}

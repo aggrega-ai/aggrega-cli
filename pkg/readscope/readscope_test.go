@@ -83,6 +83,61 @@ func TestCheckReadHoldsAReadToItsRoot(t *testing.T) {
 	}
 }
 
+// TestCheckBesideEntityReadIsTheOneJudgementWithItsOwnRemedy holds the entry for a
+// file read beside an entity's document to the judgement every other entry makes —
+// the same verdict and condition over the same layouts — while its refusal names
+// the remedy such a file has rather than the catalog directory a listing reaches,
+// which changes nothing for a file beside an entity.
+func TestCheckBesideEntityReadIsTheOneJudgementWithItsOwnRemedy(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	mustWrite(t, filepath.Join(root, "e", "real.yaml"))
+	mustWrite(t, filepath.Join(outside, "neighbour.yaml"))
+	mustLink(t, filepath.Join(root, "e", "real.yaml"), filepath.Join(root, "e", "inside.yaml"))
+	mustLink(t, filepath.Join(outside, "neighbour.yaml"), filepath.Join(root, "e", "out.yaml"))
+	for _, row := range []struct {
+		name    string
+		path    string
+		refused bool
+	}{
+		{name: "control: a file beside the entity", path: filepath.Join(root, "e", "real.yaml")},
+		{name: "control: a link to a file inside the root", path: filepath.Join(root, "e", "inside.yaml")},
+		{name: "a link leading out of the root", path: filepath.Join(root, "e", "out.yaml"), refused: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			err := readscope.CheckBesideEntityRead(root, row.path)
+			if general := readscope.CheckRead(root, row.path); (general == nil) != (err == nil) {
+				t.Fatalf("the verdict must be CheckRead's; CheckRead %v, CheckBesideEntityRead %v", general, err)
+			}
+			if !row.refused {
+				if err != nil {
+					t.Fatalf("refused a read the root holds: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+				t.Fatalf("want the read-leads-out-of-workspace halt, got %v", err)
+			}
+			if code, _ := cerrors.ShortCodeOf(err); code != "E0321" {
+				t.Errorf("short code = %q, want E0321", code)
+			}
+			for _, want := range []string{
+				"the link " + row.path + " leads to " + resolved(t, filepath.Join(outside, "neighbour.yaml")),
+				"which must stay inside " + root,
+				"A file beside an entity — another document in its directory, or the built .wasm beside a Plugin entity",
+				"keep the file itself there rather than a link to it",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal must carry %q:\n%v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "as a catalog directory") {
+				t.Errorf("a listed catalog directory reaches nothing beside an entity, so the remedy must not offer one:\n%v", err)
+			}
+		})
+	}
+}
+
 func resolved(t *testing.T, p string) string {
 	t.Helper()
 	r, err := filepath.EvalSymlinks(p)

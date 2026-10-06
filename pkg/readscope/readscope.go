@@ -34,6 +34,13 @@
 // root, and its refusal names the remedy a lockfile has: there is no other place
 // to keep one.
 //
+// [CheckBesideEntityRead] is the same judgement for a file read beside an entity's
+// document rather than as a document of a directory read whole: the other documents
+// in an entity's directory, read to tell whether another entity shares it, and the
+// .wasm a Plugin entity's artifact is read from beside it. Its refusal names the
+// remedy such a file has: keep the file itself where it sits, rather than a link to
+// it.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -62,9 +69,10 @@ import (
 // ErrReadLeadsOutOfWorkspace is the halt raised when a file an operation is about
 // to read, beneath a directory it reads as a whole — a catalog directory, the
 // directory holding a Release — or a configuration file the workspace's
-// configuration is merged from, or the lockfile beside a Release, leads, through a
-// link, out of the root it is held to: the workspace, or a directory outside it
-// the owner typed or the configuration named.
+// configuration is merged from, or the lockfile beside a Release, or a file beside
+// an entity's document — another document in its directory, a Plugin entity's
+// .wasm — leads, through a link, out of the root it is held to: the workspace, or a
+// directory outside it the owner typed or the configuration named.
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
@@ -82,9 +90,11 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 		"content as a whole — a catalog directory's documents, read by a lookup a build, a pull, a check or the " +
 		"editor depends on, and the Aggregates and Manifests beside a Release, read to resolve the names the " +
 		"Release gives them — where it reads the configuration files the workspace's configuration is merged " +
-		"from, before any command runs, and where it reads the lockfile beside a Release for the pins a build, a " +
-		"check or the editor resolves against. Each of those reads the filesystem ahead of every declared stage, " +
-		"and no stage holds the entry the rule is judged against."),
+		"from, before any command runs, where it reads the lockfile beside a Release for the pins a build, a " +
+		"check or the editor resolves against, and where it reads a file beside an entity's document — the other " +
+		"documents in the directory of an entity being pinned or published, and the .wasm beside a Plugin entity " +
+		"a build or a pull loads. Each of those reads the filesystem ahead of every declared stage, and no stage " +
+		"holds the entry the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -128,6 +138,19 @@ func lockfileRemedyFor(root string) string {
 		"removed, pulling the Release again writes a fresh lockfile there"
 }
 
+// besideEntityRemedyFor is what the refusal tells its reader for a file beside an
+// entity's document that must stay inside root.
+//
+// Such a file is read where it sits, beside the entity, and no setting names one
+// kept elsewhere: listing a catalog directory changes neither which documents sit
+// in an entity's directory nor where a Plugin entity's .wasm is looked for. So the
+// remedy is the file itself, in place of the link.
+func besideEntityRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		". A file beside an entity — another document in its directory, or the built .wasm beside a Plugin " +
+		"entity — is read where it sits, so keep the file itself there rather than a link to it"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -154,6 +177,15 @@ func CheckConfigurationRead(root, path string) error {
 // write and the file a build may read are held alike.
 func CheckLockfileRead(root, path string) error {
 	return checkRead(root, path, lockfileRemedyFor)
+}
+
+// CheckBesideEntityRead is [CheckRead] for a file about to be read beside an
+// entity's document: the same judgement and the same condition, with the remedy a
+// file beside an entity has. root is the one what is composed and read beside that
+// document is held to — for a document found beneath a catalog directory, the root
+// that directory picks; for one named by path, the root its own directory picks.
+func CheckBesideEntityRead(root, path string) error {
+	return checkRead(root, path, besideEntityRemedyFor)
 }
 
 // checkRead is the judgement every entry point makes, composing the refusal with

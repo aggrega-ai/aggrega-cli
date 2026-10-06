@@ -1600,7 +1600,7 @@ func RunTier4Pipeline(
 // directory map, feeding the co-located tier so a binary that embeds no core
 // guests resolves them from beside their catalog entities; nil at a socket with
 // no catalog access, which disables that tier.
-func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginpath.Resolver {
+func buildPluginResolver(inputs Inputs, colocatedDirs map[string]pluginpath.ColocatedDir) pluginpath.Resolver {
 	return PluginResolver(inputs.PluginPins, inputs.WorkspaceRoot, *inputs.WorkspaceConfig, colocatedDirs)
 }
 
@@ -1612,7 +1612,7 @@ func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginp
 // authored in a catalog directory resolves to — asks the same cascade over the
 // same sources rather than a second reading of either. pins states where the
 // construction's recorded digests come from and fixes its posture.
-func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]string) pluginpath.Resolver {
+func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]pluginpath.ColocatedDir) pluginpath.Resolver {
 	return pins.Resolver(pluginpath.ResolutionContext{
 		ColocatedDirs: colocatedDirs,
 		WorkspaceRoot: workspaceRoot,
@@ -1633,7 +1633,7 @@ func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg work
 // a pin supplied here would turn that comparison into a second check of the same
 // bytes and report a changed module as an integrity failure rather than as a
 // lockfile that no longer matches.
-func CatalogPluginArtifacts(workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]string) closure.LocalPluginArtifact {
+func CatalogPluginArtifacts(workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]pluginpath.ColocatedDir) closure.LocalPluginArtifact {
 	return PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, colocatedDirs).ResolveCatalogArtifact
 }
 

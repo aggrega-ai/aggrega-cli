@@ -57,6 +57,9 @@ var decidersOfInside = map[string]string{
 	"pkg/readscope:CheckRead":                     "a read beneath a directory read as a whole",
 	"pkg/readscope:CheckConfigurationRead":        "a workspace configuration file the configuration is merged from",
 	"pkg/readscope:CheckLockfileRead":             "the lockfile beside a Release, read for its pins",
+	"pkg/readscope:CheckBesideEntityRead":         "a file read beside an entity's document",
+	"internal/entitypin:RefuseSharedDirectory":    "the documents beside an entity, read to tell whether another entity shares its directory",
+	"pkg/pluginpath:Resolver.readColocated":       "the .wasm beside a catalog Plugin entity, read by the plugin cascade",
 	"pkg/lockfile:CheckRead":                      "the lockfile beside a Release, held to the root its write is held to",
 	"pkg/workspaceconfig:resolve":                 "every configuration file the workspace's configuration cascade merges",
 	"pkg/catalog:catalogWalk.walk":                "every entry of a catalog directory, and the directory itself",
@@ -103,7 +106,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},

@@ -127,7 +127,7 @@ func TestPrecedenceOrder(t *testing.T) {
 	writeColocated(t, colocatedDir, uri, colocatedBytes)
 
 	base := Resolver{
-		colocatedDirs: map[string]string{uri: colocatedDir},
+		colocatedDirs: map[string]ColocatedDir{uri: {Dir: colocatedDir}},
 		workspaceRoot: ws,
 		cacheDir:      cacheDir,
 		pinVersions:   map[string]string{uri: "1.0.0"},
@@ -200,7 +200,7 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 
 	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, content)
 	coGot, err := Resolver{
-		colocatedDirs: map[string]string{uri: colocatedDir},
+		colocatedDirs: map[string]ColocatedDir{uri: {Dir: colocatedDir}},
 		pins:          map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err != nil {
@@ -225,7 +225,7 @@ func TestPinMismatchHalts(t *testing.T) {
 	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, []byte("DIFFERENT-bytes"))
 
 	_, err := Resolver{
-		colocatedDirs: map[string]string{uri: colocatedDir},
+		colocatedDirs: map[string]ColocatedDir{uri: {Dir: colocatedDir}},
 		pins:          map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err == nil {
@@ -241,7 +241,7 @@ func TestPinMismatchHalts(t *testing.T) {
 func TestNoPinSkipsVerification(t *testing.T) {
 	const uri = "core/unpinned:1.0.0"
 	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, []byte("whatever"))
-	got, err := Resolver{colocatedDirs: map[string]string{uri: colocatedDir}}.Resolve(uri)
+	got, err := Resolver{colocatedDirs: map[string]ColocatedDir{uri: {Dir: colocatedDir}}}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 			name: "the artifact sits beside the entity",
 			setup: func(t *testing.T) Resolver {
 				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), artifactRef, []byte("guest"))
-				return Resolver{colocatedDirs: map[string]string{artifactRef: dir}}
+				return Resolver{colocatedDirs: map[string]ColocatedDir{artifactRef: {Dir: dir}}}
 			},
 			wantPath: closure.ResolutionPathCatalog,
 			bytes:    "guest",
@@ -317,7 +317,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 			name: "the binary carries the artifact and nothing sits beside the entity",
 			setup: func(t *testing.T) Resolver {
 				t.Cleanup(embedded.SeedForTest(artifactRef, []byte("embedded-guest")))
-				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}}
+				return Resolver{colocatedDirs: map[string]ColocatedDir{artifactRef: {Dir: t.TempDir()}}}
 			},
 			wantPath: closure.ResolutionPathEmbedded,
 			bytes:    "embedded-guest",
@@ -329,7 +329,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 				if err := oci.WriteCached(ws, ".aggrega/cache", artifactRef, "", []byte("cached-guest")); err != nil {
 					t.Fatalf("seed cache: %v", err)
 				}
-				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}, workspaceRoot: ws, cacheDir: ".aggrega/cache"}
+				return Resolver{colocatedDirs: map[string]ColocatedDir{artifactRef: {Dir: t.TempDir()}}, workspaceRoot: ws, cacheDir: ".aggrega/cache"}
 			},
 			wantPath: closure.ResolutionPathCache,
 			bytes:    "cached-guest",
@@ -337,7 +337,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 		{
 			name: "no tier holds the artifact",
 			setup: func(t *testing.T) Resolver {
-				return Resolver{colocatedDirs: map[string]string{artifactRef: t.TempDir()}, workspaceRoot: t.TempDir(), cacheDir: ".aggrega/cache"}
+				return Resolver{colocatedDirs: map[string]ColocatedDir{artifactRef: {Dir: t.TempDir()}}, workspaceRoot: t.TempDir(), cacheDir: ".aggrega/cache"}
 			},
 			refused: true,
 		},
@@ -374,7 +374,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 			if ce.Category() != cerrors.CatalogError {
 				t.Errorf("category = %q; want %q", ce.Category(), cerrors.CatalogError)
 			}
-			dir := r.colocatedDirs[artifactRef]
+			dir := r.colocatedDirs[artifactRef].Dir
 			for _, want := range []string{entityURI, leaf, dir, "Place the built .wasm beside the entity", "publish the plugin"} {
 				if !strings.Contains(ce.Message(), want) {
 					t.Errorf("refusal message does not name %q: %s", want, ce.Message())

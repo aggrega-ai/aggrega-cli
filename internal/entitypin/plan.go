@@ -5,6 +5,7 @@ package entitypin
 
 import (
 	"errors"
+	"path/filepath"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
@@ -195,8 +196,9 @@ func Compute(in PlanInputs) (Plan, error) {
 		if _, dup := byPath[path]; dup {
 			continue
 		}
+		root := lockRoot(in, path)
 		if in.ForWriting {
-			if err := RefuseSharedDirectory(path); err != nil {
+			if err := RefuseSharedDirectory(root, path); err != nil {
 				refused = append(refused, err)
 				continue
 			}
@@ -208,7 +210,7 @@ func Compute(in PlanInputs) (Plan, error) {
 			capability: capability,
 			artifacts:  artifacts,
 			plan: entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path),
-				lockRoot: lockRoot(in, path)},
+				lockRoot: root},
 		})
 	}
 	// One refusal is returned as itself, so the diagnostic a reader meets is the
@@ -300,6 +302,31 @@ func lockRoot(in PlanInputs, path string) string {
 		}
 	}
 	return in.WorkspaceRoot
+}
+
+// NamedDocumentRoot returns the root what is written and read beside the entity
+// document at entityPath is held to, where the document was named by path rather
+// than found beneath a catalog directory, in the workspace at workspaceRoot: the
+// document's own directory is then the directory somebody named, so the root is the
+// one that directory picks — the workspace root where it lies inside the workspace,
+// and the directory itself where it lies outside.
+//
+// It is the root the pin step holds the lock beside such a document to, asked
+// through lockRoot over the one named directory the step's view of a named document
+// reads (namedDocumentDirs), so a publication holding what it reads beside the
+// document asks the answer the step's write is held to rather than a second one.
+func NamedDocumentRoot(workspaceRoot, entityPath string) string {
+	abs, err := filepath.Abs(entityPath)
+	if err != nil {
+		abs = filepath.Clean(entityPath)
+	}
+	return lockRoot(PlanInputs{WorkspaceRoot: workspaceRoot, NamedDirs: namedDocumentDirs(abs)}, abs)
+}
+
+// namedDocumentDirs is the named part of the stack the pin step's view of a document
+// named by path reads: the document's own directory, and nothing else.
+func namedDocumentDirs(absEntityPath string) []string {
+	return []string{filepath.Dir(absEntityPath)}
 }
 
 // sourcePinsByEntity routes each resolved source to the entities whose own

@@ -17,12 +17,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -65,6 +67,15 @@ type Catalog struct {
 	componentSources map[string]string
 	featureSources   map[string]string
 	pluginSources    map[string]string
+
+	// pluginRoots records, for each Plugin entity the load indexed, the root the
+	// catalog directory it was folded from holds a read beneath it to
+	// (workspaceconfig.CatalogDirRoot) — the root the walk read the entity's own
+	// document under, and so the root a read of the .wasm beside it is held to
+	// (PluginColocatedDirs). Keyed as pluginSources is, and written by the merge
+	// that places the winning identity, which is the one step that knows which
+	// directory placed it.
+	pluginRoots map[string]string
 
 	// aggregateSources records the absolute filesystem path each Aggregate
 	// entity was loaded from. Populated by the indexing walk (indexFile) and
@@ -467,7 +478,7 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, named []string, tolerant
 			return nil, nil, err
 		}
 		skipped = append(skipped, dirSkips...)
-		acc.mergeFrom(perDir, dir, winnerDir)
+		acc.mergeFrom(perDir, dir, workspaceconfig.CatalogDirRoot(workspaceRoot, dir, named), winnerDir)
 	}
 	return acc, skipped, nil
 }
@@ -491,6 +502,7 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 		componentSources:  make(map[string]string),
 		featureSources:    make(map[string]string),
 		pluginSources:     make(map[string]string),
+		pluginRoots:       make(map[string]string),
 		aggregateSources:  make(map[string]string),
 		entityBytes:       make(map[string][]byte),
 		pathByIdentity:    make(map[string]string),
@@ -651,7 +663,9 @@ func SkipDirIfArtifactCache(workspaceRoot, path, cacheDir string) error {
 // with its side-table entries (source path, raw bytes). Iteration is in sorted
 // identity order per kind so the resolved set and the Shadows list are a pure,
 // deterministic function of directory order — preserving byte-identical output.
-func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[string]string) {
+// readRoot is the root the directory perDirRoot holds a read beneath it to, which a
+// winning Plugin entity carries for the .wasm read beside it.
+func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot, readRoot string, winnerDir map[string]string) {
 	// Every kind's retained bytes are keyed by the same index key as its typed
 	// map, so the winning identity carries its own bytes and never another
 	// version's.
@@ -701,6 +715,7 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	// offending file.
 	mergeKind(acc, "Plugin", acc.Plugins, perDir.Plugins, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.pluginSources[k] = perDir.pluginSources[k]
+		acc.pluginRoots[k] = readRoot
 		bk := entityBytesKey("Plugin", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
@@ -2363,15 +2378,16 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 
 // PluginColocatedDirs maps each indexed Plugin entity's bare-identity artifact
 // reference to the directory its plugin.yaml was loaded from — the directory a
-// co-located .wasm sits in beside the entity. The build-time plugin cascade's
-// co-located tier consults it, so a binary with no embedded core guests resolves
-// them from beside their catalog entities. Returns nil when no Plugin entity was
-// indexed. Keys are built through the single Plugin.ArtifactReference derivation,
-// so the tier keys by the same reference the cascade resolves by. When two
-// versions of one identity are indexed (same artifact reference, distinct
-// directories), the lexicographically last source path wins, so the map is
-// deterministic regardless of index-map iteration order.
-func (c *Catalog) PluginColocatedDirs() map[string]string {
+// co-located .wasm sits in beside the entity — and to the root a read there is
+// held to, the one the catalog directory it was folded from picks (pluginRoots).
+// The build-time plugin cascade's co-located tier consults it, so a binary with
+// no embedded core guests resolves them from beside their catalog entities.
+// Returns nil when no Plugin entity was indexed. Keys are built through the single
+// Plugin.ArtifactReference derivation, so the tier keys by the same reference the
+// cascade resolves by. When two versions of one identity are indexed (same
+// artifact reference, distinct directories), the lexicographically last source
+// path wins, so the map is deterministic regardless of index-map iteration order.
+func (c *Catalog) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 	if len(c.pluginSources) == 0 {
 		return nil
 	}
@@ -2380,13 +2396,16 @@ func (c *Catalog) PluginColocatedDirs() map[string]string {
 		keys = append(keys, wkey)
 	}
 	sort.Strings(keys)
-	dirs := make(map[string]string, len(c.pluginSources))
+	dirs := make(map[string]pluginpath.ColocatedDir, len(c.pluginSources))
 	for _, wkey := range keys {
 		p, ok := c.Plugins[wkey]
 		if !ok {
 			continue
 		}
-		dirs[p.ArtifactReference()] = filepath.Dir(c.pluginSources[wkey])
+		dirs[p.ArtifactReference()] = pluginpath.ColocatedDir{
+			Dir:  filepath.Dir(c.pluginSources[wkey]),
+			Root: c.pluginRoots[wkey],
+		}
 	}
 	if len(dirs) == 0 {
 		return nil

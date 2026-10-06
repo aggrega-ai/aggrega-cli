@@ -104,7 +104,7 @@ func TestRefuseSharedDirectoryReadsOnlyWhichEntitiesSitBeside(t *testing.T) {
 				writeFile(t, filepath.Join(dir, rel), body)
 			}
 
-			err := RefuseSharedDirectory(subject)
+			err := RefuseSharedDirectory(dir, subject)
 			if len(tc.refusedNaming) == 0 {
 				if err != nil {
 					t.Fatalf("the layout must be admitted; got %v", err)
@@ -147,7 +147,7 @@ func TestEveryKindButTheSharingOnesHasADirectoryOfItsOwn(t *testing.T) {
 			subject := filepath.Join(dir, "subject.yaml")
 			writeFile(t, subject, entityDoc(string(k), "subject"))
 			writeFile(t, filepath.Join(dir, "neighbour.yaml"), entityDoc("Recipe", "neighbour"))
-			err := RefuseSharedDirectory(subject)
+			err := RefuseSharedDirectory(dir, subject)
 			if entitykind.SharesDirectory(k) {
 				if err != nil {
 					t.Errorf("%s may share a directory and must be admitted; got %v", k, err)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
 
 // ErrEntitySharesItsDirectory is the loud halt raised over an entity that sits in
@@ -67,9 +68,17 @@ var errEntitySharesItsDirectory = cerrors.Register("entity-shares-its-directory"
 // sources would resolve to, can change the verdict — which is what lets the
 // answer be the same with and without a network.
 //
+// A neighbour is read only from inside root, the root the lock beside the entity
+// is held to: before a document beside the entity is opened it is judged by
+// [readscope.CheckBesideEntityRead], and one that leads through a link out of root
+// halts with that refusal, naming the link. It halts rather than being passed
+// over because the verdict turns on every neighbour: one left unread could be the
+// entity in the way. An empty root holds nothing.
+//
 // The entity's own kind is read from its own document rather than taken from the
-// caller, so no caller can hand in a kind the document does not declare.
-func RefuseSharedDirectory(entityPath string) error {
+// caller, so no caller can hand in a kind the document does not declare. The
+// document itself was admitted where it was named, so it is not judged again.
+func RefuseSharedDirectory(root, entityPath string) error {
 	abs, err := filepath.Abs(entityPath)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", entityPath, err)
@@ -105,6 +114,9 @@ func RefuseSharedDirectory(entityPath string) error {
 		}
 		if info.IsDir() {
 			continue
+		}
+		if err := readscope.CheckBesideEntityRead(root, path); err != nil {
+			return err
 		}
 		other, isEntity, err := readEntityPreamble(path)
 		if err != nil {

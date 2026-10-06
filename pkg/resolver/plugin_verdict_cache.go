@@ -20,7 +20,7 @@ import (
 // composition carries no caller-specific type. A zero field disables that tier
 // exactly as it does on the underlying resolver.
 type VerdictPluginTierSources struct {
-	ColocatedDirs map[string]string
+	ColocatedDirs map[string]pluginpath.ColocatedDir
 	WorkspaceRoot string
 	CacheDir      string
 }

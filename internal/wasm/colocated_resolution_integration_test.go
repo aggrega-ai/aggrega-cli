@@ -50,7 +50,7 @@ func TestColocatedResolvedPluginLoadsThroughGate(t *testing.T) {
 
 	resolver := pluginpath.NewResolver(
 		pluginpath.ResolutionContext{
-			ColocatedDirs: map[string]string{ref: dir},
+			ColocatedDirs: map[string]pluginpath.ColocatedDir{ref: {Dir: dir}},
 		},
 		pluginpath.PinPostureLockfile,
 		pluginpath.PinMaps{
@@ -92,7 +92,7 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	_, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: emptyDir}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
+	_, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]pluginpath.ColocatedDir{ref: {Dir: emptyDir}}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
 	if err == nil {
 		t.Fatal("expected an exhaustion halt on a co-located miss; got nil")
 	}
@@ -118,7 +118,7 @@ func TestColocatedPinMismatchHaltsBeforeLoad(t *testing.T) {
 	}
 
 	resolver := pluginpath.NewResolver(
-		pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: dir}},
+		pluginpath.ResolutionContext{ColocatedDirs: map[string]pluginpath.ColocatedDir{ref: {Dir: dir}}},
 		pluginpath.PinPostureLockfile,
 		pluginpath.PinMaps{Pins: map[string]string{ref: digest.ContentDigest([]byte("the-real-bytes"))}},
 	)
@@ -140,7 +140,7 @@ func TestResolvedGarbageBytesHaltAtGate(t *testing.T) {
 		t.Fatalf("write colocated module: %v", err)
 	}
 
-	resolved, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: dir}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
+	resolved, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]pluginpath.ColocatedDir{ref: {Dir: dir}}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
 	if err != nil {
 		t.Fatalf("resolve (no pin) should succeed; got %v", err)
 	}

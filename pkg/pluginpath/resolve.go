@@ -13,7 +13,8 @@
 //
 //	0a embed      — bytes compiled into the CLI binary (core, version-locked)
 //	0b colocated  — a .wasm laid down beside its Plugin entity in a catalog
-//	                directory (the offline path when nothing is embedded)
+//	                directory (the offline path when nothing is embedded), read
+//	                only from inside the root that directory is held to
 //	1  local      — an explicit ./ or ../ filesystem path (or an absolute path)
 //	2  cache      — the workspace content cache (a previously-pulled artifact)
 //
@@ -53,6 +54,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -375,18 +377,18 @@ type Lookup func(uri string) (ResolvedPlugin, error)
 // only the embed and local tiers (no colocated dirs, no cache, no pins) — the
 // minimum a caller with no workspace context can do.
 type Resolver struct {
-	// colocatedDirs maps a plugin's artifact reference to the on-disk directory
-	// holding its co-located .wasm — the module laid down beside its Plugin
-	// entity in a catalog directory. It is the offline resolution path (Tier 0b)
-	// for a build that embeds no core guests: the .wasm is read from the catalog
-	// directory the entity was indexed from, under the filename PluginLeaf
-	// derives from the reference. Key is the artifact reference the
+	// colocatedDirs maps a plugin's artifact reference to where its co-located
+	// .wasm is read — the module laid down beside its Plugin entity in a catalog
+	// directory — and the root that read is held to. It is the offline resolution
+	// path (Tier 0b) for a build that embeds no core guests: the .wasm is read from
+	// the catalog directory the entity was indexed from, under the filename
+	// PluginLeaf derives from the reference. Key is the artifact reference the
 	// cascade resolves by, so the front's entity → artifact translation leaves
 	// this tier's lookup unchanged. nil or empty disables the tier; a reference
 	// absent from the map, or a missing .wasm file, is a clean miss that falls
 	// through to the next tier. The tier sits after embed, so an embedded guest
 	// always wins and this never shadows a built-in.
-	colocatedDirs map[string]string
+	colocatedDirs map[string]ColocatedDir
 
 	// workspaceRoot and cacheDir address the workspace content cache (Tier 2).
 	// Both empty disables the cache tier.
@@ -593,7 +595,7 @@ func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure
 		return closure.Resolution{}, err
 	}
 	leaf := pluginLeaf(artifactRef)
-	dir := r.colocatedDirs[artifactRef]
+	dir := r.colocatedDirs[artifactRef].Dir
 	values := []string{fmt.Sprintf("Plugin entity %q is authored in a catalog directory", entityURI)}
 	where := cerrors.SourceLocation{File: entityURI}
 	advice := "Place the built .wasm beside the entity under that name, or publish the plugin and reference the " +
@@ -770,12 +772,23 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 // present file. The filename is the shared PluginLeaf mapping, which carries the
 // reference's socket and — where the reference pins one — its version, so two
 // plugins sharing a bare name are read from two files rather than one.
+//
+// The file is workspace content the product reads on its own account, so it is
+// judged before it is opened against the root the entity's catalog directory picks
+// (readscope.CheckBesideEntityRead): one that leads through a link out of that root
+// is not read, and the refusal is returned rather than a miss, because a miss would
+// fall through to the next tier and could load another artifact under the same
+// reference in its place. A link leading nowhere carries nothing to read and is a
+// clean miss, as a missing file is.
 func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
-	dir, ok := r.colocatedDirs[uri]
-	if !ok || dir == "" {
+	at, ok := r.colocatedDirs[uri]
+	if !ok || at.Dir == "" {
 		return nil, false, nil
 	}
-	path := filepath.Join(dir, pluginLeaf(uri))
+	path := filepath.Join(at.Dir, pluginLeaf(uri))
+	if err := readscope.CheckBesideEntityRead(at.Root, path); err != nil {
+		return nil, false, err
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

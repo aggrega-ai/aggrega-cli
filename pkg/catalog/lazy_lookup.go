@@ -22,10 +22,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -242,7 +244,7 @@ func (l *LazyLookup) NodeRecipeResolution(
 // each locally authored Plugin entity's .wasm sits in beside it — a pull asking
 // the build's cascade whether such an entity's artifact can be read — reads the
 // same map without assembling the rest of the lookup.
-func (l *LazyLookup) PluginColocatedDirs() map[string]string {
+func (l *LazyLookup) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.pluginColocatedDirs()
@@ -250,14 +252,18 @@ func (l *LazyLookup) PluginColocatedDirs() map[string]string {
 
 // pluginColocatedDirs maps each Tier-1-enumerated Plugin entity's bare-identity
 // artifact reference to the catalog directory its plugin.yaml was authored in —
-// the directory a co-located .wasm sits in beside the entity. It mirrors the
-// eager catalog's PluginColocatedDirs over the lazily-walked local set, reading
-// each entity's authored document from the one record of where it came from; an
-// entity read from a pinned cache slot has no authored directory and is skipped.
+// the directory a co-located .wasm sits in beside the entity — and to the root a
+// read there is held to: the one the catalog directory whose walk placed the
+// identity picks ([workspaceconfig.CatalogDirRoot]), which is the root that walk
+// read the entity's own document under. It mirrors the eager catalog's
+// PluginColocatedDirs over the lazily-walked local set, reading each entity's
+// authored document from the one record of where it came from and its catalog
+// directory from the record of which directory claimed the identity; an entity
+// read from a pinned cache slot has no authored directory and is skipped.
 // The caller (AsCatalogLookup, PluginColocatedDirs) holds l.mu. Returns nil when no local Plugin
 // entity was enumerated. On two versions of one identity, the lexicographically
 // last source path wins, so the map is deterministic regardless of map order.
-func (l *LazyLookup) pluginColocatedDirs() map[string]string {
+func (l *LazyLookup) pluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 	l.buildRecipeIndex()
 	if len(l.plugins) == 0 {
 		return nil
@@ -267,14 +273,22 @@ func (l *LazyLookup) pluginColocatedDirs() map[string]string {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	dirs := make(map[string]string, len(l.plugins))
+	dirs := make(map[string]pluginpath.ColocatedDir, len(l.plugins))
 	for _, key := range keys {
-		src, ok := l.origins[entityBytesKey("Plugin", key)].authoredDocument()
+		claim := entityBytesKey("Plugin", key)
+		src, ok := l.origins[claim].authoredDocument()
 		if !ok {
 			continue
 		}
+		position, claimed := l.shellClaims[claim]
+		if !claimed || position < 0 || position >= len(l.catalogDirs) {
+			continue
+		}
 		p := l.plugins[key]
-		dirs[p.ArtifactReference()] = filepath.Dir(src)
+		dirs[p.ArtifactReference()] = pluginpath.ColocatedDir{
+			Dir:  filepath.Dir(src),
+			Root: workspaceconfig.CatalogDirRoot(l.workspaceRoot, l.catalogDirs[position], l.namedDirs),
+		}
 	}
 	if len(dirs) == 0 {
 		return nil

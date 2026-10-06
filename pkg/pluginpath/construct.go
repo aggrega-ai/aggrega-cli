@@ -51,9 +51,10 @@ const (
 // lockfile, pipeline, or command type, so it stays package-neutral and every
 // caller can construct it from its own context.
 type ResolutionContext struct {
-	// ColocatedDirs maps a plugin's artifact reference to the catalog directory
-	// holding its co-located .wasm (Tier 0b). nil or empty disables the tier.
-	ColocatedDirs map[string]string
+	// ColocatedDirs maps a plugin's artifact reference to where its co-located
+	// .wasm is read (Tier 0b): the directory its Plugin entity was authored in, and
+	// the root a read there is held to. nil or empty disables the tier.
+	ColocatedDirs map[string]ColocatedDir
 
 	// WorkspaceRoot and CacheDir address the workspace content cache (Tier 2).
 	// Both empty disables the cache tier.
@@ -63,6 +64,22 @@ type ResolutionContext struct {
 	// Override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Empty leaves the cascade intact.
 	Override string
+}
+
+// ColocatedDir is where the co-located tier reads a plugin's .wasm, beside its
+// Plugin entity in a catalog directory.
+//
+// Dir is the directory the entity's document was authored in, which the .wasm sits
+// in under the filename [PluginLeaf] derives from the reference. Root is the root a
+// read there is held to: the one the catalog directory holding that document picks
+// (workspaceconfig.CatalogDirRoot) — the root the catalog's own walk read the
+// document under — so a .wasm that is a link leading out of it is refused rather
+// than read. The root comes from whoever found the entity, because only the walk
+// that found it knows which catalog directory it was found in; the tier never
+// decides one. An empty Root holds nothing.
+type ColocatedDir struct {
+	Dir  string
+	Root string
 }
 
 // PinMaps groups the already-derived per-URI pin maps a pinned construction site

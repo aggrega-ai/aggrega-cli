@@ -53,7 +53,7 @@ func stageColocatedCatalog(t *testing.T, catalogPaths []string, artifactToFixtur
 		}
 		bytes := wasmtest.EnsureFixtureBytes(t, fixtureName)
 		leaf := pluginpath.PluginLeaf(artifactRef)
-		if err := os.WriteFile(filepath.Join(dir, leaf), bytes, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir.Dir, leaf), bytes, 0o644); err != nil {
 			t.Fatalf("stageColocatedCatalog: stage %q as %q beside its entity: %v", fixtureName, leaf, err)
 		}
 	}

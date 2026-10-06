@@ -148,7 +148,7 @@ func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
 			name: "bytes beside the entity in a catalog directory",
 			sources: func(t *testing.T) ResolutionContext {
 				dir := writeColocated(t, filepath.Join(t.TempDir(), "catalog", "patch"), uri, []byte("colocated-guest"))
-				return ResolutionContext{ColocatedDirs: map[string]string{uri: dir}}
+				return ResolutionContext{ColocatedDirs: map[string]ColocatedDir{uri: {Dir: dir}}}
 			},
 			want:    []string{"resolved from local", "beside its Plugin entity in a catalog directory", "only for a plugin attached at a transform role", "publish the plugin"},
 			mustNot: []string{"aggrega pull"},

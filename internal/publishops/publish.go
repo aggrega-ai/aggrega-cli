@@ -492,8 +492,9 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// judgement of the entity because it costs one directory listing and fetches
 	// nothing. It is the predicate the pin step asks, reached rather than restated,
 	// so a publication refuses exactly the directories `aggrega pin` refuses, in the
-	// same words.
-	if err := entitypin.RefuseSharedDirectory(cfg.EntityPath); err != nil {
+	// same words. What it reads beside the document is held to the root the step
+	// holds the lock beside it to.
+	if err := entitypin.RefuseSharedDirectory(entitypin.NamedDocumentRoot(rw.Root(), cfg.EntityPath), cfg.EntityPath); err != nil {
 		return PushResult{}, err
 	}
 

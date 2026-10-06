@@ -185,9 +185,8 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// The document's own directory is the one directory the view reads, and it is a
 	// named one: the caller named the document, so it is read, and its lock held, to
-	// the root that directory picks.
-	entityDir := filepath.Dir(abs)
-	named := []string{entityDir}
+	// the root that directory picks (NamedDocumentRoot asks the same list).
+	named := namedDocumentDirs(abs)
 	view := catalog.NewLazyLookup(root, cacheDir, named, nil, named...)
 
 	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
