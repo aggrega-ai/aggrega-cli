@@ -314,8 +314,73 @@ func TestBuild_TheSameCapitalsNameIsLegalUnderAnotherTarget(t *testing.T) {
 	}
 }
 
+// digitFirstComponentName opens with a digit, which an authored name may do and a
+// Helm release name may too. A Kubernetes Service name may not, so every Service a
+// chart or a synthesized workload names after this identity is one the cluster
+// refuses.
+const digitFirstComponentName = "1kv"
+
+// TestBuild_ADigitFirstComponentNameIsRefusedUnderHelm asserts the helm target
+// halts on a name its Services cannot begin with, although its release name is one
+// Helm accepts — the halt carries the stricter rule of the resources named after
+// it, and says so in the target's own words.
+//
+// The fixture's chart names nothing but a ConfigMap, whose name may begin with a
+// digit, and that is deliberate: the refusal is a property of the identity the
+// target is handed, judged before anything renders, rather than of what one chart
+// happens to emit.
+func TestBuild_ADigitFirstComponentNameIsRefusedUnderHelm(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	err := buildCapitalsWorkspace(t, root, helmCapitalsFixture(t, root, digitFirstComponentName))
+	if err == nil {
+		t.Fatal("a component name opening with a digit must halt a build under the helm target")
+	}
+	if !errors.Is(err, renderer.ErrComponentIdentityTargetRefuses()) {
+		t.Fatalf("the halt must carry the target-refuses condition; got %v", err)
+	}
+	var compilerErr *cerrors.CompilerError
+	if !errors.As(err, &compilerErr) {
+		t.Fatalf("the halt must carry a category; got %T", err)
+	}
+	if compilerErr.Category() != cerrors.CatalogError {
+		t.Errorf("category = %v, want %v", compilerErr.Category(), cerrors.CatalogError)
+	}
+	for _, want := range []string{
+		"spec.components." + digitFirstComponentName,               // the field the developer wrote
+		"which the target cannot use as a Service name",            // the target's own name for what refused
+		"a Kubernetes Service name begins with a lowercase letter", // the target's own reason
+		"choose a name the target accepts",                         // no length repairs a first character
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not carry %q; got %v", want, err)
+		}
+	}
+	if entries, statErr := os.ReadDir(filepath.Join(root, "dist")); statErr == nil && len(entries) > 0 {
+		t.Errorf("the refused build emitted %d entries under dist/; it must emit none", len(entries))
+	}
+}
+
+// TestBuild_TheSameDigitFirstNameBuildsUnderAnotherTarget is the other half: the
+// refusal above belongs to the helm target, and a target whose names may begin
+// with a digit carries the same name through as authored.
+func TestBuild_TheSameDigitFirstNameBuildsUnderAnotherTarget(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	if err := buildCapitalsWorkspace(t, root, composeCapitalsFixture(t, root, digitFirstComponentName)); err != nil {
+		t.Fatalf("a name opening with a digit must build under a target that accepts it: %v", err)
+	}
+	rendered := readTree(t, filepath.Join(root, "dist"))
+	joined := strings.Join(mapValues(rendered), "\n")
+	if !strings.Contains(joined, "  "+digitFirstComponentName+":") {
+		t.Errorf("the compose output does not carry the authored name as its service key; got:\n%s", joined)
+	}
+}
+
 // TestBuild_AnOrdinaryNameStillBuildsThroughTheSameTarget is the positive control
-// the two cases above need.
+// the refusing cases above need.
 //
 // Without it a refusal that fired on every name would satisfy the first case and
 // look like correct behaviour, and the second case — which runs against a

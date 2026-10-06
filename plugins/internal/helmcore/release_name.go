@@ -148,6 +148,54 @@ func ReleaseNameVerdict(proposed string) rendercore.DerivedNameVerdict {
 	return rendercore.DerivedNameVerdict{Kind: ReleaseNameKind, Usable: true}
 }
 
+// ServiceNameKind is what a verdict about the name of a Kubernetes Service this
+// target emits for a component calls itself. It reaches a reader verbatim in a
+// refusal, so it is written in the target's vocabulary.
+const ServiceNameKind = "Service name"
+
+// ServiceNameVerdict judges a proposed component identity as the opening of the
+// Kubernetes Service names this target emits for that component.
+//
+// A Service name has to begin with a lowercase letter, which is stricter than
+// what a release name may begin with: Helm accepts a release name opening with a
+// digit, and the cluster then refuses every Service named after it. Both of this
+// target's render paths name a component's Services after its identity — a chart
+// routinely names its Services after the release name, and a synthesized
+// workload's Services open with the component's own name — so an identity opening
+// with anything but a lowercase letter yields Services the cluster refuses at
+// apply time while the build itself would stay green. The verdict carries that
+// stricter rule here, where it can halt the build instead.
+//
+// It reads the first character of the release name rather than of the identity as
+// proposed, so it judges the one derivation this target names a component's
+// resources from rather than a second reading of the same identity. A digit is
+// carried through that derivation as itself, and any character the release-name
+// alphabet does not admit opens the name with the hyphen every escape begins with;
+// both are refused. No bound comes back with a refusal, because no shortening
+// changes the first character.
+//
+// Only the first character is judged. How long a Service name may grow depends
+// on the Service key a workload declares and on what a chart appends, neither of
+// which a component identity alone determines.
+func ServiceNameVerdict(proposed string) rendercore.DerivedNameVerdict {
+	name := releaseNameEncoding.Segment(proposed)
+	if proposed != "" && !isLowercaseLetter(name[0]) {
+		return rendercore.DerivedNameVerdict{
+			Kind:   ServiceNameKind,
+			Usable: false,
+			Reason: fmt.Sprintf("a Kubernetes Service name begins with a lowercase letter, and the Services this "+
+				"target names after this identity would begin with %q", string(name[0])),
+		}
+	}
+	return rendercore.DerivedNameVerdict{Kind: ServiceNameKind, Usable: true}
+}
+
+// isLowercaseLetter reports whether a byte is a lowercase ASCII letter, the only
+// character a Kubernetes Service name may begin with.
+func isLowercaseLetter(c byte) bool {
+	return c >= 'a' && c <= 'z'
+}
+
 // longestReleaseNameSource returns how many bytes of proposed still encode to a
 // release name the target accepts.
 //
@@ -179,10 +227,17 @@ func longestReleaseNameSource(proposed string) int {
 // NameBoundOutput assembles this provider's answer to one proposed component
 // identity: one verdict per kind of name it derives from that identity.
 //
-// Two kinds are reported. The release name is this target's own, derived here.
-// The component-id label value is the identity written onto every manifest this
-// provider emits, judged where that label is written rather than restated here,
-// so the rule and the write stay one thing.
+// The release name is this target's own, derived here. The Service name is judged
+// on that same derivation, because a component's Services are named after it and
+// the cluster holds a Service name to a stricter opening than Helm holds a release
+// name. The component-id label value is the identity written onto every manifest
+// this provider emits, judged where that label is written rather than restated
+// here, so the rule and the write stay one thing.
+//
+// The release name comes before the Service name, and the order is deliberate: an
+// identity whose first character is escaped is refused as both, and the compiler
+// reports the earlier of two refusals that carry no bound, so such an identity
+// keeps being reported as the release name it cannot be.
 //
 // A guest reports every kind it derives rather than only the kinds that refused,
 // so a reader of a refusal sees what was judged and the host needs no second
@@ -200,20 +255,21 @@ func longestReleaseNameSource(proposed string) int {
 // emits. Reaching them needs the node's resolved workload on the question, which
 // is a wider question than this one.
 //
-// Only one of the two kinds is told whether the identity was authored, and the
+// Only the label kind is told whether the identity was authored, and the
 // asymmetry is deliberate. Each kind judges the value ITS OWN name is derived
-// from, and the two are not the same value. The release name is derived here,
+// from, and the values are not the same. The release name is derived here,
 // from the proposal, whichever way the proposal was arrived at — so the proposal
 // is what this side measures, and handing it an already-written identity would
 // put one encoding inside another and spell the name differently from the one a
 // recipe author predicts it by. The label value is not derived at all: it IS the
 // identity as stamped, which for an authored identity is the proposal written
 // into the identity alphabet. So the label kind needs to know which state the
-// proposal is in, and the release name does not.
+// proposal is in, and the release name and the Service name read from it do not.
 func NameBoundOutput(proposed string, authored bool) rendercore.NameBoundOutput {
 	return rendercore.NameBoundOutput{
 		Names: []rendercore.DerivedNameVerdict{
 			ReleaseNameVerdict(proposed),
+			ServiceNameVerdict(proposed),
 			rendercore.ComponentIDLabelVerdict(proposed, authored),
 		},
 	}

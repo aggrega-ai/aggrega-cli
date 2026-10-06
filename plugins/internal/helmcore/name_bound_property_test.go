@@ -118,7 +118,7 @@ func TestHelmVerdicts_ReportEveryKindTheProviderDerives(t *testing.T) {
 			t.Errorf("an ordinary authored name is refused as a %s: %s", v.Kind, v.Reason)
 		}
 	}
-	for _, want := range []string{helmcore.ReleaseNameKind, rendercore.ComponentIDLabelKind} {
+	for _, want := range []string{helmcore.ReleaseNameKind, helmcore.ServiceNameKind, rendercore.ComponentIDLabelKind} {
 		found := false
 		for _, k := range kinds {
 			if k == want {

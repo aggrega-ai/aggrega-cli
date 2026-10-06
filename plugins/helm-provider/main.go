@@ -71,7 +71,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "name_bound",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "reports whether a proposed component identity yields a release name and a component-id label value this target accepts, and how short it would have to be",
+				Description:  "reports whether a proposed component identity yields a release name, Service names and a component-id label value this target accepts, and how short it would have to be",
 			},
 			{
 				Name:         "rendered_name",
