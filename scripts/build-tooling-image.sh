@@ -14,7 +14,8 @@
 # resolves to the most recently published tooling image. Because :stable and
 # the version tag share one digest, a signature made against the version
 # reference (which resolves to that digest) already covers :stable — no
-# separate signing pass is needed.
+# separate signing pass is needed. A --save archive carries both references the
+# same way, for a publish that happens later.
 #
 # This script does NOT build the binary. The binary is produced by the
 # repository build (`scripts/build.sh` at the workspace root), which regenerates
@@ -68,9 +69,18 @@
 #                       must not name the --binary file itself.
 #   --push              Push the image after building (default: build only,
 #                       loaded into the local docker image store).
+#   --save <dir>        Build the image and write it, instead of pushing or
+#                       loading it, as an archive in <dir> (created when
+#                       missing): image.tar, which `docker load` reads, carrying
+#                       both the version reference and the moving :stable one,
+#                       and references, those two references one per line. The
+#                       archive is published later, possibly on another
+#                       machine, by scripts/publish-tooling-image.sh, which only
+#                       loads and pushes it, so the machine that publishes need
+#                       not build anything. It does not combine with --push.
 #   --allow-dirty       Permit building/pushing a -dirty tag (refused by
-#                       default when --push is set, so a work-in-progress tree
-#                       is never published).
+#                       default when --push or --save is set, so a
+#                       work-in-progress tree is never published).
 #   --dry-run           Strip and check the copy as a real run does, then print
 #                       the planned commands without running docker.
 #   -h, --help          Show this help.
@@ -92,6 +102,7 @@ PLATFORM="linux/amd64"
 BINARY="$CLI_DIR/aggrega"
 TAG=""
 KEEP_STRIPPED=""
+SAVE_DIR=""
 PUSH=0
 ALLOW_DIRTY=0
 DRY_RUN=0
@@ -108,6 +119,9 @@ while [ "$#" -gt 0 ]; do
       [ -n "${2:-}" ] || die "--keep-stripped needs a path"
       KEEP_STRIPPED="$2"; shift 2 ;;
     --push)       PUSH=1; shift ;;
+    --save)
+      [ -n "${2:-}" ] || die "--save needs a directory"
+      SAVE_DIR="$2"; shift 2 ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
     # Ends at the header's own closing line rather than at a line NUMBER, which
@@ -118,6 +132,13 @@ while [ "$#" -gt 0 ]; do
     *)            die "unknown argument: $1" ;;
   esac
 done
+
+if [ "$PUSH" = 1 ] && [ -n "$SAVE_DIR" ]; then
+  die "--push and --save do not combine: --save writes the archive a later publish pushes"
+fi
+if [ -n "$SAVE_DIR" ]; then
+  case "$SAVE_DIR" in /*) ;; *) SAVE_DIR="$PWD/$SAVE_DIR" ;; esac
+fi
 
 # Default tag from git describe (v-less), matching the binary's stamped form.
 if [ -z "$TAG" ]; then
@@ -163,6 +184,9 @@ case "$TAG" in
     if [ "$PUSH" = 1 ] && [ "$ALLOW_DIRTY" != 1 ]; then
       die "refusing to push a -dirty tag ($TAG); commit the tree or pass --allow-dirty"
     fi
+    if [ -n "$SAVE_DIR" ] && [ "$ALLOW_DIRTY" != 1 ]; then
+      die "refusing to save a -dirty tag ($TAG) for publishing; commit the tree or pass --allow-dirty"
+    fi
     printf 'warning: building a -dirty tag (%s) from an uncommitted tree\n' "$TAG" >&2
     ;;
 esac
@@ -203,11 +227,12 @@ IMAGE_REF="$REGISTRY/$IMAGE_NAME:$TAG"
 STABLE_REF="$REGISTRY/$IMAGE_NAME:stable"
 
 # docker buildx build with the binary's version + ABI stamped as labels via
-# build args. --push publishes; otherwise --load leaves the image in the local
-# store for inspection or a separate push. On a push the same build carries the
-# moving :stable tag as a second --tag, so both references are published from
-# one build and resolve to the identical digest. :stable rides on push only —
-# a local --load never fabricates a moving tag.
+# build args. --push publishes; --save writes a docker archive for a later
+# publish; otherwise --load leaves the image in the local store for inspection
+# or a separate push. On a push or a save the same build carries the moving
+# :stable tag as a second --tag, so both references come from one build and
+# resolve to the identical digest. :stable rides on those two only — a local
+# --load never fabricates a moving tag.
 declare -a BUILD_CMD=(
   docker buildx build
   --platform "$PLATFORM"
@@ -218,19 +243,27 @@ declare -a BUILD_CMD=(
 )
 if [ "$PUSH" = 1 ]; then
   BUILD_CMD+=(--tag "$STABLE_REF" --push)
+elif [ -n "$SAVE_DIR" ]; then
+  BUILD_CMD+=(--tag "$STABLE_REF" --output "type=docker,dest=$SAVE_DIR/image.tar")
 else
   BUILD_CMD+=(--load)
 fi
 BUILD_CMD+=("$CONTEXT_DIR")
 
 printf 'image:     %s\n' "$IMAGE_REF"
-if [ "$PUSH" = 1 ]; then
+if [ "$PUSH" = 1 ] || [ -n "$SAVE_DIR" ]; then
   printf 'stable:    %s\n' "$STABLE_REF"
 fi
 printf 'version:   %s\n' "$BIN_VERSION"
 printf 'abi:       %s\n' "$BIN_ABI"
 printf 'platform:  %s\n' "$PLATFORM"
-printf 'push:      %s\n' "$([ "$PUSH" = 1 ] && echo yes || echo 'no (local load)')"
+if [ "$PUSH" = 1 ]; then
+  printf 'push:      yes\n'
+elif [ -n "$SAVE_DIR" ]; then
+  printf 'push:      no (archive written to %s)\n' "$SAVE_DIR"
+else
+  printf 'push:      no (local load)\n'
+fi
 printf 'binary:    %s (%s bytes, left as built)\n' "$BINARY" "$(wc -c < "$BINARY" | tr -d '[:space:]')"
 printf 'stripped:  %s bytes, debug information removed; same version and abiVersion\n' "$(wc -c < "$STRIPPED" | tr -d '[:space:]')"
 printf 'context:   %s (the stripped copy only; removed on exit)\n' "$CONTEXT_DIR"
@@ -248,7 +281,23 @@ fi
 
 command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
 
+if [ -n "$SAVE_DIR" ]; then
+  # An archive or a reference list left from an earlier run must not pass for
+  # this build's when this build fails.
+  mkdir -p "$SAVE_DIR" || die "could not create $SAVE_DIR"
+  rm -f "$SAVE_DIR/image.tar" "$SAVE_DIR/references"
+fi
+
 "${BUILD_CMD[@]}"
+
+if [ -n "$SAVE_DIR" ]; then
+  [ -s "$SAVE_DIR/image.tar" ] || die "the build wrote no archive at $SAVE_DIR/image.tar"
+  printf '%s\n%s\n' "$IMAGE_REF" "$STABLE_REF" > "$SAVE_DIR/references"
+  printf '\nsaved %s (%s bytes), carrying:\n  %s\n  %s\n' "$SAVE_DIR/image.tar" \
+    "$(wc -c < "$SAVE_DIR/image.tar" | tr -d '[:space:]')" "$IMAGE_REF" "$STABLE_REF"
+  printf 'publish it with scripts/publish-tooling-image.sh --archive-dir %s, then sign by reference:\n  aggrega sign %s\n' \
+    "$SAVE_DIR" "$IMAGE_REF"
+fi
 
 if [ "$PUSH" = 1 ]; then
   printf '\npushed %s\n' "$IMAGE_REF"

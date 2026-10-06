@@ -48,7 +48,7 @@
 # binary-provenance chain guarded above, which is why they stay out of scope.
 #
 # Exit 0 when the recipe has one home; exit 1 (naming each offending script and
-# line) otherwise. Deterministic and offline. The release workflow's prep phase
+# line) otherwise. Deterministic and offline. The release workflow's build job
 # (.github/workflows/publish-plugins-sign.yml) runs it before anything is built,
 # on the tree the run is about to build.
 set -euo pipefail

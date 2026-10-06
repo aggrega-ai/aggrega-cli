@@ -41,15 +41,33 @@
 # AGGREGA_IDENTITY_TOKEN / SIGSTORE_ID_TOKEN environment variable) selects
 # non-interactive keyless signing. Signing is NON-INTERACTIVE ONLY: the script
 # refuses to sign when no key or token source is present, so the keyless flow can
-# never fall back to a browser prompt.
+# never fall back to a browser prompt. The publish command, its options and that
+# refusal live in scripts/lib/plugin-publish.sh, which this script sources.
 #
 # --dry-run computes and prints the proposed references for every mode without any
 # network call, OIDC contact, or marker advance.
+#
+# --pairs-out <file> resolves the work-list and writes it as a pairing instead of
+# publishing it: one line per Plugin entity, its guest's path, a tab and the
+# entity's path, each relative to the directory <file> sits in. Both must lie
+# under that directory, so the directory can be handed to another machine whole,
+# and the pairing is written only when every entity paired. With --pairs-out
+# nothing is published or signed and no marker moves, so --dry-run, --sign, --key,
+# --identity-token and --marker are refused beside it. A pairing is published by
+# scripts/publish-plugin-pairs.sh, which needs only the aggrega binary: that is
+# how a publishing machine is kept free of the toolchain the derivation above
+# runs.
 #
 # Env: AGGREGA_BIN overrides the `aggrega` binary (e.g. a freshly-built one).
 set -euo pipefail
 
 CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # aggrega-cli module root
+
+# The publish command and the signing refusal (plugin_publish_one,
+# plugin_publish_require_signing_material) have one home, shared with
+# scripts/publish-plugin-pairs.sh.
+# shellcheck source-path=SCRIPTDIR source=lib/plugin-publish.sh
+. "$CLI_ROOT/scripts/lib/plugin-publish.sh"
 
 REGISTRY="127.0.0.1:5000"
 DRYRUN=""
@@ -62,6 +80,7 @@ REPO=""
 PATHSPEC=""
 MARKER=""
 NO_ADVANCE=""
+PAIRS_OUT=""
 POSITIONAL=""
 AGGREGA="${AGGREGA_BIN:-aggrega}"
 
@@ -75,6 +94,7 @@ usage:
 
   common: [--registry <host:port>] [--dry-run]
           [--sign [--key <path>] [--identity-token <token>]]
+          | --pairs-out <file>   (write the pairing; publish nothing)
 EOF
 }
 
@@ -98,6 +118,7 @@ while [ $# -gt 0 ]; do
     --sign)           SIGN="1"; shift ;;
     --key)            KEY="$2"; shift 2 ;;
     --identity-token) IDTOKEN="$2"; shift 2 ;;
+    --pairs-out)      PAIRS_OUT="$2"; shift 2 ;;
     -h|--help)        usage; exit 0 ;;
     --*)              usage; exit 2 ;;
     *)
@@ -160,17 +181,6 @@ resolve_wasm() {
   printf '%s\n' "$wasm"
 }
 
-# extract_reference reads captured `aggrega push` stdout and prints the resolved
-# <registry>/<path>:<tag> reference. "Push complete:" and "Already published:"
-# carry it as the third field; the "aggrega push (dry-run):" line as the fourth.
-extract_reference() {
-  awk '
-    /^Push complete: /            { print $3; exit }
-    /^Already published: /        { print $3; exit }
-    /^aggrega push \(dry-run\): / { print $4; exit }
-  '
-}
-
 # --- Marker seam (git-diff-range only) ---------------------------------------
 # The only two places the marker mechanism is touched. Default mechanism is a git
 # tag on the diffed repository: read = the commit the tag points at; advance =
@@ -184,15 +194,40 @@ marker_advance() {
 }
 # -----------------------------------------------------------------------------
 
+# --- A pairing publishes nothing ---------------------------------------------
+# --pairs-out only resolves and writes, so every option that shapes a publish is
+# refused beside it rather than silently ignored.
+if [ -n "$PAIRS_OUT" ]; then
+  if [ -n "$DRYRUN" ] || [ -n "$SIGN" ] || [ -n "$KEY" ] || [ -n "$IDTOKEN" ] || [ -n "$MARKER" ]; then
+    echo "publish-plugins: --pairs-out writes the pairing and publishes nothing, so --dry-run, --sign, --key, --identity-token and --marker do not combine with it" >&2
+    exit 2
+  fi
+  PAIRS_DIR="$(dirname "$PAIRS_OUT")"
+  [ -d "$PAIRS_DIR" ] || { echo "publish-plugins: --pairs-out: directory not found: $PAIRS_DIR" >&2; exit 1; }
+  PAIRS_DIR="$(cd "$PAIRS_DIR" && pwd -P)"
+fi
+
 # --- Non-interactive signing discipline --------------------------------------
 # Refuse to sign a real publish without signing material, so the keyless flow can
 # never fall back to an interactive browser prompt. A dry-run signs nothing.
-if [ -n "$SIGN" ] && [ -z "$DRYRUN" ]; then
-  if [ -z "$KEY" ] && [ -z "$IDTOKEN" ] && [ -z "${AGGREGA_IDENTITY_TOKEN:-}" ] && [ -z "${SIGSTORE_ID_TOKEN:-}" ]; then
-    echo "publish-plugins: --sign: no signing material; pass --key <path> for offline keyed signing, or --identity-token / AGGREGA_IDENTITY_TOKEN / SIGSTORE_ID_TOKEN for non-interactive keyless signing" >&2
-    exit 2
-  fi
-fi
+plugin_publish_require_signing_material publish-plugins || exit 2
+
+# pair_path prints <path> relative to the pairing's directory, or fails when it
+# does not lie under it or carries a character the pairing's lines cannot hold.
+pair_path() {
+  local path="$1" dir abs
+  dir="$(cd "$(dirname "$path")" && pwd -P)" || return 1
+  abs="$dir/$(basename "$path")"
+  case "$abs" in
+    "$PAIRS_DIR"/*) ;;
+    *) echo "publish-plugins: $path does not lie under $PAIRS_DIR, the directory the pairing is written in" >&2; return 1 ;;
+  esac
+  abs="${abs#"$PAIRS_DIR"/}"
+  case "$abs" in
+    *$'\t'*|*$'\n'*) echo "publish-plugins: $path carries a tab or a newline, which a pairing line cannot hold" >&2; return 1 ;;
+  esac
+  printf '%s\n' "$abs"
+}
 
 # --- Select the candidate entity files ---------------------------------------
 FILES=()
@@ -225,6 +260,7 @@ esac
 # --- Push loop ---------------------------------------------------------------
 pushed=0; failed=0; skipped=0
 REFS=()
+PAIRS=()
 for f in ${FILES[@]+"${FILES[@]}"}; do
   [ -f "$f" ] || continue
   kind="$(peek_kind "$f")"
@@ -238,27 +274,35 @@ for f in ${FILES[@]+"${FILES[@]}"}; do
     failed=$((failed + 1))
     continue
   fi
-  cmd=("$AGGREGA" push --plugin "$wasm" "$f" --registry "$REGISTRY")
-  [ -n "$DRYRUN" ] && cmd+=(--dry-run)
-  if [ -n "$SIGN" ]; then
-    cmd+=(--sign)
-    [ -n "$KEY" ]     && cmd+=(--key "$KEY")
-    [ -n "$IDTOKEN" ] && cmd+=(--identity-token "$IDTOKEN")
+  if [ -n "$PAIRS_OUT" ]; then
+    if wasm_rel="$(pair_path "$wasm")" && entity_rel="$(pair_path "$f")"; then
+      PAIRS+=("$wasm_rel"$'\t'"$entity_rel")
+    else
+      failed=$((failed + 1))
+    fi
+    continue
   fi
-  # Capture stdout to recover the resolved reference, then echo it so the push
-  # output stays visible. The `if` guards the command substitution against set -e
-  # while testing push's exit status.
-  if out="$("${cmd[@]}")"; then
-    printf '%s\n' "$out"
+  if plugin_publish_one "$wasm" "$f"; then
     pushed=$((pushed + 1))
-    ref="$(printf '%s\n' "$out" | extract_reference)"
-    [ -n "$ref" ] && REFS+=("$ref")
+    [ -n "$PLUGIN_PUBLISHED_REF" ] && REFS+=("$PLUGIN_PUBLISHED_REF")
   else
-    printf '%s\n' "$out"
     echo "publish-plugins: PUSH FAILED: $f" >&2
     failed=$((failed + 1))
   fi
 done
+
+# --- Write the pairing, and publish nothing -----------------------------------
+if [ -n "$PAIRS_OUT" ]; then
+  if [ "$failed" -ne 0 ] || [ "${#PAIRS[@]}" -eq 0 ]; then
+    echo "publish-plugins: $MODE: no pairing written: ${#PAIRS[@]} paired, $skipped skipped, $failed failed" >&2
+    exit 1
+  fi
+  tmp="$(mktemp "$PAIRS_DIR/.pairs.XXXXXX")"
+  printf '%s\n' "${PAIRS[@]}" > "$tmp"
+  mv -f "$tmp" "$PAIRS_DIR/$(basename "$PAIRS_OUT")"
+  echo "publish-plugins: $MODE: wrote ${#PAIRS[@]} pair(s) to $PAIRS_OUT ($skipped skipped)"
+  exit 0
+fi
 
 echo "publish-plugins: $MODE: $pushed pushed, $skipped skipped, $failed failed -> $REGISTRY"
 if [ "${#REFS[@]}" -gt 0 ]; then
