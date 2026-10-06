@@ -46,16 +46,16 @@ func (s *Server) scopeOfWriteTarget(t registryops.WriteTarget) configWriteScope 
 	}
 }
 
-// registrationRefusal is the message a refused registration or seeding answers
-// with: the shared registration's own sentence, preceded by the short code of
-// the condition it names where it names one.
+// conditionRefusal is the message a refused registration, seeding or
+// active-Release marker write answers with: the shared layer's own sentence,
+// preceded by the short code of the condition it names where it names one.
 //
 // The sentence is the command line's, unchanged, so a caller reads what a person
 // at a terminal reads. The short code is what a terminal prints in the
 // diagnostic's bracketed head, and this answer has no head, so it leads the
 // message instead — the form the daemon's other refusals naming a condition take.
 // A refusal naming no condition is the sentence alone.
-func registrationRefusal(err error) string {
+func conditionRefusal(err error) string {
 	if short, ok := cerrors.ShortCodeOf(err); ok {
 		return short + ": " + err.Error()
 	}
@@ -238,7 +238,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, registrationRefusal(err))
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, conditionRefusal(err))
 	}
 	// projection-omits internal/registryops.AddResult.Content: the registration
 	// fills that document only under a reporting delivery, and this method takes

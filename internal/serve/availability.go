@@ -409,6 +409,15 @@ var operationAvailability = map[string]serveAvailability{
 	"release-candidates":          servedAt(at("aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates)),
 	"active-release":              servedAt(at("aggrega/activeRelease", (*Server).dispatchActiveRelease)),
 
+	// The session records a Release in the workspace's active-Release marker, the
+	// writing pair of the row above. It writes, and it is admitted on the rule every
+	// writing method here runs under: a caller that sent it has asked for the
+	// change. It is carried here rather than left to the client because the marker
+	// is a path inside the workspace, and a write the product makes there is held
+	// to the one judgement every such write is held to; a client writing the file
+	// itself would decide for itself where a link beneath the workspace leads.
+	"active-release-set": servedAt(at("aggrega/setActiveRelease", (*Server).dispatchSetActiveRelease)),
+
 	// The session applies one bounded structured edit to a document the
 	// workspace carries, and it writes. It is admitted on the rule every
 	// writing method here runs under: a caller that sent it has asked for the

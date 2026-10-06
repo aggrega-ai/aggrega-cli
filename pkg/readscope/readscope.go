@@ -21,6 +21,12 @@
 // found rather than reading it for a build names the link as not read instead of
 // halting.
 //
+// [CheckConfigurationRead] is the same judgement for a workspace configuration
+// file the configuration is about to be merged from. Only the remedy its refusal
+// names differs, because a configuration file kept outside the workspace has a
+// way in of its own — the global configuration file — where a catalog document
+// has a catalog directory.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -48,7 +54,8 @@ import (
 
 // ErrReadLeadsOutOfWorkspace is the halt raised when a file an operation is about
 // to read, beneath a directory it reads as a whole — a catalog directory, the
-// directory holding a Release — leads, through a link, out of the root it is held
+// directory holding a Release — or a configuration file the workspace's
+// configuration is merged from, leads, through a link, out of the root it is held
 // to: the workspace, or a directory outside it the owner typed or the
 // configuration named.
 //
@@ -67,8 +74,9 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 	RulePlace: cerrors.RuleNoStageReaches("The rule is evaluated where the product reads a directory of workspace " +
 		"content as a whole — a catalog directory's documents, read by a lookup a build, a pull, a check or the " +
 		"editor depends on, and the Aggregates and Manifests beside a Release, read to resolve the names the " +
-		"Release gives them. Each of those reads the filesystem to decide which documents a compilation will " +
-		"open, ahead of every declared stage, and no stage holds the entry the rule is judged against."),
+		"Release gives them — and where it reads the configuration files the workspace's configuration is merged " +
+		"from, before any command runs. Each of those reads the filesystem ahead of every declared stage, and no " +
+		"stage holds the entry the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -86,6 +94,20 @@ func remedyFor(root string) string {
 		"leads, even when it is itself a link"
 }
 
+// configurationRemedyFor is what the refusal tells its reader for a workspace
+// configuration file that must stay inside root.
+//
+// It names the global configuration file as the way a configuration kept outside
+// the workspace is read, because that is the one layer the product reads from
+// wherever it was put, and it is named deliberately — by a flag or an environment
+// variable — rather than met beneath the workspace.
+func configurationRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		": a workspace's configuration files are read only from inside the workspace they configure. A " +
+		"configuration file kept elsewhere is read by naming it as the global configuration file, with --config " +
+		"or AGGREGA_CONFIG"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -95,6 +117,19 @@ func remedyFor(root string) string {
 // never reaches root on its way passes, because root does not hold it, and so does
 // any path where root is empty: with no root there is nothing to hold a read to.
 func CheckRead(root, path string) error {
+	return checkRead(root, path, remedyFor)
+}
+
+// CheckConfigurationRead is [CheckRead] for a workspace configuration file the
+// configuration is about to be merged from: the same judgement and the same
+// condition, with the remedy a configuration file has.
+func CheckConfigurationRead(root, path string) error {
+	return checkRead(root, path, configurationRemedyFor)
+}
+
+// checkRead is the judgement both entry points make, composing the refusal with
+// the remedy the caller's kind of read has.
+func checkRead(root, path string, remedy func(root string) string) error {
 	if root == "" || path == "" {
 		return nil
 	}
@@ -108,7 +143,7 @@ func CheckRead(root, path string) error {
 		fmt.Sprintf("the link %s leads to %s", res.Link, res.LinkLeadsTo),
 	}
 	return cerrors.Raise(errReadLeadsOutOfWorkspace, "", cerrors.SourceLocation{File: res.Link},
-		cerrors.ComposeMessage(ErrReadLeadsOutOfWorkspace(), values, remedyFor(absolute(root))), nil)
+		cerrors.ComposeMessage(ErrReadLeadsOutOfWorkspace(), values, remedy(absolute(root))), nil)
 }
 
 // absolute is p made absolute against the working directory and cleaned, the

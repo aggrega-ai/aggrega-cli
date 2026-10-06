@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
 
 // ConfigFilename is the single canonical basename of the per-directory
@@ -224,6 +225,12 @@ func (r *ResolvedWorkspace) Warnings() []string {
 // `_append` pool in cascade order — it never whole-replaces a base scalar and
 // never anchors the root.
 //
+// Every file the cascade merges is workspace content and is held to the root the
+// way every read of workspace content is ([readscope.CheckConfigurationRead]): a
+// file that is a link leading out of the workspace is not read, and the
+// resolution halts naming the link. The global layer is not a workspace file and
+// is read wherever it was named.
+//
 // Environment overlay: a top layer above the merged config and below any CLI
 // flag the command applies, so the effective ladder is flag > environment >
 // config > default. The optional look reads the environment; when omitted (or
@@ -336,8 +343,19 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	// `.aggrega-config.yaml` (whole-replace + `_append`) first, then its CI-owned
 	// overlay (additive-only), so a CI attachment always lands after the base
 	// entries it sits beside.
+	//
+	// Every file the cascade merges is workspace content, so each is held to the
+	// workspace root before it is read: a file that is a link leading out of the
+	// workspace — or one reached through a directory link leading out — is neither
+	// read nor used, and the resolution halts naming the link rather than carrying
+	// on without it. Carrying on would configure the workspace from what remained,
+	// the defaults among it, and every command would then run on a configuration
+	// nobody wrote while reading as though it ran on the one somebody did.
 	for _, dir := range cascadeDirs(root, absStart) {
 		basePath := filepath.Join(dir, ConfigFilename)
+		if err := readscope.CheckConfigurationRead(root, basePath); err != nil {
+			return nil, err
+		}
 		if _, serr := os.Stat(basePath); serr == nil {
 			raw, lerr := load(basePath)
 			if lerr != nil {
@@ -362,6 +380,9 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		}
 
 		ciPath := filepath.Join(dir, AppendCIConfigFilename)
+		if err := readscope.CheckConfigurationRead(root, ciPath); err != nil {
+			return nil, err
+		}
 		if _, serr := os.Stat(ciPath); serr == nil {
 			ciCfg, ignored, cerr := loadCIOverlay(ciPath)
 			if cerr != nil {

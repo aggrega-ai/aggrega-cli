@@ -87,6 +87,9 @@
 //	aggrega/activeRelease          reports which Release a client should
 //	                               select by default, or the empty path and
 //	                               the reason when the workspace offers none
+//	aggrega/setActiveRelease       records a Release in the workspace's
+//	                               active-Release marker, held to the workspace
+//	                               boundary, and answers as activeRelease does
 //	aggrega/effectiveConfiguration reports the configuration resolved for
 //	                               this session and, per setting, the layer
 //	                               that determined it

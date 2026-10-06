@@ -55,7 +55,10 @@ var decidersOfInside = map[string]string{
 	"pkg/writescope:check":                        "a write or a delete the product composes",
 	"pkg/writescope:CheckWrite":                   "where a write through a link leading nowhere lands",
 	"pkg/writescope:RootFor":                      "which side of the workspace a named directory lies on",
+	"pkg/readscope:checkRead":                     "a read of workspace content, whichever remedy its refusal names",
 	"pkg/readscope:CheckRead":                     "a read beneath a directory read as a whole",
+	"pkg/readscope:CheckConfigurationRead":        "a workspace configuration file the configuration is merged from",
+	"pkg/workspaceconfig:resolve":                 "every configuration file the workspace's configuration cascade merges",
 	"pkg/catalog:catalogWalk.walk":                "every entry of a catalog directory, and the directory itself",
 	"pkg/resolver:scanReleaseDir":                 "the documents beside a Release that its names resolve against",
 	"internal/sourceref:AnchorContent":            "every component of a content path an entity declares",
@@ -99,7 +102,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},
@@ -114,6 +117,7 @@ var judgementsOfInside = map[string][]string{
 // so the chain from every request resolver to the definition is held link by link.
 var judgementsWithinAPackage = map[string][]string{
 	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath"},
+	"pkg/readscope":  {"checkRead"},
 	"pkg/resolver":   {"resolveManifest", "resolveReleaseExtendsRef", "LoadParametersImport"},
 }
 

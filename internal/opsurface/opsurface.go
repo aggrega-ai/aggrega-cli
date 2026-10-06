@@ -199,6 +199,9 @@ var operations = []Operation{
 	{"document-edit", ReachWorkspace, "Apply one bounded structured edit to an authored document, preserving every byte it does not touch."},
 	{"release-candidates", ReachNone, "Report every Release-kind document under the workspace root, by content."},
 	{"active-release", ReachNone, "Report the Release the workspace's disambiguation cascade selected."},
+	// The marker it writes is a file inside the workspace, which is the whole of
+	// its reach.
+	{"active-release-set", ReachWorkspace, "Record a Release as the workspace's default in its active-Release marker."},
 
 	// Capabilities the tool protocol originated.
 	{"explain-error", ReachNone, "Explain a diagnostic a build emitted, and what to change."},

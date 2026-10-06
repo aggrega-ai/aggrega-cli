@@ -144,7 +144,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 				"config init: "+existing.Path()+" already exists and was left untouched; "+
 					"send force to proceed anyway, which merges the registry entry into what is already there")
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, registrationRefusal(err))
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, conditionRefusal(err))
 	}
 	return s.writeResult(ctx, req.ID, configInitResult{
 		Host:    res.Registration.Host,

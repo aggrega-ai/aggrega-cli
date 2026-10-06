@@ -64,6 +64,14 @@ const (
 		"that view identical to the compiler's, which is why it answers as a structured document; " +
 		"a command-line invocation holds no such view"
 
+	// unavailabilityReasonNoCommandReadsTheMarker covers recording the Release a
+	// workspace's active-Release marker names. The marker is read only where the
+	// language server settles on a default Release for an editor, and no command
+	// reads it, so a command writing one would record something no command
+	// consults.
+	unavailabilityReasonNoCommandReadsTheMarker = "it records the marker the language server reads to settle on a " +
+		"default Release, and no command reads that marker"
+
 	// unavailabilityReasonProtocolLocalMeta covers an operation that reports one
 	// protocol's own capability surface. The command line withholds no command
 	// from its help, so it has no withheld set to reveal.
@@ -155,5 +163,6 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"attachment-container":        opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"release-candidates":          opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"active-release":              opsurface.Unavailable(unavailabilityReasonEditorViewParity),
+	"active-release-set":          opsurface.Unavailable(unavailabilityReasonNoCommandReadsTheMarker),
 	"describe-capabilities":       opsurface.Unavailable(unavailabilityReasonProtocolLocalMeta),
 }

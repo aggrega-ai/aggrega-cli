@@ -300,6 +300,14 @@ const (
 	unavailabilityReasonNoReleaseSelection = "it reports which Release a workspace-wide selection settled on, " +
 		"and this protocol makes no such selection: every call names the Release it means and resolves its " +
 		"workspace from its own arguments"
+
+	// unavailabilityReasonNoReleaseSelectionToRecord covers the writing pair of the
+	// operation above: recording the Release a workspace-wide selection starts
+	// from. This protocol makes no such selection, so a tool recording one would
+	// write a default no call here reads.
+	unavailabilityReasonNoReleaseSelectionToRecord = "it records the Release a workspace-wide selection starts " +
+		"from, and this protocol makes no such selection: every call names the Release it means and resolves " +
+		"its workspace from its own arguments"
 )
 
 // unbackedAvailability is what the tool protocol does with the operations no
@@ -319,6 +327,7 @@ var unbackedAvailability = map[string]opsurface.OperationAvailability{
 	"hover-at-position":           opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
 	"completion-at-position":      opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
 	"active-release":              opsurface.Unavailable(unavailabilityReasonNoReleaseSelection),
+	"active-release-set":          opsurface.Unavailable(unavailabilityReasonNoReleaseSelectionToRecord),
 }
 
 // StaticToolNames returns the tool names this package declares statically: the

@@ -285,7 +285,16 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 	if err := decodeParams(req, &noParams{}); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
+	return s.writeResult(ctx, req.ID, s.activeReleaseAnswer(ctx))
+}
 
+// activeReleaseAnswer runs the disambiguation cascade over the workspace as it
+// stands, publishes each Release it found but could not load, and composes the
+// answer aggrega/activeRelease gives. It is the one composition of that answer:
+// aggrega/setActiveRelease answers with it too, once the marker is written, so
+// the writer reports what the reader would report rather than a second account
+// of the same choice.
+func (s *Server) activeReleaseAnswer(ctx context.Context) activeReleaseResult {
 	_, releasePath, attempt := runManifestCascade(s.workspaceRoot, s.wsConfig, s.stderr)
 	s.publishCascadeFailureDiagnostics(ctx, attempt)
 	result := activeReleaseResult{Release: releasePath}
@@ -295,7 +304,7 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 	} else {
 		result.Lockfile = lockfile.PathFor(releasePath)
 	}
-	return s.writeResult(ctx, req.ID, result)
+	return result
 }
 
 // dispatchInitialize selects a position encoding from the client's
