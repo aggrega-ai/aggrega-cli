@@ -20,13 +20,19 @@ import (
 //
 // The global destination is asked too, beside a workspace file that leads out: it
 // is the machine's own configuration rather than the workspace's, so the refusal
-// must not reach it.
+// must not reach it — and it is returned where it is spelled, beneath a home
+// directory whose configuration directory is a link leading out of it, because
+// nothing judges the machine's own store against any root.
 func TestTheWorkspaceConfigDestinationIsHeldToTheWorkspace(t *testing.T) {
 	rows := []struct {
 		name    string
 		layout  func(t *testing.T, root, outside string)
 		global  bool
 		refused bool
+		// home lays out the home directory the global destination is composed
+		// beneath, given the directory outside the workspace, where the row cares
+		// which one it is; a row without it is handed a fresh one.
+		home func(t *testing.T, outside string) string
 	}{
 		{name: "control: a configuration file inside", layout: func(t *testing.T, root, _ string) {
 			if err := os.WriteFile(filepath.Join(root, ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
@@ -56,13 +62,34 @@ func TestTheWorkspaceConfigDestinationIsHeldToTheWorkspace(t *testing.T) {
 		{name: "the global destination beside a workspace file leading out", global: true, layout: func(t *testing.T, root, outside string) {
 			symlinkOrSkip(t, filepath.Join(outside, "absent.yaml"), filepath.Join(root, ConfigFilename))
 		}},
+		{name: "the global destination beneath a configuration directory that is a link leading out of the home directory", global: true,
+			layout: func(t *testing.T, root, _ string) {
+				if err := os.WriteFile(filepath.Join(root, ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			home: func(t *testing.T, outside string) string {
+				home := t.TempDir()
+				if err := os.MkdirAll(filepath.Join(outside, "config"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				symlinkOrSkip(t, filepath.Join(outside, "config"), filepath.Join(home, ".config"))
+				return home
+			}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			root, outside := t.TempDir(), t.TempDir()
 			row.layout(t, root, outside)
+			home := ""
+			if row.home != nil {
+				home = row.home(t, outside)
+			}
 			lookup := func(key string) string {
 				if key == "HOME" {
+					if home != "" {
+						return home
+					}
 					return t.TempDir()
 				}
 				return ""
@@ -72,7 +99,13 @@ func TestTheWorkspaceConfigDestinationIsHeldToTheWorkspace(t *testing.T) {
 			if row.global {
 				op = OpRegistry
 			}
-			_, byNature := WriteDestination(op, false, false, root, lookup)
+			destination, byNature := WriteDestination(op, false, false, root, lookup)
+			if home != "" {
+				if want := filepath.Join(home, ".config", "aggrega", "config.yaml"); destination != want {
+					t.Errorf("the global destination is %q, want %q — the machine's own store is returned where it "+
+						"is spelled, through its link", destination, want)
+				}
+			}
 			rw := &ResolvedWorkspace{root: root, lookup: lookup}
 			_, forCapture := rw.WorkspaceConfigDestination()
 			if row.global {

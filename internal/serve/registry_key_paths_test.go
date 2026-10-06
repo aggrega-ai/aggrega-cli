@@ -22,7 +22,9 @@ func registrationKey(marker string) string {
 // registration wrote.
 //
 // An absolute value is a file a person picked in a dialog and is read where it
-// names, wherever that is. A relative value is a file inside the workspace: it is
+// names, wherever that is — through a link leading out of the workspace too, since
+// a pick is not judged against the workspace at all. A relative value is a file
+// inside the workspace: it is
 // read from the workspace root — never from the directory the daemon happens to run
 // in, which is this test binary's own package directory and holds no key — and held
 // there, so one climbing out of the root or leading out of it through a link is
@@ -51,6 +53,13 @@ func TestARegistrationReadsARelativeKeyFileFromTheWorkspaceAndHoldsItThere(t *te
 				return map[string]any{"keyPath": filepath.Join(outside, "picked.pub")}
 			},
 			want: "PICKEDOUTSIDE",
+		},
+		{
+			name: "an absolute key file a dialog picked through a link leading out is read where the link leads",
+			params: func(root, _ string) map[string]any {
+				return map[string]any{"keyPath": filepath.Join(root, "keys", "linked.pub")}
+			},
+			want: "OUTSIDETHROUGHALINK",
 		},
 		{
 			name:   "a relative key file is read from the workspace root",

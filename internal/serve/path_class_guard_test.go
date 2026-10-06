@@ -69,7 +69,9 @@ var selectedPathForwarders = map[string]bool{
 // site in another package. The walk covers this package's own production source,
 // which is where the wire boundary is, and pathscope.ResolveSelected is exported
 // — so another package may reach that resolver directly and this check will not
-// know. What holds there is the one-home rule and review, not this test.
+// know. The path-scope package's guard of the one judgement of inside holds that
+// instead: it walks the whole module and lets pathscope.ResolveSelected be reached
+// by selectedPath alone.
 func TestSelectedPathIsReachedOnlyBySanctionedParameters(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

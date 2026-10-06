@@ -123,6 +123,64 @@ var linkResolvers = map[string][]string{
 	"os":       {"Readlink"},
 }
 
+// exceptionPredicates are the exceptions to the workspace boundary, each the one
+// function that lets its class of path through, keyed as decidersOfInside is and
+// valued by the class it answers for. Each must be FOUND declared, so a predicate
+// renamed or folded away leaves no entry describing a class nothing answers.
+//
+// 🔴 Hand-written for the reason sanctionedLinkResolvers is: an entry is the
+// decision that a class of path is let through and by which function, not a fact
+// about the source.
+//
+// Two exceptions have no predicate, because nothing judges them: a path the owner
+// types on the command line is used as typed, and the product's machine-wide
+// stores lie where no workspace root holds them. What the product works out
+// beneath either is still held — beneath a typed directory, by the anchor rule
+// below.
+var exceptionPredicates = map[string]string{
+	"pkg/writescope:RootFor": "a directory the owner typed, or the configuration named, that lies outside the " +
+		"workspace is a root of its own for what is composed or read beneath it",
+	"pkg/writescope:RootForCache": "the artifact cache directory the configuration spells climbing out of the " +
+		"workspace is a root of its own",
+	"pkg/workspaceconfig:CatalogDirRoot": "a catalog directory somebody named, typed or configured, has the root " +
+		"the anchor rule picks, and the conventional one nobody named is the workspace's",
+	"internal/serve:linkScope.configurationReaches": "a link the language server's walks meet that leads to a " +
+		"Release file or a catalog directory the configuration names",
+	"internal/serve:Server.selectedPath": "a file picked in a dialog, read where it names",
+	"internal/serve:Server.canonicalFile": "a parameter naming a document the client holds open, which is " +
+		"answered from what the client sent",
+	"internal/mcp:toolWorkspace.workspacePath": "a path an assistant names over the process's own streams, " +
+		"honoured as the owner typing it on the command line",
+}
+
+// exceptionPrimitives are calls that let a path through by their nature, each
+// valued by the one predicate that may make it. pathscope.ResolveSelected resolves
+// a path with no root to stay inside, which is right for a file a person picked
+// and for nothing else, so a site reaching it elsewhere has admitted a path by a
+// reasoning of its own. The path-scope package itself is exempt: it spells a path
+// with it and admits nothing.
+var exceptionPrimitives = map[string]string{
+	"pathscope.ResolveSelected": "internal/serve:Server.selectedPath",
+}
+
+// predicatesThatReadNothing are the exception predicates whose class is defined by
+// reading nothing at the path, each valued by why. Neither the predicate nor any
+// function of its own package it calls may reach the filesystem or a judgement of
+// inside: one that did would be reading the path the class exists not to read.
+var predicatesThatReadNothing = map[string]string{
+	"internal/serve:Server.canonicalFile": "a document the client holds open is answered from what the client " +
+		"sent, so the key it is kept under is spelled without reading anything at its path",
+}
+
+// readsTheFilesystem are the calls that read, list or resolve something on disk.
+// An empty list stands for every function of the package.
+var readsTheFilesystem = map[string][]string{
+	"os":       {},
+	"ioutil":   {},
+	"fs":       {"ReadFile", "ReadDir", "Stat", "Glob", "WalkDir", "Sub"},
+	"filepath": {"EvalSymlinks", "Glob", "Walk", "WalkDir"},
+}
+
 // TestTheOneJudgementOfInsideHasNoSecondHome keeps the judgement of where a path
 // leads on disk in the one function that makes it.
 //
@@ -135,7 +193,17 @@ var linkResolvers = map[string][]string{
 // It checks both directions. A function resolving a link must be one this file
 // sanctions, with the reason it is not a judgement; and every function this file
 // names as a decider must be found asking the one definition, so a decider that
-// stops asking it fails here as well as in its own tests.
+// stops asking it fails here as well as in its own tests. The reverse holds too:
+// a function asking the one definition itself must be a decider this file names,
+// because a site that asks it and then lets a path through for a reason of its
+// own has become a second home of an exception.
+//
+// The exceptions are held by class. Each class's predicate is named in
+// exceptionPredicates and must be found; a call that lets a path through by its
+// nature is reached only by the predicate exceptionPrimitives gives it; and a
+// predicate whose class is reading nothing at the path — a document the client
+// holds open — is held to reaching nothing on disk, through any function of its
+// own package it calls.
 //
 // It FAILS rather than reports, because a Go package that passes prints nothing,
 // so a guard that only reported would be inert in every routine run.
@@ -146,10 +214,16 @@ var linkResolvers = map[string][]string{
 // than the two named in linkResolvers. The first is the lexical question the
 // package's other entry points answer, and a reader asking it where the on-disk
 // question was owed is a defect its own tests, not this guard, have to catch.
+// Likewise a path let through by asking nothing at all, which is how the command
+// line's typed paths and the machine-wide stores are let through by design; and,
+// in the read-nothing check, a method called on a value other than the function's
+// own receiver.
 func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 	fset := token.NewFileSet()
 	resolving := map[string]bool{}
 	asking := map[string]bool{}
+	declared := map[string]declaredFunc{}
+	reachedPrimitive := map[string]bool{}
 	visited := 0
 	err := filepath.WalkDir(moduleRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -182,6 +256,7 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 				continue
 			}
 			key := pkgDir + ":" + funcName(fn)
+			declared[key] = declaredFunc{pkgDir: pkgDir, fn: fn}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -217,6 +292,26 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 				if names(judgementsOfInside, pkg.Name, sel.Sel.Name) {
 					asking[key] = true
 				}
+				if pkg.Name == "pathscope" && sel.Sel.Name == "ResolvesInside" {
+					if _, decider := decidersOfInside[key]; !decider {
+						t.Errorf("%s: pathscope.ResolvesInside asked directly in %s, which this file does not name as "+
+							"a decider — a site that asks the one definition and then acts on the answer for a reason "+
+							"of its own is a second home of a judgement or an exception. Ask the judgement or the "+
+							"exception that already answers the question; if this is a new decider, add it to "+
+							"decidersOfInside with what it judges, in the same change.",
+							fset.Position(call.Pos()), key)
+					}
+				}
+				if predicate, primitive := exceptionPrimitives[pkg.Name+"."+sel.Sel.Name]; primitive && pkgDir != "pkg/pathscope" {
+					if key != predicate {
+						t.Errorf("%s: %s.%s lets a path through in %s, and only %s may — it is the one place that "+
+							"class of path is admitted. Route the path through that predicate, or through the "+
+							"judgement its own class is held to.",
+							fset.Position(call.Pos()), pkg.Name, sel.Sel.Name, key, predicate)
+					} else {
+						reachedPrimitive[key] = true
+					}
+				}
 				return true
 			})
 		}
@@ -243,6 +338,139 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 			"stopped asking it decides for itself, and a renamed one leaves its entry judging nothing; restore the "+
 			"call, or rename the entry in the same change", missing)
 	}
+
+	// The exceptions, by class.
+	found := map[string]bool{}
+	for key := range declared {
+		found[key] = true
+	}
+	if missing := absentFrom(exceptionPredicates, found); len(missing) > 0 {
+		t.Errorf("exception predicates the walk did not find declared: %v — a predicate renamed, or folded into "+
+			"another function; rename or drop its entry in the same change, because an entry naming nothing leaves "+
+			"its class answered by a function that does not exist", missing)
+	}
+	owners := map[string]string{}
+	for primitive, predicate := range exceptionPrimitives {
+		owners[predicate] = primitive
+	}
+	if missing := absentFrom(owners, reachedPrimitive); len(missing) > 0 {
+		t.Errorf("exception predicates the walk did not find reaching the call that lets their class through: %v — "+
+			"a predicate that stopped making the call leaves the call owned by nothing; restore it, or move the "+
+			"entry in exceptionPrimitives in the same change", missing)
+	}
+	for _, key := range sortedKeys(predicatesThatReadNothing) {
+		if !found[key] {
+			t.Errorf("a predicate held to reading nothing was not found declared: %s — rename or drop its entry "+
+				"in predicatesThatReadNothing in the same change", key)
+			continue
+		}
+		if site, call, what := filesystemReachOf(declared, key); call != nil {
+			t.Errorf("%s: %s reaches %s in %s, through the functions of its own package it calls — %s; reading "+
+				"anything at the path would make it a judgement its class does not make",
+				fset.Position(call.Pos()), key, what, site, predicatesThatReadNothing[key])
+		}
+	}
+}
+
+// declaredFunc is a production function the walk met, with the package directory
+// it sits in.
+type declaredFunc struct {
+	pkgDir string
+	fn     *ast.FuncDecl
+}
+
+// filesystemReachOf follows the function start names, and every function of its
+// own package it calls — by name, or as a method of its own receiver — and
+// returns the first call met that reaches the filesystem or a judgement of
+// inside: the function it sits in, the call, and the call as written. The call is
+// nil where none is met.
+func filesystemReachOf(declared map[string]declaredFunc, start string) (string, *ast.CallExpr, string) {
+	seen := map[string]bool{start: true}
+	queue := []string{start}
+	for len(queue) > 0 {
+		key := queue[0]
+		queue = queue[1:]
+		d := declared[key]
+		recvName, recvType := receiverOf(d.fn)
+		var hit *ast.CallExpr
+		var what string
+		ast.Inspect(d.fn.Body, func(n ast.Node) bool {
+			if hit != nil {
+				return false
+			}
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			callee := ""
+			switch fun := call.Fun.(type) {
+			case *ast.Ident:
+				callee = d.pkgDir + ":" + fun.Name
+			case *ast.SelectorExpr:
+				x, isIdent := fun.X.(*ast.Ident)
+				if !isIdent {
+					return true
+				}
+				if recvName != "" && x.Name == recvName && recvType != "" {
+					callee = d.pkgDir + ":" + recvType + "." + fun.Sel.Name
+					break
+				}
+				if reaches(readsTheFilesystem, x.Name, fun.Sel.Name) || names(linkResolvers, x.Name, fun.Sel.Name) ||
+					names(judgementsOfInside, x.Name, fun.Sel.Name) {
+					hit, what = call, x.Name+"."+fun.Sel.Name
+					return false
+				}
+			}
+			if _, inPackage := declared[callee]; inPackage && !seen[callee] {
+				seen[callee] = true
+				queue = append(queue, callee)
+			}
+			return true
+		})
+		if hit != nil {
+			return key, hit, what
+		}
+	}
+	return "", nil, ""
+}
+
+// receiverOf returns the name a method's receiver is bound to and the type it
+// belongs to, pointer or not; both are empty for a plain function.
+func receiverOf(fn *ast.FuncDecl) (string, string) {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return "", ""
+	}
+	field := fn.Recv.List[0]
+	name := ""
+	if len(field.Names) > 0 {
+		name = field.Names[0].Name
+	}
+	recv := field.Type
+	if star, ok := recv.(*ast.StarExpr); ok {
+		recv = star.X
+	}
+	if ident, ok := recv.(*ast.Ident); ok {
+		return name, ident.Name
+	}
+	return name, ""
+}
+
+// reaches reports whether calls names pkg.name, an empty list naming every
+// function of pkg.
+func reaches(calls map[string][]string, pkg, name string) bool {
+	list, ok := calls[pkg]
+	return ok && (len(list) == 0 || listed(list, name))
+}
+
+// sortedKeys returns the keys of m, sorted, so a failure names the same entry
+// first on every run.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // funcName spells a declaration as its key does: the receiver's type and a dot
