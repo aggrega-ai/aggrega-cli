@@ -4,9 +4,11 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -31,8 +33,10 @@ import (
 // ResolveManifestExtends composes exactly this chain. A caller that needs to
 // report the chain rather than fold it reads it here, so no second walk can
 // disagree with the composition about what the chain is. workspaceRoot is the
-// workspace the Release is read in, which [ResolveManifest] holds each
-// reference's same-directory scan to.
+// workspace the Release is read in, which decides the root [ResolveManifest]
+// holds each reference to — an explicit file and the same-directory scan alike:
+// the workspace, or releaseDir itself where it lies outside the workspace, as the
+// directory of a Release or a Manifest named from outside it.
 func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManifest) ([]ResolvedManifest, error) {
 	if child.Manifest == nil {
 		return nil, nil
@@ -46,13 +50,21 @@ func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManife
 	// One variable is enough: the walk stops at the first reference it cannot
 	// follow, so at most one failure is ever recorded.
 	var resolveFailure error
+	// The link whose reference is being followed, captured where the walk asks for
+	// that reference: the walk hands Lookup the reference alone, and a refusal names
+	// the document the reference is written in. The walk asks for a link's reference
+	// immediately before it looks the reference up, so this is always that link.
+	var declaring ResolvedManifest
 	chain, verr := validator.ResolveExtendsChain(envelope.KindManifest, child,
 		validator.ExtendsChainSpec[ResolvedManifest]{
-			Key:        func(m ResolvedManifest) string { return manifestLinkKey(m.Path) },
-			Name:       func(m ResolvedManifest) string { return m.Manifest.Metadata.Name },
-			ParentLink: func(m ResolvedManifest) string { return m.Manifest.Spec.Extends },
+			Key:  func(m ResolvedManifest) string { return manifestLinkKey(m.Path) },
+			Name: func(m ResolvedManifest) string { return m.Manifest.Metadata.Name },
+			ParentLink: func(m ResolvedManifest) string {
+				declaring = m
+				return m.Manifest.Spec.Extends
+			},
 			Lookup: func(ref string) (ResolvedManifest, bool) {
-				parent, err := ResolveManifest(workspaceRoot, releaseDir, ref)
+				parent, err := resolveManifest(workspaceRoot, releaseDir, ref, declaring.Path, ".spec.extends")
 				if err != nil {
 					resolveFailure = err
 					return ResolvedManifest{}, false
@@ -65,6 +77,13 @@ func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManife
 			},
 		})
 	if verr != nil {
+		// A reference refused for leading out of its root names a file that may well
+		// be there, so it halts with its own condition rather than as a parent the
+		// walk could not find: the author's fix is to keep the reference inside, not
+		// to correct a name.
+		if errors.Is(resolveFailure, readscope.ErrReferenceLeadsOutOfWorkspace()) {
+			return nil, resolveFailure
+		}
 		return nil, verr
 	}
 	return chain, nil

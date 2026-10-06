@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -36,12 +37,26 @@ type ResolveConfig struct {
 // annotation-expansion pass records them in AnnotationProvenance / the
 // `[annotation: <key> from <file>:<path>]` brackets). Both are labels only —
 // the resolve pipeline performs no filesystem operations against either.
+//
+// ReleaseFile and WorkspaceRoot are for the one file the resolve reads itself:
+// the parameters a Release imports. ReleaseFile is the Release's file as this
+// process opens it — a different value from the ReleasePath label, which may be
+// rendered relative to the workspace — and the import is resolved beside it, as
+// [LoadParametersImport] resolves every import; WorkspaceRoot is the workspace
+// the Release is read in, which with the Release's own directory decides the root
+// the import is held to — the workspace, or that directory where the Release was
+// named from outside the workspace. A Release assembled in memory has no file: an
+// empty ReleaseFile resolves a relative import as the process opens any relative
+// path and holds it to the workspace, and an empty WorkspaceRoot holds it to
+// nothing.
 type ResolveInputs struct {
 	Release           *types.Release
 	Manifest          *types.Manifest
 	AggregateRawBytes []byte
 	AggregatePath     string // source-location label only; no I/O
 	ReleasePath       string // source-location label only; no I/O
+	ReleaseFile       string // the Release's file as this process opens it; its parameters import is read beside it
+	WorkspaceRoot     string // the workspace the Release is read in; it decides the root its parameters import is held to
 }
 
 // ResolveResult carries the artifacts produced by resolution. The result is
@@ -201,12 +216,19 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		}
 	}
 
-	// Load parameters' $import: target if present (mode 2). Inline
-	// content (mode 1) flows through MergeParameters directly.
+	// Load parameters' $import: target if present (mode 2), beside the Release
+	// that names it, by the one anchor every import — a chain link's included — is
+	// resolved by, and held to the root the Release's own directory picks: a
+	// Release here heads no chain, since a composed chain carries its imports
+	// inline. Inline content (mode 1) flows through MergeParameters directly.
 	var externalParams map[string]any
 	if release.Spec.Parameters.Import != "" {
+		anchor := ""
+		if in.ReleaseFile != "" {
+			anchor = filepath.Dir(in.ReleaseFile)
+		}
 		var err error
-		externalParams, err = LoadParametersImport(release.Spec.Parameters.Import)
+		externalParams, err = LoadParametersImport(in.WorkspaceRoot, anchor, in.ReleaseFile, release.Spec.Parameters.Import)
 		if err != nil {
 			return nil, err
 		}

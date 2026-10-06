@@ -20,48 +20,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 )
 
-// TestResolveSiblingYAML_AllBranches pins each documented branch:
-// explicit-extension passthrough, sibling .yaml exists, sibling .yml
-// exists, neither exists (fallback to .yaml).
-func TestResolveSiblingYAML_AllBranches(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-
-	// Explicit extension passthrough.
-	got := resolveSiblingYAML(tmp, "foo.yaml")
-	if got != filepath.Join(tmp, "foo.yaml") {
-		t.Errorf("explicit .yaml passthrough; got %q", got)
-	}
-	got = resolveSiblingYAML(tmp, "foo.yml")
-	if got != filepath.Join(tmp, "foo.yml") {
-		t.Errorf("explicit .yml passthrough; got %q", got)
-	}
-
-	// .yaml exists.
-	if err := os.WriteFile(filepath.Join(tmp, "with-yaml.yaml"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got = resolveSiblingYAML(tmp, "with-yaml")
-	if got != filepath.Join(tmp, "with-yaml.yaml") {
-		t.Errorf(".yaml-exists; got %q", got)
-	}
-
-	// .yml exists (no .yaml).
-	if err := os.WriteFile(filepath.Join(tmp, "with-yml.yml"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got = resolveSiblingYAML(tmp, "with-yml")
-	if got != filepath.Join(tmp, "with-yml.yml") {
-		t.Errorf(".yml-exists; got %q", got)
-	}
-
-	// Neither exists — fallback to .yaml.
-	got = resolveSiblingYAML(tmp, "absent")
-	if got != filepath.Join(tmp, "absent.yaml") {
-		t.Errorf("fallback; got %q", got)
-	}
-}
-
 // TestIsPathInput_AdditionalBranches expands coverage on the
 // path-discriminator beyond what TestIsPathInput already pins.
 func TestIsPathInput_AdditionalBranches(t *testing.T) {

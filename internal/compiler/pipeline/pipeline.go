@@ -57,8 +57,12 @@ type Inputs struct {
 	AggregateRawBytes []byte
 	AggregatePath     string
 	// ReleasePath is the path of the Release document the run compiles, as the
-	// caller holds it: the path a command was given, or the one a request named.
-	// It is a label, and nothing is read through it.
+	// caller holds it: the path a command was given, or the one a request named —
+	// a path this process opens the Release by. The Release itself is not read
+	// through it; the one file read beside it is the parameters file the Release
+	// imports, which is resolved from the directory holding it and held to
+	// WorkspaceRoot — or, for a Release named outside the workspace, to that
+	// directory.
 	//
 	// The run renders it against WorkspaceRoot through catalog.RelativeToWorkspace,
 	// the rule every other authored document's path in the graph is rendered by,
@@ -863,6 +867,11 @@ func ResolveAndValidate(
 		AggregateRawBytes: inputs.AggregateRawBytes,
 		AggregatePath:     inputs.AggregatePath,
 		ReleasePath:       releaseSourcePath(inputs),
+		// The Release's file as the caller holds it, which is a path this process
+		// opens, so a parameters import the Release names is read beside it; and
+		// the workspace it is read in, which that import is held to.
+		ReleaseFile:   inputs.ReleasePath,
+		WorkspaceRoot: inputs.WorkspaceRoot,
 	}, func(resolveResult *resolver.ResolveResult) error {
 		// The annotation-transform governance role runs first in the resolve
 		// continuation: it injects annotations onto resolved components before

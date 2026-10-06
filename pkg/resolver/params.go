@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -133,18 +135,46 @@ func copyParameterTree(m map[string]any) map[string]any {
 	return out
 }
 
-// LoadParametersImport reads a single parameter YAML file from the
-// path supplied at Release.spec.parameters.$import: and returns its
-// decoded map. Single-source-only at this site; multi-source layering
-// is the province of Release extends: chains where the parent Release
-// carries base parameters and the child extends + overrides.
+// LoadParametersImport reads the parameter file a Release's
+// spec.parameters.$import names and returns its decoded map. Single-source-only
+// at this site; multi-source layering is the province of Release extends: chains
+// where the parent Release carries base parameters and the child extends +
+// overrides.
+//
+// It is the one anchor every parameters import is resolved by, whether the
+// Release heads no chain or is a link of one: ref, the value as written, is
+// resolved beside the Release that names it — relative to the directory holding
+// releaseFile, the Release's file as this process opens it — and an absolute ref
+// names a place of its own. So which file a Release imports depends on where the
+// Release is, never on the directory a command was run from, and every surface
+// reads the same file. A Release assembled in memory has no file to stand beside;
+// an empty releaseFile resolves a relative ref as the process opens any relative
+// path.
+//
+// The resolved file is then held (readscope.CheckReference) to the root picked
+// for anchor, the directory of the Release the resolution started at — the
+// Release itself where it heads no chain, the head of the chain where it is a
+// link of one — given the workspace at workspaceRoot: the workspace, or anchor
+// itself where that Release was named from outside the workspace. An import
+// leading out of that root halts with readscope.ErrReferenceLeadsOutOfWorkspace,
+// and nothing is read. An empty anchor holds the import to the workspace.
 //
 // Read or unmarshal errors are wrapped as ResolverError with ErrYAMLLoad and
 // the offending path attached. That condition is the one every file a build
 // could not turn into a document reports under, and the finding's own locator is
 // what says this one was named by a Release's parameters import — see
 // ErrYAMLLoad for why the naming key does not earn an identity of its own.
-func LoadParametersImport(path string) (map[string]any, error) {
+func LoadParametersImport(workspaceRoot, anchor, releaseFile, ref string) (map[string]any, error) {
+	path := ref
+	if !filepath.IsAbs(ref) {
+		path = filepath.Join(filepath.Dir(releaseFile), ref)
+	}
+	if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
+		Document: releaseFile, Anchor: anchor, From: filepath.Dir(releaseFile), Key: ".spec.parameters.$import",
+		Value: ref, Target: path,
+	}); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, &ResolverError{

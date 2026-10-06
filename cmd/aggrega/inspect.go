@@ -5,10 +5,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -431,41 +429,6 @@ func isPathInput(identifier string) bool {
 		return true
 	}
 	return false
-}
-
-// resolveSiblingYAML returns the absolute path of a sibling YAML file
-// (the Aggregate or Manifest referenced by a Release) under dir. Three
-// shapes are handled:
-//
-//   - name carries an explicit .yaml or .yml extension → returned
-//     verbatim joined with dir (avoids the double-extension trap when
-//     the Release author wrote `aggregate: foo.yaml` instead of `foo`).
-//   - name has no extension → try `<name>.yaml` first; if absent on
-//     disk, try `<name>.yml`; return whichever exists.
-//   - neither exists → fall back to `<name>.yaml` so the downstream
-//     loader produces a clear path-not-found error.
-//
-// Non-NotExist Stat errors (e.g. permission-denied) on a candidate
-// short-circuit fallback evaluation and return that candidate directly,
-// so the downstream loader surfaces the underlying error rather than
-// having it masked by a fallback attempt on a sibling extension.
-func resolveSiblingYAML(dir, name string) string {
-	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-		return filepath.Join(dir, name)
-	}
-	candidate := filepath.Join(dir, name+".yaml")
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return candidate
-	}
-	alt := filepath.Join(dir, name+".yml")
-	if _, err := os.Stat(alt); err == nil {
-		return alt
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return alt
-	}
-	return candidate
 }
 
 // kindRenderer renders one entity kind authored as a standalone file. Each
@@ -939,17 +902,22 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	if err != nil {
 		return fmt.Errorf("load release: %w", err)
 	}
-	aggPath := resolveSiblingYAML(releaseDir, rel.Spec.Aggregate)
-	manifestPath := resolveSiblingYAML(releaseDir, rel.Spec.Manifest)
-
-	manifest, err := resolver.LoadManifest(manifestPath)
+	// The Manifest and the Aggregate are resolved by the resolvers every other
+	// surface resolves a Release's references by — a relative path beside the
+	// Release, or a name looked up beside it and then, for an Aggregate, in the
+	// catalog — and held to the root they hold them to. A resolver of this
+	// command's own would read a name as a file name and judge no path, and the
+	// picture would then be of documents a build of the same Release never reads.
+	manRes, err := resolver.ResolveManifest(wsRoot, releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	aggBytes, err := os.ReadFile(aggPath)
+	manifest := manRes.Manifest
+	aggRes, err := resolver.ResolveAggregate(wsRoot, releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
-		return fmt.Errorf("read aggregate %q: %w", aggPath, err)
+		return fmt.Errorf("load aggregate: %w", err)
 	}
+	aggPath, aggBytes := aggRes.Path, aggRes.Bytes
 	catalogLookup := cat.CatalogLookup()
 	// A catalog directory walk enumerates authored entities and deliberately steps
 	// over the artifact cache, so a plugin this workspace acquired from a
@@ -982,8 +950,8 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
-			// AggregatePath is the sibling-resolved path (drives the annotation
-			// source-location brackets); RootAggregateFile is the
+			// AggregatePath is the path the reference resolved to (drives the
+			// annotation source-location brackets); RootAggregateFile is the
 			// workspace-relative path stamped onto the root-tier node
 			// (machine-stable). The two are separate because this command needs
 			// different representations for them.

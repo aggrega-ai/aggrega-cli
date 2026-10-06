@@ -78,15 +78,34 @@ var decidersOfInside = map[string]string{
 	"internal/serve:insertionPointIn":             "the document an insertion point is located in",
 	"internal/mcp:toolWorkspace.workspacePath":    "every path an assistant-tool call names over the listener",
 	"internal/editops:resolveInside":              "the document an edit reads and writes back, on every surface",
+
+	// Every reference a document makes to another file by a path reaches the one
+	// judgement through readscope.CheckReference, at the point the file is about to
+	// be opened, and every surface that resolves a Release's references resolves
+	// them through these. A resolver of a surface's own — reading a name as a file
+	// name and judging no path — stops asking, and fails here.
+	"pkg/readscope:CheckReference":              "a reference a document makes to another file",
+	"pkg/resolver:ResolveAggregate":             "the Aggregate a Release names by a path",
+	"pkg/resolver:resolveManifest":              "the Manifest a Release names by a path, and a Manifest's extends",
+	"pkg/resolver:resolveReleaseExtendsRef":     "the Release a Release's extends names",
+	"pkg/resolver:LoadParametersImport":         "the parameters file a Release imports, chain link or not",
+	"pkg/resolver:ManifestExtendsChain":         "each link of a Manifest's extends chain",
+	"pkg/resolver:ReleaseExtendsChain":          "each link of a Release's extends chain",
+	"pkg/resolver:releaseParameterContribution": "the parameters file each link of a Release's chain imports",
+	"pkg/resolver:resolveFromInputs":            "the parameters file a Release heading no chain imports",
+	"cmd/aggrega:renderReleaseFile":             "the Aggregate and the Manifest the inspect command draws a Release with",
 }
 
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead"},
+	"readscope":  {"CheckRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},
+	// The resolvers of a Release's aggregate and manifest references, which a
+	// surface resolving a Release asks rather than reading the files itself.
+	"resolver": {"ResolveAggregate", "ResolveManifest"},
 }
 
 // judgementsWithinAPackage are the judgements built on the one definition that a
@@ -95,6 +114,7 @@ var judgementsOfInside = map[string][]string{
 // so the chain from every request resolver to the definition is held link by link.
 var judgementsWithinAPackage = map[string][]string{
 	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath"},
+	"pkg/resolver":   {"resolveManifest", "resolveReleaseExtendsRef", "LoadParametersImport"},
 }
 
 // linkResolvers are the calls that resolve a link.

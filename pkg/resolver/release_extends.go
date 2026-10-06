@@ -4,9 +4,11 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -49,7 +51,17 @@ type ResolvedRelease struct {
 // three structural conditions be decided once, here, for every kind.
 //
 // A Release declaring no extends reference yields a chain of one: itself.
-func ReleaseExtendsChain(releaseDir string, child ResolvedRelease) ([]ResolvedRelease, error) {
+//
+// Each link's reference is resolved beside the Release that writes it — the
+// directory holding that link's file — so a parent kept in another directory
+// names its own parent as its author sees it, exactly as its parameters import
+// is resolved beside it. Every reference along the chain is held to one root,
+// the one readscope.CheckReference picks for releaseDir, the directory holding
+// child: the workspace at workspaceRoot, or releaseDir itself where child was
+// named from outside the workspace. A reference leading out of that root halts
+// with readscope.ErrReferenceLeadsOutOfWorkspace, and the Release it names is
+// not read.
+func ReleaseExtendsChain(workspaceRoot, releaseDir string, child ResolvedRelease) ([]ResolvedRelease, error) {
 	if child.Release == nil {
 		return nil, nil
 	}
@@ -62,13 +74,21 @@ func ReleaseExtendsChain(releaseDir string, child ResolvedRelease) ([]ResolvedRe
 	// the first reference it cannot follow, so at most one failure is ever
 	// recorded.
 	var resolveFailure error
+	// The link whose reference is being followed, captured where the walk asks for
+	// that reference: the walk hands Lookup the reference alone, and a refusal names
+	// the document the reference is written in. The walk asks for a link's reference
+	// immediately before it looks the reference up, so this is always that link.
+	var declaring ResolvedRelease
 	chain, verr := validator.ResolveExtendsChain(envelope.KindRelease, child,
 		validator.ExtendsChainSpec[ResolvedRelease]{
-			Key:        func(r ResolvedRelease) string { return releaseLinkKey(r.Path) },
-			Name:       func(r ResolvedRelease) string { return r.Release.Metadata.Name },
-			ParentLink: func(r ResolvedRelease) string { return r.Release.Spec.Extends },
+			Key:  func(r ResolvedRelease) string { return releaseLinkKey(r.Path) },
+			Name: func(r ResolvedRelease) string { return r.Release.Metadata.Name },
+			ParentLink: func(r ResolvedRelease) string {
+				declaring = r
+				return r.Release.Spec.Extends
+			},
 			Lookup: func(ref string) (ResolvedRelease, bool) {
-				parent, err := resolveReleaseExtendsRef(releaseDir, ref)
+				parent, err := resolveReleaseExtendsRef(workspaceRoot, releaseDir, declaring, ref)
 				if err != nil {
 					resolveFailure = err
 					return ResolvedRelease{}, false
@@ -82,13 +102,23 @@ func ReleaseExtendsChain(releaseDir string, child ResolvedRelease) ([]ResolvedRe
 			},
 		})
 	if verr != nil {
+		// A reference refused for leading out of its root names a file that may well
+		// be there, so it halts with its own condition rather than as a parent the
+		// walk could not find: the author's fix is to keep the reference inside, not
+		// to correct a path.
+		if errors.Is(resolveFailure, readscope.ErrReferenceLeadsOutOfWorkspace()) {
+			return nil, resolveFailure
+		}
 		return nil, verr
 	}
 	return chain, nil
 }
 
-// resolveReleaseExtendsRef resolves one extends reference to the Release it
-// names, relative to releaseDir.
+// resolveReleaseExtendsRef resolves one extends reference, written in the Release
+// declaring, to the Release it names: relative to the directory holding
+// declaring's file, and held to the root readscope.CheckReference picks for
+// anchor, the directory of the Release the chain starts at, given the workspace
+// at workspaceRoot.
 //
 // The document itself is read by [LoadResolvedRelease], so a parent along a chain
 // is loaded by the one function that loads a Release anywhere else: the envelope
@@ -107,7 +137,7 @@ func ReleaseExtendsChain(releaseDir string, child ResolvedRelease) ([]ResolvedRe
 // halt, on directories that build today. So a bare token is refused with the form
 // that does resolve, rather than silently searched for somewhere it cannot be
 // found.
-func resolveReleaseExtendsRef(releaseDir, ref string) (ResolvedRelease, error) {
+func resolveReleaseExtendsRef(workspaceRoot, anchor string, declaring ResolvedRelease, ref string) (ResolvedRelease, error) {
 	if !isRelativePathRef(ref) {
 		return ResolvedRelease{}, &ResolverError{
 			Entity: "Release",
@@ -117,12 +147,20 @@ func resolveReleaseExtendsRef(releaseDir, ref string) (ResolvedRelease, error) {
 			Err: ErrYAMLLoad(),
 		}
 	}
-	return LoadResolvedRelease(filepath.Join(releaseDir, ref))
+	from := filepath.Dir(declaring.Path)
+	path := filepath.Join(from, ref)
+	if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
+		Document: declaring.Path, Anchor: anchor, From: from, Key: ".spec.extends", Value: ref, Target: path,
+	}); err != nil {
+		return ResolvedRelease{}, err
+	}
+	return LoadResolvedRelease(path)
 }
 
 // releaseLinkKey is the chain-membership key for one resolved link: its file path
 // in a single normal form. Normalising here rather than trusting the caller keeps
 // the child's key and every parent's key comparable, since a parent's path is
-// always built by joining releaseDir to the reference while the child's arrives
-// from whichever surface requested the resolution.
+// always built by joining the directory of the link that names it to the
+// reference while the child's arrives from whichever surface requested the
+// resolution.
 func releaseLinkKey(path string) string { return filepath.Clean(path) }

@@ -137,7 +137,12 @@ func IsRelativePathRef(ref string) bool { return isRelativePathRef(ref) }
 // ResolveAggregate resolves a Release's spec.aggregate reference to an Aggregate.
 //
 // A `./` or `../` reference is an explicit local file, loaded relative to
-// releaseDir with no scan. A bare token is an identity resolved through a
+// releaseDir with no scan, once the reference has been held to the root
+// readscope.CheckReference picks for releaseDir — the workspace, or the Release's
+// own directory where the Release was named from outside the workspace: a
+// reference leading out of that root — climbing out as written, or through a
+// link — halts with readscope.ErrReferenceLeadsOutOfWorkspace and nothing is
+// read. A bare token is an identity resolved through a
 // cascade: the tolerant same-directory scan (tier 1) wins over the catalog
 // (tier 2, via catLookup); the registry tier (tier 3) is not yet active. The
 // same-directory scan skips unrelated or unparseable files rather than failing
@@ -148,6 +153,11 @@ func IsRelativePathRef(ref string) bool { return isRelativePathRef(ref) }
 func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
+		if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
+			Anchor: releaseDir, From: releaseDir, Key: ".spec.aggregate", Value: ref, Target: path,
+		}); err != nil {
+			return ResolvedAggregate{}, err
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return ResolvedAggregate{}, &ResolverError{Entity: "Aggregate", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad()}
@@ -193,11 +203,24 @@ func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup Aggregate
 // ResolveManifest resolves a Release's spec.manifest reference to a Manifest. A
 // Manifest is operator configuration authored beside the Release: it is not
 // catalog-indexed and not publishable, so it has no catalog or registry tier —
-// only an explicit `./` / `../` file or the tolerant same-directory scan, held to
-// the root workspaceRoot picks for releaseDir as [ResolveAggregate]'s is.
+// only an explicit `./` / `../` file or the tolerant same-directory scan, each
+// held to the root workspaceRoot picks for releaseDir as [ResolveAggregate]'s is.
 func ResolveManifest(workspaceRoot, releaseDir, ref string) (ResolvedManifest, error) {
+	return resolveManifest(workspaceRoot, releaseDir, ref, "", ".spec.manifest")
+}
+
+// resolveManifest is [ResolveManifest] for a reference written at key in
+// document — a Release's spec.manifest, where the document is no longer known
+// once its extends chain is folded, or a Manifest's spec.extends, where the link
+// that declares it is — so a refusal names where the reference was written.
+func resolveManifest(workspaceRoot, releaseDir, ref, document, key string) (ResolvedManifest, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
+		if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
+			Document: document, Anchor: releaseDir, From: releaseDir, Key: key, Value: ref, Target: path,
+		}); err != nil {
+			return ResolvedManifest{}, err
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return ResolvedManifest{}, &ResolverError{Entity: "Manifest", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad()}

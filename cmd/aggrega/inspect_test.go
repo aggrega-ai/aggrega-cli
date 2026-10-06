@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,14 +23,28 @@ import (
 // the Component recipes the fullstack-app IR builder consumes.
 const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-app/catalog"
 
-// runInspectCaptured drives a dispatchInspect call against a Release file with
-// the fullstack-app catalog set, capturing the command's output through the
-// injected writer. The returned string is the per-component Feature-attachment
-// block the inspect command emits.
-func runInspectCaptured(t *testing.T, releasePath string) string {
+// runInspectCaptured drives a dispatchInspect call against one of the
+// fullstack-app Releases, named by its file under releases/, with the fixture's
+// catalog set, capturing the command's output through the injected writer. The
+// returned string is the per-component Feature-attachment block the inspect
+// command emits.
+//
+// The workspace is a copy of the whole fixture, so the Release lies inside it and
+// so does everything it names: those Releases name their Aggregate and Manifest by
+// paths climbing out of releases/ into the fixture, which a workspace holding the
+// Release reads and a Release named from outside its workspace may not. A copy
+// rather than the fixture itself, because declaring a workspace writes its
+// configuration file at the root.
+func runInspectCaptured(t *testing.T, release string) string {
 	t.Helper()
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Dir(fullstackAppInspectCatalog))); err != nil {
+		t.Fatalf("copy the fixture: %v", err)
+	}
+	releasePath := filepath.Join(root, "releases", release)
 	var buf bytes.Buffer
-	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), releasePath, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath,
+		[]string{filepath.Join(root, filepath.Base(fullstackAppInspectCatalog))}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", releasePath, err)
 	}
 	return buf.String()
@@ -46,7 +61,7 @@ func testInspectOptions(out io.Writer) inspectOptions {
 }
 
 func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-boundary-explicit.yaml")
+	out := runInspectCaptured(t, "annotation-boundary-explicit.yaml")
 	if !strings.Contains(out, "feature.myco/rewrite-host") {
 		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
 	}
@@ -56,7 +71,7 @@ func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
 }
 
 func TestInspect_AnnotationBoundary_Annotation_UniformBracket(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-boundary-annotation.yaml")
+	out := runInspectCaptured(t, "annotation-boundary-annotation.yaml")
 	if !strings.Contains(out, "feature.myco/rewrite-host") {
 		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
 	}
@@ -66,7 +81,7 @@ func TestInspect_AnnotationBoundary_Annotation_UniformBracket(t *testing.T) {
 }
 
 func TestInspect_AnnotationCrossSide_Explicit_PerLeafBrackets(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-cross-side-explicit.yaml")
+	out := runInspectCaptured(t, "annotation-cross-side-explicit.yaml")
 	// Explicit cross-side: both pillars contributed explicitly; per-leaf
 	// brackets render [explicit] on every leaf rather than the compact
 	// per-attachment marker.
@@ -79,7 +94,7 @@ func TestInspect_AnnotationCrossSide_Explicit_PerLeafBrackets(t *testing.T) {
 }
 
 func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-cross-side-annotation.yaml")
+	out := runInspectCaptured(t, "annotation-cross-side-annotation.yaml")
 	// Annotation cross-side: per-leaf brackets attribute each pillar's
 	// authoring side. Values pillar leaf carries an aggregate-sourced
 	// annotation; infra pillar leaf carries a release-sourced annotation.

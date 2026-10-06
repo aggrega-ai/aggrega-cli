@@ -225,7 +225,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// is then compared as it stood before the edit, which halts rather than
 	// passing. A failure is the composition's own, raised by the same walk, so it
 	// is reported at the composition's stage and in its words.
-	releaseDocs, derr := resolver.ReleaseDocuments(releaseDir, authored)
+	releaseDocs, derr := resolver.ReleaseDocuments(in.WorkspaceRoot, releaseDir, authored)
 	if derr != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveReleaseExtends,
@@ -249,7 +249,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	//
 	// A Release declaring no extends reference folds to itself, so the assignment
 	// is a no-op for every Release that heads no chain.
-	folded, releaseAdvisories, cerr := resolver.ResolveReleaseExtends(releaseDir, authored)
+	folded, releaseAdvisories, cerr := resolver.ResolveReleaseExtends(in.WorkspaceRoot, releaseDir, authored)
 	if cerr != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveReleaseExtends,

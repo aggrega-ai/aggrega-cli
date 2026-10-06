@@ -106,7 +106,7 @@ func TestResolveReleaseExtends_ComposesConnectionAttachmentsPerSlot(t *testing.T
 		foldFixture{"child.yaml", connectionFoldChild},
 		foldFixture{"base.yaml", connectionFoldBase},
 	)
-	composed, _, err := ResolveReleaseExtends(dir, head)
+	composed, _, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("the chain must fold; got: %v", err)
 	}

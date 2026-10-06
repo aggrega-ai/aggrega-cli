@@ -263,7 +263,7 @@ func TestResolveReleaseExtends_NoExtends_ReturnedUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	head := writeFoldChain(t, dir, foldFixture{"solo.yaml", releaseDoc("solo-release", "")})
 
-	composed, advisories, err := ResolveReleaseExtends(dir, head)
+	composed, advisories, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("a Release with no extends must fold to itself; got: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestResolveReleaseExtends_FoldsPerKeyToTheFirstIndivisibleValue(t *testing.
 		foldFixture{"base.yaml", foldBaseRelease},
 	)
 
-	composed, _, err := ResolveReleaseExtends(dir, head)
+	composed, _, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("the chain must fold; got: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestResolveReleaseExtends_IdentityAndProvenanceDoNotInherit(t *testing.T) {
 		t.Fatal("test setup: the two links must declare different metadata, or this proves nothing")
 	}
 
-	composed, _, err := ResolveReleaseExtends(dir, head)
+	composed, _, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("the chain must fold; got: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestResolveReleaseExtends_ExtendsIsSpentByTheFold(t *testing.T) {
 		t.Fatal("test setup: the child must declare an extends reference")
 	}
 
-	composed, _, err := ResolveReleaseExtends(dir, head)
+	composed, _, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("the chain must fold; got: %v", err)
 	}
@@ -521,7 +521,7 @@ spec:
 `},
 		)
 
-		composed, _, err := ResolveReleaseExtends(dir, head)
+		composed, _, err := ResolveReleaseExtends("", dir, head)
 		if err != nil {
 			t.Fatalf("a chain removing an inherited key must still fold; got: %v", err)
 		}
@@ -571,7 +571,7 @@ spec:
 `},
 		)
 
-		composed, _, err := ResolveReleaseExtends(dir, head)
+		composed, _, err := ResolveReleaseExtends("", dir, head)
 		if err != nil {
 			t.Fatalf("a chain removing an inherited parameter must still fold; got: %v", err)
 		}
@@ -674,7 +674,7 @@ spec:
 			foldFixture{"base.yaml", boundariesBase},
 		)
 
-		composed, _, err := ResolveReleaseExtends(dir, head)
+		composed, _, err := ResolveReleaseExtends("", dir, head)
 		if err == nil {
 			t.Fatal("a chain whose links wrote different routing keys must halt")
 		}
@@ -739,7 +739,7 @@ spec:
 				foldFixture{"base.yaml", tc.base},
 			)
 
-			composed, _, err := ResolveReleaseExtends(dir, head)
+			composed, _, err := ResolveReleaseExtends("", dir, head)
 			if err != nil {
 				t.Fatalf("a chain whose links agree about the routing key must compose; got: %v", err)
 			}
@@ -857,7 +857,7 @@ spec:
 				foldFixture{"base.yaml", baseWith(tc.baseDirectory)},
 			)
 
-			composed, advisories, err := ResolveReleaseExtends(dir, head)
+			composed, advisories, err := ResolveReleaseExtends("", dir, head)
 			if err != nil {
 				t.Fatalf("the reading must not halt the composition; got: %v", err)
 			}
@@ -921,7 +921,7 @@ func TestResolveReleaseExtends_FoldingOneChainTwiceProducesOneResult(t *testing.
 	fold := func() *types.Release {
 		t.Helper()
 		head := loadReleaseLink(t, dir, "child.yaml")
-		composed, _, err := ResolveReleaseExtends(dir, head)
+		composed, _, err := ResolveReleaseExtends("", dir, head)
 		if err != nil {
 			t.Fatalf("the chain must fold; got: %v", err)
 		}
@@ -1048,7 +1048,7 @@ spec:
 		t.Fatal("test setup: the child must supply its parameters inline alone")
 	}
 
-	composed, _, err := ResolveReleaseExtends(dir, head)
+	composed, _, err := ResolveReleaseExtends("", dir, head)
 	if err != nil {
 		t.Fatalf("a chain whose base imports its parameters must fold; got: %v", err)
 	}

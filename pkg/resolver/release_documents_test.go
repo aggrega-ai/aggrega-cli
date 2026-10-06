@@ -46,7 +46,7 @@ func TestReleaseDocumentsRecordsTheReleaseAlone(t *testing.T) {
 	if child.Digest != fileDigest(t, path) {
 		t.Fatalf("LoadResolvedRelease digest %s does not describe the file (%s)", child.Digest, fileDigest(t, path))
 	}
-	got, err := ReleaseDocuments(dir, child)
+	got, err := ReleaseDocuments("", dir, child)
 	if err != nil {
 		t.Fatalf("ReleaseDocuments: %v", err)
 	}
@@ -73,9 +73,8 @@ func TestReleaseDocumentsRecordsEveryReleaseAlongTheChain(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", d, err)
 		}
 	}
-	// Every extends reference is resolved from the directory holding the Release
-	// the resolution started from, so the grandparent reference is written from
-	// envs/ too.
+	// Every extends reference is resolved beside the Release that writes it, and
+	// mid.yaml sits in envs/, so the grandparent reference is written from envs/.
 	writeReleaseFile(t, dir, "prod.yaml", releaseDoc("prod", "./mid.yaml"))
 	writeReleaseFile(t, dir, "mid.yaml", releaseDoc("mid", "../shared/base.yaml"))
 	writeReleaseFile(t, shared, "base.yaml", releaseDoc("base", ""))
@@ -84,7 +83,7 @@ func TestReleaseDocumentsRecordsEveryReleaseAlongTheChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadResolvedRelease: %v", err)
 	}
-	got, err := ReleaseDocuments(dir, child)
+	got, err := ReleaseDocuments("", dir, child)
 	if err != nil {
 		t.Fatalf("ReleaseDocuments: %v", err)
 	}
@@ -142,7 +141,7 @@ func TestReleaseDocumentsRefusesAReleaseWithoutItsDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRelease: %v", err)
 	}
-	_, err = ReleaseDocuments(dir, ResolvedRelease{Release: rel, Path: filepath.Join(dir, "release.yaml")})
+	_, err = ReleaseDocuments("", dir, ResolvedRelease{Release: rel, Path: filepath.Join(dir, "release.yaml")})
 	if err == nil || !strings.Contains(err.Error(), "LoadResolvedRelease") {
 		t.Fatalf("a Release without its digest must be refused naming the loader to use; got %v", err)
 	}
@@ -160,8 +159,8 @@ func TestReleaseDocumentsFailsWhereTheCompositionFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadResolvedRelease: %v", err)
 	}
-	_, docErr := ReleaseDocuments(dir, child)
-	_, _, composeErr := ResolveReleaseExtends(dir, child)
+	_, docErr := ReleaseDocuments("", dir, child)
+	_, _, composeErr := ResolveReleaseExtends("", dir, child)
 	if docErr == nil || composeErr == nil {
 		t.Fatalf("both must refuse a chain naming a missing parent; ReleaseDocuments=%v, composition=%v", docErr, composeErr)
 	}

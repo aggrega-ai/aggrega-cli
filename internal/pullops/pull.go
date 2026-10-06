@@ -529,7 +529,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	//
 	// A failure here is the composition's own, raised by the same walk, so it is
 	// reported in the composition's words.
-	releaseDocs, err := resolver.ReleaseDocuments(releaseDir, authored)
+	releaseDocs, err := resolver.ReleaseDocuments(rw.Root(), releaseDir, authored)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}
@@ -543,7 +543,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// This operation pins what a build will resolve, and the build composes the
 	// same chain and reports the same readings; emitting them at both would show
 	// an author one finding twice for one cause.
-	rel, _, err := resolver.ResolveReleaseExtends(releaseDir, authored)
+	rel, _, err := resolver.ResolveReleaseExtends(rw.Root(), releaseDir, authored)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}

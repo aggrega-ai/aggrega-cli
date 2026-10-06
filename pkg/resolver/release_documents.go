@@ -27,9 +27,11 @@ import (
 //
 // A path is written relative to releaseDir with forward slashes, so a lockfile
 // written on one machine records the same value as one written on another whatever
-// their directory layouts. releaseDir is the directory holding child, the directory
-// every extends reference along the chain is resolved from.
-func ReleaseDocuments(releaseDir string, child ResolvedRelease) ([]closure.ReleaseDocument, error) {
+// their directory layouts. releaseDir is the directory holding child, and with
+// workspaceRoot it decides the root the chain's references are held to, as the
+// composition holds them; each reference is resolved beside the link that writes
+// it.
+func ReleaseDocuments(workspaceRoot, releaseDir string, child ResolvedRelease) ([]closure.ReleaseDocument, error) {
 	if child.Release == nil {
 		return nil, nil
 	}
@@ -37,7 +39,7 @@ func ReleaseDocuments(releaseDir string, child ResolvedRelease) ([]closure.Relea
 		return nil, fmt.Errorf("internal: the Release at %s was not loaded with the digest of its bytes; "+
 			"load it with LoadResolvedRelease", child.Path)
 	}
-	chain, err := ReleaseExtendsChain(releaseDir, child)
+	chain, err := ReleaseExtendsChain(workspaceRoot, releaseDir, child)
 	if err != nil {
 		return nil, err
 	}

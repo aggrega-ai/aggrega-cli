@@ -5,7 +5,6 @@ package resolver
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -41,7 +40,11 @@ import (
 // A Release declaring no extends reference is returned unchanged. A reference
 // that cannot be resolved, a chain that revisits a file already in the chain and
 // a chain past the depth bound each halt with the failure the walk reports; the
-// fold never sees a chain that is not one.
+// fold never sees a chain that is not one. workspaceRoot is the workspace the
+// Release is read in and releaseDir the directory holding child: every extends
+// reference and every parameters import along the chain is held to the one root
+// they pick — the workspace, or releaseDir itself where child was named from
+// outside the workspace (see [ReleaseExtendsChain] and [LoadParametersImport]).
 //
 // It returns the composed Release, whatever the composition rules advised about,
 // and the one failure that stopped it. The advisories ride back rather than
@@ -50,14 +53,14 @@ import (
 // and a caller reporting on a document want the same reading rendered
 // differently. Every caller owes a verdict on them.
 func ResolveReleaseExtends(
-	releaseDir string,
+	workspaceRoot, releaseDir string,
 	child ResolvedRelease,
 ) (*types.Release, []error, error) {
 	if child.Release == nil || child.Release.Spec.Extends == "" {
 		return child.Release, nil, nil
 	}
 
-	chain, err := ReleaseExtendsChain(releaseDir, child)
+	chain, err := ReleaseExtendsChain(workspaceRoot, releaseDir, child)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -76,7 +79,7 @@ func ResolveReleaseExtends(
 		return nil, nil, refusals[0]
 	}
 
-	composed, cerr := composeReleaseChain(chain)
+	composed, cerr := composeReleaseChain(workspaceRoot, releaseDir, chain)
 	if cerr != nil {
 		return nil, nil, cerr
 	}
@@ -100,8 +103,10 @@ func ResolveReleaseExtends(
 //
 // It starts from the root ancestor and applies each descendant in turn, so the
 // child — applied last — wins every collision. Identity comes from the child and
-// only the spec is composed.
-func composeReleaseChain(chain []ResolvedRelease) (*types.Release, error) {
+// only the spec is composed. Each link's parameters import is held to the root
+// picked for releaseDir, the directory holding the child, as the chain's
+// extends references are.
+func composeReleaseChain(workspaceRoot, releaseDir string, chain []ResolvedRelease) (*types.Release, error) {
 	child := chain[0].Release
 	out := &types.Release{
 		APIVersion: child.APIVersion,
@@ -126,7 +131,7 @@ func composeReleaseChain(chain []ResolvedRelease) (*types.Release, error) {
 			out.Spec.Manifest = spec.Manifest
 		}
 
-		contributed, perr := releaseParameterContribution(link)
+		contributed, perr := releaseParameterContribution(workspaceRoot, releaseDir, link)
 		if perr != nil {
 			return nil, perr
 		}
@@ -143,20 +148,22 @@ func composeReleaseChain(chain []ResolvedRelease) (*types.Release, error) {
 // releaseParameterContribution is what one link along the chain contributes to
 // the composed parameter set, in the shape the parameter merge works in.
 //
-// A link's import is resolved here, before the fold, and against the directory
-// holding that link rather than the directory the resolution started from: a
-// parent's import names a file beside the parent. Resolving it here is also what
-// keeps "inline or imported, never both" a property of each authored document —
-// the rule is about what one author wrote in one file, and a chain supplying one
-// mode at one link and the other mode at another breaks no author's rule.
-func releaseParameterContribution(link ResolvedRelease) (map[string]any, error) {
+// A link's import is resolved here, before the fold, and beside that link rather
+// than beside the Release the resolution started from — a parent's import names a
+// file beside the parent — by [LoadParametersImport], the one anchor every
+// parameters import is resolved by. Resolving it here is also what keeps "inline
+// or imported, never both" a property of each authored document — the rule is
+// about what one author wrote in one file, and a chain supplying one mode at one
+// link and the other mode at another breaks no author's rule. anchor is the
+// directory holding the chain's child, whose root the import is held to.
+func releaseParameterContribution(workspaceRoot, anchor string, link ResolvedRelease) (map[string]any, error) {
 	block := link.Release.Spec.Parameters
 	if block.Import == "" {
 		// MergeParameters with no external side flattens the inline map, which is
 		// the same flattening every other reader of a parameters block gets.
 		return MergeParameters(block, nil), nil
 	}
-	return LoadParametersImport(filepath.Join(filepath.Dir(link.Path), block.Import))
+	return LoadParametersImport(workspaceRoot, anchor, link.Path, block.Import)
 }
 
 // plainToOrderedSorted materializes a composed parameter map back onto the

@@ -117,7 +117,7 @@ func TestReleaseExtendsChain_NoExtends_ChainOfOne(t *testing.T) {
 	writeReleaseFile(t, dir, "solo.yaml", releaseDoc("solo-release", ""))
 	head := loadReleaseLink(t, dir, "solo.yaml")
 
-	chain, err := ReleaseExtendsChain(dir, head)
+	chain, err := ReleaseExtendsChain("", dir, head)
 	if err != nil {
 		t.Fatalf("a Release with no extends must resolve; got: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestReleaseExtendsChain_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T) {
 		dir := t.TempDir()
 		head := writeReleaseChain(t, dir, 10, false)
 
-		chain, err := ReleaseExtendsChain(dir, head)
+		chain, err := ReleaseExtendsChain("", dir, head)
 		if err != nil {
 			t.Fatalf("a chain of ten Releases must be accepted; got: %v", err)
 		}
@@ -178,7 +178,7 @@ func TestReleaseExtendsChain_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T) {
 		dir := t.TempDir()
 		head := writeReleaseChain(t, dir, 11, false)
 
-		_, err := ReleaseExtendsChain(dir, head)
+		_, err := ReleaseExtendsChain("", dir, head)
 		if err == nil {
 			t.Fatal("a chain of eleven Releases must halt")
 		}
@@ -218,7 +218,7 @@ func TestReleaseExtendsChain_ALoopIsReportedAsALoopAtEveryLength(t *testing.T) {
 			dir := t.TempDir()
 			head := writeReleaseChain(t, dir, length, true)
 
-			_, err := ReleaseExtendsChain(dir, head)
+			_, err := ReleaseExtendsChain("", dir, head)
 			if err == nil {
 				t.Fatalf("a loop of %d must halt", length)
 			}
@@ -268,7 +268,7 @@ func TestReleaseExtendsChain_CycleNamesTheEdgeThatClosesIt(t *testing.T) {
 			dir := t.TempDir()
 			head := writeReleaseChain(t, dir, tc.links, true)
 
-			_, err := ReleaseExtendsChain(dir, head)
+			_, err := ReleaseExtendsChain("", dir, head)
 			if err == nil {
 				t.Fatalf("a loop of %d must halt", tc.links)
 			}
@@ -357,12 +357,12 @@ func TestReleaseExtendsChain_MissingParentCarriesDirectoryAdviceAndResolveError(
 			// expectation below holds the walk carrying that failure through rather
 			// than restating the walk's own output. The literal fragment asserted
 			// afterwards is what keeps this from being circular.
-			_, resolveErr := resolveReleaseExtendsRef(dir, tc.ref)
+			_, resolveErr := resolveReleaseExtendsRef("", dir, child, tc.ref)
 			if resolveErr == nil {
 				t.Fatalf("test setup: %q must not resolve", tc.ref)
 			}
 
-			_, err := ReleaseExtendsChain(dir, child)
+			_, err := ReleaseExtendsChain("", dir, child)
 			if err == nil {
 				t.Fatal("a parent that cannot be resolved must halt")
 			}
@@ -433,7 +433,7 @@ func TestReleaseExtendsChain_IdentityIsTheResolvedPathNotTheName(t *testing.T) {
 		writeReleaseFile(t, dir, "b.yaml", releaseDoc("shared-release", ""))
 		head := loadReleaseLink(t, dir, "a.yaml")
 
-		chain, err := ReleaseExtendsChain(dir, head)
+		chain, err := ReleaseExtendsChain("", dir, head)
 		if err != nil {
 			t.Fatalf("two Release files sharing one metadata.name must resolve; got: %v", err)
 		}
@@ -461,7 +461,7 @@ func TestReleaseExtendsChain_IdentityIsTheResolvedPathNotTheName(t *testing.T) {
 		dir := t.TempDir()
 		head := writeReleaseChain(t, dir, 2, true)
 
-		_, err := ReleaseExtendsChain(dir, head)
+		_, err := ReleaseExtendsChain("", dir, head)
 		if err == nil {
 			t.Fatal("a loop between two distinctly named Releases must halt")
 		}
@@ -477,7 +477,7 @@ func TestReleaseExtendsChain_IdentityIsTheResolvedPathNotTheName(t *testing.T) {
 		writeReleaseFile(t, dir, "b.yaml", releaseDoc("shared-release", "./a.yaml"))
 		head := loadReleaseLink(t, dir, "a.yaml")
 
-		_, err := ReleaseExtendsChain(dir, head)
+		_, err := ReleaseExtendsChain("", dir, head)
 		if err == nil {
 			t.Fatal("a loop between two Releases sharing one metadata.name must halt")
 		}

@@ -21,6 +21,13 @@
 // found rather than reading it for a build names the link as not read instead of
 // halting.
 //
+// [CheckReference] is the same judgement for a file a document names by a path —
+// a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
+// parameters import. Such a reference is the author's words rather than a listing
+// of a directory, so it can climb out of its root as written as well as through a
+// link, and it is refused either way. Its root is picked the same way, for the
+// directory of the document the resolution started at.
+//
 // # Which root holds a read
 //
 // The root is the one a write beneath the same directory is held to,

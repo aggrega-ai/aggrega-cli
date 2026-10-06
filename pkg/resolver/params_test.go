@@ -211,7 +211,7 @@ func TestLoadParametersImport_SingleFile(t *testing.T) {
 	f := filepath.Join(dir, "params.yaml")
 	os.WriteFile(f, []byte("db_host: localhost\ndb_port: 5432"), 0644)
 
-	params, err := LoadParametersImport(f)
+	params, err := LoadParametersImport("", dir, filepath.Join(dir, "release.yaml"), "./params.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestLoadParametersImport_UnloadableFile(t *testing.T) {
 		{name: "file holds bytes that do not parse", path: malformed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadParametersImport(tc.path)
+			_, err := LoadParametersImport("", dir, filepath.Join(dir, "release.yaml"), "./"+filepath.Base(tc.path))
 			if err == nil {
 				t.Fatal("expected a load failure, got nil")
 			}
