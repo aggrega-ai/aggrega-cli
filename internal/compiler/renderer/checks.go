@@ -3346,9 +3346,8 @@ var ArtifactsEntryNamesADeclaredBundle = constraint.Check[
 // rather than after: once the two halves are joined, a climbing segment reads as
 // an ordinary interior one and the composed name resolves somewhere the consuming
 // Recipe never named. The question is asked of the shared containment predicate,
-// in slash arithmetic, because an output name is a logical name rather than a
-// path in the host's own spelling — a backslash is an ordinary character in it on
-// every platform.
+// because an output name is a logical name rather than a path in the host's own
+// spelling, and that predicate gives it the same verdict on every platform.
 //
 // A file staying inside the key's directory is untouched, including one naming a
 // subdirectory of its own: a bundle is free to carry a nested layout, and nesting

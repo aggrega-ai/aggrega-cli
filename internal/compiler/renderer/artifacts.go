@@ -275,10 +275,10 @@ func buildArtifactsProjection(
 				// before it is composed rather than after: once the two halves are
 				// joined, a climbing segment reads as an ordinary interior one and the
 				// composed name resolves somewhere the consuming Recipe never named.
-				// The question is asked of the shared containment predicate, in slash
-				// arithmetic, because an output name is a logical name rather than a
-				// path in the host's own spelling — a backslash is an ordinary
-				// character in it on every platform.
+				// The question is asked of the shared containment predicate, because
+				// an output name is a logical name rather than a path in the host's
+				// own spelling, and that predicate gives it the same verdict on every
+				// platform.
 				if !pathscope.IsLocalSlash(fname) {
 					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactLibraryFileEscapesKey(),
 						cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},

@@ -424,15 +424,22 @@ func TestIsLocalSlash(t *testing.T) {
 // TestIsLocalSlashIsPlatformInvariant pins the property that makes the logical
 // algebra a separate entry point rather than a flag on the operating-system one.
 //
-// A backslash is an ordinary character in a logical name and a separator in a
-// Windows filesystem path. A name judged with filesystem arithmetic would
-// therefore be refused on Windows and accepted on Linux, so the same rendered
-// output or archive would be accepted on one machine and refused on the next.
-// IsLocalSlash reads it as an ordinary character on every platform.
+// A backslash is a separator in a Windows filesystem path and in no Linux one. A
+// name judged with the host's own filesystem arithmetic would therefore get one
+// verdict on Windows and another on Linux, so the same rendered output or archive
+// would be accepted on one machine and refused on the next. IsLocalSlash gives
+// each of these names one verdict wherever it runs: a backslash between ordinary
+// parts is accepted, and a climb spelled with backslashes is refused, on Linux as
+// on Windows.
 func TestIsLocalSlashIsPlatformInvariant(t *testing.T) {
-	for _, in := range []string{`a\b`, `..\..\etc`, `a\..\..\b`} {
+	for _, in := range []string{`a\b`, `a\b\c.yaml`} {
 		if !pathscope.IsLocalSlash(in) {
-			t.Errorf("IsLocalSlash(%q) refused; a backslash is an ordinary character in a slash-separated name on every platform", in)
+			t.Errorf("IsLocalSlash(%q) refused; a backslash between ordinary parts stays under the directory on every platform", in)
+		}
+	}
+	for _, in := range []string{`..\..\etc`, `a\..\..\b`} {
+		if pathscope.IsLocalSlash(in) {
+			t.Errorf("IsLocalSlash(%q) accepted; a name climbing through backslashes leaves its directory when a Windows join reads them, so it is refused on every platform", in)
 		}
 	}
 }
@@ -441,7 +448,9 @@ func TestIsLocalSlashIsPlatformInvariant(t *testing.T) {
 // extractors rely on to skip a second check after joining: an accepted name
 // cannot join to a location outside the root it is joined onto.
 func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
-	const root = "/srv/dest"
+	// Spelled for the host, so the prefix comparison below reads the separator a
+	// join on that host writes.
+	root := filepath.FromSlash("/srv/dest")
 	names := []string{
 		"a.txt", "a/b/c.txt", "..config", "a/../b", "....", "./x", "a//b", "a/..",
 	}

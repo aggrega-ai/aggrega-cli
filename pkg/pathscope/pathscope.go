@@ -41,13 +41,17 @@
 // second return value on Resolve because the callers are separate: one is about to
 // read a file, the other is about to put a name in an answer.
 //
-// The distinction between those two is not cosmetic. A backslash is an ordinary
-// character in a logical name and a separator in a Windows filesystem path, so
-// judging a logical name with filesystem arithmetic gives one answer on Windows
-// and another on Linux for identical input. Deciding the two algebras with one
-// function and a mode argument would put that hazard one wrong argument away, so
-// the two are separate names over one unexported core and there is no mode to
-// pass.
+// The distinction between those two is not cosmetic. A backslash is a separator
+// in a Windows filesystem path and in no Linux one, so judging a logical name
+// with the host's own filesystem arithmetic gives one answer on Windows and
+// another on Linux for identical input. IsLocalSlash gives one answer on every
+// machine instead, and judges a climb with a backslash read as a separator
+// there too: a logical name is joined onto a root in the spelling of the machine
+// that writes it, and a Windows join reads a backslash as one, so a name that
+// climbs out through backslashes is refused everywhere. Deciding the two
+// algebras with one function and a mode argument would put the host-dependent
+// answer one wrong argument away, so the two are separate names over one
+// unexported core and there is no mode to pass.
 //
 // [ReportedName] answers containment's third caller: one that is about to put a
 // path in an answer somebody outside this process reads. It decides nothing new —
@@ -304,17 +308,47 @@ func ResolveSelected(root, selected string) (string, bool) {
 // archive entry or a rendered output name — stays at or under the directory it
 // is relative to.
 //
-// It judges the name in slash arithmetic on every platform, so an archive
-// unpacked on Windows and on Linux is judged identically. An empty name, an
-// absolute name, and a name that climbs above its directory are all refused; a
-// name that merely begins with two dots is accepted, and an interior "a/../b"
-// resolves to "b" and is accepted.
+// The verdict is the same on every platform, so an archive unpacked on Windows
+// and on Linux is judged identically. An empty name, an absolute name, and a
+// name that climbs above its directory are all refused; a name that merely
+// begins with two dots is accepted, and an interior "a/../b" resolves to "b" and
+// is accepted.
+//
+// A climb is judged with a backslash read as a separator as well as a slash, on
+// every platform, because a name is joined onto a root in the spelling of the
+// machine that writes it and a Windows join reads a backslash as a separator.
+// So "..\x" and "a\..\..\x" are refused on Linux as they are on Windows. The
+// backslash is read that way for the climb alone: "a\b" is accepted, and a name
+// opening with a backslash is not thereby absolute, since a join places it
+// beneath the root. Both the name as written and the name cleaned as a
+// slash-separated name are judged, because a caller may join either, and
+// cleaning drops a whole slash-separated part for each "..", a part the
+// backslash reading may count as several: "a\b/../..\x" climbs only once it is
+// cleaned, to "..\x".
 //
 // When this reports true, joining name onto any root produces a path under that
-// root, so a caller that has asked this question does not also need to check the
-// join.
+// root, whether the name is joined as written or cleaned first, so a caller that
+// has asked this question does not also need to check the join. A root here is
+// a directory path: an empty string is not one, and nor is a bare Windows drive
+// name such as "C:", since a Windows join onto either starts a name opening
+// with a separator from the top of the drive.
 func IsLocalSlash(name string) bool {
-	return staysInside(name)
+	return staysInside(name) && !climbsAcrossBackslash(name) && !climbsAcrossBackslash(path.Clean(name))
+}
+
+// climbsAcrossBackslash reports whether p climbs above its directory once each
+// backslash in it is read as a separator, as a Windows join reads it.
+//
+// Separators leading the name are dropped first, because a join does not treat
+// them as a fresh start: on Windows, joining "\x" onto a root lands at the root's
+// own "x", while "\.." lands above it. A name holding no backslash answers false,
+// which leaves its verdict exactly the one staysInside gives it.
+func climbsAcrossBackslash(p string) bool {
+	if !strings.Contains(p, `\`) {
+		return false
+	}
+	rest := strings.TrimLeft(strings.ReplaceAll(p, `\`, "/"), "/")
+	return rest != "" && !staysInside(rest)
 }
 
 // Resolution is what [ResolvesInside] found on the way to its verdict: the part
@@ -493,7 +527,7 @@ func resolveDeepest(p string) string {
 	return filepath.Join(resolved, rest)
 }
 
-// staysInside is the predicate both entry points decide with, over a
+// staysInside is the predicate the lexical entry points decide with, over a
 // slash-separated path. It is unexported so that a caller cannot reach the
 // primitive and skip the normalisation its algebra owes — the entry point it
 // went through is what fixes which arithmetic applies.
