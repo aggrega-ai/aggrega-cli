@@ -231,10 +231,11 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	// can reach — and nothing is resolved over the process's own streams.
 	tw := s.servedWorkspace()
 	if err != nil {
-		// A path this session may not name is answered with the refusal's own
-		// sentence. The label below says the run reported findings, which is what
-		// every other failure here means and is not what this one means: nothing
-		// was linted, so there is nothing for a caller to go and fix in a document.
+		// A path this session may not name, and a workspace that could not be
+		// resolved, are answered with the refusal's own sentence. The label below
+		// says the run reported findings, which is what every other failure here
+		// means and is not what these mean: nothing was linted, so there is nothing
+		// for a caller to go and fix in a document.
 		var refused *pathRefusal
 		if errors.As(err, &refused) {
 			return tw.answer(errorResult(refused.text))
@@ -279,7 +280,9 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, stderr io.Writer) error {
 	tw, err := s.resolveToolWorkspace(req.workspaceRoot, nil)
 	if err != nil {
-		return err
+		// Nothing was linted, so the failure is carried out as a refusal and
+		// answered in its own words rather than under the label for findings.
+		return &pathRefusal{text: explainToolError("Could not resolve the workspace to lint in.", err, "")}
 	}
 	if req.release != "" {
 		releasePath, refusal := tw.workspacePath("lint", "release", req.release)

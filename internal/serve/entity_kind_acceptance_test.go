@@ -303,9 +303,16 @@ func observeSingleEntityValidation(t *testing.T, h *acceptanceHarness, entry ent
 // observePublication sends aggrega/publishEntity naming the document of entry's
 // kind alone, as a dry run, through the production dispatch.
 //
-// The wire carries a refusal's text and no identity, so a refusal is read again
-// from the two steps the method runs, where the failure itself is still in hand,
-// and held to be the same refusal the wire carried before its identity is read.
+// The wire carries a refusal's text, and the identifiers of a condition it
+// names, but not the failure itself, and a kind this method does not publish is
+// refused with a failure recognised by its type or by a condition — and a type
+// is not on the wire. So a refusal is read again from the two steps the method
+// runs, where the failure is still in hand, and held to be the same refusal the
+// wire carried before its identity is read. It is held as the wire answers it:
+// the one function every error answer passes through on its way to the wire
+// (conditionRefusal) is applied to it here too, so the short code it leads a
+// message naming a condition with, and the identifiers it adds, are that
+// function's own rather than a second statement of its rule.
 func observePublication(t *testing.T, h *acceptanceHarness, entry entityKindDescriptor) bool {
 	t.Helper()
 	params := publishEntityParams{Entity: h.documents[entry.DocumentKind], DryRun: true, Registry: publishTestRegistry}
@@ -327,14 +334,16 @@ func observePublication(t *testing.T, h *acceptanceHarness, entry entityKindDesc
 		return false
 	}
 	_, env := runPublishEntity(context.Background(), cfg)
-	switch {
-	case env == nil:
+	if env == nil {
 		t.Errorf("the publication of the %s document was refused on the wire (%s) and answered when run "+
 			"again, so the refusal cannot be identified", entry.DocumentKind, resp.Error.Message)
 		return false
-	case env.Message != resp.Error.Message:
+	}
+	answered := conditionRefusal(env)
+	if answered.Message != resp.Error.Message || !reflect.DeepEqual(answered.Data, resp.Error.Data) {
 		t.Errorf("the refusal the wire carried for the %s document is not the one the operation raises:\n"+
-			" wire:      %s\n operation: %s", entry.DocumentKind, resp.Error.Message, env.Message)
+			" wire:      %s %+v\n operation: %s %+v", entry.DocumentKind, resp.Error.Message, resp.Error.Data,
+			answered.Message, answered.Data)
 		return false
 	}
 	var executable *publishops.ExecutableRequiredError

@@ -9,7 +9,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/editops"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // documentEditParams is what aggrega/editDocument takes.
@@ -126,11 +125,11 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 	var params documentEditParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	if params.File == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
@@ -161,7 +160,7 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, documentEditRefusal(err))
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "editDocument: ", err)
 	}
 
 	// A write makes what the session is holding for this document stale. The
@@ -181,24 +180,6 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 		Written:           documentEditList(res.Written),
 		Content:           documentEditContent(res),
 	})
-}
-
-// documentEditRefusal renders a refusal for the wire, opening with the short
-// code where the failure names a registered condition.
-//
-// The code is read off the error rather than written here, so this surface
-// cannot come to report a code the condition was not registered under. Where the
-// chain names none the sentence stands on its own: every refusal that carries no
-// code says one request's arguments do not address a place an entry can go,
-// which needs no identifier for a caller to act on it. An error envelope's own
-// code is the numeric one, which names a state of the workspace rather than a
-// condition of the toolchain, so a condition a reader can quote and look up
-// travels in the sentence — the same place a printed diagnostic carries it.
-func documentEditRefusal(err error) string {
-	if short, ok := cerrors.ShortCodeOf(err); ok {
-		return "editDocument: " + short + ": " + err.Error()
-	}
-	return "editDocument: " + err.Error()
 }
 
 // documentEditContent returns the edited document's content.

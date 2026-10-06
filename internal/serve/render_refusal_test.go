@@ -266,6 +266,10 @@ func assertRefusalReported(t *testing.T, fault renderRefusalFault, answer refusa
 		t.Errorf("the answer places the refusal at %d:%d; the key %s is at %d:%d",
 			data.Line, data.Column, key, wantLine, wantColumn)
 	}
+	if data != nil && (data.Code != code || data.ShortCode != shortCode) {
+		t.Errorf("the answer's data names condition %q, short code %q; the refusal names %q, %q",
+			data.Code, data.ShortCode, code, shortCode)
+	}
 
 	// The build layer.
 	entries, published := lastPublicationFor(pushed, document)
@@ -297,9 +301,12 @@ func assertRefusalReported(t *testing.T, fault renderRefusalFault, answer refusa
 		t.Errorf("the entry names code %q, short code %q, pointer %v; the condition is %q, %q, with a pointer",
 			got.Code, got.ShortCode, got.CodeDescription, code, shortCode)
 	}
-	if got.Message != answer.Error.Message {
-		t.Errorf("the entry and the answer word one refusal differently:\nentry:  %s\nanswer: %s",
-			got.Message, answer.Error.Message)
+	// The answer is the entry's words led by the condition's short code, the head
+	// every refusal answer naming a condition opens with; the entry carries that
+	// code in a field of its own instead.
+	if want := shortCode + ": " + got.Message; answer.Error.Message != want {
+		t.Errorf("the entry and the answer word one refusal differently — the answer is the entry's words "+
+			"led by the short code:\nentry:  %s\nanswer: %s", got.Message, answer.Error.Message)
 	}
 }
 

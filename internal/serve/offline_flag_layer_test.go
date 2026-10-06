@@ -101,9 +101,9 @@ func TestEveryWorkspaceTheDaemonResolvesCarriesTheCommandLineOfflineLayer(t *tes
 			pinDaemonOfflineEnvironment(t, tc.env)
 			root := daemonOfflineWorkspace(t, tc.config)
 
-			rw, err := resolveWorkspace(root, tc.flags)
-			if err != nil {
-				t.Fatalf("resolve: %v", err)
+			rw, held, err := resolveWorkspace(root, tc.flags)
+			if err != nil || held != nil {
+				t.Fatalf("resolve: %v (held %v)", err, held)
 			}
 			origins, err := rw.ValueOrigins()
 			if err != nil {

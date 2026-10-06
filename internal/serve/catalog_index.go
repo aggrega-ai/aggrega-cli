@@ -110,13 +110,26 @@ type catalogIndexResult struct {
 // entity set reaches the other. A request may also name a Release, and is then
 // answered in that Release's terms — see catalogIndexParams. Read-only — it
 // mutates nothing, resolves nothing, and reaches no registry or network.
+//
+// It is one of the two requests answered for a workspace whose configuration is
+// held, and only in the workspace's own terms: the documents are read with
+// nothing configured, no catalog directory is read, and the held configuration
+// file is named among the files not read (namedUnread).
 func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) error {
 	// The params are decoded strictly, so a field a caller sent that this method
 	// does not take is refused rather than dropped. See noParams for why an
 	// answer that ignored an argument is worse than a refusal naming it.
 	var params catalogIndexParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
+	}
+	// On a workspace whose configuration is held the index is the workspace's own,
+	// read with nothing configured. An index in a Release's terms is not: which
+	// catalog directories a Release reads, and which documents its answer holds, is
+	// what the held configuration decides, so it draws the hold's refusal as every
+	// request the configuration decides does.
+	if s.held != nil && params.Release != "" {
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", s.heldRefusal())
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -124,13 +137,13 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 	}
 
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	index := s.catalogIndexIn(ctx, terms)
 	return s.writeResult(ctx, req.ID, catalogIndexResult{
 		Entities:          index.Entities,
 		UnreadLinkedDirs:  index.UnreadLinkedDirs,
-		UnreadLinkedFiles: index.UnreadLinkedFiles,
+		UnreadLinkedFiles: s.namedUnread(index.UnreadLinkedFiles),
 	})
 }
 

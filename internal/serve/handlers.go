@@ -182,12 +182,19 @@ type releaseCandidatesResult struct {
 // The set is a property of one workspace, so the request names which: the walk
 // runs over the root it carries, and two requests naming two workspaces are
 // answered from two trees.
+//
+// It is one of the two requests answered for a workspace whose configuration is
+// held. The walk then runs with nothing configured, so a link only the
+// configuration would have admitted is named rather than read, and the held
+// configuration file is named among the files not read (namedUnread) — which is
+// how a client learns, from an answer it already reads, that the workspace's
+// configuration leads out of it.
 func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	// A method with no parameters of its own still decodes, so a field a caller
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	walked := walkReleases(s.workspaceRoot, s.wsConfig)
@@ -199,16 +206,31 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 	if unreadDirs == nil {
 		unreadDirs = []string{}
 	}
-	unreadFiles := walked.unreadLinkedFiles
-	if unreadFiles == nil {
-		unreadFiles = []string{}
-	}
+	unreadFiles := s.namedUnread(walked.unreadLinkedFiles)
 	return s.writeResult(ctx, req.ID, releaseCandidatesResult{
 		Releases:          releases,
 		Lockfiles:         LockfilesFor(releases),
 		UnreadLinkedDirs:  unreadDirs,
 		UnreadLinkedFiles: unreadFiles,
 	})
+}
+
+// namedUnread returns the files a listing names as not read: the links its walk
+// named, and, on a workspace whose configuration is held, every held
+// configuration file the walk did not already name. Never nil, so the answer's
+// collection reaches the wire as an array.
+//
+// It is the one place a listing on this surface adds the held files, and the
+// addition is the held view's own (workspaceconfig.HeldWorkspace.NamedWith), which
+// the tool protocol's listings read too.
+func (s *Server) namedUnread(walked []string) []string {
+	if s.held != nil {
+		return s.held.NamedWith(walked)
+	}
+	if walked == nil {
+		return []string{}
+	}
+	return walked
 }
 
 // activeReleaseResult is the aggrega/activeRelease response: the absolute
@@ -283,7 +305,7 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	return s.writeResult(ctx, req.ID, s.activeReleaseAnswer(ctx))
 }
@@ -350,7 +372,7 @@ func (s *Server) activeReleaseAnswer(ctx context.Context) activeReleaseResult {
 func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	selected := selectPositionEncoding(params.Capabilities)
 	s.setPositionEncoding(selected)
@@ -362,7 +384,7 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	// resolution in force, which is what it read before this field existed.
 	declared, declaredErr := s.declaredPushWorkspace(params.WorkspaceRoot)
 	if declaredErr != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+declaredErr.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", declaredErr)
 	}
 	s.setPushRoot(declared.workspaceRoot)
 
@@ -429,14 +451,21 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 //   - Not declared: the workspace the process was launched over, which keeps a
 //     client that predates the field reading the reply and receiving the pushes
 //     it read and received before.
+//
+// A declared workspace whose configuration is held is answered from its held
+// view rather than refused: the handshake is about the connection, and a client
+// refused it could ask nothing at all — not even the listings that name the held
+// file, which are what tell it why everything else is refused. The view reports
+// its root and what anchored it, and nothing is pushed for it, since the only
+// requests it answers publish nothing.
 func (s *Server) declaredPushWorkspace(declared *string) (*Server, error) {
 	if declared == nil {
-		return s.workspaceFor(s.launchRoot)
+		return s.workspaceOrHeldFor(s.launchRoot)
 	}
 	if *declared == "" {
 		return s.workspaceFree(), nil
 	}
-	return s.workspaceFor(*declared)
+	return s.workspaceOrHeldFor(*declared)
 }
 
 // clientHandlesWorkDoneProgress reports whether the client declared it
@@ -535,7 +564,7 @@ const checkedDocument = "document"
 func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params validateParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleValidate(ctx, params)
 	if ctx.Err() != nil {
@@ -790,7 +819,7 @@ type diagnosticsResult struct {
 func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) error {
 	var params diagnosticsParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleDiagnostics(ctx, params)
 	if ctx.Err() != nil {
@@ -802,7 +831,7 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 		return nil
 	}
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	return s.writeResult(ctx, req.ID, result)
 }
@@ -991,7 +1020,7 @@ type irGraphResult struct {
 func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error {
 	var params irGraphParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleIrGraph(ctx, params)
 	if ctx.Err() != nil {
@@ -1137,6 +1166,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		return irGraphResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
 			Message: fmt.Sprintf("marshal IR graph: %v", err),
+			cause:   err,
 		}
 	}
 	return irGraphResult{Graph: graphBytes}, nil
@@ -1424,7 +1454,7 @@ type resolveResult struct {
 func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -1432,7 +1462,7 @@ func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error
 	}
 	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position, terms)
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	return s.writeResult(ctx, req.ID, resolveResult{Location: loc})
 }
@@ -1461,7 +1491,7 @@ type findReferencesResult struct {
 func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest) error {
 	var params findReferencesParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -1469,7 +1499,7 @@ func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest
 	}
 	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position, terms.reach)
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	if locs == nil {
 		locs = []yamlpos.Location{}
@@ -1499,7 +1529,7 @@ type findImplementationsResult struct {
 func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRequest) error {
 	var params findImplementationsParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -1507,7 +1537,7 @@ func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRe
 	}
 	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position, terms.reach)
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	if locs == nil {
 		locs = []yamlpos.Location{}
@@ -1543,7 +1573,7 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	var params hoverParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -1551,7 +1581,7 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	contents, errEnvelope := s.handleHover(ctx, params, terms)
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	return s.writeResult(ctx, req.ID, hoverResult{Contents: contents})
 }
@@ -1596,7 +1626,7 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 	}
 	var params completionParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	terms, errEnvelope := s.termsFor(params.Release)
 	if errEnvelope != nil {
@@ -1604,7 +1634,7 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 	}
 	items, errEnvelope := s.handleCompletion(ctx, params, terms)
 	if errEnvelope != nil {
-		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
 	if items == nil {
 		items = []CompletionItem{}

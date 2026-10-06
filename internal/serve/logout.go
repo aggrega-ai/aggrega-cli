@@ -83,7 +83,7 @@ func (s *Server) dispatchLogout(ctx context.Context, req *jsonRPCRequest) error 
 	var params logoutParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Registry == "" {
@@ -103,7 +103,7 @@ func (s *Server) dispatchLogout(ctx context.Context, req *jsonRPCRequest) error 
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, logoutResult{
 		Registry: res.Registry,

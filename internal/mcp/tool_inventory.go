@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 )
 
@@ -136,7 +138,10 @@ var cacheStatusToolSpec = toolSpec{
 		"`machine_wide_classes` names those classes directly. `provenance` names the plugin identities each recorded " +
 		"guest digest resolved for, marking a digest more than one identity shares — it is what gives a compiled " +
 		"module a name rather than an opaque key, and it is metadata rather than reclaimable content, so it is " +
-		"excluded from the totals. Without a resolvable workspace only the machine-wide classes are reported.",
+		"excluded from the totals. Without a resolvable workspace only the machine-wide classes are reported. Where " +
+		"the workspace's own configuration file, or the CI-owned overlay beside it, is a link leading out of the " +
+		"workspace, the call is refused naming the link: where that workspace's cache sits is what its " +
+		"configuration decides.",
 	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
 	listenerNote: "You did not start this server, so you are not told where a plugin it loaded from a file sits on " +
 		"its host: that identity is null in its place in `provenance`, and its entry is marked " +
@@ -168,12 +173,20 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// caches exist and are reportable whatever the caller is standing in, and
 	// refusing the whole answer because one half of it is unavailable would be
 	// less useful than saying which half was read.
+	//
+	// A workspace whose configuration is held is refused, as every tool but the two
+	// listings refuses it. Where its cache sits is what that configuration decides,
+	// so an inventory without its classes would read as the inventory of a
+	// workspace that keeps none, and the link the hold names would go unsaid.
 	var root, cacheDir string
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
-	if err == nil {
+	switch {
+	case err == nil:
 		root = tw.root
 		cacheDir = tw.cacheDir
-	} else {
+	case errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()):
+		return errorResult(explainToolError("Could not resolve the workspace to report its caches.", err, ""))
+	default:
 		tw = s.servedWorkspace()
 	}
 

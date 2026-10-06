@@ -92,7 +92,7 @@ func (s *Server) dispatchPin(ctx context.Context, req *jsonRPCRequest) error {
 	var params pinParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Entity == "" {
@@ -101,7 +101,7 @@ func (s *Server) dispatchPin(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	entity, err := s.workspacePath("pin: entity", params.Entity)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, "the daemon holds no resolved workspace to pin in")

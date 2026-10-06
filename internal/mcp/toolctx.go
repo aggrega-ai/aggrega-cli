@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -362,6 +363,14 @@ type toolWorkspace struct {
 	// site, so the one helper that resolves a path argument has everything its
 	// answer depends on and a tool cannot reach around it to a different rule.
 	transport transportMode
+
+	// held is set on the workspace a listing resolved where that workspace's
+	// configuration is held — a configuration file its cascade merges is a link
+	// leading out of it — and is nil everywhere else. Such a workspace carries no
+	// configuration: rw is nil, cfg is the zero value and no catalog directory is
+	// read. Only resolveListingWorkspace builds one, for the tools whose operation
+	// lists what a workspace holds.
+	held *workspaceconfig.HeldWorkspace
 }
 
 // resolveToolWorkspace resolves the workspace a tool call operates in. An
@@ -393,13 +402,20 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	}
 	rw, err := workspaceconfig.ResolveWithFlags(start, flagRoot, s.flags)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace: %w", err)
+		return nil, toolWorkspaceRefusal(err)
 	}
+	return s.toolWorkspaceOf(rw, catalogDirs), nil
+}
+
+// toolWorkspaceOf builds a call's workspace context from its resolution and its
+// own catalog_dirs argument. It is the one composition of that context, so a
+// listing resolving a workspace that is not held is answered from exactly the
+// context every other tool is.
+func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) *toolWorkspace {
 	cfg := rw.Config()
-	root := rw.Root()
-	tw := &toolWorkspace{
+	return &toolWorkspace{
 		rw:        rw,
-		root:      root,
+		root:      rw.Root(),
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
 		dirs:      rw.ResolveCatalogDirs("", catalogDirs),
@@ -407,7 +423,65 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 		flagDirs:  catalogDirs,
 		transport: s.transport,
 	}
-	return tw, nil
+}
+
+// toolWorkspaceRefusal frames a failure to resolve a call's workspace, so a call
+// refused for a held configuration reads alike whichever resolution met it.
+func toolWorkspaceRefusal(err error) error {
+	return fmt.Errorf("resolve workspace: %w", err)
+}
+
+// resolveListingWorkspace resolves the workspace a call to the tool answering
+// operation names, as resolveToolWorkspace does, with one difference that is the
+// listing's own: where operation lists what a workspace holds
+// (opsurface.AnswersOverHeldConfiguration) and the workspace's configuration is
+// held — a configuration file its cascade merges is a link leading out of it —
+// the call is answered from the held view rather than refused. That view carries
+// no configuration and reads no catalog directory, and the listing names every
+// held file among the files it did not read (namedUnread). For every other
+// operation it is resolveToolWorkspace, held configuration refused.
+//
+// It is the language server's rule for the same two operations, read from the
+// same declaration, so an assistant and an editor are answered alike over one
+// workspace.
+func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs []string) (*toolWorkspace, error) {
+	if !opsurface.AnswersOverHeldConfiguration(operation) {
+		return s.resolveToolWorkspace(rootArg, catalogDirs)
+	}
+	start := rootArg
+	flagRoot := rootArg
+	if start == "" {
+		start = s.startDir
+	}
+	rw, held, err := workspaceconfig.ResolveOrHold(start, flagRoot, s.flags)
+	if err != nil {
+		return nil, toolWorkspaceRefusal(err)
+	}
+	if held == nil {
+		return s.toolWorkspaceOf(rw, catalogDirs), nil
+	}
+	return &toolWorkspace{root: held.Root(), flagDirs: catalogDirs, transport: s.transport, held: held}, nil
+}
+
+// heldRefusal is what a listing answers a request its held workspace cannot
+// serve with — one in a Release's terms, or with catalog directories laid onto a
+// stack the held configuration decides: the refusal every other tool answers the
+// same workspace with.
+func (tw *toolWorkspace) heldRefusal() error {
+	return toolWorkspaceRefusal(tw.held.Refusal())
+}
+
+// namedUnread returns the files a listing names as not read: the links its walk
+// named and, on a held workspace, every held configuration file the walk did not
+// name already (workspaceconfig.HeldWorkspace.NamedWith). Never nil.
+func (tw *toolWorkspace) namedUnread(walked []string) []string {
+	if tw.held != nil {
+		return tw.held.NamedWith(walked)
+	}
+	if walked == nil {
+		return []string{}
+	}
+	return walked
 }
 
 // catalogDirsFor returns the catalog search stack for release, resolved through
@@ -611,8 +685,10 @@ func (tw *toolWorkspace) workspacePath(tool, argument, raw string) (string, stri
 		"when it was started, and reads nothing beyond it.", tool, argument, raw)
 }
 
-// pathRefusal carries a path refusal out of an operation that reports failures as
-// errors rather than as corrective text.
+// pathRefusal carries a refusal decided before an operation ran — a path this
+// session may not name, or a workspace that could not be resolved, a workspace
+// whose configuration is held among them — out of an operation that reports
+// failures as errors rather than as corrective text.
 //
 // It exists because the answer a caller gets must be the refusal's own sentence.
 // An operation's error return is labelled at its call site with what that

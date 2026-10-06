@@ -139,14 +139,14 @@ func (s *Server) dispatchConnectionCandidates(ctx context.Context, req *jsonRPCR
 	var params connectionCandidatesParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Node == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "params.node is required")
 	}
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	result, found := s.connectionCandidates(ctx, params.Node, params.Socket)
 	if !found {

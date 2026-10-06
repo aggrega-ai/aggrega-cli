@@ -71,7 +71,7 @@ func (s *Server) dispatchScaffoldEntity(ctx context.Context, req *jsonRPCRequest
 	var params scaffoldEntityParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	kind := strings.TrimSpace(params.Kind)
@@ -84,9 +84,9 @@ func (s *Server) dispatchScaffoldEntity(ctx context.Context, req *jsonRPCRequest
 	if err != nil {
 		var unknown *scaffoldops.UnknownKindError
 		if errors.As(err, &unknown) {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, unknown.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", unknown)
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, "derive the skeleton: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "derive the skeleton: ", err)
 	}
 	return s.writeResult(ctx, req.ID, scaffoldEntityResult{Kind: kind, Skeleton: skeleton})
 }

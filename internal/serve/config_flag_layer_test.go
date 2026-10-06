@@ -82,9 +82,9 @@ func TestEveryWorkspaceTheDaemonResolvesReadsTheGlobalFileTheCommandLineNamed(t 
 			file := map[string]string{"named": named, "exported": exported, "--offline": "--offline"}
 			root := daemonOfflineWorkspace(t, "")
 
-			rw, err := resolveWorkspace(root, flags)
-			if err != nil {
-				t.Fatalf("resolve: %v", err)
+			rw, held, err := resolveWorkspace(root, flags)
+			if err != nil || held != nil {
+				t.Fatalf("resolve: %v (held %v)", err, held)
 			}
 			if got := rw.Config().Offline; got != tc.want {
 				t.Errorf("offline = %v; want %v", got, tc.want)

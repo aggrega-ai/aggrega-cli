@@ -252,8 +252,15 @@ var listEntitiesToolSpec = toolSpec{
 		"variant that Release builds with. `unread_linked_dirs` and `unread_linked_files`, in both shapes, name each " +
 		"link the listing meets that leads out of the workspace — to a directory, which is not searched, and to a " +
 		"YAML file other than a Release the workspace configuration names, which is not read — so a document an " +
-		"editor shows behind one is not listed as the workspace's own.",
-	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
+		"editor shows behind one is not listed as the workspace's own. Where the workspace's own configuration " +
+		"file, or the CI-owned overlay beside it, is a link leading out of the workspace, the configuration is not " +
+		"read: `unread_linked_files` names that file, the listing is the workspace's own read with nothing " +
+		"configured, `release` is refused, and so is every other tool over that workspace.",
+	// The refusal of `catalog_dirs` over a held configuration is said here, not in
+	// the description: it names an argument a listener does not offer, so it is
+	// advertised only where that argument is.
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery; `catalog_dirs` is " +
+		"refused where the workspace's configuration is not read, as `release` is.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -317,9 +324,18 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 			"blank value names none. Send a Release path, as list-releases returns one, or leave `release` out for " +
 			"the workspace's own listing.")
 	}
-	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
+	tw, err := s.resolveListingWorkspace("workspace-entity-index", a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to list its entities.", err, "component"))
+	}
+	// A workspace whose configuration is held is listed in its own terms with
+	// nothing configured. A listing in a Release's terms, or with catalog
+	// directories laid onto the configured stack, is decided by the configuration
+	// the hold keeps unread, so it is refused as every other tool is refused on that
+	// workspace — before anything is walked.
+	if tw.held != nil && (a.Release != nil || len(a.CatalogDirs) > 0) {
+		return tw.answer(errorResult(explainToolError("Could not resolve the workspace to list its entities.",
+			tw.heldRefusal(), "component")))
 	}
 
 	// With no Release named, the listing is the workspace's, so it reads the
@@ -351,7 +367,7 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		MoreRemaining:     more,
 		Entities:          entities[from:to],
 		UnreadLinkedDirs:  index.UnreadLinkedDirs,
-		UnreadLinkedFiles: index.UnreadLinkedFiles,
+		UnreadLinkedFiles: tw.namedUnread(index.UnreadLinkedFiles),
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderListEntitiesText(payload), payload))
@@ -557,7 +573,10 @@ var listReleasesToolSpec = toolSpec{
 		"not listed even where an editor shows it under the link. `unread_linked_files`, in both shapes, names each " +
 		"link the listing meets that leads to a YAML file outside the workspace which the workspace configuration " +
 		"does not name as a Release: no such file is read, so a Release behind one is not listed; one the " +
-		"configuration names is read and listed. Membership is decided by the file's own kind " +
+		"configuration names is read and listed. Where the workspace's own configuration file, or the CI-owned " +
+		"overlay beside it, is a link leading out of the workspace, the configuration is not read: " +
+		"`unread_linked_files` names that file, the listing is read with nothing configured, and every tool " +
+		"other than this one and list-entities is refused over that workspace. Membership is decided by the file's own kind " +
 		"header, never by its name: a Release named without a conventional prefix is included, and a file merely " +
 		"named like one is not. Call this when you need to name a Release and do not know which exist — build, " +
 		"describe and validate each require one named and none can enumerate for you. Feed a returned path straight " +
@@ -606,7 +625,7 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
+	tw, err := s.resolveListingWorkspace("release-candidates", a.WorkspaceRoot, nil)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to list its Releases.", err, "release"))
 	}
@@ -625,7 +644,7 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		Releases:          page,
 		Lockfiles:         serve.LockfilesFor(page),
 		UnreadLinkedDirs:  walked.UnreadLinkedDirs,
-		UnreadLinkedFiles: walked.UnreadLinkedFiles,
+		UnreadLinkedFiles: tw.namedUnread(walked.UnreadLinkedFiles),
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderListReleasesText(payload), payload))

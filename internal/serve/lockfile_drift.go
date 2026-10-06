@@ -81,18 +81,20 @@ func (s *Server) requireLockfile(ctx context.Context, lockfilePath, release stri
 		Code:    errEntityNotResolvable,
 		Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
 		Data:    newLockfileErrorData(lockfilePath, release),
+		cause:   err,
 	}
 }
 
 // lockfileRefusal is the answer to a request whose Release's lockfile could not be
 // read because it leads out of the root a write of it is held to: the code a
 // present but unreadable lockfile answers with, the lockfile and the Release in
-// the data, and the condition's own sentence with its short code ahead of it, as
-// every refusal naming a condition reads (conditionRefusal).
+// the data, and the condition's own sentence, carried with its failure so the
+// answer names the condition — its codes in the data and its short code ahead of
+// the sentence — as every refusal naming a condition does (conditionRefusal).
 func lockfileRefusal(lockfilePath, release string, err error) *jsonRPCError {
 	return &jsonRPCError{
 		Code:    errEntityNotResolvable,
-		Message: conditionRefusal(err),
+		Message: err.Error(),
 		Data:    newLockfileErrorData(lockfilePath, release),
 		cause:   err,
 	}

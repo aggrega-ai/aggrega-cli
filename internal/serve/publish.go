@@ -275,7 +275,7 @@ func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest)
 	var params publishEntityParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	progress := s.progressFor(ctx)
@@ -409,7 +409,7 @@ func (s *Server) dispatchPublishArtifact(ctx context.Context, req *jsonRPCReques
 	var params publishArtifactParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	progress := s.progressFor(ctx)
@@ -512,7 +512,7 @@ func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest)
 	var params signArtifactsParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	progress := s.progressFor(ctx)
@@ -608,7 +608,7 @@ func (s *Server) dispatchDeprecateArtifact(ctx context.Context, req *jsonRPCRequ
 	var params deprecateArtifactParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	progress := s.progressFor(ctx)
@@ -743,7 +743,7 @@ func (s *Server) requireDestination(requested string) *jsonRPCError {
 	if _, err := publishops.ResolveDestination(
 		requested, s.resolvedWorkspace.Config().DefaultRegistryLocation().Prefix(), daemonDestinationSupply,
 	); err != nil {
-		return invalidPublicationParam(err.Error())
+		return &jsonRPCError{Code: jsonRPCInvalidParams, Message: "invalid params: " + err.Error(), cause: err}
 	}
 	return nil
 }
@@ -751,6 +751,10 @@ func (s *Server) requireDestination(requested string) *jsonRPCError {
 // invalidPublicationParam builds the refusal a malformed publication request
 // draws. Each message names what to send rather than only what was wrong, so a
 // client author reading one learns the contract without consulting anything else.
+//
+// It carries no failure, so it is for a fault this surface words itself; a fault
+// rendered from an error is answered with that error as its cause, which is what
+// identifies the condition it names (conditionRefusal).
 func invalidPublicationParam(fault string) *jsonRPCError {
 	return &jsonRPCError{Code: jsonRPCInvalidParams, Message: "invalid params: " + fault}
 }

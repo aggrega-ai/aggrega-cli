@@ -6,7 +6,6 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"oras.land/oras-go/v2"
@@ -100,9 +99,9 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 				lifecycleAudit{
 					Event:   eventDocsBundle,
 					Outcome: bundleNotAcquired,
-					Detail:  fmt.Sprintf("resolve workspace: %v", err),
+					Detail:  err.Error(),
 				},
-				"mcp: documentation bundle not acquired: resolve workspace: %v", err)
+				"mcp: documentation bundle not acquired: %v", err)
 			return
 		}
 		ref, version := s.docsBundleCoords(tw)
@@ -170,7 +169,7 @@ func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
 	}
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
-		return readResourceResult{}, &rpcError{Code: codeInternalError, Message: "resolve workspace: " + err.Error()}
+		return readResourceResult{}, &rpcError{Code: codeInternalError, Message: err.Error()}
 	}
 	ref, version := s.docsBundleCoords(tw)
 	data, mimeType, rerr := docscache.ReadPage(tw.root, tw.cacheDir, ref, version, page)

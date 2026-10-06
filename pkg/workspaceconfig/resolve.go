@@ -241,7 +241,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	if len(look) > 0 && look[0] != nil {
 		lookup = look[0]
 	}
-	rw, err := resolve(start, flagRoot, lookup, false)
+	rw, err := resolve(start, flagRoot, lookup, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (
 	if len(look) > 0 && look[0] != nil {
 		lookup = look[0]
 	}
-	rw, err := resolve(start, flagRoot, lookup, true)
+	rw, err := resolve(start, flagRoot, lookup, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,17 @@ func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (
 // second pass can attribute which build-critical bindings originated only in the
 // global file. There is no re-implemented merge: both the full and the tree-only
 // resolution run this one function.
-func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool) (*ResolvedWorkspace, error) {
+//
+// hold is nil for every resolution but the one a held view is built from
+// ([ResolveOrHold]). With it nil, a configuration file leading out of the
+// workspace halts the resolution, as above. With it set, such a file is recorded
+// in hold and passed over unread, and the cascade goes on: every other held file
+// is recorded the same way, and every other file is read as above, so one that
+// does not load fails the resolution here too. Where any file was recorded the
+// resolution stops after the cascade and returns a nil workspace and a nil error:
+// what the remaining layers would merge to is not a configuration anybody wrote,
+// so their merge is used for nothing and is never validated as a whole.
+func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool, hold *configurationHold) (*ResolvedWorkspace, error) {
 	if start == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -351,12 +361,20 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	// on without it. Carrying on would configure the workspace from what remained,
 	// the defaults among it, and every command would then run on a configuration
 	// nobody wrote while reading as though it ran on the one somebody did.
+	//
+	// A resolution keeping a held view (hold set) records such a file instead and
+	// passes it over unread; it is the same judgement, asked here in both cases.
 	for _, dir := range cascadeDirs(root, absStart) {
 		basePath := filepath.Join(dir, ConfigFilename)
+		baseReadable := true
 		if err := readscope.CheckConfigurationRead(root, basePath); err != nil {
-			return nil, err
+			if hold == nil {
+				return nil, err
+			}
+			hold.record(basePath)
+			baseReadable = false
 		}
-		if _, serr := os.Stat(basePath); serr == nil {
+		if baseReadable && configFilePresent(basePath) {
 			raw, lerr := load(basePath)
 			if lerr != nil {
 				return nil, lerr
@@ -380,10 +398,15 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		}
 
 		ciPath := filepath.Join(dir, AppendCIConfigFilename)
+		ciReadable := true
 		if err := readscope.CheckConfigurationRead(root, ciPath); err != nil {
-			return nil, err
+			if hold == nil {
+				return nil, err
+			}
+			hold.record(ciPath)
+			ciReadable = false
 		}
-		if _, serr := os.Stat(ciPath); serr == nil {
+		if ciReadable && configFilePresent(ciPath) {
 			ciCfg, ignored, cerr := loadCIOverlay(ciPath)
 			if cerr != nil {
 				return nil, cerr
@@ -398,6 +421,11 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 					"%s: ignoring non-additive key %q (the CI-owned overlay is additive-only and cannot override the base config)", ciPath, key))
 			}
 		}
+	}
+
+	if hold.holds() {
+		hold.root, hold.marker = root, marker
+		return nil, nil
 	}
 
 	applyAppends(&merged, appendLayers...)
@@ -480,6 +508,14 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		warnings:    warnings,
 		configFiles: configFiles,
 	}, nil
+}
+
+// configFilePresent reports whether a configuration file is present at path. It
+// is asked only of a file the read judgement let through, so a held file is not
+// even looked at.
+func configFilePresent(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // discoverRoot determines the workspace root and the marker that anchored it,

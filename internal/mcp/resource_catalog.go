@@ -95,7 +95,7 @@ func (s *server) readCatalogResource(uri string) (readResourceResult, *rpcError)
 func (s *server) loadWorkspaceCatalog() (*catalog.Catalog, *rpcError) {
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
-		return nil, &rpcError{Code: codeInternalError, Message: "resolve workspace: " + err.Error()}
+		return nil, &rpcError{Code: codeInternalError, Message: err.Error()}
 	}
 	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(tw.root, tw.cacheDir, tw.named, tw.dirs...)
 	if err != nil {

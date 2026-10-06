@@ -97,18 +97,18 @@ func (s *Server) dispatchInsertionPoint(ctx context.Context, req *jsonRPCRequest
 	var params insertionPointParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	result, err := s.insertionPoint(params.File, params.Container)
 	if err != nil {
 		// Every refusal here says the request's arguments do not address a
 		// place an entry can go, which is what this code means: a retry
 		// changes nothing until the file or the container path changes.
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, result)
 }

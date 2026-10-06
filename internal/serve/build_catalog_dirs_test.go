@@ -195,8 +195,8 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 					t.Errorf("the refusal does not say %q: %s", want, resp.Error.Message)
 				}
 			}
-			if resp.Error.Data != nil {
-				t.Errorf("the refusal points at %+v; a directory is not a document a position is given in", resp.Error.Data)
+			if d := resp.Error.Data; d != nil && (d.File != "" || d.Line != 0 || d.Lockfile != "") {
+				t.Errorf("the refusal points at %+v; a directory is not a document a position is given in", *d)
 			}
 			var graphOut bytes.Buffer
 			graph := irGraphAnswer(t, catalogDirsServer(t, ws, &graphOut), &graphOut, release)

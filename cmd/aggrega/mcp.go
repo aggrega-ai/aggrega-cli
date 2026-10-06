@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -221,14 +223,30 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	// mcp block this launch honours is the one the cascade composed rather than
 	// one loaded a second time here.
 	ws, err := workspaceFromContext(cmd.Context())
+	var settings workspaceconfig.MCPConfig
+	var launch mcpLaunch
 	if err != nil {
-		return err
-	}
-	settings := ws.Config().MCP
-
-	launch, err := resolveMCPLaunch(cmd, ws)
-	if err != nil {
-		return err
+		// A workspace whose configuration is held is served all the same, over
+		// standard input and output, so the tools listing what it holds can name
+		// the held file; every other tool refuses it call by call, with the hold.
+		// The launch reads no mcp block, there being none it may read, so it takes
+		// the default transport and announces every tool — and a launch that asks
+		// for a listener is refused with the hold, since a listener's address,
+		// certificate and authorization are what the held configuration decides.
+		held := heldWorkspaceOf(cmd, root, err)
+		if held == nil || !servesHeldOverStdio(cmd) {
+			return err
+		}
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v; only the tools listing what the workspace holds "+
+			"answer, and they name the file as not read\n", held.Refusal())
+		settings = workspaceconfig.Default().MCP
+		launch = mcpLaunch{transport: workspaceconfig.MCPTransportStdio}
+	} else {
+		settings = ws.Config().MCP
+		launch, err = resolveMCPLaunch(cmd, ws)
+		if err != nil {
+			return err
+		}
 	}
 
 	cfg := mcp.Config{
@@ -309,6 +327,40 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			KeyFile:       settings.TLS.KeyFile,
 			HealthAddress: settings.Health.Listen,
 		})
+}
+
+// heldWorkspaceOf returns the held view of the workspace this invocation names,
+// where the resolution every command reads failed only because that workspace's
+// configuration is held — a configuration file its cascade merges is a link
+// leading out of it — and nil for any other failure.
+//
+// The view comes from the one resolution (workspaceconfig.ResolveOrHold), asked
+// for the root this invocation names and with the command line it carries, so it
+// is the workspace the failed resolution was resolving.
+func heldWorkspaceOf(cmd *cobra.Command, root string, err error) *workspaceconfig.HeldWorkspace {
+	if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+		return nil
+	}
+	_, held, herr := workspaceconfig.ResolveOrHold("", root, flagOverlayFromContext(cmd.Context()))
+	if herr != nil {
+		return nil
+	}
+	return held
+}
+
+// servesHeldOverStdio reports whether this invocation may serve a held workspace:
+// it speaks over standard input and output, by default or by --transport stdio,
+// and names no address to listen on.
+func servesHeldOverStdio(cmd *cobra.Command) bool {
+	flags := cmd.Flags()
+	if flags.Changed("listen") {
+		return false
+	}
+	if flags.Changed("transport") {
+		transport, _ := flags.GetString("transport")
+		return transport == workspaceconfig.MCPTransportStdio
+	}
+	return true
 }
 
 // mcpLaunch is what one invocation of `aggrega mcp` resolved to.

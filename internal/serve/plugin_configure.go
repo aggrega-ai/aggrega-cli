@@ -358,7 +358,7 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 	var params pluginAddParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Type == "" {
@@ -434,7 +434,7 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, pluginAddResult{
 		Type:       res.Socket,
@@ -480,7 +480,7 @@ func (s *Server) dispatchPluginRemove(ctx context.Context, req *jsonRPCRequest) 
 	var params pluginRemoveParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Type == "" {
@@ -506,7 +506,7 @@ func (s *Server) dispatchPluginRemove(ctx context.Context, req *jsonRPCRequest) 
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, pluginRemoveResult{
 		Type:  res.Socket,
@@ -559,7 +559,7 @@ func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) er
 	var params pluginSyncParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Entity == "" {
@@ -573,11 +573,11 @@ func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) er
 
 	entity, err := s.workspacePath("plugin sync: entity", params.Entity)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	plugin, err := s.workspacePath("plugin sync: plugin", params.Plugin)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 
 	res, err := pluginops.Sync(ctx, pluginops.SyncOptions{EntityPath: entity, PluginPath: plugin})
@@ -585,7 +585,7 @@ func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) er
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, pluginSyncResult{
 		Entity:        res.EntityPath,
@@ -708,7 +708,7 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 	var params pluginGenCatalogParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.FromEmbedded == (params.Plugin != "") {
@@ -752,18 +752,18 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 	if params.Plugin != "" {
 		plugin, err := s.selectedPath("plugin gen-catalog: plugin", params.Plugin)
 		if err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 		}
 		opts.PluginPath = plugin
 	}
 	overlay, err := s.selectedPath("plugin gen-catalog: overlay", params.Overlay)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	opts.OverlayPath = overlay
 	outputDir, err := s.workspacePath("plugin gen-catalog: outputDir", params.OutputDir)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	opts.OutputDir = outputDir
 
@@ -774,7 +774,7 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, pluginGenCatalogResult{
 		Documents: generatedDocuments(res.Documents),

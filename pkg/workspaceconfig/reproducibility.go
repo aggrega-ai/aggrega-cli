@@ -85,7 +85,7 @@ func buildCriticalSocketFields(cfg Config, allPlugins bool) []socketField {
 // examined; allPlugins widens the scope to every plugin socket, including the
 // verdict gates and the import socket that are meant to vary by environment.
 func (r *ResolvedWorkspace) GlobalOnlyBuildCritical(allPlugins bool) ([]BuildCriticalBinding, error) {
-	treeOnly, err := resolve(r.start, r.flagRoot, r.lookup, true)
+	treeOnly, err := resolve(r.start, r.flagRoot, r.lookup, true, nil)
 	if err != nil {
 		return nil, err
 	}

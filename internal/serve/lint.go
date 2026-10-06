@@ -347,7 +347,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 	var params lintParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	entity := strings.TrimSpace(params.Entity)
@@ -405,7 +405,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		// The collector is the discriminator rather than the error's prose: it is
 		// set exactly when the rules got as far as reporting, which is the
 		// difference between a refusal and a failure.
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, "lint: "+runErr.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "lint: ", runErr)
 	}
 	report := collect.Report()
 	return s.writeResult(ctx, req.ID, lintResult{

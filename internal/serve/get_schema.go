@@ -213,7 +213,7 @@ func (s *Server) dispatchGetSchema(ctx context.Context, req *jsonRPCRequest) err
 	var params getSchemaParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	kind := strings.TrimSpace(params.Kind)

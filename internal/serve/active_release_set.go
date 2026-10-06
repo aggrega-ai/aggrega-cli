@@ -50,7 +50,7 @@ type setActiveReleaseParams struct {
 func (s *Server) dispatchSetActiveRelease(ctx context.Context, req *jsonRPCRequest) error {
 	var params setActiveReleaseParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	release, errEnvelope := resolveReleaseParam(s.workspaceRoot, s.wsConfig, params.Release)
 	if errEnvelope != nil {
@@ -65,7 +65,7 @@ func (s *Server) dispatchSetActiveRelease(ctx context.Context, req *jsonRPCReque
 		if errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
 			code = jsonRPCInvalidParams
 		}
-		return s.writeError(ctx, req.ID, code, conditionRefusal(err))
+		return s.writeRefusal(ctx, req.ID, code, "", err)
 	}
 	return s.writeResult(ctx, req.ID, s.activeReleaseAnswer(ctx))
 }

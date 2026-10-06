@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
 
@@ -536,7 +537,7 @@ func (s *session) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte
 			tokenErr = errProgressNotNegotiated
 		}
 		if tokenErr != nil {
-			if err := s.writeError(ctx, req.ID, jsonRPCInvalidParams, tokenErr.Error()); err != nil {
+			if err := s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", tokenErr); err != nil {
 				fmt.Fprintf(s.stderr, "  handle %s: %v\n", req.Method, err)
 				return nil
 			}
@@ -642,13 +643,35 @@ func (s *session) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	root, decodeErr := workspaceFrom(req.Params)
 	if decodeErr != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+decodeErr.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", decodeErr)
 	}
-	ws, wsErr := s.workspaceFor(root)
+	ws, wsErr := s.workspaceForRoute(route, root)
 	if wsErr != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+wsErr.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", wsErr)
 	}
 	return route.handler(ws, ctx, req)
+}
+
+// workspaceForRoute resolves the workspace a request on route names, and it is the
+// one place a held workspace's view is handed on.
+//
+// 🔴 A held workspace — its configuration a link leading out of it — reaches a
+// handler only where the method lists what the workspace holds. Every other method
+// is decided by the configuration the hold keeps unread, and is refused here with
+// the hold, before its handler runs: handed the held view, it would run on nothing
+// configured while answering as though it ran on the workspace's configuration.
+// Which methods list is the operation set's declaration
+// (opsurface.AnswersOverHeldConfiguration), read for the operation the method's row
+// carries, never a choice a row or a handler makes.
+func (s *session) workspaceForRoute(route methodBinding, root string) (*Server, error) {
+	ws, err := s.workspaceOrHeldFor(root)
+	if err != nil {
+		return nil, err
+	}
+	if ws.held != nil && !opsurface.AnswersOverHeldConfiguration(route.operation) {
+		return nil, ws.heldRefusal()
+	}
+	return ws, nil
 }
 
 // isNotification reports whether req is a JSON-RPC 2.0 notification
@@ -680,7 +703,7 @@ func (s *session) emitResponse(ctx context.Context, body []byte) error {
 func (s *session) writeResult(ctx context.Context, id json.RawMessage, result any) error {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
-		return s.writeError(ctx, id, jsonRPCInternalError, "marshal result: "+err.Error())
+		return s.writeRefusal(ctx, id, jsonRPCInternalError, "marshal result: ", err)
 	}
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
@@ -712,8 +735,15 @@ func marshalErrorResponse(id json.RawMessage, code int, message string) ([]byte,
 
 // writeError writes an error-envelope response with the supplied code
 // and message. Used by direct-emit callers (parse error, method not
-// found, invalid params) that do not carry structured source-location
-// data. The resulting envelope has no Data field.
+// found, a parameter the request left out) whose message is composed
+// from no failure. The resulting envelope has no Data field.
+//
+// 🔴 A message rendered from an error does not come here. It names no
+// condition once it is text, so an answer written this way could never
+// carry the identity of the condition the error names: such a site
+// answers through writeRefusal, or through writeErrorEnvelope with the
+// error as the envelope's cause. A guard over this package holds every
+// call here to a message that renders no error.
 //
 // Callers that already hold a typed *jsonRPCError envelope from a
 // handler return — including envelopes carrying a populated Data
@@ -727,22 +757,32 @@ func (s *session) writeError(ctx context.Context, id json.RawMessage, code int, 
 	return s.emitResponse(ctx, respBytes)
 }
 
+// writeRefusal answers a request that cause refused, with the supplied code:
+// the message is lead followed by the failure's own text, and the failure
+// rides on the envelope as its cause, so the condition it names is identified
+// on the answer (conditionRefusal). lead is the context the site's own
+// message opens with — "invalid params: ", the operation's name — and may be
+// empty.
+func (s *session) writeRefusal(ctx context.Context, id json.RawMessage, code int, lead string, cause error) error {
+	return s.writeErrorEnvelope(ctx, id, &jsonRPCError{Code: code, Message: lead + cause.Error(), cause: cause})
+}
+
 // writeErrorEnvelope writes a pre-constructed error envelope to the
-// wire verbatim, preserving its Data field (when set). Used by
-// dispatcher wrappers that receive a *jsonRPCError from their
-// handler and want the envelope's optional Data payload to reach the
-// client. Direct-emit callers without source-location info continue
-// using writeError instead.
+// wire, preserving its Data field (when set), with the condition its
+// cause names identified on it (conditionRefusal): the descriptive code
+// and short code in the data and the short code at the head of the
+// message. Used by dispatcher wrappers that receive a *jsonRPCError
+// from their handler and want the envelope's optional Data payload to
+// reach the client.
 //
-// Behavior on a Data-free envelope is identical to writeError —
-// omitempty drops the Data field from the JSON encoding, so the wire
-// is byte-identical to today for envelopes that did not populate
-// Data.
+// Behavior on an envelope that carries no cause, or whose cause names
+// no condition, is identical to writeError — omitempty drops an absent
+// Data field from the JSON encoding.
 func (s *session) writeErrorEnvelope(ctx context.Context, id json.RawMessage, env *jsonRPCError) error {
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Error:   env,
+		Error:   conditionRefusal(env),
 	}
 	respBytes, err := json.Marshal(resp)
 	if err != nil {

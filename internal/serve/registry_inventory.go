@@ -47,11 +47,11 @@ func (s *Server) dispatchRegistryList(ctx context.Context, req *jsonRPCRequest) 
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
@@ -134,7 +134,7 @@ func (s *Server) dispatchRegistrySearch(ctx context.Context, req *jsonRPCRequest
 	var params registrySearchParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if s.resolvedWorkspace == nil {
@@ -160,7 +160,7 @@ func (s *Server) dispatchRegistrySearch(ctx context.Context, req *jsonRPCRequest
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 
 	records := make([]registrySearchRecord, 0, len(res.Records))

@@ -38,7 +38,13 @@ func TestEntityDefinitionReadsARegistryReferenceSentAsTheName(t *testing.T) {
 	if !errors.Is(envelope.cause, egress.ErrOfflineEgress()) {
 		t.Errorf("cause = %v; want the offline refusal the reading raises", envelope.cause)
 	}
-	if !strings.HasPrefix(envelope.Message, "entityDefinition: E0125: ") {
-		t.Errorf("message = %q; want it to open with the method and the condition's short code", envelope.Message)
+	// The answer as it reaches the wire: the condition the cause names is
+	// identified there, its short code ahead of the method's own message.
+	answer := conditionRefusal(envelope)
+	if !strings.HasPrefix(answer.Message, "E0125: entityDefinition: ") {
+		t.Errorf("message = %q; want it to open with the condition's short code and then the method", answer.Message)
+	}
+	if answer.Data == nil || answer.Data.ShortCode != "E0125" || answer.Data.Code == "" {
+		t.Errorf("data = %+v; want the condition's code and short code E0125", answer.Data)
 	}
 }

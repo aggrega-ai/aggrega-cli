@@ -255,7 +255,7 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 	var params attachCandidatesParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	// The coordinates are counted rather than compared in pairs, and they are
@@ -280,7 +280,7 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 			"invalid params: params.release applies to params.graphNode; a request sending "+given[0]+" builds no graph")
 	}
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 
 	if params.Labels != nil {

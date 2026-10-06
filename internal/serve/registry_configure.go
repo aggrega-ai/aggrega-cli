@@ -8,7 +8,6 @@ import (
 	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // configWriteScope states how far a write to a configuration file reached.
@@ -44,22 +43,6 @@ func (s *Server) scopeOfWriteTarget(t registryops.WriteTarget) configWriteScope 
 		MachineWide:   t.Scope == registryops.ScopeMachine,
 		WorkspaceRoot: s.workspaceRoot,
 	}
-}
-
-// conditionRefusal is the message a refused registration, seeding or
-// active-Release marker write answers with: the shared layer's own sentence,
-// preceded by the short code of the condition it names where it names one.
-//
-// The sentence is the command line's, unchanged, so a caller reads what a person
-// at a terminal reads. The short code is what a terminal prints in the
-// diagnostic's bracketed head, and this answer has no head, so it leads the
-// message instead — the form the daemon's other refusals naming a condition take.
-// A refusal naming no condition is the sentence alone.
-func conditionRefusal(err error) string {
-	if short, ok := cerrors.ShortCodeOf(err); ok {
-		return short + ": " + err.Error()
-	}
-	return err.Error()
 }
 
 // registryAddParams is what aggrega/registryAdd takes.
@@ -184,7 +167,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 	var params registryAddParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Host == "" {
@@ -203,11 +186,11 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 	// file the request named whichever directory later reads it.
 	keyPath, err := s.pickedOrWorkspacePath("registry add: keyPath", params.KeyPath)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	trustedRoot, err := s.pickedOrWorkspacePath("registry add: trustedRoot", params.TrustedRoot)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	// An absent fetchTrust takes the command line's own default rather than the
@@ -238,7 +221,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, conditionRefusal(err))
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	// projection-omits internal/registryops.AddResult.Content: the registration
 	// fills that document only under a reporting delivery, and this method takes
@@ -269,7 +252,7 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 	var params registryRemoveParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Registry == "" {
@@ -290,7 +273,7 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, registryRemoveResult{
 		Host:  res.Host,
@@ -319,14 +302,15 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 // Whether a registry was reached is one of those facts, on both shapes of the
 // answer: each host that failed carries Unreachable where it could not be
 // reached, and a refused request naming one registry carries the same key in
-// its error data. The message is the walk's own error, unchanged, so a client
-// reads the key to name the registry as not reached and shows the message as
-// the reason.
+// its error data. The message is the walk's own error — led by its condition's
+// short code where it names one, as every refusal naming a condition is — so a
+// client reads the key to name the registry as not reached and shows the message
+// as the reason.
 func (s *Server) dispatchRegistryUpdate(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryUpdateParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if s.resolvedWorkspace == nil {

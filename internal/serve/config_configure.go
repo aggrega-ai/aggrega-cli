@@ -95,7 +95,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 	var params configInitParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if s.resolvedWorkspace == nil {
@@ -144,7 +144,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 				"config init: "+existing.Path()+" already exists and was left untouched; "+
 					"send force to proceed anyway, which merges the registry entry into what is already there")
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, conditionRefusal(err))
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 	return s.writeResult(ctx, req.ID, configInitResult{
 		Host:    res.Registration.Host,
@@ -250,7 +250,7 @@ func (s *Server) dispatchConfigCapture(ctx context.Context, req *jsonRPCRequest)
 	var params configCaptureParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if s.resolvedWorkspace == nil {
@@ -265,7 +265,7 @@ func (s *Server) dispatchConfigCapture(ctx context.Context, req *jsonRPCRequest)
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 
 	sockets := make([]configCapturedSocket, 0, len(res.Sockets))

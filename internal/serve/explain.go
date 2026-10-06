@@ -95,7 +95,7 @@ func (s *Server) dispatchExplainError(ctx context.Context, req *jsonRPCRequest) 
 	var params explainErrorParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	code := strings.TrimSpace(params.Code)
@@ -115,7 +115,7 @@ func (s *Server) dispatchExplainError(ctx context.Context, req *jsonRPCRequest) 
 		return explainops.LoadPages(ctx, s.wsConfig, s.workspaceRoot, s.compilerVersion, warn)
 	})
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)
 	}
 
 	result := explainErrorResult{

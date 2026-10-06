@@ -149,7 +149,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	var params importParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.Source == "" {
@@ -179,12 +179,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 
 	sourcePath, err := s.selectedPath("source", params.Source)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
 	outputDir, err := s.workspacePath("outputDir", params.OutputDir)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
 	content, err := os.ReadFile(sourcePath)
@@ -192,8 +192,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		// The resolved path is named rather than the value as sent, because a
 		// relative source resolves against the workspace root and a reader looking
 		// for the file needs the location that was actually opened.
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"import: cannot read the source "+sourcePath+": "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: cannot read the source "+sourcePath+": ", err)
 	}
 
 	// The format is selected before the attachment inputs because the with-config
@@ -211,12 +210,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 				"import: the source format of "+undetected.Path()+" was not recognised from its shape; "+
 					"send format to name it explicitly (for example langflow or flowise)")
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
 	sources, settings, err := importops.AttachmentInputs(s.resolvedWorkspace, format)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
@@ -235,9 +234,9 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	}
 	if err != nil {
 		if escaping := (*importops.EscapingPathError)(nil); errors.As(err, &escaping) {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+escaping.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", escaping)
 		}
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
 	return s.writeResult(ctx, req.ID, importResult{

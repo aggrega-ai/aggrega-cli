@@ -78,10 +78,11 @@ var proseOnlyFailureReturns = map[string]int{
 	// nothing has resolved and there is no render in hand to carry.
 	"tool_build.go": 4,
 	// The lint tool's argument refusals, and the refusal of a path this session
-	// may not name — raised where the path is resolved and carried back out as an
-	// error so it can be answered in the refusal's own words, since the label on
-	// the return beside it says the run reported findings and nothing was linted.
-	// That post-run refusal carries the findings the run collected.
+	// may not name or of a workspace that could not be resolved — raised before
+	// the run lints anything and carried back out as an error so it can be
+	// answered in the refusal's own words, since the label on the return beside it
+	// says the run reported findings and nothing was linted. That post-run refusal
+	// carries the findings the run collected.
 	"tool_lint.go": 3,
 	// The dependency-resolution tool's pre-flight refusals — a missing release
 	// argument, an empty or blank upgrade target, the refused argument combination,
@@ -181,7 +182,11 @@ var proseOnlyFailureReturns = map[string]int{
 	// claim about the whole cache and a half-walked inventory understates them
 	// while reading exactly like a small one. So at that failure return there is
 	// no structured answer in hand to carry, by the operation's own design.
-	"tool_inventory.go": 4,
+	//
+	// The fifth is the cache inventory's refusal of a workspace whose configuration
+	// is held. It is decided from the resolution alone, before any cache is walked,
+	// so there is no inventory in hand to carry.
+	"tool_inventory.go": 5,
 	// The configuration reading. Both of these are pre-flight and neither loses
 	// anything, but they are pre-flight in two different senses and the second is
 	// the one worth stating.
@@ -295,8 +300,14 @@ var proseOnlyFailureReturns = map[string]int{
 	// names none and is read from the arguments alone; a Release path this session
 	// may not name; and a value naming no Release file. At none of them does a
 	// listing exist to carry.
+	//
+	// It refuses one more before the walk: a workspace whose configuration is held,
+	// asked for in a Release's terms or with catalog directories laid onto the
+	// stack the held configuration decides. That is the hold's refusal every other
+	// tool answers the same workspace with, decided from the arguments and the
+	// resolution alone, so no listing exists to carry.
 	"tool_insertion_point.go": 7,
-	"tool_workspace.go":       9,
+	"tool_workspace.go":       10,
 	"progressive.go":          3,
 	"tools.go":                3,
 }

@@ -77,7 +77,7 @@ func (s *Server) dispatchEffectiveConfiguration(ctx context.Context, req *jsonRP
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	if s.resolvedWorkspace == nil {
@@ -87,8 +87,7 @@ func (s *Server) dispatchEffectiveConfiguration(ctx context.Context, req *jsonRP
 
 	origins, err := s.resolvedWorkspace.ValueOrigins()
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError,
-			"read the effective configuration: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "read the effective configuration: ", err)
 	}
 
 	settings := make([]effectiveConfigurationSetting, 0, len(origins))

@@ -417,8 +417,15 @@ type RunConfig struct {
 // The root is supplied explicitly as the flag root, so discovery is not
 // consulted where one is given; an empty root discovers upward from the working
 // directory, which is what the launch resolution with no --workspace-root does.
-func resolveWorkspace(root string, flags workspaceconfig.FlagOverlay) (*workspaceconfig.ResolvedWorkspace, error) {
-	return workspaceconfig.ResolveWithFlags("", root, flags)
+//
+// A workspace whose configuration is held — a configuration file its cascade
+// merges is a link leading out of it — comes back as its held view rather than
+// as the refusal (workspaceconfig.ResolveOrHold): the process still starts over
+// it, and the requests that list what it holds are answered from that view. What
+// decides that only those are is the routing path (session.dispatch), which hands
+// a held view to no other handler.
+func resolveWorkspace(root string, flags workspaceconfig.FlagOverlay) (*workspaceconfig.ResolvedWorkspace, *workspaceconfig.HeldWorkspace, error) {
+	return workspaceconfig.ResolveOrHold("", root, flags)
 }
 
 // resolveBuildOnInspect applies the build-on-inspect precedence: an explicit
@@ -1203,6 +1210,17 @@ type Server struct {
 	//
 	// It is forgotten at the handshake, where forgetPublished says why.
 	published map[string][]Diagnostic
+
+	// held is set on the state built for a workspace whose configuration is held —
+	// a configuration file its cascade merges is a link leading out of it — and is
+	// nil on every workspace whose configuration was read. Such a state carries no
+	// configuration at all: wsConfig is the zero value, there is no resolution to
+	// read, and the catalog lookup reads no directory. It is built per request and
+	// never kept in the registry, so a link that is removed is read on the next
+	// request, and only the requests that list what a workspace holds are ever
+	// handed it (session.dispatch); every other request is answered with the
+	// hold's refusal (heldRefusal).
+	held *workspaceconfig.HeldWorkspace
 }
 
 // workspaceRegistry holds the state the daemon keeps for each workspace it has
@@ -1352,7 +1370,33 @@ func (s *Server) pushesAllowed() bool {
 //   - A value that is not an existing directory. A workspace is a tree, so a
 //     path naming a file or naming nothing cannot be one, and answering from it
 //     would report an empty workspace where the fault is a mistyped path.
+//
+// A workspace whose configuration is held is refused here too, with the hold's
+// refusal: this is the resolution every request the configuration decides is
+// answered against. The held view itself is workspaceOrHeldFor's, and only the
+// routing path hands it on, to the requests that list what a workspace holds.
 func (s *session) workspaceFor(root string) (*Server, error) {
+	ws, err := s.workspaceOrHeldFor(root)
+	if err != nil {
+		return nil, err
+	}
+	if ws.held != nil {
+		return nil, ws.heldRefusal()
+	}
+	return ws, nil
+}
+
+// workspaceOrHeldFor is workspaceFor with a held workspace answered by its held
+// view (heldWorkspace) rather than refused. It is the one resolution of a
+// workspace a request names; workspaceFor and the routing path both read it, so
+// the refusal a held workspace draws and the view a listing is answered from come
+// from one resolution of one root.
+//
+// A held view is built afresh on each request and never kept in the registry: a
+// workspace's state is kept because it is earned by walking a tree, while a held
+// view earns nothing worth keeping and would go on answering after the link that
+// held it was removed.
+func (s *session) workspaceOrHeldFor(root string) (*Server, error) {
 	if root == "" {
 		return nil, fmt.Errorf("the `workspaceRoot` parameter is required: send the absolute path of " +
 			"the workspace root this request is about")
@@ -1382,13 +1426,59 @@ func (s *session) workspaceFor(root string) (*Server, error) {
 	if ws := s.workspaces.byRoot[key]; ws != nil {
 		return ws, nil
 	}
-	resolved, err := resolveWorkspace(key, s.flags)
+	resolved, held, err := resolveWorkspace(key, s.flags)
 	if err != nil {
-		return nil, fmt.Errorf("resolve the workspace at %s: %w", key, err)
+		return nil, workspaceRefusal(key, err)
+	}
+	if held != nil {
+		return s.heldWorkspace(held), nil
 	}
 	ws := s.newWorkspace(resolved)
 	s.workspaces.byRoot[key] = ws
 	return ws, nil
+}
+
+// workspaceRefusal is the refusal a request naming the workspace at root draws
+// when that workspace cannot be resolved: the resolution's own failure, in the
+// frame naming which workspace it was, carried as the failure so the condition it
+// names is identified on the answer.
+func workspaceRefusal(root string, err error) error {
+	return fmt.Errorf("resolve the workspace at %s: %w", root, err)
+}
+
+// heldRefusal is the refusal every request this held workspace's configuration
+// decides is answered with: exactly the refusal the workspace draws where its held
+// view is not taken (workspaceFor), so a request is refused alike whichever way it
+// reached the hold.
+func (s *Server) heldRefusal() error {
+	return workspaceRefusal(s.workspaceRoot, s.held.Refusal())
+}
+
+// heldWorkspace builds the state a request listing a held workspace is answered
+// from: the root, what anchored it, and nothing configured. There is no
+// configuration to keep and no resolution to answer from; the catalog lookup
+// reads no directory, because which directories a catalog reads is what the held
+// configuration decides; and the caches start empty.
+//
+// The configuration layer the handshake reports for it is the built-in defaults',
+// because no configuration file contributed anything this view answers with —
+// and the handshake is all it is reported on, since nothing the defaults decide
+// is answered from a held view.
+func (s *session) heldWorkspace(held *workspaceconfig.HeldWorkspace) *Server {
+	root := held.Root()
+	return &Server{
+		session:         s,
+		workspaceRoot:   root,
+		configSource:    workspaceconfig.SourceDefaults.String(),
+		workspaceMarker: held.Marker(),
+		held:            held,
+		lazyCatalog:     catalog.NewLazyLookup(root, "", nil, nil),
+		parseCache:      newCache(0, 0),
+		diagnostics:     map[string][]Diagnostic{},
+		renderDiags:     map[string][]Diagnostic{},
+		conventionDiags: map[string][]Diagnostic{},
+		published:       map[string][]Diagnostic{},
+	}
 }
 
 // newWorkspace builds the state held for one resolved workspace. Every field is
@@ -1787,6 +1877,12 @@ func (s *Server) forgetPublished() {
 // returns an error before entering the dispatch loop. The cobra entry point
 // surfaces that error to the process exit code; the IDE client interprets
 // non-zero exit as a "language server failed to start" condition.
+//
+// A launch workspace whose configuration is held — a configuration file its
+// cascade merges is a link leading out of it — is not such a failure. The process
+// starts, says so on its error stream, and answers each request as it would
+// answer one naming that workspace: the requests listing what it holds from its
+// held view, every other one with the hold's refusal.
 func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
@@ -1801,7 +1897,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Single resolution path shared with the CLI and with every workspace a
 	// request names: discover the root (or honor the explicit one),
 	// cascade-merge the config tree, and lay the launch's command line on top.
-	resolved, err := resolveWorkspace(cfg.WorkspaceRoot, cfg.Flags)
+	resolved, held, err := resolveWorkspace(cfg.WorkspaceRoot, cfg.Flags)
 	if err != nil {
 		return err
 	}
@@ -1809,6 +1905,23 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	stderr := cfg.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
+	}
+
+	// A launch over a workspace whose configuration is held still starts, so the
+	// requests that list what it holds can answer and name the held file; every
+	// request its configuration decides is refused with the hold, request by
+	// request. The pool is sized by the built-in default, the one property of the
+	// process a held configuration leaves nothing else to size it by, and the hold
+	// is said once on the error stream, which is where a person launching the
+	// process reads.
+	var launchRoot string
+	var launchCfg workspaceconfig.Config
+	if held != nil {
+		launchRoot, launchCfg = held.Root(), workspaceconfig.Default()
+		fmt.Fprintf(stderr, "warning: %v; only the requests listing what the workspace holds are answered, "+
+			"and they name the file as not read\n", held.Refusal())
+	} else {
+		launchRoot, launchCfg = resolved.Root(), resolved.Config()
 	}
 	// The render pipeline's per-request Loaders draw on the process-wide shared
 	// compilation cache (see wasm.NewCachingLoaderFromContext): a guest's
@@ -1821,8 +1934,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	sess := &session{
 		compilerVersion:     cfg.CompilerVersion,
 		toolchain:           cfg.Toolchain,
-		launchRoot:          resolved.Root(),
-		launchCfg:           resolved.Config(),
+		launchRoot:          launchRoot,
+		launchCfg:           launchCfg,
 		buildOnInspectFlag:  cfg.BuildOnInspect,
 		flags:               cfg.Flags,
 		installCLIPlugin:    cfg.InstallCLIPlugin,
@@ -1836,12 +1949,15 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// The default push declaration. A client that declares a workspace at the
 	// handshake replaces it; one that declares nothing keeps it, and is pushed
 	// the diagnostics of the workspace this process was pointed at.
-	sess.setPushRoot(resolved.Root())
+	sess.setPushRoot(launchRoot)
 	// The launch workspace's entry is installed eagerly, and only so that the
 	// default push declaration names a workspace that exists. It walks nothing:
 	// the catalog lookup is lazy and the caches start empty, exactly as they do
-	// for a workspace a request names later.
-	sess.workspaces.byRoot[filepath.Clean(resolved.Root())] = sess.newWorkspace(resolved)
+	// for a workspace a request names later. A held workspace has no entry to
+	// install: its view is built per request, so it is never kept.
+	if resolved != nil {
+		sess.workspaces.byRoot[filepath.Clean(launchRoot)] = sess.newWorkspace(resolved)
+	}
 
 	// No workspace-wide walk runs here. The daemon holds no Release of
 	// its own, so there is nothing to resolve at construction: a request

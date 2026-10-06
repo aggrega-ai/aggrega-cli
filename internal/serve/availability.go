@@ -28,6 +28,13 @@ type methodBinding struct {
 	// such a method answer from an empty workspace and report an empty result,
 	// which reads exactly like a workspace with nothing in it.
 	workspaceFree bool
+
+	// operation is the operation the row binding this method declares, filled in
+	// when the routing index is built from the table rather than written on a row.
+	// The routing path reads it to decide whether the method may be answered for
+	// a workspace whose configuration is held, which is a property of the
+	// operation (opsurface.AnswersOverHeldConfiguration) and never of a row.
+	operation string
 }
 
 // at binds a wire method to its handler, for one row of the table below. The
@@ -719,6 +726,7 @@ func buildMethodIndex(table map[string]serveAvailability) map[string]methodBindi
 					"one wire method answers one capability", b.method, other, id))
 			}
 			claimed[b.method] = id
+			b.operation = id
 			idx[b.method] = b
 		}
 	}

@@ -159,26 +159,32 @@ func TestTheDaemonSaysWhichRegistryCouldNotBeReached(t *testing.T) {
 				if sharedErr == nil {
 					t.Fatal("the shared walk naming the same registry succeeded, so the refusal has nothing to be held to")
 				}
-				if resp.Error.Message != sharedErr.Error() {
+				// The shared walk's error, as every refusal carries the failure it
+				// was rendered from: its condition, where it names one, identified in
+				// the data and its short code ahead of the sentence.
+				identified := conditionRefusal(&jsonRPCError{Message: sharedErr.Error(), cause: sharedErr})
+				if resp.Error.Message != identified.Message {
 					t.Errorf("the refusal's message is not the shared walk's error\n got: %q\nwant: %q",
-						resp.Error.Message, sharedErr.Error())
+						resp.Error.Message, identified.Message)
+				}
+				identity := errorData{}
+				if identified.Data != nil {
+					identity = *identified.Data
 				}
 
 				if !row.wantUnreachable {
-					if resp.Error.Data != nil {
-						t.Errorf("a registry that answered is refused with data %+v; want none", *resp.Error.Data)
+					if d := resp.Error.Data; d != nil && *d != identity {
+						t.Errorf("a registry that answered is refused with data %+v; want only the condition its failure names, %+v", *d, identity)
 					}
 					return
 				}
 				if resp.Error.Data == nil {
 					t.Fatal("the refusal of a registry that could not be reached carries no data")
 				}
-				data, err := json.Marshal(resp.Error.Data)
-				if err != nil {
-					t.Fatalf("marshal the refusal's data: %v", err)
-				}
-				if string(data) != `{"unreachable":true}` {
-					t.Errorf("the refusal's data = %s; want exactly {\"unreachable\":true}", data)
+				want := identity
+				want.Unreachable = true
+				if *resp.Error.Data != want {
+					t.Errorf("the refusal's data = %+v; want exactly %+v — unreachable, and the condition the failure names", *resp.Error.Data, want)
 				}
 			})
 

@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -195,7 +194,7 @@ func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCReque
 	var params entityDefinitionParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	name := strings.TrimSpace(params.Name)
@@ -210,7 +209,7 @@ func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCReque
 	// on, before anything is fetched.
 	if compilerops.IsRegistryReference(name) {
 		if err := compilerops.CheckRegistryReference(name); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 		if params.Release != "" {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
@@ -307,19 +306,16 @@ func (s *Server) entityDefinition(ctx context.Context, name string, terms releas
 //
 // A reference nothing is published under, a credential the registry refuses, an
 // artifact that cannot be unpacked or holds no entity, and an offline workspace
-// are each refused with entity-not-resolvable. The message leads with the short
-// code of the condition that names the failure, where the failure carries one,
-// and ends with what to do about it.
+// are each refused with entity-not-resolvable. The failure rides on the answer,
+// so the condition that names it — where it carries one — is identified on it
+// and its short code leads the message (conditionRefusal), which ends with what to
+// do about it.
 func (s *Server) publishedEntityDefinition(ctx context.Context, reference string) (entityDefinitionResult, *jsonRPCError) {
 	entity, err := compilerops.ReadPublishedEntity(ctx, s.wsConfig, reference)
 	if err != nil {
-		message := "entityDefinition: " + err.Error()
-		if short, ok := cerrors.ShortCodeOf(err); ok {
-			message = "entityDefinition: " + short + ": " + err.Error()
-		}
 		return entityDefinitionResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: message,
+			Message: "entityDefinition: " + err.Error(),
 			cause:   err,
 		}
 	}
@@ -381,10 +377,15 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 		skipped := view.SkippedEntities()
 		hint := compilerops.KindHintFor(kind)
 		var message string
+		// The refusal that leads the message is the condition the answer names, so
+		// it rides on the answer as its cause: its codes are what a client reads,
+		// and its short code already stands in the head the message opens with.
+		var cause error
 		if refusal, found := compilerops.SoleRefusal(skipped, name, hint); found {
 			message = s.skipContextBesides(view, fmt.Sprintf("%s; note: %s, and %q resolved to no entity",
 				compilerops.RefusedDocumentLine(pathscope.ReportedName(s.workspaceRoot, refusal.Path), refusal.Err),
 				compilerops.RefusedDocumentNote, name), refusal.Path)
+			cause = refusal.Err
 		} else {
 			message = s.skipContext(view, fmt.Sprintf(
 				"%q is declared as %s %s by %s, but the catalog resolved no entity for it",
@@ -394,6 +395,7 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 			Code:    errEntityNotResolvable,
 			Message: s.localCatalogContext(message, skipped, name, hint, terms.release),
 			Data:    newErrorData(file, 0, 0),
+			cause:   cause,
 		}
 	}
 	if terms.release != "" {
@@ -667,7 +669,7 @@ type releaseClosureResult struct {
 func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest) error {
 	var params releaseClosureParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleReleaseClosure(ctx, params)
 	if ctx.Err() != nil {

@@ -130,7 +130,7 @@ type buildResult struct {
 func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 	var params buildParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleBuild(ctx, params)
 	if ctx.Err() != nil {

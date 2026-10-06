@@ -169,7 +169,7 @@ type toolchainCorePluginRow struct {
 func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveDependenciesParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	progress := s.progressFor(ctx)
 	defer progress.done()

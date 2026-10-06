@@ -48,7 +48,7 @@ type buildPreviewResult struct {
 func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) error {
 	var params buildPreviewParams
 	if err := decodeParams(req, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 	result, errEnvelope := s.handleBuildPreview(ctx, params)
 	if ctx.Err() != nil {

@@ -208,7 +208,7 @@ func (s *Server) dispatchAttachmentContainer(ctx context.Context, req *jsonRPCRe
 	var params attachmentContainerParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if params.GraphNode == "" {
@@ -217,7 +217,7 @@ func (s *Server) dispatchAttachmentContainer(ctx context.Context, req *jsonRPCRe
 				"with params.release")
 	}
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 
 	result, errEnvelope := s.attachmentContainerForGraphNode(ctx, params.GraphNode, params.Release)

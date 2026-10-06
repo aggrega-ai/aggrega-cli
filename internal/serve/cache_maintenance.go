@@ -236,11 +236,11 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	loc := s.cacheLocations()
 	report, err := cacheops.Status(ctx, loc)
@@ -248,7 +248,7 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 
 	classes := make([]cacheClassResult, 0, len(report.Classes))
@@ -302,7 +302,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	loc := s.cacheLocations()
@@ -311,7 +311,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	return s.writeResult(ctx, req.ID, cachePruneResult{
 		Removed:              cacheRemovals(res.Removed),
@@ -338,7 +338,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 	var params cacheEvictParams
 	if len(req.Params) > 0 {
 		if err := decodeParams(req, &params); err != nil {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 		}
 	}
 	if strings.TrimSpace(params.MaxSize) == "" {
@@ -347,7 +347,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 	}
 	capBytes, err := cacheops.ParseHumanSize(params.MaxSize)
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "cache evict: invalid maxSize: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "cache evict: invalid maxSize: ", err)
 	}
 	if capBytes <= 0 {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "cache evict: maxSize must be greater than zero")
@@ -358,7 +358,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 		return nil
 	}
 	if evictErr != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, evictErr.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", evictErr)
 	}
 	return s.writeResult(ctx, req.ID, cacheEvictResult{
 		WithinCapBefore:    res.WithinCapBefore,
@@ -390,7 +390,7 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 	// sent is refused rather than dropped. See noParams for why an answer that
 	// ignored an argument is worse than a refusal naming it.
 	if err := decodeParams(req, &noParams{}); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
 	res, err := cacheops.Clear(ctx, s.cacheLocations())
@@ -398,7 +398,7 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 		return nil
 	}
 	if err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
 	cleared := make([]cacheClearedResult, 0, len(res.Cleared))
 	for _, c := range res.Cleared {

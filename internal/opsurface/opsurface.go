@@ -212,6 +212,36 @@ var operations = []Operation{
 	{"describe-capabilities", ReachNone, "Reveal the tool definitions the default listing withholds."},
 }
 
+// listingsOfWorkspaceContent are the operations that answer for a workspace whose
+// configuration is held — a configuration file its cascade merges is a link
+// leading out of the workspace, so the configuration is not read: the entity
+// index and the Release listing.
+//
+// Each lists what the workspace holds and names, among the files it did not read,
+// every link leading out — the held configuration file among them — so its answer
+// is complete and true with nothing configured: what the configuration would have
+// added to it is what it says it did not read. Every other operation is decided
+// by the configuration — which catalog directories a name resolves through,
+// which plugins render, whether the workspace is offline, where a write lands —
+// and a surface answers it on such a workspace with the hold's refusal, never on
+// nothing configured.
+//
+// The set is declared here, beside the operations, so the language server's
+// routing and the tool protocol's listings read one answer rather than each
+// keeping a list of its own; an operation reaches it only by being added here.
+var listingsOfWorkspaceContent = map[string]bool{
+	"workspace-entity-index": true,
+	"release-candidates":     true,
+}
+
+// AnswersOverHeldConfiguration reports whether the operation id is one a surface
+// answers for a workspace whose configuration is held. See
+// listingsOfWorkspaceContent for which are, and why every other one is refused
+// there.
+func AnswersOverHeldConfiguration(id string) bool {
+	return listingsOfWorkspaceContent[id]
+}
+
 // Surface names one caller-facing surface, for the findings a check reports.
 type Surface string
 
