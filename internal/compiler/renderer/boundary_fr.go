@@ -1073,7 +1073,9 @@ func evaluateBoundaryFRTemplates(
 //     instance ID, provided values).
 //   - InternalUsesEdges, OutgoingCrossBoundaryUsesEdges,
 //     IncomingCrossBoundaryUsesEdges, CrossBoundaryUsesEdges — derived by
-//     intersecting graph.Spec.Edges with subtree node membership.
+//     intersecting graph.Spec.Edges with subtree node membership, each
+//     endpoint's namespace and boundary path read by
+//     edgeEndpointNetworkInputs from that endpoint's own placement.
 //   - Labels: union of subtree nodes' Labels with author-order preservation
 //     (alphabetical-by-key key order; OrderedMap iteration preserves
 //     insertion order).
@@ -1147,8 +1149,8 @@ func buildBoundaryContext(
 			// paths and raw aggrega.ai/namespace annotation values, so a provider
 			// engine can resolve each endpoint's network and decide whether the
 			// edge crosses a seam. No interpretation here (Invariant 1/6).
-			edgeView.SourceBoundaryPath, edgeView.SourceNamespace = edgeEndpointNetworkInputs(edge.Source, graph, boundaryAnnotations)
-			edgeView.TargetBoundaryPath, edgeView.TargetNamespace = edgeEndpointNetworkInputs(edge.Target, graph, boundaryAnnotations)
+			edgeView.SourceBoundaryPath, edgeView.SourceNamespace = edgeEndpointNetworkInputs(edge.Source, graph)
+			edgeView.TargetBoundaryPath, edgeView.TargetNamespace = edgeEndpointNetworkInputs(edge.Target, graph)
 			switch {
 			case srcIn && tgtIn:
 				bc.InternalUsesEdges = append(bc.InternalUsesEdges, edgeView)
@@ -1251,7 +1253,19 @@ func EnrichedEdgeViewFromIREdge(edge types.IREdge, allProvides NodeProvides) typ
 // data for a provider engine's network-identity resolution. Empty strings when
 // the node or annotation is absent. The core does not resolve these into a
 // network name — that (sanitize + fallback + compare) is provider-domain.
-func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph, boundaryAnnotations map[string]types.OrderedMap[string]) (boundaryPath, namespace string) {
+//
+// It is the one place a connection endpoint's placement is read, and both views
+// that carry one call it: the boundary-scope edge views, for each end of an edge,
+// and the connections made to a node, for the connecting end (AssembleInboundEdges).
+//
+// The namespace is the endpoint's OWN annotation — the set its own render is handed
+// (IRNode.ReleaseAnnotations: its boundaries' annotations cascaded down, with its
+// own Release entry's annotations layered on last) — and never its boundary's set
+// alone. A component whose Release entry sets or clears aggrega.ai/namespace renders
+// into that namespace, so a value read from the boundary would name a namespace the
+// endpoint does not run in, and the provider's network placement, which reads the
+// node's own set, would disagree with whatever this value was used to decide.
+func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph) (boundaryPath, namespace string) {
 	if graph == nil {
 		return "", ""
 	}
@@ -1259,11 +1273,8 @@ func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph, boundaryAnno
 	if !ok {
 		return "", ""
 	}
-	boundaryPath = n.BoundaryPath
-	if anns, ok := boundaryAnnotations[boundaryPath]; ok {
-		namespace, _ = anns.Get(AnnotationNamespace)
-	}
-	return boundaryPath, namespace
+	namespace, _ = n.ReleaseAnnotations.Get(AnnotationNamespace)
+	return n.BoundaryPath, namespace
 }
 
 // findBoundaryAtPath traverses release.Spec.Boundaries by the path

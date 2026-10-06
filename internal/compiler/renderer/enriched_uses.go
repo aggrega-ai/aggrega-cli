@@ -105,7 +105,14 @@ func AssembleEnrichedUses(
 
 // AssembleInboundEdges builds the connections other nodes make TO nodeID: one
 // entry per edge whose Target is nodeID, carrying the connecting node's identity,
-// the socket it connects through, and its published provides.
+// the socket it connects through, its published provides, and where it is placed —
+// its namespace and boundary path.
+//
+// The placement is read by edgeEndpointNetworkInputs, the one derivation the
+// boundary-scope edge views read each endpoint's placement through, so a caller's
+// namespace is the same value on every view that shows it. It is the caller's own
+// namespace — the one its own render is handed, a Release entry's own setting
+// included — and never the namespace of the node it connects to.
 //
 // It is the inverse of AssembleEnrichedUses and deliberately the narrower of the
 // two. An entry carries no per-connection values or infra, no inject mapping and no
@@ -147,10 +154,13 @@ func AssembleInboundEdges(
 		if _, ok := graph.Spec.Nodes.Get(edge.Source); !ok {
 			continue
 		}
+		boundaryPath, namespace := edgeEndpointNetworkInputs(edge.Source, graph)
 		result = append(result, types.InboundEdge{
-			ComponentID: edge.Source,
-			Socket:      edge.Socket,
-			Provides:    narrowToDeclared(allProvides[edge.Source], declaredProvides, edge.Source),
+			ComponentID:        edge.Source,
+			Socket:             edge.Socket,
+			Provides:           narrowToDeclared(allProvides[edge.Source], declaredProvides, edge.Source),
+			SourceNamespace:    namespace,
+			SourceBoundaryPath: boundaryPath,
 		})
 	}
 	return result

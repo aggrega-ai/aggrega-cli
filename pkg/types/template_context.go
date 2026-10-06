@@ -102,7 +102,8 @@ type ContextBlock struct {
 	// `uses` edge whose target this node is, in the order the graph records them:
 	// the order the connecting components are written, then the order of each
 	// one's own uses entries. It is the inverse of Uses and carries much less:
-	// who connects, through which socket, and what that caller publishes.
+	// who connects, through which socket, what that caller publishes, and the
+	// namespace and boundary path the caller is placed in.
 	//
 	// It is populated only on the context a Feature attached to this node renders
 	// its own resources against, and is empty on the node's own context. That
@@ -118,8 +119,8 @@ type ContextBlock struct {
 }
 
 // InboundEdge is one connection made TO a node, as an attached Feature's context
-// shows it: the node that connects, the socket it connects through, and what that
-// node publishes for others to read.
+// shows it: the node that connects, the socket it connects through, what that
+// node publishes for others to read, and where that node is placed.
 //
 // ComponentID is the connecting node's flattened identity as the graph names it
 // ('frontend', 'data-layer.etl') — the value a path template reads as
@@ -133,14 +134,24 @@ type ContextBlock struct {
 // the connecting node's resolved provides, narrowed to the keys its Component
 // declares, so it is exactly the bag a consumer of that node reads at
 // .context.uses.<alias>.provides: one projection of what one node may read of
-// another, whichever direction the edge is read from. All three are carried as
-// strings and never interpreted.
+// another, whichever direction the edge is read from.
+//
+// SourceNamespace and SourceBoundaryPath are the connecting node's placement,
+// under the names EnrichedEdge gives the source end of a connection on a
+// boundary's view and filled by the same reading: the connecting node's own
+// aggrega.ai/namespace annotation — its boundaries' annotations with its own
+// Release entry's layered on, the set its own render is handed — and the path of
+// the boundary that holds it. SourceNamespace is empty, and omitted, when that
+// set carries no namespace. Every field is carried as a string and never
+// interpreted.
 //
 // Schema: template-context-v1alpha1.schema.json#/$defs/inbound_edge
 type InboundEdge struct {
-	ComponentID string             `json:"component_id" yaml:"component_id"`
-	Socket      string             `json:"socket" yaml:"socket"`
-	Provides    OrderedMap[string] `json:"provides" yaml:"provides"`
+	ComponentID        string             `json:"component_id" yaml:"component_id"`
+	Socket             string             `json:"socket" yaml:"socket"`
+	Provides           OrderedMap[string] `json:"provides" yaml:"provides"`
+	SourceNamespace    string             `json:"source_namespace,omitempty" yaml:"source_namespace,omitempty"`
+	SourceBoundaryPath string             `json:"source_boundary_path,omitempty" yaml:"source_boundary_path,omitempty"`
 }
 
 // AnnotationBuckets holds the three cascading annotation origins for a node.
@@ -447,7 +458,8 @@ type EnrichedEdge struct {
 	// engine to resolve into a network identity (the compose engine compares
 	// resolved names to decide whether an edge crosses a network seam). The core
 	// does not interpret these. SourceNamespace/TargetNamespace are the raw
-	// `aggrega.ai/namespace` annotation values (empty when absent); the
+	// `aggrega.ai/namespace` annotation values each endpoint's own render is
+	// handed — its own Release entry's setting included (empty when absent); the
 	// *BoundaryPath fields are the endpoints' boundary paths used for the
 	// no-namespace fallback.
 	SourceNamespace    string `json:"source_namespace,omitempty" yaml:"source_namespace,omitempty"`
