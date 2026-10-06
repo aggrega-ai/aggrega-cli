@@ -68,12 +68,12 @@ import (
 //     in-flight, not yet on the context as values.
 //   - workload synthesis: above; .workload in progress.
 //   - artifact evaluation and provider render: above + workload.
-//   - feature rendering: for component-scope FRs, same as artifact evaluation
-//     plus the FR-scoped values/infra/locals overlay; for boundary-scope FRs,
-//     drop .context.* and surface .boundary.* (path, components,
-//     internal/cross-boundary uses-edges, labels, annotations,
-//     feature_attachments) plus the FR-attached BoundaryFeature's
-//     .infra. .values is empty for boundary-scope FRs.
+//   - feature rendering: for component-scope FRs, the host context as artifact
+//     evaluation shows it (each FR renders against an uncaptured copy); for
+//     boundary-scope FRs, drop .context.* and surface .boundary.* (path,
+//     components, internal/cross-boundary uses-edges, labels, annotations,
+//     feature_attachments) plus the FR-attached BoundaryFeature's .infra.
+//     .values is empty for boundary-scope FRs.
 //
 // nil ctx returns an empty map.
 func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map[string]any {
