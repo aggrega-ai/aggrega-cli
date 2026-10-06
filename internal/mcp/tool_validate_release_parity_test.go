@@ -354,7 +354,10 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 			// Oracle: the same core over the same resolved inputs validateReleaseScope
 			// builds internally (resolveToolWorkspace, lockfile load, view, closure).
 			tw := resolvedToolWorkspace(t, s, root, dirs)
-			lf := loadReleaseLockfile(releasePath)
+			lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+			if lockRefused != "" {
+				t.Fatalf("read the oracle's lockfile: %s", lockRefused)
+			}
 			view := tw.newView(releasePath, lf)
 			resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 				View:            view,

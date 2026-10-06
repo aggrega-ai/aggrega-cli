@@ -175,7 +175,7 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 	// pins would render a Release the build never reaches and report artifacts
 	// nobody can obtain. The message is the loader's own, which already names the
 	// file and the fault.
-	lf, _, lfErr := lockfile.LoadLockfile(lockfilePath)
+	lf, _, lfErr := lockfile.Load(s.workspaceRoot, lockfilePath)
 	if lfErr != nil {
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,

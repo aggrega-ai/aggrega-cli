@@ -908,12 +908,12 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// catalog — and held to the root they hold them to. A resolver of this
 	// command's own would read a name as a file name and judge no path, and the
 	// picture would then be of documents a build of the same Release never reads.
-	manRes, err := resolver.ResolveManifest(wsRoot, releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest(wsRoot, releaseDir, releasePath, rel.Spec.Manifest)
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
 	manifest := manRes.Manifest
-	aggRes, err := resolver.ResolveAggregate(wsRoot, releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
+	aggRes, err := resolver.ResolveAggregate(wsRoot, releaseDir, releasePath, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}

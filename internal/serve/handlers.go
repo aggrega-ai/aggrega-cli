@@ -1281,10 +1281,11 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    nothing. Guarded end-to-end by
 	//    TestServeIrGraphVerifiesCacheAgainstPinBeforePreview.
 	var pins map[string]catalog.Pin
-	lf, _, lfErr := lockfile.LoadLockfile(lockfilePath)
-	if lfErr != nil || lf == nil {
-		lf = nil
-	} else {
+	lf, lfErr := lockfile.LoadIfReadable(s.workspaceRoot, lockfilePath)
+	if lfErr != nil {
+		return nil, lockfileRefusal(lockfilePath, release, lfErr)
+	}
+	if lf != nil {
 		pins = catalog.PinsFromLockfile(lf)
 	}
 	// The view is forked from the lookup over this Release's own catalog stack,

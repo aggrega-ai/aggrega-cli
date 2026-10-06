@@ -59,11 +59,12 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
 
 	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogDirs)...)
-	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
-	if lfErr == nil {
+	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
+	if err != nil {
+		return err
+	}
+	if lf != nil {
 		view.SetPins(catalog.PinsFromLockfile(lf))
-	} else {
-		lf = nil
 	}
 
 	// The resolution below runs under the caller's context, so a reader who stops

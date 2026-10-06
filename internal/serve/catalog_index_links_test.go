@@ -175,22 +175,40 @@ func TestALinkedIgnoreFileLeadingOutIsNotRead(t *testing.T) {
 // The Release walk and the entity walk ask one judgement of the configuration, so
 // a catalog directory the configuration reaches through a link is named by
 // neither, and the same link the configuration does not reach is named by both.
+// The judgement compares places, so a listing of the place the link leads to, in
+// that place's own spelling, reaches the link as a listing of the link does, and a
+// listed directory reaches a link to a directory beneath it, which its own walk
+// reads; a link leading above a listed directory reaches further than the listing
+// and is named.
 func TestTheReleaseWalkReadsWhatTheConfigurationReachesThroughALink(t *testing.T) {
 	for _, row := range []struct {
-		name     string
-		config   string
+		name   string
+		config string
+		// lists, where set, replaces config with a listing of this directory
+		// beneath the place outside the workspace, in that place's own spelling.
+		lists string
+		// leadsTo is the directory beneath the place outside the link leads to.
+		leadsTo  string
 		wantDirs []string
 	}{
-		{name: "a link the configuration lists as a catalog directory is not named", config: "workspace:\n  catalog_dirs:\n    - ./cat-link\n", wantDirs: []string{}},
-		{name: "the same link listed nowhere is named", config: "workspace: {}\n", wantDirs: []string{"cat-link"}},
+		{name: "a link the configuration lists as a catalog directory is not named", config: "workspace:\n  catalog_dirs:\n    - ./cat-link\n", leadsTo: "cat", wantDirs: []string{}},
+		{name: "the same link listed nowhere is named", config: "workspace: {}\n", leadsTo: "cat", wantDirs: []string{"cat-link"}},
+		{name: "the place the link leads to listed in its own spelling: the link is not named", lists: "cat", leadsTo: "cat", wantDirs: []string{}},
+		{name: "a link to a directory beneath a listed one is not named", lists: "cat", leadsTo: filepath.Join("cat", "sub"), wantDirs: []string{}},
+		{name: "a link to a directory above a listed one is named", lists: filepath.Join("cat", "sub"), leadsTo: "cat", wantDirs: []string{"cat-link"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			root := t.TempDir()
 			outside := t.TempDir()
 			plantFile(t, filepath.Join(outside, "cat", "feature.yaml"), catalogIndexLinksFeature("probe/linked-feature"))
-			plantLink(t, filepath.Join(outside, "cat"), filepath.Join(root, "cat-link"))
+			plantFile(t, filepath.Join(outside, "cat", "sub", "feature.yaml"), catalogIndexLinksFeature("probe/beneath-feature"))
+			plantLink(t, filepath.Join(outside, row.leadsTo), filepath.Join(root, "cat-link"))
 			writeRelease(t, root, "release.yaml", "release/inside")
-			srv := linkedFilesServer(t, root, row.config)
+			config := row.config
+			if row.lists != "" {
+				config = "workspace:\n  catalog_dirs:\n    - " + filepath.Join(outside, row.lists) + "\n"
+			}
+			srv := linkedFilesServer(t, root, config)
 			var got struct {
 				UnreadLinkedDirs []string `json:"unreadLinkedDirs"`
 			}

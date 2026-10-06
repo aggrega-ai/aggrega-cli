@@ -550,7 +550,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	lf, _, err := lockfile.Load(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {
 		return Result{}, fmt.Errorf("load lockfile: %w", err)
 	}

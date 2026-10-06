@@ -547,7 +547,17 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// branch is unreachable.
 	var rendered *catalog.LazyLookup
 	if preview == nil {
-		lf := loadReleaseLockfile(releasePath)
+		// A lockfile that is a link leading out is refused before the render reads
+		// it. This return is reached with nothing run where no fill was asked, and
+		// after a fill that wrote its lockfile and conserved no render; the second is
+		// a build that refused after writing a lockfile, so what the fill resolved
+		// travels in the answer as it does on every other refusal.
+		lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+		if lockRefused != "" {
+			refused := buildResultPayload{Files: []buildFile{}, DependencyResolution: fillReport}
+			refused.Release, refused.ReleaseWithheld = tw.reportedLocationField(releasePath)
+			return tw.answer(structuredErrorResult(lockRefused, refused))
+		}
 		view := tw.newView(releasePath, lf)
 		rendered = view
 

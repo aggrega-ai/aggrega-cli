@@ -29,7 +29,10 @@ import (
 // A directory somebody named is followed where it leads, like every other
 // directory named; the conventional directory read only because it is there is the
 // workspace's own, so a link standing at it and leading out halts the build naming
-// the link, before anything is resolved or written.
+// the link, before anything is resolved or written. Whether it was named is a
+// question of the place it leads to: the configuration listing that place in its
+// own spelling, or the directory holding it, reaches the link, so what lies there is
+// read once, through the listed directory, and the build completes.
 //
 // The control is first: the conventional directory a plain directory, named by
 // nobody, builds — which is what makes a halting row's halt the link's doing.
@@ -47,6 +50,10 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 		linked bool
 		// workspace is the configuration's `workspace:` block.
 		workspace string
+		// listsPlace lists, as the configuration's one catalog directory, the
+		// place the link leads to in that place's own spelling — or, with
+		// listsAbove, the directory holding it — in place of workspace.
+		listsPlace, listsAbove bool
 		// flag passes `catalog` with --catalog, from the workspace root.
 		flag bool
 		// refilled builds once to fill the lockfile, then again with auto_pull off,
@@ -64,6 +71,10 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 			linked: true, workspace: "workspace: {}", flag: true},
 		{name: "listed, a link leading out is followed by a build rendering through its own lookup, the lockfile already filled",
 			linked: true, workspace: "workspace:\n  catalog_dirs:\n    - ./catalog", refilled: true},
+		{name: "the place the link leads to listed in its own spelling, the link is reached by the listing: read once, it builds",
+			linked: true, listsPlace: true},
+		{name: "the directory holding the place the link leads to listed, the link is reached by the listing: it builds",
+			linked: true, listsPlace: true, listsAbove: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -77,6 +88,13 @@ func TestTheConventionalCatalogDirectoryIsFollowedOnlyWhereItIsNamed(t *testing.
 				if err := os.Symlink(target, conventional); err != nil {
 					t.Skipf("symbolic links are not available here: %v", err)
 				}
+			}
+			if row.listsPlace {
+				listed := target
+				if row.listsAbove {
+					listed = filepath.Dir(target)
+				}
+				row.workspace = "workspace:\n  catalog_dirs:\n    - " + listed
 			}
 			writeWorkspaceConfig(t, root, "auto_pull: true\n"+row.workspace)
 			rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})

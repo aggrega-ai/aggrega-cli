@@ -231,7 +231,10 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	lf := loadReleaseLockfile(releasePath)
+	lf, refusal := tw.loadReleaseLockfile(releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	view := tw.newView(releasePath, lf)
 
 	preview, err := compilerops.PreviewForArtifactFromAvailablePins(

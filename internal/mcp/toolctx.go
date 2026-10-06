@@ -625,17 +625,20 @@ func (e *pathRefusal) Error() string { return e.text }
 
 // loadReleaseLockfile loads the per-Release lockfile beside releasePath,
 // best-effort: an absent or unreadable lockfile yields nil, and the caller
-// builds a view with no pins.
+// builds a view with no pins. A lockfile that is a link leading out of the root a
+// write of it is held to is not unreadable but refused (lockfile.LoadIfReadable):
+// it yields the refusal's guidance as the second result, and the caller answers
+// with it rather than resolving without the pins the Release records.
 //
 // It reports the pins as they stand when it is called, and says nothing about
 // how they got there. A build asked to resolve first — by its own argument or by
 // the workspace's auto_pull setting — performs that resolution BEFORE calling
 // this, so what it loads is the lockfile that fill just wrote. Every other
 // caller here resolves against whatever pins already exist and fills nothing.
-func loadReleaseLockfile(releasePath string) *lockfile.Lockfile {
-	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+func (tw *toolWorkspace) loadReleaseLockfile(releasePath string) (*lockfile.Lockfile, string) {
+	lf, err := lockfile.LoadIfReadable(tw.root, lockfile.PathFor(releasePath))
 	if err != nil {
-		return nil
+		return nil, explainToolError("Could not read the Release's lockfile.", err, "release")
 	}
-	return lf
+	return lf, ""
 }

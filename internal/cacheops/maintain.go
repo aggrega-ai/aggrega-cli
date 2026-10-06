@@ -104,7 +104,10 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	if len(lockPaths) == 0 {
 		return res, fmt.Errorf("cache prune needs a pulled workspace: no lockfiles (*.lock) found under %s; run `aggrega pull --release <release>` first", loc.WorkspaceRoot)
 	}
-	refset, loaded := BuildReferenceSet(lockPaths)
+	refset, loaded, err := BuildReferenceSet(loc.WorkspaceRoot, lockPaths)
+	if err != nil {
+		return res, err
+	}
 	if loaded == 0 {
 		return res, fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull --release <release>` first", len(lockPaths), loc.WorkspaceRoot)
 	}

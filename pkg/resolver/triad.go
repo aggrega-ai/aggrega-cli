@@ -150,7 +150,12 @@ func IsRelativePathRef(ref string) bool { return isRelativePathRef(ref) }
 // ErrDuplicateTriadIdentity, and a link in the directory leading out of the root
 // it is held to halts with readscope.ErrReadLeadsOutOfWorkspace. workspaceRoot is
 // the workspace the Release is read in, which decides that root.
-func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
+//
+// origin is the file the resolution started at — the Release a command or a
+// request names — or "" where there is none. The scan does not judge that one
+// entry of the directory: it was admitted where it was named, and a Release named
+// through a link is read where its name leads (see [scanReleaseDir]).
+func ResolveAggregate(workspaceRoot, releaseDir, origin, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
 		if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
@@ -168,7 +173,7 @@ func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup Aggregate
 		}
 		return ResolvedAggregate{Aggregate: agg, Path: path, Bytes: data}, nil
 	}
-	idx, err := scanReleaseDir(workspaceRoot, releaseDir)
+	idx, err := scanReleaseDir(workspaceRoot, releaseDir, origin)
 	if err != nil {
 		return ResolvedAggregate{}, err
 	}
@@ -204,16 +209,17 @@ func ResolveAggregate(workspaceRoot, releaseDir, ref string, catLookup Aggregate
 // Manifest is operator configuration authored beside the Release: it is not
 // catalog-indexed and not publishable, so it has no catalog or registry tier —
 // only an explicit `./` / `../` file or the tolerant same-directory scan, each
-// held to the root workspaceRoot picks for releaseDir as [ResolveAggregate]'s is.
-func ResolveManifest(workspaceRoot, releaseDir, ref string) (ResolvedManifest, error) {
-	return resolveManifest(workspaceRoot, releaseDir, ref, "", ".spec.manifest")
+// held to the root workspaceRoot picks for releaseDir as [ResolveAggregate]'s is,
+// and origin is the file the resolution started at, as it is there.
+func ResolveManifest(workspaceRoot, releaseDir, origin, ref string) (ResolvedManifest, error) {
+	return resolveManifest(workspaceRoot, releaseDir, origin, ref, "", ".spec.manifest")
 }
 
 // resolveManifest is [ResolveManifest] for a reference written at key in
 // document — a Release's spec.manifest, where the document is no longer known
 // once its extends chain is folded, or a Manifest's spec.extends, where the link
 // that declares it is — so a refusal names where the reference was written.
-func resolveManifest(workspaceRoot, releaseDir, ref, document, key string) (ResolvedManifest, error) {
+func resolveManifest(workspaceRoot, releaseDir, origin, ref, document, key string) (ResolvedManifest, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
 		if err := readscope.CheckReference(workspaceRoot, readscope.Reference{
@@ -231,7 +237,7 @@ func resolveManifest(workspaceRoot, releaseDir, ref, document, key string) (Reso
 		}
 		return ResolvedManifest{Manifest: man, Path: path, Bytes: data}, nil
 	}
-	idx, err := scanReleaseDir(workspaceRoot, releaseDir)
+	idx, err := scanReleaseDir(workspaceRoot, releaseDir, origin)
 	if err != nil {
 		return ResolvedManifest{}, err
 	}
@@ -296,7 +302,18 @@ type triadEnvelope struct {
 // another entity of the name the link stands for, or hide a duplicate of one the
 // scan did index. A link leading inside is read where the scan meets it, as a file
 // is.
-func scanReleaseDir(workspaceRoot, releaseDir string) (*triadIndex, error) {
+//
+// One entry is not judged: origin, the file the resolution started at — the Release
+// a command or a request names, or a Manifest named on its own. It was admitted
+// where it was named, by the class that named it — typed on the command line, named
+// by the configuration, or judged as a request names it — and the caller has read it
+// there already; meeting it again among its neighbours is not a read of workspace
+// content on the scan's own account. So a Release named through a link leading out
+// resolves its names beside the place it was named, the directory as spelled, with
+// every other entry held as before: a neighbouring Release, Aggregate or Manifest that
+// is a link leading out still halts the scan. The entry is read as every entry is,
+// so the index and its duplicate check are those of any other directory.
+func scanReleaseDir(workspaceRoot, releaseDir, origin string) (*triadIndex, error) {
 	idx := &triadIndex{
 		aggregates: map[string]ResolvedAggregate{},
 		manifests:  map[string]ResolvedManifest{},
@@ -306,6 +323,7 @@ func scanReleaseDir(workspaceRoot, releaseDir string) (*triadIndex, error) {
 		return nil, fmt.Errorf("scan Release directory %q: %w", releaseDir, err)
 	}
 	root := writescope.RootFor(workspaceRoot, releaseDir)
+	named := spelledPlace(origin)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -315,7 +333,7 @@ func scanReleaseDir(workspaceRoot, releaseDir string) (*triadIndex, error) {
 			continue
 		}
 		path := filepath.Join(releaseDir, base)
-		if e.Type()&fs.ModeSymlink != 0 {
+		if e.Type()&fs.ModeSymlink != 0 && spelledPlace(path) != named {
 			if lerr := readscope.CheckRead(root, path); lerr != nil {
 				return nil, lerr
 			}
@@ -360,6 +378,20 @@ func scanReleaseDir(workspaceRoot, releaseDir string) (*triadIndex, error) {
 		}
 	}
 	return idx, nil
+}
+
+// spelledPlace is the one spelling a file's path is compared under: absolute and
+// cleaned, with no link resolved — the entry the scan meets for a file it was handed
+// is the same file however either was spelled, while a link is never taken for the
+// place it leads to. An empty path stays empty.
+func spelledPlace(path string) string {
+	if path == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return filepath.Clean(path)
 }
 
 // unresolvable builds the not-found error for a bare-identity reference. It

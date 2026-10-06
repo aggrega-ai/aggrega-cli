@@ -54,7 +54,17 @@ import (
 //
 // A path that cannot be examined withdraws nothing. The file may be there, and
 // a finding raised against it may still be true.
+//
+// A lockfile that is a link leading out of the root a write of it is held to is
+// refused here, before it is looked at (lockfile.CheckRead): every request that
+// crosses this gate goes on to read the Release's pins, and one that went on
+// without them, or with pins read from elsewhere, would answer about a Release its
+// lockfile does not describe. The refusal names the link and withdraws nothing,
+// since no finding stood on a file nothing read.
 func (s *Server) requireLockfile(ctx context.Context, lockfilePath, release string) *jsonRPCError {
+	if err := lockfile.CheckRead(s.workspaceRoot, lockfilePath); err != nil {
+		return lockfileRefusal(lockfilePath, release, err)
+	}
 	_, err := os.Stat(lockfilePath)
 	if err == nil {
 		return nil
@@ -71,6 +81,20 @@ func (s *Server) requireLockfile(ctx context.Context, lockfilePath, release stri
 		Code:    errEntityNotResolvable,
 		Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
 		Data:    newLockfileErrorData(lockfilePath, release),
+	}
+}
+
+// lockfileRefusal is the answer to a request whose Release's lockfile could not be
+// read because it leads out of the root a write of it is held to: the code a
+// present but unreadable lockfile answers with, the lockfile and the Release in
+// the data, and the condition's own sentence with its short code ahead of it, as
+// every refusal naming a condition reads (conditionRefusal).
+func lockfileRefusal(lockfilePath, release string, err error) *jsonRPCError {
+	return &jsonRPCError{
+		Code:    errEntityNotResolvable,
+		Message: conditionRefusal(err),
+		Data:    newLockfileErrorData(lockfilePath, release),
+		cause:   err,
 	}
 }
 
@@ -132,7 +156,7 @@ func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath, releas
 // verifyDriftAndPublish reads it, so the command it names is the one that
 // rewrites this lockfile.
 func (s *Server) verifyDriftAndUpdateCache(lockfilePath, release string, cl closure.Closure) *lockfile.Lockfile {
-	lf, _, err := lockfile.LoadLockfile(lockfilePath)
+	lf, _, err := lockfile.Load(s.workspaceRoot, lockfilePath)
 	if err != nil {
 		fmt.Fprintf(s.stderr, "  lockfile load %s: %v\n", lockfilePath, err)
 		s.dropDiagnostics(lockfilePath)

@@ -201,9 +201,12 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	named := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...)
-	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
+	if err != nil {
+		return err
+	}
 	var lockForClosure *lockfile.Lockfile
-	if lfErr == nil {
+	if lf != nil {
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 		lockForClosure = lf
 	}
@@ -477,11 +480,13 @@ func isLintableCatalogKind(kind string) bool {
 // answer wearing a complete one's shape.
 //
 // The walk is the catalog's own (catalog.WalkDocuments), so this check reads
-// exactly the documents a lookup over the same directories reads: every walk error
-// is passed over — a catalog directory that does not exist, or cannot be read,
-// adds no file — and so is a link leading out of the root a directory is held to,
-// which is not read. A compile over the same directories halts on such a link.
-// named is the part of dirs somebody named, handed to the walk unjudged.
+// exactly the documents a lookup over the same directories reads: a catalog
+// directory that does not exist, or cannot be read, adds no file. A link leading
+// out of the root a directory is held to is not read, and halts the check naming
+// the link, as a compile over the same directories halts on it: the check's
+// verdict answers for every document the directories hold, so it does not pass in
+// silence over one it may not read. named is the part of dirs somebody named,
+// handed to the walk unjudged.
 func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
 	var files []catalogEntityFile
 	passedOver := map[string]int{}

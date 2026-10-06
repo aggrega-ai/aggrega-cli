@@ -4,15 +4,18 @@
 package catalog_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
 
 // priorPinFixture writes a prior lockfile carrying pins across several
@@ -273,7 +276,7 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 				t.Errorf("FullRefresh() = %v; want %v", got, tc.wantFullRefresh)
 			}
 
-			got, gotErr := catalog.PinReuseFromLockfile(lockfilePath, releasePath, tc.mode, tc.unpinnedTargets, nil)
+			got, gotErr := catalog.PinReuseFromLockfile("", lockfilePath, releasePath, tc.mode, tc.unpinnedTargets, nil)
 			wantPrior, wantReuse, wantErr := inlineReuseDecision(lockfilePath, releasePath, tc.mode, tc.unpinnedTargets)
 
 			// Halt parity: the lifted decision and the longhand derivation must
@@ -381,9 +384,9 @@ func TestPinReuseFromLockfile_VerifyOnlyHonoursWhatTheReconcileHonours(t *testin
 		t.Run(tc.name, func(t *testing.T) {
 			path := tc.lockfile(t)
 			var reconcileNotices, verifyNotices []string
-			reconcile, rerr := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{}, nil,
+			reconcile, rerr := catalog.PinReuseFromLockfile("", path, "release.yaml", catalog.PinReuseMode{}, nil,
 				func(n string) { reconcileNotices = append(reconcileNotices, n) })
-			verify, verr := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{VerifyOnly: true}, nil,
+			verify, verr := catalog.PinReuseFromLockfile("", path, "release.yaml", catalog.PinReuseMode{VerifyOnly: true}, nil,
 				func(n string) { verifyNotices = append(verifyNotices, n) })
 			if rerr != nil || verr != nil {
 				t.Fatalf("decision halted: reconcile %v, verify-only %v", rerr, verr)
@@ -430,7 +433,7 @@ func TestPinReuseFromLockfile_VerifyOnlyHonoursWhatTheReconcileHonours(t *testin
 // dropped sink would silence the cache-drift notices without failing anything.
 func TestPinReuseFromLockfile_ThreadsTheNoticeSink(t *testing.T) {
 	var notices []string
-	got, err := catalog.PinReuseFromLockfile(priorPinFixture(t), "release.yaml",
+	got, err := catalog.PinReuseFromLockfile("", priorPinFixture(t), "release.yaml",
 		catalog.PinReuseMode{}, nil, func(notice string) { notices = append(notices, notice) })
 	if err != nil {
 		t.Fatalf("PinReuseFromLockfile: %v", err)
@@ -454,7 +457,7 @@ func TestPinReuseFromLockfile_UnreadablePriorIsAbsent(t *testing.T) {
 		t.Fatalf("seed unparsable lockfile: %v", err)
 	}
 
-	got, err := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{}, nil, nil)
+	got, err := catalog.PinReuseFromLockfile("", path, "release.yaml", catalog.PinReuseMode{}, nil, nil)
 	if err != nil {
 		t.Fatalf("default pull over an unparsable prior lockfile: %v", err)
 	}
@@ -462,7 +465,7 @@ func TestPinReuseFromLockfile_UnreadablePriorIsAbsent(t *testing.T) {
 		t.Errorf("unparsable prior lockfile honored something: prior=%v verification=%+v", got.Prior != nil, got.Verification)
 	}
 
-	_, err = catalog.PinReuseFromLockfile(path, "release.yaml",
+	_, err = catalog.PinReuseFromLockfile("", path, "release.yaml",
 		catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database"}}, nil, nil)
 	if err == nil {
 		t.Fatal("targeted upgrade over an unparsable prior lockfile: want a halt; got nil")
@@ -470,5 +473,67 @@ func TestPinReuseFromLockfile_UnreadablePriorIsAbsent(t *testing.T) {
 	want := fmt.Sprintf("no lockfile to upgrade at %s; run `aggrega pull --release release.yaml` first to create one", path)
 	if err.Error() != want {
 		t.Errorf("halt message =\n  %q\nwant\n  %q", err.Error(), want)
+	}
+}
+
+// TestPinReuseFromLockfile_APriorLeadingOutHalts proves the prior lockfile is
+// read for its pins only where it lies inside the root its write is held to: a
+// lockfile beside a Release in the workspace that is a link to a lockfile kept
+// outside halts the decision naming the link — rather than honouring pins read
+// from elsewhere on the machine, or passing over the file as absent — while a run
+// that reads no prior lockfile at all is not held up by it.
+//
+// The control is the same lockfile beside the Release itself, whose pins are
+// honoured, so a halting row's halt is the link's doing.
+func TestPinReuseFromLockfile_APriorLeadingOutHalts(t *testing.T) {
+	for _, row := range []struct {
+		name   string
+		linked bool
+		mode   catalog.PinReuseMode
+		halts  bool
+	}{
+		{name: "control: the lockfile beside the Release is read for its pins", mode: catalog.PinReuseMode{}},
+		{name: "a lockfile that is a link leading out halts a default pull", linked: true, mode: catalog.PinReuseMode{}, halts: true},
+		{name: "a lockfile that is a link leading out halts a verify", linked: true,
+			mode: catalog.PinReuseMode{VerifyOnly: true}, halts: true},
+		{name: "a lockfile that is a link leading out halts a targeted upgrade", linked: true,
+			mode: catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database"}}, halts: true},
+		{name: "a bare upgrade reads no prior lockfile, so the link holds nothing up", linked: true,
+			mode: catalog.PinReuseMode{Upgrade: true}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			ws := t.TempDir()
+			lockPath := filepath.Join(ws, "release.lock")
+			prior := priorPinFixture(t)
+			if row.linked {
+				if err := os.Symlink(prior, lockPath); err != nil {
+					t.Skipf("symbolic links are not available here: %v", err)
+				}
+			} else {
+				data, err := os.ReadFile(prior)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(lockPath, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := catalog.PinReuseFromLockfile(ws, lockPath, "release.yaml", row.mode, nil, nil)
+			if row.halts {
+				if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+					t.Fatalf("want the read-leads-out-of-workspace halt, got %v", err)
+				}
+				if !strings.Contains(err.Error(), "the link "+lockPath+" leads to "+prior) {
+					t.Errorf("the halt does not name the link and where it leads: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("PinReuseFromLockfile: %v", err)
+			}
+			if wantPrior := !row.mode.FullRefresh(); (got.Prior != nil) != wantPrior {
+				t.Errorf("prior read = %v, want %v", got.Prior != nil, wantPrior)
+			}
+		})
 	}
 }

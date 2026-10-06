@@ -97,10 +97,25 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// deprecation report below reads its recorded markers. Retaining it does NOT
 	// change what is passed to the closure resolution: that still receives nil, so
 	// the quiet-load posture described above is untouched.
+	//
+	// A lockfile that is a link leading out of the root a write of it is held to is
+	// not absent but refused, and the validation reports the refusal as it reports
+	// a closure that does not resolve — the pins the Release records are not read
+	// from elsewhere, and are not silently done without.
 	var pins map[string]catalog.Pin
-	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	lf, lfErr := lockfile.LoadIfReadable(s.workspaceRoot, lockfile.PathFor(releasePath))
 	if lfErr != nil {
-		lf = nil
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours &&
+			catalog.RelativeToWorkspace(s.workspaceRoot, file) != catalog.RelativeToWorkspace(s.workspaceRoot, releasePath) {
+			return nil
+		}
+		return []Diagnostic{{
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + lfErr.Error(),
+			ConditionCodes: conditionCodesOf(lfErr),
+		}}
 	}
 	if lf != nil {
 		pins = catalog.PinsFromLockfile(lf)

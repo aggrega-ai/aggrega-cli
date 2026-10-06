@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -115,6 +118,57 @@ func LoadLockfile(path string) (*Lockfile, []Diagnostic, error) {
 		return nil, diagnostics, fmt.Errorf("lockfile: typed unmarshal %s: %w", path, err)
 	}
 	return lf, diagnostics, nil
+}
+
+// Load is [LoadLockfile] for the lockfile beside a Release, read for its pins by
+// an operation in the workspace at workspaceRoot: the read is held first, by
+// [CheckRead], to the root a write of the same file is held to, so a lockfile
+// that is a link leading out of that root is refused naming the link and nothing
+// is read through it.
+//
+// It is how every operation reads a Release's lockfile. [LoadLockfile] is the
+// unheld read beneath it, for a reader holding a lockfile it was handed rather
+// than one it found beside a Release.
+func Load(workspaceRoot, path string) (*Lockfile, []Diagnostic, error) {
+	if err := CheckRead(workspaceRoot, path); err != nil {
+		return nil, nil, err
+	}
+	return LoadLockfile(path)
+}
+
+// LoadIfReadable is [Load] for an operation that resolves over the catalog as it
+// stands where a Release has no lockfile to seed it with: a lockfile that is
+// absent, or cannot be read or parsed, answers nil and no error, and the caller
+// goes on without pins. A lockfile that leads out of its root is not unreadable
+// but refused: it answers the [readscope.ErrReadLeadsOutOfWorkspace] halt, because
+// passing over it would let the operation resolve differently from what the
+// Release records with nothing said.
+func LoadIfReadable(workspaceRoot, path string) (*Lockfile, error) {
+	if err := CheckRead(workspaceRoot, path); err != nil {
+		return nil, err
+	}
+	lf, _, err := LoadLockfile(path)
+	if err != nil {
+		return nil, nil
+	}
+	return lf, nil
+}
+
+// CheckRead holds a read of the lockfile at path, beside a Release in the
+// workspace at workspaceRoot, to the root a write of it is held to: the root
+// [writescope.RootFor] picks for the directory the lockfile sits in — the
+// workspace root where that directory lies inside the workspace, and the
+// directory itself where a Release typed on the command line, or named by the
+// configuration, lies outside it. It returns nil where the read may go ahead, and
+// the [readscope.ErrReadLeadsOutOfWorkspace] halt where the lockfile leads out of
+// that root through a link.
+//
+// It is the one judgement of a lockfile read, asked by [Load] and by a reader
+// that looks for the file before loading it — so a gate that finds the lockfile
+// present refuses it there, rather than letting an operation run on without the
+// pins it could not read.
+func CheckRead(workspaceRoot, path string) error {
+	return readscope.CheckLockfileRead(writescope.RootFor(workspaceRoot, filepath.Dir(path)), path)
 }
 
 // walkDiagnostics inspects the parsed `any` document and emits

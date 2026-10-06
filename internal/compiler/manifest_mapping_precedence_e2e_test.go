@@ -48,7 +48,7 @@ func loadMappingPrecedenceInputs(t *testing.T, manifestFile string) (*catalog.Ca
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
-	res, err := resolver.ResolveManifest("", mappingPrecedenceFixtureDir, "./"+manifestFile)
+	res, err := resolver.ResolveManifest("", mappingPrecedenceFixtureDir, "", "./"+manifestFile)
 	if err != nil {
 		t.Fatalf("load manifest %s: %v", manifestFile, err)
 	}
@@ -183,7 +183,7 @@ func TestMapping_ResolvingValueStillBuilds(t *testing.T) {
 func TestMapping_UnknownKeyIsRefusedAtLoad(t *testing.T) {
 	t.Parallel()
 
-	_, err := resolver.ResolveManifest("", mappingPrecedenceFixtureDir, "./manifest-unknown-mapping-key.yaml")
+	_, err := resolver.ResolveManifest("", mappingPrecedenceFixtureDir, "", "./manifest-unknown-mapping-key.yaml")
 	if err == nil {
 		t.Fatal("expected the Manifest carrying an unknown mappings key to be refused")
 	}

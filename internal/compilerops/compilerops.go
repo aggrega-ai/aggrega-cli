@@ -258,7 +258,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	rel = folded
-	manRes, err := resolver.ResolveManifest(in.WorkspaceRoot, releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest(in.WorkspaceRoot, releaseDir, in.ReleasePath, rel.Spec.Manifest)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveManifest,
@@ -266,7 +266,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			err:   err,
 		}
 	}
-	manifest, err := resolver.ResolveManifestExtends(in.WorkspaceRoot, releaseDir, manRes)
+	manifest, err := resolver.ResolveManifestExtends(in.WorkspaceRoot, releaseDir, in.ReleasePath, manRes)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComposeManifest,
@@ -321,7 +321,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// Unlike the shape gate, this one produces findings rather than a failure. The
 	// verdict belongs to the caller — see ResolvedClosure.ManifestConsistencyFindings.
 	consistencyFindings := in.View.VerifyManifestImplementsConsistency(manifest, manRes.Path)
-	aggRes, err := resolver.ResolveAggregate(in.WorkspaceRoot, releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
+	aggRes, err := resolver.ResolveAggregate(in.WorkspaceRoot, releaseDir, in.ReleasePath, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageLoadAggregate,

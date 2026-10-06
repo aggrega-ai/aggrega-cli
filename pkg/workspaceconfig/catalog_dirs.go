@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -56,10 +55,14 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // conventional directory last means anything the reader lists wins over it on
 // collision, and appending rather than defaulting means declaring one unrelated
 // directory never silently stops the conventional one being read. It is not
-// appended when an entry already in the stack reaches it — the catalog walk is
-// recursive, so a stack naming the workspace root already reads it, and reading
-// one directory twice makes the loader report every identity in it as shadowed
-// by itself.
+// appended when an entry already in the stack reaches it ([Reaches]): the place it
+// leads to is the place an entry leads to, or lies beneath it — the catalog walk is
+// recursive, so a stack naming the workspace root already reads it, and a stack
+// listing the directory a `catalog` link leads to already reads what lies behind
+// the link. Reading one directory twice makes the loader report every identity in
+// it as shadowed by itself; and a conventional directory appended beside a listed
+// directory it leads into would be held to the workspace, so the link standing at
+// it would halt a read of the very directory the configuration lists.
 //
 // A `catalog_dirs` list the reader authored as empty is the explicit off-switch
 // and suppresses the conventional directory too, so "this workspace has no local
@@ -88,7 +91,7 @@ func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string
 		return dirs
 	}
 	conventional := filepath.Join(r.root, ConventionalCatalogDir)
-	if !alreadyCovered(dirs, conventional) && isExistingDir(conventional) {
+	if isExistingDir(conventional) && !Reaches(dirs, conventional) {
 		dirs = append(dirs, conventional)
 	}
 	return dirs
@@ -104,8 +107,10 @@ func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string
 // the command line, or listed in the configuration, and possibly outside the
 // workspace — from the one the workspace carries by convention, which is part of
 // the workspace's own tree. The conventional directory is in this list exactly
-// when somebody named it. The stack itself is a single list, so the distinction is
-// drawn here, where the list is built.
+// when somebody named it in its own spelling; where somebody named the place it
+// leads to in another spelling, or a directory above that place, the stack does not
+// carry it at all ([ResolvedWorkspace.ResolveCatalogDirs]). The stack itself is a
+// single list, so the distinction is drawn here, where the list is built.
 //
 // What it returns is the only way that distinction travels: every reader of the
 // stack is handed it beside the stack, and hands it on to [CatalogDirRoot]
@@ -131,7 +136,12 @@ func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) 
 // picks: the workspace root where the directory lies inside the workspace, and the
 // directory itself, followed where it was named, where it lies outside.
 //
-// named is read as it was handed over, never re-derived: whether a directory was
+// Whether somebody named the conventional directory is a question of the place it
+// leads to, answered by [Reaches] from named: a directory named in another spelling
+// of that place, or a directory above it, names it, exactly as the stack builder
+// reads named when it decides whether to append the directory at all.
+//
+// named is read as it was handed over, never re-derived: which directories were
 // named is decided where the stack is built, and nowhere else. Where named is nil
 // the conventional directory is held to the workspace.
 //
@@ -139,26 +149,19 @@ func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) 
 // the pin step placing an entity.lock beneath one, so what a lookup reads beneath
 // a directory and what the pin step writes there are held to the same root.
 func CatalogDirRoot(workspaceRoot, dir string, named []string) string {
-	if workspaceRoot != "" && sameCleanPath(dir, filepath.Join(workspaceRoot, ConventionalCatalogDir)) &&
-		!namesDir(named, dir) {
+	if workspaceRoot != "" && isConventionalCatalogDir(workspaceRoot, dir) && !Reaches(named, dir) {
 		return workspaceRoot
 	}
 	return writescope.RootFor(workspaceRoot, dir)
 }
 
-// namesDir reports whether named spells dir.
-func namesDir(named []string, dir string) bool {
-	for _, n := range named {
-		if sameCleanPath(n, dir) {
-			return true
-		}
-	}
-	return false
-}
-
-// sameCleanPath reports whether a and b spell one path once both are made
-// absolute and cleaned.
-func sameCleanPath(a, b string) bool {
+// isConventionalCatalogDir reports whether dir is the entry a search stack carries
+// for the workspace's conventional `catalog` directory. That entry is the one the
+// stack builder appends spelled as the workspace root joined with the directory's
+// name, so which entry it is reads from the spelling, made absolute and cleaned;
+// whether anybody named the place it leads to is [Reaches]'s.
+func isConventionalCatalogDir(workspaceRoot, dir string) bool {
+	a, b := dir, filepath.Join(workspaceRoot, ConventionalCatalogDir)
 	absA, errA := filepath.Abs(a)
 	absB, errB := filepath.Abs(b)
 	if errA != nil || errB != nil {
@@ -191,35 +194,6 @@ func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) 
 // re-derive it from a nil check.
 func authoredEmpty(configured []string) bool {
 	return configured != nil && len(configured) == 0
-}
-
-// alreadyCovered reports whether an entry already in the stack reaches dir —
-// either by naming it, or by being an ancestor of it, since the catalog walk of
-// a directory is recursive.
-//
-// It is what keeps the appended conventional directory from being read twice,
-// and the cost of getting this wrong is not merely a repeated walk: the stack is
-// first-win per entry, so a directory reached twice makes the loader report
-// every identity in it as shadowed by itself. The ancestor case is the one that
-// bites, because listing the workspace root — the documented way to ask for a
-// whole-tree walk deliberately — reaches the conventional directory already.
-//
-// Paths are compared cleaned, because a configured entry may be an absolute
-// path the cascade passed through verbatim, trailing separator and all. The
-// containment test requires a separator boundary, so a sibling directory whose
-// name merely starts with the same characters is not mistaken for an ancestor.
-func alreadyCovered(dirs []string, dir string) bool {
-	want := filepath.Clean(dir)
-	for _, d := range dirs {
-		clean := filepath.Clean(d)
-		if clean == want {
-			return true
-		}
-		if strings.HasPrefix(want, clean+string(filepath.Separator)) {
-			return true
-		}
-	}
-	return false
 }
 
 // isExistingDir reports whether path names a directory that is there. A path

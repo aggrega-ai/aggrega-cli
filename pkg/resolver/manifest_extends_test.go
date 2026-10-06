@@ -47,11 +47,11 @@ func TestResolveManifestExtends_NoExtends_Unchanged(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeManifestFile(t, dir, "prod.yaml", prodManifest)
-	base, err := ResolveManifest("", dir, "./prod.yaml")
+	base, err := ResolveManifest("", dir, "", "./prod.yaml")
 	if err != nil {
 		t.Fatalf("resolve base: %v", err)
 	}
-	got, err := ResolveManifestExtends("", dir, base)
+	got, err := ResolveManifestExtends("", dir, "", base)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -89,11 +89,11 @@ spec:
       type:
         core/aws-secrets-manager: host-env-injector:1.0.0
 `)
-	child, err := ResolveManifest("", dir, "./local.yaml")
+	child, err := ResolveManifest("", dir, "", "./local.yaml")
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	got, err := ResolveManifestExtends("", dir, child)
+	got, err := ResolveManifestExtends("", dir, "", child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -176,11 +176,11 @@ spec:
       type:
         core/db: db-leaf:3.0.0
 `)
-	child, err := ResolveManifest("", dir, "./leaf.yaml")
+	child, err := ResolveManifest("", dir, "", "./leaf.yaml")
 	if err != nil {
 		t.Fatalf("resolve leaf: %v", err)
 	}
-	got, err := ResolveManifestExtends("", dir, child)
+	got, err := ResolveManifestExtends("", dir, "", child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -225,11 +225,11 @@ spec:
       type:
         core/y: y:1.0.0
 `)
-	child, err := ResolveManifest("", dir, "./a.yaml")
+	child, err := ResolveManifest("", dir, "", "./a.yaml")
 	if err != nil {
 		t.Fatalf("resolve a: %v", err)
 	}
-	_, err = ResolveManifestExtends("", dir, child)
+	_, err = ResolveManifestExtends("", dir, "", child)
 	if err == nil {
 		t.Fatalf("cycle: expected error, got nil")
 	}
@@ -256,11 +256,11 @@ spec:
       type:
         core/x: x:1.0.0
 `)
-	child, err := ResolveManifest("", dir, "./child.yaml")
+	child, err := ResolveManifest("", dir, "", "./child.yaml")
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	_, err = ResolveManifestExtends("", dir, child)
+	_, err = ResolveManifestExtends("", dir, "", child)
 	if err == nil {
 		t.Fatalf("missing parent: expected error, got nil")
 	}
@@ -357,7 +357,7 @@ func writeManifestChain(t *testing.T, dir string, n int, style extendsRefStyle, 
 		}
 		writeManifestFile(t, dir, chainManifestName(i)+".yaml", manifestChainDoc(chainManifestName(i), extends))
 	}
-	head, err := ResolveManifest("", dir, style.ref(chainManifestName(0)))
+	head, err := ResolveManifest("", dir, "", style.ref(chainManifestName(0)))
 	if err != nil {
 		t.Fatalf("test setup: resolve chain head: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T
 			t.Parallel()
 			dir := t.TempDir()
 			head := writeManifestChain(t, dir, 10, style, false)
-			got, err := ResolveManifestExtends("", dir, head)
+			got, err := ResolveManifestExtends("", dir, "", head)
 			if err != nil {
 				t.Fatalf("a chain of ten Manifests must be accepted; got: %v", err)
 			}
@@ -400,7 +400,7 @@ func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T
 			t.Parallel()
 			dir := t.TempDir()
 			head := writeManifestChain(t, dir, 11, style, false)
-			_, err := ResolveManifestExtends("", dir, head)
+			_, err := ResolveManifestExtends("", dir, "", head)
 			if err == nil {
 				t.Fatal("a chain of eleven Manifests must halt")
 			}
@@ -450,7 +450,7 @@ func TestResolveManifestExtends_ALoopIsReportedAsALoopAtEveryLength(t *testing.T
 				t.Parallel()
 				dir := t.TempDir()
 				head := writeManifestChain(t, dir, length, style, true)
-				_, err := ResolveManifestExtends("", dir, head)
+				_, err := ResolveManifestExtends("", dir, "", head)
 				if err == nil {
 					t.Fatalf("a %s loop of %d must halt", style, length)
 				}
@@ -473,7 +473,7 @@ func TestResolveManifestExtends_ALoopIsReportedAsALoopAtEveryLength(t *testing.T
 			t.Parallel()
 			dir := t.TempDir()
 			head := writeManifestChain(t, dir, 11, style, false)
-			_, err := ResolveManifestExtends("", dir, head)
+			_, err := ResolveManifestExtends("", dir, "", head)
 			if err == nil {
 				t.Fatalf("an acyclic %s chain of eleven must halt", style)
 			}
@@ -526,7 +526,7 @@ func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			head := writeManifestChain(t, dir, 3, tc.style, true)
-			_, err := ResolveManifestExtends("", dir, head)
+			_, err := ResolveManifestExtends("", dir, "", head)
 			if err == nil {
 				t.Fatalf("a %s loop of three must halt", tc.style)
 			}
@@ -595,18 +595,18 @@ func TestResolveManifestExtends_MissingParentCarriesDirectoryAdviceAndResolveErr
 			t.Parallel()
 			dir := t.TempDir()
 			writeManifestFile(t, dir, "child.yaml", manifestChainDoc("child", tc.ref))
-			child, err := ResolveManifest("", dir, "./child.yaml")
+			child, err := ResolveManifest("", dir, "", "./child.yaml")
 			if err != nil {
 				t.Fatalf("test setup: resolve child: %v", err)
 			}
 			// The same resolution the walk performs, taken independently, so the
 			// expectation below is not a restatement of the walk's own output.
-			_, resolveErr := ResolveManifest("", dir, tc.ref)
+			_, resolveErr := ResolveManifest("", dir, "", tc.ref)
 			if resolveErr == nil {
 				t.Fatalf("test setup: %q must not resolve", tc.ref)
 			}
 
-			_, err = ResolveManifestExtends("", dir, child)
+			_, err = ResolveManifestExtends("", dir, "", child)
 			if err == nil {
 				t.Fatal("a parent that cannot be resolved must halt")
 			}
@@ -686,11 +686,11 @@ spec:
         core/third: third-recipe:1.0.0
 `)
 
-	head, err := ResolveManifest("", dir, "./first.yaml")
+	head, err := ResolveManifest("", dir, "", "./first.yaml")
 	if err != nil {
 		t.Fatalf("test setup: resolve first: %v", err)
 	}
-	got, err := ResolveManifestExtends("", dir, head)
+	got, err := ResolveManifestExtends("", dir, "", head)
 	if err != nil {
 		t.Fatalf("two Manifest files sharing one metadata.name must compose; got: %v", err)
 	}

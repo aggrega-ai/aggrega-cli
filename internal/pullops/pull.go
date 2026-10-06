@@ -547,14 +547,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}
-	manRes, err := resolver.ResolveManifest(rw.Root(), releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest(rw.Root(), releaseDir, cfg.ReleasePath, rel.Spec.Manifest)
 	if err != nil {
 		return Result{}, fmt.Errorf("load manifest: %w", err)
 	}
 	// Compose the Manifest's extends chain so the closure walk and recipe
 	// resolution see the inherited mappings rather than the child's own
 	// entries alone. A Manifest with no extends reference is unchanged.
-	manifest, err := resolver.ResolveManifestExtends(rw.Root(), releaseDir, manRes)
+	manifest, err := resolver.ResolveManifestExtends(rw.Root(), releaseDir, cfg.ReleasePath, manRes)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
 	}
@@ -638,7 +638,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: document, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
 	}
-	aggRes, err := resolver.ResolveAggregate(workspaceRoot, releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), registryFetch)
+	aggRes, err := resolver.ResolveAggregate(workspaceRoot, releaseDir, cfg.ReleasePath, rel.Spec.Aggregate, lazyView.AggregateLookup(), registryFetch)
 	if err != nil {
 		return Result{}, fmt.Errorf("load aggregate: %w", err)
 	}
@@ -721,7 +721,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 	pinMode := catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify}
-	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath, pinMode,
+	pinReuse, err := catalog.PinReuseFromLockfile(workspaceRoot, lockfilePath, cfg.ReleasePath, pinMode,
 		verdictUpgradeTargets(wsCfg, recordedTrust),
 		func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) })
 	if err != nil {
@@ -957,7 +957,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// cached bytes against the digest the lockfile records for them, and a pull
 		// that adopts a moved reference rewrites BOTH in the same act — so the two
 		// values it compares moved together and it is satisfied by construction.
-		lf, _, lerr := lockfile.LoadLockfile(lockfilePath)
+		lf, _, lerr := lockfile.Load(workspaceRoot, lockfilePath)
 		if lerr != nil {
 			return Result{}, fmt.Errorf("verify: load lockfile %s: %w", lockfilePath, lerr)
 		}

@@ -882,12 +882,21 @@ func FindLockfiles(workspaceRoot, cacheDir string) []string {
 // digests are read from the raw lockfile sections directly so every cached class
 // has its reference. The second return is the count of candidates that parsed as
 // a lockfile.
-func BuildReferenceSet(lockPaths []string) (map[string]bool, int) {
+//
+// Each candidate is read only where it lies inside the root a write of it is held
+// to, in the workspace at workspaceRoot (lockfile.LoadIfReadable). One that is a
+// link leading out halts the build of the set naming the link, before the prune
+// removes anything: passing over it would drop the digests it pins from the retain
+// set, and the prune would then remove what that lockfile still needs.
+func BuildReferenceSet(workspaceRoot string, lockPaths []string) (map[string]bool, int, error) {
 	refset := map[string]bool{}
 	var loaded int
 	for _, p := range lockPaths {
-		lf, _, err := lockfile.LoadLockfile(p)
-		if err != nil || lf == nil {
+		lf, err := lockfile.LoadIfReadable(workspaceRoot, p)
+		if err != nil {
+			return nil, 0, err
+		}
+		if lf == nil {
 			continue
 		}
 		loaded++
@@ -926,7 +935,7 @@ func BuildReferenceSet(lockPaths []string) (map[string]bool, int) {
 	for _, d := range embedded.ContentDigests() {
 		addDigest(refset, d)
 	}
-	return refset, loaded
+	return refset, loaded, nil
 }
 
 func addDigest(set map[string]bool, d string) {

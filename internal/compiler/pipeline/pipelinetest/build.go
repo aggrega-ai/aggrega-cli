@@ -151,11 +151,11 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	// A fixture is read with no workspace around it, as the catalog load above is,
 	// so the Release's own directory is the root its same-directory scan holds to.
 	releaseDir := filepath.Dir(in.ReleasePath)
-	manRes, err := resolver.ResolveManifest("", releaseDir, rel.Spec.Manifest)
+	manRes, err := resolver.ResolveManifest("", releaseDir, in.ReleasePath, rel.Spec.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
-	manifest, err := resolver.ResolveManifestExtends("", releaseDir, manRes)
+	manifest, err := resolver.ResolveManifestExtends("", releaseDir, in.ReleasePath, manRes)
 	if err != nil {
 		return nil, fmt.Errorf("compose manifest extends chain: %w", err)
 	}
@@ -165,7 +165,7 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path, cat.ComponentAncestry); err != nil {
 		return nil, err
 	}
-	aggRes, err := resolver.ResolveAggregate("", releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
+	aggRes, err := resolver.ResolveAggregate("", releaseDir, in.ReleasePath, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load aggregate: %w", err)
 	}

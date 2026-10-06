@@ -49,7 +49,7 @@ func renderManifestFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if rw != nil {
 		workspaceRoot = rw.Root()
 	}
-	resolved, err := resolver.ResolveManifestExtends(workspaceRoot, filepath.Dir(path), child)
+	resolved, err := resolver.ResolveManifestExtends(workspaceRoot, filepath.Dir(path), path, child)
 	if err != nil {
 		return fmt.Errorf("resolve extends: %w", err)
 	}
@@ -66,7 +66,7 @@ func renderManifestFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace
 	identifier := identifierVersion(resolved.Metadata.Name, resolved.Metadata.Version)
 	renderHeader(opts, "Manifest", identifier)
 
-	if chain := manifestExtendsChain(workspaceRoot, filepath.Dir(path), child); chain != "" {
+	if chain := manifestExtendsChain(workspaceRoot, filepath.Dir(path), path, child); chain != "" {
 		fmt.Fprintf(opts.out, "Extends: %s\n", chain)
 	}
 
@@ -105,12 +105,13 @@ func renderManifestFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace
 // A chain the walk refuses yields "" rather than a partial rendering: this is
 // decoration on a resolved Manifest, and every path that reaches it has already
 // composed the same chain, so a fault here has already been reported as the
-// command's own failure.
-func manifestExtendsChain(workspaceRoot, releaseDir string, child resolver.ResolvedManifest) string {
+// command's own failure. origin is the file the composition started at, handed on
+// as the composition is handed it.
+func manifestExtendsChain(workspaceRoot, releaseDir, origin string, child resolver.ResolvedManifest) string {
 	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return ""
 	}
-	chain, err := resolver.ManifestExtendsChain(workspaceRoot, releaseDir, child)
+	chain, err := resolver.ManifestExtendsChain(workspaceRoot, releaseDir, origin, child)
 	if err != nil {
 		return ""
 	}

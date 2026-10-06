@@ -290,7 +290,10 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 	if twErr != nil {
 		t.Fatalf("resolve the oracle workspace: %v", twErr)
 	}
-	lf := loadReleaseLockfile(releasePath)
+	lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+	if lockRefused != "" {
+		t.Fatalf("read the oracle's lockfile: %s", lockRefused)
+	}
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            tw.newView(releasePath, lf),
 		ReleasePath:     releasePath,

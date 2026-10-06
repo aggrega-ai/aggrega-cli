@@ -36,8 +36,11 @@ import (
 // workspace the Release is read in, which decides the root [ResolveManifest]
 // holds each reference to — an explicit file and the same-directory scan alike:
 // the workspace, or releaseDir itself where it lies outside the workspace, as the
-// directory of a Release or a Manifest named from outside it.
-func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManifest) ([]ResolvedManifest, error) {
+// directory of a Release or a Manifest named from outside it. origin is the file
+// the resolution started at — the Release a command or a request names, or the
+// Manifest named on its own — which the same-directory scan does not judge again
+// (see [ResolveManifest]).
+func ManifestExtendsChain(workspaceRoot, releaseDir, origin string, child ResolvedManifest) ([]ResolvedManifest, error) {
 	if child.Manifest == nil {
 		return nil, nil
 	}
@@ -64,7 +67,7 @@ func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManife
 				return m.Manifest.Spec.Extends
 			},
 			Lookup: func(ref string) (ResolvedManifest, bool) {
-				parent, err := resolveManifest(workspaceRoot, releaseDir, ref, declaring.Path, ".spec.extends")
+				parent, err := resolveManifest(workspaceRoot, releaseDir, origin, ref, declaring.Path, ".spec.extends")
 				if err != nil {
 					resolveFailure = err
 					return ResolvedManifest{}, false
@@ -80,8 +83,10 @@ func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManife
 		// A reference refused for leading out of its root names a file that may well
 		// be there, so it halts with its own condition rather than as a parent the
 		// walk could not find: the author's fix is to keep the reference inside, not
-		// to correct a name.
-		if errors.Is(resolveFailure, readscope.ErrReferenceLeadsOutOfWorkspace()) {
+		// to correct a name. A link beside the Manifest that the same-directory scan
+		// refused halts the same way, for the same reason: the fix is the link.
+		if errors.Is(resolveFailure, readscope.ErrReferenceLeadsOutOfWorkspace()) ||
+			errors.Is(resolveFailure, readscope.ErrReadLeadsOutOfWorkspace()) {
 			return nil, resolveFailure
 		}
 		return nil, verr
@@ -107,13 +112,14 @@ func ManifestExtendsChain(workspaceRoot, releaseDir string, child ResolvedManife
 // A Manifest with no extends reference is returned unchanged. A reference that
 // cannot be resolved, a chain that revisits a file already in the chain, and a
 // chain that exceeds the depth bound each halt with the failure the walk
-// reports.
-func ResolveManifestExtends(workspaceRoot, releaseDir string, child ResolvedManifest) (*types.Manifest, error) {
+// reports. origin is the file the resolution started at, as it is for
+// [ManifestExtendsChain].
+func ResolveManifestExtends(workspaceRoot, releaseDir, origin string, child ResolvedManifest) (*types.Manifest, error) {
 	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return child.Manifest, nil
 	}
 
-	chain, err := ManifestExtendsChain(workspaceRoot, releaseDir, child)
+	chain, err := ManifestExtendsChain(workspaceRoot, releaseDir, origin, child)
 	if err != nil {
 		return nil, err
 	}

@@ -122,7 +122,10 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 	if pathRefused != "" {
 		return errorResult(pathRefused)
 	}
-	lf := loadReleaseLockfile(releasePath)
+	lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+	if lockRefused != "" {
+		return errorResult(lockRefused)
+	}
 	view := tw.newView(releasePath, lf)
 
 	// The render is skipped. This reads how the node was reached and discards

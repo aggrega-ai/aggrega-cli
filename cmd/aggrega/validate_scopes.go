@@ -190,8 +190,11 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
-	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
-	if lfErr == nil {
+	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
+	if err != nil {
+		return err
+	}
+	if lf != nil {
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 	}
 

@@ -27,6 +27,13 @@
 // way in of its own — the global configuration file — where a catalog document
 // has a catalog directory.
 //
+// [CheckLockfileRead] is the same judgement for the lockfile beside a Release,
+// which a build, a pull, a check and the editor read the Release's pins from. A
+// lockfile is the product's own file, composed and written beside the Release and
+// held there when it is written, so it is read from the same place under the same
+// root, and its refusal names the remedy a lockfile has: there is no other place
+// to keep one.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -55,9 +62,9 @@ import (
 // ErrReadLeadsOutOfWorkspace is the halt raised when a file an operation is about
 // to read, beneath a directory it reads as a whole — a catalog directory, the
 // directory holding a Release — or a configuration file the workspace's
-// configuration is merged from, leads, through a link, out of the root it is held
-// to: the workspace, or a directory outside it the owner typed or the
-// configuration named.
+// configuration is merged from, or the lockfile beside a Release, leads, through a
+// link, out of the root it is held to: the workspace, or a directory outside it
+// the owner typed or the configuration named.
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
@@ -74,9 +81,10 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 	RulePlace: cerrors.RuleNoStageReaches("The rule is evaluated where the product reads a directory of workspace " +
 		"content as a whole — a catalog directory's documents, read by a lookup a build, a pull, a check or the " +
 		"editor depends on, and the Aggregates and Manifests beside a Release, read to resolve the names the " +
-		"Release gives them — and where it reads the configuration files the workspace's configuration is merged " +
-		"from, before any command runs. Each of those reads the filesystem ahead of every declared stage, and no " +
-		"stage holds the entry the rule is judged against."),
+		"Release gives them — where it reads the configuration files the workspace's configuration is merged " +
+		"from, before any command runs, and where it reads the lockfile beside a Release for the pins a build, a " +
+		"check or the editor resolves against. Each of those reads the filesystem ahead of every declared stage, " +
+		"and no stage holds the entry the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -108,6 +116,18 @@ func configurationRemedyFor(root string) string {
 		"or AGGREGA_CONFIG"
 }
 
+// lockfileRemedyFor is what the refusal tells its reader for a Release's lockfile
+// that must stay inside root.
+//
+// A lockfile has one place, beside its Release, and a pull writes it there, so the
+// remedy is to remove the link and pull again rather than to name the file from
+// somewhere else: no setting names a lockfile kept elsewhere.
+func lockfileRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		": a Release's lockfile is read only from beside the Release, where a pull writes it. With the link " +
+		"removed, pulling the Release again writes a fresh lockfile there"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -127,7 +147,16 @@ func CheckConfigurationRead(root, path string) error {
 	return checkRead(root, path, configurationRemedyFor)
 }
 
-// checkRead is the judgement both entry points make, composing the refusal with
+// CheckLockfileRead is [CheckRead] for the lockfile beside a Release, about to be
+// read for its pins: the same judgement and the same condition, with the remedy a
+// lockfile has. root is the one a write of the same lockfile is held to — the root
+// [writescope.RootFor] picks for the Release's directory — so the file a pull may
+// write and the file a build may read are held alike.
+func CheckLockfileRead(root, path string) error {
+	return checkRead(root, path, lockfileRemedyFor)
+}
+
+// checkRead is the judgement every entry point makes, composing the refusal with
 // the remedy the caller's kind of read has.
 func checkRead(root, path string, remedy func(root string) string) error {
 	if root == "" || path == "" {

@@ -109,3 +109,79 @@ func TestEachReleaseReadsTheConventionalCatalogAsItsOwnStackNamesIt(t *testing.T
 		})
 	}
 }
+
+// TestAConventionalCatalogLinkedToAListedPlaceIsReadThroughTheListing asks the
+// daemon for the stack and the lookup a Release is answered from, where the
+// workspace's conventional `catalog` is a link to a place outside the workspace and
+// the configuration lists a directory outside it in its own spelling — the place
+// itself, the directory holding it, or a directory beneath it.
+//
+// Where the listing reaches the place, the stack does not carry the conventional
+// directory, and the lookup reads what lies there once, through the listed
+// directory, and halts on nothing; this is what the language server's walks already
+// answered for the link, and its compile now answers the same. Where the listing
+// lies beneath the place, the link leads further than anything named, so the
+// conventional directory is appended as nobody's naming and the lookup halts on
+// its link, as a compile on the command line does.
+func TestAConventionalCatalogLinkedToAListedPlaceIsReadThroughTheListing(t *testing.T) {
+	t.Parallel()
+	const probe = "example/probe"
+	const component = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + probe +
+		"\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
+	for _, row := range []struct {
+		name string
+		// listed is the directory the configuration lists, given the place the
+		// link leads to.
+		listed func(place string) string
+		halts  bool
+	}{
+		{name: "the place itself listed in its own spelling", listed: func(place string) string { return place }},
+		{name: "the directory holding the place listed", listed: filepath.Dir},
+		{name: "a directory beneath the place listed: the link leads further than the listing", halts: true,
+			listed: func(place string) string { return filepath.Join(place, "sub") }},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			ws := t.TempDir()
+			conventional := filepath.Join(ws, workspaceconfig.ConventionalCatalogDir)
+			place := filepath.Join(t.TempDir(), "kept-elsewhere")
+			if err := os.MkdirAll(filepath.Join(place, "sub"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(place, conventional); err != nil {
+				t.Skipf("symbolic links are not available here: %v", err)
+			}
+			writeFixtureFile(t, filepath.Join(place, "probe.yaml"), component)
+			release := filepath.Join(ws, "release.yaml")
+			writeFixtureFile(t, release, "kind: Release\n")
+			listed := row.listed(place)
+			writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename),
+				"workspace:\n  catalog_dirs:\n    - "+listed+"\n")
+
+			var out bytes.Buffer
+			srv := catalogDirsServer(t, ws, &out)
+			want := []string{listed}
+			if row.halts {
+				want = append(want, conventional)
+			}
+			if dirs := srv.catalogDirsFor(release); !slices.Equal(dirs, want) {
+				t.Errorf("the stack is %v; want %v", dirs, want)
+			}
+			lookup := srv.catalogFor(release)
+			linkErr := lookup.CheckLinks()
+			_, resolved := lookup.Component(probe)
+			if row.halts {
+				if !errors.Is(linkErr, readscope.ErrReadLeadsOutOfWorkspace()) {
+					t.Errorf("want the read-leads-out-of-workspace halt on the link nothing named reaches, got %v", linkErr)
+				}
+				return
+			}
+			if linkErr != nil {
+				t.Errorf("halted although the configuration lists the place the link leads to: %v", linkErr)
+			}
+			if !resolved {
+				t.Errorf("%s did not resolve through the listed directory %s", probe, listed)
+			}
+		})
+	}
+}

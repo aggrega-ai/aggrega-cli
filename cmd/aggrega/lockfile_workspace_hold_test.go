@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -19,17 +20,23 @@ import (
 //
 // A refused row is held to the file the link leads to as well as to the
 // condition: the file outside must hold what it held, and a file that was never
-// there must still not be there. The last row is the shape the definition of
-// inside passes — a link leading nowhere is passed over for its directory, which
-// is inside — and a plain write through it would create the file it points at.
+// there must still not be there. A lockfile that is a link to a lockfile outside
+// is refused where the pull first reads it for its prior pins, before anything is
+// resolved, so its condition is the read's; the last row is the shape the
+// definition of inside passes for a read — a link leading nowhere is passed over
+// for its directory, which is inside, and there is nothing to read — and a plain
+// write through it would create the file it points at, so its condition is the
+// write's.
 func TestPullHoldsTheLockfileToTheWorkspace(t *testing.T) {
 	rows := []struct {
-		name    string
-		layout  func(t *testing.T, lock, outside string, pull func() error) string
-		refused bool
+		name   string
+		layout func(t *testing.T, lock, outside string, pull func() error) string
+		// refusedWith is the condition a refused row halts with; nil for a row
+		// that completes.
+		refusedWith error
 	}{
 		{name: "control: no lockfile yet", layout: func(*testing.T, string, string, func() error) string { return "" }},
-		{name: "a lockfile that is a link to a lockfile outside", refused: true, layout: func(t *testing.T, lock, outside string, pull func() error) string {
+		{name: "a lockfile that is a link to a lockfile outside", refusedWith: readscope.ErrReadLeadsOutOfWorkspace(), layout: func(t *testing.T, lock, outside string, pull func() error) string {
 			// A real lockfile, so the pull reads it as one and reaches its write;
 			// it is then moved outside and the workspace keeps a link to it.
 			if err := pull(); err != nil {
@@ -49,7 +56,7 @@ func TestPullHoldsTheLockfileToTheWorkspace(t *testing.T) {
 			}
 			return target
 		}},
-		{name: "a lockfile that is a link leading nowhere outside", refused: true, layout: func(t *testing.T, lock, outside string, _ func() error) string {
+		{name: "a lockfile that is a link leading nowhere outside", refusedWith: writescope.ErrWriteLeadsOutOfWorkspace(), layout: func(t *testing.T, lock, outside string, _ func() error) string {
 			target := filepath.Join(outside, "absent.lock")
 			if err := os.Symlink(target, lock); err != nil {
 				t.Skipf("symbolic links are not available here: %v", err)
@@ -76,14 +83,14 @@ func TestPullHoldsTheLockfileToTheWorkspace(t *testing.T) {
 			}
 
 			err := pull()
-			if !row.refused {
+			if row.refusedWith == nil {
 				if err != nil {
 					t.Fatalf("refused a lockfile the workspace holds: %v", err)
 				}
 				return
 			}
-			if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
-				t.Fatalf("want the write-leads-out-of-workspace halt, got %v", err)
+			if !errors.Is(err, row.refusedWith) {
+				t.Fatalf("want the %v halt, got %v", row.refusedWith, err)
 			}
 			after, aerr := os.ReadFile(target)
 			switch {

@@ -41,8 +41,6 @@ var sanctionedLinkResolvers = map[string]string{
 		"written, to the place the write would create its file; the one definition of inside then judges that place",
 	"pkg/workspaceconfig:canonicalReleasePath": "the one spelling a configured Release file is keyed by — a key " +
 		"the configuration is looked up under, not a verdict on where a path leads",
-	"internal/serve:resolvedPath": "spells a path the configuration names resolved, so the configuration's " +
-		"exception can compare it with the place a link leads; the place itself was judged by the one definition",
 }
 
 // decidersOfInside are the functions that decide whether a path read or written
@@ -58,6 +56,8 @@ var decidersOfInside = map[string]string{
 	"pkg/readscope:checkRead":                     "a read of workspace content, whichever remedy its refusal names",
 	"pkg/readscope:CheckRead":                     "a read beneath a directory read as a whole",
 	"pkg/readscope:CheckConfigurationRead":        "a workspace configuration file the configuration is merged from",
+	"pkg/readscope:CheckLockfileRead":             "the lockfile beside a Release, read for its pins",
+	"pkg/lockfile:CheckRead":                      "the lockfile beside a Release, held to the root its write is held to",
 	"pkg/workspaceconfig:resolve":                 "every configuration file the workspace's configuration cascade merges",
 	"pkg/catalog:catalogWalk.walk":                "every entry of a catalog directory, and the directory itself",
 	"pkg/resolver:scanReleaseDir":                 "the documents beside a Release that its names resolve against",
@@ -65,6 +65,7 @@ var decidersOfInside = map[string]string{
 	"internal/wasm:Plugin.resolveUnderSourceRoot": "every component of a selection a plugin asks to read",
 	"internal/serve:resolveLink":                  "a link the language server's walks meet, and a Release a request names",
 	"internal/serve:gitignoreWalker.matcherFor":   "the ignore file the language server's entity walk reads",
+	"pkg/workspaceconfig:Reaches":                 "whether a place is reached by a directory or a Release file somebody named",
 
 	// Every path a request or a tool call names, on every transport, reaches the one
 	// judgement through these, read or written alike: one request judgement in the
@@ -102,7 +103,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},
@@ -148,8 +149,9 @@ var exceptionPredicates = map[string]string{
 		"workspace is a root of its own",
 	"pkg/workspaceconfig:CatalogDirRoot": "a catalog directory somebody named, typed or configured, has the root " +
 		"the anchor rule picks, and the conventional one nobody named is the workspace's",
-	"internal/serve:linkScope.configurationReaches": "a link the language server's walks meet that leads to a " +
-		"Release file or a catalog directory the configuration names",
+	"pkg/workspaceconfig:Reaches": "what the configuration names — a catalog directory and what lies beneath it, " +
+		"a Release file — or the owner typed, compared with a path by the place each leads to: the one comparison " +
+		"of the configuration's exception, on every surface",
 	"internal/serve:Server.selectedPath": "a file picked in a dialog, read where it names",
 	"internal/serve:Server.canonicalFile": "a parameter naming a document the client holds open, which is " +
 		"answered from what the client sent",
@@ -165,6 +167,42 @@ var exceptionPredicates = map[string]string{
 // with it and admits nothing.
 var exceptionPrimitives = map[string]string{
 	"pathscope.ResolveSelected": "internal/serve:Server.selectedPath",
+}
+
+// theConfigurationsReach is the configuration exception's one comparison,
+// workspaceconfig.Reaches: whether the place a path leads to is reached by a
+// directory or a Release file somebody named — listed in the configuration, or a
+// directory typed on the command line. It is the exception's one predicate, named
+// in exceptionPredicates; this is how a call of it is recognised, as
+// workspaceconfig.Reaches outside its package and as Reaches inside it.
+const (
+	theConfigurationsReachPackage = "workspaceconfig"
+	theConfigurationsReachDir     = "pkg/workspaceconfig"
+	theConfigurationsReach        = "Reaches"
+)
+
+// consultantsOfTheConfigurationsReach are the functions that let a path through,
+// or decide where it is held, because somebody named the place it leads to, keyed
+// as decidersOfInside is and valued by what each decides with the answer. Each must
+// be FOUND asking theConfigurationsReach, and every function asking it must be one
+// of them.
+//
+// 🔴 Hand-written for the reason sanctionedLinkResolvers is. Both directions are
+// held because the exception had three comparisons — one by place, two by spelling,
+// one of those counting a directory beneath a named one and the other not — which
+// agreed on every layout a test was likely to build and disagreed on a `catalog`
+// link to a listed directory: the language server named nothing unread while every
+// catalog walk refused the link. A consultant that compares a path with what was
+// named for itself, by spelling or by a resolution of its own, stops asking and
+// fails here; a new site that asks and then admits a path for a reason of its own
+// is not named here, and fails too.
+var consultantsOfTheConfigurationsReach = map[string]string{
+	"pkg/workspaceconfig:CatalogDirRoot": "whether the conventional catalog directory was named, and so which " +
+		"root it is held to",
+	"pkg/workspaceconfig:ResolvedWorkspace.ResolveCatalogDirs": "whether a stack already reads the place the " +
+		"conventional catalog directory leads to, and so whether to append it",
+	"internal/serve:linkScope.configurationReaches": "whether a link the language server's walks meet, or a " +
+		"Release a request names, leads to a place the configuration names",
 }
 
 // predicatesThatReadNothing are the exception predicates whose class is defined by
@@ -204,10 +242,12 @@ var readsTheFilesystem = map[string][]string{
 //
 // The exceptions are held by class. Each class's predicate is named in
 // exceptionPredicates and must be found; a call that lets a path through by its
-// nature is reached only by the predicate exceptionPrimitives gives it; and a
+// nature is reached only by the predicate exceptionPrimitives gives it; a
 // predicate whose class is reading nothing at the path — a document the client
 // holds open — is held to reaching nothing on disk, through any function of its
-// own package it calls.
+// own package it calls; and the configuration's exception has one comparison,
+// which every consultant named in consultantsOfTheConfigurationsReach must be
+// found asking and nothing else may ask.
 //
 // It FAILS rather than reports, because a Go package that passes prints nothing,
 // so a guard that only reported would be inert in every routine run.
@@ -219,15 +259,17 @@ var readsTheFilesystem = map[string][]string{
 // package's other entry points answer, and a reader asking it where the on-disk
 // question was owed is a defect its own tests, not this guard, have to catch.
 // Likewise a path let through by asking nothing at all, which is how the command
-// line's typed paths and the machine-wide stores are let through by design; and,
-// in the read-nothing check, a method called on a value other than the function's
-// own receiver.
+// line's typed paths and the machine-wide stores are let through by design; in the
+// read-nothing check, a method called on a value other than the function's own
+// receiver; and a consultant of the configuration's exception that asks its one
+// comparison and ALSO compares a spelling of its own beside it.
 func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 	fset := token.NewFileSet()
 	resolving := map[string]bool{}
 	asking := map[string]bool{}
 	declared := map[string]declaredFunc{}
 	reachedPrimitive := map[string]bool{}
+	consulting := map[string]bool{}
 	visited := 0
 	err := filepath.WalkDir(moduleRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -270,6 +312,9 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 					if listed(judgementsWithinAPackage[pkgDir], ident.Name) {
 						asking[key] = true
 					}
+					if pkgDir == theConfigurationsReachDir && ident.Name == theConfigurationsReach {
+						consultTheConfigurationsReach(t, fset, call, key, consulting)
+					}
 					return true
 				}
 				sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -282,6 +327,9 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 				pkg, ok := sel.X.(*ast.Ident)
 				if !ok {
 					return true
+				}
+				if pkg.Name == theConfigurationsReachPackage && sel.Sel.Name == theConfigurationsReach {
+					consultTheConfigurationsReach(t, fset, call, key, consulting)
 				}
 				if names(linkResolvers, pkg.Name, sel.Sel.Name) {
 					if _, sanctioned := sanctionedLinkResolvers[key]; !sanctioned {
@@ -353,6 +401,12 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 			"another function; rename or drop its entry in the same change, because an entry naming nothing leaves "+
 			"its class answered by a function that does not exist", missing)
 	}
+	if missing := absentFrom(consultantsOfTheConfigurationsReach, consulting); len(missing) > 0 {
+		t.Errorf("functions the walk did not find asking %s.%s, the configuration exception's one comparison: %v — "+
+			"a site that stopped asking compares what was named with a path for itself, which is the second "+
+			"comparison this guard exists to refuse; restore the call, or rename the entry in "+
+			"consultantsOfTheConfigurationsReach in the same change", theConfigurationsReachPackage, theConfigurationsReach, missing)
+	}
 	owners := map[string]string{}
 	for primitive, predicate := range exceptionPrimitives {
 		owners[predicate] = primitive
@@ -374,6 +428,26 @@ func TestTheOneJudgementOfInsideHasNoSecondHome(t *testing.T) {
 				fset.Position(call.Pos()), key, what, site, predicatesThatReadNothing[key])
 		}
 	}
+}
+
+// consultTheConfigurationsReach records that the function key asks the
+// configuration exception's one comparison, and fails where key is not a
+// consultant named in consultantsOfTheConfigurationsReach — the comparison itself
+// excepted, which may delegate to a helper of its own.
+func consultTheConfigurationsReach(t *testing.T, fset *token.FileSet, call *ast.CallExpr, key string, consulting map[string]bool) {
+	t.Helper()
+	if key == theConfigurationsReachDir+":"+theConfigurationsReach {
+		return
+	}
+	if _, named := consultantsOfTheConfigurationsReach[key]; !named {
+		t.Errorf("%s: %s.%s asked in %s, which this file does not name as a consultant of the configuration's "+
+			"exception — a site that asks whether somebody named a path's place and then lets the path through, or "+
+			"holds it, for a reason of its own is a second home of that exception. Ask the consultant that already "+
+			"answers the question; if this is a new consultant, add it to consultantsOfTheConfigurationsReach with "+
+			"what it decides, in the same change.",
+			fset.Position(call.Pos()), theConfigurationsReachPackage, theConfigurationsReach, key)
+	}
+	consulting[key] = true
 }
 
 // declaredFunc is a production function the walk met, with the package directory

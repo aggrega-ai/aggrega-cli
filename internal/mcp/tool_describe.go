@@ -469,7 +469,10 @@ func (s *server) describeRelease(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	lf := loadReleaseLockfile(releasePath)
+	lf, refusal := tw.loadReleaseLockfile(releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{

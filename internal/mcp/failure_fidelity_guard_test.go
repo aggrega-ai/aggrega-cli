@@ -119,8 +119,13 @@ var proseOnlyFailureReturns = map[string]int{
 	// not drawn at that return, and the preview's result is a graph this answer
 	// reads one node's labels from and reports nothing else of, so there is
 	// nothing in hand to carry.
-	"tool_candidates.go":           14,
-	"tool_attachment_container.go": 7,
+	//
+	// One entry each refuses the lockfile beside that Release where it is a link
+	// leading out of the root its write is held to. It is read ahead of the
+	// preview, to build the view the preview resolves through, so no preview has
+	// run and there is no graph in hand.
+	"tool_candidates.go":           15,
+	"tool_attachment_container.go": 8,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
 	// promise a validity field a consumer reads across scopes.
@@ -158,8 +163,13 @@ var proseOnlyFailureReturns = map[string]int{
 	// definition, so there is none to carry; the account of where that Release
 	// reads local entities from, which is all else the lookup has, is carried in
 	// the refusal's own words.
-	"tool_validate.go": 19,
-	"tool_describe.go": 15,
+	//
+	// The Release scope of each refuses one more: the lockfile beside the Release
+	// where it is a link leading out of the root its write is held to. It is read
+	// to build the view the closure is resolved through, ahead of the resolution,
+	// so nothing has been resolved, validated or described at that return.
+	"tool_validate.go": 20,
+	"tool_describe.go": 16,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.

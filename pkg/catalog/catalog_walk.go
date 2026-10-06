@@ -127,13 +127,17 @@ func isYAMLDocument(path string) bool {
 // directory holds — the conventions check reports on each. named is the part of
 // dir's stack somebody named ([workspaceconfig.ResolvedWorkspace.NamedCatalogDirs]).
 //
-// It finds what it can: a directory it cannot enter is passed over, and so is a
-// link leading out of the root the directory is held to, which is not read and
-// hands visit nothing. A reader that must not pass over such a link — one a
-// compile depends on — asks the lookup's CheckLinks, which answers from this same
-// walk. An error visit returns stops the walk and is returned.
+// A directory it cannot enter is passed over, as the lookup's indexes pass it
+// over. A link leading out of the root the directory is held to is not read and
+// stops the walk with the [readscope.ErrReadLeadsOutOfWorkspace] halt naming the
+// link, as a compile's CheckLinks stops on it: a reader reading every document a
+// directory holds answers for all of them, and an answer that passed over a
+// document behind such a link in silence would read as complete. An error visit
+// returns stops the walk and is returned.
 func WalkDocuments(workspaceRoot, dir, cacheDir string, named []string, visit func(path string) error) error {
-	return findingWhatItCan(workspaceRoot, cacheDir, named).walk(dir, visit)
+	w := findingWhatItCan(workspaceRoot, cacheDir, named)
+	w.leadsOut = stopOn
+	return w.walk(dir, visit)
 }
 
 // findingWhatItCan is the walk that passes over an entry it cannot read and a

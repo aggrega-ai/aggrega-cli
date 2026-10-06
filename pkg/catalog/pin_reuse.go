@@ -99,16 +99,24 @@ type PinReuse struct {
 //
 // The lockfile is only ever read here, never written or removed: deciding what
 // to honor leaves the recorded pins exactly as they were, so a run that cannot
-// complete destroys nothing it never replaced.
-func PinReuseFromLockfile(lockfilePath, releasePath string, mode PinReuseMode, unpinnedTargets []string, warn func(notice string)) (PinReuse, error) {
+// complete destroys nothing it never replaced. The read is held to the root a
+// write of the lockfile is held to, for the workspace at workspaceRoot
+// ([lockfile.CheckRead]): a prior lockfile that is a link leading out of that root
+// halts the decision naming the link, rather than being read for its pins or
+// passed over as absent — pins taken from elsewhere on the machine would decide
+// what this run resolves.
+func PinReuseFromLockfile(workspaceRoot, lockfilePath, releasePath string, mode PinReuseMode, unpinnedTargets []string, warn func(notice string)) (PinReuse, error) {
 	var reuse PinReuse
 	if !mode.FullRefresh() {
 		// A prior lockfile that cannot be read is treated as absent: a default pull
 		// re-establishes its pins from scratch, and a targeted upgrade halts below
-		// because it has no pin set to reduce.
-		if lf, _, err := lockfile.LoadLockfile(lockfilePath); err == nil {
-			reuse.Prior = lf
+		// because it has no pin set to reduce. One that leads out is not unreadable
+		// but refused, and the refusal is the answer.
+		lf, err := lockfile.LoadIfReadable(workspaceRoot, lockfilePath)
+		if err != nil {
+			return PinReuse{}, err
 		}
+		reuse.Prior = lf
 	}
 	if mode.Targeted() {
 		if reuse.Prior == nil {

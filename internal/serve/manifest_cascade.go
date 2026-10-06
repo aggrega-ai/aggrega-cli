@@ -486,13 +486,14 @@ type linkScope struct {
 	resolved bool
 	// absRoot is the root made absolute, the coordinate a link is named in.
 	absRoot string
-	// authoringRelease is the file build.authoring_release names, resolved as
-	// the active-Release cascade's first step resolves it and then with its
-	// links resolved; empty where the setting is not set.
-	authoringRelease string
+	// releaseFiles are the files the configuration names as Releases: the one
+	// build.authoring_release names, resolved against the root as the
+	// active-Release cascade's first step resolves it, and every key of
+	// workspace.releases, each already the path of the file it names.
+	releaseFiles []string
 	// catalogDirs are the directories the configuration lists as catalog
 	// directories — the workspace's own, and those it gives a Release under
-	// workspace.releases — each with its links resolved.
+	// workspace.releases — as the configuration holds them once loaded.
 	catalogDirs []string
 }
 
@@ -504,14 +505,12 @@ func (l *linkScope) resolve() {
 	l.resolved = true
 	l.absRoot = absolutePath(l.root)
 	if l.cfg.Build.AuthoringRelease != "" {
-		l.authoringRelease = resolvedPath(resolveCascadePath(l.root, l.cfg.Build.AuthoringRelease))
+		l.releaseFiles = append(l.releaseFiles, resolveCascadePath(l.root, l.cfg.Build.AuthoringRelease))
 	}
-	listed := append([]string{}, l.cfg.Workspace.CatalogDirs...)
-	for _, entry := range l.cfg.Workspace.Releases.All() {
-		listed = append(append(listed, entry.CatalogDirs...), entry.CatalogDirsAppend...)
-	}
-	for _, dir := range listed {
-		l.catalogDirs = append(l.catalogDirs, resolvedPath(dir))
+	l.catalogDirs = append([]string{}, l.cfg.Workspace.CatalogDirs...)
+	for file, entry := range l.cfg.Workspace.Releases.All() {
+		l.releaseFiles = append(l.releaseFiles, file)
+		l.catalogDirs = append(append(l.catalogDirs, entry.CatalogDirs...), entry.CatalogDirsAppend...)
 	}
 }
 
@@ -532,15 +531,16 @@ func (l *linkScope) named(names []string, path string) []string {
 // document's kind; or a directory the configuration lists as a catalog directory,
 // for the workspace or for a Release.
 //
-// It is the one home of the configuration's exception to the workspace boundary,
-// for every walk of the workspace and every request naming a Release, so a Release
-// file and a catalog directory are judged alike: by the place the link leads,
-// compared resolved with what the configuration names, so a setting naming a link
-// and one naming the place it leads to name the same thing.
-// build.authoring_release is resolved the way the cascade's first step reads it; a
-// workspace.releases key is already the resolved path of the file it names, which
-// is how the configuration holds it once loaded, so it is looked up rather than
-// resolved again; a catalog directory is resolved once, by resolve.
+// It is the language server's answer to the configuration's exception to the
+// workspace boundary, for every walk of the workspace and every request naming a
+// Release, and it compares nothing itself: whether the configuration reaches the
+// place is workspaceconfig.Reaches, the one comparison every surface asks — the
+// catalog search stack deciding whether to append the conventional directory and
+// the root a catalog directory is held to among them — so a Release file and a
+// catalog directory are judged alike, by the place the link leads, and a setting
+// naming a link and one naming the place it leads to name the same thing. A
+// directory beneath a listed catalog directory is reached by it, as the catalog
+// walk of that directory reads it.
 //
 // The configuration is asked first, and the file is opened only where it names
 // it. The settings that name a Release are a Release's, so a file named there that
@@ -549,15 +549,9 @@ func (l *linkScope) configurationReaches(linked linkTarget) bool {
 	l.resolve()
 	switch {
 	case linked.dir:
-		for _, dir := range l.catalogDirs {
-			if dir == linked.target {
-				return true
-			}
-		}
-		return false
+		return workspaceconfig.Reaches(l.catalogDirs, linked.target)
 	case linked.file:
-		_, named := l.cfg.Workspace.Releases.Get(linked.target)
-		if !named && (l.authoringRelease == "" || l.authoringRelease != linked.target) {
+		if !workspaceconfig.Reaches(l.releaseFiles, linked.target) {
 			return false
 		}
 		content, err := os.ReadFile(linked.target)
@@ -571,16 +565,6 @@ func (l *linkScope) configurationReaches(linked linkTarget) bool {
 		return scalarAtPathOnDoc(&doc, []string{"kind"}) == "Release"
 	}
 	return false
-}
-
-// resolvedPath is p made absolute with its links resolved, or made absolute and
-// cleaned where its links cannot be resolved.
-func resolvedPath(p string) string {
-	p = absolutePath(p)
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		return resolved
-	}
-	return p
 }
 
 // absolutePath is p made absolute and cleaned, or p cleaned where the working
