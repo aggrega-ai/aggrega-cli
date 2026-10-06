@@ -458,17 +458,25 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // for post-loop assembly. See boundary_fr.go for the full lifecycle. The scope
 // is read from the FeatureRecipe, so it governs every attachment identically.
 //
-// Returns a map of prefixed paths (e.g. "features/api/mon/deployment.yaml")
-// to file contents (the FR's own generated files), plus a second map of
-// host-document modifications keyed by their original emitted path. A
-// component-scope FeatureRecipe's pipeline may /host PATCH the host
-// component's existing documents or /host EMIT new ones; both surface in the
-// hostPatched map. The orchestrator merges out and hostPatched into the host
-// node's dispatched file map via the per-path merge conduit — the host docs
-// were snapshotted before this sub-pass ran, so write-back must flow through
-// the return value, not by mutating state.EmittedFiles (inert post-snapshot).
+// An attachment whose FeatureRecipe declares it reads its callers' render facts,
+// and renders per component, is not rendered here: it is returned held, with the
+// pass value this turn captured, and the orchestrator renders it after every
+// node has rendered — through the same body, from the same host state, with its
+// output placed by the same routing. Every other attachment renders here, so a
+// node none of whose attachments declares it renders exactly as it would with no
+// such pass at all.
 //
-// The third return carries every attachment the orchestrator has to route as a
+// The output's files are a map of prefixed paths (e.g.
+// "features/api/mon/deployment.yaml") to file contents (the FR's own generated
+// files), and its hostPatched a second map of host-document modifications keyed
+// by their original emitted path. A component-scope FeatureRecipe's pipeline may
+// /host PATCH the host component's existing documents or /host EMIT new ones;
+// both surface in the hostPatched map. The orchestrator merges both into the host
+// node's dispatched file map via the per-path merge conduit — the host docs were
+// snapshotted before this sub-pass ran, so write-back must flow through the
+// return value, not by mutating state.EmittedFiles (inert post-snapshot).
+//
+// Its contributions carry every attachment the orchestrator has to route as a
 // contributor of the host's dispatch group, one entry per attachment. An entry
 // carries either the output handed to that group's assembler or the position the
 // output was written at instead, never both — and the output handed over is
@@ -516,19 +524,8 @@ func phaseB6(
 	hostProvider string,
 	hostNestsContributors bool,
 	renderCtx renderctx.RenderContext,
-) (map[string][]byte, map[string][]byte, []attachmentContribution, []DeferredPatch, error) {
-	out := map[string][]byte{}
-	hostPatched := map[string][]byte{}
-	var contributions []attachmentContribution
-	var deferred []DeferredPatch
+) (attachmentOutput, *heldAttachments, error) {
 	nodeID := state.NodeID
-
-	// Running host document set threaded across the attachment sequence: each
-	// component-scope FR's pipeline sees the host documents as modified by the
-	// FRs that ran before it (the Onion-order cascade), so a later FR patches on
-	// top of an earlier FR's host changes. Non-intermediate host docs only —
-	// intermediate fragments are not discrete /host targets.
-	runningHost := nonIntermediateFiles(hostOwn)
 
 	// The node's attachment entries supply the pillar the render context does
 	// not carry — the authored delivery pipe. Order comes from featureRefs (the
@@ -550,6 +547,34 @@ func phaseB6(
 			nodeAnnotations = hostNode.ReleaseAnnotations
 		}
 	}
+
+	// Everything an attachment's render reads of its host, held in one value. It
+	// is the value the declared pass after the node walk renders from too, which is
+	// what keeps an attachment rendered there from being handed anything its host's
+	// turn would not have handed it: the state, the context and the render context
+	// are the ones this turn holds, kept by reference rather than assembled again.
+	//
+	// The running host document set travels on it, threaded across the attachment
+	// sequence: each component-scope FR's pipeline sees the host documents as
+	// modified by the FRs that ran before it (the Onion-order cascade), so a later
+	// FR patches on top of an earlier FR's host changes. Non-intermediate host docs
+	// only — intermediate fragments are not discrete /host targets.
+	pass := &attachmentPass{
+		tmplCtx:               tmplCtx,
+		state:                 state,
+		engineFactory:         engineFactory,
+		recipeLookup:          recipeLookup,
+		nodeCtx:               nodeCtx,
+		input:                 input,
+		hostIsAssembler:       hostIsAssembler,
+		hostProvider:          hostProvider,
+		hostNestsContributors: hostNestsContributors,
+		renderCtx:             renderCtx,
+		nodeAnnotations:       nodeAnnotations,
+		runningHost:           nonIntermediateFiles(hostOwn),
+	}
+	out := newAttachmentOutput()
+	var held *heldAttachments
 
 	// ONE attachment render loop over ONE sequence. The sequence carries every
 	// attachment the node holds that has work here — a resource of its own to
@@ -574,350 +599,511 @@ func phaseB6(
 				ctx, fr, item.Instance, key, state, boundaryFRState,
 				nodeCtx, engineFactory, recipeLookup, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
+				return attachmentOutput{}, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
 
-		frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
-		// The connections made to the host, on this attachment's copy only. The copy
-		// holds its own context block by value, so setting the field here leaves the
-		// host's context — the one its own Recipe rendered against — without it.
-		frCtx.Context.UsedBy = state.InboundEdges
-
-		// What of this attachment's copy an author declared sensitive: the host's
-		// set for every pillar carried over from the host, the attachment's own
-		// Feature for the values and infra the copy carries in their place. Every
-		// template this attachment evaluates below is withheld by it.
-		_, pillarsFound := tmplCtx.AttachmentPillars(item.Instance)
-		frWithheld := hostWithheld{
-			host: state.Withheld,
-			attachment: func(string) resolver.SensitiveLeaves {
-				return declaredLeavesOf(input.declaredFeatureLeaves, item.FeatureType)
-			},
-		}
-		frKeys := frWithheld.forAttachment(item.Instance, pillarsFound, fr.Spec.Locals)
-
-		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
-			frWithheld.leaves(item.Instance, pillarsFound),
-		)
-		if err != nil {
-			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
-		}
-		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
-		// The delivery pipe and the resolved-fill provides are populated only
-		// for an attachment whose family carries them; both land after the
-		// locals evaluation, which reads neither.
-		if item.Inject != nil {
-			frCtx.Inject = item.Inject
-		}
-		if item.Provides != nil {
-			frCtx.Provides = *item.Provides
-		}
-
-		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries, frKeys)
-		if err != nil {
-			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
-		}
-
-		frEngine, err := engineFactory(fr.Spec.Capability)
-		if err != nil {
-			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
-		}
-
-		frNodeCtx := nodeCtx
-		// The copy above carries the HOST Component's sensitivity declarations,
-		// and those govern the host's own rendered keys. They name nothing this
-		// attachment renders, so a key of this render that merely shares a name
-		// with a leaf the host declared would be marked from a declaration no
-		// author wrote about it — and a consumer that begins withholding a value
-		// has no way to discover that it should not have. Overwritten rather than
-		// left inherited because a whole-struct copy names no field: nothing else
-		// on this line says which declarations travelled with it.
-		//
-		// What replaces them is what this attachment's OWN Feature declares, so a
-		// leaf its author declared sensitive is marked on its own render. The
-		// assembly is not written out here: it is the same rule the boundary scope
-		// applies, and two statements of it would agree on the day they were
-		// written and be free to diverge afterwards.
-		frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, item.FeatureType, input, frValues.KeysAreDeclaredLeaves)
-		// The host's marking over its own values is overwritten for the same reason:
-		// it describes the host Recipe's mapping, and this render carries the values
-		// this attachment's own mapping produced.
-		frNodeCtx.SensitiveValues = frValues.Sensitive
-		// This attachment is a contributor of its own, so the names its render
-		// derives are declared under its own label rather than the host node's.
-		// The sink is rewired for the same reason the boundary-scope render
-		// rewires its own: the copied context's sink records against the node,
-		// so a name this attachment's guest derived would be uncomparable
-		// against a sibling attachment's — the two would arrive as one declarer,
-		// and a collision between them would read as one contributor restating
-		// itself, which the group check rules legitimate.
-		//
-		// Whether this attachment's output is handed to its host's dispatch group
-		// takes BOTH coordinates, and each one alone answers a different question
-		// wrongly.
-		//
-		// The HOST's provider decides whether the group folds its contributors into one
-		// document at all — the group is keyed by the host's evaluated path and the
-		// host's provider, so nothing the attachment declares changes what that group
-		// does with what it holds. Reading the attachment's engine alone therefore
-		// hands fragments to a group that folds nothing, and they are lost in silence,
-		// because such a group never reads the map they would travel in.
-		//
-		// The ATTACHMENT's provider decides whether what it rendered is something that
-		// group's assembler can read. An attachment names its own capability and need
-		// not name the host's; an assembler consumes fragments in its own target's
-		// shape, so a document rendered for a different target is not a contribution to
-		// it but an unrelated file. Handing one over is lost just as silently — the
-		// assembler parses it, finds none of the sections it models, and folds nothing.
-		//
-		// So the output is handed over only where the host's group folds AND this
-		// attachment rendered through the same target that group assembles for.
-		// Everything else writes under the attachment's own output prefix, which is
-		// where it has always been written.
-		//
-		// It is settled before the render because the sink below closes over the
-		// answer: a disposition settled after a crossing had already declared into the
-		// sink would label that crossing's names with the wrong answer.
-		//
-		// 🔴 The disposition is stated, never inferred from the label. A
-		// boundary-scope attachment carries a label of the same shape and reaches its
-		// assembler by a different route — its own dispatch group, under its own
-		// provider — so a reader keying on the shape would answer the same for both and
-		// would be wrong for one of them.
-		attachmentJoinsHostAssembly := hostIsAssembler &&
-			ProviderEngineKind(fr.Spec.Capability) == hostProvider
-		attachmentPlacedStandalone := !attachmentJoinsHostAssembly
-		attachmentProducer := derivedKeyProducerFor(producerKindComponent, nodeID, item.Instance)
-		attachmentContributor := derivedKeyContributorFor(attachmentProducer, attachmentPlacedStandalone)
-		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
-			state.DerivedKeys.declare(attachmentContributor, declared)
-		}
-		// The facts this attachment's guest reports are rewired for the same reason:
-		// the copied sink records the host's OWN render, and a fact arriving there
-		// would read as something the host emitted. They are recorded under this
-		// attachment's instance name instead, beside the host's.
-		frNodeCtx.RenderFactSink = func(reported []RenderFact) {
-			state.recordAttachmentRenderFacts(item.Instance, reported)
-		}
-		// The document this attachment's FeatureRecipe was declared in: what a
-		// relative source its template produces is resolved against, and what a
-		// diagnostic raised inside its render names as its location. An entity
-		// carrying no document on disk reports none, and both readers treat that as
-		// the absence it is.
-		frDocument := recipeLookup.featureRecipeDocument(fr)
-		// The attachment's source template is evaluated before it is resolved, and
-		// the order is the component path's own: what the render resolves is the
-		// value the template produced, anchored to the document that declared it.
-		// The locals were merged onto frCtx immediately above, so the template reads
-		// the same resolved values every other template of this attachment reads.
-		//
-		// The identity and the instance name are the ones this attachment's locals
-		// were evaluated with, passed through so the two surfaces publish one
-		// denotation of .context.instance_id and .attachment_name.
-		evaluatedSource, err := EvaluateFeatureRecipeSource(
-			fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
-		)
-		if err != nil {
-			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
-		}
-		evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
-		if err != nil {
-			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
-		}
-		frNodeCtx.OriginalSource = evaluatedSource
-		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument,
-			sourceOrigin{authored: fr.Spec.Source, withheld: frKeys})
-		if err != nil {
-			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
-		}
-		frNodeCtx.Source = resolvedSrc
-		frNodeCtx.SourceIgnore = localSourceIgnore(input, evaluatedSource, frDocument)
-
-		// Return the helper error directly: its internal errors (the central
-		// gate's uniform capability diagnostic, engine.Render failures, and the
-		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
-		// re-wrapping would bury the gate diagnostic the user needs to see.
-		// The owner is (this node, this attachment). Both coordinates are needed:
-		// two attachments on one node carry independently authored documents, and
-		// nothing makes one's output names distinct from the other's or from the
-		// node's own. It carries this render's presentation too, so the rule declared
-		// over the owner's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
-			input.RecordedPins.For(frDocument), item.Identity,
-			ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
-			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
-			nodeAnnotations, input.CatalogLookup.ProviderPlugin, frKeys)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		// The label value that render derived joins this node's own declaration
-		// set, which is where its dispatch group reads every declaration this node
-		// is responsible for. Declared as each attachment's render returns, one
-		// declaration per render, which is the unit the check's within-one-
-		// declaration half is defined over.
-		//
-		// Declared under THIS ATTACHMENT's label rather than the host node's, which
-		// is what the coverage rests on: every contributor's declarations reach the
-		// group under its own label, so two attachments reaching one label value are
-		// two declarers rather than one contributor restating itself. The attachment
-		// key is a coordinate of the value being declared, since the value is derived
-		// from it, so it is a coordinate of the label too.
-		//
-		// 🔴 The bound, because an unstated one reads as full coverage. This value
-		// travels with the disposition above, and the disposition says the output it
-		// labels is placed standalone — so on a provider that folds its group's
-		// output into one document, two attachments reaching one label value are
-		// compared only within themselves and do not halt. The requirement this value
-		// carries is wider than one document: it is unique across contributors,
-		// because two of them reaching one value hand one provenance to two different
-		// sets of resources. It is reached only where a composed identity had to be
-		// shortened, the composition being injective wherever it fits its target's
-		// bound. An attachment and a boundary-scope feature are excluded by
-		// construction rather than by this: their identities compose under different
-		// scopes and can never meet.
-		if frComponentID != "" {
-			state.DerivedKeys.declareDerived(attachmentContributor, componentIDKeySpace, frComponentID)
-		}
-
-		// Component-scope FeatureRecipe pipeline. Every attachment's
-		// FeatureRecipe runs its pipeline here — the pipeline is a property of
-		// the FeatureRecipe, so a credential can transform the host component's
-		// rendered documents on invitation exactly as an operational attachment
-		// can.
-		//
-		// Flat host (the common case): own + host run together per-node. own is
-		// the FR's own generated files; host is the running host-document set
-		// (the host component's own docs, modified by FRs that ran earlier in
-		// the sequence), so a /host PATCH rewrites a host doc and threads forward
-		// for a later FR to see.
-		//
-		// Assembler host (compose): the host's per-node output is pre-assembly
-		// fragments — assembly merges them into one document only later, so there
-		// is no discrete host document for the guest to content-select per-node.
-		// The host-scope pipeline is therefore DEFERRED whole to the
-		// post-assembly phase, which replays it against the merged document. The
-		// FR's own output (its artifacts / synthesized resources) is already
-		// rendered above; only its pipeline's host work defers.
-		//
-		// Own-scope-on-assembler via a component-scope FeatureRecipe: a
-		// FeatureRecipe's own output is emitted under the attachment's own output
-		// prefix as discrete files — it is NOT routed to a BoundaryAssembler (only a
-		// component's own render output is), so there is no merged document for a
-		// post-assembly /own replay to target. An /own PATCH against an
-		// FR-rendered assembler fragment therefore stays a per-node concern and
-		// trips the executor's own-fragment guard loudly (correct: there is
-		// genuinely no discrete document and nothing to defer to). The replayable
-		// own-on-assembler case is a COMPONENT Recipe whose own provider is an
-		// assembler — handled at the orchestrator, whose own render output IS
-		// assembled. So this branch defers only the host scope.
-		if len(fr.Spec.Pipeline) > 0 {
-			// The steps read this attachment's context without the connections made
-			// to the host. A step may rewrite the host's own documents, and one that
-			// could read who connects would make the host's rendered bytes depend on
-			// it — the one dependency the host's render is kept free of. The copy is
-			// taken after the render above, so the steps still see every pillar the
-			// render resolved.
-			pipelineCtx := frCtx
-			pipelineCtx.Context.UsedBy = nil
-			if hostIsAssembler {
-				// Record the FR's pipeline for post-assembly replay. The host
-				// node and provider are stamped here; the orchestrator adds the
-				// host-node author-order key. HostProvider drives the host-scope
-				// codec on replay; OwnProvider is empty — this record carries no
-				// replayable own scope (see above). An own-scope step in such a
-				// record has no merged document to address, and the rule over an
-				// attachment's own-scope steps against a merging component reports
-				// it before this render reaches here.
-				deferred = append(deferred, DeferredPatch{
-					Steps:             fr.Spec.Pipeline,
-					WithCtx:           &pipelineCtx,
-					Withheld:          frKeys,
-					RenderCtx:         renderCtx,
-					HostProvider:      hostProvider,
-					NodeID:            nodeID,
-					FRInstance:        item.Instance,
-					FeatureOrderIndex: seqIndex,
-				})
-			} else {
-				// own provider is the FR's own engine kind (version pin stripped —
-				// the codec keys on the kind); host provider is the host component's
-				// recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &pipelineCtx, frKeys, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
-				if perr != nil {
-					return nil, nil, nil, nil, perr
-				}
-				frFiles = pres.Own
-				state.Warnings = append(state.Warnings, pres.Warnings...)
-				for path, content := range pres.HostPatched {
-					hostPatched[path] = content
-					runningHost = applyHostPatchToRunning(runningHost, path, content)
-				}
+		// An attachment whose FeatureRecipe declares it reads its callers' render
+		// facts is held for the pass after every node has rendered, and is
+		// otherwise untouched: it renders there through this same body, from this
+		// same pass value, in the position it holds in this sequence.
+		if rendersAfterTheNodes(fr) {
+			if held == nil {
+				held = &heldAttachments{pass: pass}
 			}
+			held.items = append(held.items, heldAttachment{seqIndex: seqIndex, item: item})
+			continue
 		}
 
-		// Route this attachment's output by the disposition settled above, which is
-		// the host's. Handed to the group, it is NOT written here; written here, it
-		// lands under the attachment's own output prefix exactly where it has always
-		// landed. The two arms are complements, so nothing is delivered twice and no
-		// path moves.
-		//
-		// The whole of the attachment's output takes one arm rather than each file
-		// taking its own, because the question is what the group does with what it
-		// holds and the group answers once for this attachment. Splitting per file
-		// would ask each rendered file a question only the pair of providers answers.
-		var fragments []EmittedFile
-		var ownFiles []EmittedFile
-		if attachmentJoinsHostAssembly {
-			fragments = frFiles
-		} else if hostNestsContributors {
-			// A host whose group places each contributor at a position of its own
-			// places this attachment at one too — BESIDE the host rather than
-			// inside it. So the files are carried out under their own names and
-			// keyed under the attachment's own key, and the group composes the
-			// position from the coordinates that identify it.
-			//
-			// Beside rather than within, because within is not a position the
-			// host's target reads: a group's target discovers its contributors at
-			// the positions the group gives them, and output sitting below one of
-			// those positions belongs to that contributor rather than being a
-			// contributor. Keying these files inside the host's map is what left
-			// them unread — present in the output, addressed by nothing, with the
-			// build reporting success.
-			ownFiles = frFiles
-		} else {
-			// A group giving no contributor a position of its own has nowhere to
-			// put this attachment, so its coordinates go into the FILENAME and its
-			// files land beside the host's own, in the host's map, under the host's
-			// key. The host's own entry is what names that position.
-			outputPrefix := item.Identity.outputPrefix()
-			for _, f := range frFiles {
-				out[outputPrefix+f.Name] = f.Body
-			}
-		}
-		if len(fragments) > 0 || len(ownFiles) > 0 {
-			// The coordinates travel with the fragments rather than being recovered
-			// downstream: the dispatch identity joins its parts with characters either
-			// part may contain, so cutting it apart cannot return what went in. The
-			// basis is the identity this attachment's render derived its own names
-			// from, read through the one home of that fallback — so the name declared
-			// while rendering and the name the assembled artifact addresses that
-			// content by come from one identity rather than two that happen to agree.
-			contributions = append(contributions, attachmentContribution{
-				nodeID:    item.Identity.dispatchNodeID(),
-				producer:  attachmentProducer,
-				nameBasis: TargetNameBasis(frNodeCtx),
-				fragments: fragments,
-				files:     ownFiles,
-				values:    frValues.Resolved,
-			})
+		if err := pass.render(ctx, seqIndex, item, false, &out); err != nil {
+			return attachmentOutput{}, nil, err
 		}
 	}
 
 	state.PhaseReached = 6
-	return out, hostPatched, contributions, deferred, nil
+	return out, held, nil
+}
+
+// readsCallerRenderFacts reports whether a FeatureRecipe declares that its
+// templates read what its callers rendered. It is the one reading of that
+// declaration, so the render deciding where an attachment renders and the rule
+// refusing a template that reads the facts undeclared cannot come to read it
+// differently.
+func readsCallerRenderFacts(fr *types.FeatureRecipe) bool {
+	return fr != nil && fr.Spec.ReadsCallerRenderFacts
+}
+
+// rendersAfterTheNodes reports whether an attachment of fr renders in the pass
+// after every node has rendered rather than in its host's turn: it does exactly
+// when its FeatureRecipe declares it reads its callers' render facts and renders
+// per component.
+//
+// A FeatureRecipe that renders once for a boundary is not held, whatever it
+// declares. Such a render belongs to the boundary rather than to any component,
+// and where it renders is settled by its own dispatch.
+func rendersAfterTheNodes(fr *types.FeatureRecipe) bool {
+	return readsCallerRenderFacts(fr) && fr.Spec.ExecutionScope != executionScopeBoundary
+}
+
+// attachmentOutput is what one run of the component-scope attachment render hands
+// the orchestrator to place in the host's dispatch group: files written into the
+// host's own file map, host documents a pipeline rewrote or added keyed by their
+// emitted path, the attachments to route as contributors of the group, and the
+// host-scope pipelines deferred to the group's assembly.
+//
+// It is produced twice for a node carrying an attachment held for the pass after
+// the node walk — once in the host's turn, once in that pass — and both are
+// placed by the same routing, which is what makes an attachment rendered in the
+// later pass land exactly where one rendered in the host's turn does.
+type attachmentOutput struct {
+	files         map[string][]byte
+	hostPatched   map[string][]byte
+	contributions []attachmentContribution
+	deferred      []DeferredPatch
+}
+
+// newAttachmentOutput returns an empty output with its maps allocated, so a render
+// writes into it without checking.
+func newAttachmentOutput() attachmentOutput {
+	return attachmentOutput{files: map[string][]byte{}, hostPatched: map[string][]byte{}}
+}
+
+// attachmentPass is everything a component-scope attachment's render reads of
+// its host, captured in the host's turn.
+//
+// It is one value because the attachment pass runs at two moments — in the
+// host's turn, and after every node has rendered for an attachment that reads
+// its callers' render facts — and both must render from the same host state. The
+// fields are the host's own values, held by reference where they are references:
+// the state an attachment records its derived names, facts and warnings onto is
+// the host's, and the context it derives its own from is the one the host
+// rendered against. Nothing here is recomputed for the later pass, because a
+// recomputation is a second derivation that agrees only until it does not.
+//
+// runningHost is the one field the pass itself moves: each attachment's pipeline
+// sees the host documents as every attachment rendered before it left them.
+type attachmentPass struct {
+	tmplCtx               *types.TemplateContext
+	state                 *PhaseBState
+	engineFactory         EngineFactory
+	recipeLookup          RecipeLookup
+	nodeCtx               NodeRenderContext
+	input                 RendererInput
+	hostIsAssembler       bool
+	hostProvider          string
+	hostNestsContributors bool
+	renderCtx             renderctx.RenderContext
+	nodeAnnotations       types.OrderedMap[string]
+	runningHost           []EmittedFile
+}
+
+// heldAttachments are the attachments of one host held for the pass after every
+// node has rendered, in the order they hold in the host's sequence, beside the
+// pass value their host's turn captured.
+type heldAttachments struct {
+	pass  *attachmentPass
+	items []heldAttachment
+}
+
+// heldAttachment is one held attachment and the position it holds in its host's
+// attachment sequence — the position a deferred host-scope pipeline is replayed
+// at, which is the same whichever pass the attachment rendered in.
+type heldAttachment struct {
+	seqIndex int
+	item     attachmentRenderItem
+}
+
+// heldAttachmentHost is one node carrying an attachment held for the pass after
+// the node walk, with the coordinates its own turn settled for placing that
+// attachment's output: the dispatch group it joined and its position in the walk,
+// which orders a deferred host-scope pipeline's replay.
+type heldAttachmentHost struct {
+	nodeID       string
+	boundaryPath string
+	nodeOrder    int
+	key          dispatchKey
+	held         *heldAttachments
+}
+
+// render renders every held attachment of one host, in sequence order, each
+// handed the render facts its host's callers reported.
+//
+// What the callers reported is gathered once by the caller of this method, from
+// every node's record as its own turn left it, and handed to every held
+// attachment of the host alike: a held attachment never reads what another held
+// attachment rendered, which is what keeps the pass free of any order among held
+// attachments.
+func (h *heldAttachments) render(ctx context.Context, callers []callerRenderFacts) (attachmentOutput, error) {
+	out := newAttachmentOutput()
+	for _, held := range h.items {
+		item := held.item
+		item.CallerRenderFacts = callers
+		if err := h.pass.render(ctx, held.seqIndex, item, true, &out); err != nil {
+			return attachmentOutput{}, err
+		}
+	}
+	return out, nil
+}
+
+// render renders one component-scope attachment of the pass's host into out.
+//
+// afterTheNodes says which pass it renders in, and it is recorded rather than
+// read: the render itself is the same body at either moment.
+func (p *attachmentPass) render(
+	ctx context.Context,
+	seqIndex int,
+	item attachmentRenderItem,
+	afterTheNodes bool,
+	out *attachmentOutput,
+) error {
+	fr := item.FR
+	nodeID := p.state.NodeID
+	tmplCtx, state, input, nodeCtx := p.tmplCtx, p.state, p.input, p.nodeCtx
+	engineFactory, recipeLookup := p.engineFactory, p.recipeLookup
+	hostIsAssembler, hostProvider, hostNestsContributors := p.hostIsAssembler, p.hostProvider, p.hostNestsContributors
+	renderCtx, nodeAnnotations := p.renderCtx, p.nodeAnnotations
+
+	// What this render is handed of its host's callers' renders, recorded with the
+	// pass it renders in. Nothing on the attachment's context carries it.
+	input.attachmentRenders.record(item.Identity, afterTheNodes, item.CallerRenderFacts)
+
+	frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
+	// The connections made to the host, on this attachment's copy only. The copy
+	// holds its own context block by value, so setting the field here leaves the
+	// host's context — the one its own Recipe rendered against — without it.
+	frCtx.Context.UsedBy = state.InboundEdges
+
+	// What of this attachment's copy an author declared sensitive: the host's
+	// set for every pillar carried over from the host, the attachment's own
+	// Feature for the values and infra the copy carries in their place. Every
+	// template this attachment evaluates below is withheld by it.
+	_, pillarsFound := tmplCtx.AttachmentPillars(item.Instance)
+	frWithheld := hostWithheld{
+		host: state.Withheld,
+		attachment: func(string) resolver.SensitiveLeaves {
+			return declaredLeavesOf(input.declaredFeatureLeaves, item.FeatureType)
+		},
+	}
+	frKeys := frWithheld.forAttachment(item.Instance, pillarsFound, fr.Spec.Locals)
+
+	frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
+		fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
+		frWithheld.leaves(item.Instance, pillarsFound),
+	)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
+	}
+	frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
+	// The delivery pipe and the resolved-fill provides are populated only
+	// for an attachment whose family carries them; both land after the
+	// locals evaluation, which reads neither.
+	if item.Inject != nil {
+		frCtx.Inject = item.Inject
+	}
+	if item.Provides != nil {
+		frCtx.Provides = *item.Provides
+	}
+
+	frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries, frKeys)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
+	}
+
+	frEngine, err := engineFactory(fr.Spec.Capability)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
+	}
+
+	frNodeCtx := nodeCtx
+	// The copy above carries the HOST Component's sensitivity declarations,
+	// and those govern the host's own rendered keys. They name nothing this
+	// attachment renders, so a key of this render that merely shares a name
+	// with a leaf the host declared would be marked from a declaration no
+	// author wrote about it — and a consumer that begins withholding a value
+	// has no way to discover that it should not have. Overwritten rather than
+	// left inherited because a whole-struct copy names no field: nothing else
+	// on this line says which declarations travelled with it.
+	//
+	// What replaces them is what this attachment's OWN Feature declares, so a
+	// leaf its author declared sensitive is marked on its own render. The
+	// assembly is not written out here: it is the same rule the boundary scope
+	// applies, and two statements of it would agree on the day they were
+	// written and be free to diverge afterwards.
+	frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, item.FeatureType, input, frValues.KeysAreDeclaredLeaves)
+	// The host's marking over its own values is overwritten for the same reason:
+	// it describes the host Recipe's mapping, and this render carries the values
+	// this attachment's own mapping produced.
+	frNodeCtx.SensitiveValues = frValues.Sensitive
+	// This attachment is a contributor of its own, so the names its render
+	// derives are declared under its own label rather than the host node's.
+	// The sink is rewired for the same reason the boundary-scope render
+	// rewires its own: the copied context's sink records against the node,
+	// so a name this attachment's guest derived would be uncomparable
+	// against a sibling attachment's — the two would arrive as one declarer,
+	// and a collision between them would read as one contributor restating
+	// itself, which the group check rules legitimate.
+	//
+	// Whether this attachment's output is handed to its host's dispatch group
+	// takes BOTH coordinates, and each one alone answers a different question
+	// wrongly.
+	//
+	// The HOST's provider decides whether the group folds its contributors into one
+	// document at all — the group is keyed by the host's evaluated path and the
+	// host's provider, so nothing the attachment declares changes what that group
+	// does with what it holds. Reading the attachment's engine alone therefore
+	// hands fragments to a group that folds nothing, and they are lost in silence,
+	// because such a group never reads the map they would travel in.
+	//
+	// The ATTACHMENT's provider decides whether what it rendered is something that
+	// group's assembler can read. An attachment names its own capability and need
+	// not name the host's; an assembler consumes fragments in its own target's
+	// shape, so a document rendered for a different target is not a contribution to
+	// it but an unrelated file. Handing one over is lost just as silently — the
+	// assembler parses it, finds none of the sections it models, and folds nothing.
+	//
+	// So the output is handed over only where the host's group folds AND this
+	// attachment rendered through the same target that group assembles for.
+	// Everything else writes under the attachment's own output prefix, which is
+	// where it has always been written.
+	//
+	// It is settled before the render because the sink below closes over the
+	// answer: a disposition settled after a crossing had already declared into the
+	// sink would label that crossing's names with the wrong answer.
+	//
+	// 🔴 The disposition is stated, never inferred from the label. A
+	// boundary-scope attachment carries a label of the same shape and reaches its
+	// assembler by a different route — its own dispatch group, under its own
+	// provider — so a reader keying on the shape would answer the same for both and
+	// would be wrong for one of them.
+	attachmentJoinsHostAssembly := hostIsAssembler &&
+		ProviderEngineKind(fr.Spec.Capability) == hostProvider
+	attachmentPlacedStandalone := !attachmentJoinsHostAssembly
+	attachmentProducer := derivedKeyProducerFor(producerKindComponent, nodeID, item.Instance)
+	attachmentContributor := derivedKeyContributorFor(attachmentProducer, attachmentPlacedStandalone)
+	frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
+		state.DerivedKeys.declare(attachmentContributor, declared)
+	}
+	// The facts this attachment's guest reports are rewired for the same reason:
+	// the copied sink records the host's OWN render, and a fact arriving there
+	// would read as something the host emitted. They are recorded under this
+	// attachment's instance name instead, beside the host's.
+	frNodeCtx.RenderFactSink = func(reported []RenderFact) {
+		state.recordAttachmentRenderFacts(item.Instance, reported)
+	}
+	// The document this attachment's FeatureRecipe was declared in: what a
+	// relative source its template produces is resolved against, and what a
+	// diagnostic raised inside its render names as its location. An entity
+	// carrying no document on disk reports none, and both readers treat that as
+	// the absence it is.
+	frDocument := recipeLookup.featureRecipeDocument(fr)
+	// The attachment's source template is evaluated before it is resolved, and
+	// the order is the component path's own: what the render resolves is the
+	// value the template produced, anchored to the document that declared it.
+	// The locals were merged onto frCtx immediately above, so the template reads
+	// the same resolved values every other template of this attachment reads.
+	//
+	// The identity and the instance name are the ones this attachment's locals
+	// were evaluated with, passed through so the two surfaces publish one
+	// denotation of .context.instance_id and .attachment_name.
+	evaluatedSource, err := EvaluateFeatureRecipeSource(
+		fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
+	)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
+	}
+	evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
+	}
+	frNodeCtx.OriginalSource = evaluatedSource
+	resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument,
+		sourceOrigin{authored: fr.Spec.Source, withheld: frKeys})
+	if err != nil {
+		return wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
+	}
+	frNodeCtx.Source = resolvedSrc
+	frNodeCtx.SourceIgnore = localSourceIgnore(input, evaluatedSource, frDocument)
+
+	// Return the helper error directly: its internal errors (the central
+	// gate's uniform capability diagnostic, engine.Render failures, and the
+	// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
+	// re-wrapping would bury the gate diagnostic the user needs to see.
+	// The owner is (this node, this attachment). Both coordinates are needed:
+	// two attachments on one node carry independently authored documents, and
+	// nothing makes one's output names distinct from the other's or from the
+	// node's own. It carries this render's presentation too, so the rule declared
+	// over the owner's facts can be asked inside the walk that records them.
+	frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
+		input.RecordedPins.For(frDocument), item.Identity,
+		ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
+		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
+		nodeAnnotations, input.CatalogLookup.ProviderPlugin, frKeys)
+	if err != nil {
+		return err
+	}
+	// The label value that render derived joins this node's own declaration
+	// set, which is where its dispatch group reads every declaration this node
+	// is responsible for. Declared as each attachment's render returns, one
+	// declaration per render, which is the unit the check's within-one-
+	// declaration half is defined over.
+	//
+	// Declared under THIS ATTACHMENT's label rather than the host node's, which
+	// is what the coverage rests on: every contributor's declarations reach the
+	// group under its own label, so two attachments reaching one label value are
+	// two declarers rather than one contributor restating itself. The attachment
+	// key is a coordinate of the value being declared, since the value is derived
+	// from it, so it is a coordinate of the label too.
+	//
+	// 🔴 The bound, because an unstated one reads as full coverage. This value
+	// travels with the disposition above, and the disposition says the output it
+	// labels is placed standalone — so on a provider that folds its group's
+	// output into one document, two attachments reaching one label value are
+	// compared only within themselves and do not halt. The requirement this value
+	// carries is wider than one document: it is unique across contributors,
+	// because two of them reaching one value hand one provenance to two different
+	// sets of resources. It is reached only where a composed identity had to be
+	// shortened, the composition being injective wherever it fits its target's
+	// bound. An attachment and a boundary-scope feature are excluded by
+	// construction rather than by this: their identities compose under different
+	// scopes and can never meet.
+	if frComponentID != "" {
+		state.DerivedKeys.declareDerived(attachmentContributor, componentIDKeySpace, frComponentID)
+	}
+
+	// Component-scope FeatureRecipe pipeline. Every attachment's
+	// FeatureRecipe runs its pipeline here — the pipeline is a property of
+	// the FeatureRecipe, so a credential can transform the host component's
+	// rendered documents on invitation exactly as an operational attachment
+	// can.
+	//
+	// Flat host (the common case): own + host run together per-node. own is
+	// the FR's own generated files; host is the running host-document set
+	// (the host component's own docs, modified by FRs that ran earlier in
+	// the sequence), so a /host PATCH rewrites a host doc and threads forward
+	// for a later FR to see.
+	//
+	// Assembler host (compose): the host's per-node output is pre-assembly
+	// fragments — assembly merges them into one document only later, so there
+	// is no discrete host document for the guest to content-select per-node.
+	// The host-scope pipeline is therefore DEFERRED whole to the
+	// post-assembly phase, which replays it against the merged document. The
+	// FR's own output (its artifacts / synthesized resources) is already
+	// rendered above; only its pipeline's host work defers.
+	//
+	// Own-scope-on-assembler via a component-scope FeatureRecipe: a
+	// FeatureRecipe's own output is emitted under the attachment's own output
+	// prefix as discrete files — it is NOT routed to a BoundaryAssembler (only a
+	// component's own render output is), so there is no merged document for a
+	// post-assembly /own replay to target. An /own PATCH against an
+	// FR-rendered assembler fragment therefore stays a per-node concern and
+	// trips the executor's own-fragment guard loudly (correct: there is
+	// genuinely no discrete document and nothing to defer to). The replayable
+	// own-on-assembler case is a COMPONENT Recipe whose own provider is an
+	// assembler — handled at the orchestrator, whose own render output IS
+	// assembled. So this branch defers only the host scope.
+	if len(fr.Spec.Pipeline) > 0 {
+		// The steps read this attachment's context without the connections made
+		// to the host. A step may rewrite the host's own documents, and one that
+		// could read who connects would make the host's rendered bytes depend on
+		// it — the one dependency the host's render is kept free of. The copy is
+		// taken after the render above, so the steps still see every pillar the
+		// render resolved.
+		pipelineCtx := frCtx
+		pipelineCtx.Context.UsedBy = nil
+		if hostIsAssembler {
+			// Record the FR's pipeline for post-assembly replay. The host
+			// node and provider are stamped here; the orchestrator adds the
+			// host-node author-order key. HostProvider drives the host-scope
+			// codec on replay; OwnProvider is empty — this record carries no
+			// replayable own scope (see above). An own-scope step in such a
+			// record has no merged document to address, and the rule over an
+			// attachment's own-scope steps against a merging component reports
+			// it before this render reaches here.
+			out.deferred = append(out.deferred, DeferredPatch{
+				Steps:             fr.Spec.Pipeline,
+				WithCtx:           &pipelineCtx,
+				Withheld:          frKeys,
+				RenderCtx:         renderCtx,
+				HostProvider:      hostProvider,
+				NodeID:            nodeID,
+				FRInstance:        item.Instance,
+				FeatureOrderIndex: seqIndex,
+			})
+		} else {
+			// own provider is the FR's own engine kind (version pin stripped —
+			// the codec keys on the kind); host provider is the host component's
+			// recipe engine kind (threaded in from the orchestrator).
+			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, p.runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &pipelineCtx, frKeys, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+			if perr != nil {
+				return perr
+			}
+			frFiles = pres.Own
+			state.Warnings = append(state.Warnings, pres.Warnings...)
+			for path, content := range pres.HostPatched {
+				out.hostPatched[path] = content
+				p.runningHost = applyHostPatchToRunning(p.runningHost, path, content)
+			}
+		}
+	}
+
+	// Route this attachment's output by the disposition settled above, which is
+	// the host's. Handed to the group, it is NOT written here; written here, it
+	// lands under the attachment's own output prefix exactly where it has always
+	// landed. The two arms are complements, so nothing is delivered twice and no
+	// path moves.
+	//
+	// The whole of the attachment's output takes one arm rather than each file
+	// taking its own, because the question is what the group does with what it
+	// holds and the group answers once for this attachment. Splitting per file
+	// would ask each rendered file a question only the pair of providers answers.
+	var fragments []EmittedFile
+	var ownFiles []EmittedFile
+	if attachmentJoinsHostAssembly {
+		fragments = frFiles
+	} else if hostNestsContributors {
+		// A host whose group places each contributor at a position of its own
+		// places this attachment at one too — BESIDE the host rather than
+		// inside it. So the files are carried out under their own names and
+		// keyed under the attachment's own key, and the group composes the
+		// position from the coordinates that identify it.
+		//
+		// Beside rather than within, because within is not a position the
+		// host's target reads: a group's target discovers its contributors at
+		// the positions the group gives them, and output sitting below one of
+		// those positions belongs to that contributor rather than being a
+		// contributor. Keying these files inside the host's map is what left
+		// them unread — present in the output, addressed by nothing, with the
+		// build reporting success.
+		ownFiles = frFiles
+	} else {
+		// A group giving no contributor a position of its own has nowhere to
+		// put this attachment, so its coordinates go into the FILENAME and its
+		// files land beside the host's own, in the host's map, under the host's
+		// key. The host's own entry is what names that position.
+		outputPrefix := item.Identity.outputPrefix()
+		for _, f := range frFiles {
+			out.files[outputPrefix+f.Name] = f.Body
+		}
+	}
+	if len(fragments) > 0 || len(ownFiles) > 0 {
+		// The coordinates travel with the fragments rather than being recovered
+		// downstream: the dispatch identity joins its parts with characters either
+		// part may contain, so cutting it apart cannot return what went in. The
+		// basis is the identity this attachment's render derived its own names
+		// from, read through the one home of that fallback — so the name declared
+		// while rendering and the name the assembled artifact addresses that
+		// content by come from one identity rather than two that happen to agree.
+		out.contributions = append(out.contributions, attachmentContribution{
+			nodeID:    item.Identity.dispatchNodeID(),
+			producer:  attachmentProducer,
+			nameBasis: TargetNameBasis(frNodeCtx),
+			fragments: fragments,
+			files:     ownFiles,
+			values:    frValues.Resolved,
+		})
+	}
+	return nil
 }
 
 // attachmentContribution is one component-scope attachment's output where that
@@ -1006,6 +1192,12 @@ type attachmentRenderItem struct {
 	Inject      *types.InjectPipe
 	Provides    *types.OrderedMap[string]
 	Identity    attachmentIdentity
+	// CallerRenderFacts are what the host's callers reported about their renders,
+	// one entry per connection made to the host, in the order the host's inbound
+	// connections are held. It is set only for an attachment rendered in the pass
+	// after every node has rendered, and is nil for every other: an attachment
+	// rendered in its host's turn renders before some of its callers have.
+	CallerRenderFacts []callerRenderFacts
 }
 
 // attachmentRenderSequence assembles the one ordered sequence Phase B.6

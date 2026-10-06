@@ -226,6 +226,18 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	derivedNames *derivedNameSets
+
+	// attachmentRenders is the render's record of every component-scope
+	// attachment's render: which pass it rendered in, and what it was handed of
+	// its host's callers' renders.
+	//
+	// It is published here because neither leaves a mark on an output that reads
+	// none of it, so a reader asking where an attachment rendered, or what it was
+	// handed, has this and nothing else. Its only reader is this package's tests.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	attachmentRenders *attachmentRenderLog
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -933,6 +945,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rule over an attachment template that reads its callers' render facts
+		// while its FeatureRecipe does not declare it, asked against the same
+		// presentation and the same enumeration. It is here, ahead of the node walk,
+		// because the declaration it reads is what decides where in the walk such an
+		// attachment renders — so the refusal is reported against the field the author
+		// wrote before anything renders, rather than after.
+		if err := runCallerRenderFactsRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The rules over the text a Recipe wrote for each of its locals, asked here
 		// for the same reason and against the same presentation. They are asked
 		// AFTER the provides reading and BEFORE the pass below, and both halves of
@@ -1107,6 +1129,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	input.emitted = newEmittedProjections()
 	result.emitted = input.emitted
 
+	// Install this render's record of every component-scope attachment's render.
+	// It is installed beside the retentions above and travels the same way — onto
+	// the travelling input, which reaches every attachment's render, and onto the
+	// result, which outlives the render.
+	input.attachmentRenders = &attachmentRenderLog{}
+	result.attachmentRenders = input.attachmentRenders
+
 	// Present the state each node reaches before its artifact bytes exist, with
 	// the facts complete earlier answered by the presentation built above. Built
 	// here because this is the first point holding every product it names: the
@@ -1270,6 +1299,222 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		for _, instance := range input.GraphCoordinates.Nodes() {
 			nodeInstances[instance.ID] = instance
 		}
+	}
+
+	// What each node's renders reported, as the node's own turn of the walk left
+	// them, keyed by node. An attachment held for the pass after the walk reads its
+	// callers' records from here.
+	nodeRenderFacts := map[string]renderFactsRecord{}
+	// The nodes carrying an attachment held for the pass after the walk, in walk
+	// order, each with what its own turn captured for that attachment's render.
+	var heldHosts []heldAttachmentHost
+
+	// placeAttachmentOutput places what one run of a node's attachment render
+	// produced into the node's dispatch group. It runs once in the node's own turn
+	// and, for a node carrying an attachment held for the pass after the walk, once
+	// more there — so an attachment rendered in that pass is placed by exactly the
+	// routing an attachment rendered in its host's turn is.
+	placeAttachmentOutput := func(
+		key dispatchKey, nodeID string, nodeOrder int, state *PhaseBState, nodeCtx NodeRenderContext, out attachmentOutput,
+	) error {
+		// Record this contributor's derived-name declarations against the group its
+		// output merges into, under the same authoring-level producer name a path
+		// collision reports, so both collision reports point at something the author
+		// can find in their own input. The check itself runs once per group, after
+		// every contributor has rendered.
+		//
+		// Read AFTER the attachments whose output this places have rendered, not
+		// before them, and the position is the whole correctness of it: this moves
+		// the node's accumulator, and an attachment's render declares into that same
+		// accumulator — its guest's declarations through this node's sink, and the
+		// component identity the compiler derives for it directly. Reading the
+		// accumulator earlier moves it before any of that arrives, which drops every
+		// attachment's declaration silently: the group check then reports nothing,
+		// and reads as coverage. It is the same snapshot-before-attachments hazard the
+		// host-document write-back below is keyed by path to survive.
+		//
+		// The move empties the accumulator, which is what lets this run twice for one
+		// node: an attachment held for the pass after the walk declares into the
+		// emptied accumulator, so the second placement carries its declarations and
+		// nothing the first already moved.
+		//
+		// Every producer within the node arrives under its own label rather than all
+		// of them under the node's: the node's own render, and each attachment it
+		// carries under the key the author wrote it beneath. Two attachments
+		// reaching one name are then two declarers, which is what they are.
+		state.DerivedKeys.into(&dispatch[key].derivedKeys)
+		// Stash deferred host PATCHes under the host component's dispatch group.
+		// The host node IS this node (a component-scope FR patches the component
+		// it is attached to), so the merged documents the PATCH targets are the
+		// ones this dispatch group's assembler produces. Stamp the host-node
+		// author-order key for the A1 replay ordering.
+		for i := range out.deferred {
+			out.deferred[i].HostNodeOrder = nodeOrder
+			deferredByDispatch[key] = append(deferredByDispatch[key], out.deferred[i])
+		}
+		for path, content := range out.files {
+			dispatch[key].files[nodeID][path] = content
+		}
+		// Host-document write-back conduit: a component-scope FR pipeline's
+		// /host PATCH (a rewritten host doc) or /host EMIT (a new host doc)
+		// arrives keyed by the host doc's original emitted path. The host docs
+		// were snapshotted into dispatch[key].files[nodeID] before phaseB6 ran,
+		// so this merge — keyed by path — is the only live write-back path;
+		// mutating state.EmittedFiles would be inert. A PATCH overwrites the
+		// snapshotted host doc; an EMIT adds a new entry.
+		for path, content := range out.hostPatched {
+			dispatch[key].files[nodeID][path] = content
+		}
+		// Route each attachment into this node's dispatch group as a contributor of
+		// its own, so the group's assembler is told about it alongside the
+		// components. Every attachment the sub-pass reports is routed, whichever way
+		// its output travelled, because the contributor list is a property of the
+		// group: an attachment absent from it is one no assembled artifact can name,
+		// even where its files sit in the group's own output.
+		//
+		// Output handed over joins the intermediates map rather than the placed one,
+		// which is the same split the host component's own emission takes: the
+		// intermediates map is the half an assembler folds, and the placed half is
+		// also the half the flush writes at the group's own position — so content
+		// placed there would be delivered twice, once inside the assembled document
+		// and once beside it. An attachment that wrote its own files hands over
+		// nothing and adds no entry to either map; what it adds is where it wrote
+		// them, which is the only record of a position the group holds under the
+		// host's key rather than the attachment's.
+		//
+		// The coordinates are STATED here from the values the render carried out,
+		// never recovered from the key. The key is a routing marker joining two
+		// authored coordinates with characters either coordinate may itself contain,
+		// so cutting it apart cannot return what went in. The annotations and the wave
+		// are the host node's own: an attachment renders into the host's boundary and
+		// its output lands in the host's group, so the scope it is assembled under is
+		// the host's — and these are the same values its render was handed, which is
+		// what keeps one contributor from being described two ways on the two
+		// crossings.
+		for _, contrib := range out.contributions {
+			// Two attachments reaching one dispatch identity halt rather than merge,
+			// the same guardrail the boundary-scope routing carries and for the same
+			// reason: the identity joins the host to the instance with a character
+			// neither part is constrained to exclude, so an attachment named `a@b` on
+			// host `c` and one named `a` on host `b@c` spell one identity — and the
+			// map would then take the second silently, folding two contributors'
+			// fragments into one with nothing in the output recording that two were
+			// declared.
+			if _, alreadyHere := dispatch[key].nodeProducer[contrib.nodeID]; alreadyHere {
+				inner := fmt.Errorf("%w: dispatch path %q provider %q already holds output from %s, which reaches the same dispatch identity as %s; two contributors to one assembly group must be distinguishable",
+					ErrInstanceIDCollision(), key.Path, key.Provider,
+					nodeProducerLabel(dispatch[key].producerOf(contrib.nodeID)), nodeProducerLabel(contrib.producer))
+				return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
+			}
+			dispatch[key].nodeProducer[contrib.nodeID] = contrib.producer
+			dispatch[key].nodeNameBasis[contrib.nodeID] = contrib.nameBasis
+			dispatch[key].nodeAnnotations[contrib.nodeID] = nodeCtx.Annotations
+			dispatch[key].nodeSyncWave[contrib.nodeID] = nodeCtx.SyncWave
+			if len(contrib.fragments) > 0 {
+				dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
+			}
+			if len(contrib.files) > 0 {
+				// Keyed under the ATTACHMENT's own key rather than the host's, which
+				// is what puts its files at a position of their own — the group
+				// composes that position from this contributor's coordinates, so the
+				// attachment lands beside the host it is attached to rather than
+				// somewhere below it.
+				//
+				// Into BOTH maps, exactly as a component's own render is: the path map
+				// is what the group's flush writes, and the placed list is what the
+				// group's assembler is handed as this contributor's rendered output.
+				// A contributor present in only the first is written to disk and
+				// invisible to the assembler — so an assembler deriving anything from
+				// what a contributor rendered, its declared name among it, would
+				// derive it from an empty set and fall back to the routing key.
+				nodeFileMap := make(map[string][]byte, len(contrib.files))
+				for _, f := range contrib.files {
+					nodeFileMap[f.Name] = f.Body
+				}
+				dispatch[key].files[contrib.nodeID] = nodeFileMap
+				dispatch[key].placed[contrib.nodeID] = append(dispatch[key].placed[contrib.nodeID], contrib.files...)
+				// And named among the group's children, so an assembled artifact
+				// that addresses its children by name addresses this one. Placing
+				// the files is only half of being discovered: a target that reads a
+				// declared list of children reads that list, so files at a position
+				// no entry names are files nothing loads. This is the entry.
+				//
+				// It carries NO source and NO version, and neither is an omission.
+				// Both are properties of what this contributor RENDERED, and what it
+				// rendered is already in the group's hands — an assembler that names
+				// children from a manifest reads the manifest this contributor
+				// placed. A source restated here would be resolved against a
+				// different moment than the render that placed the files.
+				//
+				// It carries the values this attachment's own valuesMapping resolved
+				// to, which is what the address the entry establishes exists to
+				// deliver. They are needed here and nowhere else: an attachment on a
+				// group that places its contributors is one whose files were vendored
+				// in verbatim from what its author shipped, so nothing wrote the
+				// resolved values into them and the assembled artifact is the only
+				// surface left that can supply them. Without them the placed content
+				// renders whatever defaults its author shipped and reports success,
+				// which is the same reading-nothing outcome as files at a position no
+				// entry names — one level further in.
+				dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
+					InstanceID: contrib.nodeID,
+					Values:     contrib.values,
+				})
+			}
+		}
+		return nil
+	}
+
+	// completeNodeRender ends one node's render once its last attachment has
+	// rendered: the node's per-pass display capture, the drain of what its renders
+	// raised into the build's streams, and its emission records. For a node carrying
+	// an attachment held for the pass after the walk that is in that pass, so what
+	// the held attachment raised is drained with the rest of its host's.
+	completeNodeRender := func(
+		state *PhaseBState, tmplCtx *types.TemplateContext, nodeCtx NodeRenderContext, nodeID, boundaryPath string,
+	) {
+		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
+		// snapshot captures the post-B.6 TemplateContext for this node;
+		// boundary-scope FR contributions deduplicated by Phase B.6 surface
+		// in boundaryFRState.Files (post-loop, not per-node here).
+		state.capture(trace.PassPhaseB6, "", tmplCtx)
+
+		// Drain Phase B's per-node warnings into the build-level result.
+		// Drain position is the end of the per-node Phase B sequence
+		// (after phaseB6 — the LAST sub-pass) so any sub-pass appending
+		// to state.Warnings reaches result.Warnings, not just B.3's
+		// helm-chart provenance-skip notice today.
+		result.Warnings = append(result.Warnings, state.Warnings...)
+		result.Diagnostics = append(result.Diagnostics, state.Diagnostics...)
+
+		// Trace point: per-node emission log (slot 11). Captures the
+		// post-Phase-B node summary — the warnings accumulated during the
+		// per-node sub-pass run plus the final emitted-files inventory.
+		emittedNames := make([]string, 0, len(state.EmittedFiles))
+		for _, f := range state.EmittedFiles {
+			emittedNames = append(emittedNames, f.Name)
+		}
+		emissionLog := map[string]any{
+			"node_id":       nodeID,
+			"boundary_path": boundaryPath,
+			"warnings":      state.Warnings,
+			"emitted_files": emittedNames,
+		}
+		_ = traceWriter.Write(trace.PassEmission, nodeID, boundaryPath, "", emissionLog)
+
+		// Trace point: per-emission provenance routing summary. Captures
+		// the per-node label and annotation set applied to emitted files
+		// at the post-render handoff. Surfaces the canonical aggrega.ai/*
+		// labels and the argocd.argoproj.io/sync-wave annotation each
+		// node's emission carries.
+		labelsSummary := map[string]any{
+			"node_id":             nodeID,
+			"boundary_path":       boundaryPath,
+			"provenance_labels":   buildProvenanceLabels(state, nodeCtx),
+			"provenance_annots":   buildProvenanceAnnotations(state, nodeCtx),
+			"emitted_files_count": len(state.EmittedFiles),
+		}
+		_ = traceWriter.Write(trace.PassLabels, nodeID, boundaryPath, "", labelsSummary)
 	}
 
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
@@ -2218,192 +2463,32 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// placed while this node renders, so the answer has to be in hand here
 		// rather than at the group's own assembly, which runs a whole pass later.
 		hostNestsContributors := boundaryNestingOf(engine).PerNode
-		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, hostNestsContributors, pipelineRenderCtx)
+		b6, held, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, hostNestsContributors, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
-		// Record this contributor's derived-name declarations against the group its
-		// output merges into, under the same authoring-level producer name a path
-		// collision reports, so both collision reports point at something the author
-		// can find in their own input. The check itself runs once per group, after
-		// every contributor has rendered.
-		//
-		// Read AFTER the attachment renders above, not before them, and the
-		// position is the whole correctness of it: this is a snapshot of the node's
-		// accumulator, and an attachment's render declares into that same
-		// accumulator — its guest's declarations through this node's sink, and the
-		// component identity the compiler derives for it directly. Reading the
-		// accumulator earlier snapshots it before any of that arrives, which drops
-		// every attachment's declaration silently: the group check then reports
-		// nothing, and reads as coverage. It is the same snapshot-before-attachments
-		// hazard the host-document write-back below is keyed by path to survive.
-		//
-		// Every producer within the node arrives under its own label rather than all
-		// of them under the node's: the node's own render, and each attachment it
-		// carries under the key the author wrote it beneath. Two attachments
-		// reaching one name are then two declarers, which is what they are.
-		state.DerivedKeys.into(&dispatch[key].derivedKeys)
-		// Stash deferred host PATCHes under the host component's dispatch group.
-		// The host node IS this node (a component-scope FR patches the component
-		// it is attached to), so the merged documents the PATCH targets are the
-		// ones this dispatch group's assembler produces. Stamp the host-node
-		// author-order key for the A1 replay ordering.
-		for i := range deferred {
-			deferred[i].HostNodeOrder = nodeOrder
-			deferredByDispatch[key] = append(deferredByDispatch[key], deferred[i])
+		// What this node's renders reported, as this turn leaves them: its own render
+		// and every attachment rendered in this turn. Recorded now, before any held
+		// attachment renders onto this node's state, so an attachment held for the
+		// pass after the walk is handed what its callers' turns produced and nothing
+		// another held attachment reported.
+		nodeRenderFacts[nodeID] = state.renderFactsAsItStands()
+		if err := placeAttachmentOutput(key, nodeID, nodeOrder, state, nodeCtx, b6); err != nil {
+			return nil, err
 		}
-		for path, content := range frFiles {
-			dispatch[key].files[nodeID][path] = content
+		// A node carrying an attachment held for the pass after the walk is completed
+		// there, once that attachment has rendered; every other node is completed now.
+		if held != nil {
+			heldHosts = append(heldHosts, heldAttachmentHost{
+				nodeID:       nodeID,
+				boundaryPath: node.BoundaryPath,
+				nodeOrder:    nodeOrder,
+				key:          key,
+				held:         held,
+			})
+		} else {
+			completeNodeRender(state, tmplCtx, nodeCtx, nodeID, node.BoundaryPath)
 		}
-		// Host-document write-back conduit: a component-scope FR pipeline's
-		// /host PATCH (a rewritten host doc) or /host EMIT (a new host doc)
-		// arrives keyed by the host doc's original emitted path. The host docs
-		// were snapshotted into dispatch[key].files[nodeID] before phaseB6 ran,
-		// so this merge — keyed by path — is the only live write-back path;
-		// mutating state.EmittedFiles would be inert. A PATCH overwrites the
-		// snapshotted host doc; an EMIT adds a new entry.
-		for path, content := range hostPatched {
-			dispatch[key].files[nodeID][path] = content
-		}
-		// Route each attachment into this node's dispatch group as a contributor of
-		// its own, so the group's assembler is told about it alongside the
-		// components. Every attachment the sub-pass reports is routed, whichever way
-		// its output travelled, because the contributor list is a property of the
-		// group: an attachment absent from it is one no assembled artifact can name,
-		// even where its files sit in the group's own output.
-		//
-		// Output handed over joins the intermediates map rather than the placed one,
-		// which is the same split the host component's own emission takes: the
-		// intermediates map is the half an assembler folds, and the placed half is
-		// also the half the flush writes at the group's own position — so content
-		// placed there would be delivered twice, once inside the assembled document
-		// and once beside it. An attachment that wrote its own files hands over
-		// nothing and adds no entry to either map; what it adds is where it wrote
-		// them, which is the only record of a position the group holds under the
-		// host's key rather than the attachment's.
-		//
-		// The coordinates are STATED here from the values the render carried out,
-		// never recovered from the key. The key is a routing marker joining two
-		// authored coordinates with characters either coordinate may itself contain,
-		// so cutting it apart cannot return what went in. The annotations and the wave
-		// are the host node's own: an attachment renders into the host's boundary and
-		// its output lands in the host's group, so the scope it is assembled under is
-		// the host's — and these are the same values its render was handed, which is
-		// what keeps one contributor from being described two ways on the two
-		// crossings.
-		for _, contrib := range attachmentContribs {
-			// Two attachments reaching one dispatch identity halt rather than merge,
-			// the same guardrail the boundary-scope routing carries and for the same
-			// reason: the identity joins the host to the instance with a character
-			// neither part is constrained to exclude, so an attachment named `a@b` on
-			// host `c` and one named `a` on host `b@c` spell one identity — and the
-			// map would then take the second silently, folding two contributors'
-			// fragments into one with nothing in the output recording that two were
-			// declared.
-			if _, alreadyHere := dispatch[key].nodeProducer[contrib.nodeID]; alreadyHere {
-				inner := fmt.Errorf("%w: dispatch path %q provider %q already holds output from %s, which reaches the same dispatch identity as %s; two contributors to one assembly group must be distinguishable",
-					ErrInstanceIDCollision(), key.Path, key.Provider,
-					nodeProducerLabel(dispatch[key].producerOf(contrib.nodeID)), nodeProducerLabel(contrib.producer))
-				return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
-			}
-			dispatch[key].nodeProducer[contrib.nodeID] = contrib.producer
-			dispatch[key].nodeNameBasis[contrib.nodeID] = contrib.nameBasis
-			dispatch[key].nodeAnnotations[contrib.nodeID] = nodeCtx.Annotations
-			dispatch[key].nodeSyncWave[contrib.nodeID] = nodeCtx.SyncWave
-			if len(contrib.fragments) > 0 {
-				dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
-			}
-			if len(contrib.files) > 0 {
-				// Keyed under the ATTACHMENT's own key rather than the host's, which
-				// is what puts its files at a position of their own — the group
-				// composes that position from this contributor's coordinates, so the
-				// attachment lands beside the host it is attached to rather than
-				// somewhere below it.
-				//
-				// Into BOTH maps, exactly as a component's own render is: the path map
-				// is what the group's flush writes, and the placed list is what the
-				// group's assembler is handed as this contributor's rendered output.
-				// A contributor present in only the first is written to disk and
-				// invisible to the assembler — so an assembler deriving anything from
-				// what a contributor rendered, its declared name among it, would
-				// derive it from an empty set and fall back to the routing key.
-				nodeFileMap := make(map[string][]byte, len(contrib.files))
-				for _, f := range contrib.files {
-					nodeFileMap[f.Name] = f.Body
-				}
-				dispatch[key].files[contrib.nodeID] = nodeFileMap
-				dispatch[key].placed[contrib.nodeID] = append(dispatch[key].placed[contrib.nodeID], contrib.files...)
-				// And named among the group's children, so an assembled artifact
-				// that addresses its children by name addresses this one. Placing
-				// the files is only half of being discovered: a target that reads a
-				// declared list of children reads that list, so files at a position
-				// no entry names are files nothing loads. This is the entry.
-				//
-				// It carries NO source and NO version, and neither is an omission.
-				// Both are properties of what this contributor RENDERED, and what it
-				// rendered is already in the group's hands — an assembler that names
-				// children from a manifest reads the manifest this contributor
-				// placed. A source restated here would be resolved against a
-				// different moment than the render that placed the files.
-				//
-				// It carries the values this attachment's own valuesMapping resolved
-				// to, which is what the address the entry establishes exists to
-				// deliver. They are needed here and nowhere else: an attachment on a
-				// group that places its contributors is one whose files were vendored
-				// in verbatim from what its author shipped, so nothing wrote the
-				// resolved values into them and the assembled artifact is the only
-				// surface left that can supply them. Without them the placed content
-				// renders whatever defaults its author shipped and reports success,
-				// which is the same reading-nothing outcome as files at a position no
-				// entry names — one level further in.
-				dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
-					InstanceID: contrib.nodeID,
-					Values:     contrib.values,
-				})
-			}
-		}
-		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
-		// snapshot captures the post-B.6 TemplateContext for this node;
-		// boundary-scope FR contributions deduplicated by Phase B.6 surface
-		// in boundaryFRState.Files (post-loop, not per-node here).
-		state.capture(trace.PassPhaseB6, "", tmplCtx)
-
-		// Drain Phase B's per-node warnings into the build-level result.
-		// Drain position is the end of the per-node Phase B sequence
-		// (after phaseB6 — the LAST sub-pass) so any sub-pass appending
-		// to state.Warnings reaches result.Warnings, not just B.3's
-		// helm-chart provenance-skip notice today.
-		result.Warnings = append(result.Warnings, state.Warnings...)
-		result.Diagnostics = append(result.Diagnostics, state.Diagnostics...)
-
-		// Trace point: per-node emission log (slot 11). Captures the
-		// post-Phase-B node summary — the warnings accumulated during the
-		// per-node sub-pass run plus the final emitted-files inventory.
-		emittedNames := make([]string, 0, len(state.EmittedFiles))
-		for _, f := range state.EmittedFiles {
-			emittedNames = append(emittedNames, f.Name)
-		}
-		emissionLog := map[string]any{
-			"node_id":       nodeID,
-			"boundary_path": node.BoundaryPath,
-			"warnings":      state.Warnings,
-			"emitted_files": emittedNames,
-		}
-		_ = traceWriter.Write(trace.PassEmission, nodeID, node.BoundaryPath, "", emissionLog)
-
-		// Trace point: per-emission provenance routing summary. Captures
-		// the per-node label and annotation set applied to emitted files
-		// at the post-render handoff. Surfaces the canonical aggrega.ai/*
-		// labels and the argocd.argoproj.io/sync-wave annotation each
-		// node's emission carries.
-		labelsSummary := map[string]any{
-			"node_id":             nodeID,
-			"boundary_path":       node.BoundaryPath,
-			"provenance_labels":   buildProvenanceLabels(state, nodeCtx),
-			"provenance_annots":   buildProvenanceAnnotations(state, nodeCtx),
-			"emitted_files_count": len(state.EmittedFiles),
-		}
-		_ = traceWriter.Write(trace.PassLabels, nodeID, node.BoundaryPath, "", labelsSummary)
 
 		// Per-node progress hook (nil = no-op). Fires once as this node's render
 		// completes, with the 1-based completed count and the total node count.
@@ -2412,6 +2497,41 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if input.NodeProgress != nil {
 			input.NodeProgress(nodeOrder+1, len(nodeIDs), nodeID)
 		}
+	}
+
+	// The declared pass. An attachment whose FeatureRecipe declares it reads its
+	// callers' render facts renders here, after every node has rendered, so each
+	// caller's own render and its in-turn attachments have reported what they
+	// emitted by the time it is handed them. Hosts are taken in walk order and each
+	// host's held attachments in the order they hold in its sequence, so the order is
+	// a function of the input.
+	//
+	// It runs before anything reads what it produces: every reading of the completed
+	// groups — the attribution, the elections, the derived names, the rules over the
+	// grouping and every assembly — is below. The guards the walk runs as it adds a
+	// contributor to a group run here too, through the same routing, so two
+	// contributors reaching one identity halt whichever of them arrives second.
+	//
+	// Each held attachment renders from what its host's turn captured, kept rather
+	// than rebuilt, and its output is placed by the same routing and the host then
+	// completed as any node is. What it is handed of its callers is read from the
+	// records their own turns left, so no held attachment reads another's output.
+	//
+	// One thing differs from an attachment rendered in its host's turn, and it is
+	// an order rather than a content: a held attachment joins its group after every
+	// node of the walk has, so in the list of children a group names it comes after
+	// them. Everything else a group hands its assembler is keyed by contributor.
+	for _, h := range heldHosts {
+		pass := h.held.pass
+		callers := gatherCallerRenderFacts(pass.state.InboundEdges, nodeRenderFacts)
+		out, err := h.held.render(ctx, callers)
+		if err != nil {
+			return nil, err
+		}
+		if err := placeAttachmentOutput(h.key, h.nodeID, h.nodeOrder, pass.state, pass.nodeCtx, out); err != nil {
+			return nil, err
+		}
+		completeNodeRender(pass.state, pass.tmplCtx, pass.nodeCtx, h.nodeID, h.boundaryPath)
 	}
 
 	// Boundary-scope FR output routing. After the per-node loop, any

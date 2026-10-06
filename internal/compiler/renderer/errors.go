@@ -367,6 +367,35 @@ var errArtifactPillarNotDeclared = cerrors.Register("artifact-pillar-not-declare
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrCallerRenderFactsNotDeclared fires when a template in the FeatureRecipe a
+// per-component attachment binds reads the render facts of the components
+// connecting to its host — `render_facts` reached beneath `.context.used_by` —
+// while the FeatureRecipe does not set readsCallerRenderFacts.
+//
+// The declaration is what decides when such an attachment renders: one that sets
+// it renders after every node has rendered, so each caller has reported what it
+// emitted by then, and one that does not renders in its host's turn, before a
+// caller later in the walk has rendered at all. A template reading the facts
+// without the declaration is a template reading something that cannot be there
+// for every caller, and the build halts rather than render it. The remedy is the
+// declaration, which is always available and changes nothing but when the
+// attachment renders.
+//
+// It is read from the authored template text before anything is evaluated, so a
+// reference the text does not spell — one built at evaluation time, or written in
+// content imported from a file or a library — is not seen by it. The declaration
+// is the contract; this condition is the help an author gets when a template
+// visibly needs it.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrCallerRenderFactsNotDeclared()).
+func ErrCallerRenderFactsNotDeclared() error { return errCallerRenderFactsNotDeclared }
+
+var errCallerRenderFactsNotDeclared = cerrors.Register("caller-render-facts-not-declared", cerrors.Meta{
+	ShortCode: "E0323",
+	Message:   "template reads its callers' render facts, but the FeatureRecipe does not set readsCallerRenderFacts",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrAssembledOutputCollision fires when two contributors to one assembly
 // write a file at the same output path — two components, a component and a
 // boundary-attached feature, or a contributor and the assembled output

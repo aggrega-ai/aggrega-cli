@@ -43,21 +43,24 @@ func TestPhaseB6_NoFeatures(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	state := &PhaseBState{NodeID: "n"}
-	got, hostPatched, contributions, deferred, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{}, nil, false, "", false, renderctx.RenderContext{})
+	out, held, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{}, nil, false, "", false, renderctx.RenderContext{})
 	if err != nil {
 		t.Errorf("no features: %v", err)
 	}
-	if len(got) != 0 {
-		t.Errorf("no features should produce empty map; got %v", got)
+	if len(out.files) != 0 {
+		t.Errorf("no features should produce empty map; got %v", out.files)
 	}
-	if len(hostPatched) != 0 {
-		t.Errorf("no features should produce empty hostPatched; got %v", hostPatched)
+	if len(out.hostPatched) != 0 {
+		t.Errorf("no features should produce empty hostPatched; got %v", out.hostPatched)
 	}
-	if len(contributions) != 0 {
-		t.Errorf("no features should hand the group no contributions; got %v", contributions)
+	if len(out.contributions) != 0 {
+		t.Errorf("no features should hand the group no contributions; got %v", out.contributions)
 	}
-	if len(deferred) != 0 {
-		t.Errorf("no features should produce empty deferred; got %v", deferred)
+	if len(out.deferred) != 0 {
+		t.Errorf("no features should produce empty deferred; got %v", out.deferred)
+	}
+	if held != nil {
+		t.Errorf("no features should hold no attachment for the pass after the walk; got %v", held.items)
 	}
 }
 

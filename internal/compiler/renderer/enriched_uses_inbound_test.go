@@ -246,7 +246,7 @@ func TestPhaseB6_InboundEdgesReachTheAttachmentRenderOnly(t *testing.T) {
 			emitter := &stubArtifactsEmitter{}
 			factory := func(string) (Provider, error) { return emitter, nil }
 
-			out, _, _, deferred, err := phaseB6(context.Background(), hostCtx, state,
+			b6, _, err := phaseB6(context.Background(), hostCtx, state,
 				[]FeatureRecipeRef{{InstanceName: "guard", FeatureRecipe: fr}}, factory,
 				NodeProvides{}, RecipeLookup{}, NodeRenderContext{NodeID: "api", BoundaryPath: "local"},
 				nil, nil, nil, nil, RendererInput{}, nil, true, "compose", false, renderctx.RenderContext{})
@@ -255,17 +255,18 @@ func TestPhaseB6_InboundEdgesReachTheAttachmentRenderOnly(t *testing.T) {
 			}
 
 			var body string
-			for name, content := range out {
+			for name, content := range b6.files {
 				if strings.HasSuffix(name, "callers.yaml") {
 					body = string(content)
 				}
 			}
 			if !strings.Contains(body, tc.wantCallers) {
-				t.Errorf("the attachment's artifact rendered the wrong callers; want %s in %q (files: %d)", tc.wantCallers, body, len(out))
+				t.Errorf("the attachment's artifact rendered the wrong callers; want %s in %q (files: %d)", tc.wantCallers, body, len(b6.files))
 			}
 			if len(hostCtx.Context.UsedBy) != 0 {
 				t.Errorf("the attachment render wrote its callers back onto the host's own context: %+v", hostCtx.Context.UsedBy)
 			}
+			deferred := b6.deferred
 			if len(deferred) != 1 || deferred[0].WithCtx == nil {
 				t.Fatalf("want the attachment's pipeline deferred once with its context, got %d record(s)", len(deferred))
 			}

@@ -432,11 +432,18 @@ func (l *derivedKeyLedger) entryFor(c derivedKeyContributor) *derivedKeyLedgerEn
 }
 
 // into moves everything this node's producers declared into the set its dispatch
-// group is checked from, each under its own label.
+// group is checked from, each under its own label, and leaves the ledger empty.
+//
+// Emptying it is what makes a second move safe. A node carrying an attachment that
+// renders after the node walk is moved twice — once in its own turn, once after
+// that attachment has declared — and the second move must carry only what arrived
+// after the first, or every declaration the first carried would reach the group
+// twice.
 func (l *derivedKeyLedger) into(s *derivedKeySet) {
 	for _, e := range l.entries {
 		s.putAll(e.declared, e.repeats, e.contributor)
 	}
+	l.entries = nil
 }
 
 // declarations is every declaration this group's contributors made, one entry

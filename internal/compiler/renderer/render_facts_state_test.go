@@ -94,14 +94,14 @@ func TestRenderFacts_TheNodesOwnAreCarriedOnItsStateAndAnAttachmentsBesideThem(t
 			emitter := &factReportingEmitter{facts: tc.attachmentFacts}
 			factory := func(string) (Provider, error) { return emitter, nil }
 
-			out, _, _, _, err := phaseB6(context.Background(), hostCtx, state,
+			b6, _, err := phaseB6(context.Background(), hostCtx, state,
 				[]FeatureRecipeRef{{InstanceName: "guard", FeatureRecipe: fr}}, factory,
 				NodeProvides{}, RecipeLookup{}, nodeCtx,
 				nil, nil, nil, nil, RendererInput{}, nil, false, "helm", false, renderctx.RenderContext{})
 			if err != nil {
 				t.Fatalf("phaseB6: %v", err)
 			}
-			if len(out) == 0 {
+			if len(b6.files) == 0 {
 				t.Fatal("the attachment placed nothing, so its render never crossed the sink this test is about")
 			}
 

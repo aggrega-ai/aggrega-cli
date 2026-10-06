@@ -4268,6 +4268,28 @@ type DescribedView interface {
 	// types.FeatureRecipeSpec.ExecutionScope.
 	AttachmentExecutionScope(node string, attachment string) string
 
+	// AttachmentReadsCallerRenderFacts reports whether one attachment's bound
+	// FeatureRecipe declares that its templates read the render facts of the
+	// components connecting to the component it is attached to.
+	//
+	// The declaration is what moves such an attachment's render after every
+	// component has rendered, so a rule over a template reading those facts
+	// reads it to tell a template whose attachment renders once its callers
+	// have from one whose attachment renders before some of them.
+	//
+	// It is keyed by the node as well as the attachment for the reason the
+	// attachment's execution scope is: the attachment set a node carries is
+	// the merged one, and the coordinate naming one appearance is the node
+	// together with the attachment.
+	//
+	// False is a real answer and is the ordinary one: a FeatureRecipe that
+	// does not set the declaration, and an attachment with no bound
+	// FeatureRecipe, both answer false.
+	//
+	// Keyed by (node, attachment); read from
+	// types.FeatureRecipeSpec.ReadsCallerRenderFacts.
+	AttachmentReadsCallerRenderFacts(node string, attachment string) bool
+
 	// AttachmentStepPluginCompatibleCapabilities are the provider capabilities
 	// the plugin behind one step of an attachment's pipeline declares its step
 	// is compatible with, in declared order.

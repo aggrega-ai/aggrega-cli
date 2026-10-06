@@ -2526,6 +2526,13 @@ func (HydratedViewBase) AttachmentExecutionScope(node string, attachment string)
 	panic("this view does not carry attachment-execution-scope, which is read from types.FeatureRecipeSpec.ExecutionScope")
 }
 
+// AttachmentReadsCallerRenderFacts panics. This view does not carry
+// attachment-reads-caller-render-facts, which is read from
+// types.FeatureRecipeSpec.ReadsCallerRenderFacts.
+func (HydratedViewBase) AttachmentReadsCallerRenderFacts(node string, attachment string) bool {
+	panic("this view does not carry attachment-reads-caller-render-facts, which is read from types.FeatureRecipeSpec.ReadsCallerRenderFacts")
+}
+
 // AttachmentStepPluginCompatibleCapabilities panics. This view does not
 // carry attachment-step-plugin-compatible-capabilities, which is read from
 // wasm.PluginDescriptor.Capabilities.
@@ -3343,6 +3350,7 @@ type DescribedStageFacts interface {
 	NodeRenderingProvider(node string) string
 	AttachmentRenderingProvider(node string, attachment string) string
 	AttachmentExecutionScope(node string, attachment string) string
+	AttachmentReadsCallerRenderFacts(node string, attachment string) bool
 	AttachmentStepPluginCompatibleCapabilities(node string, attachment string, step string) []string
 	AttachmentStepExportScope(node string, attachment string, step string) string
 	BoundaryAttachmentRenderingProvider(boundary string, attachment string) string

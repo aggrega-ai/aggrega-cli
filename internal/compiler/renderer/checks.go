@@ -1351,6 +1351,129 @@ var AttachmentTemplateReadsNoHostRenderedName = constraint.Check[
 	},
 }
 
+// AttachmentTemplateReadsCallerRenderFactsDeclared reports each inline template
+// field of the FeatureRecipe a per-component attachment binds that reads the
+// render facts of the components connecting to its host, where that FeatureRecipe
+// does not declare it reads them.
+//
+// # Why the declaration is what the rule reads
+//
+// The declaration decides when the attachment renders. One that declares it
+// renders after every component has rendered, so each caller has reported what it
+// emitted; one that does not renders in its host's turn, before a caller later in
+// the walk has rendered at all. So a template reading the facts is refused where
+// the declaration is missing and admitted where it is present, and nothing about
+// the facts themselves is read.
+//
+// # What counts as a reading, and the direction it errs in
+//
+// The references are the over-collecting census, which is the direction a rule
+// refusing a reference needs: it records a field read inside a range or a with
+// body as well as at the root. That is also its limit here. The callers are a
+// list, so their facts are read off an element — inside `range .context.used_by`,
+// or off `index .context.used_by 0` — and the census records such a read relative
+// to the element, as `.render_facts`, with nothing tying it to the list it came
+// from. So a field counts as reading the facts where it reads the connection list
+// at all and also reads `render_facts` relative to some element, or names
+// `render_facts` beneath the list directly.
+//
+// That reading can refuse a template that reads an element field of that name off
+// some other list beside the connection list, and an author it refuses that way
+// sets the declaration, which costs nothing but when the attachment renders. It
+// cannot see a read made through a variable a range declares, nor one a template
+// builds at evaluation, nor one written in content imported from a file or a
+// library — none of which the authored text spells. The declaration remains the
+// contract either way: an attachment that does not set it renders in its host's
+// turn whatever its templates read.
+//
+// # Why a boundary-scope attachment ends the rule
+//
+// Such an attachment renders once for a boundary against a context that carries
+// no per-component pillar at all, so a reference to the connection list there is
+// already refused by the rules declared over that surface, and reporting it here
+// as well would give one authoring fault two positions.
+//
+// Its detail carries the offending reference bare and the field it was written in
+// captioned, so an author whose position stops at the block holding an artifacts
+// entry is still told which entry.
+var AttachmentTemplateReadsCallerRenderFactsDeclared = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrCallerRenderFactsNotDeclared(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		if v.AttachmentReadsCallerRenderFacts(s.NodeID(), s.AttachmentName()) {
+			return nil
+		}
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
+		if err != nil {
+			return nil
+		}
+		ref, reads := callerRenderFactsReference(refs)
+		if !reads {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrCallerRenderFactsNotDeclared(),
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("written in", s.TemplateField()),
+		)}
+	},
+}
+
+// The connection list a per-component attachment reads its callers from, and the
+// field a caller's render facts sit under. Declared once and read only by
+// [callerRenderFactsReference], so a renamed field cannot leave a stale spelling
+// matching nothing — which would turn the rule quiet rather than failing.
+const (
+	callerConnectionsRef = ".context.used_by"
+	callerRenderFactsRef = ".render_facts"
+)
+
+// callerRenderFactsReference reports whether a template's collected references
+// read its callers' render facts, and returns the first reference that does, in
+// the census's own order.
+//
+// The census records a field read off an element of the connection list relative
+// to the element, so a reading is recognised as the pair: the list read at all,
+// and `render_facts` read relative to an element — or `render_facts` named beneath
+// the list directly. Both halves go through [pillarRefMatches], the one statement
+// of what reaching a root or a key beneath it means.
+func callerRenderFactsReference(refs []string) (string, bool) {
+	readsCallers := false
+	for _, ref := range refs {
+		if pillarRefMatches(ref, callerConnectionsRef) {
+			readsCallers = true
+			break
+		}
+	}
+	if !readsCallers {
+		return "", false
+	}
+	for _, ref := range refs {
+		if pillarRefMatches(ref, callerConnectionsRef+callerRenderFactsRef) ||
+			pillarRefMatches(ref, callerRenderFactsRef) {
+			return ref, true
+		}
+	}
+	return "", false
+}
+
 // renderedNameSubject is the surface the rendered-name predicate needs of a
 // subject: the node whose provider is asked about, and the raising every subject
 // carries.

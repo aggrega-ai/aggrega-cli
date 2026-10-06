@@ -387,6 +387,21 @@ func (v *describedView) AttachmentExecutionScope(node string, attachment string)
 	return fr.Spec.ExecutionScope
 }
 
+// AttachmentReadsCallerRenderFacts reports whether one attachment's bound
+// FeatureRecipe declares that its templates read its callers' render facts.
+//
+// It reads the declaration through the one reading the render decides where an
+// attachment renders by, so the rule asking this and the render cannot come to
+// disagree about what was declared. An attachment with no bound FeatureRecipe
+// answers false.
+func (v *describedView) AttachmentReadsCallerRenderFacts(node string, attachment string) bool {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return false
+	}
+	return readsCallerRenderFacts(fr)
+}
+
 // AttachmentStepPluginCompatibleCapabilities returns the provider capabilities
 // the plugin behind one step of an attachment's pipeline on a node declares its
 // step is compatible with, in declared order.

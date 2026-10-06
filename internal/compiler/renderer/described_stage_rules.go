@@ -479,6 +479,64 @@ func runRenderedNameRule(
 	)
 }
 
+// callerRenderFactsAxes is the axis set the rule over an attachment template
+// reading its callers' render facts is invoked once per: the node set, the
+// attachments each node carries, and the inline template fields each of those
+// attachments' FeatureRecipes writes.
+//
+// Naming all three together is what makes the innermost one un-skippable: a value
+// supplying nodes and attachments but no field enumeration does not compile here,
+// so the rule cannot be invoked over an empty subject set by a caller that merely
+// forgot one axis.
+type callerRenderFactsAxes interface {
+	constraint.NodeEnumerator
+	constraint.AttachmentEnumerator
+	constraint.AttachmentTemplateFieldEnumerator
+}
+
+// runCallerRenderFactsRule invokes the rule declared over an attachment template
+// that reads its callers' render facts without its FeatureRecipe declaring it,
+// and returns what it raised as the render's halt.
+//
+// # Why here, ahead of the node walk
+//
+// The declaration decides where the attachment renders, and the walk is where
+// that happens: an attachment that does not declare it renders in its host's
+// turn. Asked here, the refusal reaches the author before anything has rendered,
+// against the field the template was written in, rather than after a walk whose
+// output would be discarded.
+//
+// It carries no plugin-resolution guard, for the reason the authored-text readings
+// beside it carry none: nothing it reads comes from a plugin describing itself, so
+// a render that resolved no plugin still owes the refusal.
+//
+// # What the field axis does not reach, stated because an unstated bound reads as coverage
+//
+// The axis enumerates the fields written INLINE. A values mapping, a workload body
+// or an artifacts entry supplied by an imported file or by a library entry carries
+// no text before the render resolves it, so the rule is not invoked over one. Such
+// a template reading the facts undeclared renders in its host's turn, which is what
+// the declaration it lacks decides.
+func runCallerRenderFactsRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates callerRenderFactsAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentTemplateReadsCallerRenderFactsDeclared,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "attachment templates reading their callers' render facts without declaring it",
+	)
+}
+
 // authoredLocalsAxes is the axis pair the rules over an authored locals entry are
 // invoked once per: the node set, and the locals each node's Recipe declares.
 //
