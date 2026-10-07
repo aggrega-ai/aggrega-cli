@@ -18,9 +18,12 @@ import (
 // controls: a file in the checkout, a link to a file elsewhere inside it, a file
 // link leading out, and a directory link leading out. Its verdict must be
 // CheckRead's on every row — it is the one judgement, not a second one — and a
-// refusal names the link, the checkout, and the remedy a link committed in a
-// repository has, rather than a catalog directory's.
+// refusal names the link by its place in the repository, the checkout by the
+// repository name it was handed, where the link leads, and the remedy a link
+// committed in a repository has, rather than a catalog directory's. The checkout's
+// own path appears nowhere in it: the checkout is gone once the pull halts.
 func TestCheckFetchedReadIsTheOneJudgementWithItsOwnRemedy(t *testing.T) {
+	const repository = "the repository file:///srv/charts.git at main (commit 0123abcd)"
 	checkout := t.TempDir()
 	outside := t.TempDir()
 	mustWrite(t, filepath.Join(checkout, "chart", "Chart.yaml"))
@@ -33,20 +36,21 @@ func TestCheckFetchedReadIsTheOneJudgementWithItsOwnRemedy(t *testing.T) {
 	for _, row := range []struct {
 		name string
 		path string
-		// link and leadsTo are what a refusal names, both empty for a row that reads.
+		// link is the link a refusal names, by its place in the repository, and
+		// leadsTo where it leads; both empty for a row that reads.
 		link, leadsTo string
 	}{
 		{name: "control: a file in the checkout", path: filepath.Join(checkout, "chart", "Chart.yaml")},
 		{name: "control: a link to a file elsewhere inside the checkout", path: filepath.Join(checkout, "chart", "values.yaml")},
 		{name: "a file link leading out of the checkout",
 			path: filepath.Join(checkout, "chart", "secret.txt"),
-			link: filepath.Join(checkout, "chart", "secret.txt"), leadsTo: filepath.Join(outside, "secret.txt")},
+			link: "chart/secret.txt", leadsTo: filepath.Join(outside, "secret.txt")},
 		{name: "a directory link leading out of the checkout",
 			path: filepath.Join(checkout, "chart", "linked"),
-			link: filepath.Join(checkout, "chart", "linked"), leadsTo: filepath.Join(outside, "dir")},
+			link: "chart/linked", leadsTo: filepath.Join(outside, "dir")},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			err := readscope.CheckFetchedRead(checkout, row.path)
+			err := readscope.CheckFetchedRead(checkout, repository, row.path)
 			if general := readscope.CheckRead(checkout, row.path); (general == nil) != (err == nil) {
 				t.Fatalf("the verdict must be CheckRead's; CheckRead %v, CheckFetchedRead %v", general, err)
 			}
@@ -63,8 +67,9 @@ func TestCheckFetchedReadIsTheOneJudgementWithItsOwnRemedy(t *testing.T) {
 				t.Errorf("short code = %q, want E0321", code)
 			}
 			for _, want := range []string{
+				"reading " + row.link + ",",
 				"the link " + row.link + " leads to " + resolved(t, row.leadsTo),
-				"which must stay inside " + checkout,
+				"which must stay inside " + repository,
 				"nothing was cached",
 				"committed in the repository the source names",
 				"name the revision that carries the change",
@@ -73,12 +78,19 @@ func TestCheckFetchedReadIsTheOneJudgementWithItsOwnRemedy(t *testing.T) {
 					t.Errorf("the refusal must carry %q:\n%v", want, err)
 				}
 			}
+			if strings.Contains(err.Error(), checkout) {
+				t.Errorf("the refusal names the checkout's own path, which is gone once the pull halts:\n%v", err)
+			}
+			var located *cerrors.CompilerError
+			if !errors.As(err, &located) || located.Source().File != row.link {
+				t.Errorf("the refusal's source location must be the link's place in the repository, %q; got %+v", row.link, located)
+			}
 			if strings.Contains(err.Error(), "as a catalog directory") {
 				t.Errorf("listing a catalog directory changes nothing in a fetched repository, so the remedy must not offer one:\n%v", err)
 			}
 		})
 	}
-	if err := readscope.CheckFetchedRead("", filepath.Join(checkout, "chart", "secret.txt")); err != nil {
+	if err := readscope.CheckFetchedRead("", repository, filepath.Join(checkout, "chart", "secret.txt")); err != nil {
 		t.Errorf("with no root nothing is held; got %v", err)
 	}
 }

@@ -158,16 +158,20 @@ func Digest(archiveBytes []byte) string {
 // round a loop — halts the walk, because the tree it stands for has no
 // end. A link leading nowhere is read as the missing file it names, and
 // fails the walk.
-func WalkDirectory(root, dir string) ([]Entry, error) {
+//
+// rootName is how a refusal names root — the repository and revision the
+// tree was fetched as — since root is a checkout removed once the walk's
+// caller halts; a refusal names a link by its place beneath root.
+func WalkDirectory(root, rootName, dir string) ([]Entry, error) {
 	dir = filepath.Clean(dir)
-	if err := readscope.CheckFetchedRead(root, dir); err != nil {
+	if err := readscope.CheckFetchedRead(root, rootName, dir); err != nil {
 		return nil, err
 	}
 	top, err := os.Stat(dir)
 	if err != nil {
 		return nil, err
 	}
-	w := &treeWalk{root: root}
+	w := &treeWalk{root: root, rootName: rootName}
 	if err := w.walk(dir, "", []os.FileInfo{top}); err != nil {
 		return nil, err
 	}
@@ -176,8 +180,9 @@ func WalkDirectory(root, dir string) ([]Entry, error) {
 
 // treeWalk is one archiving walk of a fetched tree.
 type treeWalk struct {
-	root    string
-	entries []Entry
+	root     string
+	rootName string
+	entries  []Entry
 }
 
 // walk adds an entry for everything beneath dir, each named beneath prefix, and
@@ -212,7 +217,7 @@ func (w *treeWalk) walk(dir, prefix string, entered []os.FileInfo) error {
 // link archives the link at path, named rel, as what it leads to, once the one
 // judgement of where a path leads has found that inside the fetched tree.
 func (w *treeWalk) link(path, rel string, entered []os.FileInfo) error {
-	if err := readscope.CheckFetchedRead(w.root, path); err != nil {
+	if err := readscope.CheckFetchedRead(w.root, w.rootName, path); err != nil {
 		return err
 	}
 	target, err := os.Stat(path)

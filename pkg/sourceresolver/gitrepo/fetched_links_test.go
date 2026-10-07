@@ -140,7 +140,11 @@ func TestAFetchedRepositorysLinksAreHeldToItsCheckout(t *testing.T) {
 				if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
 					t.Fatalf("want the read hold's refusal, got %v", err)
 				}
-				for _, says := range []string{filepath.FromSlash("/" + row.link + " leads to " + row.leadsTo), "committed in the repository"} {
+				leadsTo, err2 := filepath.EvalSymlinks(row.leadsTo)
+				if err2 != nil {
+					t.Fatal(err2)
+				}
+				for _, says := range []string{"the link " + row.link + " leads to " + leadsTo, "committed in the repository"} {
 					if !strings.Contains(err.Error(), says) {
 						t.Errorf("the refusal does not say %q:\n%v", says, err)
 					}

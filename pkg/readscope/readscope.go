@@ -61,7 +61,9 @@
 // checkout is a root of its own: what the repository carries is read only from
 // inside it, so a link the repository commits leading out of it is not read and
 // halts the pull, and its refusal names the remedy such a link has — it is the
-// repository's, not the workspace's, so the repository is where it is changed.
+// repository's, not the workspace's, so the repository is where it is changed. The
+// checkout is gone once the pull halts, so the refusal names it by the repository
+// and revision the source names, and the link by its place in the repository.
 //
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
@@ -102,7 +104,10 @@ import (
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
-// a reader knows which link to remove or repoint.
+// a reader knows which link to remove or repoint. For the checkout of a fetched
+// repository, which no longer exists once the pull halts, the root is named by the
+// repository and revision the source names and the path and the link by their
+// place in that repository.
 //
 // Category: none. The fault is in the layout on disk rather than in any document
 // an author wrote, so there is no authoring surface to route the reader to. Match
@@ -232,14 +237,14 @@ func fetchedRemedyFor(string) string {
 // never reaches root on its way passes, because root does not hold it, and so does
 // any path where root is empty: with no root there is nothing to hold a read to.
 func CheckRead(root, path string) error {
-	return checkRead(root, path, remedyFor)
+	return checkRead(root, "", path, remedyFor)
 }
 
 // CheckConfigurationRead is [CheckRead] for a workspace configuration file the
 // configuration is about to be merged from: the same judgement and the same
 // condition, with the remedy a configuration file has.
 func CheckConfigurationRead(root, path string) error {
-	return checkRead(root, path, configurationRemedyFor)
+	return checkRead(root, "", path, configurationRemedyFor)
 }
 
 // CheckLockfileRead is [CheckRead] for the lockfile beside a Release, about to be
@@ -248,7 +253,7 @@ func CheckConfigurationRead(root, path string) error {
 // [writescope.RootFor] picks for the Release's directory — so the file a pull may
 // write and the file a build may read are held alike.
 func CheckLockfileRead(root, path string) error {
-	return checkRead(root, path, lockfileRemedyFor)
+	return checkRead(root, "", path, lockfileRemedyFor)
 }
 
 // CheckBesideEntityRead is [CheckRead] for a file about to be read beside an
@@ -257,7 +262,7 @@ func CheckLockfileRead(root, path string) error {
 // document is held to — for a document found beneath a catalog directory, the root
 // that directory picks; for one named by path, the root its own directory picks.
 func CheckBesideEntityRead(root, path string) error {
-	return checkRead(root, path, besideEntityRemedyFor)
+	return checkRead(root, "", path, besideEntityRemedyFor)
 }
 
 // CheckCacheRead is [CheckRead] for a file or directory about to be read beneath
@@ -268,7 +273,7 @@ func CheckBesideEntityRead(root, path string) error {
 // place it may be written to, and a cache directory, a directory on the way, or the
 // file itself, that is a link leading out of that root is not read.
 func CheckCacheRead(root, path string) error {
-	return checkRead(root, path, cacheRemedyFor)
+	return checkRead(root, "", path, cacheRemedyFor)
 }
 
 // CheckOverlayRead is [CheckRead] for an overlay, or a directory that may hold
@@ -278,7 +283,7 @@ func CheckCacheRead(root, path string) error {
 // picks ([writescope.RootFor]) — the workspace for an overlay directory inside it,
 // and the overlay directory itself for one named outside it.
 func CheckOverlayRead(root, path string) error {
-	return checkRead(root, path, overlayRemedyFor)
+	return checkRead(root, "", path, overlayRemedyFor)
 }
 
 // CheckFetchedRead is [CheckRead] for a file or directory about to be read beneath
@@ -286,13 +291,27 @@ func CheckOverlayRead(root, path string) error {
 // and the same condition, with the remedy a link in a fetched repository has. root
 // is the checkout itself, a root of its own, so a link the repository carries
 // leading out of it — to anywhere on the machine running the pull — is not read.
-func CheckFetchedRead(root, path string) error {
-	return checkRead(root, path, fetchedRemedyFor)
+//
+// repository is how the refusal names the checkout: the repository and the
+// revision the source names, which is where a reader finds the link. The checkout
+// is a temporary directory removed once the pull halts, so the refusal names the
+// link by its place in the repository rather than by a path that no longer
+// exists. Empty names every path as it is on disk.
+func CheckFetchedRead(root, repository, path string) error {
+	return checkRead(root, repository, path, fetchedRemedyFor)
 }
 
 // checkRead is the judgement every entry point makes, composing the refusal with
 // the remedy the caller's kind of read has.
-func checkRead(root, path string, remedy func(root string) string) error {
+//
+// rootName is how the refusal names root, for a root its reader cannot open once
+// the operation halts. Where it is set, root is named by it, and every path the
+// refusal names that lies beneath root — the path read, the link, the source
+// location — by its place relative to root, the name a reader finds it under in
+// what root stands for; a place outside root, where a link leads, is still named
+// as it is on the machine, which is where the reader finds it. Where it is empty,
+// every path is named as it is on disk.
+func checkRead(root, rootName, path string, remedy func(root string) string) error {
 	if root == "" || path == "" {
 		return nil
 	}
@@ -300,13 +319,18 @@ func checkRead(root, path string, remedy func(root string) string) error {
 	if inside || res.Link == "" {
 		return nil
 	}
-	values := []string{
-		"reading " + absolute(path),
-		"which must stay inside " + absolute(root),
-		fmt.Sprintf("the link %s leads to %s", res.Link, res.LinkLeadsTo),
+	name, rootNamed := absolute, absolute(root)
+	if rootName != "" {
+		rootNamed = rootName
+		name = func(p string) string { return pathscope.ReportedName(absolute(root), absolute(p)) }
 	}
-	return cerrors.Raise(errReadLeadsOutOfWorkspace, "", cerrors.SourceLocation{File: res.Link},
-		cerrors.ComposeMessage(ErrReadLeadsOutOfWorkspace(), values, remedy(absolute(root))), nil)
+	values := []string{
+		"reading " + name(path),
+		"which must stay inside " + rootNamed,
+		fmt.Sprintf("the link %s leads to %s", name(res.Link), name(res.LinkLeadsTo)),
+	}
+	return cerrors.Raise(errReadLeadsOutOfWorkspace, "", cerrors.SourceLocation{File: name(res.Link)},
+		cerrors.ComposeMessage(ErrReadLeadsOutOfWorkspace(), values, remedy(rootNamed)), nil)
 }
 
 // absolute is p made absolute against the working directory and cleaned, the

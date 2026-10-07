@@ -119,7 +119,7 @@ func TestWalkDirectoryRoundTrip(t *testing.T) {
 	must(t, os.MkdirAll(filepath.Join(root, "sub"), 0o755))
 	must(t, os.WriteFile(filepath.Join(root, "sub", "b.yaml"), []byte("b\n"), 0o644))
 
-	entries, err := archive.WalkDirectory(root, root)
+	entries, err := archive.WalkDirectory(root, "the repository a test names", root)
 	if err != nil {
 		t.Fatalf("WalkDirectory: %v", err)
 	}

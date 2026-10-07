@@ -105,7 +105,7 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, moduleSubdir, version
 	}
 	host, urlPath := splitURL(sourceURL)
 	return oci.JoinCacheLocation(SourceArtifactsRoot(workspaceRoot, cacheDir),
-		fmt.Sprintf("%s source %q", kind, sourceURL),
+		sourceSubject(kind, sourceURL),
 		oci.CacheSegment{Key: "kind", Value: kind, Segment: kind},
 		oci.CacheSegment{Key: "url", Value: sourceURL, Segment: host},
 		oci.CacheSegment{Key: "url", Value: sourceURL, Segment: urlPath, Nested: true},
@@ -114,6 +114,40 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, moduleSubdir, version
 		oci.CacheSegment{Key: "version", Value: version, Segment: version},
 		oci.CacheSegment{Key: "digest", Value: digest, Segment: digestPrefix(digest)},
 	)
+}
+
+// CheckModuleSubdir reports whether moduleSubdir, the directory of a git-sourced
+// repository a source names as its artifact, stays beneath the place it names: nil
+// when it does, and otherwise the refusal [Slot] gives the same value
+// (oci.ErrCacheLocationOutsideCache), quoting it under its source key.
+//
+// The value names one place twice — a directory of the repository's checkout,
+// which is read to make the archive, and the segment of the slot the archive is
+// kept in. Slot judges the second, and only once the archive's digest is known,
+// which is after the checkout was read; a value climbing above its place would by
+// then have had the files beside the checkout read. So a resolver asks this
+// before it fetches anything, and a value that climbs is refused with nothing
+// read.
+//
+// It judges the value as the checkout's join reads it, by the rule
+// oci.JoinCacheLocation states for a value naming a directory path: separators
+// leading or trailing it dropped, as a join drops them, and a backslash read as a
+// separator, as a Windows join reads one — so a value climbing through
+// backslashes is refused on every platform rather than read beside the checkout
+// on one. An empty moduleSubdir names the whole repository and passes.
+func CheckModuleSubdir(kind, sourceURL, moduleSubdir string) error {
+	_, err := oci.JoinCacheLocation("", sourceSubject(kind, sourceURL), oci.CacheSegment{
+		Key:     "module_subdir",
+		Value:   moduleSubdir,
+		Segment: strings.Trim(moduleSubdir, `/\`),
+		Nested:  true,
+	})
+	return err
+}
+
+// sourceSubject is what a cache-location refusal says a source's slot is for.
+func sourceSubject(kind, sourceURL string) string {
+	return fmt.Sprintf("%s source %q", kind, sourceURL)
 }
 
 // escapeRelPath percent-escapes each segment of a slash-separated relative path

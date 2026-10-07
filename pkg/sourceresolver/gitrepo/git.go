@@ -24,7 +24,12 @@
 // against the checkout before anything is read through it: one leading
 // inside is archived as the file or directory it leads to, and one
 // leading out halts the pull with the read hold's refusal, naming the
-// link and where it leads, with nothing cached.
+// link and where it leads, with nothing cached. The checkout is removed
+// once the pull halts, so the refusal names the link by its place in the
+// repository, and the repository and revision the source names. A
+// ModuleSubdir that climbs above the checkout as written is refused before
+// anything is fetched, with the refusal its cache slot gives it, so no file
+// beside the checkout is read.
 //
 // Ref normalisation is load-bearing: only commit SHAs are
 // immutable; tags and branches may be re-pushed at the registry.
@@ -152,6 +157,12 @@ func (a *adapter) Kind() string { return Kind }
 // way out in that case as in every other, so a clone that ends part way
 // leaves nothing behind it.
 func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+	// A module subdirectory climbing above the checkout would have the archive read
+	// the files beside it, so it is refused before anything is fetched.
+	if err := cacheslot.CheckModuleSubdir(Kind, spec.URL, spec.ModuleSubdir); err != nil {
+		return nil, fmt.Errorf("git-repository: %w", err)
+	}
+
 	cloneDir, err := os.MkdirTemp("", "aggrega-git-repo-*")
 	if err != nil {
 		return nil, fmt.Errorf("git-repository: tempdir: %w", err)
@@ -190,10 +201,11 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	if spec.ModuleSubdir != "" {
 		walkRoot = filepath.Join(cloneDir, spec.ModuleSubdir)
 	}
+	commitSHA := hash.String()
 	// The checkout is a root of its own: a link the repository carries is archived
 	// as what it leads to only where that lies inside the checkout, and one leading
 	// out of it halts the pull with nothing cached.
-	entries, err := walkExcludingGit(cloneDir, walkRoot)
+	entries, err := walkExcludingGit(cloneDir, checkoutName(spec.URL, spec.Ref, commitSHA), walkRoot)
 	if err != nil {
 		return nil, fmt.Errorf("git-repository: walk: %w", err)
 	}
@@ -203,7 +215,6 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 		return nil, fmt.Errorf("git-repository: archive: %w", err)
 	}
 	digest := archive.Digest(archiveBytes)
-	commitSHA := hash.String()
 	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", spec.ModuleSubdir, commitSHA, digest)
 	if err != nil {
 		return nil, fmt.Errorf("git-repository: %w", err)
@@ -230,9 +241,10 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 // walkExcludingGit walks dir, beneath the checkout at cloneDir, via
 // internal/archive.WalkDirectory, which holds every link it meets to the
 // checkout, and filters out the .git/ subtree so the archive carries only the
-// repository's working-tree content.
-func walkExcludingGit(cloneDir, dir string) ([]archive.Entry, error) {
-	all, err := archive.WalkDirectory(cloneDir, dir)
+// repository's working-tree content. checkout is how a refusal names the
+// checkout ([checkoutName]).
+func walkExcludingGit(cloneDir, checkout, dir string) ([]archive.Entry, error) {
+	all, err := archive.WalkDirectory(cloneDir, checkout, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -244,6 +256,18 @@ func walkExcludingGit(cloneDir, dir string) ([]archive.Entry, error) {
 		filtered = append(filtered, e)
 	}
 	return filtered, nil
+}
+
+// checkoutName is how a refusal names the checkout of the repository at url,
+// checked out at commit for ref, the revision the source names (empty where it
+// names none). The checkout is a temporary directory removed once the pull halts,
+// so a reader is pointed at the repository and the revision instead, where the
+// link a refusal names is found and changed.
+func checkoutName(url, ref, commit string) string {
+	if ref == "" || ref == commit {
+		return fmt.Sprintf("the repository %s at commit %s", url, commit)
+	}
+	return fmt.Sprintf("the repository %s at %s (commit %s)", url, ref, commit)
 }
 
 // encodeTarGz wraps internal/archive.WriteTarGz in a buffer so the
