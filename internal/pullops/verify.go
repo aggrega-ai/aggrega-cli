@@ -309,11 +309,10 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 // same signature) is left untouched so the cache stays byte-stable.
 //
 // The blob is held, before anything is created, to the root the cache directory
-// picks (writescope.RootForCache): the workspace at workspaceRoot, or the cache
-// directory itself where the configuration names one outside the workspace. A
-// cache directory, or a directory on the way to the blob, that is a link leading
-// out of that root is refused with the halt the write-scope rule declares, rather
-// than written through.
+// picks (writescope.RootForCache): the cache directory itself. A directory on the
+// way to the blob, or the blob, that is a link leading out of the cache directory —
+// or a cache directory leading out of the workspace — is refused with the halt the
+// write-scope rule declares, rather than written through.
 func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte) error {
 	if bundleDigest == "" || len(bundle) == 0 {
 		return nil

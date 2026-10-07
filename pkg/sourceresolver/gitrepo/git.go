@@ -18,6 +18,14 @@
 // That is why the kind names the transport and the location rather
 // than a format.
 //
+// The checkout is a root of its own. A repository can commit links, and
+// a link can lead anywhere on the machine running the pull, so every
+// link the archive meets — the ModuleSubdir itself included — is judged
+// against the checkout before anything is read through it: one leading
+// inside is archived as the file or directory it leads to, and one
+// leading out halts the pull with the read hold's refusal, naming the
+// link and where it leads, with nothing cached.
+//
 // Ref normalisation is load-bearing: only commit SHAs are
 // immutable; tags and branches may be re-pushed at the registry.
 // The adapter resolves at lock time so the lockfile always pins a
@@ -182,7 +190,10 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	if spec.ModuleSubdir != "" {
 		walkRoot = filepath.Join(cloneDir, spec.ModuleSubdir)
 	}
-	entries, err := walkExcludingGit(walkRoot)
+	// The checkout is a root of its own: a link the repository carries is archived
+	// as what it leads to only where that lies inside the checkout, and one leading
+	// out of it halts the pull with nothing cached.
+	entries, err := walkExcludingGit(cloneDir, walkRoot)
 	if err != nil {
 		return nil, fmt.Errorf("git-repository: walk: %w", err)
 	}
@@ -216,11 +227,12 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}, nil
 }
 
-// walkExcludingGit walks rootPath via internal/archive.WalkDirectory
-// and filters out the .git/ subtree so the archive carries only the
+// walkExcludingGit walks dir, beneath the checkout at cloneDir, via
+// internal/archive.WalkDirectory, which holds every link it meets to the
+// checkout, and filters out the .git/ subtree so the archive carries only the
 // repository's working-tree content.
-func walkExcludingGit(rootPath string) ([]archive.Entry, error) {
-	all, err := archive.WalkDirectory(rootPath)
+func walkExcludingGit(cloneDir, dir string) ([]archive.Entry, error) {
+	all, err := archive.WalkDirectory(cloneDir, dir)
 	if err != nil {
 		return nil, err
 	}

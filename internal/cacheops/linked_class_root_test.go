@@ -16,12 +16,13 @@ import (
 // TestTheCacheInventoryListsAClassRootThatIsALinkWhereItLeads drives the cache
 // inventory every cache status, prune and clear reads, over a workspace whose
 // source-artifact and external-input class roots are the directories themselves
-// (the control) and links to directories elsewhere inside the workspace, and over
-// a compiled-module cache that is its directory or a link the machine's owner
+// (the control) and links to directories elsewhere inside the cache directory, and
+// over a compiled-module cache that is its directory or a link the machine's owner
 // placed.
 //
-// The read hold admits a class root leading inside the workspace, and every write
-// and read of the cache goes through it, so the inventory lists what is there: the
+// The read hold admits a class root leading elsewhere inside the cache directory,
+// and every write and read of the cache goes through it, so the inventory lists
+// what is there: the
 // slot, the blob and the compiled module, each named as in the control. Walked as
 // the link alone, the source-artifact class lists nothing, and the external-input
 // store and the compiled-module cache list one element named "." — the class root
@@ -56,18 +57,19 @@ func TestTheCacheInventoryListsAClassRootThatIsALinkWhereItLeads(t *testing.T) {
 		linked bool
 	}{
 		{"control: every class root the directory itself", false},
-		{"class roots that are links to directories elsewhere inside the workspace", true},
+		{"class roots that are links to directories elsewhere inside the cache directory", true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			base := t.TempDir()
 			ws := filepath.Join(base, "ws")
+			cache := filepath.Join(ws, testCacheDir)
 			sources := cacheslot.SourceArtifactsRoot(ws, testCacheDir)
 			inputs := externalinputs.StoreRoot(ws, testCacheDir)
 			compileDir := filepath.Join(base, "wasm-compile")
 			sourcesAt, inputsAt, compileAt := sources, inputs, compileDir
 			if row.linked {
-				sourcesAt = filepath.Join(ws, "kept", "source-artifacts")
-				inputsAt = filepath.Join(ws, "kept", "inputs")
+				sourcesAt = filepath.Join(cache, "kept", "source-artifacts")
+				inputsAt = filepath.Join(cache, "kept", "inputs")
 				compileAt = filepath.Join(base, "compile-kept")
 			}
 			put(t, filepath.Join(sourcesAt, filepath.FromSlash(slotLabel), "metadata.yaml"),
@@ -75,8 +77,8 @@ func TestTheCacheInventoryListsAClassRootThatIsALinkWhereItLeads(t *testing.T) {
 			put(t, filepath.Join(inputsAt, "sha256", blob), "input bytes")
 			put(t, filepath.Join(compileAt, filepath.FromSlash(module)), strings.Repeat("m", 64))
 			if row.linked {
-				link(t, filepath.Join("..", "..", "kept", "source-artifacts"), sources)
-				link(t, filepath.Join("..", "..", "kept", "inputs"), inputs)
+				link(t, filepath.Join("kept", "source-artifacts"), sources)
+				link(t, filepath.Join("kept", "inputs"), inputs)
 				link(t, compileAt, compileDir)
 			}
 

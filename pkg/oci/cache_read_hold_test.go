@@ -17,8 +17,10 @@ import (
 // entity and plugin is read through — the content, the manifest, and a file of the
 // slot by name — over a cache laid out one way per row: plainly inside the
 // workspace; behind a cache directory that is a link leading out; with the slot's
-// file itself a link leading out, or a link leading elsewhere inside the
-// workspace; and beneath a cache directory the configuration names outside the
+// file itself a link leading out, a link leading out of the cache directory to
+// elsewhere inside the workspace — refused too, the cache directory being the root
+// of everything beneath it — or a link leading elsewhere inside the cache
+// directory; and beneath a cache directory the configuration names outside the
 // workspace, plainly, with a file linking out of that directory, and with the
 // directory itself a link.
 //
@@ -70,10 +72,18 @@ func TestASlotIsReadOnlyFromWhereItsWriteIsHeld(t *testing.T) {
 			linkCacheDir(t, filepath.Join(p.elsewhere, file), filepath.Join(dir, file))
 			return filepath.Join(dir, file)
 		}},
-		{name: "control: a slot's file that is a link leading elsewhere inside the workspace", cacheDir: ".aggrega/cache", layout: func(t *testing.T, p place, file string) string {
+		{name: "a slot's file that is a link leading out of the cache directory, elsewhere inside the workspace", cacheDir: ".aggrega/cache", layout: func(t *testing.T, p place, file string) string {
 			dir := slotDir(t, p.ws, p.cacheDir, uri, version)
 			mustMkdir(t, dir)
 			kept := filepath.Join(p.ws, "kept")
+			seedSlotFile(t, kept, file)
+			linkCacheDir(t, filepath.Join(kept, file), filepath.Join(dir, file))
+			return filepath.Join(dir, file)
+		}},
+		{name: "control: a slot's file that is a link leading elsewhere inside the cache directory", cacheDir: ".aggrega/cache", layout: func(t *testing.T, p place, file string) string {
+			dir := slotDir(t, p.ws, p.cacheDir, uri, version)
+			mustMkdir(t, dir)
+			kept := filepath.Join(p.cache, "kept")
 			seedSlotFile(t, kept, file)
 			linkCacheDir(t, filepath.Join(kept, file), filepath.Join(dir, file))
 			return ""

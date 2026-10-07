@@ -156,17 +156,17 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 
 // ReadCachedFile returns the bytes stored under name in the cache slot for
 // uri@version. It is the one read every file a slot holds goes through, as
-// [WriteCachedFile] is the one write, so a slot is held to the workspace in one
-// place for reading as for writing.
+// [WriteCachedFile] is the one write, so a slot is held to the cache directory in
+// one place for reading as for writing.
 //
 // The file is held, before it is opened, to the root the cache directory picks
-// ([writescope.RootForCache]) — the root its write is held to: the workspace at
-// workspaceRoot, or the cache directory itself where the configuration names one
-// outside the workspace. A cache directory, a directory on the way to the slot, or
-// the file itself, that is a link leading out of that root is refused with the read
-// hold's condition ([readscope.ErrReadLeadsOutOfWorkspace]), naming the link, and
-// nothing is read through it. The refusal is returned as itself, so a reader that
-// takes an absent file for a miss does not take it for one.
+// ([writescope.RootForCache]) — the root its write is held to: the cache directory
+// itself. A directory on the way to the slot, or the file itself, that is a link
+// leading out of the cache directory — or a cache directory leading out of the
+// workspace — is refused with the read hold's condition
+// ([readscope.ErrReadLeadsOutOfWorkspace]), naming the link, and nothing is read
+// through it. The refusal is returned as itself, so a reader that takes an absent
+// file for a miss does not take it for one.
 //
 // A file that is not there is reported as [os.ReadFile] reports it, so
 // [os.IsNotExist] tells a miss apart; a version or a reference that cannot address
@@ -197,21 +197,20 @@ func heldOrMisplaced(err error) bool {
 // "blob"; callers wanting a multi-file layout should use the
 // directory-aware variants that future implementations introduce.
 //
-// The slot is held to the workspace first: see [WriteCachedFile].
+// The slot is held to the cache directory first: see [WriteCachedFile].
 func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) error {
 	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "blob", data)
 }
 
 // WriteCachedFile stores data under name in the cache slot for uri@version,
 // creating the slot as needed. It is the one write every file a slot holds goes
-// through, so the slot is held to the workspace in one place.
+// through, so the slot is held to the cache directory in one place.
 //
 // The slot is held, before anything is written, to the root the cache directory
-// picks ([writescope.RootForCache]): the workspace at workspaceRoot, or the cache
-// directory itself where the configuration names one outside the workspace. A
-// cache directory, or a directory on the way to the slot, that is a link leading
-// out of that root is refused with the halt the write-scope rule declares, rather
-// than written through.
+// picks ([writescope.RootForCache]): the cache directory itself. A directory on
+// the way to the slot, or the file, that is a link leading out of the cache
+// directory — or a cache directory leading out of the workspace — is refused with
+// the halt the write-scope rule declares, rather than written through.
 func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []byte) error {
 	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
 	if err != nil {

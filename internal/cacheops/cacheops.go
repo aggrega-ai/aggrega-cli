@@ -236,11 +236,11 @@ func (l Locations) workspaceClasses() []workspaceClass {
 
 // holdRead holds a read beneath the workspace's artifact cache — a class root, or
 // a file an enumeration opens or stats — to the root the cache's writes are held
-// to (writescope.RootForCache): the workspace, or the cache directory itself where
-// the configuration names one outside the workspace. A path leading through a link
-// out of that root is refused with the read hold's condition, naming the link, and
-// nothing is read through it. In a run that resolved no workspace there is nothing
-// to hold a read to.
+// to (writescope.RootForCache): the cache directory itself. A path leading through
+// a link out of that directory — elsewhere inside the workspace as much as anywhere
+// else — is refused with the read hold's condition, naming the link, and nothing is
+// read through it. In a run that resolved no workspace there is nothing to hold a
+// read to.
 func holdRead(loc Locations, path string) error {
 	if loc.WorkspaceRoot == "" {
 		return nil
@@ -290,12 +290,13 @@ func stopped(ctx context.Context) error {
 // an empty set that reads like an empty cache.
 //
 // Every read of a workspace class is held (holdRead): its root before it is
-// listed, and each file the enumeration opens or stats beneath it. A cache
-// directory, a class root or such a file that leads through a link out of the root
-// the cache's writes are held to halts the enumeration with the read hold's
-// condition, naming the link, with nothing read through it, and the classes
-// gathered so far returned beside it. The machine-wide classes are the machine's
-// own stores and are not held to any workspace.
+// listed, and each file the enumeration opens or stats beneath it. A class root or
+// such a file that leads through a link out of the cache directory — the root the
+// cache's writes are held to — or a cache directory leading out of the workspace,
+// halts the enumeration with the read hold's condition, naming the link, with
+// nothing read through it, and the classes gathered so far returned beside it. The
+// machine-wide classes are the machine's own stores and are not held to any
+// workspace.
 func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 	var classes []Class
 	hold := func(path string) error { return holdRead(loc, path) }

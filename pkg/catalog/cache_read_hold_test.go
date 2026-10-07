@@ -35,9 +35,12 @@ type cacheReadPlace struct{ ws, cacheDir, cache, elsewhere string }
 // cacheReadSlotLayouts are the layouts of one cached library's slot the
 // cache-read tests drive: plainly inside the workspace; behind a cache directory
 // that is a link leading out; with the slot's content or its manifest a link
-// leading out; and beneath a cache directory the configuration names outside the
-// workspace, plainly and with the content linking out of it. Each lays the slot out
-// and returns the link a refusal must name, or "" for a layout that reads.
+// leading out; with the content a link leading out of the cache directory to
+// elsewhere inside the workspace — refused too, the cache directory being the root
+// of everything beneath it — and one leading elsewhere inside the cache directory;
+// and beneath a cache directory the configuration names outside the workspace,
+// plainly and with the content linking out of it. Each lays the slot out and
+// returns the link a refusal must name, or "" for a layout that reads.
 func cacheReadSlotLayouts() []struct {
 	name     string
 	cacheDir string
@@ -52,16 +55,19 @@ func cacheReadSlotLayouts() []struct {
 		}
 		return slot
 	}
-	// moveOut replaces the slot's file name with a link to a copy of it kept in
-	// elsewhere, and returns the link.
-	moveOut := func(t *testing.T, p cacheReadPlace, slot, name string) string {
+	// moveTo replaces the slot's file name with a link to a copy of it kept in dir,
+	// and returns the link.
+	moveTo := func(t *testing.T, dir, slot, name string) string {
 		t.Helper()
 		at := filepath.Join(slot, name)
 		data, err := os.ReadFile(at)
 		if err != nil {
 			t.Fatal(err)
 		}
-		kept := filepath.Join(p.elsewhere, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		kept := filepath.Join(dir, name)
 		if err := os.WriteFile(kept, data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -70,6 +76,10 @@ func cacheReadSlotLayouts() []struct {
 		}
 		linkForCacheRead(t, kept, at)
 		return at
+	}
+	moveOut := func(t *testing.T, p cacheReadPlace, slot, name string) string {
+		t.Helper()
+		return moveTo(t, p.elsewhere, slot, name)
 	}
 	return []struct {
 		name     string
@@ -97,6 +107,13 @@ func cacheReadSlotLayouts() []struct {
 		}},
 		{"the slot's manifest a link leading out", ".aggrega/cache", func(t *testing.T, p cacheReadPlace) string {
 			return moveOut(t, p, seed(t, p), "manifest")
+		}},
+		{"the slot's content a link leading out of the cache directory, elsewhere inside the workspace", ".aggrega/cache", func(t *testing.T, p cacheReadPlace) string {
+			return moveTo(t, filepath.Join(p.ws, "kept"), seed(t, p), "blob")
+		}},
+		{"control: the slot's content a link leading elsewhere inside the cache directory", ".aggrega/cache", func(t *testing.T, p cacheReadPlace) string {
+			moveTo(t, filepath.Join(p.cache, "kept"), seed(t, p), "blob")
+			return ""
 		}},
 		{"control: a cache directory the configuration names outside the workspace", "../shared-cache", func(t *testing.T, p cacheReadPlace) string {
 			seed(t, p)
@@ -196,9 +213,12 @@ func TestTheBuildsPinGateHaltsOnASlotTheReadHoldRefuses(t *testing.T) {
 // listing a failed resolution's remedy draws from the cache: a library document
 // kept inside is named; one that is a link leading out, and every one behind a
 // cache directory that is a link leading out, is passed over unread — the remedy
-// only enriches a halt the resolution makes on its own account. An entity subtree
-// that is a link the hold admits is read where it leads, as every other read of
-// the cache reads it; walked as the link alone it would name nothing.
+// only enriches a halt the resolution makes on its own account. The cache
+// directory is the root of everything beneath it, so an entity subtree that is a
+// link leading out of it — elsewhere inside the workspace too — is passed over the
+// same way, while one leading elsewhere inside the cache directory is a link the
+// hold admits and is read where it leads, as every other read of the cache reads
+// it; walked as the link alone it would name nothing.
 func TestTheCachedLibrariesARemedyNamesAreReadOnlyFromInsideTheCache(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	library := func(name string) string {
@@ -230,10 +250,14 @@ func TestTheCachedLibrariesARemedyNamesAreReadOnlyFromInsideTheCache(t *testing.
 			linkForCacheRead(t, p.elsewhere, p.cache)
 			put(t, filepath.Join(p.cache, "entities", "outside", "1.0.0", "library.yaml"), library("Outside"))
 		}, nil},
-		{"an entity subtree that is a link leading elsewhere inside the workspace is read where it leads", func(t *testing.T, p cacheReadPlace) {
+		{"an entity subtree that is a link leading elsewhere inside the cache directory is read where it leads", func(t *testing.T, p cacheReadPlace) {
+			put(t, filepath.Join(p.cache, "kept-entities", "inside", "1.0.0", "library.yaml"), library("Inside"))
+			linkForCacheRead(t, "kept-entities", filepath.Join(p.cache, "entities"))
+		}, []string{`SchemaLibrary "Inside"`}},
+		{"an entity subtree that is a link leading out of the cache directory, elsewhere inside the workspace, is passed over", func(t *testing.T, p cacheReadPlace) {
 			put(t, filepath.Join(p.ws, "kept", "entities", "inside", "1.0.0", "library.yaml"), library("Inside"))
 			linkForCacheRead(t, filepath.Join("..", "..", "kept", "entities"), filepath.Join(p.cache, "entities"))
-		}, []string{`SchemaLibrary "Inside"`}},
+		}, nil},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

@@ -76,10 +76,10 @@ func ExtractedTree(slot, contentDigest string) string {
 // workspaceRoot and cacheDir are the workspace the cache belongs to and its
 // artifact cache directory, the two the slot was composed from. The tree is held,
 // before anything is laid out, to the root that cache directory picks
-// (writescope.RootForCache): the workspace, or the cache directory itself where the
-// configuration names one outside the workspace. A cache directory — or a
-// directory on the way to the slot — that is a link leading out of that root is
-// refused with the halt the write-scope rule declares rather than written through.
+// (writescope.RootForCache): the cache directory itself. A directory on the way to
+// the slot that is a link leading out of the cache directory — or a cache directory
+// leading out of the workspace — is refused with the halt the write-scope rule
+// declares rather than written through.
 func RegenerateExtracted(workspaceRoot, cacheDir, slot string, archive []byte) (string, error) {
 	return regenerate(workspaceRoot, cacheDir, slot, archive, tarGzEntries(archive))
 }

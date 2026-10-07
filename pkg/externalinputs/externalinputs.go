@@ -64,10 +64,11 @@ type Service struct {
 	client  *http.Client
 	// heldTo is the root every blob written or read is held to, where the service
 	// was composed over a workspace's own artifact cache: the root that workspace's
-	// cache directory picks (writescope.RootForCache). A cache directory that is a
-	// link leading out of it is refused rather than written or read through. It is
-	// empty for a service constructed over a bare store root, which holds no write
-	// or read to any workspace.
+	// cache directory picks (writescope.RootForCache), the cache directory itself. A
+	// store root or a blob that is a link leading out of it, or a cache directory
+	// leading out of the workspace, is refused rather than written or read through.
+	// It is empty for a service constructed over a bare store root, which holds no
+	// write or read to any workspace.
 	heldTo string
 
 	mu sync.Mutex

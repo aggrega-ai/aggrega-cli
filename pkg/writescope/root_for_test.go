@@ -58,13 +58,14 @@ func TestRootForPicksTheWorkspaceOrTheNamedDirectory(t *testing.T) {
 // writer of the cache then makes against it, one shape of cache directory per row
 // beside a control writing beneath the default directory.
 //
-// A cache directory spelled inside the workspace is held to the workspace root
-// whatever it leads to: a class root beneath it linked elsewhere inside the
-// workspace is followed, and the directory itself being a link leading out is
-// refused. A cache directory the configuration spells climbing out of the
-// workspace is a root of its own: a class root beneath it that is a link leading
-// out of it is refused, the directory itself being a link is followed where it was
-// named, and one leading back into the workspace is the workspace's.
+// The cache directory is the root of everything beneath it, the default as much as
+// one the configuration names outside the workspace: a class root beneath it that
+// is a link leading out of it is refused — elsewhere inside the workspace as much
+// as out of it — and one leading elsewhere inside it is followed. A cache directory
+// spelled inside the workspace is followed to wherever it leads inside the
+// workspace, and refused, held to the workspace root, where it leads out of it. One
+// the configuration spells climbing out of the workspace is honoured where it was
+// named, followed if it is a link, wherever it leads.
 func TestACacheWriteIsHeldToTheRootItsCacheDirectoryPicks(t *testing.T) {
 	parent := t.TempDir()
 	ws := filepath.Join(parent, "ws")
@@ -73,6 +74,10 @@ func TestACacheWriteIsHeldToTheRootItsCacheDirectoryPicks(t *testing.T) {
 	mustMkdir(t, filepath.Join(ws, "kept"))
 	mustMkdir(t, filepath.Join(ws, "inside-cache"))
 	mustLink(t, filepath.Join(ws, "kept"), filepath.Join(ws, "inside-cache", "entities"))
+	mustMkdir(t, filepath.Join(ws, "within-cache", "kept-entities"))
+	mustLink(t, "kept-entities", filepath.Join(ws, "within-cache", "entities"))
+	mustMkdir(t, filepath.Join(ws, "state", "cache", "entities"))
+	mustLink(t, filepath.Join(ws, "state", "cache"), filepath.Join(ws, "linked-in-cache"))
 	mustMkdir(t, filepath.Join(elsewhere, "linked-target"))
 	mustLink(t, filepath.Join(elsewhere, "linked-target"), filepath.Join(ws, "linked-cache"))
 	mustMkdir(t, filepath.Join(parent, "shared", "entities"))
@@ -83,22 +88,28 @@ func TestACacheWriteIsHeldToTheRootItsCacheDirectoryPicks(t *testing.T) {
 	mustLink(t, filepath.Join(elsewhere, "real-cache"), filepath.Join(parent, "shared-link"))
 	mustMkdir(t, filepath.Join(ws, "back"))
 	mustLink(t, filepath.Join(ws, "back"), filepath.Join(parent, "back-in"))
+	mustMkdir(t, filepath.Join(parent, "shared-into", "entities"))
+	mustLink(t, filepath.Join(ws, "kept"), filepath.Join(parent, "shared-into", "inputs"))
 
 	rows := []struct {
 		name     string
 		ws       string
 		cacheDir string
+		class    string
 		wantRoot string
 		refused  bool
 	}{
-		{name: "control: the default cache directory inside the workspace", ws: ws, cacheDir: ".aggrega/cache", wantRoot: ws},
-		{name: "a cache directory inside whose class root links elsewhere inside the workspace is followed", ws: ws, cacheDir: "inside-cache", wantRoot: ws},
+		{name: "control: the default cache directory inside the workspace is its own root", ws: ws, cacheDir: ".aggrega/cache", wantRoot: filepath.Join(ws, ".aggrega/cache")},
+		{name: "a class root linked out of a cache directory inside, elsewhere inside the workspace, is refused", ws: ws, cacheDir: "inside-cache", wantRoot: filepath.Join(ws, "inside-cache"), refused: true},
+		{name: "a class root linked elsewhere inside the cache directory is followed", ws: ws, cacheDir: "within-cache", wantRoot: filepath.Join(ws, "within-cache")},
+		{name: "a cache directory spelled inside that is a link elsewhere inside the workspace is followed", ws: ws, cacheDir: "linked-in-cache", wantRoot: filepath.Join(ws, "linked-in-cache")},
 		{name: "a cache directory spelled inside that is a link leading out of the workspace is refused", ws: ws, cacheDir: "linked-cache", wantRoot: ws, refused: true},
 		{name: "a cache directory climbing out of the workspace is its own root", ws: ws, cacheDir: "../shared", wantRoot: filepath.Join(parent, "shared")},
 		{name: "a class root beneath a cache directory outside that is a link leading out of it is refused", ws: ws, cacheDir: "../shared-out", wantRoot: filepath.Join(parent, "shared-out"), refused: true},
+		{name: "a class root beneath a cache directory outside that is a link into the workspace is refused", ws: ws, cacheDir: "../shared-into", class: "inputs", wantRoot: filepath.Join(parent, "shared-into"), refused: true},
 		{name: "a cache directory outside that is itself a link is followed where it was named", ws: ws, cacheDir: "../shared-link", wantRoot: filepath.Join(parent, "shared-link")},
-		{name: "a cache directory climbing out by a longer spelling is its own root", ws: ws, cacheDir: "inner/../../shared", wantRoot: filepath.Join(parent, "shared")},
-		{name: "a cache directory climbing out that is a link back into the workspace is the workspace's", ws: ws, cacheDir: "../back-in", wantRoot: ws},
+		{name: "a cache directory climbing out by a longer spelling is its own root", ws: ws, cacheDir: "inner/../../shared", wantRoot: filepath.Join(ws, "inner/../../shared")},
+		{name: "a cache directory climbing out that is a link back into the workspace is its own root", ws: ws, cacheDir: "../back-in", wantRoot: filepath.Join(parent, "back-in")},
 		{name: "with no workspace nothing is held", ws: "", cacheDir: "../shared-out", wantRoot: ""},
 	}
 	for _, row := range rows {
@@ -107,7 +118,11 @@ func TestACacheWriteIsHeldToTheRootItsCacheDirectoryPicks(t *testing.T) {
 			if root != row.wantRoot {
 				t.Fatalf("RootForCache(%q, %q) = %q, want %q", row.ws, row.cacheDir, root, row.wantRoot)
 			}
-			path := filepath.Join(ws, row.cacheDir, "entities", "slot", "blob")
+			class := row.class
+			if class == "" {
+				class = "entities"
+			}
+			path := filepath.Join(ws, row.cacheDir, class, "slot", "blob")
 			err := writescope.CheckWrite(root, path)
 			if !row.refused {
 				if err != nil {

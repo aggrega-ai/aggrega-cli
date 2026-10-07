@@ -56,6 +56,13 @@
 // names the remedy an overlay has: keep the overlay itself beneath the overlay
 // directory, or name a directory holding every overlay.
 //
+// [CheckFetchedRead] is the same judgement for a file or directory a pull reads
+// beneath a repository a source fetched and checked out, to archive it. The
+// checkout is a root of its own: what the repository carries is read only from
+// inside it, so a link the repository commits leading out of it is not read and
+// halts the pull, and its refusal names the remedy such a link has — it is the
+// repository's, not the workspace's, so the repository is where it is changed.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -87,9 +94,11 @@ import (
 // configuration is merged from, or the lockfile beside a Release, or a file beside
 // an entity's document — another document in its directory, a Plugin entity's
 // .wasm — or a file or directory beneath the workspace's artifact cache, or an
-// overlay beneath the overlay directory a catalog generation reads, leads, through
-// a link, out of the root it is held to: the workspace, or a directory outside it
-// the owner typed or the configuration named.
+// overlay beneath the overlay directory a catalog generation reads, or a file a
+// pull archives from a repository a source fetched, leads, through a link, out of
+// the root it is held to: the workspace, a directory outside it the owner typed or
+// the configuration named, the artifact cache directory, or the checkout of the
+// fetched repository.
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
@@ -113,8 +122,8 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 		"a build or a pull loads — and where it reads the workspace's artifact cache: a cached entity, plugin, " +
 		"source archive, external input, documentation bundle or registry index, and the entries a cache status, " +
 		"prune or clear lists — and where a catalog generation reads the overlays beneath the overlay directory it " +
-		"was given. Each of those reads the filesystem ahead of every declared stage, and no stage holds the entry " +
-		"the rule is judged against."),
+		"was given, and where a pull archives the files of a repository a source fetched. Each of those reads the " +
+		"filesystem ahead of every declared stage, and no stage holds the entry the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -200,6 +209,20 @@ func overlayRemedyFor(root string) string {
 		"read where it leads, even when it is itself a link"
 }
 
+// fetchedRemedyFor is what the refusal tells its reader for a link a fetched
+// repository carries, which must stay inside the checkout at root.
+//
+// The link is committed in the repository, so nothing in the workspace removes it
+// and the checkout it was met in is gone once the pull halts: the remedy is in the
+// repository — a link that stays inside it, or the file itself in its place — and
+// in the revision the source names. root is not named, for the same reason.
+func fetchedRemedyFor(string) string {
+	return "nothing was read through that link, and nothing was cached. The link is committed in the repository " +
+		"the source names, which is read only from inside its own checkout: a link there is archived as the file or " +
+		"directory it leads to only where that lies inside the repository too. Make the link lead to a place inside " +
+		"the repository, or commit the file itself in its place, and name the revision that carries the change"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -256,6 +279,15 @@ func CheckCacheRead(root, path string) error {
 // and the overlay directory itself for one named outside it.
 func CheckOverlayRead(root, path string) error {
 	return checkRead(root, path, overlayRemedyFor)
+}
+
+// CheckFetchedRead is [CheckRead] for a file or directory about to be read beneath
+// the checkout of a repository a source fetched, to be archived: the same judgement
+// and the same condition, with the remedy a link in a fetched repository has. root
+// is the checkout itself, a root of its own, so a link the repository carries
+// leading out of it — to anywhere on the machine running the pull — is not read.
+func CheckFetchedRead(root, path string) error {
+	return checkRead(root, path, fetchedRemedyFor)
 }
 
 // checkRead is the judgement every entry point makes, composing the refusal with

@@ -19,6 +19,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,8 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
 
 // Entry is one file in the archive, identified by its relative path
@@ -133,43 +136,119 @@ func Digest(archiveBytes []byte) string {
 	return digest.ContentDigest(archiveBytes)
 }
 
-// WalkDirectory walks a filesystem directory rooted at rootPath and
-// returns an Entry slice ready to feed into WriteTarGz. The
-// resulting RelPaths are forward-slash separated relative paths from
-// rootPath; the root directory itself is not included as an entry.
-// Symbolic links are followed; files unreadable by the current
-// process surface as errors. Returned entries are unsorted —
-// WriteTarGz sorts them.
-func WalkDirectory(rootPath string) ([]Entry, error) {
-	var entries []Entry
-	root := filepath.Clean(rootPath)
-	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if info.IsDir() {
-			entries = append(entries, Entry{RelPath: rel + "/"})
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("archive: read %s: %w", path, err)
-		}
-		entries = append(entries, Entry{RelPath: rel, Data: data})
-		return nil
-	})
+// WalkDirectory walks the directory dir, beneath root, and returns an
+// Entry slice ready to feed into WriteTarGz. The resulting RelPaths are
+// forward-slash separated relative paths from dir; dir itself is not
+// included as an entry. Files unreadable by the current process
+// surface as errors. Returned entries are unsorted — WriteTarGz sorts
+// them.
+//
+// root is the tree dir was fetched as — the checkout of a repository —
+// and it is a root of its own: dir itself, where it is a link, and every
+// link the walk meets beneath it are judged against root
+// ([readscope.CheckFetchedRead]) before anything is read through them.
+// A link leading out of root is not read: the walk halts with the read
+// hold's refusal, naming the link and where it leads, so nothing from
+// outside the fetched tree reaches an archive. A link leading inside
+// root is archived as what it leads to — a file's bytes under the
+// link's name, and a directory walked where it leads, its entries named
+// beneath the link ([pathscope.WalkDir]); dir itself being such a link
+// is walked where it leads the same way. A directory link leading back
+// into a directory the walk is already reading through it — a link
+// round a loop — halts the walk, because the tree it stands for has no
+// end. A link leading nowhere is read as the missing file it names, and
+// fails the walk.
+func WalkDirectory(root, dir string) ([]Entry, error) {
+	dir = filepath.Clean(dir)
+	if err := readscope.CheckFetchedRead(root, dir); err != nil {
+		return nil, err
+	}
+	top, err := os.Stat(dir)
 	if err != nil {
 		return nil, err
 	}
-	return entries, nil
+	w := &treeWalk{root: root}
+	if err := w.walk(dir, "", []os.FileInfo{top}); err != nil {
+		return nil, err
+	}
+	return w.entries, nil
+}
+
+// treeWalk is one archiving walk of a fetched tree.
+type treeWalk struct {
+	root    string
+	entries []Entry
+}
+
+// walk adds an entry for everything beneath dir, each named beneath prefix, and
+// holds every link it meets to the root the tree was fetched as. entered holds the
+// directories the walk is reading dir through — the one it started at and every
+// directory a link led it into on the way here — so a link leading back into one of
+// them is found to be a loop rather than walked without end.
+func (w *treeWalk) walk(dir, prefix string, entered []os.FileInfo) error {
+	return pathscope.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == dir {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		rel = joinSlash(prefix, filepath.ToSlash(rel))
+		if d.Type()&fs.ModeSymlink != 0 {
+			return w.link(path, rel, entered)
+		}
+		if d.IsDir() {
+			w.entries = append(w.entries, Entry{RelPath: rel + "/"})
+			return nil
+		}
+		return w.file(path, rel)
+	})
+}
+
+// link archives the link at path, named rel, as what it leads to, once the one
+// judgement of where a path leads has found that inside the fetched tree.
+func (w *treeWalk) link(path, rel string, entered []os.FileInfo) error {
+	if err := readscope.CheckFetchedRead(w.root, path); err != nil {
+		return err
+	}
+	target, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("archive: read %s: %w", path, err)
+	}
+	if !target.IsDir() {
+		return w.file(path, rel)
+	}
+	for _, seen := range entered {
+		if os.SameFile(seen, target) {
+			return fmt.Errorf("archive: the link %s leads back into a directory this walk is already reading "+
+				"through it, so the tree it stands for has no end to archive", path)
+		}
+	}
+	w.entries = append(w.entries, Entry{RelPath: rel + "/"})
+	return w.walk(path, rel, append(entered[:len(entered):len(entered)], target))
+}
+
+// file archives the file at path, named rel.
+func (w *treeWalk) file(path, rel string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("archive: read %s: %w", path, err)
+	}
+	w.entries = append(w.entries, Entry{RelPath: rel, Data: data})
+	return nil
+}
+
+// joinSlash joins a slash-separated name beneath prefix, which is empty at the top
+// of a walk.
+func joinSlash(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "/" + name
 }
 
 // zeroTime returns the canonical Unix epoch used for every header

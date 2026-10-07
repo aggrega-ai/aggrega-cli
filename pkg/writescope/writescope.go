@@ -40,11 +40,13 @@
 // writer's.
 //
 // The artifact cache has an answer of its own, [RootForCache], asked by every
-// writer, clearer and reader of the cache. The cache directory the configuration spells
-// inside the workspace — the default among them — is a path the product works out
-// inside the workspace, held to the workspace root; one the configuration spells
-// climbing out of the workspace is a directory it named outside, and a root of its
-// own.
+// writer, clearer and reader of the cache: the cache directory itself is the root
+// of everything beneath it, the default as much as one the configuration names
+// outside the workspace, so what a write may reach beneath it is what a removal or
+// a read may reach. Where the cache directory itself lies is read from how the
+// configuration spells it: one spelled climbing out of the workspace is a
+// directory it named outside, honoured where it was named, and one spelled inside
+// the workspace — the default among them — is held to the workspace.
 //
 // # Which paths it holds
 //
@@ -66,8 +68,9 @@ import (
 
 // ErrWriteLeadsOutOfWorkspace is the halt raised when a path an operation is
 // about to write or delete leads, through a link, out of the root it is held to —
-// the workspace, or a directory outside it the owner typed or the configuration
-// named ([RootFor]): the build output directory, a file composed beneath it, the
+// the workspace, a directory outside it the owner typed or the configuration
+// named ([RootFor]), or the artifact cache directory for what is kept beneath it
+// ([RootForCache]): the build output directory, a file composed beneath it, the
 // trace, the lockfile, the plugin trust record, an entity.lock, the workspace
 // configuration file, the artifact cache or a subtree of it, an imported draft, or
 // a generated Plugin entity.
@@ -132,32 +135,38 @@ func RootFor(workspaceRoot, anchor string) string {
 // relative to the workspace root, which is how every writer, clearer and reader of
 // the cache joins it.
 //
-// A cache directory whose spelling stays beneath the workspace root — the default,
-// or a configured one that does not climb out — is a directory the product works
-// out inside the workspace, and its writes are held to workspaceRoot: the cache
-// directory, or a directory beneath it, being a link leading out of the workspace
-// is refused. A configured cache directory that climbs out of the workspace is a
-// directory the configuration named outside it, and [RootFor] picks its root: the
-// directory itself, honoured where it was named — followed, if it is a link — so
-// a link beneath it leading out of it is refused.
+// The answer is the cache directory itself, whatever it is: the cache is the one
+// root of everything kept beneath it. A class root, a slot or a file beneath it
+// that is a link leading out of it — elsewhere inside the workspace as much as
+// anywhere else — is refused, by a write, a removal and a read alike, so no write
+// and no removal through the cache reaches a file outside the directory it is kept
+// in, and what a write may reach is exactly what a removal may.
 //
-// Which of the two a cache directory is, is read from its spelling, unlike
-// [RootFor]'s anchor, and that is deliberate: the default directory is nobody's
-// naming, so a link standing at it is a link inside the workspace, refused, rather
-// than a root of its own made so by where it leads.
+// Where the cache directory itself lies is read from its spelling first, unlike
+// [RootFor]'s anchor, and that is deliberate. A configured cache directory that
+// climbs out of the workspace is a directory the configuration named outside it,
+// honoured where it was named — followed, if it is a link. One whose spelling stays
+// beneath the workspace root — the default, or a configured one that does not
+// climb out — is a directory the product works out inside the workspace: it is
+// followed to wherever it leads inside the workspace, and where it, or a directory
+// on the way to it, leads out of the workspace, the answer is the workspace root
+// instead, so every path beneath it is refused naming that link. The default
+// directory is nobody's naming, so a link standing at it is a link inside the
+// workspace, refused, rather than a root of its own made so by where it leads.
 //
 // It is the one answer every writer, clearer and reader of the cache asks, so no
 // two of them can come to hold the cache to different roots — a read is held where
-// the write it reads back was. With no workspace root nothing is held, and the
-// answer is empty.
+// the write it reads back was, and a removal where both were. With no workspace
+// root nothing is held, and the answer is empty.
 func RootForCache(workspaceRoot, cacheDir string) string {
 	if workspaceRoot == "" {
 		return ""
 	}
-	if _, beneath := pathscope.Relative(workspaceRoot, cacheDir); beneath {
+	dir := filepath.Join(workspaceRoot, cacheDir)
+	if _, beneath := pathscope.Relative(workspaceRoot, cacheDir); beneath && RootFor(workspaceRoot, dir) != workspaceRoot {
 		return workspaceRoot
 	}
-	return RootFor(workspaceRoot, filepath.Join(workspaceRoot, cacheDir))
+	return dir
 }
 
 // maxLinkHops bounds how far CheckWrite follows a chain of links that lead

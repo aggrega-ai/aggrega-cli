@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
@@ -120,8 +122,9 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	// a dedicated arm that consults the attribution index directly.
 	//
 	// The roots a prune removes from are held before anything beneath them is read,
-	// so a cache directory linked out of the workspace is refused as the removal it
-	// would be, with nothing listed through it.
+	// so a cache directory linked out of the workspace, or a class root linked out of
+	// the cache directory, is refused as the removal it would be, with nothing listed
+	// through it.
 	if err := holdWorkspaceClassRoots(loc, loc.workspaceClasses(), true); err != nil {
 		return res, err
 	}
@@ -231,12 +234,15 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 }
 
 // holdWorkspaceClassRoots holds every workspace class root an operation would
-// remove from or clear to the root the workspace's cache directory picks, before
-// anything is removed — and before anything beneath them is enumerated.
+// remove from or clear to the root the workspace's cache directory picks — the
+// cache directory itself — before anything is removed, and before anything beneath
+// them is enumerated.
 //
 // The workspace's cache classes sit under the workspace's own cache directory, so
-// a cache directory — or a class root — that is a link leading out of that root
-// would turn a clear into deleting directories elsewhere on the machine. One class
+// a class root that is a link leading out of that directory — elsewhere inside the
+// workspace as much as anywhere else — would turn a clear or a prune into deleting
+// files the cache does not own, and a cache directory leading out of the workspace
+// would turn one into deleting directories elsewhere on the machine. One class
 // root leading out halts the operation with every class left as it was. The
 // machine-wide classes are the machine's own stores and are not held to any
 // workspace, which is why only the workspace's classes are passed here.
@@ -256,10 +262,10 @@ func holdWorkspaceClassRoots(loc Locations, classes []workspaceClass, prunableOn
 
 // holdRemoval holds one removal from class cl — its root, or one element of it —
 // to the root the cache directory loc.CacheDir picks for the workspace at
-// loc.WorkspaceRoot (writescope.RootForCache): the workspace, or the cache
-// directory itself where the configuration names one outside the workspace. A
-// machine-wide class, and a path in a run that resolved no workspace, are held to
-// nothing.
+// loc.WorkspaceRoot (writescope.RootForCache): the cache directory itself, the
+// root its writes and its reads are held to as well — or the workspace, where a
+// cache directory spelled inside it leads out of it. A machine-wide class, and a
+// path in a run that resolved no workspace, are held to nothing.
 func holdRemoval(loc Locations, cl Class, path string) error {
 	if cl.Reach != ReachWorkspace || cl.Root == "" {
 		return nil
@@ -385,6 +391,16 @@ type ClearResult struct {
 // Clear removes every cache subtree. Each subtree is sized before removal so the
 // result states what was reclaimed. Absent subtrees are no-ops.
 //
+// The workspace's class roots are held to the cache directory before anything is
+// listed or removed (holdWorkspaceClassRoots), so a class root that is a link
+// leading out of the cache directory — elsewhere inside the workspace as much as
+// anywhere else — refuses the clear and nothing is removed. A subtree whose root is
+// a link to a directory that the hold admits — a workspace class root leading
+// elsewhere inside the cache directory, or a machine-wide store its owner keeps
+// elsewhere — is the directory it leads to, which is where the inventory lists it:
+// the clear empties that directory, keeps the link, and reports the bytes it
+// reclaimed there (clearClassRoot).
+//
 // A file another process holds open is left in its subtree and counted rather
 // than failing the clear, so every subtree is still cleared of everything else.
 // Only Windows refuses that removal; elsewhere the open file is removed like any
@@ -396,8 +412,9 @@ type ClearResult struct {
 func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 	var res ClearResult
 	// The roots a clear removes are held before anything beneath them is read, so a
-	// cache directory linked out of the workspace is refused as the removal it would
-	// be, with nothing listed through it.
+	// cache directory linked out of the workspace, or a class root linked out of the
+	// cache directory, is refused as the removal it would be, with nothing listed
+	// through it.
 	if err := holdWorkspaceClassRoots(loc, loc.workspaceClasses(), false); err != nil {
 		return res, err
 	}
@@ -417,7 +434,7 @@ func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 			continue
 		}
 		size := dirSize(cl.Root)
-		held, rmErr := removeAllLeavingHeldOpen(cl.Root)
+		held, rmErr := clearClassRoot(cl.Root)
 		if rmErr != nil {
 			return res, fmt.Errorf("cache clear: remove %s: %w", cl.Root, rmErr)
 		}
@@ -435,4 +452,51 @@ func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 		res.ReclaimedBytes += reclaimed
 	}
 	return res, nil
+}
+
+// clearClassRoot removes what a clear reclaims from the subtree rooted at root: the
+// root and everything beneath it, or — where root is a link to a directory — every
+// entry of the directory the link leads to, the link itself kept. It reports what it
+// had to leave because another process held it open, as removeAllLeavingHeldOpen
+// does.
+//
+// A root that is a link is the directory it leads to: the inventory lists what lies
+// there, and dirSize sizes it there, so removing the link instead would report as
+// reclaimed bytes that are still on disk, leave in place everything the inventory
+// had just listed, and take away the link its owner placed. Each entry is removed
+// as removeAllLeavingHeldOpen removes a root, so a link met beneath is removed as
+// the link it is and never entered.
+//
+// It decides nothing about where a root may lead: a workspace class root reaches
+// here only once the hold has found it inside the cache directory, and a
+// machine-wide store is one its owner names, emptied where it leads.
+func clearClassRoot(root string) (heldOpenFiles, error) {
+	if !linksToDirectory(root) {
+		return removeAllLeavingHeldOpen(root)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return heldOpenFiles{}, err
+	}
+	var held heldOpenFiles
+	for _, e := range entries {
+		h, rmErr := removeAllLeavingHeldOpen(filepath.Join(root, e.Name()))
+		held.Files += h.Files
+		held.Bytes += h.Bytes
+		if rmErr != nil {
+			return held, rmErr
+		}
+	}
+	return held, nil
+}
+
+// linksToDirectory reports whether path is itself a symbolic link that leads to a
+// directory.
+func linksToDirectory(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return false
+	}
+	target, err := os.Stat(path)
+	return err == nil && target.IsDir()
 }

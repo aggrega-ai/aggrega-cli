@@ -63,6 +63,10 @@ var decidersOfInside = map[string]string{
 	"internal/entitypin:RefuseSharedDirectory": "the documents beside an entity, read to tell whether another entity shares its directory",
 	"pkg/pluginpath:Resolver.readColocated":    "the .wasm beside a catalog Plugin entity, read by the plugin cascade",
 	"internal/gencatalog:loadOverlaysByPlugin": "every link a catalog generation's overlay walk would read through, an overlay or a directory",
+	"pkg/readscope:CheckFetchedRead":           "a file or directory a pull archives from the checkout of a repository a source fetched",
+	"pkg/sourceresolver/internal/archive:WalkDirectory": "the directory a fetched repository is archived from, " +
+		"a module subdirectory that is a link among them",
+	"pkg/sourceresolver/internal/archive:treeWalk.link": "every link the archive of a fetched repository meets",
 
 	// Every read of the workspace's artifact cache reaches the one judgement through
 	// readscope.CheckCacheRead, against the root the cache's writes are held to. A
@@ -123,7 +127,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckCacheRead", "CheckOverlayRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckCacheRead", "CheckOverlayRead", "CheckFetchedRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},
@@ -165,8 +169,8 @@ var linkResolvers = map[string][]string{
 var exceptionPredicates = map[string]string{
 	"pkg/writescope:RootFor": "a directory the owner typed, or the configuration named, that lies outside the " +
 		"workspace is a root of its own for what is composed or read beneath it",
-	"pkg/writescope:RootForCache": "the artifact cache directory the configuration spells climbing out of the " +
-		"workspace is a root of its own",
+	"pkg/writescope:RootForCache": "the artifact cache directory is the root of everything kept beneath it, the " +
+		"default as much as one the configuration spells climbing out of the workspace, which is honoured where named",
 	"pkg/workspaceconfig:CatalogDirRoot": "a catalog directory somebody named, typed or configured, has the root " +
 		"the anchor rule picks, and the conventional one nobody named is the workspace's",
 	"pkg/workspaceconfig:Reaches": "what the configuration names — a catalog directory and what lies beneath it, " +
