@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -58,6 +59,19 @@ type callerRenderFacts struct {
 	Attachments types.OrderedMap[[]RenderFact]
 }
 
+// onContext is what a template reads of this caller's facts: keyed by name, the
+// caller's own render calls first and then each of its attachments in the order
+// they rendered, so a name more than one of them reported holds one list joining
+// theirs in that order.
+func (c callerRenderFacts) onContext() (*types.OrderedMap[[]any], error) {
+	reports := make([][]RenderFact, 0, 1+c.Attachments.Len())
+	reports = append(reports, c.Own)
+	for _, facts := range c.Attachments.All() {
+		reports = append(reports, facts)
+	}
+	return renderFactsOnContext(reports...)
+}
+
 // gatherCallerRenderFacts reads, for each connection made to a node, what that
 // connection's caller reported, from the record each node's turn left.
 //
@@ -84,38 +98,80 @@ func gatherCallerRenderFacts(
 	return out
 }
 
-// attachmentRenderRecord is what one component-scope attachment's render was
-// handed: which attachment, whether it rendered in the pass after every node had
-// rendered or in its host's turn, and what it was handed of its host's callers'
-// renders.
-type attachmentRenderRecord struct {
-	Host          string
-	Instance      string
-	AfterTheNodes bool
-	CallerFacts   []callerRenderFacts
-}
-
-// attachmentRenderLog is the render's record of every component-scope
-// attachment's render, in the order they rendered.
+// renderFactsOnContext keys reported render facts by name for a template to read.
 //
-// It is kept beside the render's output because which pass an attachment
-// rendered in, and what it was handed there, leave no mark on an output that
-// reads none of it — so they are recorded where they are decided rather than
-// inferred from what the attachment emitted. Its only reader is this package's
-// tests. A nil log records nothing.
-type attachmentRenderLog struct {
-	records []attachmentRenderRecord
+// The reports are taken in the order given, and each report's facts in the order
+// its guest listed them; a name met again joins its list to the one already held,
+// so the lists one name gets from several renders read as one list in the order
+// those renders ran. The names keep the order they were first met in. Each value
+// is the guest's JSON list, decoded so the template can range over it, with every
+// object inside it keeping its keys in the order the guest wrote them — the same
+// decode an ordered map gives a document's values, so nothing here is a second
+// reading of JSON.
+//
+// The result is never nil: a context that promises the facts carries them even
+// when nothing was reported, so a template reading a name nobody reported reads
+// an empty list rather than failing on a missing parent.
+//
+// A value that is not a list is an error. The socket refuses such a value when a
+// guest returns it, so reaching one here means a report arrived by some other
+// path, and joining it would hand a template something no provider promised.
+func renderFactsOnContext(reports ...[]RenderFact) (*types.OrderedMap[[]any], error) {
+	facts := types.NewOrderedMap[[]any]()
+	for _, report := range reports {
+		for _, fact := range report {
+			decoded, err := types.DecodeJSONValue(fact.Value)
+			if err != nil {
+				return nil, fmt.Errorf("render fact %q: decoding its value: %w", fact.Name, err)
+			}
+			entries, isList := decoded.([]any)
+			if !isList {
+				return nil, fmt.Errorf("render fact %q: its value is not a list, and every render fact's value is one", fact.Name)
+			}
+			// A name met for the first time starts from an empty list rather than a
+			// nil one: appending nothing to nil stays nil, so a name whose every
+			// report was an empty list would reach a template as null, not as the
+			// list every render fact is.
+			held, seen := facts.Get(fact.Name)
+			if !seen {
+				held = make([]any, 0, len(entries))
+			}
+			facts.Set(fact.Name, append(held, entries...))
+		}
+	}
+	return facts, nil
 }
 
-// record appends one attachment render to the log.
-func (l *attachmentRenderLog) record(id attachmentIdentity, afterTheNodes bool, callers []callerRenderFacts) {
-	if l == nil {
-		return
+// usedByWithCallerFacts returns the connections made to a node with each
+// caller's render facts on its entry, for the context of an attachment whose
+// FeatureRecipe declares it reads them.
+//
+// The connections are copied rather than written in place: the node's own list
+// is the one every other attachment of the node is handed, and an attachment that
+// does not declare the read must never meet the facts on it. Every entry carries
+// the facts, empty for a caller whose providers reported nothing, so a template
+// ranging the callers reads each one's facts the same way.
+//
+// callers is what gatherCallerRenderFacts read for the same connections, one
+// entry per connection in the same order; a list that does not line up with the
+// connections is refused rather than paired by position with the wrong caller.
+func usedByWithCallerFacts(inbound []types.InboundEdge, callers []callerRenderFacts) ([]types.InboundEdge, error) {
+	if len(callers) != len(inbound) {
+		return nil, fmt.Errorf("internal error: %d connection(s) made to the node but %d caller report(s) gathered for them",
+			len(inbound), len(callers))
 	}
-	l.records = append(l.records, attachmentRenderRecord{
-		Host:          id.host,
-		Instance:      id.instance,
-		AfterTheNodes: afterTheNodes,
-		CallerFacts:   callers,
-	})
+	out := make([]types.InboundEdge, len(inbound))
+	for i, edge := range inbound {
+		if callers[i].ComponentID != edge.ComponentID {
+			return nil, fmt.Errorf("internal error: connection %d is made by %q but the report gathered for it is %q's",
+				i, edge.ComponentID, callers[i].ComponentID)
+		}
+		facts, err := callers[i].onContext()
+		if err != nil {
+			return nil, fmt.Errorf("caller %q: %w", edge.ComponentID, err)
+		}
+		edge.RenderFacts = facts
+		out[i] = edge
+	}
+	return out, nil
 }

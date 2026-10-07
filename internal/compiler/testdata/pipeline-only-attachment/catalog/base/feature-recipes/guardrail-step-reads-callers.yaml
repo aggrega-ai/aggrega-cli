@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-step-reads-callers
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.myco/guardrail"
+  # Declares that its templates read their callers' render facts, which renders
+  # the attachment after every component. A pipeline step still never sees the
+  # components connecting to its host, so the step's input below reads nothing
+  # and the build halts before anything renders.
+  readsCallerRenderFacts: true
+  pipeline:
+    - id: inject_into_host
+      plugin: pipeline-step/host-patch:1.0.0
+      function: step
+      with: |
+        callers: '{{ range .context.used_by }}{{ .render_facts }}{{ end }}'

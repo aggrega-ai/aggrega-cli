@@ -42,14 +42,15 @@ func (e *factReportingEmitter) EmitArtifacts(ctx context.Context, proj Artifacts
 func TestRenderFacts_TheNodesOwnAreCarriedOnItsStateAndAnAttachmentsBesideThem(t *testing.T) {
 	t.Parallel()
 
-	// Out of name order, with an object value whose keys are out of key order and
-	// carry a space: anything that sorted, re-serialised or tidied would show.
+	// Out of name order, every value a list, with an object entry whose keys are
+	// out of key order and carry a space: anything that sorted, re-serialised or
+	// tidied would show.
 	hostCrossings := [][]RenderFact{
-		{{Name: "zeta_fact", Value: json.RawMessage(`{"tier":"web", "app":"api"}`)}},
+		{{Name: "zeta_fact", Value: json.RawMessage(`[{"tier":"web", "app":"api"}]`)}},
 		{{Name: "alpha_fact", Value: json.RawMessage(`["b","a"]`)}},
 	}
 	hostWant := []RenderFact{hostCrossings[0][0], hostCrossings[1][0]}
-	guardFacts := []RenderFact{{Name: "guard_fact", Value: json.RawMessage(`{"z":1,"a":2}`)}}
+	guardFacts := []RenderFact{{Name: "guard_fact", Value: json.RawMessage(`[{"z":1,"a":2}]`)}}
 
 	for _, tc := range []struct {
 		name            string
@@ -176,7 +177,7 @@ func TestRenderFacts_ABoundaryScopeRenderIsNoNodesOwn(t *testing.T) {
 
 	renders := 0
 	engine := factReportingRenderEngine{
-		facts:   []RenderFact{{Name: "bridge_fact", Value: json.RawMessage(`"bridge"`)}},
+		facts:   []RenderFact{{Name: "bridge_fact", Value: json.RawMessage(`["bridge"]`)}},
 		renders: &renders,
 	}
 	factory := func(string) (Provider, error) { return engine, nil }

@@ -138,33 +138,59 @@ const defaultNamespace = "default"
 // is not a resource name this or any other reader of the emitted documents can
 // recognise. So a green from the host's comparison means no two declared names
 // met; it does not mean every name the output will eventually carry was watched.
+//
+// A render reports these names beside its render facts, and both are read from
+// one walk over the emitted files — see [ReportEmitted], which is what the guest
+// calls. This function is the names half of that read on its own.
 func DeclaredResourceNames(
 	files []rendercore.RenderedFile,
 	fallbackNamespace string,
 ) types.OrderedMap[[]string] {
+	return declaredNamesOf(emittedResources(files), fallbackNamespace)
+}
+
+// declaredNamesOf builds the name declaration from the resource documents one
+// walk over a render's emitted files read, in the order that walk met them.
+func declaredNamesOf(resources []*yaml.Node, fallbackNamespace string) types.OrderedMap[[]string] {
 	declared := types.OrderedMap[[]string]{}
 	// Walked in the order the render emits, so the declaration's space order and
 	// each space's name order are functions of the render's own output rather than
 	// of a map walk — which is what keeps the payload byte-identical across runs
 	// of identical input.
-	for _, f := range files {
-		for _, root := range resourceMappings(f.Content) {
-			kind := scalarChildValue(root, "kind")
-			metadata := findMapChild(root, "metadata")
-			name := scalarChildValue(metadata, "name")
-			if kind == "" || name == "" {
-				continue
-			}
-			namespace := scalarChildValue(metadata, "namespace")
-			if namespace == "" {
-				namespace = fallbackNamespace
-			}
-			space := resourceNameSpace(kind, namespace)
-			names, _ := declared.Get(space)
-			declared.Set(space, append(names, name))
+	for _, root := range resources {
+		kind := scalarChildValue(root, "kind")
+		metadata := findMapChild(root, "metadata")
+		name := scalarChildValue(metadata, "name")
+		if kind == "" || name == "" {
+			continue
 		}
+		namespace := scalarChildValue(metadata, "namespace")
+		if namespace == "" {
+			namespace = fallbackNamespace
+		}
+		space := resourceNameSpace(kind, namespace)
+		names, _ := declared.Get(space)
+		declared.Set(space, append(names, name))
 	}
 	return declared
+}
+
+// emittedResources is the one walk over a render's emitted files: the root
+// mapping of every resource-shaped document, file by file in the order the render
+// emits them and document by document within each file.
+//
+// Everything this guest reports about what it emitted is read from what this walk
+// returns, and from nothing else. Two readers each parsing the files for
+// themselves would be two answers to "which documents did this render emit",
+// agreeing until the first file one of them reads differently — a document after
+// one that does not parse, say — and then reporting a name for a resource the
+// facts never mention, or the reverse, with nothing failing.
+func emittedResources(files []rendercore.RenderedFile) []*yaml.Node {
+	var out []*yaml.Node
+	for _, f := range files {
+		out = append(out, resourceMappings(f.Content)...)
+	}
+	return out
 }
 
 // resourceMappings returns the root mapping node of every document in one

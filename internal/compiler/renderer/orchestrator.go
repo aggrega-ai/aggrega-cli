@@ -226,18 +226,6 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	derivedNames *derivedNameSets
-
-	// attachmentRenders is the render's record of every component-scope
-	// attachment's render: which pass it rendered in, and what it was handed of
-	// its host's callers' renders.
-	//
-	// It is published here because neither leaves a mark on an output that reads
-	// none of it, so a reader asking where an attachment rendered, or what it was
-	// handed, has this and nothing else. Its only reader is this package's tests.
-	//
-	// Out-of-band: it carries no content that reaches an emitted file, and the
-	// emitted bytes are the same whether it is populated or not.
-	attachmentRenders *attachmentRenderLog
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -945,12 +933,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
-		// The rule over an attachment template that reads its callers' render facts
-		// while its FeatureRecipe does not declare it, asked against the same
-		// presentation and the same enumeration. It is here, ahead of the node walk,
-		// because the declaration it reads is what decides where in the walk such an
-		// attachment renders — so the refusal is reported against the field the author
-		// wrote before anything renders, rather than after.
+		// The rules over an attachment template that reads its callers' render facts
+		// — while its FeatureRecipe does not declare it, or in a pipeline step, which
+		// never sees the callers — asked against the same presentation and the same
+		// enumeration. They are here, ahead of the node walk, because the declaration
+		// one of them reads is what decides where in the walk such an attachment
+		// renders — so a refusal is reported against the field the author wrote
+		// before anything renders, rather than after.
 		if err := runCallerRenderFactsRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
@@ -1128,13 +1117,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// content is produced by the walk rather than before it.
 	input.emitted = newEmittedProjections()
 	result.emitted = input.emitted
-
-	// Install this render's record of every component-scope attachment's render.
-	// It is installed beside the retentions above and travels the same way — onto
-	// the travelling input, which reaches every attachment's render, and onto the
-	// result, which outlives the render.
-	input.attachmentRenders = &attachmentRenderLog{}
-	result.attachmentRenders = input.attachmentRenders
 
 	// Present the state each node reaches before its artifact bytes exist, with
 	// the facts complete earlier answered by the presentation built above. Built

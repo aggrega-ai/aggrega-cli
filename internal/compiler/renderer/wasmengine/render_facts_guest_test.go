@@ -17,12 +17,12 @@ import (
 
 // kitGuestFacts is what the plugin kit's render example reports for a node: the
 // paths it emitted, then the node it echoed — a fixed order that is deliberately
-// not name order, with the echoed object's keys out of key order too. Each value
-// is the exact bytes the guest writes.
+// not name order, every value a list, with the echoed entry's keys out of key
+// order too. Each value is the exact bytes the guest writes.
 func kitGuestFacts(nodeID string) []renderer.RenderFact {
 	return []renderer.RenderFact{
 		{Name: "emitted_paths", Value: []byte(`["parity.txt","attachments.txt"]`)},
-		{Name: "echoed_node", Value: []byte(`{"prefix":"rendered-node:","id":"` + nodeID + `"}`)},
+		{Name: "echoed_node", Value: []byte(`[{"prefix":"rendered-node:","id":"` + nodeID + `"}]`)},
 	}
 }
 

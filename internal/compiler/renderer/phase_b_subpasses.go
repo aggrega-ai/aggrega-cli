@@ -451,6 +451,13 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // is what keeps the host's rendered bytes independent of who connects to it while
 // an attached Feature that restricts or describes those connections can read them.
 //
+// The host's own render facts appear at .context.render_facts on every template
+// of this context, pipeline steps included: they come from the host's own render
+// alone, so nothing that reads them makes the host's bytes depend on who connects.
+// Each caller's render facts appear on its .context.used_by entry only for an
+// attachment rendered after every node — one whose FeatureRecipe declares it reads
+// them — because before then a caller later in the walk has not rendered.
+//
 // A FeatureRecipe declaring spec.executionScope: boundary takes the
 // boundary-scope dispatch instead: dedup by (boundary_path, fr_instance),
 // evaluate against the boundary-scope TemplateContext (.boundary.* pillars in
@@ -548,11 +555,22 @@ func phaseB6(
 		}
 	}
 
+	// The host's own render facts, keyed for a template once: the host's own
+	// render has finished by now, and nothing an attachment renders is recorded
+	// among them, so every attachment of the host — in its turn or after the walk —
+	// reads the same facts.
+	hostRenderFacts, err := renderFactsOnContext(state.RenderFacts)
+	if err != nil {
+		return attachmentOutput{}, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("node %q render facts", nodeID))
+	}
+
 	// Everything an attachment's render reads of its host, held in one value. It
 	// is the value the declared pass after the node walk renders from too, which is
 	// what keeps an attachment rendered there from being handed anything its host's
-	// turn would not have handed it: the state, the context and the render context
-	// are the ones this turn holds, kept by reference rather than assembled again.
+	// turn would not have handed it: the state, the context, the host's render
+	// facts and the render context are the ones this turn holds, kept by reference
+	// rather than assembled again.
 	//
 	// The running host document set travels on it, threaded across the attachment
 	// sequence: each component-scope FR's pipeline sees the host documents as
@@ -571,6 +589,7 @@ func phaseB6(
 		hostNestsContributors: hostNestsContributors,
 		renderCtx:             renderCtx,
 		nodeAnnotations:       nodeAnnotations,
+		hostRenderFacts:       hostRenderFacts,
 		runningHost:           nonIntermediateFiles(hostOwn),
 	}
 	out := newAttachmentOutput()
@@ -695,6 +714,7 @@ type attachmentPass struct {
 	hostNestsContributors bool
 	renderCtx             renderctx.RenderContext
 	nodeAnnotations       types.OrderedMap[string]
+	hostRenderFacts       *types.OrderedMap[[]any]
 	runningHost           []EmittedFile
 }
 
@@ -748,8 +768,10 @@ func (h *heldAttachments) render(ctx context.Context, callers []callerRenderFact
 
 // render renders one component-scope attachment of the pass's host into out.
 //
-// afterTheNodes says which pass it renders in, and it is recorded rather than
-// read: the render itself is the same body at either moment.
+// afterTheNodes says which pass it renders in. The render is the same body at
+// either moment, and the one thing the moment decides is whether the attachment
+// is handed its host's callers' render facts: only after every node has rendered
+// are they complete, so only then are they on its context.
 func (p *attachmentPass) render(
 	ctx context.Context,
 	seqIndex int,
@@ -764,15 +786,26 @@ func (p *attachmentPass) render(
 	hostIsAssembler, hostProvider, hostNestsContributors := p.hostIsAssembler, p.hostProvider, p.hostNestsContributors
 	renderCtx, nodeAnnotations := p.renderCtx, p.nodeAnnotations
 
-	// What this render is handed of its host's callers' renders, recorded with the
-	// pass it renders in. Nothing on the attachment's context carries it.
-	input.attachmentRenders.record(item.Identity, afterTheNodes, item.CallerRenderFacts)
-
 	frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
-	// The connections made to the host, on this attachment's copy only. The copy
-	// holds its own context block by value, so setting the field here leaves the
-	// host's context — the one its own Recipe rendered against — without it.
+	// The host's own render facts and the connections made to the host, on this
+	// attachment's copy only. The copy holds its own context block by value, so
+	// setting the fields here leaves the host's context — the one its own Recipe
+	// rendered against — without them.
+	frCtx.Context.RenderFacts = p.hostRenderFacts
 	frCtx.Context.UsedBy = state.InboundEdges
+	// Rendered after every node, as only an attachment whose FeatureRecipe declares
+	// it reads its callers' render facts is, the attachment is handed each caller's
+	// facts on that caller's entry. The entries are a copy: the host's own list is
+	// the one every other attachment of the host reads, and one that does not
+	// declare the read must never meet the facts there.
+	if afterTheNodes {
+		usedBy, err := usedByWithCallerFacts(state.InboundEdges, item.CallerRenderFacts)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				fmt.Sprintf("node %q attachment %q callers' render facts", nodeID, item.Instance))
+		}
+		frCtx.Context.UsedBy = usedBy
+	}
 
 	// What of this attachment's copy an author declared sensitive: the host's
 	// set for every pillar carried over from the host, the attachment's own
@@ -1004,11 +1037,14 @@ func (p *attachmentPass) render(
 	// assembled. So this branch defers only the host scope.
 	if len(fr.Spec.Pipeline) > 0 {
 		// The steps read this attachment's context without the connections made
-		// to the host. A step may rewrite the host's own documents, and one that
-		// could read who connects would make the host's rendered bytes depend on
-		// it — the one dependency the host's render is kept free of. The copy is
-		// taken after the render above, so the steps still see every pillar the
-		// render resolved.
+		// to the host, and so without any caller's render facts. A step may
+		// rewrite the host's own documents, and one that could read who connects
+		// would make the host's rendered bytes depend on it — the one dependency
+		// the host's render is kept free of. A step template that reads its
+		// callers' render facts is refused before the walk rather than reading
+		// nothing here. The copy is taken after the render above, so the steps
+		// still see every pillar the render resolved, the host's own render facts
+		// among them.
 		pipelineCtx := frCtx
 		pipelineCtx.Context.UsedBy = nil
 		if hostIsAssembler {

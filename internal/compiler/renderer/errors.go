@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -381,6 +382,12 @@ var errArtifactPillarNotDeclared = cerrors.Register("artifact-pillar-not-declare
 // declaration, which is always available and changes nothing but when the
 // attachment renders.
 //
+// It covers the templates that produce the attachment's own resources — its values
+// mapping, its workload and its artifacts entries. A pipeline step's input or gate
+// reading the same facts is ErrPipelineStepReadsCallerRenderFacts instead, whether
+// or not the FeatureRecipe sets the key: a step never sees the connections, so the
+// declaration this condition asks for would not make the read work.
+//
 // It is read from the authored template text before anything is evaluated, so a
 // reference the text does not spell — one built at evaluation time, or written in
 // content imported from a file or a library — is not seen by it. The declaration
@@ -393,6 +400,39 @@ func ErrCallerRenderFactsNotDeclared() error { return errCallerRenderFactsNotDec
 var errCallerRenderFactsNotDeclared = cerrors.Register("caller-render-facts-not-declared", cerrors.Meta{
 	ShortCode: "E0323",
 	Message:   "template reads its callers' render facts, but the FeatureRecipe does not set readsCallerRenderFacts",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrPipelineStepReadsCallerRenderFacts fires when a pipeline step's input or gate
+// — its `with:` or its `when:` — in the FeatureRecipe a per-component attachment
+// binds reads the render facts of the components connecting to its host:
+// `render_facts` reached beneath `.context.used_by`.
+//
+// A step's templates are evaluated without the connections made to the host, and
+// that holds for every FeatureRecipe. A step may rewrite the host's own
+// documents, so a step that could read who connects to the host would make the
+// host's rendered output depend on its callers — and a component's own output is
+// kept the same whoever uses it. Such a reference therefore reads nothing, and the
+// build halts rather than render it as an empty value.
+//
+// It is raised whether or not the FeatureRecipe sets readsCallerRenderFacts. That
+// key decides when the attachment renders, never what a step sees, so the remedy
+// the undeclared condition names would not make the read work; this condition
+// names the one that does. A step reads the host's own render facts at
+// `.context.render_facts`, which come from the host's own render and make nothing
+// depend on its callers; the callers' facts are read by the templates that produce
+// the attachment's own resources.
+//
+// It is read from the authored template text before anything is evaluated, with
+// the bound ErrCallerRenderFactsNotDeclared states: a reference the text does not
+// spell is not seen by it.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrPipelineStepReadsCallerRenderFacts()).
+func ErrPipelineStepReadsCallerRenderFacts() error { return errPipelineStepReadsCallerRenderFacts }
+
+var errPipelineStepReadsCallerRenderFacts = cerrors.Register("pipeline-step-reads-caller-render-facts", cerrors.Meta{
+	ShortCode: "E0326",
+	Message:   "pipeline step reads its callers' render facts, but a pipeline step does not read the components connecting to its host; it reads only the host's own render facts",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
@@ -1237,6 +1277,93 @@ func DuplicateRenderPathErr(path, nodeID string) error {
 	return cerrors.Wrap(ErrProviderRenderDuplicatePath(), cerrors.CatalogError,
 		cerrors.SourceLocation{File: path},
 		cerrors.ComposeMessage(ErrProviderRenderDuplicatePath(), values, ""))
+}
+
+// ErrProviderRenderFactNotList fires when a provider guest reports a render fact
+// whose value is not a list.
+//
+// Every render fact a provider reports carries a list, even when it holds one
+// entry, because one name can be reported by more than one render of the same
+// component — its own render calls, and the renders of the Features attached to
+// it — and the lists are joined into one under that name for the templates that
+// read it. A value that is not a list has no join a template could rely on, and
+// whether it would have been the only report under its name is something no
+// provider can know when it renders. So the value is refused where the guest
+// hands it over, naming the provider and the fact, rather than passed on to fail
+// or vanish in a template far from its cause.
+//
+// It is the one thing the compiler learns about a value: that it is a list,
+// read from the value's own syntax. What a name or an entry means stays the
+// provider's documented contract. Match with
+// errors.Is(err, ErrProviderRenderFactNotList()).
+// Category: CATALOG_ERROR.
+func ErrProviderRenderFactNotList() error { return errProviderRenderFactNotList }
+
+var errProviderRenderFactNotList = cerrors.Register("provider-render-fact-not-list", cerrors.Meta{
+	ShortCode: "E0325",
+	Message: "provider guest reported a render fact whose value is not a list; " +
+		"a conforming guest reports every render fact's value as a JSON array, even with one entry",
+	RulePlace: cerrors.NotARule("A provider guest reported a render fact whose value is not a list. Which value " +
+		"the guest meant to report is a question only that guest can answer, so it reports a guest whose " +
+		"returned output does not conform to the contract rather than anything an author wrote."),
+})
+
+// RequireRenderFactLists raises [ErrProviderRenderFactNotList] for the first fact
+// in reported whose value is not a list, naming the fact, the node it was
+// reported for and the provider that reported it, and returns nil when every
+// fact's value is a list.
+//
+// It is the one place the rule is applied, and it is exported because the
+// crossing that hands a guest's report over is in another package. Each fact is
+// judged by the first token of its value, which is all the rule needs: a JSON
+// value is a list exactly when it opens with an array bracket. Nothing else of
+// the value is read.
+func RequireRenderFactLists(reported []RenderFact, nodeID, provider string) error {
+	for _, fact := range reported {
+		kind := renderFactValueKind(fact.Value)
+		if kind == renderFactListKind {
+			continue
+		}
+		values := []string{fmt.Sprintf("fact %q", fact.Name)}
+		if nodeID != "" {
+			values = append(values, fmt.Sprintf("node %q", nodeID))
+		}
+		if provider != "" {
+			values = append(values, fmt.Sprintf("provider %q", provider))
+		}
+		values = append(values, "its value is "+kind)
+		return cerrors.Wrap(ErrProviderRenderFactNotList(), cerrors.CatalogError,
+			cerrors.SourceLocation{File: nodeID},
+			cerrors.ComposeMessage(ErrProviderRenderFactNotList(), values, ""))
+	}
+	return nil
+}
+
+// renderFactListKind is what renderFactValueKind answers for a list.
+const renderFactListKind = "a list"
+
+// renderFactValueKind names the kind of JSON value raw holds, read from its first
+// token alone: renderFactListKind for an array and the kind of any other value,
+// which is what the refusal tells a guest's author it found instead.
+func renderFactValueKind(raw []byte) string {
+	trimmed := bytes.TrimLeft(raw, " \t\r\n")
+	if len(trimmed) == 0 {
+		return "empty"
+	}
+	switch trimmed[0] {
+	case '[':
+		return renderFactListKind
+	case '{':
+		return "an object"
+	case '"':
+		return "a string"
+	case 't', 'f':
+		return "a boolean"
+	case 'n':
+		return "null"
+	default:
+		return "a number"
+	}
 }
 
 // ErrLinkPatchFileNotEmitted fires when a provider guest returns artifact

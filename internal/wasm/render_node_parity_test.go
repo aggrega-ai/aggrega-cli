@@ -270,12 +270,12 @@ func TestRenderSocketParity_RustTypeScript(t *testing.T) {
 	// attachment echo above: a fact's value crosses as the JSON its guest wrote, so
 	// two guests writing the same value produce the same bytes whatever their
 	// language's map container does — which is what lets a provider fix the order
-	// of a value's keys itself. Both fixtures list their facts out of name order and
-	// write the echoed node's keys out of key order, so a decode that sorted either
-	// would fail here.
+	// of a value's keys itself. Both fixtures list their facts out of name order,
+	// report every value as a list, and write the echoed node's keys out of key
+	// order, so a decode that sorted either would fail here.
 	wantFacts := []struct{ name, value string }{
 		{"emitted_paths", `["parity.txt","attachments.txt"]`},
-		{"echoed_node", `{"prefix":"rendered-node:","id":"parity-node-01"}`},
+		{"echoed_node", `[{"prefix":"rendered-node:","id":"parity-node-01"}]`},
 	}
 	for _, tc := range []struct {
 		name string

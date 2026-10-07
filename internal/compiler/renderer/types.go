@@ -218,15 +218,6 @@ type RendererInput struct {
 	// this axis's safe direction, and it is the opposite of the direction that is
 	// safe for withholding, so this reader's answer must never be reused there.
 	declaredFeatureLeaves func(featureType string) resolver.SensitiveLeaves
-
-	// attachmentRenders records every component-scope attachment's render: which
-	// pass it rendered in and what it was handed of its host's callers' renders.
-	//
-	// It is unexported for the same reason the retentions above are: it is the
-	// render's own working state rather than anything a caller supplies. An input
-	// built elsewhere leaves it nil and nothing is recorded. RenderAll installs it
-	// and publishes it on the result.
-	attachmentRenders *attachmentRenderLog
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

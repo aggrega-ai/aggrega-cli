@@ -713,6 +713,20 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 	}
 }
 
+// DecodeJSONValue decodes one JSON value of any kind into the shapes an
+// OrderedMap[any] gives the values it holds: an object becomes a
+// *OrderedMap[any] keeping its keys in the order they were written, an array a
+// []any, a number a json.Number carrying its exact text, and a string, a boolean
+// or null what encoding/json makes of them — at every depth, under the same
+// depth bound UnmarshalJSON applies.
+//
+// It is the decode UnmarshalJSON performs for each value of an ordered map,
+// offered for a value that arrives as JSON on its own rather than under a key, so
+// such a value keeps its author's order exactly as one read from a document does.
+func DecodeJSONValue(raw []byte) (any, error) {
+	return decodeJSONValue[any](raw, 0)
+}
+
 // decodeYAMLValue is the per-value YAML decoder used by
 // unmarshalYAMLWithDepth. Dispatch order mirrors decodeJSONValue:
 //

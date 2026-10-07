@@ -8,11 +8,18 @@
 //
 // It is a provider guest that returns output the plugin contract does not admit,
 // so a host refusal of a guest contract violation can be driven and the
-// diagnostic it prints can be read. Each violation sits on its own export, so no
-// selection is needed:
+// diagnostic it prints can be read. Each violation sits on its own export or, for
+// the two render_node carries, on its own crossing of that export, so the input
+// the host hands over is the whole selection:
 //
-//   - render_node returns two output files under one path, which leaves the host
-//     collecting them with two values for one key and no way to choose.
+//   - render_node, handed a source to render, returns two output files under one
+//     path, which leaves the host collecting them with two values for one key and
+//     no way to choose.
+//   - render_node, handed a workload to synthesize, returns one ordinary file and
+//     one render fact whose value is not a list. The node's id names the kind of
+//     value reported — "object", "string", "number", "boolean", "null" — and any
+//     other id gets a list, the conforming answer, so the refusal can be driven for
+//     every kind and its absence shown on the same guest.
 //   - link_publish returns artifact wiring naming an output file the dispatch
 //     group it applies to did not emit, which leaves the pass that carves that
 //     file nothing to carve.
@@ -46,7 +53,27 @@ const (
 	// the name says so, so a reader of the halt is not left wondering whether a
 	// real file was meant.
 	absentFile = "never-emitted.yaml"
+
+	// synthesizedPath is the one ordinary file a synthesis returns, and factName
+	// the render fact reported beside it.
+	synthesizedPath = "workload.yaml"
+	factName        = "pod_labels"
 )
+
+// factValues is the value reported under factName for each node id that asks for
+// a kind other than a list. The bytes are written here rather than marshalled, so
+// what crosses is exactly the kind the id names.
+var factValues = map[string]string{
+	"object":  `{"app":"api"}`,
+	"string":  `"api"`,
+	"number":  `3`,
+	"boolean": `true`,
+	"null":    `null`,
+}
+
+// conformingFactValue is reported for any other node id: a list, which the
+// contract requires of every fact's value.
+const conformingFactValue = `[{"app":"api"}]`
 
 // providerDescriptor is the fixed describe() self-report: a provider that
 // renders a sourced node and advertises both halves of the cross-boundary link
@@ -57,7 +84,7 @@ const providerDescriptor = `{` +
 	`"capabilities":["` + capability + `"],` +
 	`"description":"Returns provider output the contract does not admit, to drive a host refusal.",` +
 	`"exports":[` +
-	`{"name":"render_node","input_pattern":"b","description":"returns two output files under one path"},` +
+	`{"name":"render_node","input_pattern":"b","description":"returns two output files under one path, or a render fact whose value is not a list"},` +
 	`{"name":"link_publish","input_pattern":"b","description":"returns wiring naming a file the group did not emit"},` +
 	`{"name":"link_resolve","input_pattern":"b","description":"returns no wiring"}` +
 	`],` +
@@ -66,7 +93,7 @@ const providerDescriptor = `{` +
 	// It is a CONFORMING declaration on purpose: the fixture must load and run to
 	// be able to violate anything, so every part of its self-report is honest and
 	// only the payloads it returns are not.
-	`"contract":{"input_kinds":{"sourced":true},"boundary_assembly":"none",` +
+	`"contract":{"input_kinds":{"sourced":true,"synthesized":true},"boundary_assembly":"none",` +
 	`"reusable_instance":true,"cross_boundary_linking":true}` +
 	`}`
 
@@ -79,9 +106,27 @@ type renderedFile struct {
 }
 
 // renderNodeOutput is the sliver of the render reply this guest returns: the
-// files alone. Every other field is optional and absent.
+// files, and the render facts a synthesis reports. Every other field is optional
+// and absent.
 type renderNodeOutput struct {
-	Files []renderedFile `json:"files"`
+	Files       []renderedFile `json:"files"`
+	RenderFacts []renderFact   `json:"render_facts,omitempty"`
+}
+
+// renderFact mirrors the wire shape of one render fact. Value is carried as the
+// raw JSON this guest wrote, so its kind is exactly what the guest chose.
+type renderFact struct {
+	Name  string          `json:"name"`
+	Value json.RawMessage `json:"value"`
+}
+
+// renderNodeInput is the sliver of the render input this guest reads: the node's
+// id, and whether the host handed it a workload to synthesize.
+type renderNodeInput struct {
+	Node struct {
+		ID string `json:"id"`
+	} `json:"node"`
+	WorkloadProjection json.RawMessage `json:"workload_projection,omitempty"`
 }
 
 // linkPatch mirrors the wire shape of one per-file structural patch. Ops is
@@ -125,6 +170,25 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func render_node() int32 {
+	var in renderNodeInput
+	if err := json.Unmarshal(pdk.Input(), &in); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	// A synthesis: one ordinary file, and one render fact whose value is the
+	// kind the node's id names.
+	if len(in.WorkloadProjection) > 0 {
+		value, named := factValues[in.Node.ID]
+		if !named {
+			value = conformingFactValue
+		}
+		return output(renderNodeOutput{
+			Files:       []renderedFile{{Path: synthesizedPath, Content: []byte("kind: Workload\n")}},
+			RenderFacts: []renderFact{{Name: factName, Value: json.RawMessage(value)}},
+		})
+	}
+
 	// Two entries, one path. The bytes differ so a host that silently took one
 	// of them would produce output a test could tell apart from the other.
 	return output(renderNodeOutput{Files: []renderedFile{

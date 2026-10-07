@@ -24,11 +24,12 @@ import (
 // refusals of a plugin contract violation, and assert that each refusal names a
 // condition whose code reaches the emitted diagnostic.
 //
-// Neither condition is reachable from any authored document — an author decides
+// No such condition is reachable from any authored document — an author decides
 // which provider renders a node, never what that provider returns — so the guest
 // is what makes the proof possible at all. Its source is at
 // internal/wasm/testdata/nonconforming-provider, and each violation sits on its
-// own export so no selection is needed.
+// own export or on its own crossing of one, so the input the host hands over is
+// the whole selection.
 
 const nonconformingProvider = "nonconforming"
 
@@ -110,6 +111,73 @@ func TestNonconformingProvider_DuplicateOutputPath(t *testing.T) {
 		ProviderName: nonconformingProvider,
 	})
 	assertProviderRefusalEmitsCode(t, err, renderer.ErrProviderRenderDuplicatePath(), "E0269")
+}
+
+// TestNonconformingProvider_RenderFactNotAList drives the guest's synthesis into the
+// refusal of a render fact whose value is not a list, once for every kind of value
+// that is not one. The guest reads the node's id to choose the kind it reports, so
+// every row crosses the same export through the same real boundary and differs only
+// in that one value. The halt names the fact, the node and the guest, and says what
+// the value was.
+//
+// The control row asks for the conforming answer — a list — from the same guest,
+// so a refusal on the other rows is attributable to the value and nothing else; it
+// must render and hand its file back.
+func TestNonconformingProvider_RenderFactNotAList(t *testing.T) {
+	engine := nonconformingProviderEngine(t)
+	synth, ok := engine.(renderer.WorkloadSynthesizer)
+	if !ok {
+		t.Fatalf("the provider adapter does not synthesize workloads (%T), so no synthesis crosses the guest", engine)
+	}
+	workload := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	container := types.ContainerSpec{Image: "app:1.0"}
+	workload.Containers.Set("main", container)
+
+	for _, tc := range []struct {
+		nodeID   string
+		wantKind string // empty for the conforming control
+	}{
+		{nodeID: "object", wantKind: "an object"},
+		{nodeID: "string", wantKind: "a string"},
+		{nodeID: "number", wantKind: "a number"},
+		{nodeID: "boolean", wantKind: "a boolean"},
+		{nodeID: "null", wantKind: "null"},
+		{nodeID: "control-list"},
+	} {
+		t.Run(tc.nodeID, func(t *testing.T) {
+			var reported [][]renderer.RenderFact
+			nodeCtx := renderer.NodeRenderContext{
+				NodeID:         tc.nodeID,
+				BoundaryPath:   "default",
+				ProviderName:   nonconformingProvider,
+				RenderFactSink: func(f []renderer.RenderFact) { reported = append(reported, f) },
+			}
+			files, err := synth.SynthesizeWorkload(context.Background(), nil, workload, nodeCtx)
+
+			if tc.wantKind == "" {
+				if err != nil {
+					t.Fatalf("a guest reporting a list was refused: %v", err)
+				}
+				if len(files) != 1 || len(reported) != 1 || len(reported[0]) != 1 {
+					t.Fatalf("the conforming synthesis handed back %d file(s) and %d report(s), want 1 and 1", len(files), len(reported))
+				}
+				if got := string(reported[0][0].Value); got != `[{"app":"api"}]` {
+					t.Errorf("the conforming fact's value = %s, want the guest's own list", got)
+				}
+				return
+			}
+
+			assertProviderRefusalEmitsCode(t, err, renderer.ErrProviderRenderFactNotList(), "E0325")
+			for _, want := range []string{`fact "pod_labels"`, `node "` + tc.nodeID + `"`, `provider "file://`, "its value is " + tc.wantKind} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not say %s: %v", want, err)
+				}
+			}
+			if len(reported) != 0 {
+				t.Errorf("a refused report reached the node's sink: %+v", reported)
+			}
+		})
+	}
 }
 
 // TestNonconformingProvider_LinkPatchNamesAbsentFile drives the guest's publish

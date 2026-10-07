@@ -133,12 +133,13 @@ func renderNode() int32 {
 }
 
 // renderNodeOutput decodes the render_node input, renders it, and declares the
-// names the rendered output addresses its resources by. It returns the error
-// rather than reporting it, so the one export above decides how a failure crosses
-// and this stays about what helm renders.
+// names the rendered output addresses its resources by, beside the render facts it
+// reports about the same output. It returns the error rather than reporting it, so
+// the one export above decides how a failure crosses and this stays about what
+// helm renders.
 //
-// The declaration is taken here, once, over the emitted file set rather than
-// inside each render path that has one. A resource's name is read from the emitted
+// The declaration and the facts are taken here, once, over the emitted file set
+// rather than inside each render path that has one. A resource's name is read from the emitted
 // document the same way whichever path produced it, so one reader serves them all
 // and a path added later is covered without anyone remembering to declare in it.
 // Declaring per path would be several copies of one reader, agreeing on the day
@@ -179,11 +180,20 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	// namespace, and the host writes the file bytes verbatim without reading them,
 	// so the declaration is how the guest asks for a check the host could not
 	// otherwise make.
-	if declared := helmcore.DeclaredResourceNames(
-		out.Files, helmcore.EffectiveNamespace(nodeCtxFromInput(in)),
-	); !declared.IsZero() {
+	//
+	// Beside them, the render facts this provider documents: the pod template
+	// labels, controller and Service selectors and container ports of what this
+	// render emitted, which a Feature attached to this node or to one this node
+	// connects to can read. Both come from one read of the emitted files, so the
+	// facts describe exactly the documents the names were taken from.
+	declared, facts, err := helmcore.ReportEmitted(out.Files, helmcore.EffectiveNamespace(nodeCtxFromInput(in)))
+	if err != nil {
+		return rendercore.RenderNodeOutput{}, err
+	}
+	if !declared.IsZero() {
 		out.DerivedKeys = declared
 	}
+	out.RenderFacts = facts
 	return out, nil
 }
 

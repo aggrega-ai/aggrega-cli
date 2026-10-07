@@ -11,11 +11,12 @@ import (
 
 // The authored blocks a Recipe writes an inline template field under. They are
 // constants because two surfaces spell them: the enumeration below, which builds
-// a field's label out of them, and the reading beside it, which tells one family
+// a field's label out of them, and the readings beside it, which tell one family
 // of label from another. A spelling written out at each would agree on the day it
 // was written and drift afterwards, and the drift would be silent — a reading
 // that stopped recognising a family would treat that family's fields as belonging
-// to another, and the fields would be read with the wrong delimiter pair.
+// to another, and the fields would be read with the wrong delimiter pair, or
+// judged against a context they are not evaluated in.
 const (
 	recipeFieldValuesMapping = "valuesMapping"
 	recipeFieldWorkload      = "workload"
@@ -40,6 +41,13 @@ const (
 // author names an entry — a key carrying a bracket or a dot changes what follows
 // the prefix and never the prefix itself.
 const artifactsLabelPrefix = recipeFieldArtifacts + "["
+
+// pipelineLabelPrefix opens the label of every field written on a pipeline step —
+// its input and its gate — and nothing else opens with it, on the reading
+// [artifactsLabelPrefix] states: every family's prefix is fixed text this file
+// writes ahead of whatever the author typed, so a step id or an artifact key
+// spelling the same characters changes what follows a prefix and never the prefix.
+const pipelineLabelPrefix = recipeFieldPipeline + "["
 
 // RecipeTemplateField is one inline template field a Recipe declares: the label
 // an author reads it back by, the text as written, and the authored keys beneath
@@ -190,9 +198,9 @@ func inlineTemplateFieldsOf(
 		add(artifactsLabelPrefix+k+"]", v.Inline, recipeFieldArtifacts, k)
 	}
 	for _, step := range pipeline {
-		add(recipeFieldPipeline+"["+step.ID+"]."+recipeFieldPipelineWith,
+		add(pipelineLabelPrefix+step.ID+"]."+recipeFieldPipelineWith,
 			step.With, recipeFieldPipeline, step.ID, recipeFieldPipelineWith)
-		add(recipeFieldPipeline+"["+step.ID+"]."+recipeFieldPipelineWhen,
+		add(pipelineLabelPrefix+step.ID+"]."+recipeFieldPipelineWhen,
 			step.When, recipeFieldPipeline, step.ID, recipeFieldPipelineWhen)
 	}
 	return out
@@ -258,4 +266,23 @@ func RecipeImportFields(recipe *types.Recipe) []string {
 // would surface none of the references it does make.
 func RecipeTemplateFieldReadsWithArtifactDelimiters(label string) bool {
 	return strings.HasPrefix(label, artifactsLabelPrefix)
+}
+
+// RecipeTemplateFieldIsPipelineStep reports whether one enumerated field is a
+// pipeline step's input or its gate rather than a template that produces the
+// document's own resources.
+//
+// It sits beside the enumeration for the reason the delimiter reading above does:
+// the label's grammar has one home, and the family prefix is written and
+// recognised here.
+//
+// The distinction is what a reading of an attachment's templates needs where the
+// two families are evaluated against different contexts. A step's templates run
+// without the connections made to the attachment's host, because a step may
+// rewrite the host's own documents; the templates producing the attachment's own
+// resources run with them. So a reference to those connections means one thing in
+// a step and another everywhere else, and a rule judging it has to know which
+// family the field belongs to.
+func RecipeTemplateFieldIsPipelineStep(label string) bool {
+	return strings.HasPrefix(label, pipelineLabelPrefix)
 }

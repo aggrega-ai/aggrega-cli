@@ -102,8 +102,10 @@ type ContextBlock struct {
 	// `uses` edge whose target this node is, in the order the graph records them:
 	// the order the connecting components are written, then the order of each
 	// one's own uses entries. It is the inverse of Uses and carries much less:
-	// who connects, through which socket, what that caller publishes, and the
-	// namespace and boundary path the caller is placed in.
+	// who connects, through which socket, what that caller publishes, the
+	// namespace and boundary path the caller is placed in, and — for a
+	// FeatureRecipe that declares it reads them — what the caller's renders
+	// reported about what they emitted.
 	//
 	// It is populated only on the context a Feature attached to this node renders
 	// its own resources against, and is empty on the node's own context. That
@@ -116,11 +118,28 @@ type ContextBlock struct {
 	// A slice rather than a keyed map, because a template ranges a map in key order
 	// and the order of the callers is the author's.
 	UsedBy []InboundEdge `json:"used_by,omitempty" yaml:"used_by,omitempty"`
+
+	// RenderFacts is what this node's own provider reported about what the node's
+	// own render emitted, keyed by fact name. Every value is a list — the provider
+	// reports each fact as one — and where the node's render took more than one
+	// call and one name was reported by several of them, its lists are joined
+	// into one in the order the calls ran. Each entry is the provider's JSON
+	// decoded with its keys in the order the provider wrote them; nothing about a
+	// name or an entry is interpreted.
+	//
+	// It is set only on the context a Feature attached to this node renders
+	// against, once the node itself has rendered — present there, and empty where
+	// the provider reports nothing, so a template reading a name the provider did
+	// not report reads nothing rather than failing. It is nil on the node's own
+	// context and wherever a template runs before the node has rendered.
+	RenderFacts *OrderedMap[[]any] `json:"render_facts,omitempty" yaml:"render_facts,omitempty"`
 }
 
 // InboundEdge is one connection made TO a node, as an attached Feature's context
 // shows it: the node that connects, the socket it connects through, what that
-// node publishes for others to read, and where that node is placed.
+// node publishes for others to read, where that node is placed, and — where the
+// Feature's FeatureRecipe declares it reads them — what that node's renders
+// reported.
 //
 // ComponentID is the connecting node's flattened identity as the graph names it
 // ('frontend', 'data-layer.etl') — the value a path template reads as
@@ -145,6 +164,16 @@ type ContextBlock struct {
 // set carries no namespace. Every field is carried as a string and never
 // interpreted.
 //
+// RenderFacts is what the connecting node's renders reported about what they
+// emitted, keyed by fact name: the facts its own render calls reported, then
+// those of each Feature attached to it that rendered in its own turn, in the
+// order those rendered, with the lists one name gets joined into one in that
+// order. It is set only on the context of a FeatureRecipe that declares it reads
+// its callers' render facts — such an attachment renders once every node has, so
+// every caller's render is complete — and there it is present on every entry,
+// empty for a caller whose providers report nothing. Everywhere else it is nil
+// and absent.
+//
 // Schema: template-context-v1alpha1.schema.json#/$defs/inbound_edge
 type InboundEdge struct {
 	ComponentID        string             `json:"component_id" yaml:"component_id"`
@@ -152,6 +181,7 @@ type InboundEdge struct {
 	Provides           OrderedMap[string] `json:"provides" yaml:"provides"`
 	SourceNamespace    string             `json:"source_namespace,omitempty" yaml:"source_namespace,omitempty"`
 	SourceBoundaryPath string             `json:"source_boundary_path,omitempty" yaml:"source_boundary_path,omitempty"`
+	RenderFacts        *OrderedMap[[]any] `json:"render_facts,omitempty" yaml:"render_facts,omitempty"`
 }
 
 // AnnotationBuckets holds the three cascading annotation origins for a node.

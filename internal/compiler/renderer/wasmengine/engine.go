@@ -363,7 +363,9 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
-	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
+	if err := e.surfaceRenderFacts(nodeCtx, out.RenderFacts); err != nil {
+		return nil, err
+	}
 
 	seen := make(map[string]struct{}, len(out.Files))
 	for _, f := range out.Files {
@@ -422,7 +424,9 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
-	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
+	if err := e.surfaceRenderFacts(nodeCtx, out.RenderFacts); err != nil {
+		return nil, err
+	}
 
 	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
@@ -471,7 +475,9 @@ func (e *Engine) EmitArtifacts(
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
-	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
+	if err := e.surfaceRenderFacts(nodeCtx, out.RenderFacts); err != nil {
+		return nil, err
+	}
 
 	origins := renderer.NewArtifactOriginIndex(proj)
 
@@ -701,20 +707,28 @@ func (e *Engine) surfaceDerivedKeys(nodeCtx renderer.NodeRenderContext, declared
 // It is the one place a provider engine hands that report to the host, so every
 // render crossing reports through the same seam.
 //
-// Nothing here reads a name or looks inside a value. The JSON decode already
+// Every fact's value has to be a list, and a report carrying one that is not is
+// refused here, before anything is forwarded, naming the fact and this guest —
+// whether or not anything would have read the fact, because the report is the
+// guest's whatever reads it. That a value is a list is the one thing read of it;
+// nothing here reads a name or looks inside a list. The JSON decode already
 // copies each value out of the guest's reply; the forward copies it again so the
 // sink never depends on how a reply was decoded, because that reply also holds
 // every file the guest emitted and a fact kept after the crossing must not keep
 // them alive. A guest that reports nothing costs the sink no call.
-func (e *Engine) surfaceRenderFacts(nodeCtx renderer.NodeRenderContext, reported []renderer.RenderFact) {
+func (e *Engine) surfaceRenderFacts(nodeCtx renderer.NodeRenderContext, reported []renderer.RenderFact) error {
+	if err := renderer.RequireRenderFactLists(reported, nodeCtx.NodeID, e.pluginURI); err != nil {
+		return err
+	}
 	if nodeCtx.RenderFactSink == nil || len(reported) == 0 {
-		return
+		return nil
 	}
 	forwarded := make([]renderer.RenderFact, len(reported))
 	for i, fact := range reported {
 		forwarded[i] = renderer.RenderFact{Name: fact.Name, Value: bytes.Clone(fact.Value)}
 	}
 	nodeCtx.RenderFactSink(forwarded)
+	return nil
 }
 
 // advertisesExport reports whether the guest's describe() self-report declares an

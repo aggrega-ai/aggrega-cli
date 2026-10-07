@@ -5,27 +5,30 @@ package wasmengine
 
 import (
 	"bytes"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// renderFactsWire is a guest's render reply carrying three facts. They are listed
-// out of name order, the object value's keys are out of key order and carry a
-// space after one separator, and one value is an array whose items are out of
-// order — so a forward that sorted the list, re-serialised a value, or tidied its
+// renderFactsWire is a guest's render reply carrying three facts, every value a
+// list. They are listed out of name order, the object entry's keys are out of key
+// order and carry a space after one separator, and one list's items are out of
+// order — so a forward that sorted the facts, re-serialised a value, or tidied its
 // bytes would not reproduce any of them.
 const renderFactsWire = `{"files":[],"render_facts":[` +
-	`{"name":"zeta_fact","value":{"tier":"web", "app":"api"}},` +
+	`{"name":"zeta_fact","value":[{"tier":"web", "app":"api"}]},` +
 	`{"name":"alpha_fact","value":["b","a"]},` +
-	`{"name":"mid_fact","value":"plain"}]}`
+	`{"name":"mid_fact","value":["plain"]}]}`
 
 // renderFactsWant is each fact the reply above carries, as the exact bytes the
 // guest wrote for its value.
 var renderFactsWant = []struct{ name, value string }{
-	{"zeta_fact", `{"tier":"web", "app":"api"}`},
+	{"zeta_fact", `[{"tier":"web", "app":"api"}]`},
 	{"alpha_fact", `["b","a"]`},
-	{"mid_fact", `"plain"`},
+	{"mid_fact", `["plain"]`},
 }
 
 // TestSurfaceRenderFacts_ForwardsTheGuestReportVerbatimAndInOrder proves the
@@ -49,7 +52,9 @@ func TestSurfaceRenderFacts_ForwardsTheGuestReportVerbatimAndInOrder(t *testing.
 		RenderFactSink: func(f []renderer.RenderFact) { got = append(got, f) },
 	}
 	e := &Engine{}
-	e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
+	if err := e.surfaceRenderFacts(nodeCtx, out.RenderFacts); err != nil {
+		t.Fatalf("a report whose every value is a list was refused: %v", err)
+	}
 
 	if len(got) != 1 {
 		t.Fatalf("render-fact sink called %d times, want 1", len(got))
@@ -101,7 +106,9 @@ func TestSurfaceRenderFacts_NothingReportedCostsNoCall(t *testing.T) {
 		NodeID:         "api",
 		RenderFactSink: func([]renderer.RenderFact) { called++ },
 	}
-	e.surfaceRenderFacts(nodeCtx, bare.RenderFacts)
+	if err := e.surfaceRenderFacts(nodeCtx, bare.RenderFacts); err != nil {
+		t.Fatalf("a reply reporting nothing was refused: %v", err)
+	}
 	if called != 0 {
 		t.Errorf("a reply reporting nothing called the sink %d times, want 0", called)
 	}
@@ -111,5 +118,88 @@ func TestSurfaceRenderFacts_NothingReportedCostsNoCall(t *testing.T) {
 		t.Fatalf("decode render output: %v", err)
 	}
 	// No sink attached: nothing to call, and nothing to panic on.
-	e.surfaceRenderFacts(renderer.NodeRenderContext{NodeID: "api"}, populated.RenderFacts)
+	if err := e.surfaceRenderFacts(renderer.NodeRenderContext{NodeID: "api"}, populated.RenderFacts); err != nil {
+		t.Fatalf("a conforming report with no sink attached was refused: %v", err)
+	}
+}
+
+// TestSurfaceRenderFacts_RefusesAFactWhoseValueIsNotAList holds the socket's one
+// rule about a fact's value: it is a list. Each row hands the forward a report
+// through the same decode a guest's reply takes, and a report carrying a value of
+// any other kind is refused with the condition's own identity, naming the fact,
+// the node and the guest — and nothing of that report is forwarded, not even the
+// facts before the one refused, because a report half-forwarded would leave the
+// host holding a part the guest never meant as the whole. A refusal does not
+// depend on a sink being attached: the report is the guest's whatever reads it.
+//
+// The accepted rows are the edges of "a list": an empty one, one nested inside
+// another, and one written after white space, which is still a list.
+func TestSurfaceRenderFacts_RefusesAFactWhoseValueIsNotAList(t *testing.T) {
+	t.Parallel()
+
+	const guest = "file:///guests/facts-provider.wasm"
+	for _, tc := range []struct {
+		name     string
+		reply    string
+		withSink bool
+		// wantFact is the fact the refusal names and wantKind what it says the value
+		// was; both empty for a report that must be accepted.
+		wantFact, wantKind string
+	}{
+		{name: "an object", reply: `{"name":"pods","value":{"app":"api"}}`, withSink: true, wantFact: "pods", wantKind: "an object"},
+		{name: "a string", reply: `{"name":"pods","value":"api"}`, withSink: true, wantFact: "pods", wantKind: "a string"},
+		{name: "a number", reply: `{"name":"pods","value":3}`, withSink: true, wantFact: "pods", wantKind: "a number"},
+		{name: "a boolean", reply: `{"name":"pods","value":false}`, withSink: true, wantFact: "pods", wantKind: "a boolean"},
+		{name: "null", reply: `{"name":"pods","value":null}`, withSink: true, wantFact: "pods", wantKind: "null"},
+		{name: "a list first, then an object", reply: `{"name":"paths","value":["a"]},{"name":"pods","value":{"app":"api"}}`,
+			withSink: true, wantFact: "pods", wantKind: "an object"},
+		{name: "an object with no sink attached", reply: `{"name":"pods","value":{"app":"api"}}`, withSink: false,
+			wantFact: "pods", wantKind: "an object"},
+		{name: "control: an empty list", reply: `{"name":"pods","value":[]}`, withSink: true},
+		{name: "control: a list of lists", reply: `{"name":"pods","value":[["a"],[]]}`, withSink: true},
+		{name: "control: a list after white space", reply: `{"name":"pods","value":` + "\n\t " + `[{"app":"api"}]}`, withSink: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out renderer.RenderNodeOutput
+			if err := out.UnmarshalJSON([]byte(`{"files":[],"render_facts":[` + tc.reply + `]}`)); err != nil {
+				t.Fatalf("decode render output: %v", err)
+			}
+			called := 0
+			nodeCtx := renderer.NodeRenderContext{NodeID: "api", ProviderName: "helm"}
+			if tc.withSink {
+				nodeCtx.RenderFactSink = func([]renderer.RenderFact) { called++ }
+			}
+			e := &Engine{pluginURI: guest}
+
+			err := e.surfaceRenderFacts(nodeCtx, out.RenderFacts)
+			if tc.wantFact == "" {
+				if err != nil {
+					t.Fatalf("a report whose every value is a list was refused: %v", err)
+				}
+				if tc.withSink && called != 1 {
+					t.Errorf("the accepted report reached the sink %d times, want 1", called)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("a fact whose value is not a list was forwarded; the socket must refuse it")
+			}
+			if !errors.Is(err, renderer.ErrProviderRenderFactNotList()) {
+				t.Fatalf("the refusal is not ErrProviderRenderFactNotList: %v", err)
+			}
+			if short, ok := cerrors.ShortCodeOf(err); !ok || short != "E0325" {
+				t.Errorf("short code = %q (present %v), want E0325", short, ok)
+			}
+			for _, want := range []string{`fact "` + tc.wantFact + `"`, `node "api"`, `provider "` + guest + `"`, "its value is " + tc.wantKind} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not say %s: %v", want, err)
+				}
+			}
+			if called != 0 {
+				t.Errorf("a refused report reached the sink %d times, want 0", called)
+			}
+		})
+	}
 }

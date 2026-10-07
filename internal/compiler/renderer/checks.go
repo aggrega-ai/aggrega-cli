@@ -1352,9 +1352,9 @@ var AttachmentTemplateReadsNoHostRenderedName = constraint.Check[
 }
 
 // AttachmentTemplateReadsCallerRenderFactsDeclared reports each inline template
-// field of the FeatureRecipe a per-component attachment binds that reads the
-// render facts of the components connecting to its host, where that FeatureRecipe
-// does not declare it reads them.
+// field producing the attachment's own resources, in the FeatureRecipe a
+// per-component attachment binds, that reads the render facts of the components
+// connecting to its host, where that FeatureRecipe does not declare it reads them.
 //
 // # Why the declaration is what the rule reads
 //
@@ -1378,13 +1378,26 @@ var AttachmentTemplateReadsNoHostRenderedName = constraint.Check[
 // `render_facts` beneath the list directly.
 //
 // That reading can refuse a template that reads an element field of that name off
-// some other list beside the connection list, and an author it refuses that way
-// sets the declaration, which costs nothing but when the attachment renders. It
+// some other list beside the connection list, or that reads the host's own facts
+// through a dot rebound to the context — `{{ with .context }}{{ .render_facts }}` —
+// beside the connection list, where the census records the same relative read; the
+// host's own facts written out in full, `.context.render_facts`, are never taken
+// for the callers'. An author it refuses that way sets the declaration, which costs
+// nothing but when the attachment renders. It
 // cannot see a read made through a variable a range declares, nor one a template
 // builds at evaluation, nor one written in content imported from a file or a
 // library — none of which the authored text spells. The declaration remains the
 // contract either way: an attachment that does not set it renders in its host's
 // turn whatever its templates read.
+//
+// # Why a pipeline step's input and gate are not this rule's
+//
+// A step's templates are evaluated without the connections made to the host,
+// whether or not the FeatureRecipe declares it reads its callers' facts — so
+// declaring, the remedy this rule names, would not make a step's read work.
+// Such a field is [AttachmentPipelineStepReadsNoCallerRenderFacts]'s, which names
+// the remedy that does; asking both would give one authoring fault two
+// conditions with opposite advice.
 //
 // # Why a boundary-scope attachment ends the rule
 //
@@ -1409,22 +1422,13 @@ var AttachmentTemplateReadsCallerRenderFactsDeclared = constraint.Check[
 		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
 			return nil
 		}
+		if RecipeTemplateFieldIsPipelineStep(s.TemplateField()) {
+			return nil
+		}
 		if v.AttachmentReadsCallerRenderFacts(s.NodeID(), s.AttachmentName()) {
 			return nil
 		}
-		left, right := "{{", "}}"
-		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
-			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
-			left, right = delims.Left, delims.Right
-		}
-		refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
-			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
-			left, right,
-		)
-		if err != nil {
-			return nil
-		}
-		ref, reads := callerRenderFactsReference(refs)
+		ref, reads := attachmentTemplateCallerRenderFactsReference(v, s)
 		if !reads {
 			return nil
 		}
@@ -1434,6 +1438,100 @@ var AttachmentTemplateReadsCallerRenderFactsDeclared = constraint.Check[
 			constraint.Captioned("written in", s.TemplateField()),
 		)}
 	},
+}
+
+// AttachmentPipelineStepReadsNoCallerRenderFacts reports each pipeline step input
+// or gate of the FeatureRecipe a per-component attachment binds that reads the
+// render facts of the components connecting to its host — whatever that
+// FeatureRecipe declares.
+//
+// # Why the declaration is not read
+//
+// A step's templates are evaluated without the connections made to the host, for
+// every FeatureRecipe. A step may rewrite the host's own documents, so one that
+// could read who connects would make the host's rendered output depend on its
+// callers, and a component's own output stays the same whoever uses it. The
+// declaration decides when the attachment renders and nothing about what a step
+// sees, so a step reading the callers' facts reads nothing either way — and the
+// read is refused either way rather than rendered as an empty value. The remedy
+// the refusal names is the same in both cases: a step reads the host's own facts
+// in full, at `.context.render_facts`, and the callers' facts are read by the
+// templates that produce the attachment's own resources.
+//
+// # What counts as a reading
+//
+// The reading [AttachmentTemplateReadsCallerRenderFactsDeclared] makes, through
+// the same matcher, with the same direction of error and the same bound: a
+// field-relative `render_facts` read beside a read of the connection list counts,
+// and a read the authored text does not spell is not seen.
+//
+// # Why every other field ends the rule
+//
+// The templates producing the attachment's own resources DO see the connections
+// on a FeatureRecipe that declares it, so a reading there is the other rule's,
+// whose remedy is the declaration.
+//
+// # Why a boundary-scope attachment ends the rule
+//
+// For the reason it ends the other rule: that attachment's surface already
+// refuses any reference to the connection list.
+//
+// Its detail carries the offending reference bare and the field it was written in
+// captioned, which names the step by its id.
+var AttachmentPipelineStepReadsNoCallerRenderFacts = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrPipelineStepReadsCallerRenderFacts(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		if !RecipeTemplateFieldIsPipelineStep(s.TemplateField()) {
+			return nil
+		}
+		ref, reads := attachmentTemplateCallerRenderFactsReference(v, s)
+		if !reads {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrPipelineStepReadsCallerRenderFacts(),
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("written in", s.TemplateField()),
+		)}
+	},
+}
+
+// attachmentTemplateCallerRenderFactsReference reads one attachment template field
+// as written and reports whether it reads its callers' render facts, returning the
+// first reference that does.
+//
+// It is the one reading both rules over that reference make, so the two cannot
+// disagree about what a reading is and differ only in which fields they own and
+// which condition they raise. The field's text is parsed with the delimiter pair
+// that field is evaluated with; a template that does not parse is left to the
+// evaluation that reports it.
+func attachmentTemplateCallerRenderFactsReference(
+	v constraint.DescribedView,
+	s constraint.NodeAttachmentTemplateFieldSubject,
+) (string, bool) {
+	left, right := "{{", "}}"
+	if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+		delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+		left, right = delims.Left, delims.Right
+	}
+	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
+		v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+		left, right,
+	)
+	if err != nil {
+		return "", false
+	}
+	return callerRenderFactsReference(refs)
 }
 
 // The connection list a per-component attachment reads its callers from, and the

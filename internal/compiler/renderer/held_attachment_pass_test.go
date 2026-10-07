@@ -8,26 +8,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The proofs in this file drive the whole render — RenderAll, the node walk, the
 // attachment pass in each host's turn and the declared pass after the walk — over
-// one stub provider standing in for every node's and every attachment's guest.
+// one stub provider standing in for every node's and every attachment's guest, and
+// they read what the render produced: the files, what each group handed its
+// assembler, and the order the guest was asked to render in.
 //
 // The stub does on every artifacts crossing what a real guest does on its way
-// out: it declares one derived name and reports one render fact, each naming
-// whoever rendered (the node, or the attachment's own composed identity), so a
-// placement that dropped either is visible in what the group holds. Where its
-// group assembles, it records what the group handed it, so the routing into the
-// group is compared as well as the files.
+// out: it declares one derived name and reports one render fact — a list naming
+// whoever rendered (the node, or the attachment's own composed identity) — so a
+// placement that dropped either is visible in what the group holds, and a template
+// reading the facts prints who reported them. A node whose id begins "quiet"
+// reports none. Where its group assembles, it records what the group handed it, so
+// the routing into the group is compared as well as the files.
 
 // heldPassProvider stands in for a provider guest on every crossing these proofs
 // reach.
@@ -39,6 +43,10 @@ type heldPassProvider struct {
 	assembly string
 	// assembled is what each group's assembly was handed, summarised.
 	assembled []string
+	// crossings is whom each artifacts crossing rendered for, in the order the
+	// render asked the guest — which is what tells an attachment rendered in its
+	// host's turn from one rendered after every node.
+	crossings []string
 }
 
 func (p *heldPassProvider) BoundaryAssembly() string { return p.assembly }
@@ -52,13 +60,18 @@ func (p *heldPassProvider) EmitArtifacts(
 	if who == "" {
 		who = nodeCtx.NodeID
 	}
+	p.crossings = append(p.crossings, who)
 	if nodeCtx.DerivedKeySink != nil {
 		declared := types.OrderedMap[[]string]{}
 		declared.Set("probe-names", []string{"name-of-" + who})
 		nodeCtx.DerivedKeySink(declared)
 	}
-	if nodeCtx.RenderFactSink != nil {
-		nodeCtx.RenderFactSink([]RenderFact{{Name: "emitted_by", Value: json.RawMessage(strconv.Quote(who))}})
+	if nodeCtx.RenderFactSink != nil && !strings.HasPrefix(nodeCtx.NodeID, "quiet") {
+		value, err := json.Marshal([]string{who})
+		if err != nil {
+			return nil, err
+		}
+		nodeCtx.RenderFactSink([]RenderFact{{Name: "emitted_by", Value: value}})
 	}
 	intermediate := RenderIsIntermediate(p)
 	files := make([]EmittedFile, 0, len(proj.Entries))
@@ -137,17 +150,34 @@ type heldPassAttachment struct {
 	declares bool
 }
 
+// parityTemplate reads the host's own render facts and the connections made to the
+// host — both of which an attachment reads alike in its host's turn and after the
+// walk — and nothing the declaration changes, so a declared and an undeclared
+// render of it render the same text.
+const parityTemplate = "kind: Attached\n" +
+	"host: {{ .context.instance_id }}\n" +
+	"name: {{ .attachment_name }}\n" +
+	"host_facts: {{ toJson .context.render_facts }}\n" +
+	"callers: \"{{ range .context.used_by }}{{ .component_id }};{{ end }}\"\n"
+
+// handingTemplate prints the host's own render facts and every connection made to
+// the host whole, one line each. It names no render_facts beneath the connections,
+// so the rule over an undeclared reading does not refuse it, and a caller's facts
+// appear on a line exactly where the render handed them over.
+const handingTemplate = "kind: Attached\n" +
+	"host: {{ .context.instance_id }}\n" +
+	"name: {{ .attachment_name }}\n" +
+	"host_facts: {{ toJson .context.render_facts }}\n" +
+	"{{- range .context.used_by }}\ncaller: {{ toJson . }}{{ end }}\n"
+
 // renderHeldPass renders a graph of the given nodes, all in one boundary and all
 // rendered through the stub, with one connection per pair in edges (caller first,
 // then the node it connects to).
 //
 // Every node's Recipe places one artifact naming the node. Every attachment's
-// FeatureRecipe places one artifact naming its host, its own name and the
-// components connecting to its host — a reading of the connections that exists
-// whether or not the FeatureRecipe declares anything, so a declared and an
-// undeclared render of the same FeatureRecipe render the same text.
+// FeatureRecipe places one artifact written from frTemplate.
 func renderHeldPass(
-	t *testing.T, assembly string, nodes []heldPassNode, edges [][2]string,
+	t *testing.T, assembly string, nodes []heldPassNode, edges [][2]string, frTemplate string,
 ) (*RenderResult, *heldPassProvider) {
 	t.Helper()
 
@@ -215,10 +245,7 @@ func renderHeldPass(
 				return nil, false
 			}
 			art := types.OrderedMap[types.ArtifactEntry]{}
-			art.Set(instance+".yaml", types.ArtifactEntry{Inline: "kind: Attached\n" +
-				"host: {{ .context.instance_id }}\n" +
-				"name: {{ .attachment_name }}\n" +
-				"callers: \"{{ range .context.used_by }}{{ .component_id }};{{ end }}\"\n"})
+			art.Set(instance+".yaml", types.ArtifactEntry{Inline: frTemplate})
 			return &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: instance + "-fr", Version: "1.0.0"},
 				Spec: types.FeatureRecipeSpec{
@@ -251,23 +278,39 @@ func heldPassFileKeys(files map[string]AssembledFile) []string {
 	return keys
 }
 
-// heldPassRecord returns what the render recorded for one attachment's render,
-// failing the test where it recorded none — an attachment with no record never
-// rendered, and every assertion over it would then compare nothing.
-func heldPassRecord(t *testing.T, result *RenderResult, host, instance string) attachmentRenderRecord {
+// attachmentIdentityOf is the composed identity an attachment's render reports as,
+// computed by the one composition the render uses — the stub answers no name-bound
+// question, so the composition stands as composed.
+func attachmentIdentityOf(host, instance string) string {
+	return labels.ComposeComponentIdentity(labels.AttachmentScope, labels.Unbounded, host, instance)
+}
+
+// crossingIndex returns where in the guest's crossings the given one ran, failing
+// the test where it ran other than exactly once — a crossing that never ran, or
+// ran twice, leaves every comparison of its position meaningless.
+func crossingIndex(t *testing.T, prov *heldPassProvider, who string) int {
 	t.Helper()
-	if result.attachmentRenders == nil {
-		t.Fatal("the render published no record of its attachment renders")
+	first := slices.Index(prov.crossings, who)
+	if first < 0 || slices.Index(prov.crossings[first+1:], who) >= 0 {
+		t.Fatalf("%q crossed the guest other than exactly once; crossings %v", who, prov.crossings)
 	}
-	var found []attachmentRenderRecord
-	for _, r := range result.attachmentRenders.records {
-		if r.Host == host && r.Instance == instance {
-			found = append(found, r)
+	return first
+}
+
+// attachedOutput returns the body of the one output file carrying the given
+// attachment's artifact, failing the test where there is not exactly one.
+func attachedOutput(t *testing.T, result *RenderResult, host, instance string) string {
+	t.Helper()
+	marker := "kind: Attached\nhost: " + host + "\nname: " + instance + "\n"
+	var found []string
+	for _, key := range heldPassFileKeys(result.Files) {
+		if body := string(result.Files[key].Content); strings.Contains(body, marker) {
+			found = append(found, body)
 		}
 	}
 	if len(found) != 1 {
-		t.Fatalf("attachment %q on %q rendered %d time(s), want exactly once; the render recorded %+v",
-			instance, host, len(found), result.attachmentRenders.records)
+		t.Fatalf("%d output file(s) carry attachment %q on %q, want exactly one; files %v",
+			len(found), instance, host, heldPassFileKeys(result.Files))
 	}
 	return found[0]
 }
@@ -278,7 +321,8 @@ func heldPassRecord(t *testing.T, result *RenderResult, host, instance string) a
 // its callers' render facts, so it renders after every node — and its templates
 // read nothing the declaration changes. Every output file, everything the group
 // hands its assembler, and every derived name the group holds must come out the
-// same.
+// same. The template reads the host's own render facts, which an attachment is
+// handed alike at either moment, so the comparison covers them too.
 //
 // It runs once per kind of group, because each kind places an attachment through a
 // different arm: a flat group writes its files into the host's own map, a nesting
@@ -287,9 +331,10 @@ func heldPassRecord(t *testing.T, result *RenderResult, host, instance string) a
 // a node follows it in the same group, so a placement that depended on when in the
 // walk it ran would show.
 //
-// Each row first establishes that the declared render really took the later pass
-// and the undeclared one did not; without that the comparison would hold between
-// two identical renders and prove nothing.
+// Each row first establishes, from the order the guest was asked to render in, that
+// the declared render really took the later pass and the undeclared one did not;
+// without that the comparison would hold between two identical renders and prove
+// nothing.
 func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 	t.Parallel()
 
@@ -313,14 +358,17 @@ func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 			}
 			edges := [][2]string{{"web", "api"}}
 
-			inTurn, inTurnProv := renderHeldPass(t, tc.assembly, graph(false), edges)
-			held, heldProv := renderHeldPass(t, tc.assembly, graph(true), edges)
+			inTurn, inTurnProv := renderHeldPass(t, tc.assembly, graph(false), edges, parityTemplate)
+			held, heldProv := renderHeldPass(t, tc.assembly, graph(true), edges, parityTemplate)
 
-			if r := heldPassRecord(t, inTurn, "api", "guard"); r.AfterTheNodes {
-				t.Fatal("the undeclared attachment rendered after the walk; the comparison below would be between two held renders")
+			guard := attachmentIdentityOf("api", "guard")
+			if crossingIndex(t, inTurnProv, guard) > crossingIndex(t, inTurnProv, "zz-tail") {
+				t.Fatalf("the undeclared attachment rendered after the walk; the comparison below would be between two held renders (crossings %v)",
+					inTurnProv.crossings)
 			}
-			if r := heldPassRecord(t, held, "api", "guard"); !r.AfterTheNodes {
-				t.Fatal("the declaring attachment rendered in its host's turn; the comparison below would be between two in-turn renders")
+			if crossingIndex(t, heldProv, guard) < crossingIndex(t, heldProv, "zz-tail") {
+				t.Fatalf("the declaring attachment rendered in its host's turn; the comparison below would be between two in-turn renders (crossings %v)",
+					heldProv.crossings)
 			}
 
 			if !reflect.DeepEqual(heldPassFileKeys(inTurn.Files), heldPassFileKeys(held.Files)) {
@@ -335,17 +383,36 @@ func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 					attachmentFileSeen = true
 				}
 			}
-			if !attachmentFileSeen {
-				t.Fatalf("no output carries the attachment's artifact, so the comparison covers none of its placement; files %v",
-					heldPassFileKeys(inTurn.Files))
-			}
-
 			if !reflect.DeepEqual(inTurnProv.assembled, heldProv.assembled) {
 				t.Errorf("the groups handed their assemblers different contributors:\n in turn:\n%s\n held:\n%s",
 					strings.Join(inTurnProv.assembled, "---\n"), strings.Join(heldProv.assembled, "---\n"))
 			}
+			for _, summary := range inTurnProv.assembled {
+				if strings.Contains(summary, "kind: Attached") {
+					attachmentFileSeen = true
+				}
+			}
+			if !attachmentFileSeen {
+				t.Fatalf("no output carries the attachment's artifact, so the comparison covers none of its placement; files %v",
+					heldPassFileKeys(inTurn.Files))
+			}
 			if tc.assembly != "" && len(inTurnProv.assembled) == 0 {
 				t.Fatal("no group assembled, so the contributor routing was compared over nothing")
+			}
+			wantHostFacts := `host_facts: {"emitted_by":["api"]}`
+			hostFactsSeen := false
+			for _, key := range heldPassFileKeys(held.Files) {
+				if strings.Contains(string(held.Files[key].Content), wantHostFacts) {
+					hostFactsSeen = true
+				}
+			}
+			for _, summary := range heldProv.assembled {
+				if strings.Contains(summary, strings.ReplaceAll(wantHostFacts, `"`, `\"`)) {
+					hostFactsSeen = true
+				}
+			}
+			if !hostFactsSeen {
+				t.Errorf("the held attachment's output does not carry its host's own render facts %s", wantHostFacts)
 			}
 
 			if !reflect.DeepEqual(inTurn.Contributions, held.Contributions) {
@@ -372,22 +439,34 @@ func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 	}
 }
 
-// TestHeldAttachment_IsHandedItsCallersFactsAfterEveryNodeHasRendered holds what a
-// declaring attachment is handed and when it renders.
+// TestHeldAttachment_ReadsItsCallersFactsOnceEveryNodeHasRendered holds what a
+// declaring attachment reads, by reading what it rendered.
 //
 // The first row is the case the walk order alone gets wrong: the host's id sorts
 // before its caller's, so in its host's turn the caller has not rendered at all.
-// Held for the later pass, it is handed the caller's own facts and the facts of the
-// attachment rendered in the caller's turn, kept apart.
+// Held for the later pass, the attachment reads, on the caller's connection, the
+// caller's own facts and then those of each attachment rendered in the caller's
+// turn, joined under the one name they share in the order they rendered.
 //
 // The second row is the property that keeps the pass free of any order among held
 // attachments. The caller carries a held attachment of its own and sorts first, so
 // in the later pass that attachment renders — and reports — before the host's does.
-// The host's held attachment must still not be handed it.
+// The host's held attachment must still not read it.
 //
-// The third row holds the other side of the declaration: an attachment that does
-// not declare it renders in its host's turn and is handed nothing.
-func TestHeldAttachment_IsHandedItsCallersFactsAfterEveryNodeHasRendered(t *testing.T) {
+// The third row holds a caller whose provider reports nothing: its connection
+// carries the facts all the same, empty, so a template reads every caller alike.
+//
+// The fourth row holds what the host's own facts are: the host carries another
+// attachment that renders and reports in its turn, and the declaring attachment
+// still reads only what the host's own render reported.
+//
+// The fifth row holds the other side of the declaration: an attachment that does
+// not declare it renders in its host's turn, and no caller's connection carries
+// facts at all — not even an empty set.
+//
+// Every row also reads the host's own render facts, which every attachment is
+// handed whatever it declares.
+func TestHeldAttachment_ReadsItsCallersFactsOnceEveryNodeHasRendered(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -396,74 +475,123 @@ func TestHeldAttachment_IsHandedItsCallersFactsAfterEveryNodeHasRendered(t *test
 		edges          [][2]string
 		host, instance string
 		wantAfter      bool
-		// wantCallers is each handed connection's caller and the instance names of
-		// its attachments whose facts it carries; nil when nothing is handed.
+		// wantHostFacts is the host's own facts as the attachment printed them.
+		wantHostFacts string
+		// wantCallers is each connection's caller and the render facts its line
+		// carries, in the order the connections are held; "absent" where the line
+		// must carry no facts at all.
 		wantCallers []string
 	}{
 		{
 			name: "a declaring attachment on a host sorting before its caller",
 			nodes: []heldPassNode{
 				{id: "api", attachments: []heldPassAttachment{{instance: "guard", declares: true}}},
-				{id: "web", attachments: []heldPassAttachment{{instance: "tag"}}},
+				{id: "web", attachments: []heldPassAttachment{{instance: "tag"}, {instance: "mark"}}},
 			},
-			edges:       [][2]string{{"web", "api"}},
-			host:        "api",
-			instance:    "guard",
-			wantAfter:   true,
-			wantCallers: []string{"web own=\"web\" attachments=[tag]"},
+			edges:         [][2]string{{"web", "api"}},
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantCallers: []string{fmt.Sprintf(`web {"emitted_by":["web",%q,%q]}`,
+				attachmentIdentityOf("web", "tag"), attachmentIdentityOf("web", "mark"))},
 		},
 		{
-			name: "a held attachment is not handed what another held attachment reported",
+			name: "a held attachment does not read what another held attachment reported",
 			nodes: []heldPassNode{
 				{id: "alpha", attachments: []heldPassAttachment{{instance: "probe", declares: true}}},
 				{id: "beta", attachments: []heldPassAttachment{{instance: "guard", declares: true}}},
 			},
-			edges:       [][2]string{{"alpha", "beta"}},
-			host:        "beta",
-			instance:    "guard",
-			wantAfter:   true,
-			wantCallers: []string{"alpha own=\"alpha\" attachments=[]"},
+			edges:         [][2]string{{"alpha", "beta"}},
+			host:          "beta",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["beta"]}`,
+			wantCallers:   []string{`alpha {"emitted_by":["alpha"]}`},
 		},
 		{
-			name: "an attachment that does not declare it renders in its host's turn and is handed nothing",
+			name: "a caller whose provider reports nothing carries empty facts",
+			nodes: []heldPassNode{
+				{id: "api", attachments: []heldPassAttachment{{instance: "guard", declares: true}}},
+				{id: "quiet-worker"},
+				{id: "web"},
+			},
+			edges:         [][2]string{{"quiet-worker", "api"}, {"web", "api"}},
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantCallers:   []string{`quiet-worker {}`, `web {"emitted_by":["web"]}`},
+		},
+		{
+			name: "the host's own facts leave out what its other attachments reported",
+			nodes: []heldPassNode{
+				{id: "api", attachments: []heldPassAttachment{{instance: "tag"}, {instance: "guard", declares: true}}},
+				{id: "web"},
+			},
+			edges:         [][2]string{{"web", "api"}},
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantCallers:   []string{`web {"emitted_by":["web"]}`},
+		},
+		{
+			name: "an attachment that does not declare it renders in its host's turn and reads no caller's facts",
 			nodes: []heldPassNode{
 				{id: "api", attachments: []heldPassAttachment{{instance: "plain"}}},
 				{id: "web"},
 			},
-			edges:     [][2]string{{"web", "api"}},
-			host:      "api",
-			instance:  "plain",
-			wantAfter: false,
+			edges:         [][2]string{{"web", "api"}},
+			host:          "api",
+			instance:      "plain",
+			wantAfter:     false,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantCallers:   []string{`web absent`},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result, _ := renderHeldPass(t, "", tc.nodes, tc.edges)
-			rec := heldPassRecord(t, result, tc.host, tc.instance)
+			result, prov := renderHeldPass(t, "", tc.nodes, tc.edges, handingTemplate)
 
-			if rec.AfterTheNodes != tc.wantAfter {
-				t.Errorf("rendered after every node = %v, want %v", rec.AfterTheNodes, tc.wantAfter)
+			// When it rendered, read from the order the guest was asked: after every
+			// node's own render, or before a node later in the walk.
+			mine := crossingIndex(t, prov, attachmentIdentityOf(tc.host, tc.instance))
+			lastNode := -1
+			for _, n := range tc.nodes {
+				lastNode = max(lastNode, crossingIndex(t, prov, n.id))
+			}
+			if after := mine > lastNode; after != tc.wantAfter {
+				t.Errorf("rendered after every node = %v, want %v (crossings %v)", after, tc.wantAfter, prov.crossings)
+			}
+
+			body := attachedOutput(t, result, tc.host, tc.instance)
+			if want := "host_facts: " + tc.wantHostFacts + "\n"; !strings.Contains(body, want) {
+				t.Errorf("the attachment read its host's facts wrong; want %q in\n%s", want, body)
 			}
 			var got []string
-			for _, c := range rec.CallerFacts {
-				own := make([]string, 0, len(c.Own))
-				for _, f := range c.Own {
-					own = append(own, string(f.Value))
+			for _, line := range strings.Split(body, "\n") {
+				raw, isCaller := strings.CutPrefix(line, "caller: ")
+				if !isCaller {
+					continue
 				}
-				got = append(got, fmt.Sprintf("%s own=%s attachments=%v",
-					c.ComponentID, strings.Join(own, ","), c.Attachments.Keys()))
+				var entry map[string]json.RawMessage
+				if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+					t.Fatalf("a caller line is not the connection's JSON: %q: %v", line, err)
+				}
+				var caller string
+				if err := json.Unmarshal(entry["component_id"], &caller); err != nil {
+					t.Fatalf("a caller line names no caller: %q: %v", line, err)
+				}
+				facts, carried := entry["render_facts"]
+				if !carried {
+					got = append(got, caller+" absent")
+					continue
+				}
+				got = append(got, caller+" "+string(facts))
 			}
 			if !reflect.DeepEqual(got, tc.wantCallers) {
-				t.Errorf("handed %q, want %q", got, tc.wantCallers)
-			}
-			// What an attachment of the caller reported is carried under that
-			// attachment, never as the caller's own.
-			for _, c := range rec.CallerFacts {
-				for _, f := range c.Own {
-					if string(f.Value) != strconv.Quote(c.ComponentID) {
-						t.Errorf("caller %q's own facts carry %s, which its own render did not report", c.ComponentID, f.Value)
-					}
-				}
+				t.Errorf("the attachment read its callers as\n %q\nwant\n %q\nfrom\n%s", got, tc.wantCallers, body)
 			}
 		})
 	}

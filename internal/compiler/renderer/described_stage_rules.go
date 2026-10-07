@@ -494,9 +494,16 @@ type callerRenderFactsAxes interface {
 	constraint.AttachmentTemplateFieldEnumerator
 }
 
-// runCallerRenderFactsRule invokes the rule declared over an attachment template
-// that reads its callers' render facts without its FeatureRecipe declaring it,
-// and returns what it raised as the render's halt.
+// runCallerRenderFactsRule invokes the two rules declared over an attachment
+// template that reads its callers' render facts — the one over a template
+// producing the attachment's own resources whose FeatureRecipe does not declare
+// it, and the one over a pipeline step's input or gate, which never sees the
+// callers — and returns what they raised as the render's halt.
+//
+// The two own disjoint fields, so one authoring fault is reported by exactly one
+// of them, and they read one matcher, so they cannot disagree about what a
+// reading is. They are asked in that order and the first that raises halts, the
+// way the rules beside it are asked.
 //
 // # Why here, ahead of the node walk
 //
@@ -504,7 +511,8 @@ type callerRenderFactsAxes interface {
 // that happens: an attachment that does not declare it renders in its host's
 // turn. Asked here, the refusal reaches the author before anything has rendered,
 // against the field the template was written in, rather than after a walk whose
-// output would be discarded.
+// output would be discarded. A step's read is refused here for the same reason:
+// left to evaluation it would render as an empty value rather than halt.
 //
 // It carries no plugin-resolution guard, for the reason the authored-text readings
 // beside it carry none: nothing it reads comes from a plugin describing itself, so
@@ -532,8 +540,20 @@ func runCallerRenderFactsRule(
 	if err != nil {
 		return err
 	}
-	return objectionsAsHalt(
+	if halt := objectionsAsHalt(
 		raised, "attachment templates reading their callers' render facts without declaring it",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnNodeAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentPipelineStepReadsNoCallerRenderFacts,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "pipeline steps reading their callers' render facts",
 	)
 }
 
