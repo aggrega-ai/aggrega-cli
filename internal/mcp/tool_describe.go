@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // describeArgs is the describe tool's argument shape. Name or release selects the
@@ -334,7 +337,7 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 				"type URI and that the catalog directories that Release reads cover it.%s",
 			name, kinds, pathscope.ReportedName(tw.root, releasePath), note), "component")))
 	}
-	def, mErr := json.Marshal(match.Definition)
+	def, mErr := definitionJSON(match)
 	if mErr != nil {
 		return nil, &rpcError{Code: codeInternalError,
 			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
@@ -350,6 +353,28 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 	// outside the workspace is kept back rather than named absolutely.
 	payload.File, payload.FileWithheld = tw.reportedLocationField(pathscope.ReportedName(tw.root, match.Source))
 	return tw.answer(textResult(renderDescribeEntityText(payload), payload))
+}
+
+// definitionJSON carries a resolved entity's definition document as JSON: the
+// document every surface showing a definition by name shows, its mappings
+// carried as objects with their keys in the order the document holds them.
+//
+// It converts the document rather than encoding the typed entity, because the
+// typed entity holds an authored schema as a parsed document node, and encoding
+// one of those directly emits the parser's own fields — line and column numbers
+// among them — in place of the schema, and does so even for a schema the entity
+// does not declare. Converting the one rendering is what keeps this answer, the
+// daemon's definition answer and `aggrega inspect` showing the same definition.
+func definitionJSON(match compilerops.Entity) (json.RawMessage, error) {
+	document, err := match.DefinitionDocument()
+	if err != nil {
+		return nil, err
+	}
+	var tree types.OrderedMap[any]
+	if err := yaml.Unmarshal(document, &tree); err != nil {
+		return nil, err
+	}
+	return json.Marshal(tree)
 }
 
 // describePublishedEntity reads the entity a registry reference publishes, through

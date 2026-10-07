@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.conn/vault
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  # Its labels satisfy the credential slot's selector, but it applies only to a
+  # stateful server, which the gateway is not: it may fill no slot there.
+  appliesTo: "component.aggrega.ai/type=stateful-server"
+  schema:
+    values:
+      key: { type: string }

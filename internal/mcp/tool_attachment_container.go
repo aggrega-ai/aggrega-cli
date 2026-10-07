@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // attachmentContainerArgs is the attachment-container tool's argument shape.
@@ -24,11 +25,18 @@ import (
 // metadata.name names an entity rather than an instance of one, and one entity
 // may be instantiated at several places in a single Aggregate, so such a name
 // has no one container to report.
+//
+// Connection names one connection the graph node draws, when the attachment is
+// for that connection rather than for the node; its document is required,
+// because either document may hold an attachment on a connection the Aggregate
+// drew. It is the daemon's request shape for the same thing, so the two surfaces
+// accept and refuse the same coordinates.
 type attachmentContainerArgs struct {
-	GraphNode     string   `json:"graph_node"`
-	Release       string   `json:"release"`
-	WorkspaceRoot string   `json:"workspace_root"`
-	CatalogDirs   []string `json:"catalog_dirs"`
+	GraphNode     string                      `json:"graph_node"`
+	Release       string                      `json:"release"`
+	Connection    *serve.ConnectionCoordinate `json:"connection"`
+	WorkspaceRoot string                      `json:"workspace_root"`
+	CatalogDirs   []string                    `json:"catalog_dirs"`
 }
 
 // attachmentContainerPayload is the attachment-container tool's structured
@@ -60,9 +68,16 @@ var attachmentContainerToolSpec = toolSpec{
 		"answer's `container` is a list of segments, in the exact shape insertion-point takes, so pass `file` and " +
 		"`container` straight to insertion-point to learn where in that document's bytes the text goes. `file` is part of " +
 		"the answer rather than something you already know: a node contributed by a sub-aggregate was authored in that " +
-		"module's own document, not in the Aggregate the Release names. It ANSWERS AND STOPS: it creates no attachment, " +
-		"writes nothing to any file and composes no text — that is yours. Pair it with attach-candidates, which says WHAT " +
-		"may attach; this says WHICH CONTAINER it goes in, and insertion-point says WHERE in the file.",
+		"module's own document, not in the Aggregate the Release names. For an attachment on one CONNECTION the node's " +
+		"component draws, add `connection` with its `socket`, `alias` and `document` — `aggregate` or `release`, either of " +
+		"which may hold one: the answer is then that connection's own features container in that document. In the " +
+		"Release it is the per-edge entry under the Release's entry for the node, reported whether or not the Release " +
+		"writes that per-edge entry yet, so insertion-point names the keys still to write; a Release writing no entry " +
+		"for the node is refused. A connection the Release drew is refused in the Aggregate, which holds no entry for " +
+		"it, and one a Feature drew is refused in both, because nothing is attached to it. It ANSWERS AND STOPS: it " +
+		"creates no attachment, writes nothing to any file and composes no text — that is yours. Pair it with " +
+		"attach-candidates, which says WHAT may attach; this says WHICH CONTAINER it goes in, and insertion-point says " +
+		"WHERE in the file.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -75,6 +90,16 @@ var attachmentContainerToolSpec = toolSpec{
       "type": "string",
       "minLength": 1,
       "description": "Path to the Release whose graph carries graph_node, absolute or relative to the workspace root."
+    },
+    "connection": {
+      "type": "object",
+      "description": "One connection the graph_node's component draws, when the attachment is for that connection rather than for the node.",
+      "properties": {
+        "socket": { "type": "string", "minLength": 1, "description": "The dependency socket the connection is wired through." },
+        "alias": { "type": "string", "minLength": 1, "description": "The name the connection carries within its socket." },
+        "document": { "type": "string", "enum": ["aggregate", "release"], "description": "The document the attachment is written in." }
+      },
+      "required": ["socket", "alias", "document"]
     },
     "workspace_root": {
       "type": "string",
@@ -107,6 +132,11 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 		return errorResult("attachment-container requires a 'release': a node id names a node on a Release's " +
 			"compiled graph, so there is no graph to look in without one. Call list-releases with response_format " +
 			"detailed to see the Releases this workspace declares.")
+	}
+	if a.Connection != nil {
+		if field, reason := a.Connection.Fault(true); field != "" {
+			return errorResult("attachment-container: 'connection." + field + "' " + reason + ".")
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return errorResult(explainToolError("Could not report where an attachment belongs.", err, ""))
@@ -153,11 +183,29 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 
 	// The graph comes off the finished payload: the refusal above returned, so the
 	// run this reports a container from is one that ended.
-	result, refusal := serve.AttachmentContainer(preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
-	if refusal != serve.AttachmentContainerReported {
-		return errorResult(explainDiagnostic(fmt.Sprintf(
-			"No container is reported for %q on the compiled graph of %s: %s.",
-			a.GraphNode, a.Release, refusal.Reason()), "release"))
+	graph := preview.PipelineOutcome().Completed().IRGraph
+	var result serve.AttachmentContainerResult
+	if a.Connection != nil {
+		var release *types.Release
+		if preview.Resolved != nil {
+			release = preview.Resolved.Release
+		}
+		var refused serve.ConnectionRefusal
+		result, refused = serve.ConnectionAttachmentContainer(tw.root, graph, release, releasePath, a.GraphNode,
+			*a.Connection)
+		if refused != serve.ConnectionAnswered {
+			return errorResult(explainDiagnostic(fmt.Sprintf(
+				"No container is reported for the connection %q through socket %q of %q on the compiled graph of %s: %s.",
+				a.Connection.Alias, a.Connection.Socket, a.GraphNode, a.Release, refused.Reason()), "release"))
+		}
+	} else {
+		var refusal serve.AttachmentContainerRefusal
+		result, refusal = serve.AttachmentContainer(graph, a.GraphNode)
+		if refusal != serve.AttachmentContainerReported {
+			return errorResult(explainDiagnostic(fmt.Sprintf(
+				"No container is reported for %q on the compiled graph of %s: %s.",
+				a.GraphNode, a.Release, refusal.Reason()), "release"))
+		}
 	}
 
 	payload := attachmentContainerPayload{AttachmentContainerResult: result}

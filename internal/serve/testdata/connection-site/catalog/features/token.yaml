@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.conn/token
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  # Applies to the gateway, and its labels satisfy the credential slot's
+  # selector: it may fill both of the models socket's slots.
+  appliesTo: "component.aggrega.ai/type=server"
+  schema:
+    values:
+      key: { type: string }
+    provides:
+      key: { type: string, required: true }

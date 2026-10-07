@@ -44,23 +44,60 @@ func ReleaseEdgeConfigurations(
 	}
 	out := make([]constraint.ReleaseEdgeConfigurationInstance, 0, len(entries))
 	for _, e := range entries {
-		instance := constraint.ReleaseEdgeConfigurationInstance{
-			Configuration: constraint.ReleaseEdgeConfiguration{
-				Document:     constraint.AuthoringDocumentRelease,
-				BoundaryPath: e.BoundaryScopePath,
-				Node:         e.NodeID,
-				Socket:       e.Socket,
-				Alias:        e.Alias,
-			},
-			SourceFile: sourceFile,
-		}
-		if e.BoundaryScopePath == "" {
-			instance.Site = constraint.AuthoredSite{Component: e.NodeID}
-		} else {
-			instance.Site = constraint.AuthoredSite{ScopePath: e.BoundaryScopePath}
-			instance.ComponentKeys = e.ComponentKeys
-		}
-		out = append(out, instance)
+		out = append(out, releaseEdgeConfigurationInstance(
+			e.NodeID, e.BoundaryScopePath, e.ComponentKeys, e.Socket, e.Alias, sourceFile))
 	}
 	return out
+}
+
+// ReleaseConnectionEntry returns the per-edge entry a Release writes, or would
+// write, for one connection of one component: the coordinates and the site the
+// fold above gives an entry the Release does write, built from the Release's own
+// component entry for the node. The second return is false where the Release
+// writes no component entry for the node at all, so there is no entry of its own
+// for a per-edge one to sit under.
+//
+// It answers whether or not the Release writes an entry for that connection yet,
+// and that is its point: where a new per-edge entry belongs is a fact about the
+// component entry it goes under, and it is spelled exactly as the entry would be
+// once written, so a reader placing one and a rule later judging it name the same
+// keys.
+func ReleaseConnectionEntry(
+	rel *types.Release,
+	sourceFile, node, socket, alias string,
+) (constraint.ReleaseEdgeConfigurationInstance, bool) {
+	for _, c := range ReleaseComponentEntries(rel) {
+		if c.NodeID != node {
+			continue
+		}
+		return releaseEdgeConfigurationInstance(
+			c.NodeID, c.BoundaryScopePath, c.ComponentKeys, socket, alias, sourceFile), true
+	}
+	return constraint.ReleaseEdgeConfigurationInstance{}, false
+}
+
+// releaseEdgeConfigurationInstance is the one spelling of a per-edge entry's
+// coordinates and site, for an entry written and for one about to be.
+func releaseEdgeConfigurationInstance(
+	node, boundaryScopePath string,
+	componentKeys []string,
+	socket, alias, sourceFile string,
+) constraint.ReleaseEdgeConfigurationInstance {
+	instance := constraint.ReleaseEdgeConfigurationInstance{
+		Configuration: constraint.ReleaseEdgeConfiguration{
+			Document:     constraint.AuthoringDocumentRelease,
+			BoundaryPath: boundaryScopePath,
+			Node:         node,
+			Socket:       socket,
+			Alias:        alias,
+		},
+		SourceFile: sourceFile,
+	}
+	if boundaryScopePath == "" {
+		instance.Site = constraint.AuthoredSite{Component: node}
+	} else {
+		instance.Site = constraint.AuthoredSite{ScopePath: boundaryScopePath}
+		instance.ComponentKeys = componentKeys
+	}
+	return instance
 }

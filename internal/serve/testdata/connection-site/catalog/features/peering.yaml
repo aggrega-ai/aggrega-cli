@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.conn/peering
+  version: "1.0.0"
+spec:
+  # A pure-wiring Feature: attached to a component, its own dependency block
+  # draws a connection from that component, which is a connection a Feature drew.
+  usesSchema:
+    peer:
+      selector: "component.aggrega.ai/category=model"

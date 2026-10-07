@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: connection-site-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        conn/gateway: conn-gateway-recipe:1.0.0
+        conn/model: conn-model-recipe:1.0.0
+        conn/sink: conn-sink-recipe:1.0.0
+    features:
+      type:
+        feature.conn/token: conn-token-compose:1.0.0
+        feature.conn/audit: conn-audit-compose:1.0.0
+        feature.conn/peering: conn-peering-compose:1.0.0

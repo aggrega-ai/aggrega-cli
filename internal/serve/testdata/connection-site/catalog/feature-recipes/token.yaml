@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: conn-token-compose
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: feature.conn/token
+  provides:
+    key: "{{ .values.key }}"

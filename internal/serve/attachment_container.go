@@ -174,9 +174,17 @@ func AttachmentContainer(graph *types.IRGraph, node string) (AttachmentContainer
 // names an entity rather than an instance of one, and the same entity may be
 // instantiated at several places in one Aggregate, so a name has no single
 // container to report.
+//
+// Connection names one connection the graph node draws, when the attachment is
+// for that connection rather than for the node, and its document is required
+// here: an attachment on a connection the Aggregate drew may be written in
+// either document, so an answer for an unnamed one would be a guess. A pointer,
+// so a request that did not send it is answered exactly as it was before the
+// field existed.
 type attachmentContainerParams struct {
-	GraphNode string `json:"graphNode"`
-	Release   string `json:"release"`
+	GraphNode  string                `json:"graphNode"`
+	Release    string                `json:"release"`
+	Connection *ConnectionCoordinate `json:"connection"`
 }
 
 // dispatchAttachmentContainer reports where a Feature attachment for a node on a
@@ -197,6 +205,13 @@ type attachmentContainerParams struct {
 // document. It composes no entry text and applies no edit, because the caller is
 // the surface that owns the buffer and the undo history the edit lands in.
 //
+// # A connection the node draws
+//
+// A request naming a connection beside the node is answered for that connection
+// instead: the connection entry's own `features` container, in the document the
+// request names — see [ConnectionAttachmentContainer] for what each document
+// answers and refuses.
+//
 // # What it resolves
 //
 // Building the graph resolves the Release's closure through the ordinary catalog
@@ -216,8 +231,28 @@ func (s *Server) dispatchAttachmentContainer(ctx context.Context, req *jsonRPCRe
 			"invalid params: address a node with params.graphNode, and name the Release whose graph carries it "+
 				"with params.release")
 	}
+	if params.Connection != nil {
+		if field, reason := params.Connection.Fault(true); field != "" {
+			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+				"invalid params: params.connection."+field+" "+reason)
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
+	}
+
+	if params.Connection != nil {
+		result, errEnvelope := s.connectionAttachmentContainerForGraphNode(ctx, params.GraphNode, params.Release,
+			*params.Connection)
+		if ctx.Err() != nil {
+			// Cancelled mid-pipeline (shutdown). Drop the response; the dispatcher
+			// exits via the drain timer.
+			return nil
+		}
+		if errEnvelope != nil {
+			return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
+		}
+		return s.writeResult(ctx, req.ID, result)
 	}
 
 	result, errEnvelope := s.attachmentContainerForGraphNode(ctx, params.GraphNode, params.Release)

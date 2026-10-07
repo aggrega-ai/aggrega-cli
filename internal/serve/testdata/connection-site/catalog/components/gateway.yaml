@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: conn/gateway
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  usesSchema:
+    # A socket declaring two slots each connection on it may fill: one narrowed
+    # by a selector over the filling Feature's own labels, required and marked
+    # sensitive, and one declaring no constraint at all.
+    models:
+      selector: "component.aggrega.ai/category=model"
+      featuresSchema:
+        credential:
+          selector: "feature.aggrega.ai/kind=secret"
+          required: true
+          inject: [env]
+          sensitive: true
+          description: The credential the gateway presents to the model a connection reaches.
+        trace:
+          description: Where the gateway reports the calls a connection carries.
+    # A socket declaring no slot, so no connection on it carries an attachment.
+    logs:
+      selector: "component.aggrega.ai/category=sink"
+  schema:
+    provides:
+      host: { type: string, required: true }

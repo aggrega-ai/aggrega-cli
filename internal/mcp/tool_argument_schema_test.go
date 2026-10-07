@@ -259,6 +259,15 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"attach-candidates", "a blank coordinate", `{"node":""}`, false},
 		{"attach-candidates", "a coordinate of the wrong type", `{"node":5}`, false},
 		{"attach-candidates", "a label value that is not a string", `{"labels":{"k":5}}`, false},
+		// A connection rides beside the graph node that draws it, and nowhere else;
+		// its socket and alias address it, and its document is one of two.
+		{"attach-candidates", "a connection on a graph node", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a"}}`, true},
+		{"attach-candidates", "a connection named in a document's terms", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a","document":"release"}}`, true},
+		{"attach-candidates", "a connection beside a workspace entity", `{"node":"n","connection":{"socket":"s","alias":"a"}}`, false},
+		{"attach-candidates", "a connection beside a label set", `{"labels":{},"connection":{"socket":"s","alias":"a"}}`, false},
+		{"attach-candidates", "a connection naming no alias", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s"}}`, false},
+		{"attach-candidates", "a connection with a blank socket", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"","alias":"a"}}`, false},
+		{"attach-candidates", "a connection's document outside the two", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a","document":"elsewhere"}}`, false},
 
 		// attachment-container: both coordinates required together. A node id is
 		// a key of one Release's graph, so it is meaningless without the Release
@@ -271,6 +280,12 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"attachment-container", "a Release with no graph node", `{"release":"r.yaml"}`, false},
 		{"attachment-container", "a blank graph node", `{"graph_node":"","release":"r.yaml"}`, false},
 		{"attachment-container", "a graph node of the wrong type", `{"graph_node":5,"release":"r.yaml"}`, false},
+		// A connection's container is asked in one of the two documents, so its
+		// document is required here.
+		{"attachment-container", "a connection in a named document", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a","document":"aggregate"}}`, true},
+		{"attachment-container", "a connection naming no document", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a"}}`, false},
+		{"attachment-container", "a connection's document outside the two", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a","document":"elsewhere"}}`, false},
+		{"attachment-container", "a connection naming no socket", `{"graph_node":"g","release":"r.yaml","connection":{"alias":"a","document":"release"}}`, false},
 
 		// edit-document: four required arguments, plus two rules that hold only
 		// for some of the edits — the socket a wiring needs, and the non-empty

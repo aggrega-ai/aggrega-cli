@@ -2280,12 +2280,34 @@ func connectionEntrySegments(
 	return authoredSiteSegments(nesting, site, keys...)
 }
 
-// connectionAttachmentSegments returns the segments naming one attachment a
-// connection carries: the connection entry's own site, then the `features`
-// block and the slot the attachment is written under.
-func connectionAttachmentSegments(site ConnectionAttachmentSite) []string {
+// ConnectionAttachmentContainerSegments returns the segments naming the container
+// a connection entry's attachments are written in: the entry's own site, then the
+// `features` block. The site's slot is not read — the container is the same for
+// every slot the entry fills.
+//
+// It is exported for the reason [AttachmentContainerSegments] is: naming an
+// existing attachment on a connection and naming where a new one goes are the same
+// question about the same key, asked from two directions, and a surface answering
+// the second has to produce what a locator over the first produces. So the
+// attachment's own segments below are this container with the slot appended, and
+// the two cannot come to name different entries.
+//
+// A site whose document this rule cannot name yields no segments, which is the
+// mechanical form of not inventing a locator.
+func ConnectionAttachmentContainerSegments(site ConnectionAttachmentSite) []string {
 	return connectionEntrySegments(site.Document, site.Site, site.ComponentKeys,
-		site.Socket, site.Alias, authoredKeyFeatures, site.Slot)
+		site.Socket, site.Alias, authoredKeyFeatures)
+}
+
+// connectionAttachmentSegments returns the segments naming one attachment a
+// connection carries: the connection entry's own attachment container, then the
+// slot the attachment is written under.
+func connectionAttachmentSegments(site ConnectionAttachmentSite) []string {
+	container := ConnectionAttachmentContainerSegments(site)
+	if len(container) == 0 {
+		return nil
+	}
+	return append(container, site.Slot)
 }
 
 // Locator returns the locator naming the attachment the site describes, through

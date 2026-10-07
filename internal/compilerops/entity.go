@@ -4,6 +4,8 @@
 package compilerops
 
 import (
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -98,6 +100,21 @@ type Entity struct {
 	// reporting their length as an authored document's would misstate it.
 	Source string
 	Bytes  []byte
+}
+
+// DefinitionDocument renders the resolved definition as the YAML document every
+// surface showing a definition by name shows: each key under the name its
+// author writes, an authored schema as the YAML it was written as, and a field
+// the entity does not carry left out.
+//
+// It is one rendering rather than one per surface because the typed entity holds
+// some of its content as parsed document nodes, and re-encoding one of those
+// through any other encoding emits the parser's own fields — positions, styles,
+// tags — in place of what the author wrote. A surface carrying the definition in
+// another encoding converts this document rather than the typed entity, so it
+// shows what this shows.
+func (e Entity) DefinitionDocument() ([]byte, error) {
+	return yaml.Marshal(e.Definition)
 }
 
 // entityKind is one rung of the resolution: the kind it matches, and the

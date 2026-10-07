@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: conn-sink-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: conn/sink
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: sink:1.0

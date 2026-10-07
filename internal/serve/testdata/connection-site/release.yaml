@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: connection-site-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        gateway:
+          uses:
+            # A connection the Release draws into a socket the Aggregate leaves
+            # unbound. Its socket declares no slot.
+            logs:
+              out:
+                target: sink
+        model: {}
+        sink: {}

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.conn/audit
+  version: "1.0.0"
+spec:
+  # Declares no applicability, so it applies to every node, and carries no label
+  # the credential slot's selector asks for: it may fill only the slot declaring
+  # no constraint.
+  schema:
+    values:
+      level: { type: string }

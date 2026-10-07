@@ -143,11 +143,17 @@ const (
 // for a caller holding a rendered graph: the labels it holds are the finalised
 // ones, which are better data than either name-addressed path can reach on its
 // own, and passing them costs no round trip and no graph rebuild.
+//
+// Connection is not a fourth coordinate: it names one connection the graph node
+// draws, so it rides beside GraphNode and is refused beside anything else. A
+// pointer, so a request that sent it is told apart from one that did not — the
+// second is answered exactly as it was before the field existed.
 type attachCandidatesParams struct {
-	Node      string            `json:"node"`
-	GraphNode string            `json:"graphNode"`
-	Release   string            `json:"release"`
-	Labels    map[string]string `json:"labels"`
+	Node       string                `json:"node"`
+	GraphNode  string                `json:"graphNode"`
+	Release    string                `json:"release"`
+	Labels     map[string]string     `json:"labels"`
+	Connection *ConnectionCoordinate `json:"connection"`
 }
 
 // coordinates names the addressing parameters the request carried, in the
@@ -199,11 +205,22 @@ func (p attachCandidatesParams) coordinates() []string {
 // origin says why a catalog-resolved entity reports no file. The field stays
 // present rather than being omitted so the response shape is the same
 // whichever coordinate was sent.
+//
+// Slots and NoSlotReason answer for a connection, and they are on the wire only
+// when the request named one: an answer about a node, or about a label set,
+// carries neither, so every such answer is the bytes it always was. Slots is
+// then always present as a list — empty, never absent, where no slot may be
+// filled — and NoSlotReason says why it is empty, so a client never reads "no
+// slot may be filled here" as "no Feature matched a slot". The empty list is
+// what the zero-value omission distinguishes from an absent one, which is why
+// a connection's answer always builds it rather than appending to nothing.
 type AttachCandidatesResult struct {
-	Node        string            `json:"node"`
-	NodeLabels  map[string]string `json:"nodeLabels"`
-	LabelSource string            `json:"labelSource"`
-	Candidates  []AttachCandidate `json:"candidates"`
+	Node         string            `json:"node"`
+	NodeLabels   map[string]string `json:"nodeLabels"`
+	LabelSource  string            `json:"labelSource"`
+	Candidates   []AttachCandidate `json:"candidates"`
+	Slots        []SlotCandidacy   `json:"slots,omitzero"`
+	NoSlotReason NoSlotReason      `json:"noSlotReason,omitempty"`
 }
 
 // dispatchAttachCandidates reports which of the workspace's Features
@@ -251,6 +268,14 @@ type AttachCandidatesResult struct {
 // used. A request addressing a workspace document by name needs no lockfile
 // and is answered exactly as it was before this path existed, and a request
 // supplying a label set builds no graph either.
+//
+// # Addressing a connection a graph node draws
+//
+// A request may name, beside the graph node, one connection its component draws.
+// The answer is then the graph-node answer plus that connection's slots and the
+// Features that may fill each — see [AttachCandidatesForConnection]. A connection
+// exists only on a compiled graph, so it is refused beside a workspace document
+// or a label set, neither of which draws one.
 func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	var params attachCandidatesParams
 	if len(req.Params) > 0 {
@@ -278,6 +303,16 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 	case params.Release != "" && params.GraphNode == "":
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 			"invalid params: params.release applies to params.graphNode; a request sending "+given[0]+" builds no graph")
+	case params.Connection != nil && params.GraphNode == "":
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+			"invalid params: params.connection names a connection a graph node draws, so it is sent with "+
+				"params.graphNode and params.release; a request sending "+given[0]+" addresses no graph node")
+	}
+	if params.Connection != nil {
+		if field, reason := params.Connection.Fault(false); field != "" {
+			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+				"invalid params: params.connection."+field+" "+reason)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
@@ -289,6 +324,19 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 			// Cancelled mid-traversal (shutdown). Drop the response; the
 			// dispatcher exits via the drain timer.
 			return nil
+		}
+		return s.writeResult(ctx, req.ID, result)
+	}
+
+	if params.GraphNode != "" && params.Connection != nil {
+		result, errEnvelope := s.attachCandidatesForConnection(ctx, params.GraphNode, params.Release, *params.Connection)
+		if ctx.Err() != nil {
+			// Cancelled mid-pipeline (shutdown). Drop the response; the
+			// dispatcher exits via the drain timer.
+			return nil
+		}
+		if errEnvelope != nil {
+			return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 		}
 		return s.writeResult(ctx, req.ID, result)
 	}
@@ -431,18 +479,25 @@ func attachCandidatesForGraphNodeIn(ctx context.Context, root string, cfg worksp
 	if !ok {
 		return AttachCandidatesResult{}, false
 	}
+	return graphNodeCandidacy(node, irNode, featureDeclsIn(ctx, root, cfg, view, reach, overlay)), true
+}
 
+// graphNodeCandidacy is the node half of every answer about a node of a compiled
+// graph: the node's finalised labels, and the Features of the population whose
+// applicability those labels satisfy. An answer for one of the node's
+// connections carries exactly this beside its slots, so the two are one
+// computation rather than two that agree.
+func graphNodeCandidacy(node string, irNode types.IRNode, decls []featureDecl) AttachCandidatesResult {
 	labels := map[string]string{}
 	for k, v := range irNode.Labels.All() {
 		labels[k] = v
 	}
-
 	return AttachCandidatesResult{
 		Node:        node,
 		NodeLabels:  labels,
 		LabelSource: NodeLabelsResolved,
-		Candidates:  matchingFeaturesIn(ctx, root, cfg, view, reach, overlay, irNode.Labels),
-	}, true
+		Candidates:  matchFeatures(decls, irNode.Labels),
+	}
 }
 
 // attachCandidatesForLabels reports which Features may attach to a node
@@ -653,16 +708,21 @@ func attachCandidatesForNodeIn(ctx context.Context, root string, cfg workspaceco
 
 // featureDecl is one Feature's applicability declaration, reduced to the two
 // surfaces a match evaluates and a flag saying whether they could be read at
-// all.
+// all, together with the labels the Feature declares on itself.
 //
 // The flag exists because "declares no requirement" and "declares something
 // unreadable" are opposite answers that must not collapse into each other:
 // the first admits every node, the second admits none.
+//
+// The labels are what a slot's selector is evaluated against when the Feature
+// is offered for a slot a connection's socket declares: a slot constrains the
+// Feature filling it by that Feature's own labels, never by the node's.
 type featureDecl struct {
 	entity    AttachCandidate
 	appliesTo string
 	anyOf     []types.SelectorTerm
 	parsed    bool
+	labels    types.OrderedMap[string]
 }
 
 // workspaceFeatureDecls walks the workspace once and returns the
@@ -738,9 +798,14 @@ func workspaceFeatureDeclsIn(ctx context.Context, root string, cfg workspaceconf
 }
 
 // featureDeclFromDoc reads a workspace document's applicability declaration
-// off the authored YAML.
+// off the authored YAML, and the labels it declares at metadata.labels through
+// the same helper aggrega/catalogIndex reports them through.
 func featureDeclFromDoc(entity AttachCandidate, doc *yaml.Node) featureDecl {
-	decl := featureDecl{entity: entity, parsed: true}
+	decl := featureDecl{
+		entity: entity,
+		parsed: true,
+		labels: orderedLabels(stringMapAtPathOnDoc(doc, []string{"metadata", "labels"})),
+	}
 	// An absent appliesTo and one authored as something other than a
 	// scalar are different states and must not collapse into each
 	// other. Absent declares no requirement; a mapping or a list
@@ -791,6 +856,7 @@ func catalogFeatureDeclsFrom(view *catalog.LazyLookup, alreadyReported map[strin
 			appliesTo: feat.Spec.AppliesTo,
 			anyOf:     feat.Spec.AppliesToAnyOf,
 			parsed:    true,
+			labels:    feat.Metadata.Labels,
 		})
 	}
 	return out
@@ -804,7 +870,26 @@ func catalogFeatureDeclsFrom(view *catalog.LazyLookup, alreadyReported map[strin
 // offered for a document are decided by the same rule. A second matcher would
 // agree on the ordinary case and part company on the awkward one.
 func matchFeatures(decls []featureDecl, labels types.OrderedMap[string]) []AttachCandidate {
-	candidates := []AttachCandidate{}
+	admitted := admittedDecls(decls, labels)
+	candidates := make([]AttachCandidate, 0, len(admitted))
+	for _, decl := range admitted {
+		candidates = append(candidates, decl.entity)
+	}
+	sortCandidates(candidates)
+	return candidates
+}
+
+// admittedDecls is the declarations whose applicability admits the label set,
+// in the order they were handed over. It is the match itself, which
+// matchFeatures reports and a slot's candidacy narrows further, so the Features
+// offered for a node and those offered for a slot on one of its connections are
+// admitted by one evaluation.
+//
+// A declaration that could not be read, and one whose applicability cannot be
+// evaluated, admit nothing — the direction a build takes with the same
+// declaration.
+func admittedDecls(decls []featureDecl, labels types.OrderedMap[string]) []featureDecl {
+	var admitted []featureDecl
 	for _, decl := range decls {
 		if !decl.parsed {
 			continue
@@ -813,10 +898,9 @@ func matchFeatures(decls []featureDecl, labels types.OrderedMap[string]) []Attac
 		if err != nil || !ok {
 			continue
 		}
-		candidates = append(candidates, decl.entity)
+		admitted = append(admitted, decl)
 	}
-	sortCandidates(candidates)
-	return candidates
+	return admitted
 }
 
 // matchingFeatures reports every Feature the daemon can see whose declared
@@ -839,9 +923,18 @@ func (s *Server) matchingFeatures(ctx context.Context, labels types.OrderedMap[s
 // Release's terms or both in the workspace's.
 func matchingFeaturesIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
 	reach workspaceconfig.ReleaseReach, overlay []workspaceDoc, labels types.OrderedMap[string]) []AttachCandidate {
+	return matchFeatures(featureDeclsIn(ctx, root, cfg, view, reach, overlay), labels)
+}
+
+// featureDeclsIn is the candidate population both label-first paths match
+// against: the workspace documents reach holds, then the Features view's catalog
+// directories declare under a name the workspace did not already report. It is
+// read once per answer, so an answer reporting the Features for a node and the
+// Features for each slot on one of its connections reads one population.
+func featureDeclsIn(ctx context.Context, root string, cfg workspaceconfig.Config, view *catalog.LazyLookup,
+	reach workspaceconfig.ReleaseReach, overlay []workspaceDoc) []featureDecl {
 	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, cfg, overlay, reach, nil)
-	features = append(features, catalogFeatureDeclsFrom(view, workspaceNames)...)
-	return matchFeatures(features, labels)
+	return append(features, catalogFeatureDeclsFrom(view, workspaceNames)...)
 }
 
 // sortCandidates puts entities into the shared workspace-entity order,

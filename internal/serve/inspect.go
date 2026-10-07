@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -253,7 +251,7 @@ func (s *Server) entityDefinition(ctx context.Context, name string, terms releas
 	if !ok {
 		return entityDefinitionResult{}, s.unresolvedEntityEnvelope(ctx, view, name, terms)
 	}
-	definition, err := yaml.Marshal(match.Definition)
+	definition, err := match.DefinitionDocument()
 	if err != nil {
 		return entityDefinitionResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,

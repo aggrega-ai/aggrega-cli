@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: connection-site-app
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: conn/gateway
+      features:
+        # An attachment whose own dependency block draws a connection: the
+        # connection peer.p1 is one a Feature drew.
+        peering:
+          type: feature.conn/peering
+          uses:
+            peer:
+              p1:
+                target: model
+      uses:
+        # A connection through a socket declaring two slots, filling the
+        # required one on the connection's own entry.
+        models:
+          gpt:
+            target: model
+            features:
+              credential:
+                type: feature.conn/token
+                values:
+                  key: gpt-key
+        # A connection through a socket the Component does not declare.
+        extra:
+          side:
+            target: sink
+    model:
+      type: conn/model
+    sink:
+      type: conn/sink

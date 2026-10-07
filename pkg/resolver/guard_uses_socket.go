@@ -81,9 +81,32 @@ type ReleaseEdgeEntry struct {
 	Entry types.ReleaseUsesEntry
 }
 
-// ReleaseEdgeEntries walks the Release boundary tree (outer to inner, author
-// order) and flattens every per-edge `uses` entry on every boundary component
-// into a deterministic slice.
+// ReleaseComponentEntry is one component entry a Release's boundaries write: the
+// node it names, where in the document the author wrote it, and the entry itself.
+//
+// It is the unit [ReleaseEdgeEntries] is folded from. A reader asking where a
+// per-edge entry for a component belongs — whether or not the Release writes one
+// yet — reads the component entry here rather than walking the boundary tree a
+// second time, so the entry it names and the entries the guards judge are found
+// by one walk.
+type ReleaseComponentEntry struct {
+	NodeID string
+
+	// BoundaryScopePath is the boundary the entry was written in, joined the way
+	// that axis joins its levels, and empty for the boundary normalization
+	// synthesizes — exactly as on [ReleaseEdgeEntry].
+	BoundaryScopePath string
+
+	// ComponentKeys are the authoring keys reaching the component's own block from
+	// inside its boundary, exactly as on [ReleaseEdgeEntry].
+	ComponentKeys []string
+
+	Component types.BoundaryComponent
+}
+
+// ReleaseComponentEntries walks the Release boundary tree (outer to inner, author
+// order) and returns every component entry each boundary writes, whether or not
+// it carries a per-edge `uses` block.
 //
 // The boundary each entry sits in is composed through the one rule that composes
 // a boundary's scope path, so the value splits back into the levels a locator
@@ -94,31 +117,21 @@ type ReleaseEdgeEntry struct {
 // names directly. Nothing is lost to that fold: a Release placing one component
 // twice is refused when the document loads, so by the time anything walks this
 // the two entries cannot both exist.
-func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
+func ReleaseComponentEntries(release *types.Release) []ReleaseComponentEntry {
 	if release == nil {
 		return nil
 	}
-	var out []ReleaseEdgeEntry
+	var out []ReleaseComponentEntry
 	var walk func(scopePath string, b types.Boundary)
 	walk = func(scopePath string, b types.Boundary) {
 		components := types.BoundaryComponents(b)
 		for nodeID, bc := range components.All() {
-			if bc.Uses.Len() == 0 {
-				continue
-			}
-			locator := types.BoundaryComponentLocator(b, nodeID)
-			for socket, aliases := range bc.Uses.All() {
-				for alias, e := range aliases.All() {
-					out = append(out, ReleaseEdgeEntry{
-						NodeID:            nodeID,
-						Socket:            socket,
-						Alias:             alias,
-						BoundaryScopePath: scopePath,
-						ComponentKeys:     locator,
-						Entry:             e,
-					})
-				}
-			}
+			out = append(out, ReleaseComponentEntry{
+				NodeID:            nodeID,
+				BoundaryScopePath: scopePath,
+				ComponentKeys:     types.BoundaryComponentLocator(b, nodeID),
+				Component:         bc,
+			})
 		}
 		for name, nested := range b.Boundaries.All() {
 			walk(constraint.JoinBoundaryScope(scopePath, name, nested.Synthesized), nested)
@@ -126,6 +139,29 @@ func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
 	}
 	for name, b := range release.Spec.Boundaries.All() {
 		walk(constraint.JoinBoundaryScope("", name, b.Synthesized), b)
+	}
+	return out
+}
+
+// ReleaseEdgeEntries flattens every per-edge `uses` entry on every component
+// entry a Release's boundaries write into a deterministic slice: the component
+// entries in the order [ReleaseComponentEntries] walks them, and each one's
+// entries in author order.
+func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
+	var out []ReleaseEdgeEntry
+	for _, c := range ReleaseComponentEntries(release) {
+		for socket, aliases := range c.Component.Uses.All() {
+			for alias, e := range aliases.All() {
+				out = append(out, ReleaseEdgeEntry{
+					NodeID:            c.NodeID,
+					Socket:            socket,
+					Alias:             alias,
+					BoundaryScopePath: c.BoundaryScopePath,
+					ComponentKeys:     c.ComponentKeys,
+					Entry:             e,
+				})
+			}
+		}
 	}
 	return out
 }

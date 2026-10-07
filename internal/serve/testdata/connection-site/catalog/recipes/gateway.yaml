@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: conn-gateway-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: conn/gateway
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: gateway:1.0

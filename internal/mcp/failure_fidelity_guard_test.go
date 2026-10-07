@@ -125,8 +125,18 @@ var proseOnlyFailureReturns = map[string]int{
 	// leading out of the root its write is held to. It is read ahead of the
 	// preview, to build the view the preview resolves through, so no preview has
 	// run and there is no graph in hand.
-	"tool_candidates.go":           15,
-	"tool_attachment_container.go": 8,
+	//
+	// The connection a call may name adds refusals of the same two kinds. Its
+	// coordinates are refused ahead of the preview — a connection sent beside an
+	// entity name or labels rather than a graph node, and a coordinate missing or
+	// outside its closed set — so nothing has been read. And after the preview, a
+	// connection the call cannot be answered for (not drawn by the node, drawn by a
+	// Feature, or written in a document that holds no entry for it) is refused
+	// before any slot or container is drawn; the graph is in hand, but the answer
+	// reports nothing of it but the coordinates the call already sent and the
+	// reason, which the prose carries.
+	"tool_candidates.go":           18,
+	"tool_attachment_container.go": 10,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
 	// promise a validity field a consumer reads across scopes.

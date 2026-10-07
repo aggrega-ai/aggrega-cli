@@ -35,13 +35,19 @@ import (
 // label set and the Feature declarations and of nothing else, so a caller that
 // already holds a label set has nothing to name and nothing to look up. That is
 // what makes it the coordinate-free form rather than an advanced one.
+//
+// Connection is not a fourth coordinate: it names one connection the graph node
+// draws, so it rides beside GraphNode and is refused beside anything else. It is
+// the daemon's request shape for the same thing, so the two surfaces accept and
+// refuse the same coordinates.
 type attachCandidatesArgs struct {
-	Node          string            `json:"node"`
-	GraphNode     string            `json:"graph_node"`
-	Release       string            `json:"release"`
-	Labels        map[string]string `json:"labels"`
-	WorkspaceRoot string            `json:"workspace_root"`
-	CatalogDirs   []string          `json:"catalog_dirs"`
+	Node          string                      `json:"node"`
+	GraphNode     string                      `json:"graph_node"`
+	Release       string                      `json:"release"`
+	Labels        map[string]string           `json:"labels"`
+	Connection    *serve.ConnectionCoordinate `json:"connection"`
+	WorkspaceRoot string                      `json:"workspace_root"`
+	CatalogDirs   []string                    `json:"catalog_dirs"`
 }
 
 // coordinates names the addressing arguments the call carried, in the order the
@@ -101,7 +107,14 @@ var attachCandidatesToolSpec = toolSpec{
 		"a Feature kept under a catalog directory only another Release reads is not offered; join each on kind, name and " +
 		"file against list-entities for anything more to display. A `node` or `graph_node` that does not resolve is refused " +
 		"rather than answered with an empty list, so a typo never reads as \"nothing may attach here\"; a `labels` call has " +
-		"no name to mistype, so an empty list there means what it says.",
+		"no name to mistype, so an empty list there means what it says. To ask about one CONNECTION the `graph_node`'s " +
+		"component draws, add `connection` with its `socket` and `alias`: the answer then also carries `slots`, each slot " +
+		"that connection's socket declares — its `selector`, `required`, `inject`, `sensitive` and `description` — with the " +
+		"`candidates` that may fill it, which are the Features whose applicability the node's labels satisfy AND whose own " +
+		"labels the slot's selector admits, the two rules a build holds such an attachment to. Where no slot may be filled " +
+		"the list is empty and `noSlotReason` says why — `feature-created-connection`, `ad-hoc-socket` or " +
+		"`no-slot-declared` — so never read an empty `slots` as \"nothing matched\". `candidates` beside it keeps its " +
+		"meaning: what may attach to the node itself.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -125,6 +138,16 @@ var attachCandidatesToolSpec = toolSpec{
       "additionalProperties": { "type": "string" },
       "description": "A label set to match against directly, naming no node. An empty object is a subject in its own right — a node carrying no labels — not an absent argument."
     },
+    "connection": {
+      "type": "object",
+      "description": "One connection the graph_node's component draws, to answer for as well as for the node. Meaningful only alongside graph_node and release.",
+      "properties": {
+        "socket": { "type": "string", "minLength": 1, "description": "The dependency socket the connection is wired through." },
+        "alias": { "type": "string", "minLength": 1, "description": "The name the connection carries within its socket." },
+        "document": { "type": "string", "enum": ["aggregate", "release"], "description": "The document an attachment on the connection is written in. Accepted and not read here: the slots and the Features that may fill them are the same in either." }
+      },
+      "required": ["socket", "alias"]
+    },
     "workspace_root": {
       "type": "string",
       "description": "Optional workspace root override. Defaults to discovery from the server's working directory."
@@ -136,9 +159,9 @@ var attachCandidatesToolSpec = toolSpec{
     }
   },
   "oneOf": [
-    {"required":["node"],"not":{"anyOf":[{"required":["graph_node"]},{"required":["labels"]},{"required":["release"]}]}},
+    {"required":["node"],"not":{"anyOf":[{"required":["graph_node"]},{"required":["labels"]},{"required":["release"]},{"required":["connection"]}]}},
     {"required":["graph_node","release"],"not":{"anyOf":[{"required":["node"]},{"required":["labels"]}]}},
-    {"required":["labels"],"not":{"anyOf":[{"required":["node"]},{"required":["graph_node"]},{"required":["release"]}]}}
+    {"required":["labels"],"not":{"anyOf":[{"required":["node"]},{"required":["graph_node"]},{"required":["release"]},{"required":["connection"]}]}}
   ]
 }`,
 	invoke: attachCandidatesInvoke,
@@ -170,6 +193,15 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 	case a.GraphNode != "" && a.Release == "":
 		return errorResult("attach-candidates: 'graph_node' names a node on a Release's compiled graph, so it needs " +
 			"the 'release' whose graph to build. Add 'release', or address a workspace entity with 'node'.")
+	case a.Connection != nil && a.GraphNode == "":
+		return errorResult("attach-candidates: 'connection' names a connection a graph node draws, so it is sent " +
+			"with 'graph_node' and 'release'; a call sending '" + given[0] + "' addresses no graph node. Drop " +
+			"'connection', or address the graph node that draws it.")
+	}
+	if a.Connection != nil {
+		if field, reason := a.Connection.Fault(false); field != "" {
+			return errorResult("attach-candidates: 'connection." + field + "' " + reason + ".")
+		}
 	}
 
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
@@ -188,7 +220,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 			return errorResult("attach-candidates: the workspace read was interrupted before it completed, so there " +
 				"is no answer to report. Call it again.")
 		}
-		return attachCandidatesResultFor(tw, result)
+		return attachCandidatesResultFor(tw, result, nil)
 	case a.GraphNode != "":
 		return s.attachCandidatesForGraphNode(ctx, tw, a)
 	default:
@@ -199,7 +231,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 					"list-entities with response_format detailed to see the names this workspace declares.",
 				a.Node), "component"))
 		}
-		return attachCandidatesResultFor(tw, result)
+		return attachCandidatesResultFor(tw, result, nil)
 	}
 }
 
@@ -268,8 +300,18 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, tw.cfg, view, reach,
-		preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
+	graph := preview.PipelineOutcome().Completed().IRGraph
+	if a.Connection != nil {
+		result, refused := serve.AttachCandidatesForConnection(ctx, tw.root, tw.cfg, view, reach, graph,
+			a.GraphNode, *a.Connection)
+		if refused != serve.ConnectionAnswered {
+			return errorResult(explainDiagnostic(fmt.Sprintf(
+				"Nothing is reported for the connection %q through socket %q of %q on the compiled graph of %s: %s.",
+				a.Connection.Alias, a.Connection.Socket, a.GraphNode, a.Release, refused.Reason()), "release"))
+		}
+		return attachCandidatesResultFor(tw, result, a.Connection)
+	}
+	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, tw.cfg, view, reach, graph, a.GraphNode)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed. A caller told "no workspace entity is named X" after
@@ -279,19 +321,26 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 				"the graph a build or an inspect returns, and note that a node contributed by a sub-aggregate "+
 				"carries a qualified id.", a.Release, a.GraphNode), "release"))
 	}
-	return attachCandidatesResultFor(tw, result)
+	return attachCandidatesResultFor(tw, result, nil)
 }
 
-func attachCandidatesResultFor(tw *toolWorkspace, result serve.AttachCandidatesResult) (*callToolResult, *rpcError) {
+// attachCandidatesResultFor wraps a candidacy answer in this surface's payload.
+// connection is the connection the call named, or nil; it is read only to name
+// the connection in the readable rendering, since the answer itself carries no
+// echo of it.
+func attachCandidatesResultFor(tw *toolWorkspace, result serve.AttachCandidatesResult,
+	connection *serve.ConnectionCoordinate) (*callToolResult, *rpcError) {
 	payload := attachCandidatesPayload{AttachCandidatesResult: result}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
-	return tw.answer(textResult(renderAttachCandidatesText(payload), payload))
+	return tw.answer(textResult(renderAttachCandidatesText(payload, connection), payload))
 }
 
 // renderAttachCandidatesText renders the human-readable candidacy answer: what
 // the match was evaluated over, where those labels came from, and one line per
-// candidate giving the coordinates a caller joins it by.
-func renderAttachCandidatesText(p attachCandidatesPayload) string {
+// candidate giving the coordinates a caller joins it by — then, where the call
+// named a connection, one block per slot its socket declares, or why none may be
+// filled.
+func renderAttachCandidatesText(p attachCandidatesPayload, connection *serve.ConnectionCoordinate) string {
 	var b strings.Builder
 	if p.Node != "" {
 		fmt.Fprintf(&b, "Features that may attach to %s (%d):\n", p.Node, len(p.Candidates))
@@ -299,20 +348,70 @@ func renderAttachCandidatesText(p attachCandidatesPayload) string {
 		fmt.Fprintf(&b, "Features that may attach to the supplied label set (%d):\n", len(p.Candidates))
 	}
 	for _, c := range p.Candidates {
-		fmt.Fprintf(&b, "  %s %s", c.Kind, c.Name)
-		if c.File != "" {
-			fmt.Fprintf(&b, " [%s]", c.File)
-		} else {
-			fmt.Fprintf(&b, " [%s]", c.Origin)
-		}
-		b.WriteByte('\n')
+		renderCandidateLine(&b, "  ", c)
 	}
 	if len(p.Candidates) == 0 {
 		b.WriteString("  none — no Feature this workspace can see declares an applicability these labels satisfy\n")
 	}
+	if connection != nil {
+		renderConnectionSlotsText(&b, p, *connection)
+	}
 	fmt.Fprintf(&b, "\nMatched against the %s labels: %s", p.LabelSource, renderLabelPairs(p.NodeLabels))
 	b.WriteString("\nThis reports a match and creates nothing: no attachment was made and no file was written.")
 	return b.String()
+}
+
+// renderCandidateLine renders one candidate with the coordinates a caller joins
+// it by: its file where it has one, otherwise where it was read from.
+func renderCandidateLine(b *strings.Builder, indent string, c serve.AttachCandidate) {
+	fmt.Fprintf(b, "%s%s %s", indent, c.Kind, c.Name)
+	if c.File != "" {
+		fmt.Fprintf(b, " [%s]", c.File)
+	} else {
+		fmt.Fprintf(b, " [%s]", c.Origin)
+	}
+	b.WriteByte('\n')
+}
+
+// renderConnectionSlotsText renders the slots a named connection's socket
+// declares, each with the Features that may fill it, or the reason none may be
+// filled.
+//
+// The reason is stated in the text and not left to the structured field alone,
+// because the text block is what an assistant reads when it does not parse the
+// result, and an empty slot list read without it is "nothing matched" — the
+// reading the field exists to rule out.
+func renderConnectionSlotsText(b *strings.Builder, p attachCandidatesPayload, connection serve.ConnectionCoordinate) {
+	fmt.Fprintf(b, "\nSlots the connection %s through socket %s declares (%d):\n",
+		connection.Alias, connection.Socket, len(p.Slots))
+	for _, slot := range p.Slots {
+		fmt.Fprintf(b, "  %s", slot.Slot)
+		if slot.Required {
+			b.WriteString(" (required)")
+		}
+		if slot.Sensitive {
+			b.WriteString(" (sensitive)")
+		}
+		if slot.Selector != "" {
+			fmt.Fprintf(b, " selector: %s", slot.Selector)
+		}
+		if len(slot.Inject) > 0 {
+			fmt.Fprintf(b, " inject: %s", strings.Join(slot.Inject, ", "))
+		}
+		b.WriteByte('\n')
+		if slot.Description != "" {
+			fmt.Fprintf(b, "      %s\n", slot.Description)
+		}
+		for _, c := range slot.Candidates {
+			renderCandidateLine(b, "      ", c)
+		}
+		if len(slot.Candidates) == 0 {
+			b.WriteString("      no Feature this workspace can see may fill it\n")
+		}
+	}
+	if p.NoSlotReason != "" {
+		fmt.Fprintf(b, "  none may be filled: %s\n", p.NoSlotReason.Sentence())
+	}
 }
 
 // renderLabelPairs renders a label set in a stable order, so the text block is a
