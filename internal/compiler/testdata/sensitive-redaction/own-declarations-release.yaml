@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-own-declarations-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./own-declarations-app.yaml
+  manifest: ./own-declarations-manifest.yaml
+  boundaries:
+    own:
+      directory: ./dist/own
+      components:
+        app: {}

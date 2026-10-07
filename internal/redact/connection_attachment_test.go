@@ -152,7 +152,7 @@ func TestUses_WithholdsAConnectionAttachmentsDeclaredData(t *testing.T) {
 // TestSubstituteTree_WithholdsTheConnectionViewAndNothingElse covers the
 // substitution a re-rendered workload is evaluated against, over the template data
 // tree of a render context. It reaches the connection view at the coordinates the
-// set derives for it, and the node's own attachments — which a display set names
+// set derives for it, and the node's own attachments — which this set names
 // nothing about — pass through as they are.
 func TestSubstituteTree_WithholdsTheConnectionViewAndNothingElse(t *testing.T) {
 	t.Parallel()

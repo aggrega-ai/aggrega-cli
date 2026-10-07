@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/own-declarations
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # One slot of the node's own holding a credential, and one provides key the
+  # Component declares sensitive beside one it leaves undeclared. The slot
+  # declares `sensitive: true`, which says the attachment handles secret
+  # material and withholds no leaf of its own: which leaves are withheld is the
+  # attached Feature's to declare, so the Feature's undeclared leaf must still
+  # read as written.
+  featuresSchema:
+    credentials:
+      required: false
+      sensitive: true
+  schema:
+    values:
+      appName: { type: string }
+      sessionToken: { type: string, sensitive: true }
+    provides:
+      session: { type: string, required: true, sensitive: true }
+      host: { type: string, required: true }

@@ -198,7 +198,9 @@ type PhaseBState struct {
 
 	// Redact names the node's declared-sensitive data, assembled once by the
 	// orchestrator — where the catalog and the node's attachments are both in
-	// scope — and read by every sub-pass that captures a trace snapshot.
+	// scope — and read by every sub-pass that captures a trace snapshot. It is
+	// Withheld passed through the trace mode, so it names what a refusal is
+	// withheld by, or nothing at all.
 	// Carrying the assembled set rather than its inputs is what keeps
 	// sensitivity derived in one place: a sub-pass substitutes a placeholder,
 	// it never decides what is sensitive. The zero value redacts nothing.
@@ -209,12 +211,10 @@ type PhaseBState struct {
 	// every template a sub-pass evaluates against the context, and every check of
 	// what such a template produced, reports without a value it names.
 	//
-	// It is kept apart from Redact on purpose. Redact is the capture's set, and the
-	// capture's escape hatch empties it for one invocation; a failure's text must
-	// not depend on that switch, so this set is the declarations as read, never
-	// passed through it. It is also wider: it names the node's own attachments'
-	// declarations and the provides its Component declares, which a template can
-	// read and fail on but which no capture shows. The zero value withholds
+	// It is kept apart from Redact on purpose. Redact is this same set passed
+	// through the capture's escape hatch, which empties it for one invocation; a
+	// failure's text must not depend on that switch, so this set is the
+	// declarations as read, never passed through it. The zero value withholds
 	// nothing.
 	Withheld redact.Keys
 

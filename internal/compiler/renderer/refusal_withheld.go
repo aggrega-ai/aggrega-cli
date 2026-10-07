@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -94,7 +95,27 @@ func (d nodeDeclaration) pillarKeys() redact.Keys {
 // computed from a declared leaf. A pillar a stage's context does not carry
 // matches nothing, so one set serves both stages.
 func (d nodeDeclaration) assertionKeys() redact.Keys {
-	return withRefusalDeclarations(d.pillarKeys(), d.own, d.component.Provides)
+	return withOwnDeclarations(d.pillarKeys(), d.own, d.component.Provides)
+}
+
+// withheldSets returns the two sets one assembly of the node's render context
+// yields: the set a capture is withheld by, and the set a failure's text is
+// withheld by.
+//
+// They are one set. The failure's is the assembled set widened by the node's own
+// declarations; the capture's is that same set passed through the trace mode, whose
+// escape hatch empties it for one invocation. A failure's text does not pass
+// through the mode, because what a refusal says must not change with a switch
+// scoped to the trace.
+//
+// The capture's set is read from the failure's rather than assembled beside it,
+// because the capture shows a re-render of the workload template, and that
+// template reads the node's own attachments and its own provides as readily as a
+// template that fails. A narrower capture set would show, in the clear, a datum the
+// same template's refusal withholds.
+func (d nodeDeclaration) withheldSets(assembled redact.Keys, mode trace.Mode) (capture, failure redact.Keys) {
+	failure = withOwnDeclarations(assembled, d.own, d.component.Provides)
+	return mode.Keys(failure), failure
 }
 
 // refusalDeclarations answers what each node's own entities declare sensitive,
@@ -174,11 +195,12 @@ func ownAttachmentKeys(attachments types.OrderedMap[types.IRFeatureEntry], featu
 	return out
 }
 
-// withRefusalDeclarations widens a node's set by what a refusal can read that the
-// per-pass display does not show: the declarations of the Features attached to the
-// node itself, and the provides keys the node's Component declares. The display's
-// set is left as it is, so what a trace shows does not move.
-func withRefusalDeclarations(keys redact.Keys, own map[string]redact.AttachmentKeys, declaredProvides map[string]bool) redact.Keys {
+// withOwnDeclarations widens a node's set by the two pillars of the node's own a
+// template reads that the per-pass pillar projection does not show: the
+// declarations of the Features attached to the node itself, and the provides keys
+// the node's Component declares. A template's refusal and the trace's re-render of
+// the workload template are both withheld by the widened set.
+func withOwnDeclarations(keys redact.Keys, own map[string]redact.AttachmentKeys, declaredProvides map[string]bool) redact.Keys {
 	keys.Features = own
 	keys.Provides = declaredProvides
 	return keys

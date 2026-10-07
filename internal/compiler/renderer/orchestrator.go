@@ -1645,20 +1645,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				untracedKeys,
 				derived)
 		}
-		// Two sets come out of the one assembly, and they differ for a reason each.
-		// The capture's set passes through the trace mode, whose escape hatch empties
-		// it for one invocation. The set a failure's text is withheld by does NOT:
-		// what a refusal says must not change with a switch scoped to the trace. It is
-		// also wider, naming the declarations of the Features attached to the node
-		// itself and the provides its Component declares — pillars a template can read
-		// and fail on, which the capture does not show.
-		nodeRedactKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
-			return input.TraceMode.Keys(nodeKeys(injectMapping))
+		// Two sets come out of the one assembly, and they are one set: the set a
+		// failure's text is withheld by, and that same set passed through the trace
+		// mode for the capture, whose escape hatch empties it for one invocation.
+		nodeSets := func(injectMapping redact.DeliveryKeys) (capture, failure redact.Keys) {
+			return nodeDeclared.withheldSets(nodeKeys(injectMapping), input.TraceMode)
 		}
-		nodeWithheld := func(injectMapping redact.DeliveryKeys) redact.Keys {
-			return withRefusalDeclarations(nodeKeys(injectMapping), nodeDeclared.own, declared.Provides)
-		}
-		redactKeys := nodeRedactKeys(nil)
+		redactKeys, withheldKeys := nodeSets(nil)
 
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
@@ -1714,9 +1707,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// reading a copy taken earlier would show a document the decision said to
 		// substitute or withhold.
 		state.Redact = redactKeys
-		// The set a failure's text is withheld by, assembled beside the capture's from
-		// the same call and re-assembled beside it after Phase A.
-		state.Withheld = nodeWithheld(nil)
+		// The set a failure's text is withheld by, from the same call as the capture's
+		// and re-assembled with it after Phase A.
+		state.Withheld = withheldKeys
 
 		// Trace points: per-node pre-loop captures.
 		state.capture(trace.PassPillarsInitial, "", tmplCtx)
@@ -1802,8 +1795,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// beside the node's declarations. Every capture from Phase A onward reads the
 		// state's copy, which is what this replaces.
 		mappedKeys := injectMappingWithheld(mappedDelivery, attachmentLeaves)
-		state.Redact = nodeRedactKeys(mappedKeys)
-		state.Withheld = nodeWithheld(mappedKeys)
+		state.Redact, state.Withheld = nodeSets(mappedKeys)
 		// Boundary->component env channel. The overrides a boundary-scope FR
 		// emitted for this consumer (computed in the pre-loop) are a third route
 		// by which an attachment delivers: they join the node's record after every

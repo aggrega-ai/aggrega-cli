@@ -407,25 +407,60 @@ func TestSensitiveRedaction_TraceShowsTheWorkloadAsASubstitutedReRender(t *testi
 	}
 }
 
-// TestSensitiveRedaction_AttachmentOwnLeafIsAKnownGap records, as executable fact,
-// the one thing the withholding does not reach on this fixture.
+// TestSensitiveRedaction_AttachmentOwnLeafIsNeverShownInTheClear covers the two
+// ways a declared-sensitive leaf of an attachment the node holds itself can reach
+// the trace, one build each.
 //
-// An attachment's OWN declared-sensitive values leaf: the per-node pillar
-// projection carries the host component's pillars, not the per-attachment view, so
-// the datum is absent from the display rather than withheld in it. Absent and
-// withheld are different states, and the difference matters — if the projection
-// ever gains that surface, the datum starts printing with nothing covering it. The
-// pin turns that into a visible failure instead of a silent leak.
-func TestSensitiveRedaction_AttachmentOwnLeafIsAKnownGap(t *testing.T) {
+// Where no template reads it — this fixture — the datum is absent: the per-node
+// pillar projection carries the host component's pillars, not the per-attachment
+// view. Absent and withheld are different states, so that row pins the absence: if
+// the projection ever gains that surface, the datum starts printing with nothing
+// covering it, and the pin turns that into a visible failure instead of a silent
+// leak.
+//
+// Where the workload template reads it — the own-declarations fixture — the slot
+// shows the re-render, and the leaf reads as the replacement text there. That row
+// requires the replacement text at the variable reading it, so a fixture that
+// stopped reading the leaf fails rather than passing on its absence.
+func TestSensitiveRedaction_AttachmentOwnLeafIsNeverShownInTheClear(t *testing.T) {
 	t.Parallel()
-	result := sensitiveRedactionBuild(t)
-
-	if len(result.Trace) == 0 {
-		t.Fatal("the build produced no trace; this pin would be vacuous")
+	cases := []struct {
+		name      string
+		build     func(*testing.T) *pipeline.Result
+		plaintext string
+		// readAt is the workload variable reading the leaf, empty where no
+		// template reads it.
+		readAt string
+	}{
+		{"absent where no template reads it", sensitiveRedactionBuild, sensitiveByValueLeaf, ""},
+		{
+			"withheld where the workload reads it",
+			func(t *testing.T) *pipeline.Result { return ownDeclarationsBuild(t, false) },
+			ownDeclaredPassword,
+			"OWN_PASSWORD",
+		},
 	}
-	for slot := range result.Trace {
-		if strings.Contains(string(result.Trace[slot]), sensitiveByValueLeaf) {
-			t.Errorf("%s carries the attachment's declared-sensitive values leaf %q; the projection gained a surface that needs its own withholding set", slot, sensitiveByValueLeaf)
-		}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			result := c.build(t)
+			if len(result.Trace) == 0 {
+				t.Fatal("the build produced no trace; this pin would be vacuous")
+			}
+			for slot := range result.Trace {
+				if strings.Contains(string(result.Trace[slot]), c.plaintext) {
+					t.Errorf("%s carries the attachment's declared-sensitive values leaf %q in the clear", slot, c.plaintext)
+				}
+			}
+			if c.readAt == "" {
+				return
+			}
+			for _, slot := range ownDeclarationsWorkloadSlots {
+				leaves := workloadLeaves(t, traceEntry(t, result, "boundaries/own/app/"+slot))
+				if got := leaves["containers.main.variables."+c.readAt]; got != redact.Placeholder() {
+					t.Errorf("%s: %s must read as the replacement text; got %q", slot, c.readAt, got)
+				}
+			}
+		})
 	}
 }

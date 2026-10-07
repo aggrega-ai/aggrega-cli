@@ -259,10 +259,10 @@ type DeliveryKeys map[string]map[string]bool
 // keyed by the instance name each is attached under — how a template reads one,
 // at .features.<name> — each governed by its own Feature's schema. Provides names
 // the node's own resolved provides keys its Component declares sensitive, read at
-// .provides.<key>. NodeKeys fills neither: the per-pass display does not show
-// either pillar, so a display set leaves both empty. A set governing what a
-// refusal's text may carry fills both, because a template can read either and
-// fail on it.
+// .provides.<key>. NodeKeys fills neither, because the per-pass pillar projection
+// shows neither pillar. A node's set is widened by both before it governs a
+// template's text — what a refusal may carry, and the re-render of a workload a
+// capture shows — because a template can read either.
 //
 // Workload is the one entry that names a whole projection rather than keys
 // within it, and it records what the display DOES with that projection rather

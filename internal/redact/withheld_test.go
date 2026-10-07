@@ -164,9 +164,10 @@ func TestSubstituteTree_AgreesWithTheDisplayAppliers(t *testing.T) {
 	}
 }
 
-// TestSubstituteTree_RefusalWidening covers the two pillars only a refusal's set
-// names — the node's own attachments and its declared provides — beside their
-// undeclared siblings, and that an absent declared datum stays absent.
+// TestSubstituteTree_RefusalWidening covers the two pillars a node's set is
+// widened by before it governs a template's text — the node's own attachments and
+// its declared provides — beside their undeclared siblings, and that an absent
+// declared datum stays absent.
 func TestSubstituteTree_RefusalWidening(t *testing.T) {
 	t.Parallel()
 	tree := map[string]any{
@@ -207,6 +208,114 @@ func TestSubstituteTree_RefusalWidening(t *testing.T) {
 				t.Errorf("got %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// ownDeclarationsKeys is a node's set as it governs a template's text: the set the
+// one assembler builds — here the node's own declared values leaf — widened by what
+// the Feature attached to the node itself declares and by the provides keys the
+// node's Component declares.
+func ownDeclarationsKeys() Keys {
+	keys := NodeKeys(map[string]bool{"admin_token": true}, nil, types.OrderedMap[types.IRFeatureEntry]{},
+		CrossNode{}, nil, nil, nil, Derived{})
+	keys.Features = map[string]AttachmentKeys{"admin_key": {
+		Values:   map[string]bool{"origin": true, "rotation.token": true},
+		Infra:    map[string]bool{"rotation_token": true},
+		Provides: map[string]bool{"secret": true},
+	}}
+	keys.Provides = map[string]bool{"session": true}
+	return keys
+}
+
+// ownDeclarationsTree is a template's data carrying a datum at every position
+// ownDeclarationsKeys names, beside an undeclared sibling at each, and a second
+// attachment whose leaves share the first one's names and are declared by nothing.
+func ownDeclarationsTree() map[string]any {
+	return map[string]any{
+		"values":   map[string]any{"admin_token": "node-token-plaintext", "region": "eu-west-1"},
+		"provides": map[string]any{"session": "sess-node-token-plaintext", "host": "router"},
+		"features": map[string]any{
+			"admin_key": map[string]any{
+				"type": "core/referenced-secret",
+				"values": map[string]any{
+					"origin":   "own-origin-plaintext",
+					"key":      "own-key-public",
+					"rotation": map[string]any{"token": "own-nested-plaintext", "window": "7d"},
+				},
+				"infra":    map[string]any{"rotation_token": "own-rotation-plaintext", "rotation_window": "own-window-public"},
+				"provides": map[string]any{"secret": "prov-own-origin-plaintext", "name": "own-key-public"},
+			},
+			"monitoring": map[string]any{
+				"type":   "core/monitoring",
+				"values": map[string]any{"origin": "monitoring-origin-public"},
+			},
+		},
+	}
+}
+
+// TestKeys_NodesOwnDeclarations is the set's two readings over the pillars a node's
+// own entities declare beyond its values and infra. Each row is a reference a
+// template spells and the position it reads: whether the reference reaches a
+// withheld datum, and what the one substitution leaves at that position. Every
+// withheld row sits beside an undeclared row of the same shape, and the second
+// attachment's leaves share the first one's names, so a reading keyed on a leaf's
+// name rather than on the attachment it belongs to fails a row.
+func TestKeys_NodesOwnDeclarations(t *testing.T) {
+	t.Parallel()
+	keys := ownDeclarationsKeys()
+	tree := ownDeclarationsTree()
+	keys.SubstituteTree(tree)
+
+	attachment := []string{"features", "admin_key"}
+	cases := []struct {
+		name     string
+		ref      string
+		at       []string
+		withheld bool
+		kept     any
+	}{
+		{"an own attachment's declared values leaf", ".features.admin_key.values.origin", append(attachment, "values", "origin"), true, nil},
+		{"its undeclared values leaf", ".features.admin_key.values.key", append(attachment, "values", "key"), false, "own-key-public"},
+		{"an own attachment's declared nested leaf", ".features.admin_key.values.rotation.token", append(attachment, "values", "rotation", "token"), true, nil},
+		{"its undeclared nested sibling", ".features.admin_key.values.rotation.window", append(attachment, "values", "rotation", "window"), false, "7d"},
+		{"an own attachment's declared infra leaf", ".features.admin_key.infra.rotation_token", append(attachment, "infra", "rotation_token"), true, nil},
+		{"its undeclared infra leaf", ".features.admin_key.infra.rotation_window", append(attachment, "infra", "rotation_window"), false, "own-window-public"},
+		{"an own attachment's declared provides key", ".features.admin_key.provides.secret", append(attachment, "provides", "secret"), true, nil},
+		{"its undeclared provides key", ".features.admin_key.provides.name", append(attachment, "provides", "name"), false, "own-key-public"},
+		{"an own attachment's type", ".features.admin_key.type", append(attachment, "type"), false, "core/referenced-secret"},
+		{"another attachment's leaf of the same name", ".features.monitoring.values.origin", []string{"features", "monitoring", "values", "origin"}, false, "monitoring-origin-public"},
+		{"a provides key the Component declares", ".provides.session", []string{"provides", "session"}, true, nil},
+		{"a provides key the Component leaves undeclared", ".provides.host", []string{"provides", "host"}, false, "router"},
+		{"the node's own declared values leaf", ".values.admin_token", []string{"values", "admin_token"}, true, nil},
+		{"the node's own undeclared values leaf", ".values.region", []string{"values", "region"}, false, "eu-west-1"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := keys.ReachedBy([]string{c.ref}); got != c.withheld {
+				t.Errorf("ReachedBy(%s) = %v, want %v", c.ref, got, c.withheld)
+			}
+			want := c.kept
+			if c.withheld {
+				want = placeholder
+			}
+			if got := dig(tree, c.at...); got != want {
+				t.Errorf("the substitution left %v at %s, want %v", got, strings.Join(c.at, "."), want)
+			}
+		})
+	}
+
+	// A read of a whole object reaches every withheld datum beneath it, which is
+	// what makes a template ranging over an attachment or over the provides
+	// conservative rather than invisible. The control is an object holding nothing
+	// declared.
+	for _, ref := range []string{".features", ".features.admin_key", ".features.admin_key.infra", ".features.admin_key.provides", ".provides"} {
+		if !keys.ReachedBy([]string{ref}) {
+			t.Errorf("a read of %s must reach the withheld data beneath it", ref)
+		}
+	}
+	if keys.ReachedBy([]string{".features.monitoring"}) {
+		t.Error("a read of an attachment that declares nothing must reach nothing")
 	}
 }
 
