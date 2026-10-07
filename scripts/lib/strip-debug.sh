@@ -5,9 +5,12 @@
 # script that writes a copy of a built aggrega binary without its debug
 # information: the tooling image's build (scripts/build-tooling-image.sh), whose
 # copy a release also attaches as the Linux stripped binary, and
-# `scripts/build.sh --stripped`, which writes the stripped binary for a Linux or
-# Windows target. Sourcing one recipe means a stripped binary is made the same
-# way whichever script made it.
+# `scripts/build.sh --stripped`, which writes the stripped binary with it for a
+# Linux target and for the machine it runs on. Sourcing one recipe means a
+# stripped copy is made the same way whichever script made it. A Windows binary
+# is not stripped here: scripts/build.sh has the linker write the stripped
+# Windows binary instead, and says why where it decides how each target's
+# stripped binary is made.
 #
 # Sourcing defines one function and sets no variables:
 #   strip_debug_copy <binary> <copy>
@@ -16,16 +19,13 @@
 #     0755. <binary> is never modified. Returns non-zero, after saying why on
 #     standard error, when strip is not on PATH or fails.
 #
-# strip runs with SOURCE_DATE_EPOCH=0, and that matters for one format only. GNU
-# strip writes the current time into a Windows (PE) executable's header time stamp
-# unless SOURCE_DATE_EPOCH names a time, so two copies stripped from one binary a
-# second apart would differ. The Go linker writes 0 there, so pinning it to 0
-# keeps the copy's stamp the original's and makes the copy reproducible. A Linux
-# (ELF) binary carries no such stamp, and strip writes the same bytes for it with
-# or without the variable.
+# strip runs with SOURCE_DATE_EPOCH=0 so that a copy never depends on the time it
+# was made: GNU strip writes the current time into the header time stamp of a
+# format that carries one unless SOURCE_DATE_EPOCH names a time. A Linux (ELF)
+# binary carries no such stamp, and strip writes the same bytes for it with or
+# without the variable.
 #
-# strip comes from GNU binutils; its support for the PE format is what strips a
-# Windows binary on a Linux machine. It does not read the macOS (Mach-O) format.
+# strip comes from GNU binutils. It does not read the macOS (Mach-O) format.
 strip_debug_copy() {
   local binary="$1" copy="$2"
   if ! command -v strip >/dev/null 2>&1; then

@@ -51,13 +51,17 @@
 # --stripped also writes the stripped binary beside the full one: the full binary
 # without its debug information (the symbol table and the program stay), named
 # ./aggrega-stripped, or ./aggrega-stripped-<goos>-<goarch>[.exe] with --target.
-# It is written by the one stripped-copy recipe in scripts/lib/strip-debug.sh,
-# which the tooling image's build uses too, and the script refuses a copy whose
-# stamped version differs from the full binary's. It does not combine with
-# --light, because the stripped binary is the full one, debug information
-# removed. `strip` (GNU binutils) must be on PATH. With a darwin target it is
-# refused before anything is built: GNU strip cannot read a macOS (Mach-O)
-# binary, so the stripped macOS binary is not produced.
+# How it is made depends on the target's executable format, and one place in this
+# script decides it and says why. For a Windows target the linker writes it, with
+# the full binary's own flags and -w added. With a darwin target it is refused
+# before anything is built: GNU strip cannot read a macOS (Mach-O) binary, so the
+# stripped macOS binary is not produced. For any other target, and for this
+# machine, it is a copy of the full binary stripped by the one recipe in
+# scripts/lib/strip-debug.sh, which the tooling image's build uses too, and
+# `strip` (GNU binutils) must be on PATH. However it is made, the script refuses a
+# stripped binary whose stamped version differs from the full binary's. It does
+# not combine with --light, because the stripped binary is the full one, debug
+# information removed.
 #
 # --expect-version <version> refuses, after building, unless every binary the run
 # wrote carries <version> as its stamped version. The stamp is read from each
@@ -115,7 +119,7 @@ export GOWORK=off
 . scripts/lib/build-version.sh
 
 # The stripped-copy recipe (strip_debug_copy), shared with the tooling image's
-# build; --stripped is its only use here.
+# build; --stripped for any target but Windows is its only use here.
 . scripts/lib/strip-debug.sh
 
 BINPATH="./cmd/aggrega"
@@ -187,13 +191,44 @@ if [ "$STRIPPED" = 1 ] && [ "$MODE" = "light" ]; then
   exit 2
 fi
 
-# The stripped copy comes from GNU strip, which reads Linux and Windows binaries
-# and not macOS (Mach-O) ones, so for a darwin target it is refused here, before
-# anything is built, rather than by strip after the full build.
-if [ "$STRIPPED" = 1 ] && [ "${TARGET%%/*}" = "darwin" ]; then
-  fail "--stripped --target $TARGET: the stripped binary is not produced for macOS yet;"
-  fail "  GNU strip, which writes it for Linux and Windows, cannot read a macOS (Mach-O) binary"
-  exit 2
+# How the stripped binary is made depends on the format of the executable the
+# target runs, and this is the one place that decides it: the step that writes
+# the stripped binary below follows STRIPPED_BY and decides nothing. However it
+# is made, it is the full binary without its debug information, the symbol table
+# and the program kept.
+#
+#   strip   Any target but Windows and macOS, and a build for this machine: the
+#           full binary is linked, then copied without its debug information by
+#           strip_debug_copy, the recipe in scripts/lib/strip-debug.sh that the
+#           tooling image's build uses too, so the Linux stripped binary is the
+#           same bytes whichever of the two scripts writes it.
+#   linker  Windows: the linker writes the stripped binary itself, from the full
+#           binary's own build with -w added, which leaves the debug information
+#           out — the same sources, embedded guests, flags and version stamp. A
+#           Windows (PE) binary cannot be stripped after it is linked. The Go
+#           linker places its debug sections in the middle of a Windows image,
+#           before the import table, the relocations and the symbol table, and
+#           removing them afterwards cannot move the sections that follow, so
+#           the image is left with a gap in its addresses where they were; the
+#           Windows format requires an image's sections to be adjacent, and
+#           Windows refuses to run one that leaves such a gap.
+#   macOS   refused here, before anything is built: GNU strip cannot read a
+#           macOS (Mach-O) binary, so the stripped macOS binary is not produced.
+STRIPPED_BY=""
+if [ "$STRIPPED" = 1 ]; then
+  case "${TARGET%%/*}" in
+    windows)
+      STRIPPED_BY="linker"
+      ;;
+    darwin)
+      fail "--stripped --target $TARGET: the stripped binary is not produced for macOS yet;"
+      fail "  GNU strip, which writes it for Linux, cannot read a macOS (Mach-O) binary"
+      exit 2
+      ;;
+    *)
+      STRIPPED_BY="strip"
+      ;;
+  esac
 fi
 
 # The output names, and the go build environment for a --target build. A target
@@ -231,14 +266,18 @@ stamp_ldflags() {
   printf -- '-X main.version=%s -X main.commit=%s -buildid=' "$_ver" "$_sha"
 }
 
-# go_build <output> [go build flags…] — the one final go build both variants run:
-# trimmed paths and the version stamp, and for a --target build the target's
-# environment. The guards keep an empty TARGET_ENV from expanding under set -u in
-# older bash.
+# go_build <output> <more linker flags> [go build flags…] — the one final go build
+# every binary this script writes runs: trimmed paths and the version stamp, then
+# <more linker flags> when it is not empty (the stripped Windows binary's -w), and
+# for a --target build the target's environment. An empty <more linker flags>
+# leaves the linker flags exactly the stamp's. The guards keep an empty
+# TARGET_ENV from expanding under set -u in older bash.
 go_build() {
-  local out="$1"
-  shift
-  env ${TARGET_ENV[@]+"${TARGET_ENV[@]}"} go build "$@" -trimpath -ldflags "$(stamp_ldflags)" -o "$out" "$BINPATH"
+  local out="$1" more="$2" ldflags
+  shift 2
+  ldflags="$(stamp_ldflags)"
+  [ -z "$more" ] || ldflags="$ldflags $more"
+  env ${TARGET_ENV[@]+"${TARGET_ENV[@]}"} go build "$@" -trimpath -ldflags "$ldflags" -o "$out" "$BINPATH"
 }
 
 # stamped_version <binary> — print the version the linker stamped into
@@ -272,7 +311,7 @@ if [ "$MODE" = "light" ]; then
   # embed out) and resolves every provider through the plugin cascade, so it
   # needs no guest regeneration and no overlay check.
   step "go build (light, no embed): $LIGHT_OUT${TARGET:+ for $TARGET}"
-  go_build "$LIGHT_OUT" -tags light
+  go_build "$LIGHT_OUT" "" -tags light
   ok "built ./$LIGHT_OUT"
   if [ -n "$EXPECT_VERSION" ]; then
     check_stamp "$LIGHT_OUT" "$EXPECT_VERSION" "--expect-version"
@@ -336,19 +375,28 @@ else
 fi
 
 step "go build (embedded): $FULL_OUT${TARGET:+ for $TARGET}"
-go_build "$FULL_OUT"
+go_build "$FULL_OUT" ""
 ok "built ./$FULL_OUT"
 if [ -n "$EXPECT_VERSION" ]; then
   check_stamp "$FULL_OUT" "$EXPECT_VERSION" "--expect-version"
 fi
 
 if [ "$STRIPPED" = 1 ]; then
-  # The stripped binary is the full one without its debug information, written by
-  # the shared recipe. Built for another system it cannot be run to check it, so
+  # The stripped binary is the full one without its debug information, made the
+  # way STRIPPED_BY names; why each target takes its way is written where
+  # STRIPPED_BY is set. Built for another system it cannot be run to check it, so
   # its stamped version is read the same way as the full binary's and held to
-  # that: a copy that lost or changed the stamp is refused.
-  step "strip a copy of its debug information: $STRIPPED_OUT"
-  strip_debug_copy "$FULL_OUT" "$STRIPPED_OUT" || { fail "could not write ./$STRIPPED_OUT"; exit 1; }
+  # that: a stripped binary that lost or changed the stamp is refused.
+  case "$STRIPPED_BY" in
+    linker)
+      step "go build (embedded) without its debug information: $STRIPPED_OUT for $TARGET"
+      go_build "$STRIPPED_OUT" "-w"
+      ;;
+    strip)
+      step "strip a copy of its debug information: $STRIPPED_OUT"
+      strip_debug_copy "$FULL_OUT" "$STRIPPED_OUT" || { fail "could not write ./$STRIPPED_OUT"; exit 1; }
+      ;;
+  esac
   # With --expect-version the full binary was held to it above, so that is its
   # stamp; otherwise it is read here.
   full_version="$EXPECT_VERSION"

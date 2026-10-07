@@ -36,9 +36,12 @@
 # (`strip --strip-debug`; the symbol table stays) into a build context of its
 # own, a temporary directory holding only that copy under the name `aggrega`,
 # and builds the image from it. The recipe is the shared one in
-# scripts/lib/strip-debug.sh, which `scripts/build.sh --stripped` also uses, so
-# every stripped binary a release carries is made the same way. The binary given
-# by --binary is never modified.
+# scripts/lib/strip-debug.sh, which `scripts/build.sh --stripped` also uses for
+# a Linux target, so a Linux stripped binary is the same bytes whichever script
+# writes it; the one a release attaches is the copy --keep-stripped keeps here.
+# scripts/build.sh decides, per target format, how a stripped binary is made,
+# and says there why a Windows one is linked without its debug information
+# instead. The binary given by --binary is never modified.
 # The copy must report the same `version` and `abiVersion` in
 # `aggrega version -o json` as the original, or the script refuses. It strips on
 # every run, a dry run included: stripping is local, and a dry run exists to

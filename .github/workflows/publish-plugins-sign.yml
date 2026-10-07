@@ -519,18 +519,20 @@ jobs:
 
           echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
 
-      - name: Build the Windows binary and its stripped copy for the release
+      - name: Build the full and stripped Windows binaries for the release
         # The release also carries the CLI for windows/amd64, built by the same
         # build script as the Linux binary with the target named, so the two
         # cannot follow different build steps. The full binary embeds the guests
         # the Linux build above regenerated, which are WebAssembly and the same
-        # for every system. --stripped also writes the stripped copy, the full
-        # binary without its debug information, with the one recipe the tooling
-        # image strips the Linux copy with. A Windows binary cannot run on this
-        # runner, so the script reads each binary's stamped version from the
-        # binary itself and refuses, naming both, unless it is the version the
-        # Linux binary reports — which, whenever a release tag is in play, the
-        # ABI gate above has already held to that tag. Writes
+        # for every system. --stripped also writes the stripped binary, the full
+        # binary without its debug information, which for Windows the linker
+        # writes from the full binary's own build with -w added, rather than
+        # strip after linking as for Linux; the build script says why. A Windows
+        # binary cannot run on this runner, so the script reads each binary's
+        # stamped version from the binary itself and refuses, naming both,
+        # unless it is the version the Linux binary reports — which, whenever a
+        # release tag is in play, the ABI gate above has already held to that
+        # tag. Writes
         # aggrega-cli/aggrega-windows-amd64.exe and
         # aggrega-cli/aggrega-stripped-windows-amd64.exe. No external side
         # effect: a dry run builds both, and the release step attaches them.
@@ -629,6 +631,22 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/amd64 --expect-version "$BIN_VERSION"
 
+      - name: Make this run's own staging directories
+        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, a
+        # fixed name in the runner's temporary directory can still hold an
+        # earlier run's files, which the smoke staging refuses to stage over and
+        # the release inputs would otherwise carry as this run's own. This run
+        # stages into directories of its own, made empty here: the steps below,
+        # the uploads included, read them from the environment, and the last
+        # step removes them.
+        run: |
+          set -euo pipefail
+          windows_smoke="$(mktemp -d "$RUNNER_TEMP/windows-smoke.XXXXXX")"
+          macos_smoke="$(mktemp -d "$RUNNER_TEMP/macos-smoke.XXXXXX")"
+          release_inputs="$(mktemp -d "$RUNNER_TEMP/release-inputs.XXXXXX")"
+          printf 'WINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\nRELEASE_INPUTS=%s\n' \
+            "$windows_smoke" "$macos_smoke" "$release_inputs" >> "$GITHUB_ENV"
+
       - name: Stage the Windows smoke run's inputs
         # Everything the windows-smoke job runs, staged by one script into one
         # directory: the three Windows binaries above; a Windows test executable
@@ -645,14 +663,14 @@ jobs:
         id: windows-smoke-inputs
         run: |
           set -euo pipefail
-          aggrega-cli/scripts/stage-platform-smoke.sh --target windows/amd64 --output-dir "$RUNNER_TEMP/windows-smoke"
+          aggrega-cli/scripts/stage-platform-smoke.sh --target windows/amd64 --output-dir "$WINDOWS_SMOKE_INPUTS"
           # The commit the windows-smoke job checks out is the one the staged
           # inputs record, so the job and the inputs cannot name different ones.
           while IFS='=' read -r key value; do
             if [ "$key" = commit ]; then
               printf 'commit=%s\n' "$value" >> "$GITHUB_OUTPUT"
             fi
-          done < "$RUNNER_TEMP/windows-smoke/smoke.env"
+          done < "$WINDOWS_SMOKE_INPUTS/smoke.env"
 
       - name: Upload the Windows smoke run's inputs
         # One workflow artifact, read only by the windows-smoke job of this same
@@ -661,7 +679,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-smoke-inputs
-          path: ${{ runner.temp }}/windows-smoke
+          path: ${{ env.WINDOWS_SMOKE_INPUTS }}
           if-no-files-found: error
           retention-days: 1
           include-hidden-files: true
@@ -678,7 +696,7 @@ jobs:
         run: |
           set -euo pipefail
           for target in darwin/arm64 darwin/amd64; do
-            aggrega-cli/scripts/stage-platform-smoke.sh --target "$target" --output-dir "$RUNNER_TEMP/macos-smoke/${target/\//-}"
+            aggrega-cli/scripts/stage-platform-smoke.sh --target "$target" --output-dir "$MACOS_SMOKE_INPUTS/${target/\//-}"
           done
           # Both targets are staged from this one tree, so their inputs record
           # one commit; the macos-smoke jobs check out that commit, and the
@@ -687,7 +705,7 @@ jobs:
             if [ "$key" = commit ]; then
               printf 'commit=%s\n' "$value" >> "$GITHUB_OUTPUT"
             fi
-          done < "$RUNNER_TEMP/macos-smoke/darwin-arm64/smoke.env"
+          done < "$MACOS_SMOKE_INPUTS/darwin-arm64/smoke.env"
 
       - name: Upload the macOS arm64 smoke run's inputs
         # One workflow artifact per macOS target, read only by that target's
@@ -699,7 +717,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-smoke-inputs-darwin-arm64
-          path: ${{ runner.temp }}/macos-smoke/darwin-arm64
+          path: ${{ env.MACOS_SMOKE_INPUTS }}/darwin-arm64
           if-no-files-found: error
           retention-days: 1
           include-hidden-files: true
@@ -709,7 +727,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-smoke-inputs-darwin-amd64
-          path: ${{ runner.temp }}/macos-smoke/darwin-amd64
+          path: ${{ env.MACOS_SMOKE_INPUTS }}/darwin-amd64
           if-no-files-found: error
           retention-days: 1
           include-hidden-files: true
@@ -743,7 +761,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          BUNDLE="$(aggrega-cli/scripts/build-mcp-bundle.sh --output-dir "$RUNNER_TEMP/release-inputs/mcp-bundle" --expect-version "$BIN_VERSION")"
+          BUNDLE="$(aggrega-cli/scripts/build-mcp-bundle.sh --output-dir "$RELEASE_INPUTS/mcp-bundle" --expect-version "$BIN_VERSION")"
           echo "packed $BUNDLE"
 
       - name: Generate the core plugin catalog entities
@@ -756,8 +774,8 @@ jobs:
         run: |
           set -euo pipefail
           export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
-          mkdir -p "$RUNNER_TEMP/release-inputs/plugins/entities"
-          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" --output-dir "$RUNNER_TEMP/release-inputs/plugins/entities"
+          mkdir -p "$RELEASE_INPUTS/plugins/entities"
+          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" --output-dir "$RELEASE_INPUTS/plugins/entities"
 
       - name: Stage the core plugins for publishing
         # Exactly the set of guests built into this binary, each generated entity
@@ -782,7 +800,7 @@ jobs:
         # The pairing is written only when every entity paired.
         run: |
           set -euo pipefail
-          STAGE="$RUNNER_TEMP/release-inputs/plugins"
+          STAGE="$RELEASE_INPUTS/plugins"
           WASM_DIR="$STAGE/wasm"
           mkdir -p "$WASM_DIR"
           staged=0
@@ -830,10 +848,10 @@ jobs:
         # asset cannot differ. aggrega-cli/aggrega itself stays as built.
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/release-inputs/bin"
+          mkdir -p "$RELEASE_INPUTS/bin"
           aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" \
-            --keep-stripped "$RUNNER_TEMP/release-inputs/bin/aggrega-stripped" \
-            --save "$RUNNER_TEMP/release-inputs/image"
+            --keep-stripped "$RELEASE_INPUTS/bin/aggrega-stripped" \
+            --save "$RELEASE_INPUTS/image"
 
       - name: Collect the binaries the release carries
         # The binaries the steps above wrote, under the names they wrote them,
@@ -843,7 +861,7 @@ jobs:
         # already there, kept by the image step. A missing file fails the copy.
         run: |
           set -euo pipefail
-          BIN="$RUNNER_TEMP/release-inputs/bin"
+          BIN="$RELEASE_INPUTS/bin"
           mkdir -p "$BIN"
           for built in aggrega aggrega-light \
               aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe \
@@ -862,9 +880,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-inputs
-          path: ${{ runner.temp }}/release-inputs
+          path: ${{ env.RELEASE_INPUTS }}
           if-no-files-found: error
           retention-days: 1
+
+      - name: Remove this run's staging directories
+        # Whatever the steps above did, so nothing this run staged is left on a
+        # persistent runner for a later run to find.
+        if: ${{ always() && env.RELEASE_INPUTS != '' }}
+        run: |
+          rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$RELEASE_INPUTS"
 
   sign-and-publish:
     needs: build
@@ -911,21 +936,35 @@ jobs:
           ref: ${{ needs.build.outputs.commit }}
           persist-credentials: false
 
+      - name: Make this run's own directories
+        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, a
+        # fixed name in the runner's temporary directory can still hold an
+        # earlier run's files, which this run would then read as inputs it was
+        # handed or release beside its own. The
+        # inputs arrive in a directory of this run's own, INPUTS, and the
+        # release assets are assembled in another, RELEASE_DIR, both made empty
+        # here; the steps below read them from the environment, and the last
+        # step removes them.
+        run: |
+          set -euo pipefail
+          inputs="$(mktemp -d "$RUNNER_TEMP/release-inputs.XXXXXX")"
+          release="$(mktemp -d "$RUNNER_TEMP/release.XXXXXX")"
+          printf 'INPUTS=%s\nRELEASE_DIR=%s\n' "$inputs" "$release" >> "$GITHUB_ENV"
+
       - name: Download the release inputs
         uses: actions/download-artifact@v4
         with:
           name: release-inputs
-          path: ${{ runner.temp }}/release-inputs
+          path: ${{ env.INPUTS }}
 
       - name: Make the built binary runnable and hold it to the release
         # The artifact keeps no file modes, so the binary this job runs is made
         # executable again. Whenever a release tag is in play, the binary must
         # report that tag's version, as the build job's ABI gate held it to, so
         # the job publishes the build it was handed and no other. Later steps
-        # find the binary and the inputs through AGGREGA_BIN and INPUTS.
+        # find the binary through AGGREGA_BIN, and the inputs through INPUTS.
         run: |
           set -euo pipefail
-          INPUTS="$RUNNER_TEMP/release-inputs"
           chmod 0755 "$INPUTS/bin/aggrega"
           # Whitespace is stripped before the match so the extraction is insensitive to
           # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
@@ -942,10 +981,7 @@ jobs:
             echo "the downloaded binary reports version '$BIN_VERSION', not the release tag '${TAG#v}'" >&2
             exit 1
           fi
-          {
-            echo "INPUTS=$INPUTS"
-            echo "AGGREGA_BIN=$INPUTS/bin/aggrega"
-          } >> "$GITHUB_ENV"
+          echo "AGGREGA_BIN=$INPUTS/bin/aggrega" >> "$GITHUB_ENV"
           echo "publishing version $BIN_VERSION from $INPUTS"
 
       - name: Authenticate to the registry
@@ -1136,8 +1172,8 @@ jobs:
             fi
           done
 
-          RELEASE_DIR="$RUNNER_TEMP/release"
-          mkdir -p "$RELEASE_DIR"
+          # RELEASE_DIR is this run's own directory, made empty by the step that
+          # makes this run's own directories.
           FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
           LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
           STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-linux-amd64"
@@ -1189,6 +1225,13 @@ jobs:
               --title "$TAG" \
               --notes "Release $TAG. Downloadable binaries for linux/amd64, for windows/amd64 (the Windows files end in .exe and are not code-signed), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and, for linux/amd64 and windows/amd64, aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
           fi
+
+      - name: Remove this run's directories
+        # Whatever the steps above did, so nothing this run received or
+        # assembled is left on a persistent runner for a later run to find.
+        if: ${{ always() && env.INPUTS != '' }}
+        run: |
+          rm -rf -- "$INPUTS" "$RELEASE_DIR"
 
   windows-smoke:
     # Runs the Windows binaries the build job built, on Windows. Cross-compiling
