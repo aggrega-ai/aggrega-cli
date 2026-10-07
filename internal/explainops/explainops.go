@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -265,7 +266,7 @@ func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
 			// bundle that is here and does not carry the page, and a reader repairs
 			// them differently: one is documentation to obtain, the other a bundle
 			// that is not the one this reads.
-			if errors.Is(rerr, docscache.ErrFetchNotFound()) {
+			if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, readscope.ErrReadLeadsOutOfWorkspace()) {
 				return Pages{}, uncachedBundle(ref, version, rerr)
 			}
 			return Pages{}, fmt.Errorf("the published documentation is not available: the "+
@@ -288,11 +289,19 @@ func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
 // It names the artifact and the version rather than reporting that something was
 // not found, and it carries both published addresses, so the answer stands on its
 // own for a reader who has to go and read the pages instead.
+//
+// A bundle the artifact cache's read hold refused is said to be unread rather than
+// absent: it may well be cached, behind a link the cache is not read through, and
+// the cause names that link, which is what the reader removes.
 func uncachedBundle(ref, version string, cause error) error {
+	state := "is not cached for this workspace and could not be acquired"
+	if errors.Is(cause, readscope.ErrReadLeadsOutOfWorkspace()) {
+		state = "is not read: the artifact cache would be reached through a link it is not read through"
+	}
 	return fmt.Errorf("the published documentation is not available: the documentation "+
-		"bundle %s@%s is not cached for this workspace and could not be acquired (%v). The conditions "+
+		"bundle %s@%s %s (%v). The conditions "+
 		"this binary declares are still answered; every condition, including the ones a provider "+
 		"declares, is published at %s, and the walk-through of each authoring fix at %s",
-		ref, version, cause,
+		ref, version, state, cause,
 		haltref.PublishedPath(haltref.ReferencePagePath), haltref.PublishedPath(haltref.PagePath))
 }

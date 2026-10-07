@@ -4,6 +4,7 @@
 package registryindex
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -102,15 +104,23 @@ func WithdrawnVersions(deps []VersionDeprecation) map[string]string {
 // A nil screen leaves the discovery step unscreened, which is the honest posture
 // rather than a degradation — with no local snapshot there is no verified fact to
 // act on, and acting on an unverified one is exactly what this must not do.
-func NewScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer) catalog.RetractionScreen {
+//
+// An index the read hold refuses — leading through a link out of the root the
+// cache is held to — is not an absent snapshot: there is one, and it may not be
+// read. The refusal is returned, naming the link, so a version selection that
+// would have been screened halts rather than running unscreened over it.
+func NewScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer) (catalog.RetractionScreen, error) {
 	if host == "" || out == nil {
-		return nil
+		return nil, nil
 	}
 	loaded, err := LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
-		return nil
+		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+			return nil, err
+		}
+		return nil, nil
 	}
-	return NewScreenFromRecords(loaded.Records, IndexProvenance(loaded.LastUpdated, loaded.HasTimestamp), out)
+	return NewScreenFromRecords(loaded.Records, IndexProvenance(loaded.LastUpdated, loaded.HasTimestamp), out), nil
 }
 
 // NewScreenFromRecords builds a withdrawal screen from index records the caller

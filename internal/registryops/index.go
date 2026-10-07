@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -449,7 +450,9 @@ func updateHostIndex(
 	}
 	var prior map[string]registryindex.Record
 	if !upgrade {
-		prior = loadPriorRecords(root, cacheDir, host)
+		if prior, err = loadPriorRecords(root, cacheDir, host); err != nil {
+			return hu, err
+		}
 	}
 	// The host's own trust policy, resolved once for the whole walk: it decides
 	// which signers may withdraw a version of anything this host serves, so every
@@ -495,16 +498,24 @@ func reportDeprecationScan(notices io.Writer, hu HostUpdate, host string) {
 // or unreadable prior index yields a nil map, degrading the refresh to a full
 // build rather than failing — the first update after a cache wipe re-reads
 // everything.
-func loadPriorRecords(root, cacheDir, host string) map[string]registryindex.Record {
+//
+// A prior index the read hold refuses — leading through a link out of the root the
+// cache is held to — is not one of those: it is returned as the error, naming the
+// link, because a record reused from it would carry whatever the link leads to into
+// the index this refresh writes.
+func loadPriorRecords(root, cacheDir, host string) (map[string]registryindex.Record, error) {
 	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
-		return nil
+		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+			return nil, err
+		}
+		return nil, nil
 	}
 	prior := make(map[string]registryindex.Record, len(loaded.Records))
 	for _, rec := range loaded.Records {
 		prior[rec.URI] = rec
 	}
-	return prior
+	return prior, nil
 }
 
 // buildHostIndex enumerates the host's repositories through the one enumeration

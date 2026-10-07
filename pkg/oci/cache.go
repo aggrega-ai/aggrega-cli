@@ -4,6 +4,7 @@
 package oci
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -128,7 +130,9 @@ func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 
 // ReadCached returns the bytes previously stored at the cache slot
 // for uri@version. Returns a wrapped ErrFetchNotFound when the slot
-// is empty (cache miss); other errors surface as wrapped read
+// is empty (cache miss); a slot read through a link leading out of
+// the root the cache is held to returns the read hold's refusal as
+// itself (see [ReadCachedFile]); other errors surface as wrapped read
 // failures.
 //
 // The single-blob layout assumes one artifact per (uri, version)
@@ -137,19 +141,55 @@ func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 // function with a directory-walking variant; callers should consult
 // the layout convention in effect at their entry point.
 func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	slot, err := CachePath(workspaceRoot, cacheDir, uri, version)
-	if err != nil {
-		return nil, err
-	}
-	blob := filepath.Join(slot, "blob")
-	data, err := os.ReadFile(blob)
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, uri, version, "blob")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
 		}
+		if heldOrMisplaced(err) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("oci: cache read %s@%s: %w", uri, version, err)
 	}
 	return data, nil
+}
+
+// ReadCachedFile returns the bytes stored under name in the cache slot for
+// uri@version. It is the one read every file a slot holds goes through, as
+// [WriteCachedFile] is the one write, so a slot is held to the workspace in one
+// place for reading as for writing.
+//
+// The file is held, before it is opened, to the root the cache directory picks
+// ([writescope.RootForCache]) — the root its write is held to: the workspace at
+// workspaceRoot, or the cache directory itself where the configuration names one
+// outside the workspace. A cache directory, a directory on the way to the slot, or
+// the file itself, that is a link leading out of that root is refused with the read
+// hold's condition ([readscope.ErrReadLeadsOutOfWorkspace]), naming the link, and
+// nothing is read through it. The refusal is returned as itself, so a reader that
+// takes an absent file for a miss does not take it for one.
+//
+// A file that is not there is reported as [os.ReadFile] reports it, so
+// [os.IsNotExist] tells a miss apart; a version or a reference that cannot address
+// a slot is the refusal [CachePath] returns.
+func ReadCachedFile(workspaceRoot, cacheDir, uri, version, name string) ([]byte, error) {
+	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err != nil {
+		return nil, err
+	}
+	file := filepath.Join(dir, name)
+	if err := readscope.CheckCacheRead(writescope.RootForCache(workspaceRoot, cacheDir), file); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(file)
+}
+
+// heldOrMisplaced reports whether err refuses where a cache read would go — the
+// read hold's refusal of a link leading out, or a value that cannot address a
+// slot — rather than reporting what the read found there. A cache reader returns
+// either as itself: the refusal names what to fix, and a wrapped one would bury it
+// behind a read that never happened.
+func heldOrMisplaced(err error) bool {
+	return errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) || errors.Is(err, ErrCacheLocationOutsideCache())
 }
 
 // WriteCached stores bytes at the cache slot for uri@version,
@@ -195,18 +235,17 @@ func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []
 // second, self-verifying blob: a reader re-hashes these bytes and confirms they
 // match the manifest digest the artifact commits to. Returns a wrapped
 // ErrFetchNotFound when the manifest blob is absent (an incomplete slot — a
-// content blob written without its manifest); other errors surface as wrapped
-// read failures. Mirrors ReadCached; the filename is "manifest".
+// content blob written without its manifest); the read hold's refusal of a link
+// leading out is returned as itself; other errors surface as wrapped read
+// failures. Mirrors ReadCached; the filename is "manifest".
 func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	slot, err := CachePath(workspaceRoot, cacheDir, uri, version)
-	if err != nil {
-		return nil, err
-	}
-	blob := filepath.Join(slot, "manifest")
-	data, err := os.ReadFile(blob)
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, uri, version, "manifest")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
+		}
+		if heldOrMisplaced(err) {
+			return nil, err
 		}
 		return nil, fmt.Errorf("oci: manifest cache read %s@%s: %w", uri, version, err)
 	}

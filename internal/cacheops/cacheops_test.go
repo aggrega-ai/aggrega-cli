@@ -46,7 +46,7 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 	}
 	loc := Locations{WorkspaceRoot: wsRoot, CacheDir: testCacheDir}
 
-	els, err := enumEntities(t.Context(), loc.entitiesRoot())
+	els, err := enumEntities(t.Context(), loc.entitiesRoot(), func(p string) error { return holdRead(loc, p) })
 	if err != nil {
 		t.Fatalf("enumEntities: %v", err)
 	}

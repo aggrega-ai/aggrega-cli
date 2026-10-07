@@ -918,6 +918,12 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 		}
 		return &abi.SourceProjection{Files: []abi.SourceFile{{Path: filepath.Base(resolved), Content: data}}}, "", nil
 	case "dir":
+		// A selection that is itself a link is refused before it is listed, as a
+		// file or a tree selection naming one is: listing it would hand on what it
+		// points to under its name.
+		if err := sourcewalk.RefuseLink(resolved, path.Join(rel, ".")); err != nil {
+			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: %v", err)
+		}
 		entries, err := os.ReadDir(resolved)
 		if err != nil {
 			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: listing %q failed: %v", rel, err)
@@ -942,7 +948,9 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 		}
 		return &abi.SourceProjection{Files: files}, "", nil
 	case "tree":
-		entries, walkErr := p.sourceScope.Entries(resolved, nil)
+		// A refusal names a link as the guest spells paths, beneath the source root,
+		// so a selection that is itself a link is named by the selection.
+		entries, walkErr := p.sourceScope.Entries(resolved, func(r string) string { return path.Join(rel, r) })
 		if walkErr != nil {
 			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, walkErr)
 		}

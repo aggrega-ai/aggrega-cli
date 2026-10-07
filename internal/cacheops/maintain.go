@@ -118,11 +118,15 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	// — so it maps to the same reference set. The compiled-module cache is prunable
 	// too, but by attribution rather than by an element digest, so it is handled by
 	// a dedicated arm that consults the attribution index directly.
-	classes, err := Collect(ctx, loc)
-	if err != nil {
+	//
+	// The roots a prune removes from are held before anything beneath them is read,
+	// so a cache directory linked out of the workspace is refused as the removal it
+	// would be, with nothing listed through it.
+	if err := holdWorkspaceClassRoots(loc, loc.workspaceClasses(), true); err != nil {
 		return res, err
 	}
-	if err := holdWorkspaceClassRoots(loc, classes, true); err != nil {
+	classes, err := Collect(ctx, loc)
+	if err != nil {
 		return res, err
 	}
 	ax, _ := attribindex.Load(loc.AttribIndexPath)
@@ -226,23 +230,24 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	return res, nil
 }
 
-// holdWorkspaceClassRoots holds every class root an operation would remove from
-// or clear to the root the workspace's cache directory picks, before anything is
-// removed.
+// holdWorkspaceClassRoots holds every workspace class root an operation would
+// remove from or clear to the root the workspace's cache directory picks, before
+// anything is removed — and before anything beneath them is enumerated.
 //
 // The workspace's cache classes sit under the workspace's own cache directory, so
 // a cache directory — or a class root — that is a link leading out of that root
 // would turn a clear into deleting directories elsewhere on the machine. One class
 // root leading out halts the operation with every class left as it was. The
 // machine-wide classes are the machine's own stores and are not held to any
-// workspace. prunableOnly narrows the set to the classes a prune reclaims from,
-// which are the only ones a prune removes anything under.
-func holdWorkspaceClassRoots(loc Locations, classes []Class, prunableOnly bool) error {
-	for _, cl := range classes {
-		if prunableOnly && !cl.Prunable {
+// workspace, which is why only the workspace's classes are passed here.
+// prunableOnly narrows the set to the classes a prune reclaims from, which are the
+// only ones a prune removes anything under.
+func holdWorkspaceClassRoots(loc Locations, classes []workspaceClass, prunableOnly bool) error {
+	for _, wc := range classes {
+		if prunableOnly && !wc.Prunable {
 			continue
 		}
-		if err := holdRemoval(loc, cl, cl.Root); err != nil {
+		if err := holdRemoval(loc, wc.Class, wc.Root); err != nil {
 			return err
 		}
 	}
@@ -390,11 +395,14 @@ type ClearResult struct {
 // restored, so a withdrawn clear reports what it removed.
 func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 	var res ClearResult
-	classes, err := Collect(ctx, loc)
-	if err != nil {
+	// The roots a clear removes are held before anything beneath them is read, so a
+	// cache directory linked out of the workspace is refused as the removal it would
+	// be, with nothing listed through it.
+	if err := holdWorkspaceClassRoots(loc, loc.workspaceClasses(), false); err != nil {
 		return res, err
 	}
-	if err := holdWorkspaceClassRoots(loc, classes, false); err != nil {
+	classes, err := Collect(ctx, loc)
+	if err != nil {
 		return res, err
 	}
 	for _, cl := range classes {

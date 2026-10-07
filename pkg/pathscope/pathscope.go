@@ -22,7 +22,13 @@
 // the first rather than a stricter form of it. A path written inside a workspace
 // can lead anywhere through a symbolic link on the way to it, so a verdict on the
 // spelling says nothing about which file is read, written or removed. [ResolvesInside]
-// answers it, and it is the only entry point here that reads the filesystem.
+// answers it, and it is the only entry point here that judges the filesystem.
+//
+// Beside the three questions sits the walk of a tree beneath a root, [WalkDir],
+// because a root reached through a link is the directory it leads to for a walk
+// as it is for ResolvesInside: a walk of such a root reads where it leads, and
+// hands on every path spelled beneath the root as named. It answers no question of
+// scope; a walker judges each link it meets with ResolvesInside.
 //
 // # The entry points, and why they are separate
 //
@@ -89,8 +95,8 @@
 // another skips a file silently, another halts an operation before it writes.
 // Each attaches its own condition and its own message at its own call site.
 //
-// Every entry point but [ResolvesInside] is purely lexical, exactly as
-// [path.Clean] is. Those resolve no symbolic link, so a caller whose root can
+// Every entry point but [ResolvesInside] and [WalkDir] is purely lexical, exactly
+// as [path.Clean] is. Those resolve no symbolic link, so a caller whose root can
 // contain a link out of the tree asks [ResolvesInside] as well.
 package pathscope
 

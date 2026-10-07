@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
@@ -1093,7 +1094,10 @@ func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
 // A version that cannot address a slot at all is not a miss. The registry tier
 // would be handed the same reference, so the refusal is returned as the error and
 // the resolution halts naming the value rather than going on to ask a registry
-// for it.
+// for it. Nor is a slot the read hold refused — a cache directory, or a file of the
+// slot, leading through a link out of the root the cache is held to: nothing was
+// read through it, and the halt names the link rather than a registry fetch
+// writing over a place the cache may not reach.
 //
 // uri is the reference as the caller wrote it and fetchURI the versioned form the
 // slot is addressed at, which differ for a bare reference resolved at its pinned
@@ -1105,7 +1109,7 @@ func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
 func (l *catalogLookup) tier2(uri, fetchURI string) ([]byte, closure.Resolution, bool, error) {
 	bytes, manifest, version, err := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, fetchURI)
 	if err != nil {
-		if errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+		if refusesTheSlot(err) {
 			return nil, closure.Resolution{}, false, err
 		}
 		return nil, closure.Resolution{}, false, nil
@@ -1332,17 +1336,23 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // unset, when the URI carries no version pin, when the cache slot holds no
 // readable content, or when it holds content but no manifest; a manifest that
 // exists but cannot be read is reported as that failure, and a version that
-// cannot address a slot as the refusal oci.CachePath returns.
+// cannot address a slot as the refusal oci.CachePath returns. A file of the slot
+// that leads through a link out of the root the cache is held to is not read, and
+// the read hold's refusal is returned as itself rather than as a miss, so no
+// caller fetches around it (oci.ReadCachedFile).
 func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, []byte, string, error) {
-	slot, version, ok, err := tier2Slot(workspaceRoot, cacheDir, uri)
+	_, version, ok, err := tier2Slot(workspaceRoot, cacheDir, uri)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	if !ok {
 		return nil, nil, "", errNotInContentCache(uri)
 	}
-	bytes, err := readCacheSlotBytes(slot)
+	bytes, err := readCacheSlotBytes(workspaceRoot, cacheDir, uri, version)
 	if err != nil {
+		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+			return nil, nil, "", err
+		}
 		return nil, nil, "", errNotInContentCache(uri)
 	}
 	manifest, err := persistedManifest(workspaceRoot, cacheDir, uri, version)
@@ -1939,6 +1949,17 @@ func tier2Slot(workspaceRoot, cacheDir, uri string) (string, string, bool, error
 	return slot, version, true, nil
 }
 
+// refusesTheSlot reports whether err refuses the cache slot a read addressed rather
+// than reporting what the slot held: a version that cannot address a slot
+// (oci.ErrCacheLocationOutsideCache), or a slot the read hold refused because the
+// cache directory, or a file of the slot, leads through a link out of the root the
+// cache is held to (readscope.ErrReadLeadsOutOfWorkspace). Neither is a miss, so
+// neither sends a resolution on to the registry tier, whose fetch would be written
+// to the same slot.
+func refusesTheSlot(err error) bool {
+	return errors.Is(err, oci.ErrCacheLocationOutsideCache()) || errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace())
+}
+
 // tier3Slot returns the cache slot tier3PullCatalogEntity wrote the bytes it
 // resolved uri to, given the resolution it returned: the slot is keyed by the URI
 // as passed and by the version the resolution records, which is the version the
@@ -1992,14 +2013,22 @@ func unpackEntitySlot(workspaceRoot, cacheDir, slot string, published []byte) (s
 	return filepath.Join(dir, name), document, nil
 }
 
-// readCacheSlotBytes reads the entity bytes from a cache slot. Tries
-// the canonical filenames in order: library.yaml (libraries),
+// readCacheSlotBytes reads the entity bytes from the cache slot for uri at
+// version. Tries the canonical filenames in order: library.yaml (libraries),
 // blob (everything else).
-func readCacheSlotBytes(slot string) ([]byte, error) {
+//
+// Each is read through the one read of a slot's files (oci.ReadCachedFile), which
+// holds it to the root the cache's writes are held to; a file that leads through a
+// link out of that root is not read, and the refusal is returned rather than
+// passed over for the next name.
+func readCacheSlotBytes(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 	for _, name := range []string{"library.yaml", "blob"} {
-		path := filepath.Join(slot, name)
-		if data, err := os.ReadFile(path); err == nil {
+		data, err := oci.ReadCachedFile(workspaceRoot, cacheDir, uri, version, name)
+		if err == nil {
 			return data, nil
+		}
+		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+			return nil, err
 		}
 	}
 	return nil, os.ErrNotExist

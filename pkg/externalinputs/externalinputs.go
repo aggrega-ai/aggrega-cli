@@ -38,6 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -61,12 +62,12 @@ type Service struct {
 	root    string
 	acquire bool
 	client  *http.Client
-	// heldTo is the root every blob written is held to, where the service was
-	// composed over a workspace's own artifact cache: the root that workspace's
+	// heldTo is the root every blob written or read is held to, where the service
+	// was composed over a workspace's own artifact cache: the root that workspace's
 	// cache directory picks (writescope.RootForCache). A cache directory that is a
-	// link leading out of it is refused rather than written through. It is empty for
-	// a service constructed over a bare store root, which holds no write to any
-	// workspace.
+	// link leading out of it is refused rather than written or read through. It is
+	// empty for a service constructed over a bare store root, which holds no write
+	// or read to any workspace.
 	heldTo string
 
 	mu sync.Mutex
@@ -207,11 +208,20 @@ func (s *Service) Records() []lockfile.ExternalInput {
 
 // servePinned serves a pinned URL: store read with per-read verification, or
 // a digest-gated network refill when the blob is missing. Callers hold s.mu.
+//
+// The blob is held, before it is opened, to the root the store's writes are held
+// to (s.heldTo): a cache directory, the store, or the blob itself, that leads
+// through a link out of that root is not read, and the read hold's refusal is
+// returned naming the link — not taken for a missing blob, which would refill it
+// through the same link.
 func (s *Service) servePinned(ctx context.Context, kind inputKind, rawURL string, rec lockfile.ExternalInput, requiredBy string) ([]byte, error) {
 	if !isHexDigest(rec.Sha256) {
 		return nil, fmt.Errorf("externalinputs: %q: pinned digest %q is not a lowercase hex sha256", rawURL, rec.Sha256)
 	}
 	blobPath := s.blobPath(rec.Sha256)
+	if err := readscope.CheckCacheRead(s.heldTo, blobPath); err != nil {
+		return nil, err
+	}
 	b, err := os.ReadFile(blobPath)
 	switch {
 	case err == nil:

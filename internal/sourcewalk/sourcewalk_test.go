@@ -232,6 +232,55 @@ func TestEveryShapeOfLinkIsRefusedUnderOneCondition(t *testing.T) {
 	})
 }
 
+// TestARootThatIsItselfALinkIsRefusedAsALinkBeneathItIs walks a root that is
+// itself a symbolic link — to a directory beside it, one the rules would leave
+// out, and one leading nowhere — and asserts the refusal a link beneath the root
+// draws, naming the root as the caller's show spells it. A walk that did not
+// judge its root would answer each link row with no entry and no refusal, as
+// though the directory were empty; one that followed it would return the
+// control's files under the link's name.
+func TestARootThatIsItselfALinkIsRefusedAsALinkBeneathItIs(t *testing.T) {
+	show := func(rel string) string { return filepath.ToSlash(filepath.Join("chart", rel)) }
+	rows := []struct {
+		name  string
+		rules []types.IgnoreRule
+		plant func(base string) error
+		want  []string
+	}{
+		{name: "control: a root that is a directory", want: []string{"chart/Chart.yaml"},
+			plant: func(base string) error { return os.Rename(filepath.Join(base, "real"), filepath.Join(base, "chart")) }},
+		{name: "a root that is a link to a directory beside it",
+			plant: func(base string) error { return os.Symlink("real", filepath.Join(base, "chart")) }},
+		{name: "a root that is a link the rules would leave out",
+			rules: []types.IgnoreRule{{Pattern: "chart", Within: ".", From: AuthorIgnoreFile}},
+			plant: func(base string) error { return os.Symlink("real", filepath.Join(base, "chart")) }},
+		{name: "a root that is a link leading nowhere",
+			plant: func(base string) error { return os.Symlink("nowhere", filepath.Join(base, "chart")) }},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			base := t.TempDir()
+			writeTree(t, base, map[string]string{"real/Chart.yaml": "apiVersion: v2\n"})
+			if err := row.plant(base); err != nil {
+				t.Skipf("symbolic links are not available here: %v", err)
+			}
+			files, err := NewScope(base, row.rules).Files(filepath.Join(base, "chart"), show)
+			if row.want != nil {
+				if err != nil || !reflect.DeepEqual(files, row.want) {
+					t.Fatalf("walk = %q, %v; want %q and no refusal", files, err, row.want)
+				}
+				return
+			}
+			if !errors.Is(err, ErrSymbolicLinkInEntityFiles()) {
+				t.Fatalf("walk = %q, %v; want the symbolic-link refusal", files, err)
+			}
+			if !strings.Contains(err.Error(), "(chart)") {
+				t.Errorf("the refusal does not name the root as show spells it: %v", err)
+			}
+		})
+	}
+}
+
 // TestPatternLinesSkipsBlanksAndCommentsAndNothingElse pins the one reading of an
 // ignore file's lines both the entity walk and the workspace walk use.
 func TestPatternLinesSkipsBlanksAndCommentsAndNothingElse(t *testing.T) {

@@ -35,9 +35,12 @@ import (
 // matchers are cached across the walk to avoid re-parsing.
 //
 // Errors returned by visit halt the walk and propagate.
-// filepath.WalkDir does not follow symlinks by default, matching the
-// IDE's expectation that the workspace tree is a finite acyclic
-// search domain.
+// The walk enters no link beneath the root, matching the IDE's
+// expectation that the workspace tree is a finite acyclic search
+// domain. A root that is itself a link is walked where it leads
+// (pathscope.WalkDir), and every path is still named beneath the root
+// as the request spelled it: a folder opened through a link is the
+// workspace it leads to.
 //
 // visit is handed two paths for each file: path, the file's place in the
 // workspace, which is how it is named; and read, the file whose bytes are
@@ -78,7 +81,7 @@ type unreadLinks struct {
 //
 // # A link is judged where the walk meets it
 //
-// The walk never enters a link. A link is judged by the one resolution
+// The walk never enters a link beneath the root. A link is judged by the one resolution
 // resolveLink makes of it, against the root resolved the same way — the same
 // judgement the Release walk applies — and nothing outside the workspace root is
 // read through one but a Release the workspace's configuration names:
@@ -117,7 +120,7 @@ func walkWorkspaceYAMLIn(ctx context.Context, root string, cfg workspaceconfig.C
 	w := newGitignoreWalker(root)
 	scope := linkScope{root: root, cfg: cfg}
 	var unread unreadLinks
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := pathscope.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

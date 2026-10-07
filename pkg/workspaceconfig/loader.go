@@ -280,9 +280,9 @@ func load(path string) (Config, error) {
 // and refuses once rather than letting each consumer discover it differently.
 //
 // It judges the value's spelling and nothing else: which side of the workspace the
-// directory lies on, and what may be written or removed beneath it, is
-// writescope.RootForCache's answer, which every writer and clearer of the cache
-// asks. A value spelled climbing out of the workspace root passes here, because it
+// directory lies on, and what may be written, removed or read beneath it, is
+// writescope.RootForCache's answer, which every writer, clearer and reader of the
+// cache asks. A value spelled climbing out of the workspace root passes here, because it
 // is a directory the configuration names outside the workspace.
 func validateArtifactCacheDir(v, path string) error {
 	if v == "" {

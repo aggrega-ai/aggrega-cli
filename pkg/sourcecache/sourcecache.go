@@ -50,9 +50,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // kindExpectsManifest reports whether a source kind is OCI-distributed and
@@ -101,6 +103,12 @@ func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 // or on archive corruption. Returns wrapped fs errors on read/write/extract
 // failures. A non-OCI source kind (HTTPS chart, git module) carries no manifest
 // by construction and stays on content-pin authority.
+//
+// The slot's files are read only from inside the root the cache's writes are held
+// to (writescope.RootForCache): a cache directory, a directory on the way to the
+// slot, or a file of it, that leads through a link out of that root is not read,
+// and the read hold's refusal (readscope.ErrReadLeadsOutOfWorkspace) is returned
+// naming the link.
 func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, version, ref, workspaceRoot, cacheDir string) (string, error) {
 	if lf == nil {
 		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound())
@@ -128,6 +136,15 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 		return "", err
 	}
 	blobPath := filepath.Join(slot, "blob.tgz")
+	// Every file the slot holds is judged before any is read, against the root the
+	// slot's write was held to: one leading through a link out of it is refused with
+	// the read hold's condition, naming the link, and nothing is read at all.
+	heldTo := writescope.RootForCache(workspaceRoot, cacheDir)
+	for _, name := range []string{"blob.tgz", "metadata.yaml", cacheslot.ManifestFile} {
+		if err := readscope.CheckCacheRead(heldTo, filepath.Join(slot, name)); err != nil {
+			return "", err
+		}
+	}
 	blobBytes, err := os.ReadFile(blobPath)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -41,6 +41,21 @@
 // remedy such a file has: keep the file itself where it sits, rather than a link to
 // it.
 //
+// [CheckCacheRead] is the same judgement for a file or directory read beneath the
+// workspace's artifact cache: a cached entity, plugin, source archive, external
+// input, documentation bundle or registry index, and every entry a cache inventory
+// lists. The cache is the product's own store, written beside the workspace, so it
+// is read from the place its writes are held to, and its refusal names the remedy
+// the cache has: a pull fills it again, and a cache kept outside the workspace is
+// one the configuration names rather than one a link reaches.
+//
+// [CheckOverlayRead] is the same judgement for an overlay a catalog generation reads
+// beneath the overlay directory it was given: the authored half of each Plugin
+// entity it generates. A missing overlay changes what is generated, so a link
+// leading out halts the generation rather than being passed over, and its refusal
+// names the remedy an overlay has: keep the overlay itself beneath the overlay
+// directory, or name a directory holding every overlay.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -71,8 +86,10 @@ import (
 // directory holding a Release — or a configuration file the workspace's
 // configuration is merged from, or the lockfile beside a Release, or a file beside
 // an entity's document — another document in its directory, a Plugin entity's
-// .wasm — leads, through a link, out of the root it is held to: the workspace, or a
-// directory outside it the owner typed or the configuration named.
+// .wasm — or a file or directory beneath the workspace's artifact cache, or an
+// overlay beneath the overlay directory a catalog generation reads, leads, through
+// a link, out of the root it is held to: the workspace, or a directory outside it
+// the owner typed or the configuration named.
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
@@ -91,10 +108,13 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 		"editor depends on, and the Aggregates and Manifests beside a Release, read to resolve the names the " +
 		"Release gives them — where it reads the configuration files the workspace's configuration is merged " +
 		"from, before any command runs, where it reads the lockfile beside a Release for the pins a build, a " +
-		"check or the editor resolves against, and where it reads a file beside an entity's document — the other " +
+		"check or the editor resolves against, where it reads a file beside an entity's document — the other " +
 		"documents in the directory of an entity being pinned or published, and the .wasm beside a Plugin entity " +
-		"a build or a pull loads. Each of those reads the filesystem ahead of every declared stage, and no stage " +
-		"holds the entry the rule is judged against."),
+		"a build or a pull loads — and where it reads the workspace's artifact cache: a cached entity, plugin, " +
+		"source archive, external input, documentation bundle or registry index, and the entries a cache status, " +
+		"prune or clear lists — and where a catalog generation reads the overlays beneath the overlay directory it " +
+		"was given. Each of those reads the filesystem ahead of every declared stage, and no stage holds the entry " +
+		"the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -151,6 +171,35 @@ func besideEntityRemedyFor(root string) string {
 		"entity — is read where it sits, so keep the file itself there rather than a link to it"
 }
 
+// cacheRemedyFor is what the refusal tells its reader for a file or directory
+// beneath the workspace's artifact cache that must stay inside root.
+//
+// The cache is the product's own store: a pull fills it, so with the link removed
+// the next pull writes what it held again. A cache kept somewhere else is reached
+// by naming its directory in the workspace configuration, which is read where it
+// is named, rather than by a link beneath the workspace, which is not followed out
+// of it.
+func cacheRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		": the artifact cache is read only from inside the directory it is kept in, where a pull writes it, so " +
+		"with the link removed a pull fills it again. To keep the artifact cache outside the workspace, name its " +
+		"directory, relative to the workspace root, as artifact_cache_dir in the workspace configuration rather " +
+		"than reaching it through a link"
+}
+
+// overlayRemedyFor is what the refusal tells its reader for an overlay beneath the
+// overlay directory that must stay inside root.
+//
+// An overlay is read only from beneath the overlay directory, and no setting names
+// one kept elsewhere, so the remedy is the overlay itself in place of the link — or a
+// different overlay directory, which is read where it was named.
+func overlayRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		". Overlays are read from beneath the overlay directory, so keep the overlay itself there rather than a " +
+		"link to it, or name a directory holding every overlay as the overlay directory: a directory you name is " +
+		"read where it leads, even when it is itself a link"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -186,6 +235,27 @@ func CheckLockfileRead(root, path string) error {
 // that directory picks; for one named by path, the root its own directory picks.
 func CheckBesideEntityRead(root, path string) error {
 	return checkRead(root, path, besideEntityRemedyFor)
+}
+
+// CheckCacheRead is [CheckRead] for a file or directory about to be read beneath
+// the workspace's artifact cache: the same judgement and the same condition, with
+// the remedy the cache has. root is the one a write beneath the same cache
+// directory is held to — the root [writescope.RootForCache] picks for the
+// workspace and the configured cache directory — so the cache is read from the
+// place it may be written to, and a cache directory, a directory on the way, or the
+// file itself, that is a link leading out of that root is not read.
+func CheckCacheRead(root, path string) error {
+	return checkRead(root, path, cacheRemedyFor)
+}
+
+// CheckOverlayRead is [CheckRead] for an overlay, or a directory that may hold
+// overlays, about to be read beneath the overlay directory a catalog generation
+// merges its Plugin entities' authored halves from: the same judgement and the same
+// condition, with the remedy an overlay has. root is the one the overlay directory
+// picks ([writescope.RootFor]) — the workspace for an overlay directory inside it,
+// and the overlay directory itself for one named outside it.
+func CheckOverlayRead(root, path string) error {
+	return checkRead(root, path, overlayRemedyFor)
 }
 
 // checkRead is the judgement every entry point makes, composing the refusal with

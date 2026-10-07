@@ -122,10 +122,17 @@ func RegistryTarget(cfg workspaceconfig.Config, ref, version string, warn func(s
 // The error is returned rather than swallowed, and what to do with it is the
 // caller's decision: a session that serves documentation as one capability among
 // many logs it and carries on, while a command whose whole answer is a page has
-// to say so.
+// to say so. A presence check the read hold refuses — the cache, or the bundle's
+// slot, leading through a link out of the root the cache is held to — is such an
+// error, returned before any registry is reached, rather than an absent bundle to
+// fetch into the same place.
 func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, workspaceRoot, cacheDir, ref, version string,
 	target TargetFor, warn func(string)) (bool, error) {
-	if docscache.Cached(workspaceRoot, cacheDir, ref, version) {
+	cached, err := docscache.Cached(workspaceRoot, cacheDir, ref, version)
+	if err != nil {
+		return false, err
+	}
+	if cached {
 		return false, nil
 	}
 	if target == nil {

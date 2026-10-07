@@ -17,7 +17,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // Record is one repository's entry in a host's local searchable index: the
@@ -183,9 +185,19 @@ type Loaded struct {
 // only the freshness display depends on the timestamp. A timestamp sibling that
 // is present but unreadable or not a valid RFC3339 line is a genuine fault and
 // returns a wrapped error.
+//
+// The host directory, each record and the timestamp are held, before each is
+// read, to the root the index's write is held to (writescope.RootForCache): one
+// that leads through a link out of that root is not read, and the read hold's
+// refusal is returned as itself, naming the link — neither an unbuilt index nor a
+// read fault, so IsNotBuilt does not take it for one.
 func LoadHost(workspaceRoot, cacheDir, host string) (Loaded, error) {
 	base := oci.IndexBasePath(workspaceRoot, cacheDir, host)
 	hostDir := base
+	heldTo := writescope.RootForCache(workspaceRoot, cacheDir)
+	if err := readscope.CheckCacheRead(heldTo, hostDir); err != nil {
+		return Loaded{}, err
+	}
 	entries, err := os.ReadDir(hostDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -199,6 +211,9 @@ func LoadHost(workspaceRoot, cacheDir, host string) (Loaded, error) {
 			continue
 		}
 		recordPath := filepath.Join(hostDir, entry.Name())
+		if err := readscope.CheckCacheRead(heldTo, recordPath); err != nil {
+			return Loaded{}, err
+		}
 		data, rerr := os.ReadFile(recordPath)
 		if rerr != nil {
 			return Loaded{}, fmt.Errorf("read index %s: %w", recordPath, rerr)
@@ -213,6 +228,9 @@ func LoadHost(workspaceRoot, cacheDir, host string) (Loaded, error) {
 	result := Loaded{Host: host, Records: records}
 
 	timestampPath := base + ".updated"
+	if err := readscope.CheckCacheRead(heldTo, timestampPath); err != nil {
+		return Loaded{}, err
+	}
 	stamp, err := os.ReadFile(timestampPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

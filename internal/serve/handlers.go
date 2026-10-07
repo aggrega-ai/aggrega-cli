@@ -109,7 +109,9 @@ type serverCapabilities struct {
 // configuration: "workspace" | "global" | "defaults". WorkspaceMarker names the
 // marker tier that anchored it: "config" | "directory" | "aggregate-glob" |
 // "release-glob" | "manifest-glob"; the field is omitted on the wire when the
-// root was supplied explicitly, since no marker was consulted in that path.
+// root was supplied explicitly, since no marker was consulted in that path, except
+// that a declared root naming the directory the process was launched over — through
+// a link, or spelled otherwise — is that workspace and reports what anchored it.
 //
 // A client that declared the empty workspace — asking for no pushes at all —
 // reads an empty WorkspaceRoot, which is the honest answer: there is no

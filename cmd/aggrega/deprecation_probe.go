@@ -62,8 +62,10 @@ var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host 
 	}
 	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
-		// No local index for the host (not built) or an unreadable one: the
-		// advisory is best-effort and simply shows nothing, the same silent
+		// No local index for the host (not built), an unreadable one, or one the
+		// read hold refuses because it leads through a link out of the root the
+		// cache is held to — nothing is read through that link: the advisory is
+		// best-effort, decides nothing, and simply shows nothing, the same silent
 		// degrade the probe had when it could not reach the registry.
 		return nil
 	}

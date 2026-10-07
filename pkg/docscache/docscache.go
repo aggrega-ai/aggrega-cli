@@ -40,6 +40,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -118,9 +119,19 @@ const (
 // It reports presence and nothing more: a slot whose content is corrupt still
 // reports cached, because integrity is re-checked against the stored manifest on
 // every read and is that read's answer to give, not this probe's.
-func Cached(workspaceRoot, cacheDir, ref, version string) bool {
-	_, err := os.Stat(filepath.Join(slotPath(workspaceRoot, cacheDir, ref, version), blobFile))
-	return err == nil
+//
+// The probe is a read of the cache, held as every read of it is: a cache
+// directory, or the bundle's blob, that leads through a link out of the root the
+// cache's writes are held to is not looked at, and the read hold's refusal is
+// returned naming the link. Reporting such a slot absent instead would send the
+// caller to fetch into the same place.
+func Cached(workspaceRoot, cacheDir, ref, version string) (bool, error) {
+	blob := filepath.Join(slotPath(workspaceRoot, cacheDir, ref, version), blobFile)
+	if err := readscope.CheckCacheRead(writescope.RootForCache(workspaceRoot, cacheDir), blob); err != nil {
+		return false, err
+	}
+	_, err := os.Stat(blob)
+	return err == nil, nil
 }
 
 // slotPath returns the cache slot for a documentation bundle addressed by
@@ -173,11 +184,14 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	}
 
 	slot := slotPath(workspaceRoot, cacheDir, ref, version)
-	// The slot is held to the root the cache directory picks before anything is
-	// written: a cache directory that is a link leading out of that root is refused
-	// rather than written through.
-	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), filepath.Join(slot, blobFile)); err != nil {
-		return "", err
+	// Both files of the slot are held to the root the cache directory picks before
+	// either is written: a cache directory, or a file of the slot, that is a link
+	// leading out of that root is refused rather than written through.
+	heldTo := writescope.RootForCache(workspaceRoot, cacheDir)
+	for _, name := range []string{blobFile, manifestFile} {
+		if err := writescope.CheckWrite(heldTo, filepath.Join(slot, name)); err != nil {
+			return "", err
+		}
 	}
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		return "", fmt.Errorf("docscache: cache mkdir %s: %w", slot, err)
@@ -202,8 +216,19 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 // page is the bundle-internal path of the requested entry (e.g.
 // "language-reference/entities/component.md"). A page absent from an otherwise
 // valid bundle returns ErrPageNotFound.
+//
+// The blob and the manifest are held, before either is opened, to the root the
+// cache's writes are held to (writescope.RootForCache): one that leads through a
+// link out of that root is not read, and the read hold's refusal is returned naming
+// the link.
 func ReadPage(workspaceRoot, cacheDir, ref, version, page string) ([]byte, string, error) {
 	slot := slotPath(workspaceRoot, cacheDir, ref, version)
+	heldTo := writescope.RootForCache(workspaceRoot, cacheDir)
+	for _, name := range []string{blobFile, manifestFile} {
+		if err := readscope.CheckCacheRead(heldTo, filepath.Join(slot, name)); err != nil {
+			return nil, "", err
+		}
+	}
 	blob, err := os.ReadFile(filepath.Join(slot, blobFile))
 	if err != nil {
 		if os.IsNotExist(err) {

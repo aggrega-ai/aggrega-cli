@@ -484,9 +484,11 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // question a caller about to report a path asks, where the first three serve a
 // caller about to use one — ReportedName answers the question after that one,
 // which spelling to put in an answer, for a caller that owes its reader a path
-// either way — and ResolvesInside answers where a path leads on disk once its
-// links are followed, the one question here a spelling cannot settle. A further
-// export is either one of those six wearing a second name or a class nobody named
+// either way — ResolvesInside answers where a path leads on disk once its links
+// are followed, the one question here a spelling cannot settle — and WalkDir walks
+// the tree beneath a root, a root that is itself a link walked where it leads as
+// ResolvesInside resolves such a root, which no question of scope covers. A further
+// export is either one of those seven wearing a second name or a class nobody named
 // — and if a genuinely new class is being added, this count moves in the same
 // change that names it, which is exactly the deliberation the pin exists to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
@@ -523,8 +525,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 6 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly six entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside), so a seventh is either a mode in disguise or a class nobody named", exported)
+	if exported != 7 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly seven entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, WalkDir), so an eighth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

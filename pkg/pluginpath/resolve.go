@@ -16,7 +16,8 @@
 //	                directory (the offline path when nothing is embedded), read
 //	                only from inside the root that directory is held to
 //	1  local      — an explicit ./ or ../ filesystem path (or an absolute path)
-//	2  cache      — the workspace content cache (a previously-pulled artifact)
+//	2  cache      — the workspace content cache (a previously-pulled artifact),
+//	                read only from inside the root the cache's writes are held to
 //
 // Every tier reads bytes already on the machine; the cascade fetches nothing. An
 // artifact a registry serves reaches it only through the cache a pull filled, and a
@@ -57,6 +58,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // Tier names the source a plugin's bytes came from. It is a provenance tag: the
@@ -537,7 +539,10 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 		return r.verified(uri, b, TierLocal)
 	}
 
-	// 2 cache: a previously-pulled artifact in the workspace content cache.
+	// 2 cache: a previously-pulled artifact in the workspace content cache. A slot
+	// the read hold refuses — leading through a link out of the root the cache is
+	// held to — is not a miss: it is returned below, so no later answer stands in
+	// for bytes the cascade may not read.
 	if r.workspaceRoot != "" || r.cacheDir != "" {
 		version := r.pinVersions[uri]
 		b, err := oci.ReadCached(r.workspaceRoot, r.cacheDir, uri, version)
@@ -749,8 +754,17 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 // checked here is the slot the pull path wrote whatever directory either was
 // run from; the re-hash uses the single content-address spelling in
 // digest.ContentDigest, so an intact bundle matches.
+//
+// The blob is held, before it is opened, to the root the pull's write of it is held
+// to (readscope.CheckCacheRead over writescope.RootForCache): a cache directory, or
+// the blob itself, that leads through a link out of that root is not read, and the
+// read hold's refusal is returned as itself, naming the link, rather than as a
+// bundle that does not match.
 func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
 	path := oci.SignatureBundlePath(r.workspaceRoot, r.cacheDir, bundleDigest)
+	if err := readscope.CheckCacheRead(writescope.RootForCache(r.workspaceRoot, r.cacheDir), path); err != nil {
+		return err
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(

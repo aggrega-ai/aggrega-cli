@@ -66,6 +66,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	extism "github.com/extism/go-sdk"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/sys"
@@ -1305,9 +1306,13 @@ func (l *Loader) attributeCompileLeaves(guestDigest string, before, after map[st
 // command applies its own small predicate on the far side of the package
 // boundary; keep the two in step, since a change to which files count as compiled
 // modules must land on both.
+//
+// A cache directory that is itself a link is walked where it leads, as
+// [CollectCompileCacheLeaves] walks it, so the snapshot keys a leaf exactly as
+// reclamation and the cache listing do.
 func listCompileLeaves(dir string) map[string]int64 {
 	out := map[string]int64{}
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	_ = pathscope.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}

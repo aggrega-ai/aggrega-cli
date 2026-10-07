@@ -182,7 +182,20 @@ type Entry struct {
 // is passed over like any other excluded entry; it is never followed. root itself
 // is not an entry. show spells an entry's path for a refusal, so each caller can
 // name a link the way its reader knows the directory.
+//
+// A root that is itself a symbolic link is refused the same way, named as
+// show(".") spells it, whatever the rules say of it: the caller named that path
+// directly, as a file named directly is judged by [RefuseLink], and a walk that
+// followed it would hand on the bytes it points to under its name, while one that
+// did not would answer as though the directory were empty.
 func (s Scope) Entries(root string, show func(rel string) string) ([]Entry, error) {
+	shownRoot := "."
+	if show != nil {
+		shownRoot = show(shownRoot)
+	}
+	if err := RefuseLink(root, shownRoot); err != nil {
+		return nil, err
+	}
 	var out []Entry
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

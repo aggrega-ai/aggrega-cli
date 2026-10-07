@@ -723,7 +723,11 @@ func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath stri
 		if len(record.Versions) == 0 {
 			return record.Version, true, nil
 		}
-		version, serr := catalog.SelectScreenedVersion(rec.watch(registryindex.NewScreen(rw, host, retractions)), reference, record.Versions)
+		screen, herr := registryindex.NewScreen(rw, host, retractions)
+		if herr != nil {
+			return "", true, herr
+		}
+		version, serr := catalog.SelectScreenedVersion(rec.watch(screen), reference, record.Versions)
 		if serr != nil {
 			return "", true, serr
 		}

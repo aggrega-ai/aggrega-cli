@@ -586,8 +586,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// workspace with no index built gets a nil screen and an unscreened
 		// discovery step. The index is kept per registry host and records every
 		// repository the host serves, a default's repository path included, so it
-		// is read by the default's host alone.
-		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, registryindex.NewScreen(rw, wsCfg.DefaultRegistryLocation().Host, cfg.DiagOut))
+		// is read by the default's host alone. An index that leads through a link out
+		// of the root the cache is held to halts the run here, naming the link.
+		screen, err := registryindex.NewScreen(rw, wsCfg.DefaultRegistryLocation().Host, cfg.DiagOut)
+		if err != nil {
+			return Result{}, err
+		}
+		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, screen)
 	}
 	// The catalog is read through the one lazy view a build resolves through, and
 	// through nothing else: every pass below — the aggregate resolve, the closure

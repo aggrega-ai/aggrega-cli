@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -57,7 +60,8 @@ const genCatalogPluginFilename = "plugin.yaml"
 // ([writescope.RootFor]): the workspace root where OutputDir lies inside the
 // workspace, and OutputDir itself where it lies outside it — the directory the
 // caller named, honoured where it was named. An empty WorkspaceRoot holds every
-// entity to OutputDir.
+// entity to OutputDir. The overlays read beneath an overlay directory are held the
+// same way, to the root OverlayPath picks.
 type Options struct {
 	FromEmbedded  bool
 	PluginPath    string
@@ -160,7 +164,7 @@ func writeEntities(docs []authoredcontent.Document, out io.Writer) error {
 // The documents come back in the embedded set's own order, so a report and a
 // write name the entities in the same sequence on every run.
 func composeFromEmbedded(ctx context.Context, opts Options) ([]authoredcontent.Document, error) {
-	overlays, err := loadOverlaysByPlugin(opts.OverlayPath)
+	overlays, err := loadOverlaysByPlugin(writescope.RootFor(opts.WorkspaceRoot, opts.OverlayPath), opts.OverlayPath)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +360,22 @@ func genCatalogDiagName(ref string) string {
 // their metadata.name identity — the join key the embedded path matches a guest
 // against. Two overlays declaring the same identity halt loudly: the identity
 // must be unique, and silently keeping one would drop the other.
-func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {
+//
+// dir is the overlay directory the caller named, and a directory named through a
+// link is the directory it leads to, so it is walked there, each overlay still
+// spelled beneath dir as named (pathscope.WalkDir).
+//
+// root is the directory every read beneath dir is held to — the one dir picks
+// ([writescope.RootFor]): the workspace for an overlay directory inside it, and dir
+// itself for one named outside it. A link met beneath dir that the walk would read
+// something through — one named like an overlay, or one leading to a directory — is
+// judged where the walk meets it ([readscope.CheckOverlayRead]). One leading out of
+// root is not read and halts the generation, naming the link and where it leads:
+// passing it over would generate without the overlay it stands for, or fail later
+// asking for an overlay that was authored. One leading elsewhere inside root is met
+// as any entry is: a link to an overlay is read where it leads, and a link to a
+// directory is not entered.
+func loadOverlaysByPlugin(root, dir string) (map[string]types.Plugin, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay directory %s: %w", dir, err)
@@ -365,18 +384,28 @@ func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {
 		return nil, fmt.Errorf("aggrega plugin gen-catalog: --overlay must be a directory for --from-embedded, got file %s", dir)
 	}
 	var paths []string
-	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	var held error
+	err = pathscope.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		if ext := strings.ToLower(filepath.Ext(path)); ext == ".yaml" || ext == ".yml" {
+		overlay := isOverlayFile(path)
+		if d.Type()&fs.ModeSymlink != 0 && (overlay || leadsToDirectory(path)) {
+			if held = readscope.CheckOverlayRead(root, path); held != nil {
+				return fs.SkipAll
+			}
+		}
+		if overlay {
 			paths = append(paths, path)
 		}
 		return nil
 	})
+	if held != nil {
+		return nil, fmt.Errorf("aggrega plugin gen-catalog: %w", held)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("aggrega plugin gen-catalog: walk overlay directory %s: %w", dir, err)
 	}
@@ -399,6 +428,20 @@ func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {
 		out[key] = overlay
 	}
 	return out, nil
+}
+
+// isOverlayFile reports whether path is named like an overlay, the one shape of
+// file the overlay walk reads.
+func isOverlayFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yaml" || ext == ".yml"
+}
+
+// leadsToDirectory reports whether the link at path leads to a directory, which may
+// hold overlays of its own.
+func leadsToDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // loadOverlayFile reads and parses one overlay file into a Plugin value.

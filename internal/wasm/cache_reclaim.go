@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // DefaultCompileCacheCapBytes is the size the compiled-module cache is held to
@@ -146,7 +147,11 @@ func isCompileCacheLeaf(name string) bool {
 // runtime version no longer in use, which is exactly the oldest content.
 //
 // A directory that does not exist is an empty entry set rather than an error, so
-// a caller can ask about a cache that was never populated.
+// a caller can ask about a cache that was never populated. A directory that is
+// itself a link — the machine's owner keeping the cache elsewhere — is walked
+// where it leads (pathscope.WalkDir), where the runtime compiles into it, each
+// leaf's path spelled beneath dir: walked as the link alone it would be one leaf
+// whose path is the link, the first thing a reclamation removes.
 func CollectCompileCacheLeaves(dir string) ([]CompileCacheLeaf, error) {
 	if dir == "" {
 		return nil, nil
@@ -158,7 +163,7 @@ func CollectCompileCacheLeaves(dir string) ([]CompileCacheLeaf, error) {
 		return nil, err
 	}
 	var out []CompileCacheLeaf
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err := pathscope.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

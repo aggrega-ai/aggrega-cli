@@ -266,8 +266,11 @@ type releaseWalk struct {
 // link it met that leads out of the workspace root and was not read: those
 // leading to a directory, and those leading to a YAML file.
 //
-// The walk never enters a link: filepath.WalkDir reports one as an entry of its
-// own and does not descend into it. A link to a directory inside the root needs
+// The walk never enters a link beneath the root: pathscope.WalkDir reports one as
+// an entry of its own and does not descend into it. The root itself is walked
+// where it leads when it is a link, every path still spelled beneath the root as
+// named, because a folder opened through a link is the workspace it leads to. A
+// link to a directory inside the root needs
 // nothing more, because that directory is walked, or left out, where it actually
 // sits. A link to a directory outside the root leads somewhere the walk does not
 // go, so a Release inside it is never found. It is recorded where the walk meets
@@ -304,7 +307,7 @@ type releaseWalk struct {
 func walkReleases(workspaceRoot string, wsCfg workspaceconfig.Config) releaseWalk {
 	var out releaseWalk
 	scope := linkScope{root: workspaceRoot, cfg: wsCfg}
-	_ = filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
+	_ = pathscope.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

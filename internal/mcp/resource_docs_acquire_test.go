@@ -135,8 +135,8 @@ func TestDocsBundleAcquiredAtTheStartOfTheRunAndServedAfterwards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve workspace: %v", err)
 	}
-	if !docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion) {
-		t.Fatalf("the run did not populate the bundle cache under %s", ws)
+	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
+		t.Fatalf("the run did not populate the bundle cache under %s (%v)", ws, cerr)
 	}
 
 	rr, rerr := readResource(t, s, "langref://entities/component")
@@ -211,8 +211,8 @@ func TestDocsBundleAcquiredBeforeAMessageThatIsNotInitialize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve workspace: %v", err)
 	}
-	if !docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion) {
-		t.Error("the bundle cache is empty after a run that attempted the acquisition")
+	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
+		t.Errorf("the bundle cache is empty after a run that attempted the acquisition (%v)", cerr)
 	}
 }
 
@@ -266,8 +266,8 @@ func TestDocsBundleAcquiredBeforeAFirstMessageInThePerRequestRevision(t *testing
 	if err != nil {
 		t.Fatalf("resolve workspace: %v", err)
 	}
-	if !docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion) {
-		t.Error("the bundle cache is empty after a run that attempted the acquisition")
+	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
+		t.Errorf("the bundle cache is empty after a run that attempted the acquisition (%v)", cerr)
 	}
 }
 

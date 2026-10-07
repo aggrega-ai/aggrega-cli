@@ -96,8 +96,8 @@ func NewAcquiring(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, 
 }
 
 // inWorkspace records that s stores into the artifact cache directory cacheDir of
-// the workspace at workspaceRoot, so every blob it writes is held to the root that
-// cache directory picks (writescope.RootForCache): the workspace, or the cache
+// the workspace at workspaceRoot, so every blob it writes or reads is held to the
+// root that cache directory picks (writescope.RootForCache): the workspace, or the cache
 // directory itself where the configuration names one outside the workspace. Each
 // composition above is over a workspace's own cache, which is why each passes
 // through here.

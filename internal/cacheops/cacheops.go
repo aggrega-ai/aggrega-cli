@@ -48,8 +48,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // Reach states how far a cache class's contents are shared, and therefore how
@@ -202,6 +204,50 @@ func (l Locations) docsBundlesRoot() string {
 	return docscache.DocsBundlesRoot(l.WorkspaceRoot, l.CacheDir)
 }
 
+// workspaceClass is one of the workspace's cache classes before it is enumerated:
+// what every result names it by, and the enumeration that lists its elements.
+type workspaceClass struct {
+	Class
+	enumerate enumeration
+}
+
+// enumeration lists the elements of a workspace cache class rooted at root. hold
+// judges every file or directory it is about to open or stat beneath root, and
+// the enumeration returns its refusal rather than reading on.
+type enumeration func(ctx context.Context, root string, hold func(path string) error) ([]Element, error)
+
+// workspaceClasses returns the workspace's four cache classes in the fixed order
+// every enumeration lists them, or none when no workspace resolved.
+//
+// It is the one place their names, roots, reach and prunability are written, so
+// the removal hold a prune or a clear makes before it enumerates anything and the
+// enumeration itself cannot come to disagree about which roots there are.
+func (l Locations) workspaceClasses() []workspaceClass {
+	if l.WorkspaceRoot == "" {
+		return nil
+	}
+	return []workspaceClass{
+		{Class{Name: "workspace entity cache", Root: l.entitiesRoot(), Reach: ReachWorkspace, Prunable: true}, enumEntities},
+		{Class{Name: "workspace source-artifact cache", Root: l.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true}, enumSourceArtifacts},
+		{Class{Name: "workspace external-input store", Root: l.inputsRoot(), Reach: ReachWorkspace, Prunable: true}, enumInputs},
+		{Class{Name: "workspace docs-bundle cache", Root: l.docsBundlesRoot(), Reach: ReachWorkspace, Prunable: false}, enumDocsBundles},
+	}
+}
+
+// holdRead holds a read beneath the workspace's artifact cache — a class root, or
+// a file an enumeration opens or stats — to the root the cache's writes are held
+// to (writescope.RootForCache): the workspace, or the cache directory itself where
+// the configuration names one outside the workspace. A path leading through a link
+// out of that root is refused with the read hold's condition, naming the link, and
+// nothing is read through it. In a run that resolved no workspace there is nothing
+// to hold a read to.
+func holdRead(loc Locations, path string) error {
+	if loc.WorkspaceRoot == "" {
+		return nil
+	}
+	return readscope.CheckCacheRead(writescope.RootForCache(loc.WorkspaceRoot, loc.CacheDir), path)
+}
+
 // CompiledModuleClassName is the display name of the compiled-module cache
 // class. It is the single spelling the class assembly and the prune arm that
 // special-cases the class share, so the two never drift.
@@ -242,32 +288,28 @@ func stopped(ctx context.Context) error {
 // has been read. A stop returns the classes gathered so far alongside the error,
 // so a caller can tell how far the enumeration reached instead of being handed
 // an empty set that reads like an empty cache.
+//
+// Every read of a workspace class is held (holdRead): its root before it is
+// listed, and each file the enumeration opens or stats beneath it. A cache
+// directory, a class root or such a file that leads through a link out of the root
+// the cache's writes are held to halts the enumeration with the read hold's
+// condition, naming the link, with nothing read through it, and the classes
+// gathered so far returned beside it. The machine-wide classes are the machine's
+// own stores and are not held to any workspace.
 func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 	var classes []Class
-	if loc.WorkspaceRoot != "" {
-		entities, err := enumEntities(ctx, loc.entitiesRoot())
+	hold := func(path string) error { return holdRead(loc, path) }
+	for _, wc := range loc.workspaceClasses() {
+		if err := hold(wc.Root); err != nil {
+			return classes, err
+		}
+		elements, err := wc.enumerate(ctx, wc.Root, hold)
 		if err != nil {
 			return classes, err
 		}
-		classes = append(classes, Class{Name: "workspace entity cache", Root: loc.entitiesRoot(), Reach: ReachWorkspace, Prunable: true, Elements: entities})
-
-		sourceArtifacts, err := enumSourceArtifacts(ctx, loc.sourceArtifactsRoot())
-		if err != nil {
-			return classes, err
-		}
-		classes = append(classes, Class{Name: "workspace source-artifact cache", Root: loc.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: sourceArtifacts})
-
-		inputs, err := enumInputs(ctx, loc.inputsRoot())
-		if err != nil {
-			return classes, err
-		}
-		classes = append(classes, Class{Name: "workspace external-input store", Root: loc.inputsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: inputs})
-
-		docsBundles, err := enumDocsBundles(ctx, loc.docsBundlesRoot())
-		if err != nil {
-			return classes, err
-		}
-		classes = append(classes, Class{Name: "workspace docs-bundle cache", Root: loc.docsBundlesRoot(), Reach: ReachWorkspace, Prunable: false, Elements: docsBundles})
+		cl := wc.Class
+		cl.Elements = elements
+		classes = append(classes, cl)
 	}
 	if loc.CompileDir != "" {
 		modules, err := enumCompileModules(ctx, loc.CompileDir, loc.AttribIndexPath, loc.ProvIndexPath)
@@ -292,8 +334,13 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 // for an entity, the digest of what its publication carries, which is what the
 // entity row records, and for a plugin artifact the digest of its bytes. A slot
 // whose blob cannot be read, or yields no digest, carries an empty digest and is
-// retained by a prune rather than removed on a guess.
-func enumEntities(ctx context.Context, root string) ([]Element, error) {
+// retained by a prune rather than removed on a guess; a blob the hold refuses is
+// not read at all, and the refusal ends the enumeration.
+//
+// Only a slot's blob can be opened through a link: a URI or version directory that
+// is a link is not a directory to the listing and is passed over unlisted, and
+// sizing a slot follows no link beneath it.
+func enumEntities(ctx context.Context, root string, hold func(path string) error) ([]Element, error) {
 	var out []Element
 	uriDirs, err := os.ReadDir(root)
 	if err != nil {
@@ -328,7 +375,11 @@ func enumEntities(ctx context.Context, root string) ([]Element, error) {
 				Path:  slot,
 				Size:  dirSize(slot),
 			}
-			if blob, berr := os.ReadFile(filepath.Join(slot, "blob")); berr == nil {
+			blobPath := filepath.Join(slot, "blob")
+			if herr := hold(blobPath); herr != nil {
+				return out, herr
+			}
+			if blob, berr := os.ReadFile(blobPath); berr == nil {
 				if d, derr := catalog.PinDigest(blob); derr == nil {
 					el.DigestHex = NormalizeDigestHex(d)
 				}
@@ -349,10 +400,14 @@ func enumEntities(ctx context.Context, root string) ([]Element, error) {
 //
 // The stop is returned as the caller's own reason rather than as fs.SkipAll,
 // which would end the walk and hand back a short element list wearing a
-// completed enumeration's shape.
-func enumSourceArtifacts(ctx context.Context, root string) ([]Element, error) {
+// completed enumeration's shape. The refusal of a metadata.yaml the hold refuses is
+// returned the same way, before the file is looked at; the walk itself follows no
+// link beneath root. A root that is itself a link, which the hold judged before the
+// enumeration began, is walked where it leads (pathscope.WalkDir), as the entity
+// and documentation classes' listings read theirs, each slot spelled beneath root.
+func enumSourceArtifacts(ctx context.Context, root string, hold func(path string) error) ([]Element, error) {
 	var out []Element
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := pathscope.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if serr := stopped(ctx); serr != nil {
 			return serr
 		}
@@ -360,6 +415,9 @@ func enumSourceArtifacts(ctx context.Context, root string) ([]Element, error) {
 			return nil
 		}
 		metaPath := filepath.Join(p, "metadata.yaml")
+		if herr := hold(metaPath); herr != nil {
+			return herr
+		}
 		if _, statErr := os.Stat(metaPath); statErr != nil {
 			return nil
 		}
@@ -392,15 +450,21 @@ func enumSourceArtifacts(ctx context.Context, root string) ([]Element, error) {
 // external-input entry records.
 //
 // The stop is returned as the caller's own reason rather than as fs.SkipAll, for
-// the reason given on enumSourceArtifacts.
-func enumInputs(ctx context.Context, root string) ([]Element, error) {
+// the reason given on enumSourceArtifacts, and so is the refusal of a blob the
+// hold refuses, before the blob is sized. A root that is itself a link is walked
+// where it leads, as on enumSourceArtifacts; walked as the link alone, it would be
+// listed as one blob named ".".
+func enumInputs(ctx context.Context, root string, hold func(path string) error) ([]Element, error) {
 	var out []Element
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := pathscope.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if serr := stopped(ctx); serr != nil {
 			return serr
 		}
 		if err != nil || d.IsDir() {
 			return nil
+		}
+		if herr := hold(p); herr != nil {
+			return herr
 		}
 		rel, relErr := filepath.Rel(root, p)
 		if relErr != nil {
@@ -427,7 +491,12 @@ func enumInputs(ctx context.Context, root string) ([]Element, error) {
 // no lockfile references it; the class carries no element digest and is never
 // prune-eligible — only a clear reclaims it. Enumeration reports each slot's
 // decoded reference and version for a stable, deterministic listing.
-func enumDocsBundles(ctx context.Context, root string) ([]Element, error) {
+//
+// It opens no file: its root is held before it is listed, a reference or version
+// directory that is a link is not a directory to the listing and is passed over
+// unlisted, and sizing a slot follows no link beneath it — so hold has nothing
+// further to judge here.
+func enumDocsBundles(ctx context.Context, root string, _ func(path string) error) ([]Element, error) {
 	var out []Element
 	refDirs, err := os.ReadDir(root)
 	if err != nil {
@@ -514,11 +583,15 @@ func isCompileLeaf(name string) bool {
 // transients — are skipped per isCompileLeaf; they are not cache content. The
 // class remains non-prunable by element digest here: attributing leaves is a
 // reporting concern, not a prune-scope change.
+//
+// A cache directory that is itself a link — the machine's owner keeping the cache
+// elsewhere — is walked where it leads (pathscope.WalkDir), as the runtime compiles
+// into it there, each leaf keyed beneath root as spelled.
 func enumCompileModules(ctx context.Context, root, attribIndexPath, provIndexPath string) ([]Element, error) {
 	ax, _ := attribindex.Load(attribIndexPath)
 	identities := provenanceIdentities(provIndexPath)
 	var out []Element
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := pathscope.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if serr := stopped(ctx); serr != nil {
 			return serr
 		}
@@ -734,9 +807,14 @@ func sortElements(els []Element) {
 // dirSize returns the total byte size of every regular file beneath path, or the
 // file's own size when path is a file. A path that cannot be walked contributes
 // zero.
+//
+// A path that is itself a link to a directory is sized where it leads
+// (pathscope.WalkDir), which is where the inventory lists a class root that is a
+// link and where a clear empties it, so the bytes a clear reports are the bytes it
+// removed. A link beneath path is counted as the link it is, as a removal removes it.
 func dirSize(path string) int64 {
 	var total int64
-	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	_ = pathscope.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -855,10 +933,15 @@ func NormalizeDigestHex(d string) string {
 // workspaceRoot, skipping the artifact cache directory and version-control
 // metadata so the walk does not mistake a source-control lock file for a Release
 // lockfile.
+//
+// A workspace root that is itself a link is walked where it leads, each path
+// spelled beneath the root as named (pathscope.WalkDir): a workspace opened
+// through a link holds the lockfiles of the workspace it leads to, and a prune
+// finding none there would refuse a workspace that was pulled.
 func FindLockfiles(workspaceRoot, cacheDir string) []string {
 	cacheAbs := filepath.Join(workspaceRoot, cacheDir)
 	var paths []string
-	_ = filepath.WalkDir(workspaceRoot, func(p string, d fs.DirEntry, err error) error {
+	_ = pathscope.WalkDir(workspaceRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

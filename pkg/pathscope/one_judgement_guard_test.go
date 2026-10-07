@@ -50,25 +50,42 @@ var sanctionedLinkResolvers = map[string]string{
 // asking and decides for itself, or is renamed so nothing here exercises it, fails
 // rather than passing over an empty walk.
 var decidersOfInside = map[string]string{
-	"pkg/writescope:check":                        "a write or a delete the product composes",
-	"pkg/writescope:CheckWrite":                   "where a write through a link leading nowhere lands",
-	"pkg/writescope:RootFor":                      "which side of the workspace a named directory lies on",
-	"pkg/readscope:checkRead":                     "a read of workspace content, whichever remedy its refusal names",
-	"pkg/readscope:CheckRead":                     "a read beneath a directory read as a whole",
-	"pkg/readscope:CheckConfigurationRead":        "a workspace configuration file the configuration is merged from",
-	"pkg/readscope:CheckLockfileRead":             "the lockfile beside a Release, read for its pins",
-	"pkg/readscope:CheckBesideEntityRead":         "a file read beside an entity's document",
-	"internal/entitypin:RefuseSharedDirectory":    "the documents beside an entity, read to tell whether another entity shares its directory",
-	"pkg/pluginpath:Resolver.readColocated":       "the .wasm beside a catalog Plugin entity, read by the plugin cascade",
-	"pkg/lockfile:CheckRead":                      "the lockfile beside a Release, held to the root its write is held to",
-	"pkg/workspaceconfig:resolve":                 "every configuration file the workspace's configuration cascade merges",
-	"pkg/catalog:catalogWalk.walk":                "every entry of a catalog directory, and the directory itself",
-	"pkg/resolver:scanReleaseDir":                 "the documents beside a Release that its names resolve against",
-	"internal/sourceref:AnchorContent":            "every component of a content path an entity declares",
-	"internal/wasm:Plugin.resolveUnderSourceRoot": "every component of a selection a plugin asks to read",
-	"internal/serve:resolveLink":                  "a link the language server's walks meet, and a Release a request names",
-	"internal/serve:gitignoreWalker.matcherFor":   "the ignore file the language server's entity walk reads",
-	"pkg/workspaceconfig:Reaches":                 "whether a place is reached by a directory or a Release file somebody named",
+	"pkg/writescope:check":                     "a write or a delete the product composes",
+	"pkg/writescope:CheckWrite":                "where a write through a link leading nowhere lands",
+	"pkg/writescope:RootFor":                   "which side of the workspace a named directory lies on",
+	"pkg/readscope:checkRead":                  "a read of workspace content, whichever remedy its refusal names",
+	"pkg/readscope:CheckRead":                  "a read beneath a directory read as a whole",
+	"pkg/readscope:CheckConfigurationRead":     "a workspace configuration file the configuration is merged from",
+	"pkg/readscope:CheckLockfileRead":          "the lockfile beside a Release, read for its pins",
+	"pkg/readscope:CheckBesideEntityRead":      "a file read beside an entity's document",
+	"pkg/readscope:CheckCacheRead":             "a read of the workspace's artifact cache, held where its writes are",
+	"pkg/readscope:CheckOverlayRead":           "an overlay read beneath the overlay directory a catalog generation merges from",
+	"internal/entitypin:RefuseSharedDirectory": "the documents beside an entity, read to tell whether another entity shares its directory",
+	"pkg/pluginpath:Resolver.readColocated":    "the .wasm beside a catalog Plugin entity, read by the plugin cascade",
+	"internal/gencatalog:loadOverlaysByPlugin": "every link a catalog generation's overlay walk would read through, an overlay or a directory",
+
+	// Every read of the workspace's artifact cache reaches the one judgement through
+	// readscope.CheckCacheRead, against the root the cache's writes are held to. A
+	// reader of the cache that opens a file of it without asking stops being found
+	// here, and fails.
+	"pkg/oci:ReadCachedFile":                                 "every file a cache slot holds: a plugin's or an entity's bytes, its manifest, a library document",
+	"pkg/catalog:LazyLookup.unverifiedCachedSchemaLibraries": "the cached SchemaLibraries a failed resolution's remedy names",
+	"pkg/pluginpath:Resolver.verifyCachedBundle":             "the cached signature bundle a signed guest is checked against",
+	"pkg/sourcecache:LookupAndExtract":                       "a pinned source artifact's cached archive, metadata and manifest",
+	"pkg/externalinputs:Service.servePinned":                 "a pinned external input's stored blob",
+	"pkg/docscache:Cached":                                   "the presence of a cached documentation bundle",
+	"pkg/docscache:ReadPage":                                 "a cached documentation bundle and its manifest",
+	"internal/registryindex:LoadHost":                        "a registry host's local searchable index",
+	"internal/cacheops:holdRead":                             "every class root and file a cache status, prune or clear enumerates",
+	"pkg/lockfile:CheckRead":                                 "the lockfile beside a Release, held to the root its write is held to",
+	"pkg/workspaceconfig:resolve":                            "every configuration file the workspace's configuration cascade merges",
+	"pkg/catalog:catalogWalk.walk":                           "every entry of a catalog directory, and the directory itself",
+	"pkg/resolver:scanReleaseDir":                            "the documents beside a Release that its names resolve against",
+	"internal/sourceref:AnchorContent":                       "every component of a content path an entity declares",
+	"internal/wasm:Plugin.resolveUnderSourceRoot":            "every component of a selection a plugin asks to read",
+	"internal/serve:resolveLink":                             "a link the language server's walks meet, and a Release a request names",
+	"internal/serve:gitignoreWalker.matcherFor":              "the ignore file the language server's entity walk reads",
+	"pkg/workspaceconfig:Reaches":                            "whether a place is reached by a directory or a Release file somebody named",
 
 	// Every path a request or a tool call names, on every transport, reaches the one
 	// judgement through these, read or written alike: one request judgement in the
@@ -106,7 +123,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckCacheRead", "CheckOverlayRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},

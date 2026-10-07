@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -21,6 +23,17 @@ import (
 const retractionScreenHost = "hub.aggrega.ai"
 const retractionScreenRepo = "component/core/api-server"
 const retractionScreenReference = retractionScreenHost + "/" + retractionScreenRepo
+
+// screenOf builds the withdrawal screen for host over rw's local index, failing the
+// test where the index could not be read at all.
+func screenOf(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer) catalog.RetractionScreen {
+	t.Helper()
+	screen, err := registryindex.NewScreen(rw, host, out)
+	if err != nil {
+		t.Fatalf("build the withdrawal screen for %s: %v", host, err)
+	}
+	return screen
+}
 
 // buildScreenIndex builds a real local index for a two-version repository through
 // the production `registry update`, attaching a marker of the given severity to each
@@ -97,7 +110,7 @@ func TestRetractionScreenHonorsOnlyVerifiedWithdrawals(t *testing.T) {
 	t.Run("signed_retracted_marker_excludes_the_version", func(t *testing.T) {
 		rw := buildScreenIndex(t, map[string]deprecation.Severity{"2.0.0": deprecation.SeverityRetracted}, true)
 		var diag bytes.Buffer
-		screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+		screen := screenOf(t, rw, retractionScreenHost, &diag)
 		if screen == nil {
 			t.Fatal("a verified withdrawal must produce a screen")
 		}
@@ -116,7 +129,7 @@ func TestRetractionScreenHonorsOnlyVerifiedWithdrawals(t *testing.T) {
 	t.Run("unsigned_retracted_marker_screens_nothing", func(t *testing.T) {
 		rw := buildScreenIndex(t, map[string]deprecation.Severity{"2.0.0": deprecation.SeverityRetracted}, false)
 		var diag bytes.Buffer
-		screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+		screen := screenOf(t, rw, retractionScreenHost, &diag)
 		if screen == nil {
 			// The honest outcome: nothing verified was recorded, so no screen forms and
 			// the discovery step stays unscreened.
@@ -190,7 +203,7 @@ func TestRetractionScreenSoftSeverityDoesNotScreen(t *testing.T) {
 		"2.0.0": deprecation.SeverityWarning,
 	}, true)
 	var diag bytes.Buffer
-	screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+	screen := screenOf(t, rw, retractionScreenHost, &diag)
 	if screen == nil {
 		t.Fatal("a verified withdrawal on 1.0.0 must produce a screen")
 	}
@@ -212,7 +225,7 @@ func TestRetractionScreenNoticesCarryTheObservationMoment(t *testing.T) {
 
 	t.Run("selection_notice", func(t *testing.T) {
 		var diag bytes.Buffer
-		screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+		screen := screenOf(t, rw, retractionScreenHost, &diag)
 		_, excluded := screen.ScreenVersions(retractionScreenReference, []string{"1.0.0", "2.0.0"})
 		screen.ReportSelection(retractionScreenReference, "1.0.0", excluded)
 		notice := diag.String()
@@ -231,7 +244,7 @@ func TestRetractionScreenNoticesCarryTheObservationMoment(t *testing.T) {
 
 	t.Run("pinned_notice_is_loud", func(t *testing.T) {
 		var diag bytes.Buffer
-		screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+		screen := screenOf(t, rw, retractionScreenHost, &diag)
 		screen.ReportPinned(retractionScreenReference, "2.0.0")
 		notice := diag.String()
 		for _, want := range []string{"2.0.0 is retracted", "names it explicitly", "as of 2026-01-02T03:04:05Z"} {
@@ -243,7 +256,7 @@ func TestRetractionScreenNoticesCarryTheObservationMoment(t *testing.T) {
 
 	t.Run("pinned_notice_is_silent_for_an_unwithdrawn_version", func(t *testing.T) {
 		var diag bytes.Buffer
-		screen := registryindex.NewScreen(rw, retractionScreenHost, &diag)
+		screen := screenOf(t, rw, retractionScreenHost, &diag)
 		screen.ReportPinned(retractionScreenReference, "1.0.0")
 		if diag.String() != "" {
 			t.Errorf("an unwithdrawn pinned version must produce no notice; got:\n%s", diag.String())

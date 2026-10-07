@@ -7,9 +7,9 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -67,20 +67,15 @@ type catalogWalk struct {
 //     whose read then fails as a missing file does.
 func (w catalogWalk) walk(dir string, visit func(path string) error) error {
 	root := workspaceconfig.CatalogDirRoot(w.workspaceRoot, dir, w.named)
-	start := dir
 	if info, err := os.Lstat(dir); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		if err := readscope.CheckRead(root, dir); err != nil {
 			return w.leadsOut(err)
 		}
-		// A trailing separator makes the walk's first look at dir follow the link
-		// standing there, so its entries are read where it leads while every path
-		// handed on is still spelled beneath dir. A link leading nowhere is walked
-		// as it stands, which finds nothing beneath it, as it always did.
-		if target, err := os.Stat(dir); err == nil && target.IsDir() {
-			start = dir + string(filepath.Separator)
-		}
 	}
-	return filepath.WalkDir(start, func(path string, d fs.DirEntry, err error) error {
+	// A dir that is a link, judged above, is walked where it leads while every path
+	// handed on is still spelled beneath dir (pathscope.WalkDir). A link leading
+	// nowhere is walked as it stands, which finds nothing beneath it.
+	return pathscope.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return w.unreadable(err)
 		}

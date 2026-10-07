@@ -1038,7 +1038,9 @@ type Server struct {
 
 	// workspaceMarker names the marker tier that anchored this root via
 	// discovery. The zero value (no marker) when the root was supplied
-	// explicitly, since no marker was consulted in that path. Surfaced on the
+	// explicitly, since no marker was consulted in that path — unless the root
+	// names the directory the process was launched over, which reports what
+	// anchored the launch (session.workspaceOrHeldFor). Surfaced on the
 	// handshake via its String() wire token.
 	workspaceMarker workspaceconfig.Marker
 
@@ -1234,6 +1236,10 @@ type Server struct {
 // per-file stores fix their key at the boundary rather than per handler. Two
 // spellings of one root would otherwise install two entries, and a client would
 // then be answered from a cold cache for a workspace the daemon already had warm.
+//
+// A root reached through a link is the exception, and keeps an entry of its own:
+// it is the workspace the link leads to, but every answer is spelled from the root
+// the request names, and the entry's caches hold paths in that spelling.
 //
 // A relative or empty value is refused rather than resolved. A file parameter has
 // a workspace root to be relative to, so resolving one is lossless; a workspace
@@ -1434,8 +1440,29 @@ func (s *session) workspaceOrHeldFor(root string) (*Server, error) {
 		return s.heldWorkspace(held), nil
 	}
 	ws := s.newWorkspace(resolved)
+	// A root naming the directory the process was launched over — through a link,
+	// or spelled otherwise than the working directory was — is that workspace, so
+	// it reports what anchored the launch, as the launch's own spelling of it does.
+	// Its entry stays its own: every answer is spelled from the root it names.
+	if launch := s.workspaces.byRoot[filepath.Clean(s.launchRoot)]; launch != nil && sameDirectory(key, launch.workspaceRoot) {
+		ws.workspaceMarker = launch.workspaceMarker
+	}
 	s.workspaces.byRoot[key] = ws
 	return ws, nil
+}
+
+// sameDirectory reports whether a and b name one directory on disk, whatever links
+// either is spelled through. A path that cannot be read names none.
+func sameDirectory(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
 }
 
 // workspaceRefusal is the refusal a request naming the workspace at root draws

@@ -185,16 +185,23 @@ const ManifestFile = "manifest"
 // PulledAt is set to time.Now().UTC() at write time.
 //
 // workspaceRoot and cacheDir are the workspace the cache belongs to and its
-// artifact cache directory, as [Slot] was given them. The slot is held, before
-// anything is written, to the root that cache directory picks
-// (writescope.RootForCache): the workspace, or the cache directory itself where the
-// configuration names one outside the workspace. A cache directory — or a
-// directory on the way to the slot — that is a link leading out of that root is
-// refused with the halt the write-scope rule declares, rather than written
-// through.
+// artifact cache directory, as [Slot] was given them. The slot, and every file
+// about to be written in it, is held, before anything is written, to the root
+// that cache directory picks (writescope.RootForCache): the workspace, or the
+// cache directory itself where the configuration names one outside the workspace.
+// A cache directory — or a directory on the way to the slot, or a file of the slot
+// — that is a link leading out of that root is refused with the halt the
+// write-scope rule declares, rather than written through.
 func WriteBlobAndMetadata(workspaceRoot, cacheDir, slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
-	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), slotDir); err != nil {
-		return err
+	root := writescope.RootForCache(workspaceRoot, cacheDir)
+	written := []string{slotDir, filepath.Join(slotDir, "blob.tgz"), filepath.Join(slotDir, "metadata.yaml")}
+	if len(manifestBytes) > 0 {
+		written = append(written, filepath.Join(slotDir, ManifestFile))
+	}
+	for _, p := range written {
+		if err := writescope.CheckWrite(root, p); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {
 		return fmt.Errorf("cacheslot: mkdir %s: %w", slotDir, err)

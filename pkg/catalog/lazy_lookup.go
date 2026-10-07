@@ -22,12 +22,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -730,6 +733,12 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 // fetch-integrity condition. A complete slot that DOES hold the pinned bytes is
 // read as before, which is what lets it stand in for a catalog-directory entity
 // its author has removed.
+//
+// A slot the read hold refuses — the cache directory, or a file of the slot,
+// leading through a link out of the root the cache is held to — halts the gate
+// with that refusal, naming the link. Nothing was read through it, so the slot
+// holds nothing this gate could compare, and passing it over would leave the pin
+// to a later read that meets the same link.
 func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -742,6 +751,9 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 		pin := l.pins[uri]
 		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
 		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
+			return err
+		}
 		if err == nil || !(errors.Is(err, oci.ErrFetchIntegrity()) || errors.Is(err, oci.ErrCachedManifestIntegrity())) {
 			continue
 		}
@@ -953,9 +965,11 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, []byte, string, tier2Out
 		}
 		return bytes, manifest, slot, tier2Use
 	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()),
-		errors.Is(err, oci.ErrCacheLocationOutsideCache()):
+		refusesTheSlot(err):
 		// A pin whose version cannot address a slot is not fetched around either:
-		// the registry tier would be handed the same version.
+		// the registry tier would be handed the same version. Nor is a slot the read
+		// hold refused: nothing was read through the link, and the closure's own
+		// cache tier meets the same slot and halts naming it.
 		return nil, nil, "", tier2Skip
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
 		return nil, nil, "", tier2Fetch
@@ -2745,14 +2759,30 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 // The cache is read only once a resolution has already failed, so a build that
 // succeeds never pays for the enumeration. Names come back sorted for a stable
 // diagnostic.
+//
+// The subtree and each library file are held, before they are read, to the root the
+// cache's writes are held to (readscope.CheckCacheRead over
+// writescope.RootForCache). One that leads through a link out of that root is
+// passed over unread rather than halting: the names only enrich the remedy of a
+// resolution that has already failed, which halts on its own account. A subtree
+// that is itself a link the hold admits is walked where it leads
+// (pathscope.WalkDir), where the cache's own reads of it find each library.
 func (l *LazyLookup) unverifiedCachedSchemaLibraries() []string {
 	if l.cacheDir == "" {
 		return nil
 	}
+	heldTo := writescope.RootForCache(l.workspaceRoot, l.cacheDir)
+	entities := oci.EntitiesRoot(l.workspaceRoot, l.cacheDir)
+	if readscope.CheckCacheRead(heldTo, entities) != nil {
+		return nil
+	}
 	var names []string
 	seen := map[string]bool{}
-	_ = filepath.WalkDir(oci.EntitiesRoot(l.workspaceRoot, l.cacheDir), func(path string, d fs.DirEntry, err error) error {
+	_ = pathscope.WalkDir(entities, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || d.Name() != "library.yaml" {
+			return nil
+		}
+		if readscope.CheckCacheRead(heldTo, path) != nil {
 			return nil
 		}
 		data, rerr := os.ReadFile(path)

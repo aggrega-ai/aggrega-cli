@@ -195,7 +195,7 @@ func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers ma
 func (f retractionFixture) screenedPuller(t *testing.T, out *bytes.Buffer) catalog.OCIPuller {
 	t.Helper()
 	wsCfg := f.rw.Config()
-	screen := registryindex.NewScreen(f.rw, wsCfg.DefaultRegistry, out)
+	screen := screenOf(t, f.rw, wsCfg.DefaultRegistry, out)
 	puller := catalog.NewOCIPullerWithRetractionScreen(wsCfg, screen)
 	if puller == nil {
 		t.Fatal("puller is nil; the fixture workspace must not be offline")

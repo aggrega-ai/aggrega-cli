@@ -40,7 +40,7 @@
 // writer's.
 //
 // The artifact cache has an answer of its own, [RootForCache], asked by every
-// writer and clearer of the cache. The cache directory the configuration spells
+// writer, clearer and reader of the cache. The cache directory the configuration spells
 // inside the workspace — the default among them — is a path the product works out
 // inside the workspace, held to the workspace root; one the configuration spells
 // climbing out of the workspace is a directory it named outside, and a root of its
@@ -126,10 +126,11 @@ func RootFor(workspaceRoot, anchor string) string {
 	return anchor
 }
 
-// RootForCache returns the root a write or a removal beneath the workspace's
-// artifact cache directory is held to, given the workspace at workspaceRoot and the
-// cache directory cacheDir as the configuration spells it: relative to the
-// workspace root, which is how every writer and clearer of the cache joins it.
+// RootForCache returns the root a write, a removal or a read beneath the
+// workspace's artifact cache directory is held to, given the workspace at
+// workspaceRoot and the cache directory cacheDir as the configuration spells it:
+// relative to the workspace root, which is how every writer, clearer and reader of
+// the cache joins it.
 //
 // A cache directory whose spelling stays beneath the workspace root — the default,
 // or a configured one that does not climb out — is a directory the product works
@@ -145,9 +146,10 @@ func RootFor(workspaceRoot, anchor string) string {
 // naming, so a link standing at it is a link inside the workspace, refused, rather
 // than a root of its own made so by where it leads.
 //
-// It is the one answer every writer and clearer of the cache asks, so no two of
-// them can come to hold the cache to different roots. With no workspace root
-// nothing is held, and the answer is empty.
+// It is the one answer every writer, clearer and reader of the cache asks, so no
+// two of them can come to hold the cache to different roots — a read is held where
+// the write it reads back was. With no workspace root nothing is held, and the
+// answer is empty.
 func RootForCache(workspaceRoot, cacheDir string) string {
 	if workspaceRoot == "" {
 		return ""
