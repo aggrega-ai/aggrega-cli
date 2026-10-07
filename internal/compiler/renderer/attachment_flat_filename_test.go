@@ -282,8 +282,9 @@ func TestContributorDirSegmentSeparatesEveryDISTINCTCoordinateList(t *testing.T)
 //
 // The coordinates are the real ones from those pages, and each is chosen because
 // it exercises a character the filename alphabet refuses: an underscore in an
-// authored attachment key, and the dots and slash of an attachment key an
-// annotation mints rather than an author typing it.
+// authored attachment key, the dot that joins a connection's alias to its slot in
+// the name of the attachment that connection carries, and the dots and slash of
+// an attachment key an annotation mints rather than an author typing it.
 func TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates(t *testing.T) {
 	t.Parallel()
 
@@ -296,9 +297,9 @@ func TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates(t *testing.T) {
 		{"examples/ai-agent-and-model-router", []string{"router", "provider_key"}, "router--provider-zukey--"},
 		{"examples/ai-agent-and-model-router", []string{"router", "published"}, "router--published--"},
 		{"examples/ai-agent-and-model-router", []string{"router", "metrics"}, "router--metrics--"},
-		{"examples/ai-agent-and-model-router", []string{"agent", "model_api_key"}, "agent--model-zuapi-zukey--"},
-		{"examples/model-api-key-sharing", []string{"researcher", "model_api_key"}, "researcher--model-zuapi-zukey--"},
-		{"examples/model-api-key-sharing", []string{"writer", "model_api_key"}, "writer--model-zuapi-zukey--"},
+		{"examples/ai-agent-and-model-router", []string{"agent", "router_model.credential"}, "agent--router-zumodel-zdcredential--"},
+		{"examples/model-api-key-sharing", []string{"researcher", "gateway.credential"}, "researcher--gateway-zdcredential--"},
+		{"examples/model-api-key-sharing", []string{"writer", "gateway.credential"}, "writer--gateway-zdcredential--"},
 		{"examples/credential-secretkeyref", []string{"db", "password"}, "db--password--"},
 		{"examples/mariadb-bitnami-credential-set", []string{"db", "root_password"}, "db--root-zupassword--"},
 		{"examples/credential-shape-per-target", []string{"db", "app_user_password"}, "db--app-zuuser-zupassword--"},
