@@ -33,10 +33,11 @@ name: Publish and sign core plugins
 #                        its guest, and builds the tooling image into an
 #                        archive. Everything the publish needs leaves it as one
 #                        workflow artifact, release-inputs.
-#   sign-and-publish     Downloads release-inputs and publishes it: it pushes
-#                        the tooling image from the archive, publishes each
-#                        plugin with its guest, signs both, and creates the
-#                        GitHub release with the downloadable binaries and the
+#   sign-and-publish     Once every smoke job below has passed, downloads
+#                        release-inputs and publishes it: it pushes the
+#                        tooling image from the archive, publishes each plugin
+#                        with its guest, signs both, and creates the GitHub
+#                        release with the downloadable binaries and the
 #                        extension package. It alone may mint the OIDC token and
 #                        alone holds the token that writes the release; the
 #                        registry password it holds is otherwise held only by
@@ -64,18 +65,21 @@ name: Publish and sign core plugins
 # that prove each platform split behaves on that platform, all through one
 # script. They need nothing the build needs — no sibling repository, no
 # toolchain, no secret — because the build job stages everything each runs as
-# one workflow artifact per target. They publish nothing, so a dry run is how
-# Windows and macOS are proved before a real release; on a release tag they run
-# beside sign-and-publish, which does not wait for them, so a failure there marks
-# the run failed but does not stop that release.
+# one workflow artifact per target. They publish nothing, and sign-and-publish
+# waits for all of them: it starts only when the Windows run and both macOS
+# runs have passed, on a release tag and on a dispatch, a dry run's included.
+# So a binary that fails on its own platform stops the release before anything
+# is pushed, and a smoke job that never starts holds sign-and-publish back with
+# it. A dry run proves the binaries the same way before a tag is pushed.
 #
-# Nothing with an external side effect runs until every build and validation has
-# passed, so a failure in the ABI check or in catalog generation can never strand
-# an already-pushed tooling image or a half-published plugin set. The Wasm guests
-# are reproducible build outputs, not tracked files, so they are absent from a
-# fresh checkout: the build MUST run before catalog generation (which reads each
-# guest's self-reported descriptor) and before the plugins are staged for
-# publishing (which needs each guest's compiled module).
+# Nothing with an external side effect runs until every build, validation and
+# smoke run has passed, so a failure in the ABI check, in catalog generation or
+# on a smoke runner can never strand an already-pushed tooling image or a
+# half-published plugin set. The Wasm guests are reproducible build outputs, not
+# tracked files, so they are absent from a fresh checkout: the build MUST run
+# before catalog generation (which reads each guest's self-reported descriptor)
+# and before the plugins are staged for publishing (which needs each guest's
+# compiled module).
 #
 # This workflow NEVER creates or pushes a git tag. Deciding the version and
 # cutting the tag is a human action; this workflow publishes the OCI artifacts and
@@ -83,10 +87,10 @@ name: Publish and sign core plugins
 # for the already-pushed tag.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
-# builds everything a real run builds — the tooling image included — and then
+# builds everything a real run builds — the tooling image included — runs the
+# Windows and macOS smoke jobs in full, and then, once they have passed,
 # sign-and-publish loads the image archive and prints what it would push,
-# publish, sign and release, doing none of it; the Windows and macOS smoke jobs
-# run in full.
+# publish, sign and release, doing none of it.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -892,7 +896,16 @@ jobs:
           rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$RELEASE_INPUTS"
 
   sign-and-publish:
-    needs: build
+    # Waits for the build and for every smoke run — windows-smoke and both
+    # targets of macos-smoke — and starts only when each one succeeded: a job
+    # is skipped when a job it needs failed, was cancelled or was skipped, and
+    # neither this job nor a smoke job carries an if: of its own, so no
+    # trigger skips a smoke run and lets this job through. Nothing is pushed,
+    # signed, published or released unless the binaries passed on their own
+    # platforms, and a dry run prints its plan only once they have. The build
+    # is named as well because a job reads the outputs only of the jobs it
+    # names; from the smoke jobs this job reads nothing but their result.
+    needs: [build, windows-smoke, macos-smoke]
     # The same runner label as the build.
     runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
     permissions:
@@ -1243,7 +1256,8 @@ jobs:
     # checks out this repository only so that each test executable runs from its
     # package directory, at the commit the artifact records. It holds no secret
     # and reads only this repository, and its one script stops at the first
-    # failure, saying what failed.
+    # failure, saying what failed. sign-and-publish waits for it, so a failure
+    # here publishes nothing.
     needs: build
     runs-on: windows-latest
     timeout-minutes: 60
@@ -1297,12 +1311,14 @@ jobs:
     # artifact the build job staged for the target; it checks out this
     # repository only so that each test executable runs from its package
     # directory, at the commit the artifact records. It holds no secret and
-    # reads only this repository.
+    # reads only this repository. sign-and-publish waits for both targets, so a
+    # failure on either publishes nothing.
     #
     # macos-15 names GitHub's hosted Apple silicon image and macos-15-intel its
     # hosted Intel image. A label GitHub does not offer leaves its job queued,
-    # waiting for a runner that never comes, so a job that never starts is the
-    # sign that its label needs changing here.
+    # waiting for a runner that never comes, and sign-and-publish waiting behind
+    # it, so a job that never starts is the sign that its label needs changing
+    # here.
     needs: build
     name: macos-smoke (${{ matrix.target }})
     strategy:
