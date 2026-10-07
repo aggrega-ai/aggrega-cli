@@ -251,7 +251,7 @@ func (s *Server) entityDefinition(ctx context.Context, name string, terms releas
 	if !ok {
 		return entityDefinitionResult{}, s.unresolvedEntityEnvelope(ctx, view, name, terms)
 	}
-	definition, err := match.DefinitionDocument()
+	definition, err := compilerops.DefinitionDocument(match.Definition)
 	if err != nil {
 		return entityDefinitionResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,

@@ -31,7 +31,12 @@ const (
 
 // callerFactsHalt drives the rule through its production invocation site over one
 // node carrying one attachment bound to fr, and returns the halt.
-func callerFactsHalt(t *testing.T, fr *types.FeatureRecipe) error {
+//
+// factory resolves the capability fr declares to the provider reading its
+// artifacts entries, which is where the delimiter pair an entry is parsed with
+// comes from. A nil factory resolves nothing, so every entry is read with the
+// usual pair.
+func callerFactsHalt(t *testing.T, fr *types.FeatureRecipe, factory EngineFactory) error {
 	t.Helper()
 
 	graph := &types.IRGraph{}
@@ -57,7 +62,7 @@ func callerFactsHalt(t *testing.T, fr *types.FeatureRecipe) error {
 
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
-		recipes, lookup, nil, newStepDescriptorMemo(), nil, nil,
+		recipes, lookup, nil, newStepDescriptorMemo(), nil, factory,
 		NodeRenderedNames{}, nil, nil, nil,
 	)
 	if view == nil {
@@ -103,12 +108,20 @@ func callerFactsFR(block, text string, declares bool) *types.FeatureRecipe {
 // is not beneath the connections, a step reading the host's own facts in full under
 // either declaration, and the same template on a FeatureRecipe that renders once
 // for a boundary, whose own surface refuses the reference already.
+//
+// Two rows bind the FeatureRecipe's capability to a provider declaring its own
+// delimiter pair for artifacts entries, so the pair an entry is read with is
+// observable: a reading spelled in that pair halts, and the usual pair's spelling
+// of the same reading is plain text there and is admitted. Read with the wrong
+// pair, both rows flip.
 func TestTheCallerRenderFactsRuleIsReachedAndHalts(t *testing.T) {
 	t.Parallel()
 
 	const inRange = `{{ range .context.used_by }}{{ .render_facts }}{{ end }}`
 	const byIndex = `{{ (index .context.used_by 0).render_facts.pod_labels }}`
 	const hostOwn = `{{ range .context.render_facts.pod_labels }}{{ .name }}{{ end }}`
+	const inRangeAlternatePair = `[[ range .context.used_by ]][[ .render_facts ]][[ end ]]`
+	alternatePair := [2]string{"[[", "]]"}
 
 	undeclared := ErrCallerRenderFactsNotDeclared
 	inAStep := ErrPipelineStepReadsCallerRenderFacts
@@ -119,10 +132,16 @@ func TestTheCallerRenderFactsRuleIsReachedAndHalts(t *testing.T) {
 		text     string
 		declares bool
 		scope    string
+		pair     [2]string    // the artifacts pair the capability's provider declares; zero: no provider
 		want     func() error // nil: admitted
 		wantRef  string
 		field    string
 	}{
+		{name: "an artifacts entry reading each caller's facts in the pair its provider declares",
+			block: "artifacts", text: inRangeAlternatePair, pair: alternatePair,
+			want: undeclared, wantRef: ".render_facts", field: "artifacts[probe.yaml]"},
+		{name: "the usual pair's spelling of that reading is text under a provider declaring another pair",
+			block: "artifacts", text: inRange, pair: alternatePair},
 		{name: "an artifacts entry reading each caller's facts", block: "artifacts", text: inRange,
 			want: undeclared, wantRef: ".render_facts", field: "artifacts[probe.yaml]"},
 		{name: "a values mapping reading one caller's facts", block: "valuesMapping", text: byIndex,
@@ -160,7 +179,16 @@ func TestTheCallerRenderFactsRuleIsReachedAndHalts(t *testing.T) {
 			t.Parallel()
 			fr := callerFactsFR(tc.block, tc.text, tc.declares)
 			fr.Spec.ExecutionScope = tc.scope
-			halt := callerFactsHalt(t, fr)
+			var factory EngineFactory
+			if tc.pair != ([2]string{}) {
+				factory = func(capability string) (Provider, error) {
+					if capability != fr.Spec.Capability {
+						return nil, errors.New("no provider for that capability")
+					}
+					return &stubArtifactsEmitter{left: tc.pair[0], right: tc.pair[1]}, nil
+				}
+			}
+			halt := callerFactsHalt(t, fr, factory)
 
 			if tc.want == nil {
 				if halt != nil {

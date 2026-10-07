@@ -63,10 +63,15 @@ var moduleRoutingPlacement = map[string]string{
 // every-contributed-component-emitted-something pass must not demand a resource
 // of it — while the placement rules apply to it identically: a resource emitted
 // inside a boundary belongs to that boundary whoever emitted it.
+//
+// An attachment a connection carries is an attachment of the consuming
+// component, named by the connection's alias and the slot it fills, so the store
+// gateway's credential on its `s3` connection to the object store composes from
+// `s3.credential` on the gateway.
 var moduleRoutingAttachmentPlacement = map[string]string{
 	"cfr--metrics-zdquery--scrape":             "observability",
 	"cfr--metrics-zdobjstore--root-zupassword": "observability",
-	"cfr--metrics-zdstore--s3-zusecret-zukey":  "observability",
+	"cfr--metrics-zdstore--s3-zdcredential":    "observability",
 }
 
 // The well-known labels and annotations the assertions read. Each is emitted on
@@ -222,15 +227,16 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	}
 
 	// The metrics module attaches its credential Feature to the object store's
-	// and the store gateway's credential slots, and each attachment emits one
-	// Secret carrying the attachment's own composed identity. Each is asserted
-	// positively, exactly as the ServiceMonitor is, against the boundary its host
-	// component is routed into: a Secret outside that namespace is one the
-	// workload beside it cannot read, and neither earlier check would notice a
-	// Secret that carried no namespace at all.
+	// credential slot and to the credential the store gateway's connection to the
+	// object store carries, and each attachment emits one Secret carrying the
+	// attachment's own composed identity. Each is asserted positively, exactly as
+	// the ServiceMonitor is, against the boundary its host component is routed
+	// into: a Secret outside that namespace is one the workload beside it cannot
+	// read, and neither earlier check would notice a Secret that carried no
+	// namespace at all.
 	for _, credential := range []struct{ id, host string }{
 		{id: "cfr--metrics-zdobjstore--root-zupassword", host: "metrics-zdobjstore"},
-		{id: "cfr--metrics-zdstore--s3-zusecret-zukey", host: "metrics-zdstore"},
+		{id: "cfr--metrics-zdstore--s3-zdcredential", host: "metrics-zdstore"},
 	} {
 		secret, secretPath := resourceOfKind(t, run1, "Secret", credential.id)
 		secretRes := parseRenderedResource(t, secretPath, secret)

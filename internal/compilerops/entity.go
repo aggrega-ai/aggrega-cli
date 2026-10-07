@@ -102,10 +102,10 @@ type Entity struct {
 	Bytes  []byte
 }
 
-// DefinitionDocument renders the resolved definition as the YAML document every
-// surface showing a definition by name shows: each key under the name its
-// author writes, an authored schema as the YAML it was written as, and a field
-// the entity does not carry left out.
+// DefinitionDocument renders a resolved definition — an [Entity]'s Definition —
+// as the YAML document every surface showing a definition by name shows: each
+// key under the name its author writes, an authored schema as the YAML it was
+// written as, and a field the entity does not carry left out.
 //
 // It is one rendering rather than one per surface because the typed entity holds
 // some of its content as parsed document nodes, and re-encoding one of those
@@ -113,8 +113,11 @@ type Entity struct {
 // tags — in place of what the author wrote. A surface carrying the definition in
 // another encoding converts this document rather than the typed entity, so it
 // shows what this shows.
-func (e Entity) DefinitionDocument() ([]byte, error) {
-	return yaml.Marshal(e.Definition)
+//
+// It takes the definition rather than the whole entity, so a surface carrying it
+// names the field it carries where it hands it here.
+func DefinitionDocument(definition any) ([]byte, error) {
+	return yaml.Marshal(definition)
 }
 
 // entityKind is one rung of the resolution: the kind it matches, and the

@@ -1428,7 +1428,15 @@ var AttachmentTemplateReadsCallerRenderFactsDeclared = constraint.Check[
 		if v.AttachmentReadsCallerRenderFacts(s.NodeID(), s.AttachmentName()) {
 			return nil
 		}
-		ref, reads := attachmentTemplateCallerRenderFactsReference(v, s)
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		ref, reads := attachmentTemplateCallerRenderFactsReference(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
 		if !reads {
 			return nil
 		}
@@ -1494,7 +1502,15 @@ var AttachmentPipelineStepReadsNoCallerRenderFacts = constraint.Check[
 		if !RecipeTemplateFieldIsPipelineStep(s.TemplateField()) {
 			return nil
 		}
-		ref, reads := attachmentTemplateCallerRenderFactsReference(v, s)
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		ref, reads := attachmentTemplateCallerRenderFactsReference(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
 		if !reads {
 			return nil
 		}
@@ -1506,28 +1522,19 @@ var AttachmentPipelineStepReadsNoCallerRenderFacts = constraint.Check[
 	},
 }
 
-// attachmentTemplateCallerRenderFactsReference reads one attachment template field
-// as written and reports whether it reads its callers' render facts, returning the
+// attachmentTemplateCallerRenderFactsReference reads one attachment template
+// field's text as written, parsed with the delimiter pair that field is evaluated
+// with, and reports whether it reads its callers' render facts, returning the
 // first reference that does.
 //
 // It is the one reading both rules over that reference make, so the two cannot
 // disagree about what a reading is and differ only in which fields they own and
-// which condition they raise. The field's text is parsed with the delimiter pair
-// that field is evaluated with; a template that does not parse is left to the
-// evaluation that reports it.
-func attachmentTemplateCallerRenderFactsReference(
-	v constraint.DescribedView,
-	s constraint.NodeAttachmentTemplateFieldSubject,
-) (string, bool) {
-	left, right := "{{", "}}"
-	if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
-		delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
-		left, right = delims.Left, delims.Right
-	}
-	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
-		v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
-		left, right,
-	)
+// which condition they raise. It takes the text and the pair as values rather than
+// the presentation they come from, so every fact either rule reads is read in that
+// rule's own body. A template that does not parse is left to the evaluation that
+// reports it.
+func attachmentTemplateCallerRenderFactsReference(text, left, right string) (string, bool) {
+	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(text, left, right)
 	if err != nil {
 		return "", false
 	}

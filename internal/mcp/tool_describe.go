@@ -366,7 +366,7 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 // does not declare. Converting the one rendering is what keeps this answer, the
 // daemon's definition answer and `aggrega inspect` showing the same definition.
 func definitionJSON(match compilerops.Entity) (json.RawMessage, error) {
-	document, err := match.DefinitionDocument()
+	document, err := compilerops.DefinitionDocument(match.Definition)
 	if err != nil {
 		return nil, err
 	}

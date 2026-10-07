@@ -220,7 +220,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 	for _, r := range reported {
 		value, err := json.Marshal(r.value)
 		if err != nil {
-			return nil, fmt.Errorf("helm: writing render fact %q: %w", r.name, err)
+			return nil, fmt.Errorf("writing render fact %q: %w", r.name, err)
 		}
 		facts = append(facts, rendercore.RenderFact{Name: r.name, Value: value})
 	}
