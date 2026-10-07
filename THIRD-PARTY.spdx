@@ -317,7 +317,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2023-present Dylibso, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/dylibso/observe-sdk/go@v0.0.0-20240819160327-2d926c5d788a
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/emicklei/go-restful/v3
@@ -384,7 +384,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2023, Extism</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/extism/go-sdk@v1.7.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/fxamacker/cbor/v2
@@ -417,7 +417,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012 Péter Surányi. Portions Copyright (c) 2009 The Go</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/gcfg@v1.5.1-0.20230307220236-3a3c6141e376
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-git/go-billy/v5
@@ -428,7 +428,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2017 Sourced Technologies S.L.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/go-billy/v5@v5.9.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-git/go-git/v5
@@ -439,7 +439,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2018 Sourced Technologies, S.L.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/go-git/v5@v5.19.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-jose/go-jose/v4
@@ -921,7 +921,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ianlancetaylor/demangle@v0.0.0-20240805132620-81f5be970eca
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/in-toto/attestation
@@ -954,7 +954,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Juan Batiz-Benet</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/jbenet/go-context@v0.0.0-20150711004518-d14ea06fba99
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/jedisct1/go-minisign
@@ -1225,7 +1225,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.2
-PackageComment: <text>Compiled into: wasm-provider-guests</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sassoftware/relic
@@ -1414,18 +1414,18 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2020-2022 wazero authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/tetratelabs/wabin@v0.0.0-20230304001439-f6f874872834
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/tetratelabs/wazero
-SPDXID: SPDXRef-Package-go-github.com-tetratelabs-wazero-v1.9.0
-PackageVersion: v1.9.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/tetratelabs/wazero/@v/v1.9.0.zip
+SPDXID: SPDXRef-Package-go-github.com-tetratelabs-wazero-v1.12.0
+PackageVersion: v1.12.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/tetratelabs/wazero/@v/v1.12.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2020-2023 wazero authors</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/tetratelabs/wazero@v1.9.0
-PackageComment: <text>Compiled into: cli-host</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/tetratelabs/wazero@v1.12.0
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/theupdateframework/go-tuf/v2
@@ -1581,7 +1581,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/proto/otlp@v1.7.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: go.yaml.in/yaml/v2
@@ -1783,7 +1783,7 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2016 Péter Surányi.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/warnings.v0@v0.1.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/yaml.v3
@@ -1797,7 +1797,7 @@ Copyright (c) 2006-2011 Kirill Simonov
 Copyright (c) 2011-2019 Canonical Ltd
 Copyright 2011-2016 Canonical Ltd.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/yaml.v3@v3.0.1
-PackageComment: <text>Compiled into: wasm-provider-guests</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: helm.sh/helm/v3
@@ -2613,7 +2613,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-spf13-cas
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-spf13-cobra-v1.10.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-spf13-pflag-v1.0.10
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-tetratelabs-wabin-v0.0.0-20230304001439-f6f874872834
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-tetratelabs-wazero-v1.9.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-tetratelabs-wazero-v1.12.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-theupdateframework-go-tuf-v2-v2.4.2-0.20260407074541-7e8f69f906ef
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-theupdateframework-go-tuf-v0.7.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-transparency-dev-formats-v0.1.1

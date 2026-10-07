@@ -569,80 +569,125 @@ func TestFirstLoadGateOrdersBuilds(t *testing.T) {
 // dropped from memory would be read from disk again by a later build — reopening
 // the half-built window after the gate had stopped guarding it.
 //
-// It ends every use of a compiled module this package makes — an instance of a
-// shared compiled form closed, and a compiled form a load owns closed with its
-// instance — removes every entry from disk, and builds the guest's compiled form
-// again against the same cache, outside this package's table. Nothing may be
-// written back: the guest and the kernel both came from the engine's memory. A
-// control then drops the guest explicitly and shows it is compiled and written
-// back, so the check can see a removal when one happens.
+// The engine counts the compiles of each module it holds and drops a module once
+// every one of them has been closed. Each build of a compiled form compiles the
+// guest and the kernel into the cache's engine, and closing the form closes only
+// its runtime, which releases none of those compiles while a cache shares the
+// engine — so nothing this package compiles is dropped while the cache is open.
+//
+// Because the engine counts, a close that released a compile would go unseen
+// while any other build still held the module. So each subtest ends one use of a
+// compiled module this package makes — an instance of a shared compiled form
+// closed, or a compiled form a load owns closed with its instance — in a cache of
+// its own, where that use's build is the only compile of the guest and of the
+// kernel. It then removes every entry from disk and builds the guest's compiled
+// form again against the same cache, outside this package's table. Nothing may be
+// written back: the guest and the kernel both came from the engine's memory.
+//
+// A control then shows the check can see a write-back when one happens. It cannot
+// drop the guest itself, whose compiles stay held by the compiled forms built
+// before it. Instead a copy of the guest made distinct by a custom section is
+// compiled into the same engine once, its entry is removed from disk, and that one
+// compile is closed, which drops the copy; compiling it again must write back
+// exactly its own entry.
 func TestSharedEngineKeepsEveryModuleItCompiled(t *testing.T) {
-	ctx := context.Background()
-	guest := isolatedGuest(t, "policy-go.wasm", t.Name())
-	dir := compileDirIn(t)
-	cache := diskCache(t, dir)
-	l := &Loader{Cache: cache, compileDir: dir}
+	cases := []struct {
+		name string
+		// end loads guest through l and ends that use of it as this package does.
+		end func(t *testing.T, l *Loader, guest []byte)
+	}{
+		{
+			name: "an instance of a shared compiled form closed",
+			end: func(t *testing.T, l *Loader, guest []byte) {
+				ctx := context.Background()
+				shared, err := l.Load(ctx, PluginSpec{Name: "shared", Bytes: guest})
+				if err != nil {
+					t.Fatalf("load the shared compiled form: %v", err)
+				}
+				if shared.compiled != nil {
+					t.Fatal("a load with no plugin configuration through a Loader with a cache must share its compiled form, or this subtest closes no shared instance")
+				}
+				if _, err := shared.Call(ctx, describeExportName, nil); err != nil {
+					t.Fatalf("describe() on the shared compiled form: %v", err)
+				}
+				if err := shared.Close(ctx); err != nil {
+					t.Fatalf("close the shared instance: %v", err)
+				}
+			},
+		},
+		{
+			name: "a compiled form a load owns closed with its instance",
+			end: func(t *testing.T, l *Loader, guest []byte) {
+				ctx := context.Background()
+				owned, err := l.Load(ctx, PluginSpec{Name: "owned", Bytes: guest, ConfigKV: map[string]string{"owned": "true"}})
+				if err != nil {
+					t.Fatalf("load an owned compiled form: %v", err)
+				}
+				if owned.compiled == nil {
+					t.Fatal("a load carrying a plugin configuration must own its compiled form, or this subtest closes no owned form")
+				}
+				if _, err := owned.Call(ctx, describeExportName, nil); err != nil {
+					t.Fatalf("describe() on the owned compiled form: %v", err)
+				}
+				if err := owned.Close(ctx); err != nil {
+					t.Fatalf("close the owned instance and its compiled form: %v", err)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			guest := isolatedGuest(t, "policy-go.wasm", t.Name())
+			dir := compileDirIn(t)
+			cache := diskCache(t, dir)
 
-	shared, err := l.Load(ctx, PluginSpec{Name: "shared", Bytes: guest})
-	if err != nil {
-		t.Fatalf("load the shared compiled form: %v", err)
-	}
-	if _, err := shared.Call(ctx, describeExportName, nil); err != nil {
-		t.Fatalf("describe() on the shared compiled form: %v", err)
-	}
-	if err := shared.Close(ctx); err != nil {
-		t.Fatalf("close the shared instance: %v", err)
-	}
+			tc.end(t, &Loader{Cache: cache, compileDir: dir}, guest)
 
-	owned, err := l.Load(ctx, PluginSpec{Name: "owned", Bytes: guest, ConfigKV: map[string]string{"owned": "true"}})
-	if err != nil {
-		t.Fatalf("load an owned compiled form: %v", err)
-	}
-	if owned.compiled == nil {
-		t.Fatal("a load carrying a plugin configuration must own its compiled form, or this test closes no owned form")
-	}
-	if _, err := owned.Call(ctx, describeExportName, nil); err != nil {
-		t.Fatalf("describe() on the owned compiled form: %v", err)
-	}
-	if err := owned.Close(ctx); err != nil {
-		t.Fatalf("close the owned instance and its compiled form: %v", err)
-	}
+			if len(leafFiles(t, dir)) == 0 {
+				t.Fatal("the load wrote no compiled module to disk, so removing the entries would prove nothing")
+			}
+			removeLeaves(t, dir)
 
-	if len(leafFiles(t, dir)) == 0 {
-		t.Fatal("the loads wrote no compiled module to disk, so removing the entries would prove nothing")
-	}
-	removeLeaves(t, dir)
+			config := wazero.NewRuntimeConfig().WithCloseOnContextDone(true).WithCompilationCache(cache)
+			again, err := extism.NewCompiledPlugin(ctx,
+				extism.Manifest{Wasm: []extism.Wasm{extism.WasmData{Data: guest}}},
+				extism.PluginConfig{EnableWasi: true, RuntimeConfig: config},
+				nil)
+			if err != nil {
+				t.Fatalf("build the compiled form again: %v", err)
+			}
+			defer func() { _ = again.Close(ctx) }()
+			if leaves := leafFiles(t, dir); len(leaves) != 0 {
+				t.Fatalf("the engine no longer held a module it had compiled: building the form again recompiled and wrote back %s",
+					leafChanges(nil, leaves))
+			}
 
-	config := wazero.NewRuntimeConfig().WithCloseOnContextDone(true).WithCompilationCache(cache)
-	again, err := extism.NewCompiledPlugin(ctx,
-		extism.Manifest{Wasm: []extism.Wasm{extism.WasmData{Data: guest}}},
-		extism.PluginConfig{EnableWasi: true, RuntimeConfig: config},
-		nil)
-	if err != nil {
-		t.Fatalf("build the compiled form again: %v", err)
-	}
-	defer func() { _ = again.Close(ctx) }()
-	if leaves := leafFiles(t, dir); len(leaves) != 0 {
-		t.Fatalf("the engine no longer held a module it had compiled: building the form again recompiled and wrote back %s",
-			leafChanges(nil, leaves))
-	}
-
-	// Control: a module the engine does drop is compiled and written back.
-	rt := wazero.NewRuntimeWithConfig(ctx, config)
-	defer func() { _ = rt.Close(ctx) }()
-	held, err := rt.CompileModule(ctx, guest)
-	if err != nil {
-		t.Fatalf("control: compile the guest: %v", err)
-	}
-	if err := held.Close(ctx); err != nil {
-		t.Fatalf("control: drop the guest from the engine: %v", err)
-	}
-	if _, err := rt.CompileModule(ctx, guest); err != nil {
-		t.Fatalf("control: compile the guest after dropping it: %v", err)
-	}
-	if leaves := leafFiles(t, dir); len(leaves) != 1 {
-		t.Fatalf("control: after the engine dropped the guest, compiling it again should write back exactly its own entry; the cache holds %s",
-			leafChanges(nil, leaves))
+			// Control: a module the engine does drop — its one compile closed — is
+			// compiled and written back.
+			rt := wazero.NewRuntimeWithConfig(ctx, config)
+			defer func() { _ = rt.Close(ctx) }()
+			copyOfGuest := withCustomSection(guest, "aggrega-test-isolation", t.Name()+"/control")
+			held, err := rt.CompileModule(ctx, copyOfGuest)
+			if err != nil {
+				t.Fatalf("control: compile the copy of the guest: %v", err)
+			}
+			removeLeaves(t, dir)
+			if err := held.Close(ctx); err != nil {
+				t.Fatalf("control: close the copy's one compile, dropping it from the engine: %v", err)
+			}
+			if _, err := rt.CompileModule(ctx, copyOfGuest); err != nil {
+				t.Fatalf("control: compile the copy again after the engine dropped it: %v", err)
+			}
+			if leaves := leafFiles(t, dir); len(leaves) != 1 {
+				changes := leafChanges(nil, leaves)
+				if changes == "" {
+					changes = "none"
+				}
+				t.Fatalf("control: after the engine dropped the copy, compiling it again should write back exactly its own entry; the change to the cache: %s",
+					changes)
+			}
+		})
 	}
 }
 

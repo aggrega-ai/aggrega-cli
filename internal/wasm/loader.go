@@ -1120,9 +1120,11 @@ func (l *Loader) compiledPlugin(guestDigest, profile string, manifest extism.Man
 //   - for the runtime kernel every guest's compiled form includes: until one
 //     build against the cache has completed, builds of different guests take
 //     turns as well, because each of them compiles that kernel. Once one has
-//     completed the kernel's entry is complete, and the engine never removes a
-//     module it holds (TestSharedEngineKeepsEveryModuleItCompiled pins that), so
-//     later builds of different guests run in parallel.
+//     completed the kernel's entry is complete, and the engine keeps it while the
+//     cache is open: the engine drops a module only once every compile of it has
+//     been closed, and closing a compiled form releases none of them
+//     (TestSharedEngineKeepsEveryModuleItCompiled pins that), so later builds of
+//     different guests run in parallel.
 func (l *Loader) firstLoadGate(guestDigest string, build func() (*extism.CompiledPlugin, error)) (*extism.CompiledPlugin, error) {
 	guest := compileMutex(guestDigest)
 	guest.Lock()

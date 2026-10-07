@@ -83,18 +83,18 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/davecgh/go-spew` | `v1.1.2-0.20180830191138-d8f796af33cc` | go | cli-host, wasm-provider-guests | `ISC` | [ISC](LICENSES/ISC.txt) |
 | `github.com/digitorus/pkcs7` | `v0.0.0-20230818184609-3a137a874352` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/digitorus/timestamp` | `v0.0.0-20231217203849-220c5c2851b7` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
-| `github.com/dylibso/observe-sdk/go` | `v0.0.0-20240819160327-2d926c5d788a` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/dylibso/observe-sdk/go` | `v0.0.0-20240819160327-2d926c5d788a` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/emicklei/go-restful/v3` | `v3.12.2` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/emirpasic/gods` | `v1.18.1` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
 | `github.com/evanphx/json-patch` | `v5.9.11+incompatible` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/exponent-io/jsonpath` | `v0.0.0-20210407135951-1de76d718b3f` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/extism/go-pdk` | `v1.1.3` | go | wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/extism/go-sdk` | `v1.7.1` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/extism/go-sdk` | `v1.7.1` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/fxamacker/cbor/v2` | `v2.9.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/go-errors/errors` | `v1.4.2` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `github.com/go-git/gcfg` | `v1.5.1-0.20230307220236-3a3c6141e376` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/go-git/go-billy/v5` | `v5.9.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/go-git/go-git/v5` | `v5.19.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/go-git/gcfg` | `v1.5.1-0.20230307220236-3a3c6141e376` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/go-git/go-billy/v5` | `v5.9.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/go-git/go-git/v5` | `v5.19.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-jose/go-jose/v4` | `v4.1.4` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-logr/logr` | `v1.4.3` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-logr/stdr` | `v1.2.2` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -137,10 +137,10 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/hashicorp/go-retryablehttp` | `v0.7.8` | go | cli-host | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/hashicorp/hcl/v2` | `v2.24.0` | go | wasm-provider-guests | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/huandu/xstrings` | `v1.5.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `github.com/ianlancetaylor/demangle` | `v0.0.0-20240805132620-81f5be970eca` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/ianlancetaylor/demangle` | `v0.0.0-20240805132620-81f5be970eca` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/in-toto/attestation` | `v1.2.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/in-toto/in-toto-golang` | `v0.11.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/jbenet/go-context` | `v0.0.0-20150711004518-d14ea06fba99` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `github.com/jbenet/go-context` | `v0.0.0-20150711004518-d14ea06fba99` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/jedisct1/go-minisign` | `v0.0.0-20211028175153-1c139d1cc84b` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/json-iterator/go` | `v1.1.12` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/kevinburke/ssh_config` | `v1.2.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
@@ -164,7 +164,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/pkg/errors` | `v0.9.1` | go | cli-host, wasm-provider-guests | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
 | `github.com/pmezard/go-difflib` | `v1.0.1-0.20181226105442-5d4384ee4fb2` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/russross/blackfriday/v2` | `v2.1.0` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
-| `github.com/santhosh-tekuri/jsonschema/v6` | `v6.0.2` | go | wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/santhosh-tekuri/jsonschema/v6` | `v6.0.2` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/sassoftware/relic` | `v7.2.1+incompatible` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/secure-systems-lab/go-securesystemslib` | `v0.11.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/sergi/go-diff` | `v1.4.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
@@ -181,8 +181,8 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/spf13/cast` | `v1.10.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/spf13/cobra` | `v1.10.2` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/spf13/pflag` | `v1.0.10` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/tetratelabs/wabin` | `v0.0.0-20230304001439-f6f874872834` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/tetratelabs/wazero` | `v1.9.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/tetratelabs/wabin` | `v0.0.0-20230304001439-f6f874872834` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/tetratelabs/wazero` | `v1.12.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/theupdateframework/go-tuf/v2` | `v2.4.2-0.20260407074541-7e8f69f906ef` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/theupdateframework/go-tuf` | `v0.7.0` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/transparency-dev/formats` | `v0.1.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -196,7 +196,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `go.opentelemetry.io/otel/metric` | `v1.44.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel/trace` | `v1.44.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel` | `v1.44.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `go.opentelemetry.io/proto/otlp` | `v1.7.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `go.opentelemetry.io/proto/otlp` | `v1.7.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.yaml.in/yaml/v2` | `v2.4.4` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.yaml.in/yaml/v3` | `v3.0.4` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `golang.org/x/crypto` | `v0.52.0` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
@@ -214,8 +214,8 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `google.golang.org/protobuf` | `v1.36.11` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `gopkg.in/evanphx/json-patch.v4` | `v4.13.0` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `gopkg.in/inf.v0` | `v0.9.1` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `gopkg.in/warnings.v0` | `v0.1.2` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
-| `gopkg.in/yaml.v3` | `v3.0.1` | go | wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `gopkg.in/warnings.v0` | `v0.1.2` | go | cli-host, wasm-provider-guests | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
+| `gopkg.in/yaml.v3` | `v3.0.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `helm.sh/helm/v3` | `v3.20.2` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `k8s.io/apiextensions-apiserver` | `v0.35.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `k8s.io/apimachinery` | `v0.35.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
