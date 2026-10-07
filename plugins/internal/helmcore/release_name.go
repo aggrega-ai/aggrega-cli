@@ -159,11 +159,11 @@ const ServiceNameKind = "Service name"
 // A Service name has to begin with a lowercase letter, which is stricter than
 // what a release name may begin with: Helm accepts a release name opening with a
 // digit, and the cluster then refuses every Service named after it. Both of this
-// target's render paths name a component's Services after its identity — a chart
-// routinely names its Services after the release name, and a synthesized
-// workload's Services open with the component's own name — so an identity opening
-// with anything but a lowercase letter yields Services the cluster refuses at
-// apply time while the build itself would stay green. The verdict carries that
+// target's render paths name a component's Services after its release name — a
+// chart routinely names its Services after it, and a synthesized workload's
+// Services open with it — so an identity opening with anything but a lowercase
+// letter yields Services the cluster refuses at apply time while the build itself
+// would stay green. The verdict carries that
 // stricter rule here, where it can halt the build instead.
 //
 // It reads the first character of the release name rather than of the identity as
@@ -273,4 +273,30 @@ func NameBoundOutput(proposed string, authored bool) rendercore.NameBoundOutput 
 			rendercore.ComponentIDLabelVerdict(proposed, authored),
 		},
 	}
+}
+
+// RenderedNameOutput assembles this provider's answer to the question the host
+// asks before any node renders: what name will this target give the node's
+// resources. It is the release name for a node whose Recipe declares source the
+// author supplied or a workload this provider synthesizes, and no name for a node
+// declaring neither.
+//
+// The two input kinds answer with one name because both render paths name a
+// component's resources after it. A chart's own templates read it as
+// .Release.Name and routinely name their resources after it; the synthesized path
+// names every resource it emits for a component after it too
+// ([synthesizedNameBasis]). Both read the one derivation, [ReleaseNameFor], so the
+// name reported here and the names emitted cannot part — and an address a Recipe
+// publishes from this answer is the name a Service the node emits actually
+// carries.
+//
+// A node declaring neither renders an artifact set alone, and gets no name: the
+// resources in an artifact set are named by the artifacts its author wrote, so a
+// name reported here would be one none of that node's emitted resources carries.
+// No name is the answer rather than an omission.
+func RenderedNameOutput(in rendercore.RenderedNameInput) rendercore.RenderedNameOutput {
+	if !in.Sourced && !in.Synthesized {
+		return rendercore.RenderedNameOutput{}
+	}
+	return rendercore.RenderedNameOutput{Name: ReleaseNameFor(in.NodeID, in.DerivedNameBasis)}
 }

@@ -16,7 +16,7 @@ import (
 
 // identityContextRoot is the context root a template reads a node's own
 // identities through, and renderedNameContextKey is the key beneath it that names
-// the value a target renders author-supplied source under.
+// the value a target renders a node's output under.
 //
 // They are constants because every surface that watches for this key compares
 // against the same two spellings: the rules declared over authored text, and the
@@ -37,7 +37,7 @@ const (
 )
 
 // renderedNameRootRef reports the first root access a parsed template makes to the
-// name its target renders author-supplied source under, and whether it makes one.
+// name its target renders a node's output under, and whether it makes one.
 //
 // The reference is recovered from the collected root accesses rather than by
 // matching the authored keystrokes, so every spelling that resolves to the same
@@ -60,8 +60,8 @@ func renderedNameRootRef(tree parse.Node) (gotmpl.RootRef, bool) {
 }
 
 // renderedNameReference reports the path of the first reference a parsed template
-// makes to the name its target renders author-supplied source under, and whether
-// it makes one.
+// makes to the name its target renders a node's output under, and whether it
+// makes one.
 func renderedNameReference(tree parse.Node) (string, bool) {
 	ref, reads := renderedNameRootRef(tree)
 	if !reads {
@@ -71,9 +71,10 @@ func renderedNameReference(tree parse.Node) (string, bool) {
 }
 
 // RenderedNameReporter is the optional capability a provider engine implements to
-// report the name its target gives the resources it renders from a node's
-// author-supplied source — the name those supplied templates themselves render
-// against.
+// report the name its target gives the resources it renders for a node — from the
+// node's author-supplied source, the name those supplied templates themselves
+// render against, and from a workload it synthesizes, the name it gives the
+// resources it builds where it derives one.
 //
 // It is the OPPOSITE direction from [NameBounder] and the two must not be
 // conflated. NameBounder carries a question the host asks about a name the host
@@ -85,20 +86,21 @@ func renderedNameReference(tree parse.Node) (string, bool) {
 // An engine that does not implement it reports nothing, and a recipe author has
 // no such name to read for any node that engine renders. That is the honest
 // position rather than a gap: a target whose resource names a Recipe writes
-// verbatim has no derivation to report, and one whose name is a function of where
-// its files were placed does not know it while a node is being rendered.
+// verbatim, or whose synthesized resources carry the node's identity as written,
+// has no derivation to report, and one whose name is a function of where its
+// files were placed does not know it while a node is being rendered.
 type RenderedNameReporter interface {
 	RenderedName(ctx context.Context, in RenderedNameInput) (RenderedNameOutput, error)
 }
 
 // NodeRenderedNames is the name each node's own provider reports for the output
-// it renders from that node's author-supplied source, by node identity. A node
+// it renders for that node, by node identity. A node
 // whose provider reports none is absent rather than present and empty, so a
 // reader can tell "no name" from "a name that happens to be empty".
 type NodeRenderedNames map[string]string
 
 // askRenderedName puts one node to a provider engine and reads back the name that
-// target will render the node's author-supplied source under.
+// target will render the node's output under.
 //
 // An engine that does not implement the capability reports no name without being
 // asked, so adding the exchange costs a provider that serves no such name
@@ -116,7 +118,7 @@ func askRenderedName(ctx context.Context, engine any, in RenderedNameInput) (str
 }
 
 // CollectRenderedNames asks each node's own provider what name it will render
-// that node's author-supplied source under, and returns the answers by node.
+// that node's output under, and returns the answers by node.
 //
 // # Why it is one pass ahead of the node walk rather than part of it
 //
@@ -129,15 +131,19 @@ func askRenderedName(ctx context.Context, engine any, in RenderedNameInput) (str
 //
 // # What is asked, and of whom
 //
-// Only the two identities a target derives its own names from, plus whether the
-// node's bound Recipe declares source the author wrote. The full render context
-// does not exist at this point and is not needed: what a target names its own
-// output is a function of the node's identity, not of its resolved values.
+// Only the two identities a target derives its own names from, plus which input
+// kinds the node's bound Recipe declares: source the author wrote, and a workload
+// for the provider to synthesize. The full render context does not exist at this
+// point and is not needed: what a target names its own output is a function of
+// the node's identity, not of its resolved values.
 //
-// The sourced flag reads the text the AUTHOR wrote rather than a resolved value,
-// because no source has been resolved yet. The two part for a Recipe whose
+// Both flags read the text the AUTHOR wrote rather than a resolved value, because
+// nothing has been resolved yet. For the source the two part for a Recipe whose
 // `source:` template evaluates to nothing — authored-sourced, rendered
-// sourceless — and the authored reading is the one available here.
+// sourceless — and the authored reading is the one available here. The workload
+// flag is read through the same helper the render reads when it decides to
+// synthesize, so a provider is told a node is synthesized exactly when the render
+// synthesizes it.
 //
 // A node with no bound Recipe is not asked: there is no provider to ask, and no
 // name for an author to read.
@@ -178,8 +184,9 @@ func CollectRenderedNames(
 			continue
 		}
 		name, err := askRenderedName(ctx, engine, RenderedNameInput{
-			NodeID:  nodeID,
-			Sourced: recipeSourceDeclared(recipe),
+			NodeID:      nodeID,
+			Sourced:     recipeSourceDeclared(recipe),
+			Synthesized: recipeWorkloadDeclared(recipe),
 			// DerivedNameBasis is deliberately left unset. It is carried on a node
 			// whose own identity a target's name alphabet refuses, and the one node
 			// kind that carries it has its basis settled inside the node walk —

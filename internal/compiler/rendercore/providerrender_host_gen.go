@@ -63,7 +63,7 @@ type IRNodeProjection struct {
 	RecipeVersion string `json:"recipe_version,omitempty" yaml:"recipe_version,omitempty" cbor:"recipe_version,omitempty"`
 	// LabelComponentID The Kubernetes-safe component identity — what a resource this node emits BELONGS to, which is what provenance records and what a selector queries. When non-empty it overrides the node id as the app.kubernetes.io/name and aggrega.ai/component-id label value; empty means the node id is already label-valid and is used directly. It is carried for every resource a Feature attachment emits, whatever way the attachment delivers them, so an attachment's resources are distinguishable from its host component's by label alone. What a guest derives its own names from is a separate carry, derived_name_basis, and the two answer different questions.
 	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty" cbor:"label_component_id,omitempty"`
-	// DerivedNameBasis The identity a guest derives its own names from when it renders source an author wrote — the release name a chart installer's templates read, and the prefix on the files that render emits. Empty means the node id is used directly, which is the value for an ordinary component and for a per-component Feature attachment: an attachment delivering a chart or a fragment its author wrote renders it against the HOST component's name, because the author's own templates name resources after that name and a different one would rename resources already deployed. A node whose id carries marker syntax a target's name alphabet refuses carries this explicitly instead, so the name a guest derives stays one the target accepts. It is deliberately separate from label_component_id: a guest that BUILDS resources itself rather than rendering an author's source names them after the identity, so a Feature attachment's own resources cannot collide with its host's, while the name an author's source renders against stays put. The two carry the same value wherever a node's identity is also what its source renders against.
+	// DerivedNameBasis The identity a guest derives its own names from — the release name a chart installer's templates read, which such a guest may also name the resources it synthesizes for a component after, and the prefix on the files a source render emits. Empty means the node id is used directly, which is the value for an ordinary component and for a per-component Feature attachment: an attachment delivering a chart or a fragment its author wrote renders it against the HOST component's name, because the author's own templates name resources after that name and a different one would rename resources already deployed. A node whose id carries marker syntax a target's name alphabet refuses carries this explicitly instead, so the name a guest derives stays one the target accepts. It is deliberately separate from label_component_id: a guest that BUILDS resources for a Feature attachment rather than rendering its author's source names them after the identity, so the attachment's own resources cannot collide with its host's, while the name an author's source renders against stays put. The two carry the same value wherever a node's identity is also what its source renders against.
 	DerivedNameBasis string `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
 	// OutputLabels The recipe-author-declared output labels the guest stamps onto every emitted manifest alongside the build-identity provenance, keyed by label name. Two authored blocks merge into this one map: the literal key-value pairs a recipe writes in `outputLabels`, and one entry for each key a recipe names in `outputComponentLabels`, whose value is read from that key on the rendered component's own labels — so a promoted value follows the component it came from rather than being repeated in the recipe. Both blocks are disjoint from the provenance keyspace by load-time validation (no aggrega.ai/ or app.kubernetes.io/ key), so stamping never collides with a provenance label. A promoted key the component does not declare stamps nothing and raises an advisory rather than an empty label. A guest whose output is not Kubernetes YAML translates them onto its own label surface (Compose service labels) or ignores them.
 	OutputLabels map[string]string `json:"output_labels,omitempty" yaml:"output_labels,omitempty" cbor:"output_labels,omitempty"`
@@ -395,19 +395,21 @@ type NameBoundOutput struct {
 	ConditionShortCode string `json:"condition_short_code,omitempty" yaml:"condition_short_code,omitempty" cbor:"condition_short_code,omitempty"`
 }
 
-// RenderedNameInput The payload a Provider guest receives on its optional rendered_name export: the two identities a target derives its own names from, and whether the node's Recipe declares source the author supplied. The guest answers with the name its target will give the resources it renders from that supplied source — the name the author's own templates render against, such as the release name a chart reads. A guest that derives no such name reports none, which is the honest answer for a target whose resource names a Recipe writes verbatim, and for one whose name is a function of where the files are placed rather than of the node. This export reports a name the guest itself composes and is not the exchange that asks the guest to judge a name the host proposes; those are different questions and each has its own export.
+// RenderedNameInput The payload a Provider guest receives on its optional rendered_name export: the two identities a target derives its own names from, and which input kinds the node's Recipe declares — source the author supplied, a workload the guest synthesizes. The guest answers with the name its target will give the resources it renders for that node: for supplied source, the name the author's own templates render against, such as the release name a chart reads; for a synthesized workload, the name the guest gives the resources it builds, where it derives one rather than writing the node's identity as it is. A guest that derives no such name reports none, which is the honest answer for a target whose resource names a Recipe writes verbatim, and for one whose name is a function of where the files are placed rather than of the node. This export reports a name the guest itself composes and is not the exchange that asks the guest to judge a name the host proposes; those are different questions and each has its own export.
 type RenderedNameInput struct {
 	// NodeID The node's own identity, as authored. It is carried unencoded: a target narrows it through its own alphabet, so encoding it first would put one escape inside another and spell the name differently from the one a recipe author predicts it by.
 	NodeID string `json:"node_id" yaml:"node_id" cbor:"node_id"`
 	// DerivedNameBasis The identity a contributor's own source renders against when it is not the node's own — set for a contributor whose identity a target's name alphabet refuses, absent otherwise. A guest resolves the pair the same way every other surface does: this value when it is present, the node id when it is not.
 	DerivedNameBasis string `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
-	// Sourced Whether the node's bound Recipe declares source the author supplied, read from the text the author wrote. It is carried so the question can be asked of any node and answered correctly: a guest reports no name for a node whose output it composes from a workload or an artifact set alone, because such output carries no author templates for a name to render against and is named after the node's identity instead.
+	// Sourced Whether the node's bound Recipe declares source the author supplied, read from the text the author wrote. It is carried, with synthesized, so the question can be asked of any node and answered correctly: a guest reports no name for a node declaring neither, whose output is an artifact set alone, because the resources in such a set are named by the artifacts the author wrote rather than by any name the guest derives.
 	Sourced bool `json:"sourced,omitempty" yaml:"sourced,omitempty" cbor:"sourced,omitempty"`
+	// Synthesized Whether the node's bound Recipe declares a workload for the guest to synthesize, read from the text the author wrote, as sourced is. A guest whose target names the resources it synthesizes after a name it derives, rather than after the node's identity as written, reports that name for such a node, so an address a Recipe publishes for one of those resources can be built from the name the resource carries.
+	Synthesized bool `json:"synthesized,omitempty" yaml:"synthesized,omitempty" cbor:"synthesized,omitempty"`
 }
 
-// RenderedNameOutput The payload a Provider guest returns from its rendered_name export: the name its target gives the resources it renders from the node's author-supplied source, or no name at all. An absent or empty name is a positive answer rather than a failure — it says this target derives no such name — and the host spends what it was told without reading it, so no knowledge of the target's naming crosses the boundary.
+// RenderedNameOutput The payload a Provider guest returns from its rendered_name export: the name its target gives the resources it renders for the node — from the node's author-supplied source, or from the workload it synthesizes — or no name at all. An absent or empty name is a positive answer rather than a failure — it says this target derives no such name — and the host spends what it was told without reading it, so no knowledge of the target's naming crosses the boundary.
 type RenderedNameOutput struct {
-	// Name The name the guest will itself render this node's author-supplied source under, already written into whatever alphabet its target accepts in that position. Empty or absent means the guest derives no such name.
+	// Name The name the guest will itself render this node's author-supplied source, or the resources it synthesizes for the node, under, already written into whatever alphabet its target accepts in that position. Empty or absent means the guest derives no such name.
 	Name string `json:"name,omitempty" yaml:"name,omitempty" cbor:"name,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from reporting no name: no name is an answer about the target, while error reports that the question itself could not be answered. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
@@ -4614,6 +4616,18 @@ func (t RenderedNameInput) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.Synthesized != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"synthesized\":")
+		if t.Synthesized {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -4650,6 +4664,12 @@ func (t *RenderedNameInput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Sourced = v
 			}
+		case "synthesized":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Synthesized = v
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -4669,7 +4689,7 @@ func (t *RenderedNameInput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNameInput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "node_id", "derived_name_basis", "sourced"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "node_id", "derived_name_basis", "sourced", "synthesized"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -9847,6 +9867,9 @@ func (t RenderedNameInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Sourced != false {
 		n++
 	}
+	if t.Synthesized != false {
+		n++
+	}
 	if t.DerivedNameBasis != "" {
 		n++
 	}
@@ -9856,6 +9879,10 @@ func (t RenderedNameInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Sourced != false {
 		dst = appendCBORTextString(dst, "sourced")
 		dst = appendCBORBool(dst, t.Sourced)
+	}
+	if t.Synthesized != false {
+		dst = appendCBORTextString(dst, "synthesized")
+		dst = appendCBORBool(dst, t.Synthesized)
 	}
 	if t.DerivedNameBasis != "" {
 		dst = appendCBORTextString(dst, "derived_name_basis")
@@ -9900,6 +9927,12 @@ func (t *RenderedNameInput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Sourced = v
 			}
+		case "synthesized":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Synthesized = v
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -9916,7 +9949,7 @@ func (t *RenderedNameInput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderedNameInput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "node_id", "derived_name_basis", "sourced"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "node_id", "derived_name_basis", "sourced", "synthesized"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

@@ -111,10 +111,10 @@ type NodeRenderContext struct {
 	// DerivedNameBasis below, and the two answer different questions.
 	LabelComponentID string
 	// DerivedNameBasis, when non-empty, overrides NodeID as the identity a target
-	// derives its OWN names from when it renders source an author wrote — the Helm
-	// release name a chart's templates read as .Release.Name, and the prefix on the
-	// files that render emits. Empty means "use NodeID directly". Read through
-	// [TargetNameBasis].
+	// derives its OWN names from — the Helm release name a chart's templates read
+	// as .Release.Name and that target names a component's synthesized workload
+	// after, and the prefix on the files a source render emits. Empty means "use
+	// NodeID directly". Read through [TargetNameBasis].
 	//
 	// The split from LabelComponentID above is the point rather than a compromise,
 	// and the asymmetry runs both ways. A chart or fragment an FR attachment's
@@ -122,10 +122,11 @@ type NodeRenderContext struct {
 	// author's own templates name resources after it and changing it would rename
 	// resources already deployed for a reason that has nothing to do with the
 	// chart — so a per-component attachment leaves this empty and the host's NodeID
-	// stands. A workload or artifact set the compiler SYNTHESIZES has no author
-	// templates, so nothing renders against its name and its resources are named
-	// after the identity instead, which is what keeps an FR's synthesized workload
-	// from colliding with its host's own.
+	// stands. A workload or artifact set built for an FR attachment rather than
+	// rendered from its author's source has no author templates, so nothing renders
+	// against its name and its resources are named after the identity instead,
+	// which is what keeps an FR's synthesized workload from colliding with its
+	// host's own.
 	//
 	// A boundary-scope attachment sets it, to the same composed identity it sets
 	// LabelComponentID to. It has to: that node's NodeID is a dispatch marker

@@ -38,9 +38,10 @@
 // OrderedMap.All() so byte-identical input produces byte-identical
 // output across compilations.
 //
-// Filename convention: per-resource files named
-// "<instance_id>-<kind>.yaml" for Deployment/StatefulSet/PVC, and
-// "<instance_id>-<service-key>-service.yaml" for Services.
+// Filename convention: per-resource files named after the naming basis
+// (synthesizedNameBasis) — "<basis>-<kind>.yaml" for the controller,
+// "<basis>-<volume>-pvc.yaml" for a standalone claim, and
+// "<basis>-<service-key>-service.yaml" for a Service.
 //
 // Secrets-as-env pattern: the synthesizer uses `env.valueFrom.secretKeyRef`
 // for `as: env` secret entries (one env var per secret entry, naming the
@@ -117,18 +118,16 @@ func SynthesizeWorkloadCore(
 
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
-	// componentID is the single naming basis for every synthesized resource —
-	// file keys, selector labels, metadata.name, and the per-resource sub-names
-	// (containers, PVCs, services). It derives from ProvenanceComponentID:
-	// LabelComponentID when set, else the raw NodeID. For a component node
-	// LabelComponentID is empty, so this is the raw NodeID (byte-identical to
-	// the prior behavior). For a FeatureRecipe-synthesized workload the caller
-	// sets LabelComponentID to the sanitized FR-instance id, so the workload is
-	// named after the feature instance rather than the host component (whose
-	// NodeID the FR node otherwise carries) — this is what keeps an FR's
-	// synthesized Deployment from colliding with the host's own workload, and
-	// keeps a boundary-scope FR's marker-syntax NodeID out of K8s names.
+	// componentID is what every synthesized resource BELONGS to, and it is read
+	// only where that is the question: the selector label below, and the
+	// provenance labels it merges with. A label value admits the identity as
+	// written, underscores and capitals included, so the selector and the pod
+	// template it selects keep agreeing whatever the component is called.
 	componentID := rendercore.ProvenanceComponentID(nodeCtx)
+	// name is what every synthesized resource is CALLED — metadata.name, the file
+	// it is written to, and the prefix of every Service, standalone claim and
+	// secret-file volume. See synthesizedNameBasis for why the two differ.
+	name := synthesizedNameBasis(nodeCtx)
 	selectorLabels := map[string]string{"app": componentID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)
@@ -140,17 +139,17 @@ func SynthesizeWorkloadCore(
 	var out []rendercore.EmittedFile
 
 	// Containers: translate each in author-order.
-	containers, err := translateContainers(w, componentID, attachmentProvides, imageRegistry)
+	containers, err := translateContainers(w, name, attachmentProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
-	initContainers, err := translateInitContainers(w, componentID, attachmentProvides, imageRegistry)
+	initContainers, err := translateInitContainers(w, name, attachmentProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
 
 	// Pod-spec volumes (excludes persistentTemplate variants).
-	podVolumes := translatePodVolumes(w, componentID, attachmentProvides)
+	podVolumes := translatePodVolumes(w, name, attachmentProvides)
 
 	// Pod-level configuration: scheduling, podSecurityContext,
 	// serviceAccount, restartPolicy.
@@ -175,7 +174,7 @@ func SynthesizeWorkloadCore(
 	// StatefulSet can reference its governing headless Service by that Service's
 	// own rendered name — reusing it (rather than re-deriving the string) keeps
 	// the StatefulSet's serviceName and the emitted Service from ever drifting.
-	services, err := translateServices(w, componentID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
+	services, err := translateServices(w, name, namespace, selectorLabels, resourceLabels, resourceAnnotations)
 	if err != nil {
 		return nil, err
 	}
@@ -193,13 +192,13 @@ func SynthesizeWorkloadCore(
 		ss := StatefulSet{
 			APIVersion: k8sStatefulSetAPIVersion,
 			Kind:       "StatefulSet",
-			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: StatefulSetSpec{
 				Replicas:             &replicas,
 				Selector:             &LabelSelector{MatchLabels: selectorLabels},
 				ServiceName:          governingService,
 				Template:             template,
-				VolumeClaimTemplates: translateVolumeClaimTemplates(w, componentID),
+				VolumeClaimTemplates: translateVolumeClaimTemplates(w),
 			},
 		}
 		body, err := marshalDeterministic(&ss, nodeCtx.YAMLIndent)
@@ -207,14 +206,14 @@ func SynthesizeWorkloadCore(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
-			Name: componentID + "-statefulset.yaml",
+			Name: name + "-statefulset.yaml",
 			Body: body,
 		})
 	case rendercore.WorkloadFormDaemon:
 		ds := DaemonSet{
 			APIVersion: k8sDaemonSetAPIVersion,
 			Kind:       "DaemonSet",
-			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: DaemonSetSpec{
 				Selector: &LabelSelector{MatchLabels: selectorLabels},
 				Template: template,
@@ -225,14 +224,14 @@ func SynthesizeWorkloadCore(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q daemonset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
-			Name: componentID + "-daemonset.yaml",
+			Name: name + "-daemonset.yaml",
 			Body: body,
 		})
 	case rendercore.WorkloadFormTask:
 		job := Job{
 			APIVersion: k8sJobAPIVersion,
 			Kind:       "Job",
-			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec:       JobSpec{Template: jobValidTemplate(template)},
 		}
 		body, err := marshalDeterministic(&job, nodeCtx.YAMLIndent)
@@ -240,14 +239,14 @@ func SynthesizeWorkloadCore(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q job marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
-			Name: componentID + "-job.yaml",
+			Name: name + "-job.yaml",
 			Body: body,
 		})
 	case rendercore.WorkloadFormScheduled:
 		cron := CronJob{
 			APIVersion: k8sCronJobAPIVersion,
 			Kind:       "CronJob",
-			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: CronJobSpec{
 				Schedule:    w.Schedule,
 				JobTemplate: JobTemplateSpec{Spec: JobSpec{Template: jobValidTemplate(template)}},
@@ -258,14 +257,14 @@ func SynthesizeWorkloadCore(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q cronjob marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
-			Name: componentID + "-cronjob.yaml",
+			Name: name + "-cronjob.yaml",
 			Body: body,
 		})
 	default:
 		dep := Deployment{
 			APIVersion: k8sDeploymentAPIVersion,
 			Kind:       "Deployment",
-			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: DeploymentSpec{
 				Replicas: &replicas,
 				Selector: &LabelSelector{MatchLabels: selectorLabels},
@@ -277,14 +276,14 @@ func SynthesizeWorkloadCore(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
-			Name: componentID + "-deployment.yaml",
+			Name: name + "-deployment.yaml",
 			Body: body,
 		})
 	}
 
 	// PVCs: one per persistent volume (NOT persistentTemplate; those
 	// become volumeClaimTemplates inside the StatefulSet spec).
-	pvcs := translatePersistentPVCs(w, componentID, namespace, resourceLabels, resourceAnnotations)
+	pvcs := translatePersistentPVCs(w, name, namespace, resourceLabels, resourceAnnotations)
 	for _, pvc := range pvcs {
 		body, err := marshalDeterministic(&pvc, nodeCtx.YAMLIndent)
 		if err != nil {
@@ -312,7 +311,7 @@ func SynthesizeWorkloadCore(
 }
 
 // synthesizeReference emits the render shape for a form: reference workload —
-// one ExternalName Service aliasing an in-cluster name (the component id) to the
+// one ExternalName Service aliasing an in-cluster name (the naming basis) to the
 // external endpoint host, with the optional port. It emits no controller and no
 // Secret: the credential is a pointer the recipe's provides carry to consumers
 // (AOT boundary — the secret value is never resolved here).
@@ -320,6 +319,7 @@ func synthesizeReference(w *types.Workload, nodeCtx rendercore.NodeRenderContext
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
 	componentID := rendercore.ProvenanceComponentID(nodeCtx)
+	name := synthesizedNameBasis(nodeCtx)
 	resourceLabels := mergeLabels(map[string]string{"app": componentID}, labels)
 	namespace := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
 
@@ -333,14 +333,45 @@ func synthesizeReference(w *types.Workload, nodeCtx rendercore.NodeRenderContext
 	svc := ExternalNameService{
 		APIVersion: k8sServiceAPIVersion,
 		Kind:       "Service",
-		Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: nilIfEmpty(annotations)},
+		Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: nilIfEmpty(annotations)},
 		Spec:       spec,
 	}
 	body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q externalname service marshal", nodeCtx.NodeID))
 	}
-	return []rendercore.EmittedFile{{Name: componentID + "-service.yaml", Body: body}}, nil
+	return []rendercore.EmittedFile{{Name: name + "-service.yaml", Body: body}}, nil
+}
+
+// synthesizedNameBasis is the one name every resource the synthesized path emits
+// for a node is called by: its metadata.name, the file it is written to, and the
+// prefix of every Service, standalone claim and secret-file volume it declares.
+//
+// For a component it is the node's release name, [releaseName] — the derivation a
+// chart's own templates render against, and the name [RenderedNameOutput] reports
+// for the node. So a Recipe publishing an address from that report hands its
+// consumers the name the node's Services actually carry, whichever input kind
+// rendered them, and no second encoding exists to drift from the first. The
+// release-name alphabet admits only lowercase letters and digits and escapes
+// everything else, which is what a Kubernetes resource name accepts: an identity
+// carrying an underscore or a capital contributes a part every such name admits,
+// and one carrying neither is spelled exactly as the node's own label value
+// spells it.
+//
+// For a Feature attachment it is the attachment's composed identity, as
+// [rendercore.ProvenanceComponentID] reports it, and deliberately not a release
+// name. An attachment's render carries its HOST's node identity, so a release name
+// derived from it would name the attachment's workload after the host and collide
+// with the host's own; the composed identity carries the attachment's own key and
+// is what keeps the two apart.
+//
+// Label values do not read this. The selector and the provenance labels say what
+// a resource belongs to, and a label value admits the identity as written.
+func synthesizedNameBasis(nodeCtx rendercore.NodeRenderContext) string {
+	if nodeCtx.LabelComponentID != "" {
+		return rendercore.ProvenanceComponentID(nodeCtx)
+	}
+	return releaseName(nodeCtx)
 }
 
 // externalNameHost extracts the bare DNS host from an endpoint that may carry a
@@ -404,11 +435,12 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 
 // translateContainers walks Workload.Containers in author order and produces
 // K8s-shape Container values. Returns an error if any container's
-// translation fails (e.g., probe http: with no available port).
-func translateContainers(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
+// translation fails (e.g., probe http: with no available port). basis is the
+// naming basis the workload's resources are called by (synthesizedNameBasis).
+func translateContainers(w *types.Workload, basis string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	var out []Container
 	for name, c := range w.Containers.All() {
-		k8sContainer, err := translateContainer(name, c, nodeID, attachmentProvides, imageRegistry)
+		k8sContainer, err := translateContainer(name, c, basis, attachmentProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -422,7 +454,7 @@ func translateContainers(w *types.Workload, nodeID string, attachmentProvides ma
 // entry's authored name is honored as the emitted container name; an entry
 // without a name falls back to "init-<index>", where the index is the entry's
 // position in the list.
-func translateInitContainers(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
+func translateInitContainers(w *types.Workload, basis string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	if len(w.InitContainers) == 0 {
 		return nil, nil
 	}
@@ -432,7 +464,7 @@ func translateInitContainers(w *types.Workload, nodeID string, attachmentProvide
 		if name == "" {
 			name = fmt.Sprintf("init-%d", i)
 		}
-		k8sContainer, err := translateContainer(name, c, nodeID, attachmentProvides, imageRegistry)
+		k8sContainer, err := translateContainer(name, c, basis, attachmentProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -445,7 +477,7 @@ func translateInitContainers(w *types.Workload, nodeID string, attachmentProvide
 // Container. Author-order preserved across ports / variables / attachments. When
 // imageRegistry is non-empty, the container image ref is relocated under that
 // registry prefix (regular and init containers share this single site).
-func translateContainer(name string, c types.ContainerSpec, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
+func translateContainer(name string, c types.ContainerSpec, basis string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
 	out := Container{
 		Name:            sanitizeContainerName(name),
 		Image:           rendercore.ApplyImageRegistry(c.Image, imageRegistry),
@@ -499,7 +531,7 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, attac
 			})
 		case "file":
 			out.VolumeMounts = append(out.VolumeMounts, VolumeMount{
-				Name:      secretVolumeName(nodeID, ref.From),
+				Name:      secretVolumeName(basis, ref.From),
 				MountPath: ref.Path,
 				ReadOnly:  true,
 			})
@@ -709,11 +741,11 @@ func translateContainerSecurityContext(s *types.ContainerSecurityContext) *Conta
 //
 // Also adds secret-volume entries for container attachments entries that use
 // `as: file` — one volume per slot, named per the convention
-// "<instance_id>-secret-<slot>" with the slot written out by secretVolumeName.
+// "<basis>-secret-<slot>" with the slot written out by secretVolumeName.
 // The volume name stays convention-based (pod-internal); the
 // SecretVolumeSource.SecretName it mounts is the generated Secret's name, read
 // from the slot's resolved provides.
-func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string]) []Volume {
+func translatePodVolumes(w *types.Workload, basis string, attachmentProvides map[string]types.OrderedMap[string]) []Volume {
 	var out []Volume
 
 	for name, v := range w.Volumes.All() {
@@ -743,7 +775,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 			out = append(out, Volume{
 				Name: name,
 				PersistentVolumeClaim: &PersistentVolumeClaimVolumeSource{
-					ClaimName: nodeID + "-" + name,
+					ClaimName: persistentClaimName(basis, name),
 				},
 			})
 			// persistentTemplate intentionally omitted — handled at
@@ -760,7 +792,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 			if ref.As != "file" {
 				continue
 			}
-			volName := secretVolumeName(nodeID, ref.From)
+			volName := secretVolumeName(basis, ref.From)
 			if _, seen := seenSecretVolumes[volName]; seen {
 				continue
 			}
@@ -780,7 +812,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 			if ref.As != "file" {
 				continue
 			}
-			volName := secretVolumeName(nodeID, ref.From)
+			volName := secretVolumeName(basis, ref.From)
 			if _, seen := seenSecretVolumes[volName]; seen {
 				continue
 			}
@@ -801,8 +833,10 @@ func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides ma
 
 // translateVolumeClaimTemplates produces the StatefulSet.spec.
 // volumeClaimTemplates list, one entry per persistentTemplate volume.
-// Author order preserved.
-func translateVolumeClaimTemplates(w *types.Workload, nodeID string) []PersistentVolumeClaim {
+// Author order preserved. A claim template is named by its volume alone: the
+// StatefulSet controller prefixes each claim it creates from one, so no naming
+// basis is written here.
+func translateVolumeClaimTemplates(w *types.Workload) []PersistentVolumeClaim {
 	var out []PersistentVolumeClaim
 	for name, v := range w.Volumes.All() {
 		if v.PersistentTemplate == nil {
@@ -814,16 +848,21 @@ func translateVolumeClaimTemplates(w *types.Workload, nodeID string) []Persisten
 			Metadata:   ObjectMeta{Name: name},
 			Spec:       buildPVCSpec(v.PersistentTemplate.Size, v.PersistentTemplate.Class, v.PersistentTemplate.AccessModes),
 		}
-		_ = nodeID // pvc names inside volumeClaimTemplates are local to the
-		// StatefulSet; no nodeID prefix needed.
 		out = append(out, pvc)
 	}
 	return out
 }
 
+// persistentClaimName is the name of the standalone claim a persistent volume is
+// backed by. The claim itself and the pod volume referencing it both read it here,
+// so the reference always names the claim that is emitted.
+func persistentClaimName(basis, volume string) string {
+	return basis + "-" + volume
+}
+
 // translatePersistentPVCs produces standalone PVC resources (one per
 // persistent volume; not persistentTemplate). Author order preserved.
-func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels map[string]string, annotations map[string]string) []PersistentVolumeClaim {
+func translatePersistentPVCs(w *types.Workload, basis, namespace string, labels map[string]string, annotations map[string]string) []PersistentVolumeClaim {
 	var out []PersistentVolumeClaim
 	for name, v := range w.Volumes.All() {
 		if v.Persistent == nil {
@@ -833,7 +872,7 @@ func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels
 			APIVersion: k8sPVCAPIVersion,
 			Kind:       "PersistentVolumeClaim",
 			Metadata: ObjectMeta{
-				Name:        nodeID + "-" + name,
+				Name:        persistentClaimName(basis, name),
 				Namespace:   namespace,
 				Labels:      labels,
 				Annotations: annotations,
@@ -868,9 +907,9 @@ func buildPVCSpec(size, class string, accessModes []string) PersistentVolumeClai
 }
 
 // translateServices walks Workload.Services in author order and produces K8s
-// Service resources. targetPort resolution: look up the port name across
-// all containers; error if not found.
-func translateServices(w *types.Workload, nodeID, namespace string, selectorLabels, resourceLabels map[string]string, resourceAnnotations map[string]string) ([]Service, error) {
+// Service resources, each named "<basis>-<service key>". targetPort resolution:
+// look up the port name across all containers; error if not found.
+func translateServices(w *types.Workload, basis, namespace string, selectorLabels, resourceLabels map[string]string, resourceAnnotations map[string]string) ([]Service, error) {
 	var out []Service
 
 	containerPortMap := w.ContainerPortsByName()
@@ -901,7 +940,7 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 			APIVersion: k8sServiceAPIVersion,
 			Kind:       "Service",
 			Metadata: ObjectMeta{
-				Name:        nodeID + "-" + svcName,
+				Name:        basis + "-" + svcName,
 				Namespace:   namespace,
 				Labels:      resourceLabels,
 				Annotations: resourceAnnotations,

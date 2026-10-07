@@ -86,11 +86,11 @@ type LocalsContext struct {
 //     locals pass, so the name would render empty. The type carries the field
 //     because a FeatureRecipe's own locals populate it.
 //   - context.rendered_name. Whether a node HAS a name of that kind depends on
-//     whether its Recipe supplies source at all — and on this surface a `source:`
-//     template is the very thing being evaluated to decide what that source is.
-//     So the name's existence is not a settled fact here, and a reference to it
-//     would render empty. A provides template reads it, which is the surface it
-//     is published for.
+//     which inputs its Recipe declares, whether it supplies source among them —
+//     and on this surface a `source:` template is the very thing being evaluated
+//     to decide what that source is. So the name is not offered here, and a
+//     reference to it would render empty. A provides template reads it, which is
+//     the surface it is published for.
 //
 // The Recipe source surface shares this scope rather than declaring a second one
 // with the same content. Both are the base Recipe's node-local surface, evaluated
@@ -109,13 +109,13 @@ var recipeLocalsScope = templateScope{
 // .attachment_name names it and is admitted here.
 //
 // One narrowing: context.rendered_name. The value on this surface is the HOST
-// node's answer — the name the host's own bound provider reports for the output it
-// renders from the host Recipe's source — and an attachment is not that node: it
-// binds its own recipe and therefore its own provider. So the value is not an
-// answer about the attachment's own output at all. It is absent whenever the HOST
-// Recipe supplies no source, even where the attachment's own author did supply one,
-// and it comes from a different target entirely whenever the attachment's declared
-// capability differs from its host's.
+// node's answer — the name the host's own bound provider reports for the resources
+// it renders for the host — and an attachment is not that node: it binds its own
+// recipe and therefore its own provider. So the value is not an answer about the
+// attachment's own output at all. It is absent whenever the HOST's provider
+// reports none for the host, whatever the attachment itself declares, and it comes
+// from a different target entirely whenever the attachment's declared capability
+// differs from its host's.
 //
 // It is deliberately NOT narrowed on the grounds that an attachment's supplied
 // source renders under the attachment's own identity, which is what a reader

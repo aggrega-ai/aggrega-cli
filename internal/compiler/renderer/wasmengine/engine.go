@@ -56,10 +56,11 @@ const BoundaryEnvOverridesExport = "boundary_env_overrides"
 const NameBoundExport = "name_bound"
 
 // RenderedNameExport is the optional guest export this adapter drives to ask what
-// name the guest's target will give the resources it renders from a node's
-// author-supplied source. A guest whose target derives such a name advertises it;
-// a guest whose describe() omits it is never invoked here, and no name reaches a
-// recipe author for any node that guest renders.
+// name the guest's target will give the resources it renders for a node — from
+// source the author supplied, or from a workload it synthesizes. A guest whose
+// target derives such a name advertises it; a guest whose describe() omits it is
+// never invoked here, and no name reaches a recipe author for any node that guest
+// renders.
 //
 // It is deliberately absent from every minimum-export rule, for the reason
 // [NameBoundExport] is: those are load-time requirements, and requiring this one
@@ -932,8 +933,8 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 }
 
 // RenderedName drives the guest's optional rendered_name export to ask what name
-// its target will give the resources it renders from a node's author-supplied
-// source, returning the guest's answer.
+// its target will give the resources it renders for a node, returning the guest's
+// answer.
 //
 // It is advertised-only: a guest that does not declare the export in describe()
 // is never invoked, and this returns an empty output and no error — which is the

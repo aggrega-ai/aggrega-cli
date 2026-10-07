@@ -77,7 +77,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "rendered_name",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "reports the release name a chart's own templates render against, so a Recipe can publish an address naming what that chart emits",
+				Description:  "reports the release name a chart's own templates render against and a synthesized workload's resources are named after, so a Recipe can publish an address naming what that node emits",
 			},
 		},
 		Contract: &aggrega.ProviderContract{
@@ -235,19 +235,17 @@ func nameBound() int32 {
 	return 0
 }
 
-// renderedName reports the name this target gives the resources it renders from
-// a node's author-supplied source: the release name, which is what a chart's own
-// templates read as .Release.Name and what those templates routinely name their
-// resources after.
+// renderedName reports the name this target gives the resources it renders for a
+// node: the release name, which is what a chart's own templates read as
+// .Release.Name and routinely name their resources after, and what this guest
+// names every resource it synthesizes for a component after.
 //
-// It reports NO name for a node with no author-supplied source, and that is the
-// answer rather than an omission. What this guest emits for a workload or an
-// artifact set is named after the node's identity instead — there are no author
-// templates for a release name to reach — so reporting one here would hand a
-// recipe author a name none of that node's emitted resources carries.
+// It reports NO name for a node declaring neither source nor a workload, and that
+// is the answer rather than an omission: such a node renders an artifact set
+// alone, whose resources are named by the artifacts its author wrote.
 //
-// The name is derived through the one derivation the sourced render itself uses,
-// so what is reported and what is rendered cannot part.
+// The answer is assembled by the same package both render paths name their
+// resources through, so what is reported and what is rendered cannot part.
 //
 //go:wasmexport rendered_name
 func renderedName() int32 {
@@ -255,8 +253,8 @@ func renderedName() int32 {
 	out := rendercore.RenderedNameOutput{}
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		out = rendercore.RenderedNameFailure(err)
-	} else if in.Sourced {
-		out.Name = helmcore.ReleaseNameFor(in.NodeID, in.DerivedNameBasis)
+	} else {
+		out = helmcore.RenderedNameOutput(in)
 	}
 	encoded, mErr := out.MarshalJSON()
 	if mErr != nil {

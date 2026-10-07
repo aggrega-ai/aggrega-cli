@@ -79,15 +79,17 @@ func (c *TemplateContext) AttachmentPillars(name string) (TemplateAttachment, bo
 type ContextBlock struct {
 	InstanceID string `json:"instance_id" yaml:"instance_id"`
 	// RenderedName is the name the node's own provider gives the resources it
-	// renders from source the author supplied — the name those supplied templates
-	// render against, such as a chart's release name.
+	// renders for the node — from source the author supplied, the name those
+	// supplied templates render against, such as a chart's release name; and from
+	// a workload it synthesizes, the name it gives the resources it builds where it
+	// derives one, such as the same release name.
 	//
 	// It is empty where the bound provider derives no such name, and empty is an
-	// answer rather than a gap: what the compiler BUILT for a node — a synthesized
-	// workload, a placed artifact set — is named after InstanceID instead, because
-	// there are no author templates for this name to reach. The two are separate
-	// concepts and neither stands in for the other, which is why there is one name
-	// for each rather than one value answering both.
+	// answer rather than a gap: what the compiler builds for a node on such a
+	// target — a synthesized workload, a placed artifact set — is named after
+	// InstanceID instead. The two are separate concepts and neither stands in for
+	// the other, which is why there is one name for each rather than one value
+	// answering both.
 	//
 	// The value is composed inside the provider's own guest and carried here
 	// unread: no alphabet, grammar or length from any target reaches the compiler

@@ -1435,8 +1435,9 @@ var errPipelineSideEffectKindUndefined = cerrors.Register("pipeline-side-effect-
 })
 
 // ErrRenderedNameUnavailable fires when a Recipe writes a template reading the
-// name its provider gives the output it renders from author-supplied source, and
-// that provider reports no such name for the node.
+// name its provider gives the resources it renders for the node — from source the
+// author supplied, or from a workload it synthesizes — and that provider reports
+// no such name for the node.
 //
 // It halts rather than resolving the reference away, and the reason is the defect
 // it exists to remove. An empty value here does not fail: it renders, the build
@@ -1458,15 +1459,16 @@ var errPipelineSideEffectKindUndefined = cerrors.Register("pipeline-side-effect-
 // Recipe binding selects that provider, before anything is evaluated.
 //
 // The remedy names what to write instead, because in most cases there is a
-// correct answer and it is already reachable: a node whose output the compiler
-// built is named after the node's identity. A refusal that only refuses sends an
-// author looking for a key that does not exist.
+// correct answer and it is already reachable: a node that supplies no source, on a
+// target that reports no name for it, has its output named after the node's
+// identity. A refusal that only refuses sends an author looking for a key that
+// does not exist.
 // Category: CATALOG_ERROR.
 func ErrRenderedNameUnavailable() error { return errRenderedNameUnavailable }
 
 var errRenderedNameUnavailable = cerrors.Register("rendered-name-unavailable", cerrors.Meta{
 	ShortCode: "E0273",
-	Message: "template reads the name the target renders author-supplied source under, and this node's " +
-		"provider reports no such name; a conforming template reads a value the node's own provider supplies",
+	Message: "template reads the name the target gives the resources it renders for the node, and this " +
+		"node's provider reports no such name; a conforming template reads a value the node's own provider supplies",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

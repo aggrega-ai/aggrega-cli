@@ -361,9 +361,9 @@ func runAuthoredProvidesRule(
 }
 
 // renderedNameAxes is the axis set the rules over a reference to the name a
-// target renders author-supplied source under are invoked once per: the node set,
-// the provides keys each node's Recipe declares, and the inline template fields
-// that Recipe writes.
+// target gives the resources it renders for a node are invoked once per: the node
+// set, the provides keys each node's Recipe declares, and the inline template
+// fields that Recipe writes.
 //
 // It names all three together rather than one per surface, and that grouping is
 // what makes a surface structurally un-skippable: a value satisfying the node and
@@ -379,8 +379,8 @@ type renderedNameAxes interface {
 }
 
 // runRenderedNameRule invokes the rules declared over an authored template that
-// reads the name its target renders author-supplied source under, and returns what
-// they raised as the render's halt.
+// reads the name its target gives the resources it renders for a node, and returns
+// what they raised as the render's halt.
 //
 // # One moment, one actor, every surface the value lands on
 //

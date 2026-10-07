@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -143,15 +144,15 @@ func TestRenderedNameReferenceCoversEverySpelling(t *testing.T) {
 }
 
 // TestRenderedNameRemedyDiffersByWhetherTheNodeSuppliesSource pins the property
-// R6 turns on: a refusal tells the author what to write instead, and the two
-// cases need different sentences.
+// the rendered-name refusal turns on: it tells the author what to write instead,
+// and the two cases need different sentences.
 //
-// A node supplying no source has its output named after its own identity, so
-// there IS a correct value and the remedy names it. A node that does supply
-// source and whose target still reports no name has no substitute, and naming
-// the identity there would send its reader to a value that names none of that
-// node's resources — so the assertion is that the identity is named in exactly
-// one of the two.
+// A node supplying no source, on a target reporting no name for it, has its output
+// named after its own identity, so there IS a correct value and the remedy names
+// it. A node that does supply source and whose target still reports no name has
+// no substitute, and naming the identity there would send its reader to a value
+// that names none of that node's resources — so the assertion is that the
+// identity is named in exactly one of the two.
 func TestRenderedNameRemedyDiffersByWhetherTheNodeSuppliesSource(t *testing.T) {
 	sourceless := renderedNameRemedy(false)
 	sourced := renderedNameRemedy(true)
@@ -176,6 +177,76 @@ func containsSubstring(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// recordingRenderedNamer is a provider engine implementing the rendered-name
+// capability and nothing else of note. It records every question it is put, and
+// answers with a name only for a node the question calls synthesized — so a name
+// reaching the collected result is itself evidence the flag crossed, independent
+// of the recorded inputs.
+type recordingRenderedNamer struct {
+	asked []RenderedNameInput
+}
+
+func (r *recordingRenderedNamer) Render(context.Context, map[string]any, NodeRenderContext) ([]RenderedFile, error) {
+	return nil, nil
+}
+
+func (r *recordingRenderedNamer) Contract() ProviderContract { return ProviderContract{} }
+
+func (r *recordingRenderedNamer) RenderedName(_ context.Context, in RenderedNameInput) (RenderedNameOutput, error) {
+	r.asked = append(r.asked, in)
+	if in.Synthesized {
+		return RenderedNameOutput{Name: "named-" + in.NodeID}, nil
+	}
+	return RenderedNameOutput{}, nil
+}
+
+// TestCollectRenderedNamesTellsTheProviderWhichInputKindsANodeDeclares drives
+// the pass over one node of each shape a Recipe can author — source alone, a
+// workload alone, both, and neither — and reads what the provider was asked.
+//
+// The synthesized flag is the subject: a provider that names the resources it
+// synthesizes after a name of its own can only report that name if it learns the
+// node is synthesized, and a pass that never set the flag would leave every such
+// node with no name to publish while every sourced row still passed. The sourced
+// flag is asserted beside it so a fix that swapped or merged the two fails here,
+// and the neither-row keeps a pass that set both on every node from passing.
+func TestCollectRenderedNamesTellsTheProviderWhichInputKindsANodeDeclares(t *testing.T) {
+	graph := &types.IRGraph{}
+	for _, id := range []string{"chart", "synth", "both", "placed"} {
+		graph.Spec.Nodes.Set(id, types.IRNode{})
+	}
+	source := "oci://charts.example/app"
+	workload := types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
+	recipes := map[string]*types.Recipe{
+		"chart":  {Spec: types.RecipeSpec{Capability: "helm", Source: source}},
+		"synth":  {Spec: types.RecipeSpec{Capability: "helm", Workload: workload}},
+		"both":   {Spec: types.RecipeSpec{Capability: "helm", Source: source, Workload: workload}},
+		"placed": {Spec: types.RecipeSpec{Capability: "helm"}},
+	}
+	engine := &recordingRenderedNamer{}
+	factory := func(string) (Provider, error) { return engine, nil }
+
+	names, err := CollectRenderedNames(t.Context(), graph, recipes, factory)
+	if err != nil {
+		t.Fatalf("collecting rendered names: %v", err)
+	}
+
+	// Asked in sorted identity order, which is the pass's own determinism claim.
+	want := []RenderedNameInput{
+		{NodeID: "both", Sourced: true, Synthesized: true},
+		{NodeID: "chart", Sourced: true},
+		{NodeID: "placed"},
+		{NodeID: "synth", Synthesized: true},
+	}
+	if !reflect.DeepEqual(engine.asked, want) {
+		t.Errorf("the provider was asked %+v, want %+v", engine.asked, want)
+	}
+	wantNames := NodeRenderedNames{"both": "named-both", "synth": "named-synth"}
+	if !reflect.DeepEqual(names, wantNames) {
+		t.Errorf("collected names %v, want %v", names, wantNames)
+	}
 }
 
 // TestCollectRenderedNamesAsksNothingWithoutAnEngineFactory pins the no-op shape

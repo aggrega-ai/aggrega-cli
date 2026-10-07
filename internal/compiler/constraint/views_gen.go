@@ -4151,11 +4151,12 @@ type DescribedView interface {
 	// they would change.
 	//
 	// What it is for is telling two absences apart where the remedy differs. A
-	// node with no supplied source has its output named after its own
-	// identity, so an author reaching for a name that does not exist there has
-	// a correct value already available; a node that DOES supply source and
-	// whose target still reports no name has no such substitute, and a rule
-	// offering one would send its reader to a value that is wrong for them.
+	// node with no supplied source, on a target that reports no name for it,
+	// has its output named after its own identity, so an author reaching for a
+	// name that does not exist there has a correct value already available; a
+	// node that DOES supply source and whose target still reports no name has
+	// no such substitute, and a rule offering one would send its reader to a
+	// value that is wrong for them.
 	//
 	// False is a real answer and covers a node with no bound Recipe as well as
 	// one whose Recipe declares no source: neither supplies source for a
@@ -4166,25 +4167,27 @@ type DescribedView interface {
 	NodeDeclaresAuthoredSource(node string) bool
 
 	// NodeRenderedName is the name the provider rendering a node's own
-	// documents reports it will give the resources it renders from source the
-	// author supplied, empty when it reports none.
+	// documents reports it will give the resources it renders for that node,
+	// empty when it reports none.
 	//
 	// It is the name an author's own templates render against — what a chart
-	// reads as its release name — and it is a different value from the
-	// identity the compiler stamps on the resources it built itself. The two
-	// are separate facts because they answer separate questions, and a single
-	// value answering both is what leaves a published address naming a
-	// resource that does not exist: the two are written in different
-	// alphabets, so for some authored identities they differ.
+	// reads as its release name — and, on a target that names the workload
+	// it synthesizes after a name of its own, the name that workload's
+	// resources carry. It is a different value from the identity the compiler
+	// stamps on a node's resources as their labels. The two are separate facts
+	// because they answer separate questions, and a single value answering
+	// both is what leaves a published address naming a resource that does not
+	// exist: the two are written in different alphabets, so for some authored
+	// identities they differ.
 	//
 	// Emptiness is one answer rather than several, and the reason is what the
 	// rule reading it asks. A node with no bound Recipe, a provider that
-	// reports no such name, a provider that reports one only for a node whose
-	// Recipe supplies source, and a binding the build could not resolve to a
-	// provider all leave an author with no such name to read. That is one
-	// answer to the question the fact is asked for, and distinguishing them
-	// would put a second condition on it that the reading cannot act on
-	// differently.
+	// reports no such name, a provider that reports one only for some input
+	// kinds asked about a node declaring none of them, and a binding the build
+	// could not resolve to a provider all leave an author with no such name to
+	// read. That is one answer to the question the fact is asked for, and
+	// distinguishing them would put a second condition on it that the reading
+	// cannot act on differently.
 	//
 	// The value is composed inside the provider's own guest and is carried
 	// here unread, so nothing about what that target accepts in a name — its

@@ -840,8 +840,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
-	// Ask each node's own provider what name it will give the output it renders
-	// from that node's author-supplied source, before anything is evaluated.
+	// Ask each node's own provider what name it will give the resources it renders
+	// for that node, before anything is evaluated.
 	//
 	// It is here because the binding above is what selects a node's provider, so
 	// this is the earliest point the question can be asked at all — and it has to
@@ -920,8 +920,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
-		// The rule over a provides entry that reads the name its target renders
-		// author-supplied source under, asked against the same presentation and
+		// The rule over a provides entry that reads the name its target gives the
+		// resources it renders for the node, asked against the same presentation and
 		// the same enumeration and immediately after the reading above.
 		//
 		// It is here rather than at evaluation because the name is a plain string
@@ -1839,7 +1839,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		result.Warnings = append(result.Warnings,
 			unreadValueWarnings(nodeID, nodeRecipes[nodeID], tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
 
-		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
+		hasWorkload := recipeWorkloadDeclared(recipe)
 
 		// Resolve engine for this node's provider via factory. The factory
 		// receives the full binding (version pin included) so it can resolve the

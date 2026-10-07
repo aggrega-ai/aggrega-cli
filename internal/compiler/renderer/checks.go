@@ -1170,8 +1170,8 @@ var ProvidesTemplateSelfContained = constraint.Check[
 }
 
 // ProvidesTemplateRenderedNameAvailable reports each provides entry that reads
-// the name its target renders author-supplied source under, on a node whose
-// provider reports no such name.
+// the name its target gives the resources it renders for the node, on a node
+// whose provider reports no such name.
 //
 // The refusal is what keeps the value from being worse than its absence. The name
 // reaches a template as a plain string, so a node with none renders the reference
@@ -1219,8 +1219,8 @@ var ProvidesTemplateRenderedNameAvailable = constraint.Check[
 }
 
 // TemplateFieldRenderedNameAvailable reports each inline template field a node's
-// own Recipe writes that reads the name its target renders author-supplied source
-// under, on a node whose provider reports no such name.
+// own Recipe writes that reads the name its target gives the resources it renders
+// for the node, on a node whose provider reports no such name.
 //
 // It is the same refusal the provides rule carries, over the rest of the surfaces
 // the value lands on: the values mapping, the workload body, each artifacts entry,
@@ -1271,7 +1271,7 @@ var TemplateFieldRenderedNameAvailable = constraint.Check[
 
 // AttachmentTemplateReadsNoHostRenderedName reports each inline template field a
 // per-component attachment's FeatureRecipe writes that reads the name a target
-// renders author-supplied source under.
+// gives the resources it renders for a node.
 //
 // # Why the refusal is unconditional here, where the node's own rules read a fact
 //
@@ -1280,11 +1280,12 @@ var TemplateFieldRenderedNameAvailable = constraint.Check[
 // for that node. On an attachment's surfaces there is no such case. The attachment's
 // render context is derived from its host node's, so the value standing at the key
 // is the HOST's answer whatever it is — the name the host's own bound provider
-// reports for output rendered from the HOST Recipe's source. An attachment binds its
-// own recipe and therefore its own provider, so that value is not an answer about
-// the attachment's own output at all: it is absent whenever the host supplies no
-// source even where the attachment's author did, and it comes from a different
-// target entirely whenever the two declared capabilities differ.
+// reports for the HOST's resources, from what the HOST Recipe declares. An
+// attachment binds its own recipe and therefore its own provider, so that value is
+// not an answer about the attachment's own output at all: it is absent whenever the
+// host's provider reports none for the host, whatever the attachment declares, and
+// it comes from a different target entirely whenever the two declared capabilities
+// differ.
 //
 // So the fault is the reference's PROVENANCE rather than the host's report, and
 // reading the host's report would make the refusal fire on some hosts and not
@@ -1592,8 +1593,8 @@ type renderedNameSubject interface {
 }
 
 // renderedNameObjections is the ONE body of the rendered-name predicate: it
-// refuses one authored template that reads the name its target renders
-// author-supplied source under, on a node whose provider reports no such name.
+// refuses one authored template that reads the name its target gives the
+// resources it renders for the node, on a node whose provider reports no such name.
 //
 // The facts arrive as arguments rather than being read here, because reading them
 // is precisely the part that differs between the values declared over this
@@ -1645,11 +1646,12 @@ func renderedNameObjections[S renderedNameSubject](
 // not report, and it differs by whether the node supplies source of its own.
 //
 // The remedy is a property of the occurrence rather than of the rule, which is
-// what makes stating it worth the branch. A node that supplies no source has its
-// output named after its own identity, so there IS a correct value and naming it
-// closes the question; a node that does supply source and whose target still
-// reports no name has no substitute, and offering the identity there would send
-// its reader to a value that names none of that node's resources. Stating the
+// what makes stating it worth the branch. A node that supplies no source, on a
+// target that reports no name for it, has its output named after its own
+// identity, so there IS a correct value and naming it closes the question; a node
+// that does supply source and whose target still reports no name has no
+// substitute, and offering the identity there would send its reader to a value
+// that names none of that node's resources. Stating the
 // wrong remedy is worse than stating none, which is why the two are separate
 // sentences rather than one that covers both loosely.
 // Neither sentence says WHY a target reports no name, and the omission is
@@ -2432,6 +2434,20 @@ func recipeSourceDeclared(recipe *types.Recipe) bool {
 		return false
 	}
 	return sourceValueDeclared(recipe.Spec.Source)
+}
+
+// recipeWorkloadDeclared reports whether a Recipe declares a workload for its
+// provider to synthesize, reading the block the author WROTE.
+//
+// It is one helper because two readers ask the one question and must not part:
+// the render, which synthesizes a workload for exactly the nodes this answers
+// true for, and the question put to a provider ahead of the render about the name
+// it will give that node's resources. A provider told a node is synthesized when
+// the render then synthesizes nothing for it — or the reverse — would report a
+// name for resources that are not emitted, or withhold one for resources that
+// are. A nil Recipe declares no workload.
+func recipeWorkloadDeclared(recipe *types.Recipe) bool {
+	return recipe != nil && !recipe.Spec.Workload.IsEmpty()
 }
 
 // The artifact-pillar rule, declared once per artifacts block the rule governs.

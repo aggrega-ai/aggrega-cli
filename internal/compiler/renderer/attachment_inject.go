@@ -138,13 +138,13 @@ func pipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery {
 // would be free to disagree about what the path admits.
 //
 // One narrowing: context.rendered_name. The value on this surface is the HOST
-// node's answer — the name the host's own bound provider reports for the output it
-// renders from the host Recipe's source — and an attachment is not that node: it
-// binds its own recipe and therefore its own provider. So the value is not an
-// answer about the attachment's own output at all. It is absent whenever the HOST
-// Recipe supplies no source, even where the attachment's own author did supply
-// one, and it comes from a different target entirely whenever the attachment's
-// declared capability differs from its host's.
+// node's answer — the name the host's own bound provider reports for the resources
+// it renders for the host — and an attachment is not that node: it binds its own
+// recipe and therefore its own provider. So the value is not an answer about the
+// attachment's own output at all. It is absent whenever the HOST's provider
+// reports none for the host, whatever the attachment itself declares, and it
+// comes from a different target entirely whenever the attachment's declared
+// capability differs from its host's.
 //
 // It is deliberately NOT narrowed on the grounds that an attachment's supplied
 // source renders under the attachment's own identity, which is what a reader
@@ -169,12 +169,12 @@ var attachmentFRScope = templateScope{
 // It carries the SAME single narrowing as the locals-and-provides scope above and
 // for the same reason, which is the whole point of it being a second scope rather
 // than a second rule: context.rendered_name on any of these fields is the HOST
-// node's answer — the name the host's own bound provider reports for the output it
-// renders from the host Recipe's source — and an attachment is not that node. It
-// binds its own recipe and therefore its own provider, so the value is absent
-// whenever the HOST Recipe supplies no source even where the attachment's own
-// author did supply one, and it comes from a different target entirely whenever the
-// attachment's declared capability differs from its host's.
+// node's answer — the name the host's own bound provider reports for the resources
+// it renders for the host — and an attachment is not that node. It binds its own
+// recipe and therefore its own provider, so the value is absent whenever the HOST's
+// provider reports none for the host, whatever the attachment itself declares, and
+// it comes from a different target entirely whenever the attachment's declared
+// capability differs from its host's.
 //
 // A rule that refused the reference on two of an attachment's surfaces while
 // admitting it on the rest would be an inconsistency rather than a coverage bound:
@@ -196,8 +196,8 @@ var attachmentFRRenderScope = templateScope{
 }
 
 // classifyAttachmentTemplateRenderedName decides whether one authored template
-// field on a per-component attachment reads the name its host node's target
-// renders author-supplied source under, and returns the refusal where it does.
+// field on a per-component attachment reads the name its host node's target gives
+// the resources it renders for the host, and returns the refusal where it does.
 //
 // It is the ONE home of that decision, so the rule declared over these fields and
 // any later reader reach the same verdict. The refused reference is recovered from

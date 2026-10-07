@@ -14,12 +14,12 @@ spec:
   implements: core/compute/api-server
   source: ./charts/api-server
   provides:
-    # This node emits two differently named sets of resources, and the published
-    # address names the one a consumer dials: the vendored chart's own Service,
-    # named after the release name this target renders that chart under. The
-    # manifests synthesized from the workload beside it are named after the
-    # node's identity instead, which is what `.context.instance_id` carries —
-    # so the two names are both correct and neither stands in for the other.
+    # This node emits two sets of resources, and the published address names the
+    # one a consumer dials: the vendored chart's own Service, named after the
+    # release name this target renders that chart under. The manifests
+    # synthesized from the workload beside it are named after that same release
+    # name, so `.context.rendered_name` serves either set; the node's identity in
+    # `.context.instance_id` names neither wherever the two spellings differ.
     host: "{{ .context.rendered_name }}.svc.cluster.local"
     service_port: "{{ optional .infra `port` 8080 }}"
   locals:

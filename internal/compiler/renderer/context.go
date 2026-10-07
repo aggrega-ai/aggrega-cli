@@ -15,7 +15,7 @@ import (
 // puts on it is exactly what a template can read.
 //
 // It fills the node's identity and topology (instance_id, the name its provider
-// reports for the output it renders from author-supplied source, labels, the
+// reports for the resources it renders for the node, labels, the
 // three cascading annotation buckets, the pre-hydrated inject pipe, and the
 // enriched uses map keyed by the alias the developer gave each edge), the
 // evaluated values and infra dictionaries, the node's own resolved provides, its

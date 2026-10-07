@@ -58,10 +58,11 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 	return labels.EncodeNodeIdentity(nodeCtx.NodeID)
 }
 
-// TargetNameBasis returns the identity a target derives its OWN names from when
-// it renders source an author wrote — a Helm release name, the prefix on the
-// files a source render emits. It is the DerivedNameBasis when set, falling back
-// to NodeID.
+// TargetNameBasis returns the identity a target derives its OWN names from — a
+// Helm release name, which a chart an author wrote renders against and which
+// names the workload that target synthesizes for a component, and the prefix on
+// the files a source render emits. It is the DerivedNameBasis when set, falling
+// back to NodeID.
 //
 // It sits beside [ProvenanceComponentID] rather than inside it because the two
 // answer different questions, and a single value answering both is what made an
@@ -79,12 +80,14 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // whose first character the release-name alphabet does not admit, so every
 // escape would open the name with a hyphen and no shortening would repair it.
 //
-// Deliberately NOT read by a surface that names resources the COMPILER built. A
-// synthesized workload and a standalone artifact set have no author templates,
-// so nothing renders against their names and they are named after the identity —
-// which is what keeps an FR's synthesized workload from colliding with its
-// host's own. Reading this there would fall back to the host's NodeID and
-// reintroduce exactly that collision.
+// Deliberately NOT read by a surface that names a workload an FR attachment
+// synthesizes, or a standalone artifact set. Those have no author templates, so
+// nothing renders against their names and they are named after the identity —
+// which is what keeps an FR's synthesized workload from colliding with its host's
+// own. Reading this there would fall back to the host's NodeID and reintroduce
+// exactly that collision. A component's own synthesized workload may be named
+// from it, as the Helm release name names it: for a component the basis is its
+// own identity, so no other node's name is borrowed.
 //
 // It also does NOT encode, where [ProvenanceComponentID] does, and the asymmetry
 // is deliberate rather than an oversight — encoding here would be a defect, not a

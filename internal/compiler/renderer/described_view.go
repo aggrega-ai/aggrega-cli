@@ -164,10 +164,9 @@ type describedView struct {
 	// which carries that provider's own retained self-report.
 	engineFactory EngineFactory
 
-	// renderedNames is the name each node's own provider reported for the output
-	// it renders from that node's author-supplied source, as the pass ahead of
-	// this presentation collected it. A node whose provider reported none is
-	// absent.
+	// renderedNames is the name each node's own provider reported for the
+	// resources it renders for that node, as the pass ahead of this presentation
+	// collected it. A node whose provider reported none is absent.
 	//
 	// It is TAKEN rather than asked for here, and that is what keeps the fact
 	// single-sourced. The answers reach two readers — the rule declared over a
@@ -253,8 +252,8 @@ func newDescribedView(
 }
 
 // NodeRenderedName returns the name the provider rendering a node's own documents
-// reported it will give the resources it renders from source the author supplied,
-// empty when it reported none.
+// reported it will give the resources it renders for that node, empty when it
+// reported none.
 //
 // It answers from the collection taken ahead of this presentation rather than by
 // asking the guest again, so the name a rule reads and the name a provides
