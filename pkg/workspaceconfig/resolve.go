@@ -801,7 +801,7 @@ func loadGlobalLayer(platform machinedirs.Platform, lookup func(string) string) 
 		}
 		cfg, err = load(v)
 		if err != nil {
-			return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", v, err)
+			return Config{}, false, "", fmt.Errorf("load the global configuration file %s: %w", v, err)
 		}
 		return cfg, true, v, nil
 	}
@@ -815,7 +815,7 @@ func loadGlobalLayer(platform machinedirs.Platform, lookup func(string) string) 
 	}
 	cfg, err = load(defaultPath)
 	if err != nil {
-		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", defaultPath, err)
+		return Config{}, false, "", fmt.Errorf("load the global configuration file %s: %w", defaultPath, err)
 	}
 	return cfg, true, defaultPath, nil
 }
