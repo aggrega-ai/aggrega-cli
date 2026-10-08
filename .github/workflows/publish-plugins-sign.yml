@@ -61,16 +61,30 @@ name: Publish and sign core plugins
 # Apple silicon (darwin/arm64) and an Intel (darwin/amd64) macOS runner. Each
 # runs every binary's version report, the protocol handshake over standard input
 # and output, a validate, pull and build of a worked example whose result it
-# compares byte for byte with the result the build job produced, and the tests
-# that prove each platform split behaves on that platform, all through one
-# script. They need nothing the build needs — no sibling repository, no
-# toolchain, no secret — because the build job stages everything each runs as
-# one workflow artifact per target. They publish nothing, and sign-and-publish
-# waits for all of them: it starts only when the Windows run and both macOS
-# runs have passed, on a release tag and on a dispatch, a dry run's included.
-# So a binary that fails on its own platform stops the release before anything
-# is pushed, and a smoke job that never starts holds sign-and-publish back with
-# it. A dry run proves the binaries the same way before a tag is pushed.
+# compares byte for byte with the result the build job produced; then, in a
+# directory whose path holds a space and a letter outside ASCII, config init
+# with only the platform's own rule able to place the global configuration, a
+# pull from a registry the job starts on its own loopback address that writes
+# the workspace's entity cache and a build from that cache, and a pull naming
+# one catalog directory twice; every command's output is redirected and must
+# carry no escape byte; and last the tests that prove each platform split
+# behaves on that platform, all through one script. They need nothing the build
+# needs — no sibling repository, no toolchain, no secret, no network beyond
+# their own loopback address — because the build job stages everything each
+# runs as one workflow artifact per target. They publish nothing, and
+# sign-and-publish waits for all of them: it starts only when the Windows run
+# and both macOS runs have passed, on a release tag and on a dispatch, a dry
+# run's included. So a binary that fails on its own platform stops the release
+# before anything is pushed, and a smoke job that never starts holds
+# sign-and-publish back with it. A dry run proves the binaries the same way
+# before a tag is pushed.
+#
+# A dry run may also name, in smoke_binaries_from, the tag of an earlier
+# release: windows-smoke then runs that release's Windows binaries in place of
+# this run's own, every check reporting its verdict, to show which checks those
+# binaries fail. Such a smoke run never passes, so the run never reaches
+# sign-and-publish, and a dispatch that is not a dry run is refused for naming
+# one before anything is built.
 #
 # Nothing with an external side effect runs until every build, validation and
 # smoke run has passed, so a failure in the ABI check, in catalog generation or
@@ -129,6 +143,11 @@ on:
         type: boolean
       tag:
         description: "The release tag (vMAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
+        required: false
+        default: ""
+        type: string
+      smoke_binaries_from:
+        description: "Dry run only: the tag of an earlier release whose Windows binaries the Windows smoke job runs in place of this run's own, reporting every check's verdict, to show which checks they fail. The smoke run then never passes."
         required: false
         default: ""
         type: string
@@ -281,6 +300,17 @@ jobs:
         run: |
           set -euo pipefail
           echo "publish-plugins: a manual publish requires the tag input (vMAJOR.MINOR.PATCH)" >&2
+          exit 2
+
+      - name: Refuse substituted smoke binaries on a real publish
+        # smoke_binaries_from has windows-smoke prove an earlier release's
+        # binaries rather than the ones this run builds, so it proves nothing
+        # about what a publish would ship: a dispatch that would publish is
+        # refused for naming one, here, before anything is built.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.smoke_binaries_from != '' }}
+        run: |
+          set -euo pipefail
+          echo "publish-plugins: smoke_binaries_from runs only on a dry run (dry_run=true)" >&2
           exit 2
 
       - name: Pin the CLI tree to the release tag
@@ -656,13 +686,16 @@ jobs:
         # directory: the three Windows binaries above; a Windows test executable
         # for each package whose tests prove a platform split, cross-compiled
         # here because the Windows runner has no toolchain and no sibling
-        # repositories; and the worked example, with the workspace this
-        # machine's validate, pull and build of it leave — the bytes the Windows
-        # run must reproduce. The example builds from a catalog in this
-        # repository and the guests the full binary embeds, offline and with no
-        # configuration of this machine read, so the Windows run needs no
-        # registry either. The script builds that reference twice, in two
-        # directories, and refuses when the two differ. No external side
+        # repositories; the worked example, with the workspace this machine's
+        # validate, pull and build of it leave — the bytes the Windows run must
+        # reproduce; and, for the entity-cache check, a registry program built
+        # for Windows from a module go.mod already pins, one entity to publish to
+        # it, and a copy of the example that pulls that entity from it. The
+        # example builds from a catalog in this repository and the guests the
+        # full binary embeds, offline and with no configuration of this machine
+        # read, so the Windows run needs no registry but the one it starts on
+        # its own loopback address. The script builds that reference twice, in
+        # two directories, and refuses when the two differ. No external side
         # effect; a dry run stages too.
         id: windows-smoke-inputs
         run: |
@@ -1246,19 +1279,66 @@ jobs:
         run: |
           rm -rf -- "$INPUTS" "$RELEASE_DIR"
 
+  smoke-binaries:
+    # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
+    # binaries and hands them to windows-smoke as an artifact, saved under the
+    # names the smoke inputs give the binaries; on every other run each step is
+    # skipped and the job passes at once. It runs on every run, rather than
+    # being skipped, because windows-smoke waits for it and carries no condition
+    # of its own that could let a skipped dependency through. The download reads
+    # this repository's releases with the run's own token; the job runs nothing
+    # but the GitHub CLI and the artifact upload, which is why it is a job of its
+    # own: windows-smoke runs code a token must not reach. It starts once the
+    # credential check has passed, beside the build.
+    needs: registry-credential
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download the release binaries named to run in place of this run's own
+        if: ${{ inputs.smoke_binaries_from != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBSTITUTE_TAG: ${{ inputs.smoke_binaries_from }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/substituted-binaries"
+          mkdir -p "$dir"
+          version="${SUBSTITUTE_TAG#v}"
+          for name in aggrega aggrega-light aggrega-stripped; do
+            gh release download "$SUBSTITUTE_TAG" -R "$GITHUB_REPOSITORY" \
+              -p "$name-$version-windows-amd64.exe" -O "$dir/$name-windows-amd64.exe"
+          done
+          ls -l "$dir"
+
+      - name: Upload them for windows-smoke
+        if: ${{ inputs.smoke_binaries_from != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: substituted-windows-binaries
+          path: ${{ runner.temp }}/substituted-binaries
+          if-no-files-found: error
+          retention-days: 1
+
   windows-smoke:
     # Runs the Windows binaries the build job built, on Windows. Cross-compiling
     # proves only that the code compiles for Windows; this job proves that the
     # binaries start, answer, and build what the Linux build builds, byte for
-    # byte, and that the platform splits — file locks, files another process
-    # holds open, forward-slash paths, a Unix-socket listen address — behave
-    # there. Everything it runs comes from the artifact the build job staged; it
+    # byte; that they do what a Windows user does where a Unix-like shell would
+    # hide it — place the global configuration with no HOME, write the entity
+    # cache under names Windows accepts, work in a path with a space and an
+    # accented letter, and keep escape bytes out of redirected output; and that
+    # the platform splits — file locks, files another process holds open,
+    # forward-slash paths, a Unix-socket listen address — behave there.
+    # Everything it runs comes from the artifact the build job staged, a registry
+    # program among it, which serves on this machine's loopback address alone; it
     # checks out this repository only so that each test executable runs from its
     # package directory, at the commit the artifact records. It holds no secret
     # and reads only this repository, and its one script stops at the first
     # failure, saying what failed. sign-and-publish waits for it, so a failure
-    # here publishes nothing.
-    needs: build
+    # here publishes nothing. On a dry run naming smoke_binaries_from it runs
+    # the binaries smoke-binaries fetched instead, and fails whatever they do.
+    needs: [build, smoke-binaries]
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
@@ -1288,24 +1368,46 @@ jobs:
           name: windows-smoke-inputs
           path: ${{ runner.temp }}/windows-smoke
 
+      - name: Download the release binaries named to run in place of this run's own
+        # Only on a dry run naming smoke_binaries_from: the binaries
+        # smoke-binaries fetched from that release.
+        if: ${{ inputs.smoke_binaries_from != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: substituted-windows-binaries
+          path: ${{ runner.temp }}/substituted-binaries
+
       - name: Run the Windows binaries and tests
         # The versions, the handshake, the example and its byte comparison —
         # with a planted one-byte difference shown turning the comparison red —
-        # then the named tests, any of which skipping or not running fails the
-        # step. aggrega-cli/scripts/platform-smoke.sh --help says what each
-        # check asserts.
+        # then config init with no HOME, a pull from a registry on this machine
+        # into the entity cache and a build from it, a catalog directory named
+        # twice, all in a path with a space and an accented letter, every
+        # command's redirected output free of escape bytes, each check shown
+        # refusing a planted fault; then the named tests, any of which skipping
+        # or not running fails the step. On a dry run naming
+        # smoke_binaries_from, the binaries downloaded above run instead, and
+        # the step fails whatever they do. aggrega-cli/scripts/platform-smoke.sh
+        # --help says what each check asserts.
+        env:
+          SUBSTITUTE_TAG: ${{ inputs.smoke_binaries_from }}
         run: |
           set -euo pipefail
-          aggrega-cli/scripts/platform-smoke.sh --target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke"
+          args=(--target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke")
+          if [ -n "$SUBSTITUTE_TAG" ]; then
+            args+=(--binaries "$RUNNER_TEMP/substituted-binaries")
+          fi
+          aggrega-cli/scripts/platform-smoke.sh "${args[@]}"
 
   macos-smoke:
     # Runs the macOS binaries the build job built, on macOS: the darwin/arm64
     # ones on an Apple silicon runner and the darwin/amd64 ones on an Intel
-    # runner, through the same script and the same checks as windows-smoke. It
-    # proves that the binaries start, answer, and build what the Linux build
-    # builds, byte for byte, and that the platform splits — file locks, files
-    # another process holds open, forward-slash paths, a Unix-socket listen
-    # address — behave there. The script also refuses a machine whose
+    # runner, through the same script and the same checks as windows-smoke, its
+    # configuration check holding macOS's own rule, which reads HOME. It proves
+    # that the binaries start, answer, and build what the Linux build builds,
+    # byte for byte, and that the platform splits — file locks, files another
+    # process holds open, forward-slash paths, a Unix-socket listen address —
+    # behave there. The script also refuses a machine whose
     # architecture is not the target's, because a Mac with Apple silicon runs
     # an amd64 binary too, through Rosetta 2. Everything it runs comes from the
     # artifact the build job staged for the target; it checks out this
@@ -1375,9 +1477,14 @@ jobs:
       - name: Run the macOS binaries and tests
         # The machine check, the versions, the handshake, the example and its
         # byte comparison — with a planted one-byte difference shown turning the
-        # comparison red — then the named tests, any of which skipping or not
-        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
-        # says what each check asserts.
+        # comparison red — then config init placed by HOME alone, a pull from a
+        # registry on this machine into the entity cache and a build from it, a
+        # catalog directory named twice, all in a path with a space and an
+        # accented letter, every command's redirected output free of escape
+        # bytes, each check shown refusing a planted fault; then the named
+        # tests, any of which skipping or not running fails the step.
+        # aggrega-cli/scripts/platform-smoke.sh --help says what each check
+        # asserts.
         env:
           TARGET: ${{ matrix.target }}
         run: |

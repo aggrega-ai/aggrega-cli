@@ -19,8 +19,19 @@
 #               pull writes; reference/, that workspace after this machine's
 #               validate, pull and build — the bytes the target machine must
 #               reproduce
+#   tools/      registry (registry.exe for windows/amd64), go-containerregistry's
+#               in-memory registry server built for the target from the module
+#               this repository's go.mod already requires, which the smoke run
+#               starts on the target machine's loopback address
+#   registry/   publish/<name>/<name>.yaml, one FeatureRecipe of the example in a
+#               directory of its own, which the smoke run pushes to that registry;
+#               and consumer/, a copy of the example whose catalog lacks that
+#               entity and whose Manifest names it by provider, so its pull fetches
+#               the entity from the registry and writes it into its entity cache
 #   smoke.env   the target, the version every binary must report, the commit the
-#               example and the tests come from, and the example's Release
+#               example and the tests come from, the example's Release, the staged
+#               entity's path (registry_entity) and the reference its pull
+#               resolves (registry_reference)
 #
 # The worked example is a test fixture of this repository whose catalog sits beside
 # it and whose providers the full binary embeds, so it builds with no registry at
@@ -32,8 +43,9 @@
 # Run it from the release build's checkout after the target's binaries are built:
 # it needs ./aggrega (the full binary for this machine), the target's binaries
 # beside it, the embedded guests they embed (the test executables embed the same
-# guests), and a Go toolchain. The smoke run holds every binary to the version
-# ./aggrega reports, so all of them must come from one build of this tree, as the
+# guests), and a Go toolchain with the modules go.mod requires. The smoke run
+# holds every binary to the version ./aggrega reports, so all of them must come
+# from one build of this tree, as the
 # release build's --expect-version already holds them. Like scripts/build.sh it
 # builds with GOWORK=off, the go.mod replace directives resolving the sibling
 # repositories beside this one.
@@ -60,6 +72,21 @@ smoke_require_bash || exit 1
 # Windows checkout could not reproduce.
 EXAMPLE_FIXTURE="internal/compiler/testdata/fullstack-app"
 EXAMPLE_RELEASE="release.yaml"
+# The Manifest that Release names.
+EXAMPLE_MANIFEST="manifest.yaml"
+
+# The entity the smoke run serves from a registry of its own: a FeatureRecipe the
+# example's Release builds. In the consumer copy the Manifest's mapping to it is
+# rewritten to name its provider, since a reference with no provider is looked for
+# only in a catalog directory; the reference a pull then resolves carries a colon,
+# which the name of its cache slot must not.
+REGISTRY_ENTITY="catalog/base/feature-recipes/k8s-dns-patcher.yaml"
+REGISTRY_MAPPING_FROM=": k8s-dns-patcher:1.0.0"
+REGISTRY_MAPPING_TO=": helm/k8s-dns-patcher:1.0.0"
+REGISTRY_REFERENCE="helm/k8s-dns-patcher:1.0.0"
+# The registry program: built from a module go.mod already requires, at the version
+# it pins, rather than fetched as a binary from anywhere.
+REGISTRY_PROGRAM="github.com/google/go-containerregistry/cmd/registry"
 
 # The tests the smoke run executes, as <systems> <package> <test>, where <systems>
 # names, comma-separated, the operating systems the test is staged for. Each
@@ -211,19 +238,44 @@ cp -R "$EXAMPLE_FIXTURE/." "$OUT/example/input/"
 mkdir -p "$OUT/example/reference" "$OUT/.smoke-recheck/a/b/c/reference"
 cp -R "$OUT/example/input/." "$OUT/example/reference/"
 cp -R "$OUT/example/input/." "$OUT/.smoke-recheck/a/b/c/reference/"
-smoke_build_example "$CLI_ROOT/aggrega" "$OUT/example/reference" "$EXAMPLE_RELEASE"
-smoke_build_example "$CLI_ROOT/aggrega" "$OUT/.smoke-recheck/a/b/c/reference" "$EXAMPLE_RELEASE"
+smoke_build_example "$CLI_ROOT/aggrega" "$OUT/example/reference" "$EXAMPLE_RELEASE" "$OUT/.smoke-logs/reference"
+smoke_build_example "$CLI_ROOT/aggrega" "$OUT/.smoke-recheck/a/b/c/reference" "$EXAMPLE_RELEASE" "$OUT/.smoke-logs/recheck"
 if ! smoke_compare_trees "$OUT/example/reference" "$OUT/.smoke-recheck/a/b/c/reference"; then
   fail "the example does not build to the same bytes in two directories on this machine; a comparison on $TARGET against it would mean nothing"
   exit 1
 fi
-rm -rf "$OUT/.smoke-recheck" "$OUT/.smoke-config"
+rm -rf "$OUT/.smoke-recheck" "$OUT/.smoke-config" "$OUT/.smoke-logs"
+
+echo "==> the registry the smoke run starts: $REGISTRY_PROGRAM"
+mkdir -p "$OUT/tools"
+env GOOS="$GOOS_T" GOARCH="$GOARCH_T" CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+  -o "$OUT/tools/registry$EXE_SUFFIX" "$REGISTRY_PROGRAM"
+echo "  tools/registry$EXE_SUFFIX"
+
+echo "==> the entity served from it, and the copy of the example that fetches it: $REGISTRY_ENTITY"
+entity_name="$(basename "$REGISTRY_ENTITY" .yaml)"
+mkdir -p "$OUT/registry/publish/$entity_name" "$OUT/registry/consumer"
+cp "$EXAMPLE_FIXTURE/$REGISTRY_ENTITY" "$OUT/registry/publish/$entity_name/$entity_name.yaml"
+cp -R "$EXAMPLE_FIXTURE/." "$OUT/registry/consumer/"
+rm -f "$OUT/registry/consumer/$REGISTRY_ENTITY" "$OUT/registry/consumer/${EXAMPLE_RELEASE%.yaml}.lock"
+manifest="$OUT/registry/consumer/$EXAMPLE_MANIFEST"
+content="$(< "$manifest")"
+rest="${content//"$REGISTRY_MAPPING_FROM"/}"
+if [ $(( (${#content} - ${#rest}) / ${#REGISTRY_MAPPING_FROM} )) != 1 ]; then
+  fail "$EXAMPLE_FIXTURE/$EXAMPLE_MANIFEST does not map to the entity as \"$REGISTRY_MAPPING_FROM\" exactly once"
+  exit 1
+fi
+printf '%s\n' "${content//"$REGISTRY_MAPPING_FROM"/"$REGISTRY_MAPPING_TO"}" > "$manifest"
+echo "  registry/publish/$entity_name/$entity_name.yaml"
+echo "  registry/consumer/, its $EXAMPLE_MANIFEST mapping to $REGISTRY_REFERENCE"
 
 {
   printf 'target=%s\n' "$TARGET"
   printf 'version=%s\n' "$VERSION"
   printf 'commit=%s\n' "$COMMIT"
   printf 'release=%s\n' "$EXAMPLE_RELEASE"
+  printf 'registry_entity=%s\n' "registry/publish/$entity_name/$entity_name.yaml"
+  printf 'registry_reference=%s\n' "$REGISTRY_REFERENCE"
 } > "$OUT/smoke.env"
 
 echo "==> staged $TARGET into $OUT: version $VERSION, commit $COMMIT"
