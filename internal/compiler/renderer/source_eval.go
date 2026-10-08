@@ -73,16 +73,19 @@ func EvaluateRecipeSource(
 // — featureRecipeLocalsScope — rather than the base Recipe's, and the difference
 // is not cosmetic. An attachment IS being resolved here, so .attachment_name names
 // it and is admitted, exactly as it is admitted on the locals entries of the same
-// entity; .context.rendered_name stays narrowed, for the reason the source surface
-// narrows it everywhere — on this surface a source template is the very thing being
-// evaluated to decide what the source is, so whether a name of that kind exists is
-// not a settled fact.
+// entity. .context.rendered_name is the HOST's reported name on the same terms as
+// those entries too — present where the host's provider reported one and refused
+// where it reported none. A base Recipe's source surface refuses the key whatever
+// is reported, because there the template being evaluated decides what the node's
+// own source is; an attachment's source decides nothing about its host's, whose
+// name is settled before any template of the attachment runs.
 //
-// instanceID and instanceName are what EvaluateFeatureRecipeLocals is given at the
-// same site, passed through unchanged: .context.instance_id is the host component
-// the attachment resolves for and .attachment_name the instance filling the slot,
-// and one entity's own templates have to publish one denotation of each. Deriving
-// either here instead would give the same author two answers for one reference.
+// instanceID, hostRenderedName and instanceName are what EvaluateFeatureRecipeLocals
+// is given at the same site, passed through unchanged: .context.instance_id and
+// .context.rendered_name name the host component the attachment resolves for and
+// .attachment_name the instance filling the slot, and one entity's own templates have
+// to publish one denotation of each. Deriving any of them here instead would give the
+// same author two answers for one reference.
 //
 // locals is the resolved locals set this attachment's other templates read, which
 // at component scope is the FeatureRecipe's own block merged over the host
@@ -95,21 +98,21 @@ func EvaluateRecipeSource(
 // template reports without such a value.
 func EvaluateFeatureRecipeSource(
 	source any,
-	instanceName, instanceID string,
+	instanceName, instanceID, hostRenderedName string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 	locals types.OrderedMap[string],
 	withheld redact.Keys,
 ) (any, error) {
 	ctx := LocalsContext{
-		Context:        ProvidesContextBlock{InstanceID: instanceID},
+		Context:        ProvidesContextBlock{InstanceID: instanceID, RenderedName: hostRenderedName},
 		Values:         values,
 		Infra:          infra,
 		Locals:         locals,
 		AttachmentName: instanceName,
 	}
 	surface := sourceTemplateSurface{
-		scope:  featureRecipeLocalsScope.with(ctx, withheld),
+		scope:  attachmentHostScope(featureRecipeLocalsScope, hostRenderedName).with(ctx, withheld),
 		locals: locals.Keys(),
 		kind:   "FeatureRecipe",
 	}

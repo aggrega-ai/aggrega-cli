@@ -1271,37 +1271,34 @@ var TemplateFieldRenderedNameAvailable = constraint.Check[
 
 // AttachmentTemplateReadsNoHostRenderedName reports each inline template field a
 // per-component attachment's FeatureRecipe writes that reads the name a target
-// gives the resources it renders for a node.
+// gives the resources it renders for a node, on a host whose provider reported no
+// such name.
 //
-// # Why the refusal is unconditional here, where the node's own rules read a fact
+// # What the value is on an attachment, and so when it is refused
 //
-// On a node's own surfaces the reference is refused only where that node's provider
-// reports no such name, because where one IS reported the value is the right answer
-// for that node. On an attachment's surfaces there is no such case. The attachment's
-// render context is derived from its host node's, so the value standing at the key
-// is the HOST's answer whatever it is — the name the host's own bound provider
-// reports for the HOST's resources, from what the HOST Recipe declares. An
-// attachment binds its own recipe and therefore its own provider, so that value is
-// not an answer about the attachment's own output at all: it is absent whenever the
-// host's provider reports none for the host, whatever the attachment declares, and
-// it comes from a different target entirely whenever the two declared capabilities
-// differ.
+// The attachment's render context is derived from its host node's, so the value
+// standing at the key is the HOST's answer — the name the host's own bound provider
+// reports for the host's resources — in the same way .context.instance_id there is
+// the host's identity. That is the value an attachment needs: it names its own
+// resources after the component hosting it, and the host's reported name is a
+// spelling of that component the host's target accepts where the identity as
+// written may not be. So the reference is admitted wherever the host's provider
+// reported a name, and refused where it reported none, because an empty value there
+// would name a resource nothing emits.
 //
-// So the fault is the reference's PROVENANCE rather than the host's report, and
-// reading the host's report would make the refusal fire on some hosts and not
-// others for one authored mistake.
+// The value is never the attachment's OWN provider's answer, and the rule does not
+// read the attachment's declared capability: an attachment rendering through a
+// different target from its host still reads its host's name, which is what naming
+// a resource after the host means.
 //
 // # Why it is this refusal rather than the one the node's surfaces raise
 //
 // It raises the reference-not-admitted condition every template surface shares,
-// which is what the attachment's locals and provides surfaces already raise for
-// this same key through their own scope. That is the honest identity: the surface
-// does not offer the reference, which is a different statement from the node-rooted
-// one that a provider reports no name — and telling an attachment author their
-// provider is at fault would send them to change a capability that is not the
-// problem. It also promises nothing: a refusal phrased as an absent report reads as
-// a report that might arrive, and whether an attachment should instead be served its
-// OWN provider's answer is a question this surface does not answer.
+// which is what the attachment's locals, source and provides surfaces raise for this
+// same key through their own scope on the same hosts. One condition across every
+// surface of one attachment is what lets an author fix it once: on such a host the
+// surface does not define the key, and the detail lists what it does define — the
+// host's identity among it.
 //
 // # Why a boundary-scope attachment ends the rule
 //
@@ -1338,6 +1335,7 @@ var AttachmentTemplateReadsNoHostRenderedName = constraint.Check[
 		violation := classifyAttachmentTemplateRenderedName(
 			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
 			left, right,
+			v.NodeRenderedName(s.NodeID()),
 		)
 		if violation == nil {
 			return nil

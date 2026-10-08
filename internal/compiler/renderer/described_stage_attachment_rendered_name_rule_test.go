@@ -24,12 +24,12 @@ import (
 // carries a control showing the outcome follows from the planted reference rather
 // than from the fixture.
 //
-// The property that separates this rule from the node-rooted pair beside it is
-// asserted directly: the refusal is UNCONDITIONAL. An attachment's render context
-// is derived from its host node's, so the value standing at the key is the host's
-// answer whatever the host reports — which makes it the wrong node's answer even on
-// a host whose provider reports a name. A control drives exactly that world, because
-// it is the one case a rule copied from the node-rooted shape would silently admit.
+// The rule reads the HOST's reported name: an attachment's render context is
+// derived from its host node's, so the value standing at the key is the host's
+// answer, and the reference is refused exactly where that answer is absent. A
+// control drives the reporting world and asserts the reference is admitted there,
+// because a rule refusing whatever the host reports would refuse the one value an
+// attachment needs to name its resources after its host.
 
 const (
 	attachmentRenderedNameNode = "my_db"
@@ -147,8 +147,8 @@ func declaredAttachmentRenderedNameHalt(
 func TestTheAttachmentRenderedNameRuleIsReachedAndItsObjectionsHalt(t *testing.T) {
 	t.Parallel()
 
-	// The host reports NO name. The refusal does not depend on that — the control
-	// below drives the reporting world — but it is the ordinary case.
+	// The host reports NO name, which is the world the refusal belongs to; the
+	// control below drives the reporting world, where the reference is admitted.
 	noNames := NodeRenderedNames{}
 
 	for _, tc := range []struct {
@@ -196,7 +196,7 @@ func TestTheAttachmentRenderedNameRuleIsReachedAndItsObjectionsHalt(t *testing.T
 			fr := attachmentRenderedNameFR("helm", tc.block, tc.text)
 			halt := declaredAttachmentRenderedNameHalt(t, fr, noNames)
 			if halt == nil {
-				t.Fatalf("the rules admitted %s reading a name that is not the attachment's own", tc.field)
+				t.Fatalf("the rules admitted %s reading a name its host's provider does not report", tc.field)
 			}
 			if !errors.Is(halt, ErrTemplateUnknownRoot()) {
 				t.Fatalf("the refusal does not carry %v: %v", ErrTemplateUnknownRoot(), halt)
@@ -216,29 +216,34 @@ func TestTheAttachmentRenderedNameRuleIsReachedAndItsObjectionsHalt(t *testing.T
 		})
 	}
 
-	// 🔴 THE CONTROL THAT SEPARATES THIS RULE FROM THE NODE-ROOTED PAIR. On a node's
-	// own surface the reference is refused only where that node's provider reports no
-	// name; here it is refused whatever the host reports, because the value is the
-	// HOST's answer and the attachment is a different node with its own provider. A
-	// rule copied from the node-rooted shape would admit every row below.
-	t.Run("the refusal stands even where the host's provider reports a name", func(t *testing.T) {
+	// 🔴 THE CONTROL THAT KEEPS THE REFUSAL SCOPED. Where the host's provider reports
+	// a name, that name is the value an attachment names its resources after, so
+	// every field family reading it is admitted. A rule refusing whatever the host
+	// reports would refuse every row below.
+	t.Run("the reference is admitted where the host's provider reports a name", func(t *testing.T) {
 		t.Parallel()
 		reported := NodeRenderedNames{attachmentRenderedNameNode: "my-zudb"}
 		for _, block := range []string{
 			"valuesMapping", "workload", "artifacts", "pipeline-with", "pipeline-when",
 		} {
 			fr := attachmentRenderedNameFR("helm", block, "{{ .context.rendered_name }}.svc")
-			halt := declaredAttachmentRenderedNameHalt(t, fr, reported)
-			if halt == nil {
-				t.Errorf("the rules admitted %s on a host whose provider DOES report a name; that "+
-					"name is the host's answer and this attachment binds its own provider, so "+
-					"admitting it hands an attachment author a name for resources it never emitted",
-					block)
-				continue
+			if halt := declaredAttachmentRenderedNameHalt(t, fr, reported); halt != nil {
+				t.Errorf("the rules refused %s on a host whose provider reports a name, which is the "+
+					"host's valid name and the value an attachment names its resources after: %v",
+					block, halt)
 			}
-			if !errors.Is(halt, ErrTemplateUnknownRoot()) {
-				t.Errorf("%s: the refusal does not carry %v: %v", block, ErrTemplateUnknownRoot(), halt)
-			}
+		}
+	})
+	// The same host-reports-a-name world with an attachment rendering through a
+	// DIFFERENT capability from its host: the value is still the host's name, which
+	// is what naming a resource after the host means, so it is admitted.
+	t.Run("an attachment on another capability still reads its host's name", func(t *testing.T) {
+		t.Parallel()
+		reported := NodeRenderedNames{attachmentRenderedNameNode: "my-zudb"}
+		fr := attachmentRenderedNameFR("compose", "artifacts", "{{ .context.rendered_name }}.svc")
+		if halt := declaredAttachmentRenderedNameHalt(t, fr, reported); halt != nil {
+			t.Errorf("the rules refused the host's reported name to an attachment declaring another "+
+				"capability: %v", halt)
 		}
 	})
 

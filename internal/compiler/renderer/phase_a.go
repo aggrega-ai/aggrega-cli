@@ -171,7 +171,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 		featureCtx := attachmentFRContext(ctx, ref.InstanceName, vals, inf)
 		frLocals, err := EvaluateFeatureRecipeLocals(
-			ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID,
+			ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID, ctx.Context.RenderedName,
 			featureCtx.Values, featureCtx.Infra,
 			withheld.leaves(ref.InstanceName, pillarsFound),
 		)

@@ -81,7 +81,7 @@ func assertIdentityLocals(t *testing.T, path string, got types.OrderedMap[string
 func TestLocalsIdentity_PerComponentPath(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateFeatureRecipeLocals(
-		identityLocalsFR(), identityInstanceName, identityHostID,
+		identityLocalsFR(), identityInstanceName, identityHostID, "",
 		identityLocalsValues(), types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 
 	if err != nil {
@@ -149,7 +149,7 @@ func TestLocalsIdentity_PhaseAPath(t *testing.T) {
 func TestLocalsIdentity_BothPathsAgreeOnOneBlock(t *testing.T) {
 	t.Parallel()
 	perComponent, err := EvaluateFeatureRecipeLocals(
-		identityLocalsFR(), identityInstanceName, identityHostID,
+		identityLocalsFR(), identityInstanceName, identityHostID, "",
 		identityLocalsValues(), types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 
 	if err != nil {

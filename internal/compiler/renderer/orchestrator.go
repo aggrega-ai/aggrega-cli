@@ -1543,7 +1543,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// is resolved below, then located and handed to the same out-of-band
 		// stream the render diagnostics use.
 		var sensitiveByValue []Diagnostic
-		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup,
+		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, renderedNames[nodeID], recipeLookup,
 			func(attachment, mechanism, deliveryKey string) {
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
 			}, readers.feature)
@@ -1575,7 +1575,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// contract. It reads nothing the template context carries, so it runs
 		// first and the context is assembled with the bag already in hand.
 		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
-		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, recipeLookup, input.CatalogLookup, readers.feature)
+		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, renderedNames[nodeID], recipeLookup, input.CatalogLookup, readers.feature)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
 		}

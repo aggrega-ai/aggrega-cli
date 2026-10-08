@@ -141,7 +141,7 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 	}
 
 	// Same block, the attachment render path: the answer must not differ.
-	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", "", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 
 	if !errors.Is(perr, ErrLocalsUnknownReference()) {
 		t.Errorf("the two attachment-locals surfaces disagree: interception halt %v, render path %v", err, perr)
@@ -204,7 +204,7 @@ func TestExecutePhaseA_FeatureLocalsScopeMatchesRenderPath(t *testing.T) {
 			vals.Set("port", 9090)
 			infra := types.OrderedMap[any]{}
 			infra.Set("region", "eu-west-1")
-			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", vals, infra, resolver.SensitiveLeaves{})
+			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", "", vals, infra, resolver.SensitiveLeaves{})
 			if (renderErr == nil) != (interceptErr == nil) {
 				t.Errorf("the two attachment-locals surfaces disagree on %q: interception err=%v, render err=%v", tc.template, interceptErr, renderErr)
 			}

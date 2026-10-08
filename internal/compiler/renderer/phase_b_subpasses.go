@@ -821,7 +821,7 @@ func (p *attachmentPass) render(
 	frKeys := frWithheld.forAttachment(item.Instance, pillarsFound, fr.Spec.Locals)
 
 	frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-		fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
+		fr, item.Instance, nodeID, frCtx.Context.RenderedName, frCtx.Values, frCtx.Infra,
 		frWithheld.leaves(item.Instance, pillarsFound),
 	)
 	if err != nil {
@@ -940,7 +940,7 @@ func (p *attachmentPass) render(
 	// were evaluated with, passed through so the two surfaces publish one
 	// denotation of .context.instance_id and .attachment_name.
 	evaluatedSource, err := EvaluateFeatureRecipeSource(
-		fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
+		fr.Spec.Source, item.Instance, nodeID, frCtx.Context.RenderedName, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
 	)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))

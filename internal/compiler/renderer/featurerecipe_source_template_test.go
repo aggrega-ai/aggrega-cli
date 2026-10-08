@@ -253,13 +253,13 @@ func TestEvaluateFeatureRecipeSource_RefusesAnUndeclaredLocal(t *testing.T) {
 	locals.Set("chart_dir", "./charts/mon")
 
 	if _, err := EvaluateFeatureRecipeSource(
-		"{{ .locals.chart_dir }}", "mon", "api",
+		"{{ .locals.chart_dir }}", "mon", "api", "",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{}); err != nil {
 		t.Fatalf("a declared local must resolve: %v", err)
 	}
 
 	_, err := EvaluateFeatureRecipeSource(
-		"{{ .locals.chart_directory }}", "mon", "api",
+		"{{ .locals.chart_directory }}", "mon", "api", "",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals, redact.Keys{})
 
 	if err == nil {
@@ -275,7 +275,7 @@ func TestEvaluateFeatureRecipeSource_RefusesAnUndeclaredLocal(t *testing.T) {
 func TestEvaluateFeatureRecipeSource_AdmitsTheAttachmentName(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateFeatureRecipeSource(
-		"./charts/{{ .attachment_name }}", "mon", "api",
+		"./charts/{{ .attachment_name }}", "mon", "api", "",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}, redact.Keys{})
 
 	if err != nil {

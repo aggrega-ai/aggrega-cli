@@ -35,7 +35,7 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	values.Set("scrape_port", float64(9090))
 	values.Set("tier", "prod")
 
-	got, err := EvaluateFeatureRecipeLocals(fr, "scrape_target", "api", values, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+	got, err := EvaluateFeatureRecipeLocals(fr, "scrape_target", "api", "", values, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsProvidesRef(t *testing.T) {
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec:     types.FeatureRecipeSpec{Locals: locals},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", "", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
@@ -78,7 +78,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsProvidesRef(t *testing.T) {
 
 func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "n", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "n", "api", "", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 			Locals: locals,
 		},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "n", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "n", "api", "", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}

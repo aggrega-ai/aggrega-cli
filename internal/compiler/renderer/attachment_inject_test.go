@@ -65,7 +65,7 @@ func TestResolveAttachmentInject_SecretDeliversResolvedProvidesToHostPipe(t *tes
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if _, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	got, ok := inject.Env.Get("DB_PASSWORD")
@@ -105,7 +105,7 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if _, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	if got, _ := inject.Env.Get("CACHE_URL"); got != "redis.svc.cluster.local" {
@@ -143,7 +143,7 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyIsRefused(t *testing.T)
 
 	inject, _ := BuildInjectPipe(nil)
 	inject.Env.Set("DB_PASSWORD", "from-self-inject") // a prior developer source claimed the key
-	deliveries, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil, nil)
+	deliveries, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil)
 	if err != nil {
 		t.Fatalf("delivery itself must not fail: %v", err)
 	}

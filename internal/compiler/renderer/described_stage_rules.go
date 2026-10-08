@@ -400,12 +400,12 @@ type renderedNameAxes interface {
 // counts is a second statement of what the calls already say, and a surface added
 // later would leave it wrong with nothing able to notice.
 //
-// The node-rooted axes share one predicate, so an author reading either finding is
-// told the same thing. The attachment axis does NOT, and that is the finding rather
-// than an inconsistency: on a node's own surface the reference is wrong only where
-// that node's provider reports no name, while on an attachment's surface it is the
-// wrong node's answer whatever the host reports. Two different faults, so two
-// conditions and two remedies.
+// Every axis reads the same fact — the name the NODE's provider reported, the host
+// node's for an attachment — and refuses only where it is absent. The node-rooted
+// axes share one predicate, so an author reading either finding is told the same
+// thing. The attachment axis raises the condition the rest of that attachment's
+// surfaces raise for the same key on the same hosts instead, so one attachment is
+// refused one way wherever its templates read the key.
 //
 // # Why here, and in this order
 //
@@ -475,7 +475,7 @@ func runRenderedNameRule(
 		return err
 	}
 	return objectionsAsHalt(
-		raised, "attachment templates reading a name that is not the attachment's own",
+		raised, "attachment templates reading a name the host's provider does not report",
 	)
 }
 

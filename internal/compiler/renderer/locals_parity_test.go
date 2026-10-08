@@ -107,7 +107,7 @@ func localsParitySurfaces() []localsParitySurface {
 				fr := &types.FeatureRecipe{}
 				fr.Metadata.Name = "parity-fr"
 				fr.Spec.Locals = locals
-				got, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
+				got, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", "", types.OrderedMap[any]{}, types.OrderedMap[any]{}, resolver.SensitiveLeaves{})
 				if err != nil {
 					return "", err
 				}
@@ -123,7 +123,7 @@ func localsParitySurfaces() []localsParitySurface {
 				fr.Metadata.Name = "parity-fr"
 				fr.Spec.Locals = locals
 				fr.Spec.Provides.Set("echo", "{{ .locals."+observedKey+" }}")
-				got, err := evalAttachmentFRProvides(fr, "mon", "api", types.IRFeatureEntry{}, resolver.SensitiveLeaves{})
+				got, err := evalAttachmentFRProvides(fr, "mon", "api", "", types.IRFeatureEntry{}, resolver.SensitiveLeaves{})
 				if err != nil {
 					return "", err
 				}

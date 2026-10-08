@@ -70,6 +70,33 @@ func renderedNameReference(tree parse.Node) (string, bool) {
 	return ref.Path, true
 }
 
+// attachmentHostScope returns the reference set one surface of a per-component
+// attachment is checked against, given the name its HOST's provider reported for
+// the host.
+//
+// On every such surface .context.rendered_name is the host's answer, the way
+// .context.instance_id there is the host's identity: an attachment names its own
+// resources after the component hosting it, and the name the host's provider gives
+// the host's resources is a spelling of that component its target accepts, where the
+// identity as written may not be. So
+// where the host's provider reported a name the surface's own scope stands and the
+// value is on the context; where it reported none — a node rendering a placed
+// artifact set, a node on a provider that derives no such name — the key is refused
+// rather than resolved away, because an empty value there would name a resource
+// nothing emits.
+//
+// It is the ONE home of that decision for the surfaces evaluated after the host's
+// answer is known: the attachment's locals, its source and its provides. The rule
+// declared over the attachment's render fields reads the same derivation for the
+// set it reports, so what an author is refused and what they are told this surface
+// defines cannot disagree.
+func attachmentHostScope(scope templateScope, hostRenderedName string) templateScope {
+	if hostRenderedName != "" {
+		return scope
+	}
+	return scope.refusingKey(identityContextRoot, renderedNameContextKey)
+}
+
 // RenderedNameReporter is the optional capability a provider engine implements to
 // report the name its target gives the resources it renders for a node — from the
 // node's author-supplied source, the name those supplied templates themselves

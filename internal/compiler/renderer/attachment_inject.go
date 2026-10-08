@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -53,10 +54,15 @@ import (
 // advisory tied to a delivery that really happened. The callback receives the
 // attachment instance, the delivery mechanism and the delivery key; it never
 // sees the value.
+//
+// hostRenderedName is the name the node's own provider reported for it, which each
+// attachment's provides read as .context.rendered_name; empty where none was
+// reported. It is passed rather than looked up so the caller's one answer is the
+// one every attachment surface reads.
 func ResolveAttachmentInject(
 	inject *types.InjectPipe,
 	graph *types.IRGraph,
-	nodeID string,
+	nodeID, hostRenderedName string,
 	recipeLookup RecipeLookup,
 	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
 	declared func(featureType string) resolver.SensitiveLeaves,
@@ -82,7 +88,7 @@ func ResolveAttachmentInject(
 		if !found {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry, declaredLeavesOf(declared, entry.Type))
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, hostRenderedName, entry, declaredLeavesOf(declared, entry.Type))
 		if err != nil {
 			return deliveries, err
 		}
@@ -137,25 +143,13 @@ func pipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery {
 // One scope covers both stages because they render against one context shape; two
 // would be free to disagree about what the path admits.
 //
-// One narrowing: context.rendered_name. The value on this surface is the HOST
-// node's answer — the name the host's own bound provider reports for the resources
-// it renders for the host — and an attachment is not that node: it binds its own
-// recipe and therefore its own provider. So the value is not an answer about the
-// attachment's own output at all. It is absent whenever the HOST's provider
-// reports none for the host, whatever the attachment itself declares, and it
-// comes from a different target entirely whenever the attachment's declared
-// capability differs from its host's.
-//
-// It is deliberately NOT narrowed on the grounds that an attachment's supplied
-// source renders under the attachment's own identity, which is what a reader
-// reasonably assumes and is not what happens: for a chart-delivering attachment
-// the name those templates render against stays the host's, precisely so the
-// resources the chart's author declared are not renamed. The two coincide on that
-// target and part on the two counts above, so the narrowing rests on where the
-// answer comes from rather than on which identity it spells.
+// context.rendered_name is the HOST node's answer on this surface, as instance_id
+// is the host's identity. Whether it is admitted is a property of the host being
+// rendered — admitted where the host's provider reported a name, refused where it
+// reported none — so it is decided per host by [attachmentHostScope] rather than
+// declared here.
 var attachmentFRScope = templateScope{
-	data:    ProvidesContext{},
-	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
+	data: ProvidesContext{},
 }
 
 // attachmentFRRenderScope is the reference set an attachment FeatureRecipe's
@@ -164,40 +158,26 @@ var attachmentFRScope = templateScope{
 // The universe is the full render context, because that is what those fields are
 // evaluated against: an attachment's context is derived from its host node's, with
 // the values and infra pillars replaced by the attachment's own and the attachment
-// instance named.
+// instance named. Deriving it from the host's context is also what puts the host's
+// reported name at context.rendered_name on these fields.
 //
-// It carries the SAME single narrowing as the locals-and-provides scope above and
-// for the same reason, which is the whole point of it being a second scope rather
-// than a second rule: context.rendered_name on any of these fields is the HOST
-// node's answer — the name the host's own bound provider reports for the resources
-// it renders for the host — and an attachment is not that node. It binds its own
-// recipe and therefore its own provider, so the value is absent whenever the HOST's
-// provider reports none for the host, whatever the attachment itself declares, and
-// it comes from a different target entirely whenever the attachment's declared
-// capability differs from its host's.
-//
-// A rule that refused the reference on two of an attachment's surfaces while
-// admitting it on the rest would be an inconsistency rather than a coverage bound:
-// the value has the same wrong provenance on all of them. Two scopes rather than
-// one is a consequence of the two surfaces being evaluated against two different
-// context TYPES — the locals and provides pass renders against the provides
-// context, these fields against the whole render context — and the narrowing they
-// share is declared identically at both so neither can be relaxed alone.
-//
-// It is deliberately NOT narrowed on the grounds that an attachment's supplied
-// source renders under the attachment's own identity, which is what a reader
-// reasonably assumes and is not what happens: for a chart-delivering attachment the
-// name those templates render against stays the host's, precisely so the resources
-// the chart's author declared are not renamed. The narrowing rests on where the
-// answer comes from rather than on which identity it spells.
+// It declares no narrowing of its own and takes the same per-host one the
+// locals-and-provides scope above takes, through [attachmentHostScope], for the same
+// reason: a rule that admitted the reference on some of an attachment's surfaces and
+// refused it on others for one host would be an inconsistency rather than a coverage
+// bound. Two scopes rather than one is a consequence of the two surfaces being
+// evaluated against two different context TYPES — the locals and provides pass
+// renders against the provides context, these fields against the whole render
+// context — and the narrowing they share is derived at one site so neither can drift
+// from the other.
 var attachmentFRRenderScope = templateScope{
-	data:    &types.TemplateContext{},
-	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
+	data: &types.TemplateContext{},
 }
 
 // classifyAttachmentTemplateRenderedName decides whether one authored template
 // field on a per-component attachment reads the name its host node's target gives
-// the resources it renders for the host, and returns the refusal where it does.
+// the resources it renders for the host where the host's provider reported no such
+// name, and returns the refusal where it does.
 //
 // It is the ONE home of that decision, so the rule declared over these fields and
 // any later reader reach the same verdict. The refused reference is recovered from
@@ -211,14 +191,14 @@ var attachmentFRRenderScope = templateScope{
 // a stale root resolving to an empty value is a defect, but it is a different
 // defect with a different remedy, and turning it into a halt here would reject
 // authoring on the strength of a rule nobody declared over this surface. The set
-// the author is told about is still derived from the scope rather than restated, so
-// what is refused and what is reported cannot disagree.
+// the author is told about is still derived from the per-host scope rather than
+// restated, so what is refused and what is reported cannot disagree.
 //
 // A template that does not parse yields no refusal: evaluation reports the parse
 // error against the same text, so refusing it here as well would report one
 // authoring fault twice.
 func classifyAttachmentTemplateRenderedName(
-	text, leftDelim, rightDelim string,
+	text, leftDelim, rightDelim, hostRenderedName string,
 ) *templateScopeViolation {
 	if text == "" {
 		return nil
@@ -231,8 +211,8 @@ func classifyAttachmentTemplateRenderedName(
 	if !reads {
 		return nil
 	}
-	keys, gated := attachmentFRRenderScope.admittedKeys(identityContextRoot)
-	if !gated {
+	keys, gated := attachmentHostScope(attachmentFRRenderScope, hostRenderedName).admittedKeys(identityContextRoot)
+	if !gated || slices.Contains(keys, renderedNameContextKey) {
 		return nil
 	}
 	return &templateScopeViolation{Ref: ref, Admitted: keys, Level: scopeLevelKey}
@@ -247,6 +227,9 @@ func classifyAttachmentTemplateRenderedName(
 //
 // The two identities are distinct and both are carried: .context.instance_id is
 // the host component, and the attachment travels separately on .attachment_name.
+// hostRenderedName is the name the host's provider reported for the host, carried
+// as .context.rendered_name on both stages and refused by their scope where it is
+// empty ([attachmentHostScope]).
 //
 // The locals resolve first, through evaluateLocalsInOrder — the one home of the
 // locals contract — so an entry may read an earlier sibling and a forward or
@@ -259,11 +242,12 @@ func classifyAttachmentTemplateRenderedName(
 // the provides render against the attachment's own values and infra, so a failure
 // of either reports without a value that Feature declares, or a local computed
 // from one.
-func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry, leaves resolver.SensitiveLeaves) (types.OrderedMap[string], error) {
+func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID, hostRenderedName string, entry types.IRFeatureEntry, leaves resolver.SensitiveLeaves) (types.OrderedMap[string], error) {
 	withheld := attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
+	scope := attachmentHostScope(attachmentFRScope, hostRenderedName)
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
-		attachmentFRScope,
+		scope,
 		func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("node %q attachment %q locals[%q]", nodeID, instanceName, key),
@@ -274,7 +258,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 		func(key string) string { return fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, key) },
 		func(resolved types.OrderedMap[string]) any {
 			return ProvidesContext{
-				Context:        ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
+				Context:        ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID), RenderedName: hostRenderedName},
 				Values:         entry.Values,
 				Infra:          entry.Infra,
 				Locals:         resolved,
@@ -295,7 +279,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 		return types.OrderedMap[string]{}, err
 	}
 	pCtx := ProvidesContext{
-		Context:        ProvidesContextBlock{InstanceID: nodeID},
+		Context:        ProvidesContextBlock{InstanceID: nodeID, RenderedName: hostRenderedName},
 		Values:         entry.Values,
 		Infra:          entry.Infra,
 		Locals:         resolvedLocals,
@@ -303,7 +287,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	}
 	provided := types.OrderedMap[string]{}
 	for k, tmplText := range fr.Spec.Provides.All() {
-		out, err := evalValueTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, attachmentFRScope.with(pCtx, withheld), "{{", "}}")
+		out, err := evalValueTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, scope.with(pCtx, withheld), "{{", "}}")
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("node %q attachment %q provides[%q]", nodeID, instanceName, k))
 		}
@@ -374,7 +358,11 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 // declared answers what each attachment's Feature declares sensitive, so a
 // failure evaluating an attachment's provides reports without a value its Feature
 // declares; nil declares nothing.
-func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup, declared func(featureType string) resolver.SensitiveLeaves) (map[string]types.OrderedMap[string], error) {
+//
+// hostRenderedName is the name the node's own provider reported for it — what an
+// attachment's provides read as .context.rendered_name — and empty where none was
+// reported, as for [ResolveAttachmentInject].
+func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID, hostRenderedName string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup, declared func(featureType string) resolver.SensitiveLeaves) (map[string]types.OrderedMap[string], error) {
 	if recipeLookup.FeatureRecipe == nil || attachments.Len() == 0 {
 		return nil, nil
 	}
@@ -387,7 +375,7 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 		if !found || fr == nil {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry, declaredLeavesOf(declared, entry.Type))
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, hostRenderedName, entry, declaredLeavesOf(declared, entry.Type))
 		if err != nil {
 			return nil, err
 		}

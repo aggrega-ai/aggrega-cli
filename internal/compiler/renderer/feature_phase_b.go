@@ -173,13 +173,19 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // instanceID supplies the first and instanceName the second. A base Recipe's locals
 // surface refuses .attachment_name, because no attachment is being resolved there.
 //
+// hostRenderedName is the name the HOST's provider reported for the host, published
+// as .context.rendered_name beside the host's identity: the name an attachment names
+// its own resources after where the host's identity is not one its target accepts.
+// Empty where that provider reported none, and the surface then refuses the key
+// rather than rendering it away ([attachmentHostScope]).
+//
 // instanceID is the identity ALREADY PUBLISHED as .context.instance_id on the host
 // node's context, not the identity the graph is keyed by, and the difference is
 // load-bearing: a published identity has had the composition join written out of it,
 // and that encoding is injective rather than idempotent, so encoding a published
 // identity again would write out the escape the first pass emitted and give one node
 // two spellings. A caller holding a graph identity here encodes it once; a caller
-// reading it off a context, as the one production caller does, passes it through.
+// reading it off a context, as the interception phase does, passes it through.
 //
 // Iteration is in author order (fr.Spec.Locals is an OrderedMap), and an entry may
 // read an earlier sibling: the evaluation routes through evaluateLocalsInOrder,
@@ -196,7 +202,7 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // reports without such a value, or one computed from it, in its text.
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
-	instanceName, instanceID string,
+	instanceName, instanceID, hostRenderedName string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 	leaves resolver.SensitiveLeaves,
@@ -207,7 +213,7 @@ func EvaluateFeatureRecipeLocals(
 	withheld := attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
 	return evaluateLocalsInOrder(
 		fr.Spec.Locals,
-		featureRecipeLocalsScope,
+		attachmentHostScope(featureRecipeLocalsScope, hostRenderedName),
 		func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key),
@@ -218,7 +224,7 @@ func EvaluateFeatureRecipeLocals(
 		func(key string) string { return fmt.Sprintf("fr-locals[%q]", key) },
 		func(resolved types.OrderedMap[string]) any {
 			return LocalsContext{
-				Context:        ProvidesContextBlock{InstanceID: instanceID},
+				Context:        ProvidesContextBlock{InstanceID: instanceID, RenderedName: hostRenderedName},
 				Values:         values,
 				Infra:          infra,
 				Locals:         resolved,

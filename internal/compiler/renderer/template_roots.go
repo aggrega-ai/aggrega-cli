@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -160,6 +161,25 @@ type templateScope struct {
 func (s templateScope) with(data any, withheld redact.Keys) templateScope {
 	s.data = data
 	s.withheld = withheld
+	return s
+}
+
+// refusingKey returns the scope narrowed by one more depth-2 key under root, for a
+// surface whose narrowing depends on what is being rendered rather than on the
+// surface alone.
+//
+// The narrowing map is copied rather than extended in place. A scope is declared
+// once at package level and handed out by value to every evaluation of its
+// surface, and a value copy shares the map: writing the key into it would narrow
+// that surface for every later evaluation, including the ones whose data does
+// carry the key.
+func (s templateScope) refusingKey(root, key string) templateScope {
+	gate := maps.Clone(s.subGate)
+	if gate == nil {
+		gate = map[string][]string{}
+	}
+	gate[root] = append(slices.Clone(gate[root]), key)
+	s.subGate = gate
 	return s
 }
 

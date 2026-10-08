@@ -35,9 +35,10 @@ import (
 // and .infra directly — the same expression the provides entry evaluates.
 //
 // Self-containment is a property of this type rather than of a check over template
-// text. Context is a ProvidesContextBlock, which defines instance_id and nothing
-// else, so .context.inject and .context.uses name keys this surface's context does
-// not define and the reference halts before the template executes. Cross-node data
+// text. Context is a ProvidesContextBlock, which defines instance_id and
+// rendered_name and nothing else, so .context.inject and .context.uses name keys this
+// surface's context does not define and the reference halts before the template
+// executes. Cross-node data
 // is therefore unreachable from a local by construction, which is what keeps locals
 // resolvable without ordering the graph first.
 //
@@ -108,25 +109,18 @@ var recipeLocalsScope = templateScope{
 // is checked against. An attachment IS being resolved during that pass, so
 // .attachment_name names it and is admitted here.
 //
-// One narrowing: context.rendered_name. The value on this surface is the HOST
-// node's answer — the name the host's own bound provider reports for the resources
-// it renders for the host — and an attachment is not that node: it binds its own
-// recipe and therefore its own provider. So the value is not an answer about the
-// attachment's own output at all. It is absent whenever the HOST's provider
-// reports none for the host, whatever the attachment itself declares, and it comes
-// from a different target entirely whenever the attachment's declared capability
-// differs from its host's.
+// context.rendered_name is the HOST node's answer on this surface — the name the
+// host's own bound provider reports for the resources it renders for the host — in
+// the same way context.instance_id is the host's identity. It is admitted where the
+// host's provider reported a name and refused where it reported none, and that
+// choice is made per host by [attachmentHostScope] rather than declared here,
+// because it is a property of the host being rendered and not of the surface.
 //
-// It is deliberately NOT narrowed on the grounds that an attachment's supplied
-// source renders under the attachment's own identity, which is what a reader
-// reasonably assumes and is not what happens: for a chart-delivering attachment the
-// name those templates render against stays the host's, precisely so the resources
-// the chart's author declared are not renamed. The two coincide on that target and
-// part on the two counts above, so the narrowing rests on where the answer comes
-// from rather than on which identity it spells.
+// Unlike a base Recipe's locals, nothing on this surface decides the answer: the
+// host's name depends on what the HOST's Recipe declares, which is settled before
+// any template of the attachment is evaluated.
 var featureRecipeLocalsScope = templateScope{
-	data:    LocalsContext{},
-	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
+	data: LocalsContext{},
 }
 
 // localsContextRoot is the context root a template reads a resolved local through.

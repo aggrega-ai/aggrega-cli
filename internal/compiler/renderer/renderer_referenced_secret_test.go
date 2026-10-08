@@ -109,7 +109,7 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 
 	// Consumer side: the resolved bag the .features.<slot>.provides exposure uses.
 	dbAttachments, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
-	bag, err := renderer.ResolveAttachmentProvides(dbAttachments, "db", lookup, input.CatalogLookup, nil)
+	bag, err := renderer.ResolveAttachmentProvides(dbAttachments, "db", "", lookup, input.CatalogLookup, nil)
 	if err != nil {
 		t.Fatalf("ResolveAttachmentProvides: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestIntegration_ReferencedSecret_FulfilmentHalt(t *testing.T) {
 	input, lookup := referencedSecretFixture(partial)
 
 	dbSecrets, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
-	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", lookup, input.CatalogLookup, nil)
+	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", "", lookup, input.CatalogLookup, nil)
 	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled()) {
 		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}
