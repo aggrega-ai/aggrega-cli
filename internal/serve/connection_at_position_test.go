@@ -49,6 +49,23 @@ func positionWorkspace(t *testing.T) (ws, release string) {
 	return ws, release
 }
 
+// positionReasonsOverlay is laid over the connection fixture for the Release
+// entries a build accepts and the graph answers no connection for. Its Aggregate
+// switches one component off and has an attachment's dependency block draw two
+// connections through a socket the Component declares too; its Feature declares
+// that socket; its Release writes an entry for each of those connections and one
+// for a connection nothing draws. The tool protocol's tests read the same files.
+const positionReasonsOverlay = "testdata/connection-site-reasons"
+
+// positionReasonsWorkspace is the connection fixture with positionReasonsOverlay
+// laid over it.
+func positionReasonsWorkspace(t *testing.T) (ws, release string) {
+	t.Helper()
+	ws, release = connectionSiteWorkspace(t)
+	copyConnectionSiteFixture(t, positionReasonsOverlay, ws)
+	return ws, release
+}
+
 // positionOf locates text on the one line of content whose trimmed text starts
 // with linePrefix, and returns the position offset characters past where text
 // starts on that line. A prefix matching no line or more than one is a broken
@@ -404,12 +421,131 @@ func TestConnectionAtPositionRefusesWhatItCannotRead(t *testing.T) {
 	}
 }
 
-// TestConnectionAtPositionAnswersTheReasonsAReleaseEntryCanCarry covers what the
-// fixture's documents cannot reach through the wire, over a graph built here: a
-// Release entry for a connection a Feature drew, one for a connection the graph
-// does not carry, and an entry in the document of a module the Aggregate
-// imports, which the graph records its node as authored in.
-func TestConnectionAtPositionAnswersTheReasonsAReleaseEntryCanCarry(t *testing.T) {
+// TestConnectionAtPositionAnswersTheReasonsOnAReleaseThatBuilds drives the wire
+// method at each Release entry a build accepts that names no connection an
+// attachment is written on: an entry for a connection nothing draws, configuring
+// nothing; an entry for a connection of a component an active toggle switched
+// off; and two entries for connections an attachment's dependency block drew, one
+// configuring nothing and one carrying per-edge infra.
+//
+// The Release is built first, so every answer is one a Release that builds
+// reaches, and the graph is read for the fact each reason states, so a fixture
+// that stopped reaching its shape fails here rather than passing on another
+// shape. Each answer is pinned on the bytes, behind a positive control in the
+// same Release, and the shared entry point the tool protocol calls answers the
+// same bytes over the same graph.
+func TestConnectionAtPositionAnswersTheReasonsOnAReleaseThatBuilds(t *testing.T) {
+	ws, release := positionReasonsWorkspace(t)
+	srv := connectionSiteServer(t, ws)
+	preview, envelope := srv.previewRelease(context.Background(), release,
+		pipeline.Options{IncludeTrace: false, SkipRender: true})
+	if envelope != nil {
+		t.Fatalf("the Release does not build, so no answer below is one a building Release reaches: %+v", envelope)
+	}
+	graph := preview.pipeline.Completed().IRGraph
+
+	edgesAt := func(node, socket, alias string) []types.IREdge {
+		var out []types.IREdge
+		for _, e := range graph.Spec.Edges {
+			if e.Source == node && e.Socket == socket && e.Alias == alias {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	if _, held := graph.Spec.Nodes.Get("standby"); held {
+		t.Fatal("the graph holds the component its active toggle switches off")
+	}
+	for _, c := range [][3]string{{"gateway", "models", "ghost"}, {"standby", "logs", "l1"}} {
+		if got := edgesAt(c[0], c[1], c[2]); len(got) != 0 {
+			t.Fatalf("the graph carries %s/%s/%s, which the case needs absent: %+v", c[0], c[1], c[2], got)
+		}
+	}
+	for _, alias := range []string{"p8", "p9"} {
+		got := edgesAt("gateway", "logs", alias)
+		if len(got) != 1 || got[0].OriginFeature == "" {
+			t.Fatalf("gateway/logs/%s is not one connection an attachment drew: %+v", alias, got)
+		}
+	}
+
+	content, err := os.ReadFile(filepath.Join(ws, release))
+	if err != nil {
+		t.Fatalf("read the Release: %v", err)
+	}
+	reason := func(r NoConnectionReason) ConnectionAtPositionResult {
+		return ConnectionAtPositionResult{NoConnectionReason: r}
+	}
+	for _, tc := range []struct {
+		name       string
+		linePrefix string
+		text       string
+		want       ConnectionAtPositionResult
+	}{
+		{name: "the positive control: the Release's own entry for a connection the Aggregate drew",
+			linePrefix: "gpt:", text: "gpt", want: ConnectionAtPositionResult{GraphNode: "gateway",
+				Connection: &ConnectionCoordinate{Socket: "models", Alias: "gpt", Document: "release"}}},
+		{name: "an entry for a connection nothing draws, configuring nothing", linePrefix: "ghost: {}",
+			text: "ghost", want: reason(NoConnectionReasonUnknownConnection)},
+		{name: "an entry for a connection of a component switched off", linePrefix: "l1:", text: "l1",
+			want: reason(NoConnectionReasonUnknownConnection)},
+		{name: "inside the per-edge infra of the switched-off component's entry", linePrefix: "tier: silver",
+			text: "silver", want: reason(NoConnectionReasonUnknownConnection)},
+		{name: "an entry for a connection an attachment drew, configuring nothing", linePrefix: "p8: {}",
+			text: "p8", want: reason(NoConnectionReasonFeatureCreated)},
+		{name: "an entry for a connection an attachment drew, carrying per-edge infra", linePrefix: "p9:",
+			text: "p9", want: reason(NoConnectionReasonFeatureCreated)},
+		{name: "inside the per-edge infra of that entry", linePrefix: "tier: gold", text: "gold",
+			want: reason(NoConnectionReasonFeatureCreated)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pos := positionOf(t, string(content), tc.linePrefix, tc.text, 0)
+			resp := connectionAtPositionRequest(t, connectionSiteServer(t, ws), connectionAtPositionParams{
+				File: release, Position: &pos, Release: release,
+			})
+			if resp.Error != nil {
+				t.Fatalf("the request was refused: %+v", resp.Error)
+			}
+			want, err := json.Marshal(tc.want)
+			if err != nil {
+				t.Fatalf("marshal the expected answer: %v", err)
+			}
+			if string(resp.Result) != string(want) {
+				t.Fatalf("answer at line %d, character %d:\n  got:  %s\n  want: %s", pos.Line, pos.Character,
+					resp.Result, want)
+			}
+			shared, err := ConnectionAtPosition(srv.workspaceRoot, graph, preview.resolved.Release,
+				preview.releasePath, release, pos, yamlpos.PositionEncodingUTF16)
+			if err != nil {
+				t.Fatalf("the shared entry point refused what the method answered: %v", err)
+			}
+			sharedJSON, err := json.Marshal(shared)
+			if err != nil {
+				t.Fatalf("marshal the shared answer: %v", err)
+			}
+			if string(sharedJSON) != string(resp.Result) {
+				t.Fatalf("the wire method's answer and the shared layer's differ:\n  method: %s\n  shared: %s",
+					resp.Result, sharedJSON)
+			}
+		})
+	}
+
+	for _, r := range []NoConnectionReason{NoConnectionReasonNoEntry, NoConnectionReasonFeatureCreated,
+		NoConnectionReasonUnknownConnection} {
+		if strings.TrimSpace(r.Sentence()) == "" {
+			t.Errorf("the %q reason renders no sentence", r)
+		}
+	}
+	if NoConnectionReason("").Sentence() != "" {
+		t.Error("an empty reason renders a sentence")
+	}
+}
+
+// TestConnectionAtPositionAnswersForAnImportedModulesOwnDocument covers what the
+// fixture's documents cannot reach through the wire, over a graph built here: an
+// entry in the document of a module the Aggregate imports, which the graph
+// records its node as authored in, and the same place in the Aggregate, which the
+// graph records no such node in.
+func TestConnectionAtPositionAnswersForAnImportedModulesOwnDocument(t *testing.T) {
 	ws := t.TempDir()
 	write := func(rel, content string) {
 		t.Helper()
@@ -429,16 +565,7 @@ spec:
   boundaries:
     cluster:
       components:
-        gateway:
-          uses:
-            peer:
-              p1:
-                infra:
-                  tier: gold
-            models:
-              ghost:
-                infra:
-                  tier: gold
+        gateway: {}
 `
 	const moduleDoc = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -467,8 +594,6 @@ spec:
 	graph.Spec.Nodes.Set("edge.web", types.IRNode{Component: "conn/gateway", SourceFile: "modules/edge.yaml",
 		SynthesizedSubsystem: true})
 	graph.Spec.Edges = []types.IREdge{
-		{Source: "gateway", Target: "model", Socket: "peer", Alias: "p1", OriginFeature: "feature.conn/peering",
-			OriginFeatureInstance: "peering"},
 		{Source: "edge.web", Target: "edge.store", Socket: "db", Alias: "primary"},
 	}
 	releasePath := filepath.Join(ws, "release.yaml")
@@ -481,12 +606,6 @@ spec:
 		text       string
 		want       ConnectionAtPositionResult
 	}{
-		{name: "the Release's entry for a connection a Feature drew", file: "release.yaml", content: releaseDoc,
-			linePrefix: "p1:", text: "p1",
-			want: ConnectionAtPositionResult{NoConnectionReason: NoConnectionReasonFeatureCreated}},
-		{name: "the Release's entry for a connection the graph does not carry", file: "release.yaml",
-			content: releaseDoc, linePrefix: "ghost:", text: "ghost",
-			want: ConnectionAtPositionResult{NoConnectionReason: NoConnectionReasonUnknownConnection}},
 		{name: "an entry in an imported module's own document", file: "modules/edge.yaml", content: moduleDoc,
 			linePrefix: "target: store", text: "store",
 			want: ConnectionAtPositionResult{GraphNode: "edge.web",
@@ -518,16 +637,6 @@ spec:
 	}
 	if where.File != "modules/edge.yaml" {
 		t.Fatalf("the container is placed in %s, not in the module's own document", where.File)
-	}
-
-	for _, r := range []NoConnectionReason{NoConnectionReasonNoEntry, NoConnectionReasonFeatureCreated,
-		NoConnectionReasonUnknownConnection} {
-		if strings.TrimSpace(r.Sentence()) == "" {
-			t.Errorf("the %q reason renders no sentence", r)
-		}
-	}
-	if NoConnectionReason("").Sentence() != "" {
-		t.Error("an empty reason renders a sentence")
 	}
 }
 

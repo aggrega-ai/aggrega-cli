@@ -37,27 +37,7 @@ var connectionSiteFixtureDir = filepath.Join("..", "serve", "testdata", "connect
 func connectionSiteWorkspace(t *testing.T) (root, release string) {
 	t.Helper()
 	root = t.TempDir()
-	err := filepath.WalkDir(connectionSiteFixtureDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(connectionSiteFixtureDir, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(root, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, b, 0o644)
-	})
-	if err != nil {
-		t.Fatalf("copy the connection fixture: %v", err)
-	}
+	copyFixtureTree(t, connectionSiteFixtureDir, root)
 
 	release = filepath.Join(root, "release.yaml")
 	var entities []lockfile.Entity
@@ -73,6 +53,34 @@ func connectionSiteWorkspace(t *testing.T) (root, release string) {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 	return root, release
+}
+
+// copyFixtureTree copies a fixture tree into dst file by file, replacing any file
+// dst already holds at the same path, so a tree laid over a copied workspace
+// changes exactly the files it carries.
+func copyFixtureTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copy the fixture %s: %v", src, err)
+	}
 }
 
 // connectionArgs is a graph-node call on the fixture's gateway naming one

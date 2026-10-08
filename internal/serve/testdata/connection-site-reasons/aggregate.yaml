@@ -1,0 +1,44 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: connection-site-app
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: conn/gateway
+      features:
+        # An attachment whose own dependency block draws connections, two of them
+        # through a socket the Component declares as well.
+        peering:
+          type: feature.conn/peering
+          uses:
+            peer:
+              p1:
+                target: model
+            logs:
+              p8:
+                target: sink
+              p9:
+                target: sink
+      uses:
+        models:
+          gpt:
+            target: model
+            features:
+              credential:
+                type: feature.conn/token
+                values:
+                  key: gpt-key
+    # A component switched off, which the composition removes with its connection.
+    standby:
+      type: conn/gateway
+      active: false
+      uses:
+        logs:
+          l1:
+            target: sink
+    model:
+      type: conn/model
+    sink:
+      type: conn/sink

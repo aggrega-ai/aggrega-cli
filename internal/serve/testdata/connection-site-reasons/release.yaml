@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: connection-site-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        gateway:
+          uses:
+            # Entries for connections the attachment's dependency block drew: one
+            # configuring nothing, one carrying per-edge infra.
+            logs:
+              p8: {}
+              p9:
+                infra:
+                  tier: gold
+            models:
+              # The Release's own entry for a connection the Aggregate drew.
+              gpt:
+                features:
+                  trace:
+                    type: feature.conn/audit
+              # An entry for a connection nothing draws, configuring nothing.
+              ghost: {}
+        # An entry for a connection of the component switched off.
+        standby:
+          uses:
+            logs:
+              l1:
+                infra:
+                  tier: silver
+        model: {}
+        sink: {}
