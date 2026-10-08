@@ -235,6 +235,27 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// An attachment written on a component instance under a name no slot declares
+	// does not fit a slot that instance leaves empty, evaluated once per attachment
+	// a node carries after the whole attachment cascade has folded. Both halves of
+	// the question need that point: which slots end up bound is known only once
+	// every scope has folded, and which scope each attachment was written at is
+	// recorded as the cascade folds — so an attachment a subsystem or a boundary
+	// shares is told apart from one the instance wrote here and nowhere earlier.
+	// The signal is read once per node, which is the granularity the traversal
+	// promises.
+	violations, err = constraint.RunOnNodeAttachments(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		analyzer.AttachmentFittingAnEmptySlotIsNamedForIt,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// Each presence mandate a node's component type declares is satisfied by some
 	// attachment of the type it names. The satisfying set is the node's merged
 	// attachment names and each name's resolved type, so an attachment

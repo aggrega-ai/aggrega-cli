@@ -101,6 +101,15 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 // separately authored, so a rule reading one for the other would advise about a
 // name the Aggregate never wrote.
 //
+// A declared slot the attachment's Feature fits is not paired with it. That
+// pairing is not a mistyped free attachment but a fill written under another
+// name, and whether the slot it fits is left empty is known only once every
+// scope has folded — which is where the rule halting on it is asked. Pairing it
+// here as well would put an advisory beside that halt about the same attachment,
+// and where the slot ends up bound by a broader scope the attachment is an
+// ordinary extra one. Fit is decided by [FeatureFitsSlot], the predicate that
+// rule reads, so the two cannot come to disagree about which pairing is whose.
+//
 // The detail leads with the name the attachment was written under, which is the
 // value the rule's own wording is about and so carries no caption. The component
 // type it sits on and the declared slot it sits within one edit of follow, each
@@ -115,7 +124,8 @@ var attachmentNameNearADeclaredSlot = constraint.Check[
 		v constraint.NormalizedView,
 		s constraint.NodeAttachmentSubject,
 	) []constraint.Objection {
-		if _, written := v.AuthoredAttachmentType(s.NodeID(), s.AttachmentName()); !written {
+		featureType, written := v.AuthoredAttachmentType(s.NodeID(), s.AttachmentName())
+		if !written {
 			return nil
 		}
 		componentType, present := v.InstanceComponentType(s.NodeID())
@@ -126,8 +136,12 @@ var attachmentNameNearADeclaredSlot = constraint.Check[
 		if slices.Contains(declared, s.AttachmentName()) {
 			return nil
 		}
+		featureLabels := v.AttachmentFeatureLabels(featureType)
 		var out []constraint.Objection
 		for _, candidate := range NearMissCandidates(s.AttachmentName(), declared) {
+			if FeatureFitsSlot(v.SlotSelector(componentType, candidate), featureLabels) {
+				continue
+			}
 			out = append(out, s.RaiseWith(ErrAttachmentSlotNearMiss(),
 				constraint.Uncaptioned(s.AttachmentName()),
 				constraint.Captioned("on component type", componentType),

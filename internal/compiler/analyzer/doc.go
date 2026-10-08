@@ -6,7 +6,7 @@
 //
 // # Role
 //
-// The contracts are five, each declared here as a value the framework invokes
+// The contracts are these, each declared here as a value the framework invokes
 // and none evaluated in this package:
 //
 //   - usesSchema selector rules on every edge — the target node's
@@ -30,17 +30,23 @@
 //     socket. Whether a slot may be left unbound is this rule's question and
 //     not the one above it: the two are asked of the same slot and answer about
 //     different things.
+//   - the misnamed fill on a component's own slots — an attachment written on
+//     the component instance under a name no slot declares must not fit, by the
+//     selector a slot declares, a slot nothing binds on that node once every
+//     scope has folded. An attachment inherited from a subsystem or a boundary
+//     is not judged, and neither is a slot declaring no selector.
 //   - presence mandates a component type declares — each
 //     features.aggrega.ai/requiredType.<label> annotation must be satisfied by
 //     some attachment of the type it names, under any name, counting every
 //     scope the node inherits from.
 //
-// The first three delegate label matching to pkg/selector, all five report on
-// [AnalysisResult].Errors, and none is evaluated in this package. Each is
-// declared here — [EdgeTargetSatisfiesSocketSelector],
+// Every rule reading a label constraint delegates the matching to pkg/selector,
+// all of them report on [AnalysisResult].Errors, and none is evaluated in this
+// package. Each is declared here — [EdgeTargetSatisfiesSocketSelector],
 // [AttachmentSatisfiesFeatureApplicability], [SlotFillSatisfiesSlotSelector] and
 // [ConnectionAttachmentSatisfiesSocketSlotSelector], [RequiredAttachmentSlotBound]
-// and [RequiredSocketSlotFilledOnEveryConnection], and
+// and [RequiredSocketSlotFilledOnEveryConnection],
+// [AttachmentFittingAnEmptySlotIsNamedForIt], and
 // [RequiredAttachmentTypeAttached] — and each
 // is evaluated over a presentation of the finalised graph, which this package is
 // not handed; whatever holds that presentation invokes them and appends what
@@ -110,6 +116,10 @@
 //     same axis, and after every slot-fill violation: the two rules are
 //     invoked as two walks rather than one, so all of the first rule's
 //     findings precede all of the second's.
+//   - Misnamed-fill violations emerge in the order the graph holds its nodes
+//     and then its merged attachments, after every slot-fill violation and
+//     before every presence-mandate one, for the same reason: one walk per
+//     rule, in the order the invoking site runs them.
 //   - Unsatisfied-presence-mandate violations emerge in the order the graph
 //     holds its nodes and then in the order the component type's annotations
 //     declare the mandates, and they precede the unbound-required-slot

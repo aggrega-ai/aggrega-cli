@@ -300,12 +300,42 @@ var errAttachmentSlotShape = cerrors.Register("attachment-slot-shape", cerrors.M
 // takes. An attachment name matching no slot is legal (the attachment
 // surface is open), so this sentinel never reaches a build's verdict; it
 // exists so a front end can recognise the advisory class and render it as a
-// warning.
+// warning. It is not raised for a declared slot whose label constraint the
+// attachment's Feature satisfies: that pairing is a fill written under another
+// name rather than a mistyped free attachment, and it is judged, once every
+// scope has folded, by the rule reporting ErrMisnamedSlotFill.
 func ErrAttachmentSlotNearMiss() error { return errAttachmentSlotNearMiss }
 
 var errAttachmentSlotNearMiss = cerrors.Register("attachment-slot-near-miss", cerrors.Meta{
 	ShortCode: "E0149",
 	Message:   "attachment name is a near miss for a declared slot",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrMisnamedSlotFill wraps an attachment written on a component instance under a
+// name its component type declares no slot for, whose Feature satisfies the label
+// constraint of a slot the type declares that nothing binds on that instance once
+// every scope has folded — a fill meant for the slot, written under another
+// name. It halts.
+//
+// It is narrower than the openness of the attachment surface, and deliberately:
+// an attachment fitting no declared slot, an extra attachment once every slot it
+// fits is bound, and an attachment the instance inherits from a subsystem or a
+// Release boundary all stay free. The finding names the attachment, the
+// component instance, the Feature attached and each empty slot that Feature
+// fits, and the remedy is to attach it under the slot's name.
+//
+// It is declared here and raised from the package that holds the rule, which is
+// the one point in the compilation where every fact it reads is in hand: which
+// slots a node ends up binding, and which scope each attachment was written at.
+// It is distinct from ErrAttachmentSlotNearMiss, which is an advisory about a
+// name one edit from a declared slot whose Feature does not fit it; where both
+// would describe one attachment, this is the one reported.
+func ErrMisnamedSlotFill() error { return errMisnamedSlotFill }
+
+var errMisnamedSlotFill = cerrors.Register("misnamed-slot-fill", cerrors.Meta{
+	ShortCode: "E0328",
+	Message:   "attachment written under a name no slot declares fits a slot its component leaves empty",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

@@ -304,7 +304,10 @@ var ConnectionAttachmentSatisfiesSocketSlotSelector = constraint.Check[
 // It is handed the values rather than the view, so every fact a rule reads is
 // named in the rule's own body, where its point in the compilation is read off.
 // Sharing it is what keeps the two slot surfaces from coming to disagree about
-// what an unsatisfied or unreadable constraint is and how each is reported.
+// what an unsatisfied or unreadable constraint is and how each is reported. The
+// evaluation itself is the one [resolver.SlotSelectorAdmits] makes, which the
+// rule over a fill written under another name reads as well, so what a slot's
+// constraint accepts has one answer for every rule asking it.
 //
 // declaredOn names where the slot is declared, after the constraint and before
 // the reason; correction is the remedy for a constraint the matcher cannot
@@ -318,7 +321,7 @@ func slotSelectorObjections(
 	declaredOn ...constraint.DetailValue,
 ) []constraint.Objection {
 	detail := append([]constraint.DetailValue{constraint.Uncaptioned(labelConstraint)}, declaredOn...)
-	match, err := selector.MatchString(labelConstraint, fillLabels)
+	match, err := resolver.SlotSelectorAdmits(labelConstraint, fillLabels)
 	if err != nil {
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrSlotSelectorUnsatisfied(),
