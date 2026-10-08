@@ -148,11 +148,17 @@ func EvaluateAllProvides(
 			val, err := evalValueTemplate(
 				fmt.Sprintf("provides[%q]", key), tmplText, providesScope.with(pCtx, withheld), "{{", "}}")
 			if err != nil {
+				// The evaluation's report is carried as its whole cause chain. The
+				// error is a diagnostic envelope whose own text is a single frame —
+				// the surface and the stage — while what the evaluation said, the
+				// failing expression and the key a read did not find, sits in the
+				// frames beneath it; formatting the envelope alone would print the
+				// frame and drop the reason.
 				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{
 						fmt.Sprintf("node %q", nodeID),
 						fmt.Sprintf("provides[%q]", key),
-						fmt.Sprintf("%v", err),
+						cerrors.CauseChain(err),
 					}, ""))
 			}
 			resolved.Set(key, strings.TrimSpace(val))

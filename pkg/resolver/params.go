@@ -6,6 +6,7 @@ package resolver
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -107,11 +108,29 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 // The two function sets themselves are deliberately left as they are. Which
 // helpers an Aggregate's own text may call is a question about what an author is
 // offered, and it is not settled by making one rule agree with one renderer.
+//
+// What this set does take from the shared template layer is its replacement for
+// Go's own `index`, and only that: a read of a map key the map does not hold
+// halts naming the key here exactly as it does on every other template surface,
+// rather than printing the engine's placeholder text into the document.
 func parseAggregateTemplate(raw []byte) (*template.Template, error) {
 	return template.New("aggregate").
 		Option("missingkey=zero").
-		Funcs(sprig.FuncMap()).
+		Funcs(aggregateTemplateFuncs()).
 		Parse(string(raw))
+}
+
+// aggregateTemplateFuncs is the function set an Aggregate's own templates are
+// parsed and rendered with — its text, and the validate: predicates its parameter
+// contracts declare: Sprig's, with the shared replacement for `index` merged over
+// it.
+func aggregateTemplateFuncs() template.FuncMap {
+	funcs := sprig.FuncMap()
+	// Iterating a map is safe here where it usually would not be: the loop only
+	// assigns distinct keys into another map, so the merged set is the same
+	// whatever order the keys arrive in.
+	maps.Copy(funcs, gotmpl.BuiltinReplacements())
+	return funcs
 }
 
 // copyParameterTree returns a copy of a parameter map deep enough that inserting

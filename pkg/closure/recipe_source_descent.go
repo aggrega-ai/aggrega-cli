@@ -545,7 +545,8 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 	}
 	// Aggrega's helpers come from the one place they are defined, so `optional`
 	// resolves a key here exactly as it does when the same recipe renders — same
-	// presence check, same value, same type. Take the set whole rather than
+	// presence check, same value, same type — and `index` halts on a map key the
+	// map does not hold exactly as it does there. Take the set whole rather than
 	// rebuilding it here: a local implementation registered under an authored
 	// name Aggrega already defines is what makes two surfaces disagree about a
 	// non-string value, and they disagree silently.
@@ -598,12 +599,14 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 // FieldNode or ChainNode walks; they live in *parse.StringNode as
 // constant content, which the walker ignores.
 //
-// Residual escape hatch: `{{ index . "provides" "X" }}` evaluates
-// to `.provides.X` at runtime but parses as an IdentifierNode +
-// DotNode + StringNode chain that the walker does not specifically
-// recognise as a `.provides` reference. This requires deliberate
-// authoring to bypass; documented here for completeness, not
-// closed.
+// Residual escape hatch: `{{ index . "provides" "X" }}` names
+// `.provides.X` but parses as an IdentifierNode + DotNode +
+// StringNode chain that the walker does not specifically recognise
+// as a `.provides` reference. It still halts, because the data this
+// surface evaluates against holds no "provides" key and `index`
+// halts on a map key the map does not hold — but it halts naming
+// that key rather than with this check's condition. This requires
+// deliberate authoring to reach; documented here for completeness.
 func rejectProvidesReference(tmpl *template.Template, fieldPath string) error {
 	root := tmpl.Tree
 	if root == nil || root.Root == nil {

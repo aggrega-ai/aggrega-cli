@@ -4,11 +4,14 @@
 package jsonschema
 
 import (
+	"maps"
 	"regexp"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/google/jsonschema-go/jsonschema"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 )
 
 // Validator is the swap boundary between the compiler core and a
@@ -478,17 +481,27 @@ type validateNode struct {
 //
 // `param` and `parameters` give x-aggrega-when / x-aggrega-validate predicates
 // access to the resolved Aggregate parameter map: `param "X"` returns one
-// parameter's value, `parameters` returns the whole map (e.g.
-// `{{ index (parameters) "X" }}`). They are exposed as functions rather than a
+// parameter's value, or nil where no such parameter was supplied, and
+// `parameters` returns the whole map. They are exposed as functions rather than a
 // data-root field so the dot stays the field value / surrounding object exactly
 // as before — predicates that do not call them render identically. Registered
 // here as placeholders (so templates referencing them parse); the real
 // closures over the per-validation Context.Parameters are bound per evaluation
 // in evaluateTemplate via a template clone, since the parameter map is known
 // only at Validate time, not at compile time.
+//
+// `index` is the shared template layer's replacement for Go's own, merged over
+// the Sprig set so a predicate reads a map exactly as every other template
+// surface does: indexing a map with a key it does not hold halts naming the key.
+// Reading `(parameters)` through `index` therefore halts on a parameter nobody
+// supplied, where `param` answers nil.
 var sprigFuncs = func() template.FuncMap {
 	m := sprig.HermeticTxtFuncMap()
 	m["param"] = func(string) any { return nil }
 	m["parameters"] = func() map[string]any { return nil }
+	// Iterating a map is safe here where it usually would not be: the loop only
+	// assigns distinct keys into another map, so the merged set is the same
+	// whatever order the keys arrive in.
+	maps.Copy(m, gotmpl.BuiltinReplacements())
 	return m
 }()

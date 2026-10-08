@@ -210,7 +210,10 @@ func TestEvalTemplate_OpenPillarOptionalityIsUntouched(t *testing.T) {
 		`{{ (default dict .values.absent).deeper }}`,
 		`{{ .features.nosuchattachment }}`,
 		`{{ .steps.nosuchstep }}`,
-		`{{ index .values "absent" }}`,
+		// A presence-testing read of an absent key. Reading one through `index`
+		// halts naming the key, which is a different rule from this check's and is
+		// held where the strict index is tested.
+		`{{ get .values "absent" }}`,
 		// A whole-root reference is admitted whenever its root is, closed pillars
 		// included — refusing one would break every defensive wrapper.
 		`{{ default dict .context }}`,

@@ -11,7 +11,6 @@ import (
 	"text/template"
 	"text/template/parse"
 
-	"github.com/Masterminds/sprig/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
@@ -737,16 +736,17 @@ func refusePredicateUnknownRoot(tree parse.Node) error {
 }
 
 // evalValidatePredicate compiles the validate template against the value
-// (bound as .value) and Sprig functions. The template must render to one
-// of the truthy/falsy literals "true" / "false" — anything else returns an
-// error from the predicate evaluator.
+// (bound as .value) and the function set an Aggregate's own templates are
+// rendered with — Sprig's, with `index` halting on a map key the map does not
+// hold. The template must render to one of the truthy/falsy literals "true" /
+// "false" — anything else returns an error from the predicate evaluator.
 //
 // A predicate naming anything other than .value is refused before it runs, so a
 // mistyped reference is reported as the naming mistake it is rather than through
 // whatever its empty resolution happens to produce.
 func evalValidatePredicate(predicate string, value any) (bool, error) {
 	tmpl, err := template.New("validate").
-		Funcs(sprig.FuncMap()).
+		Funcs(aggregateTemplateFuncs()).
 		Parse(predicate)
 	if err != nil {
 		return false, fmt.Errorf("parse: %w", err)

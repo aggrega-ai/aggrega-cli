@@ -36,8 +36,9 @@ func FuncMap() template.FuncMap {
 // A fresh map is returned on each call.
 //
 // The helper surface grows additively as catalog-authoring needs
-// surface. Two helpers are bound today: [optional] and
-// [capitalizedWords].
+// surface. It binds [optional] and [capitalizedWords], and carries the
+// replacements [BuiltinReplacements] returns, so every surface taking this
+// set reads `index` the strict way that function describes.
 //
 // The helper functions themselves are unexported. Wiring one under a
 // name of your own choosing is therefore not possible from outside this
@@ -47,10 +48,15 @@ func FuncMap() template.FuncMap {
 // forwarder here for that reason, rather than by naming the shared
 // implementation directly.
 func Helpers() template.FuncMap {
-	return template.FuncMap{
+	helpers := template.FuncMap{
 		"optional":         optional,
 		"capitalizedWords": capitalizedWords,
 	}
+	// Iterating a map is safe here where it usually would not be: the loop only
+	// assigns distinct keys into another map, so the merged set is the same
+	// whatever order the keys arrive in.
+	maps.Copy(helpers, BuiltinReplacements())
+	return helpers
 }
 
 // capitalizedWords reads a string as words separated by runs of anything

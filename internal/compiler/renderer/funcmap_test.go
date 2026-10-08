@@ -4,8 +4,10 @@
 package renderer
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
@@ -69,12 +71,12 @@ func TestOptional_InTemplateContext(t *testing.T) {
 // every template-bearing surface runs through one evaluator, so a per-surface
 // function set would be a second place for the surfaces to disagree.
 //
-// Reaching optional from a path template widens nothing the surface could not
-// already express. Under missingkey=error a bare reference to an absent key halts,
-// but index does not consult the missing-key policy — it yields the element type's
-// zero value — so index piped through default already produced a fallback on this
-// surface. The second arm below is that equivalence, asserted rather than assumed:
-// both spellings render the same fallback.
+// optional is the one spelling that supplies a fallback for an absent key on this
+// surface. Under missingkey=error a bare reference to an absent key halts, and so
+// does reading it through index: index of a map key the map does not hold halts
+// naming the key whatever the surface's missing-key policy, so index piped through
+// default never reaches the default. The second and third arms below hold both
+// halts, so optional stays the explicit, presence-testing read.
 func TestOptional_PathTemplatesShareTheOneFuncSet(t *testing.T) {
 	data := PathTemplateContext{Parameters: map[string]any{}}
 	got, err := EvalPathTemplate("path-test", "directory", "some-boundary",
@@ -85,14 +87,10 @@ func TestOptional_PathTemplatesShareTheOneFuncSet(t *testing.T) {
 	if got != "y" {
 		t.Errorf("optional fallback = %q; want y", got)
 	}
-	viaIndex, err := EvalPathTemplate("path-test", "directory", "some-boundary",
+	_, err = EvalPathTemplate("path-test", "directory", "some-boundary",
 		`{{ index .parameters "x" | default "y" }}`, data)
-	if err != nil {
-		t.Fatalf("index+default must be reachable from a path template: %v", err)
-	}
-	if viaIndex != got {
-		t.Errorf("index+default rendered %q but optional rendered %q; the two spellings must agree, "+
-			"which is what makes optional on this surface a convenience rather than a new capability", viaIndex, got)
+	if err == nil || !errors.Is(err, gotmpl.ErrIndexOfAbsentMapKey()) {
+		t.Errorf("index of an absent parameter key piped through default must halt naming the key; got %v", err)
 	}
 	// A bare reference to the same absent key still halts, so the surface's
 	// missing-key strictness is intact and only the explicit fallback is exempt.

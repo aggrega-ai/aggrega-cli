@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
 
@@ -73,20 +74,31 @@ func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 	}
 }
 
-// TestEvaluateAssertion_IndexFuncWorksAroundMissingKey pins the author
-// workaround for optional-field idioms: Go template's index function plus
-// Sprig's default returns a fallback value when the referenced field is
-// missing. (Sprig's default alone does NOT work under missingkey=error —
-// the reference itself halts before default can fire; index returns nil
-// for missing keys and default can then take effect.)
-func TestEvaluateAssertion_IndexFuncWorksAroundMissingKey(t *testing.T) {
+// TestEvaluateAssertion_OptionalWorksAroundMissingKey pins the author
+// workaround for optional-field idioms: the optional helper returns the
+// fallback when the referenced field is missing. (Sprig's default alone does
+// NOT work under missingkey=error — the reference itself halts before default
+// can fire.) Reading the key through index and then applying default does not
+// work either: index halts on a map key the map does not hold, naming the key,
+// before default runs — the second half below holds that.
+func TestEvaluateAssertion_OptionalWorksAroundMissingKey(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	// .values.replicas is absent; index returns nil, default 1 supplies the fallback.
-	err := EvaluateAssertion("optional", `{{ if lt ((index .values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx, redact.Keys{})
-
+	// .values.replicas is absent; optional supplies the fallback 1.
+	err := EvaluateAssertion("optional", `{{ if lt (optional .values "replicas" 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx, redact.Keys{})
 	if err != nil {
-		t.Errorf("expected nil (index+default fallback); got %v", err)
+		t.Errorf("expected nil (optional fallback); got %v", err)
+	}
+
+	err = EvaluateAssertion("index-default", `{{ if lt ((index .values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx, redact.Keys{})
+	if err == nil {
+		t.Fatal("index of an absent key piped through default passed; want a halt naming the key")
+	}
+	if !errors.Is(err, gotmpl.ErrIndexOfAbsentMapKey()) || errors.Is(err, ErrAssertionFailed()) {
+		t.Errorf("want the absent-key condition and not an assertion failure; got %v", err)
+	}
+	if !strings.Contains(err.Error(), `key "replicas"`) {
+		t.Errorf("the halt does not name the key: %v", err)
 	}
 }
 

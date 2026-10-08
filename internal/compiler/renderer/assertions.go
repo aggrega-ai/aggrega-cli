@@ -58,14 +58,13 @@ type AssertionRecipeContext struct {
 // EvaluateAssertion runs the named template body against the context. The
 // evaluator uses missingkey=error: any reference to a missing key halts
 // with a no-such-key diagnostic. Authors needing optional-field idioms
-// use hasKey to gate the reference, index + default to provide a
-// fallback, or the optional helper, which takes the map, the key and the
-// fallback and performs the presence check directly:
-// `optional .values "optional" <fallback>`. (Plain Sprig default does NOT
-// work under missingkey=error: the bare reference `.values.optional`
-// halts before default can fire; index returns nil for missing keys and
-// default can then take effect:
-// `(index .values "optional") | default <fallback>`.)
+// use hasKey to gate the reference, or the optional helper, which takes
+// the map, the key and the fallback and performs the presence check
+// directly: `optional .values "optional" <fallback>`. (Plain Sprig default
+// does NOT work under missingkey=error: the bare reference
+// `.values.optional` halts before default can fire. Reading the key
+// through index does not help either: index of a map key the map does not
+// hold halts naming the key, on this surface as on every other.)
 //
 // Returns nil on pass (template renders to empty/whitespace and no fail
 // call). Returns a non-nil error wrapping ErrAssertionFailed on
