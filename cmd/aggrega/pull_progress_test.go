@@ -13,10 +13,11 @@ import (
 )
 
 // TestPull_ProgressSurface_ForcedStatic drives a real pull with the progress
-// surface forced on over a non-terminal sink and asserts the pull phases appear
-// as plain static lines on the diagnostic sink (stderr), while the user-facing
-// "Pull complete" summary stays on the output sink (stdout). It also confirms
-// stdout carries no progress lines, mirroring the build's stderr-only discipline.
+// surface forced on over a non-terminal sink and asserts every pull step is
+// named on exactly one plain line on the diagnostic sink (stderr), with no escape
+// byte, while the user-facing "Pull complete" summary stays on the output sink
+// (stdout). It also confirms stdout carries no progress lines, mirroring the
+// build's stderr-only discipline.
 func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	orig := fileTerminal
@@ -39,21 +40,30 @@ func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 	}
 
 	errStr := stderr.String()
-	for _, label := range []string{"loading catalog...", "resolving dependencies...", "writing lockfile..."} {
-		if !strings.Contains(errStr, label) {
-			t.Errorf("expected pull phase line %q on stderr; got %q", label, errStr)
+	labels := pullProgressSpine().labels
+	for label, n := range stepLineCounts(errStr, labels) {
+		if n != 1 {
+			t.Errorf("pull step %q is named on %d lines on stderr, want exactly 1; got %q", label, n, errStr)
 		}
 	}
 	if strings.ContainsRune(errStr, '\r') {
 		t.Errorf("forced static pull surface must not redraw in place; got %q", errStr)
+	}
+	if i := strings.IndexByte(errStr, 0x1b); i >= 0 {
+		t.Errorf("forced static pull surface carries an escape byte at offset %d; got %q", i, errStr)
 	}
 
 	outStr := stdout.String()
 	if !strings.Contains(outStr, "Pull complete") {
 		t.Errorf("expected the pull summary on stdout; got %q", outStr)
 	}
-	if strings.Contains(outStr, "...") || strings.ContainsRune(outStr, '\r') {
-		t.Errorf("stdout must carry no progress lines; got %q", outStr)
+	for label, n := range stepLineCounts(outStr, labels) {
+		if n != 0 {
+			t.Errorf("stdout must carry no progress lines; step %q is named on %d; got %q", label, n, outStr)
+		}
+	}
+	if strings.ContainsRune(outStr, '\r') {
+		t.Errorf("stdout must carry no redraw; got %q", outStr)
 	}
 }
 
@@ -80,8 +90,10 @@ func TestPull_ProgressSurface_AutoNonTTYSilent(t *testing.T) {
 		t.Fatalf("pullRun: %v (stderr=%q)", err, stderr.String())
 	}
 
-	if strings.Contains(stderr.String(), "loading catalog...") {
-		t.Errorf("auto mode on a non-TTY must not print phase lines; got %q", stderr.String())
+	for label, n := range stepLineCounts(stderr.String(), pullProgressSpine().labels) {
+		if n != 0 {
+			t.Errorf("auto mode on a non-TTY must not print step lines; step %q is named on %d; got %q", label, n, stderr.String())
+		}
 	}
 	if !strings.Contains(stdout.String(), "Pull complete") {
 		t.Errorf("expected the pull summary on stdout; got %q", stdout.String())

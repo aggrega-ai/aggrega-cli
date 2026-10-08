@@ -5,9 +5,6 @@ package main
 
 import (
 	"io"
-	"os"
-
-	"golang.org/x/term"
 )
 
 // ANSI SGR sequences. The palette is deliberately tiny — color marks structure
@@ -32,25 +29,15 @@ type colorizer struct {
 	enabled bool
 }
 
-// fileTerminal reports whether w is an interactive terminal. It is a
-// package-level seam so the auto-detect branch is unit-testable without a real
-// TTY; tests replace it. A writer that is not an *os.File (a *bytes.Buffer in
-// tests, a pipe in production) is never a terminal.
-var fileTerminal = func(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	return term.IsTerminal(int(f.Fd()))
-}
-
 // newColorizer resolves the color decision. noColorSet is the process-global
 // color-off signal (the global --no-color / --plain flags or NO_COLOR, any value
 // per the no-color.org convention); it disables color UNLESS an explicit
 // --color=always was requested — an explicit operator request outranks the
 // global default. Otherwise colorAlways enables, colorNever disables, and
-// colorAuto enables only when the global signal is unset and the sink is an
-// interactive terminal.
+// colorAuto enables only when the global signal is unset and the sink is a
+// terminal that interprets escape sequences — the same decision the progress
+// surface reads, so a console that cannot draw the checklist gets no color
+// either.
 func newColorizer(mode colorMode, out io.Writer, noColorSet bool) *colorizer {
 	switch mode {
 	case colorAlways:
@@ -61,7 +48,7 @@ func newColorizer(mode colorMode, out io.Writer, noColorSet bool) *colorizer {
 		if noColorSet {
 			return &colorizer{enabled: false}
 		}
-		return &colorizer{enabled: fileTerminal(out)}
+		return &colorizer{enabled: outputTerminal(out) == drawingTerminal}
 	}
 }
 

@@ -190,10 +190,20 @@ func silenceUsageOnRun(c *cobra.Command) {
 // that owns the whole process: a stop request arrives for the process, not for a
 // command, so the context every command inherits has to start here for any of
 // them to be able to observe one.
+//
+// The consoles behind standard output and standard error are prepared here too,
+// before any command writes to them, for the same reason: a console's mode
+// belongs to the process rather than to a command. Where a console has to be
+// asked to interpret escape sequences it is asked once, and put back the way it
+// was found when the command returns; where it refuses, color and progress
+// write plain text to it.
 func Execute() {
+	restoreTerminals := prepareTerminals(os.Stdout, os.Stderr)
 	ctx, stop := withStopSignals(context.Background())
 	defer stop()
-	if code := executeRoot(ctx, newRootCmd()); code != 0 {
+	code := executeRoot(ctx, newRootCmd())
+	restoreTerminals()
+	if code != 0 {
 		os.Exit(code)
 	}
 }

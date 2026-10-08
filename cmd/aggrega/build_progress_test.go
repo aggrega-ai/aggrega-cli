@@ -44,8 +44,8 @@ func TestProgress_Auto_NonTTY_Silent(t *testing.T) {
 }
 
 // TestProgress_ForcedStatic_NonTTY pins the forced shape: --progress on a
-// non-terminal sink prints plain static phase lines — no carriage returns, no
-// spinner characters, no cursor movement.
+// non-terminal sink prints one plain line per completed step — no carriage
+// returns, no spinner characters, no cursor movement.
 func TestProgress_ForcedStatic_NonTTY(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
@@ -57,20 +57,12 @@ func TestProgress_ForcedStatic_NonTTY(t *testing.T) {
 	p.finish()
 
 	got := buf.String()
-	if strings.ContainsRune(got, '\r') {
-		t.Errorf("forced static output must not contain carriage returns; got %q", got)
-	}
-	if strings.ContainsRune(got, '\x1b') {
-		t.Errorf("forced static output must not contain ANSI escapes; got %q", got)
-	}
 	for _, spin := range spinnerFrames {
 		if strings.ContainsRune(got, spin) {
 			t.Errorf("forced static output must not contain spinner chars; got %q", got)
 		}
 	}
-	if !strings.Contains(got, "loading catalog...") || !strings.Contains(got, "resolving dependencies...") {
-		t.Errorf("expected plain per-phase lines; got %q", got)
-	}
+	assertPlainSteps(t, got, []string{"loading catalog", "resolving dependencies"})
 }
 
 // TestProgress_TTY_Checklist pins the interactive shape: a TTY sink redraws a
@@ -179,7 +171,7 @@ func TestProgress_DebugWinsOverQuiet(t *testing.T) {
 }
 
 // TestProgress_RealCompile_ShowsCompileStep pins the reveal path: when the eager
-// pass observes a guest actually compiling, the "Plugin compilation" step joins
+// pass observes a guest actually compiling, the "compiling plugins" step joins
 // the checklist between the pre-render phases and the render phase.
 func TestProgress_RealCompile_ShowsCompileStep(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
@@ -456,7 +448,7 @@ func TestProgress_UncountedPhase_NoBar(t *testing.T) {
 }
 
 // TestProgress_ForcedStatic_RenderNoEscapesNoBar confirms the forced non-TTY
-// static path emits plain lines for the render phase too — no ANSI escapes, no
+// static path writes the render step as a plain line too — no ANSI escapes, no
 // bar cells, no dim elapsed — so redirected logs stay clean.
 func TestProgress_ForcedStatic_RenderNoEscapesNoBar(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
@@ -472,15 +464,10 @@ func TestProgress_ForcedStatic_RenderNoEscapesNoBar(t *testing.T) {
 	p.finish()
 
 	got := buf.String()
-	if strings.ContainsRune(got, '\x1b') {
-		t.Errorf("static render output must contain no ANSI escapes; got %q", got)
-	}
 	if strings.ContainsRune(got, '█') || strings.ContainsRune(got, '░') {
 		t.Errorf("static render output must contain no bar cells; got %q", got)
 	}
-	if !strings.Contains(got, "rendering 20/20...") {
-		t.Errorf("expected the plain static final count; got %q", got)
-	}
+	assertPlainSteps(t, got, []string{"rendering 20/20"})
 }
 
 // TestProgressBar_ExactShape pins the pure global-progress-bar composition from a
@@ -533,10 +520,11 @@ func TestClampVisibleWidth_NoWrap(t *testing.T) {
 	}
 }
 
-// TestProgress_RenderNode_ForcedStatic_Throttled pins the forced-static render
-// shape: a large graph emits periodic lines (roughly one per tenth) plus a
-// guaranteed final count — never one line per node — and no carriage returns.
-func TestProgress_RenderNode_ForcedStatic_Throttled(t *testing.T) {
+// TestProgress_RenderNode_Plain_OneLine pins the plain render shape: however
+// many nodes a graph has, the render step is one line, written when the step
+// completes and carrying the final count — never a line per node or a run of
+// interim counts — and no carriage returns.
+func TestProgress_RenderNode_Plain_OneLine(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
@@ -546,25 +534,13 @@ func TestProgress_RenderNode_ForcedStatic_Throttled(t *testing.T) {
 	total := 50
 	for i := 1; i <= total; i++ {
 		p.renderNode(i, total, "node")
+		if i < total && buf.Len() != 0 {
+			t.Fatalf("the plain surface wrote before the render step completed, at node %d; got %q", i, buf.String())
+		}
 	}
 	p.finish()
 
-	got := buf.String()
-	if strings.ContainsRune(got, '\r') {
-		t.Errorf("forced static render progress must not contain carriage returns; got %q", got)
-	}
-	lines := 0
-	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
-		if strings.Contains(ln, "rendering ") {
-			lines++
-		}
-	}
-	if lines < 2 || lines > 12 {
-		t.Errorf("expected a throttled handful of interim lines, got %d; output %q", lines, got)
-	}
-	if !strings.Contains(got, "rendering 50/50...") {
-		t.Errorf("expected a guaranteed final count line; got %q", got)
-	}
+	assertPlainSteps(t, buf.String(), []string{"rendering 50/50"})
 }
 
 // TestProgress_TTY_SpinnerTicker_Animates proves the active-phase spinner is
@@ -799,7 +775,7 @@ func TestProgress_Redraw_CursorUpMatchesLineCount(t *testing.T) {
 // surface does NOT print the completion summary on the diagnostic sink: the single
 // "Total build time" / "Build completed:" block lives on stdout in every mode, so
 // the stderr diagnostic surface must not duplicate it. The static surface's finish
-// is silent (its render lines already printed inline).
+// writes the lines of the steps it completes and nothing else.
 func TestProgress_StaticFinish_NoSummaryOnDiagSink(t *testing.T) {
 	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
@@ -890,22 +866,11 @@ func TestProgress_Plain_ForcesStaticEvenOnTTY(t *testing.T) {
 	p.renderNode(1, 1, "svc")
 	p.finish()
 
-	got := buf.String()
-	if strings.ContainsRune(got, '\r') {
-		t.Errorf("plain mode must not repaint with carriage returns; got %q", got)
-	}
-	if strings.ContainsRune(got, '\x1b') {
-		t.Errorf("plain mode must emit no ANSI escapes (no color, no cursor-up); got %q", got)
-	}
-	// Static lines carry no checklist markers at all — no animated [|]/[/] spinner
-	// row and no [✓]/[ ] marker — so the '[' character never appears. (A bare
+	// Static lines carry no carriage return, no escape sequence (no color, no
+	// cursor-up) and no checklist marker at all — no animated [|]/[/] spinner row
+	// and no [✓]/[ ] marker — so the '[' character never appears. (A bare
 	// spinner-frame scan would false-match the '/' in the "1/1" counter.)
-	if strings.ContainsRune(got, '[') {
-		t.Errorf("plain mode must draw no checklist/spinner markers; got %q", got)
-	}
-	if !strings.Contains(got, "loading catalog...") {
-		t.Errorf("plain mode must print plain per-phase lines; got %q", got)
-	}
+	assertPlainSteps(t, buf.String(), []string{"loading catalog", "resolving dependencies", "rendering 1/1"})
 }
 
 // TestProgress_Plain_NonTTY_StaysSilent pins that --plain does not turn the

@@ -146,7 +146,7 @@ the entity's files are the ones its recorded rules kept.`,
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Not yet implemented: accepted and ignored, so a script that passes it keeps working when it starts having an effect")
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external (the Release's own Aggregate or Manifest, read from the file or entry the Release names). Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
-	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
+	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing one plain line per step as it completes, with its time. The default is auto: the interactive phase checklist is shown only when stderr is a terminal that interprets escape sequences, a terminal that does not gets the same plain lines, and redirected or piped output gets none")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the bare --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: every other form of pull asks nothing, so passing it changes no behaviour there")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, the entity.lock beside every Recipe and FeatureRecipe whose recorded pins would move under --pin-sources, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills, a pull that would halt on an unpinned entity halts here too, and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes none of them")
 	c.Flags().BoolVar(&opts.pinSources, "pin-sources", false, helpPullPinSources)
@@ -333,11 +333,17 @@ const (
 // but that render's artifacts are discarded and its rows would put a per-node
 // counter in the middle of a spine whose last step is the lockfile write. The
 // external-input step therefore draws as one row like the others.
+//
+// Each row names what its step does, so no two rows share a name. The step that
+// finds the Aggregate the Release names — in a registry where it is not local —
+// and decides which pins an existing lockfile records are honoured is "resolving
+// aggregate"; the walk over the Release's dependencies that follows is
+// "resolving dependencies", the same name the build gives the same walk.
 func pullProgressSpine() progressSpine {
 	return progressSpine{
 		labels: []string{
 			pullPhaseLoadCatalog:    "loading catalog",
-			pullPhaseDependencies:   "resolving dependencies",
+			pullPhaseDependencies:   "resolving aggregate",
 			pullPhaseClosure:        "resolving dependencies",
 			pullPhaseLibraries:      "resolving libraries",
 			pullPhaseValidate:       "validating",

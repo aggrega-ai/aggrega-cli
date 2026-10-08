@@ -52,13 +52,16 @@ const (
 	// progressSilent draws nothing. Chosen for --quiet, and for the auto default
 	// when the sink is not an interactive terminal.
 	progressSilent progressMode = iota
-	// progressStatic draws one plain static line per phase as it starts, with no
-	// spinner and no cursor movement. Chosen when the surface is forced on
-	// (--progress) but the sink is not a terminal (redirected / piped / log).
+	// progressStatic is the plain surface: one line per step as the step
+	// completes — its name and its elapsed time — with no escape sequence, no
+	// spinner and no cursor movement, so nothing is ever redrawn. Chosen for a
+	// terminal whose console does not interpret escape sequences, for --plain on
+	// any terminal, and when the surface is forced on (--progress) but the sink is
+	// not a terminal (redirected / piped / log).
 	progressStatic
 	// progressChecklist draws an in-place multi-line phase checklist that ticks
 	// each phase as it completes and spins the active phase. Chosen when the sink
-	// is an interactive terminal.
+	// is an interactive terminal that interprets escape sequences.
 	progressChecklist
 	// progressDebug draws the verbose per-phase timing layer. Chosen for --debug,
 	// independent of sink shape.
@@ -70,9 +73,13 @@ const (
 // the render phase (the one that reports per-node progress and may be preceded by
 // a plugin-compilation step); it is -1 for a command with no render phase (pull).
 // coldProfile is the up-front cold/warm guess for this build, used only to pick
-// the global bar's weight profile. It does not gate the "Plugin compilation"
+// the global bar's weight profile. It does not gate the "compiling plugins"
 // step: that step is revealed from whether a guest is observed to actually
 // compile during the build, not from this guess.
+//
+// Every label is a lowercase phrase naming what its step does, short enough that
+// its row, marker included, ends before rowBodyColumn, so every elapsed time
+// stays in one column.
 type progressSpine struct {
 	labels      []string
 	renderIdx   int
@@ -92,7 +99,7 @@ const (
 )
 
 // buildProgressSpine returns the ordered build phase spine. cold selects the
-// bar's cold weight profile; the "Plugin compilation" step's appearance is
+// bar's cold weight profile; the "compiling plugins" step's appearance is
 // driven separately by an observed guest compilation, not by this flag.
 func buildProgressSpine(cold bool) progressSpine {
 	return progressSpine{
@@ -111,7 +118,7 @@ func buildProgressSpine(cold bool) progressSpine {
 
 // compilePhaseLabel is the label of the cold-profile plugin-compilation step
 // shown between the pre-render phases and the render phase.
-const compilePhaseLabel = "Plugin compilation"
+const compilePhaseLabel = "compiling plugins"
 
 // buildBarWeights assigns each build phase a fixed share of the global progress
 // bar. The compiler cannot know a phase's true duration ahead of time, so the
@@ -214,11 +221,12 @@ const (
 // untouched by the presence or shape of progress.
 //
 // The checklist ticks each phase as it completes and spins the currently-active
-// phase. A "Plugin compilation" step appears before the render phase when the
+// phase. A "compiling plugins" step appears before the render phase when the
 // eager pass observes a guest actually compiling; a build served entirely from
 // the cache omits it. The render phase carries an X/Y node counter. A separate
 // global progress line below the rows shows a profile-weighted whole-build
-// completion bar.
+// completion bar. The plain surface walks the same steps and writes each one's
+// line once, as it completes.
 type progressReporter struct {
 	// mu guards every state mutation and every write to out, so the background
 	// spinner ticker (checklist mode only) and the main build thread never race
@@ -234,8 +242,9 @@ type progressReporter struct {
 	// warm), so the bar's calibration is decided up front.
 	weights buildBarWeights
 
-	// colorOff suppresses the dim ANSI on the checklist elapsed field when the
-	// process-global color-off decision is set. The elapsed value and its column
+	// colorOff suppresses the dim ANSI on the elapsed field when the
+	// process-global color-off decision is set, and always on the plain surface,
+	// which writes no escape sequence at all. The elapsed value and its column
 	// alignment are preserved; only the dim escape sequences are dropped.
 	colorOff bool
 
@@ -253,12 +262,12 @@ type progressReporter struct {
 	started    time.Time
 	phaseStart time.Time
 
-	// Per-phase timing for the checklist elapsed column. phaseClock records when
-	// each row's phase began, keyed by phase index (0..renderIdx for the spine
-	// phases, compileTimerKey for the plugin-compilation step). phaseFrozen
-	// captures a phase's final elapsed once it completes, so a done row shows a
-	// stable time while the active row's time still advances on each redraw. Both
-	// are checklist-only; other modes never populate them.
+	// Per-phase timing for the elapsed column the checklist and the plain surface
+	// both write. phaseClock records when each row's phase began, keyed by phase
+	// index (0..renderIdx for the spine phases, compileTimerKey for the
+	// plugin-compilation step). phaseFrozen captures a phase's final elapsed once
+	// it completes, so a done row shows a stable time while the active row's time
+	// still advances on each redraw.
 	phaseClock  map[int]time.Time
 	phaseFrozen map[int]time.Duration
 
@@ -272,7 +281,7 @@ type progressReporter struct {
 	inRenderStage bool
 
 	// compileShown is true once a real guest compilation has been observed this
-	// build, so the "Plugin compilation" step joins the checklist.
+	// build, so the "compiling plugins" step joins the checklist.
 	// compileActive spins it; compileDone ticks it once every guest has compiled.
 	compileShown  bool
 	compileActive bool
@@ -290,8 +299,8 @@ type progressReporter struct {
 
 	// renderTotal is the node count the render phase walks, captured on the first
 	// renderNode call. renderDone is the running completed count. renderNext is
-	// the next static/debug throttle threshold so a large graph does not emit one
-	// line per node on a non-redraw sink.
+	// the next debug throttle threshold so a large graph does not emit one debug
+	// line per node.
 	renderTotal int
 	renderDone  int
 	renderNext  int
@@ -300,49 +309,54 @@ type progressReporter struct {
 	// linesDrawn is the number of lines in the last checklist block, so the next
 	// redraw can move the cursor up over them.
 	linesDrawn int
-	// staticStarted tracks which static-mode lines were already emitted, so a
-	// forced-on non-TTY surface prints each phase label exactly once.
-	staticStarted map[string]bool
+	// plainWritten records which steps the plain surface has written the line
+	// for, keyed as phaseClock is, so every step's line is written exactly once.
+	plainWritten map[int]bool
 	// finished guards finish against a double call: the caller invokes it
 	// explicitly before the stdout summary and again via defer on any return.
 	finished bool
 }
 
 // newProgressReporter resolves the reporter shape from the diagnostic options,
-// the command's phase spine, and whether the sink is an interactive terminal. It
-// reuses the shared terminal detection so the decision matches the rest of the
-// CLI.
+// the command's phase spine, and what the sink is. It reads the same terminal
+// decision the color surface reads, so the two cannot disagree about a stream.
 //
-//   - debug         → the verbose timing layer, regardless of sink shape.
-//   - quiet         → silent.
-//   - interactive   → the in-place checklist.
-//   - forced (non-interactive, --progress) → plain static lines.
-//   - auto (non-interactive, no --progress) → silent.
+//   - debug                      → the verbose timing layer, regardless of sink.
+//   - quiet                      → silent.
+//   - a drawing terminal         → the in-place checklist; plain lines under --plain.
+//   - a terminal that cannot draw → plain lines.
+//   - not a terminal, --progress → plain lines.
+//   - not a terminal, auto       → silent.
 func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpine) *progressReporter {
 	mode := resolveProgressMode(out, opts)
 	return &progressReporter{
-		out:           out,
-		mode:          mode,
-		spine:         spine,
-		weights:       buildBarWeightsFor(spine.coldProfile),
-		colorOff:      opts.noColor || opts.plain,
-		active:        -1,
-		staticStarted: map[string]bool{},
-		phaseClock:    map[int]time.Time{},
-		phaseFrozen:   map[int]time.Duration{},
+		out:          out,
+		mode:         mode,
+		spine:        spine,
+		weights:      buildBarWeightsFor(spine.coldProfile),
+		colorOff:     opts.noColor || opts.plain || mode == progressStatic,
+		active:       -1,
+		plainWritten: map[int]bool{},
+		phaseClock:   map[int]time.Time{},
+		phaseFrozen:  map[int]time.Duration{},
 	}
 }
 
-// resolveProgressMode applies the precedence ladder (debug > quiet > plain-on-
-// terminal > checklist-on-terminal > forced-static > auto-silent) and the sink-
-// shape test to pick the reporter's mode.
+// resolveProgressMode applies the precedence ladder (debug > quiet > plain on a
+// drawing terminal under --plain > checklist on a drawing terminal > plain on a
+// terminal that cannot draw > forced plain > auto-silent) to pick the reporter's
+// mode, from what outputTerminal says the sink is.
 //
 // The plain (accessible) mode downgrades what would be the interactive checklist
-// on a terminal to plain static lines — no spinner ticker, no cursor repaint —
-// so screen readers receive stable line-oriented output. It does not turn the
+// on a terminal to plain lines — no spinner ticker, no cursor repaint — so
+// screen readers receive stable line-oriented output. It does not turn the
 // surface on where it would otherwise be silent (a non-terminal sink with no
 // --progress stays silent); plain only removes animation where a terminal would
 // have animated.
+//
+// A terminal whose console does not interpret escape sequences gets the same
+// plain lines without being asked: a person is reading it, and the checklist's
+// redraws would reach them as raw escape bytes and a reprinted block per tick.
 func resolveProgressMode(out io.Writer, opts buildDiagOptions) progressMode {
 	if opts.debug {
 		return progressDebug
@@ -350,11 +364,14 @@ func resolveProgressMode(out io.Writer, opts buildDiagOptions) progressMode {
 	if opts.quiet {
 		return progressSilent
 	}
-	if fileTerminal(out) {
+	switch outputTerminal(out) {
+	case drawingTerminal:
 		if opts.plain {
 			return progressStatic
 		}
 		return progressChecklist
+	case plainTerminal:
+		return progressStatic
 	}
 	if opts.progress {
 		return progressStatic
@@ -380,7 +397,7 @@ const (
 	// rowBodyColumn is the column the dim elapsed field is padded out to, so the
 	// elapsed times line up in a single right-hand column across every row that
 	// carries one — the phase rows and the total-build-time line. It is wide
-	// enough to clear the longest body (the "resolving dependencies" phase row,
+	// enough to clear the longest body (the longest phase row of any spine,
 	// marker included); the render row no longer carries an inline bar, so the
 	// column is far narrower than when it had to clear a full bar.
 	rowBodyColumn = 30
@@ -461,14 +478,12 @@ func (p *progressReporter) phase(i int) {
 		}
 		return
 	}
-	p.freezeTimer(p.active)
+	p.completeStep(p.active)
 	p.active = i
-	if p.mode == progressStatic {
-		p.staticLine(p.spine.labels[i])
-		return
-	}
 	p.startTimer(i)
-	p.draw()
+	if p.mode == progressChecklist {
+		p.draw()
+	}
 }
 
 // pluginCompileBegin records that the eager plugin-compilation pass is about to
@@ -495,7 +510,7 @@ func (p *progressReporter) pluginCompileBegin(total int) {
 	p.startTimer(compileTimerKey)
 }
 
-// pluginCompileRunning reveals the "Plugin compilation" step because a provider
+// pluginCompileRunning reveals the "compiling plugins" step because a provider
 // guest is being compiled this build rather than served from the cache. The
 // eager pass calls it once a guest's warm runs past the near-instant window a
 // cache hit completes in, so the step appears only for a build that truly
@@ -531,7 +546,7 @@ func (p *progressReporter) pluginCompileRunning() {
 		return
 	}
 	if p.mode == progressStatic {
-		p.staticLine(compilePhaseLabel)
+		// The plain surface writes a step's line when the step completes.
 		return
 	}
 	p.draw()
@@ -556,7 +571,7 @@ func (p *progressReporter) pluginCompileGuestDone(done int) {
 	if complete {
 		p.compileActive = false
 		p.compileDone = true
-		p.freezeTimer(compileTimerKey)
+		p.completeStep(compileTimerKey)
 	} else {
 		// Restart the ramp anchor so the next guest's time ramp begins at zero
 		// rather than continuing from the phase start.
@@ -673,7 +688,7 @@ func (p *progressReporter) renderNode(done, total int, nodeID string) {
 	p.compileActive = false
 	if p.compileShown {
 		p.compileDone = true
-		p.freezeTimer(compileTimerKey)
+		p.completeStep(compileTimerKey)
 	}
 	p.renderDone = done
 
@@ -683,28 +698,19 @@ func (p *progressReporter) renderNode(done, total int, nodeID string) {
 	}
 	if p.mode == progressChecklist {
 		p.draw()
-		return
 	}
-	// Static (forced non-TTY): throttle to periodic lines plus a guaranteed final
-	// count, so a large graph does not spam one line per node.
-	final := done >= p.renderTotal
-	if done < p.renderNext && !final {
-		return
-	}
-	for p.renderNext <= done {
-		p.renderNext += renderThrottleStep(p.renderTotal)
-	}
-	fmt.Fprintf(p.out, "%s %d/%d...\n", p.spine.labels[p.spine.renderIdx], done, p.renderTotal)
+	// The plain surface writes nothing per node: the render step's single line,
+	// carrying the final count, is written when the step completes.
 }
 
 // beginRenderStage marks the transition out of the pre-render phases: every phase
 // before the render phase is done and none of them is the active spinner. It
-// freezes the timer of the phase being left so its row stops advancing.
+// completes the phase being left so its row stops advancing.
 func (p *progressReporter) beginRenderStage() {
 	if p.started.IsZero() {
 		p.started = time.Now()
 	}
-	p.freezeTimer(p.active)
+	p.completeStep(p.active)
 	p.inRenderStage = true
 }
 
@@ -715,7 +721,7 @@ const compileTimerKey = -2
 
 // startTimer records the start instant of a row's phase the first time it
 // becomes active, so its elapsed can be reported. A no-op after the first call
-// for that key, and outside checklist mode (the maps stay empty).
+// for that key.
 func (p *progressReporter) startTimer(key int) {
 	if p.phaseClock == nil {
 		return
@@ -877,10 +883,11 @@ func (p *progressReporter) note(format string, args ...any) {
 	fmt.Fprintf(p.out, "  [debug]   %s\n", fmt.Sprintf(format, args...))
 }
 
-// renderThrottleFraction bounds how often a static (forced non-TTY) or debug
-// sink logs a render-progress line: at most once per this fraction of the total
-// node count, so a large graph emits a handful of periodic lines rather than one
-// per node. A checklist sink is unaffected — it redraws in place every node.
+// renderThrottleFraction bounds how often a debug sink logs a render-progress
+// line: at most once per this fraction of the total node count, so a large graph
+// emits a handful of periodic lines rather than one per node. A checklist sink is
+// unaffected — it redraws in place every node — and the plain surface writes the
+// render step's one line when the step completes.
 const renderThrottleFraction = 10
 
 // renderThrottleStep is the non-redraw logging stride for a total node count: one
@@ -1021,10 +1028,7 @@ func (p *progressReporter) phaseRow(i int, frame rune) string {
 // lives on the global progress line, not here; the elapsed field is added by
 // composeRow, not here.
 func (p *progressReporter) renderRowBody(frame rune) string {
-	label := p.spine.labels[p.spine.renderIdx]
-	if p.renderTotal > 0 {
-		label = fmt.Sprintf("%s %d/%d", label, p.renderDone, p.renderTotal)
-	}
+	label := p.renderLabel()
 	rendered := p.renderDone > 0 || p.inRenderStage
 	switch {
 	case p.finished && rendered:
@@ -1038,14 +1042,49 @@ func (p *progressReporter) renderRowBody(frame rune) string {
 	}
 }
 
-// staticLine prints one plain phase line on a forced non-TTY sink, once per
-// label.
-func (p *progressReporter) staticLine(label string) {
-	if p.staticStarted[label] {
+// renderLabel is the render step's name as both surfaces write it: the render
+// phase's label, followed by the done/total counter once a node count is known.
+func (p *progressReporter) renderLabel() string {
+	label := p.spine.labels[p.spine.renderIdx]
+	if p.renderTotal > 0 {
+		label = fmt.Sprintf("%s %d/%d", label, p.renderDone, p.renderTotal)
+	}
+	return label
+}
+
+// stepLabel names the step a timer key stands for, as its row names it: a spine
+// phase by its label, the plugin-compilation step by compilePhaseLabel, and the
+// render phase by renderLabel. It is "" for a key that stands for no step, such
+// as the -1 of a reporter no phase has reached yet.
+func (p *progressReporter) stepLabel(key int) string {
+	switch {
+	case key == compileTimerKey:
+		return compilePhaseLabel
+	case key >= 0 && key == p.spine.renderIdx:
+		return p.renderLabel()
+	case key >= 0 && key < len(p.spine.labels):
+		return p.spine.labels[key]
+	}
+	return ""
+}
+
+// completeStep marks the step under key complete. It freezes the step's elapsed
+// so every surface reports one stable time for it, and on the plain surface it
+// writes the step's line: the step's name and that elapsed, in the column the
+// checklist uses, with no escape sequence, so a redirected or non-drawing stream
+// reads one line per completed step and nothing is ever redrawn. A key that
+// stands for no step, or a step whose line is already written, writes nothing.
+func (p *progressReporter) completeStep(key int) {
+	p.freezeTimer(key)
+	if p.mode != progressStatic || p.plainWritten[key] {
 		return
 	}
-	p.staticStarted[label] = true
-	fmt.Fprintf(p.out, "%s...\n", label)
+	label := p.stepLabel(key)
+	if label == "" {
+		return
+	}
+	p.plainWritten[key] = true
+	fmt.Fprintln(p.out, p.composeRow(label, p.elapsedStr(key)))
 }
 
 // debugCloseAndOpen closes the previous phase's timing and opens phase i in the
@@ -1126,5 +1165,20 @@ func (p *progressReporter) finish() {
 		p.freezeTimer(compileTimerKey)
 		p.draw()
 		return
+	}
+	if p.mode == progressStatic {
+		// The steps still open complete with the run, in the order the checklist
+		// lists them, and each writes its line: the active pre-render phase (the
+		// last step of a spine with no render phase), then the plugin-compilation
+		// step, then the render phase. Which of them count as complete is the
+		// checklist's own rule for its finished block, so the two surfaces report
+		// the same steps.
+		p.completeStep(p.active)
+		if p.compileShown {
+			p.completeStep(compileTimerKey)
+		}
+		if p.spine.renderIdx >= 0 && (p.renderDone > 0 || p.inRenderStage) {
+			p.completeStep(p.spine.renderIdx)
+		}
 	}
 }

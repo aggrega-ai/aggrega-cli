@@ -46,8 +46,9 @@ const (
 	// PhaseLoadCatalog is the opening of the catalog view the run resolves through,
 	// and the check of the Manifest's mapping table against it.
 	PhaseLoadCatalog Phase = iota
-	// PhaseDependencies is the discovery step that selects each reference's
-	// version.
+	// PhaseDependencies resolves the Aggregate the Release names — fetching it
+	// from a registry where no local tier holds it — and decides which of the
+	// pins an existing lockfile records this run honours.
 	PhaseDependencies
 	// PhaseClosure is the closure walk over the selected references.
 	PhaseClosure

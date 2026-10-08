@@ -104,7 +104,7 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When the pull step runs — because --auto-pull was passed or the workspace enables auto_pull — build fills the lockfile in-process whether or not one is already present, and this flag prints per resolved entity what that fill did: fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external (the Release's own Aggregate or Manifest, read from the file or entry the Release names). When no pull step runs, it prints one line saying so instead of the per-entity rows. Stdout only; not persisted")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
-	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
+	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing one plain line per step as it completes, with its time. The default is auto: the interactive phase checklist is shown only when stderr is a terminal that interprets escape sequences, a terminal that does not gets the same plain lines, and redirected or piped output gets none. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&opts.debug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&opts.noUnsupportedFieldWarns, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings)
 	c.Flags().BoolVar(&opts.disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
@@ -221,7 +221,7 @@ func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWork
 	// progress phases) so the summary's "Build time" spans the entire dispatch.
 	buildStart := time.Now()
 	// Cold/warm plugin-compile-cache guess, up front: it picks the progress bar's
-	// weight profile only. The visible "Plugin compilation" step is revealed
+	// weight profile only. The visible "compiling plugins" step is revealed
 	// separately, from whether a guest is observed to actually compile during the
 	// build, so a stale-cache rebuild that recompiles still shows it. This guess
 	// is detected before the build runs so the bar's calibration is fixed for
