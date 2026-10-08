@@ -206,9 +206,16 @@ func TestFetchTransportError(t *testing.T) {
 	}
 }
 
+// TestFetchRequiresHost pins the refusal of a fetch naming no registry, by its
+// whole sentence: it says what was being asked for rather than naming the
+// package that asked.
 func TestFetchRequiresHost(t *testing.T) {
 	t.Parallel()
-	if _, err := Fetch(context.Background(), http.DefaultClient, ""); err == nil {
+	_, err := Fetch(context.Background(), http.DefaultClient, "")
+	if err == nil {
 		t.Fatal("Fetch with empty host should error")
+	}
+	if want := "a registry host is required to ask for its trust policy"; err.Error() != want {
+		t.Errorf("Fetch with an empty host said %q; want %q", err.Error(), want)
 	}
 }

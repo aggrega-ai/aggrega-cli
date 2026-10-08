@@ -25,6 +25,7 @@ package registrytrust
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -224,7 +225,7 @@ const fetchTimeout = 15 * time.Second
 // and a nil client is that gate's offline refusal, reported before any dial.
 func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTrust, error) {
 	if host == "" {
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: a registry host is required")
+		return AdvertisedTrust{}, errors.New("a registry host is required to ask for its trust policy")
 	}
 	if client == nil {
 		// The client is obtained from the network-egress gate (pkg/egress); a nil

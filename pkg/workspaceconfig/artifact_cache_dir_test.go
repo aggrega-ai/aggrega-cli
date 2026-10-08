@@ -79,8 +79,10 @@ func TestEnvRefusesWorkspaceRootArtifactCacheDir(t *testing.T) {
 		if !errors.Is(err, ErrConfigInvalid()) {
 			t.Errorf("refusal of %q is not category-consistent with other config rejections: %v", v, err)
 		}
-		if !strings.Contains(err.Error(), "AGGREGA_ARTIFACT_CACHE_DIR") {
-			t.Errorf("the diagnostic for %q does not name the variable that carried the value:\n%s", v, err.Error())
+		// Named once: the overlay names the layer, and the check that refused the
+		// value says only what is wrong with it.
+		if n := strings.Count(err.Error(), "AGGREGA_ARTIFACT_CACHE_DIR"); n != 1 {
+			t.Errorf("the diagnostic for %q names the variable that carried the value %d times; want once:\n%s", v, n, err.Error())
 		}
 	}
 }
@@ -123,6 +125,12 @@ func TestEnvRefusesAbsoluteArtifactCacheDir(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), "the AGGREGA_ARTIFACT_CACHE_DIR environment variable: ") ||
 		strings.Contains(err.Error(), "$AGGREGA_") {
 		t.Errorf("the diagnostic does not name the variable that carried the value in words:\n%s", err.Error())
+	}
+	// Once, and with no package's name after it: the refusal reads the layer and
+	// then what is wrong with the value.
+	if !strings.HasPrefix(err.Error(), "the AGGREGA_ARTIFACT_CACHE_DIR environment variable: artifact_cache_dir ") ||
+		strings.Count(err.Error(), "AGGREGA_ARTIFACT_CACHE_DIR") != 1 {
+		t.Errorf("the diagnostic does not name the variable once, ahead of the setting it refuses:\n%s", err.Error())
 	}
 
 	// Non-vacuity: the same overlay accepts a relative value.

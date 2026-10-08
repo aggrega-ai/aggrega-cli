@@ -30,8 +30,8 @@ func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	if uerr := yaml.Unmarshal(data, &cfg); uerr != nil {
 		return Config{}, nil, fmt.Errorf("workspaceconfig: typed unmarshal %s: %w", path, uerr)
 	}
-	if verr := validateSigningKinds(cfg.Signing.Kinds, path); verr != nil {
-		return Config{}, nil, verr
+	if verr := validateSigningKinds(cfg.Signing.Kinds); verr != nil {
+		return Config{}, nil, fmt.Errorf("%s: %w", path, verr)
 	}
 	return cfg, ciNonAdditiveKeys(data), nil
 }

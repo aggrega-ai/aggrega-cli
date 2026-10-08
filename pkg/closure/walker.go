@@ -597,7 +597,7 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		// without parsing its own output back. The message is unchanged.
 		if err != nil {
 			return unresolvedEntity(uri, pending.kindHint,
-				fmt.Errorf("resolve: resolve entity %q: %w", uri, err))
+				fmt.Errorf("resolve entity %q: %w", uri, err))
 		}
 		if res.NotFound {
 			return unresolvedEntity(uri, pending.kindHint,

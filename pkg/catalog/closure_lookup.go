@@ -1611,7 +1611,7 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, derr)
 		}
 		if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, pinnedVersion, result); err != nil {
-			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
+			return nil, closure.Resolution{}, err
 		}
 		return result.Bytes, closure.Resolution{
 			ResolvedVersion: pinnedVersion,
@@ -1648,7 +1648,7 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, derr)
 	}
 	if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, tag, result); err != nil {
-		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
+		return nil, closure.Resolution{}, err
 	}
 	return result.Bytes, closure.Resolution{
 		ResolvedVersion: tag,
@@ -1706,7 +1706,7 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 		}
 		versionedKey := name + ":" + pinnedVersion
 		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, versionedKey, pinnedVersion, result); err != nil {
-			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, name, err)
+			return closure.Resolution{}, err
 		}
 		digest := contentDigest(result.Bytes)
 		l.recordRefetchNotice(uri, digest)
@@ -1735,7 +1735,7 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 		return closure.Resolution{}, aerr
 	}
 	if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, uri, tag, result); err != nil {
-		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, uri, err)
+		return closure.Resolution{}, err
 	}
 	digest := contentDigest(result.Bytes)
 	l.recordRefetchNotice(uri, digest)
@@ -1829,7 +1829,7 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	}
 	versionedKey := name + ":" + version
 	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, versionedKey, version, result); werr != nil {
-		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 cache write Aggregate %s: %w", name, werr)
+		return nil, "", "", "", false, werr
 	}
 	document, derr := oci.EntityYAML(result.Bytes)
 	if derr != nil {
@@ -1876,6 +1876,12 @@ func admitFetchedEntity(kind string, published []byte, coordinate string) error 
 // under the canonical "library.yaml" filename (matching the
 // local-authoring layout); every other mediatype writes via
 // pkg/oci.WriteCached's "blob" filename.
+//
+// A failed write is returned as pkg/oci words it — what was being done, with which
+// path, and the operating system's reason — and the registry tiers return it as it
+// is, leaving the entity to the frame that asked for it: the dependency walk's frame
+// names the reference it was resolving, so a frame of their own would name it a
+// second time.
 func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result *oci.PullResult) error {
 	if cacheDir == "" {
 		return nil

@@ -51,7 +51,7 @@ func TestAnnotateSkipContext_LeadingPlusNoteIsTheWholeText(t *testing.T) {
 			"spec.implements: missing required property: implements",
 		),
 	}
-	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
+	failure := fmt.Errorf("resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 
 	// No local-catalog note: this pins the relationship between the leading
 	// failure and the refusal note, and a second note would widen the subject.

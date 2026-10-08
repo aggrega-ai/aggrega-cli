@@ -782,9 +782,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if faults := resolver.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return Result{}, cfg.annotate(faults[0], lazyView.SkippedEntities())
 	}
+	// A failure of this walk, and of the resolution steps below it, is returned as the
+	// walk words it, with no label of this function's own: the walk's frames open by
+	// saying what was being resolved, so a label here would say it a second time.
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
 	if err != nil {
-		return Result{}, cfg.annotate(fmt.Errorf("resolve: %w", err), lazyView.SkippedEntities())
+		return Result{}, cfg.annotate(err, lazyView.SkippedEntities())
 	}
 	cl.ReleaseDocuments = releaseDocs
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
@@ -793,7 +796,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// from live config — the entity axis stays invariant to a config edit
 	// afterwards.
 	if err := closure.ResolveProviderSocketEntities(ctx, &cl, wsCfg.Plugins.Providers, lookup); err != nil {
-		return Result{}, fmt.Errorf("resolve: %w", err)
+		return Result{}, err
 	}
 	// The post-fetch consumers — closure-library discovery, closure-scoped
 	// validation, and the source-descent SubAggregateLoader below — read the view
@@ -810,7 +813,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// closure.
 	report.phase(PhaseLibraries)
 	if err := closure.AugmentClosure(ctx, &cl, lazyView, lookup); err != nil {
-		return Result{}, fmt.Errorf("resolve: %w", err)
+		return Result{}, err
 	}
 	// The pinned axes the closure walk leaves empty — the transitive sub-aggregates,
 	// the pipeline and provider plugin entities the closure's Recipes and
@@ -878,7 +881,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// entity pass reads it.
 	if err := closure.DescendPinnedAxes(ctx, &cl, aggLoader, lazyView.ClosureRecipeLoader(), lookup, lookup,
 		providerBindResolver, refold, catalogArtifacts, catalogArtifacts); err != nil {
-		return Result{}, fmt.Errorf("resolve: %w", err)
+		return Result{}, err
 	}
 	// Resolve the transform-role governance attachments (label-transform /
 	// annotation-transform) to their pinned lockfile records, in authored order. A

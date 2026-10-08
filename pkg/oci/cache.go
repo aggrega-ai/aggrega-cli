@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/filefailure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -215,6 +216,10 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 // the way to the slot, or the file, that is a link leading out of the cache
 // directory — or a cache directory leading out of the workspace — is refused with
 // the halt the write-scope rule declares, rather than written through.
+//
+// A failure to create the slot or write the file is said as what was being done
+// and with which path, followed by the operating system's reason. Which entity the
+// slot holds is the caller's to say, so it is not said here as well.
 func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []byte) error {
 	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
 	if err != nil {
@@ -225,10 +230,10 @@ func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("oci: cache mkdir %s: %w", dir, err)
+		return filefailure.Wrap("create the cache directory", dir, err)
 	}
 	if err := os.WriteFile(file, data, 0o644); err != nil {
-		return fmt.Errorf("cache write %s: %w", file, err)
+		return filefailure.Wrap("write the cache file", file, err)
 	}
 	return nil
 }

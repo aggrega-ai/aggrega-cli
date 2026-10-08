@@ -44,7 +44,7 @@ func refusedRecipeSkip() catalog.SkippedEntity {
 // errors.Is, and by the short-code lookup the formatter's head uses — because a
 // chain rendered into text loses both while still reading correctly.
 func TestWithSkipContext_SentinelSurvivesToTheReader(t *testing.T) {
-	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
+	failure := fmt.Errorf("resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 	// The subject of every case in this file is the refusal record, so none of
 	// them passes a local-catalog note: it is a second, independent note, and
 	// adding it here would put text in the assertions that these cases are not
@@ -81,7 +81,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 	}{
 		{
 			name:    "no envelope in the chain",
-			failure: fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference()),
+			failure: fmt.Errorf("resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference()),
 		},
 		{
 			name: "an envelope in the chain",
@@ -117,7 +117,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 // decorated failure leads and its own code heads the diagnostic, while the
 // refused file's code stays where the refused file is reported.
 func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
-	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
+	failure := fmt.Errorf("resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, ""))
 
 	wantCode, ok := cerrors.ShortCodeOf(envelope.ErrEntityEnvelope())
@@ -153,7 +153,7 @@ func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 // reader who is not told which class is which cannot tell a cause from a
 // bystander.
 func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T) {
-	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
+	failure := fmt.Errorf("resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, ""))
 
 	for _, want := range []string{
