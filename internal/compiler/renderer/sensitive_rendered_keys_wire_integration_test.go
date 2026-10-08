@@ -15,6 +15,7 @@ package renderer_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,9 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -54,8 +57,21 @@ const (
 // is what keeps the observation at the boundary rather than beside it: a
 // projection assembled from anything other than these two values would be a
 // second construction, free to differ from the one that crossed.
+//
+// It embeds the concrete guest adapter rather than the Provider interface, and
+// that is what keeps the render it observes a real one. The render reaches every
+// capability beyond Render and Contract by asserting it on the engine it was
+// handed — the name the target renders a node under, the bound on a composed
+// name, artifact placement, input validation, the pipeline codec — and takes a
+// quiet fallback where the assertion fails. An embedded interface promotes only
+// its own two methods, so every one of those assertions would fail on the
+// wrapper while the guest underneath implements them all: a Feature reading its
+// host's rendered name would then be refused for a name the guest does report,
+// and the checks with no refusal would simply not run. Embedding the adapter
+// promotes its whole method set, including any capability added to it later;
+// SynthesizeWorkload below is the one method replaced.
 type recordingSynthesizer struct {
-	renderer.Provider
+	*wasmengine.Engine
 	nodeCtx  renderer.NodeRenderContext
 	workload *types.Workload
 	seen     bool
@@ -70,11 +86,7 @@ func (r *recordingSynthesizer) SynthesizeWorkload(
 	r.nodeCtx = nodeCtx
 	r.workload = w
 	r.seen = true
-	synth, ok := r.Provider.(renderer.WorkloadSynthesizer)
-	if !ok {
-		return nil, nil
-	}
-	return synth.SynthesizeWorkload(ctx, tmplCtx, w, nodeCtx)
+	return r.Engine.SynthesizeWorkload(ctx, tmplCtx, w, nodeCtx)
 }
 
 // multikeyRenderInputs loads the worked example's own catalog plus the standard
@@ -189,13 +201,20 @@ func renderMultikeyAndCapture(t *testing.T, mutateComponent func(*types.Componen
 			return nil, err
 		}
 		if rec == nil {
-			rec = &recordingSynthesizer{Provider: engine}
+			guest, ok := engine.(*wasmengine.Engine)
+			if !ok {
+				return nil, fmt.Errorf("provider %q resolved to %T, not the render adapter the recorder wraps", providerRef, engine)
+			}
+			rec = &recordingSynthesizer{Engine: guest}
 		}
 		return rec, nil
 	}
 
 	if _, err := renderer.RenderAll(context.Background(), input, recipeLookup, factory); err != nil {
-		t.Fatalf("RenderAll over the worked example: %v", err)
+		// The error's own text is its outermost frame alone; the condition that
+		// halted and the template that raised it sit beneath it.
+		code, _ := cerrors.ShortCodeOf(err)
+		t.Fatalf("RenderAll over the worked example: [%s] %s", code, cerrors.CauseChain(err))
 	}
 	if rec == nil || !rec.seen {
 		t.Fatal("the render never dispatched a workload synthesis, so nothing was observed at the boundary")
