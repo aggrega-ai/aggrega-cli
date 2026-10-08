@@ -31,7 +31,7 @@ entities:
         - release.spec.manifest
     - uri: prometheus-exporter:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:fc737376c81dab4ed8321e191bd18fd9469ee8a14aeece6d862bca473d0ee18c
+      digest: sha256:9f084833e8984ff6e085e4572cf4f0d077da7218bc8eca38b9559f9a7c19ab5c
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: service:1.0.0

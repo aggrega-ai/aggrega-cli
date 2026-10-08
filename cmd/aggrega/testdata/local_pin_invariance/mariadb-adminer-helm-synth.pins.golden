@@ -1,7 +1,7 @@
 entities:
     - uri: adminer-helm:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:a833dd2a9c6998ccab3b5fc78ec602ed9e39862f070126b98380a12dbbda8138
+      digest: sha256:ea9d2387d0a7ab67c0bb3d21ab9f32f88ad48da47a2a81d9e8b5a022d26948ee
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: aggregate
@@ -66,7 +66,7 @@ entities:
         - release.spec.manifest
     - uri: mariadb-synth:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:1cdaeb582a1e938c1a71514d45b6de57e324944f39e4565e8e6edff261d745da
+      digest: sha256:5ff2b2928b4c2108b7b2eb84ccb9a30e833e06c6c311b24fb53e0c827c9d550b
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
 external_inputs: []
