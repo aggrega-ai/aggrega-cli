@@ -41,7 +41,7 @@
 #                 runs against a copy of the reference with one byte changed, and
 #                 must report that difference, so the comparison shown passing is
 #                 one that can fail
-#   4. path       steps 5 to 7 work in a directory whose path holds a space and a
+#   4. path       steps 5 to 8 work in a directory whose path holds a space and a
 #                 letter outside ASCII, as a user's own directories often do; the
 #                 same check over a plain path must refuse it
 #   5. configuration
@@ -77,21 +77,28 @@
 #                 the pull must write the lockfile and print no notice that a
 #                 catalog file is shadowed; the same check over its output with
 #                 such a notice planted must refuse it
-#   8. escapes    every command steps 3 to 7 ran had its standard output and its
+#   8. chart      the full binary validates, pulls and builds the staged
+#                 chart-backed example — a Recipe whose workload is the Helm chart
+#                 beside it, pinned file by file in the entity.lock beside it — in a
+#                 fresh directory beneath step 4's; the whole workspace it leaves is
+#                 compared byte for byte with the reference the build machine
+#                 built, and the same comparison against a copy of that reference
+#                 with one byte changed must report the difference
+#   9. escapes    every command steps 3 to 8 ran had its standard output and its
 #                 standard error redirected to files, as a run whose output a log
 #                 or another program reads, and was refused had either carried an
 #                 escape byte; here that check, over a copy of one such file with
 #                 an escape byte planted, must refuse it
-#   9. tests      each staged test executable runs, from its package directory, the
+#  10. tests      each staged test executable runs, from its package directory, the
 #                 tests staged for it with -test.run naming them, -test.count=1,
 #                 -test.timeout 10m and -test.v; every named test must report PASS,
 #                 and a named test that skips, a run that finds no test to run, or a
 #                 count of passes other than the count of names fails the run
 #
-# Each binary started in steps 1-7 has every AGGREGA_ setting of the machine
+# Each binary started in steps 1-8 has every AGGREGA_ setting of the machine
 # unset, the global configuration pointed at an empty directory (XDG_CONFIG_HOME
 # and APPDATA both name it), and the offline posture on, so it reads no
-# configuration of the machine and reaches no network; steps 4 and 8 start no
+# configuration of the machine and reaches no network; steps 4 and 9 start no
 # binary. Step 5 replaces that configuration directory with its own, and step 6
 # turns the posture off for its push and its
 # pull alone, with the proxy settings naming a closed port on the loopback
@@ -178,19 +185,20 @@ for tool in "${TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { fail "$tool not found on PATH"; exit 1; }
 done
 
-STAGED_TARGET="" VERSION="" COMMIT="" RELEASE="" REGISTRY_ENTITY="" REGISTRY_REFERENCE=""
+STAGED_TARGET="" VERSION="" COMMIT="" RELEASE="" CHART_RELEASE="" REGISTRY_ENTITY="" REGISTRY_REFERENCE=""
 while IFS='=' read -r key value; do
   case "$key" in
     target) STAGED_TARGET="$value" ;;
     version) VERSION="$value" ;;
     commit) COMMIT="$value" ;;
     release) RELEASE="$value" ;;
+    chart_release) CHART_RELEASE="$value" ;;
     registry_entity) REGISTRY_ENTITY="$value" ;;
     registry_reference) REGISTRY_REFERENCE="$value" ;;
   esac
 done < "$INPUTS/smoke.env"
-[ -n "$STAGED_TARGET" ] && [ -n "$VERSION" ] && [ -n "$COMMIT" ] && [ -n "$RELEASE" ] ||
-  { fail "smoke.env names no target, version, commit or release"; exit 1; }
+[ -n "$STAGED_TARGET" ] && [ -n "$VERSION" ] && [ -n "$COMMIT" ] && [ -n "$RELEASE" ] && [ -n "$CHART_RELEASE" ] ||
+  { fail "smoke.env names no target, version, commit, release or chart_release"; exit 1; }
 [ -n "$REGISTRY_ENTITY" ] && [ -n "$REGISTRY_REFERENCE" ] ||
   { fail "smoke.env names no registry_entity or registry_reference"; exit 1; }
 if [ "$STAGED_TARGET" != "$TARGET" ]; then
@@ -272,7 +280,7 @@ FULL="$BIN_DIR/${BINARY_NAMES[0]}"
 BINARIES=()
 for name in "${BINARY_NAMES[@]}"; do BINARIES+=("$BIN_DIR/$name"); done
 LOGS="$WORK/logs"
-# Steps 5 to 7 work beneath this directory. Its last name carries a space and an
+# Steps 5 to 8 work beneath this directory. Its last name carries a space and an
 # e with an acute accent, written as its UTF-8 bytes so this file stays ASCII.
 ODD="$WORK/work space "$'\303\251'
 
@@ -332,8 +340,40 @@ check_handshake() {
   echo "ok: initialize answered with a result"
 }
 
+# compare_with_reference <reference> <workspace> <planted> — compare <workspace>
+# with the <reference> the build machine built, then show the comparison can fail:
+# a copy of the reference made at <planted>, one byte of its first non-empty
+# rendered file changed, must compare unequal with the same workspace.
+compare_with_reference() {
+  local reference="$1" workspace="$2" planted="$3" target="" had_globstar=0 entry name
+  if ! smoke_compare_trees "$reference" "$workspace"; then
+    fail "what this machine built differs from what the release's build machine built"
+    return 1
+  fi
+  echo "ok: the $TARGET build is byte-identical to the reference"
+
+  echo "The same comparison against the reference with one byte changed must report it:"
+  mkdir -p "$planted"
+  cp -R "$reference/." "$planted/"
+  shopt -q globstar && had_globstar=1
+  shopt -s globstar
+  for entry in "$planted/dist/"**; do
+    if [ -f "$entry" ] && [ -s "$entry" ]; then target="$entry"; break; fi
+  done
+  [ "$had_globstar" = 1 ] || shopt -u globstar
+  [ -n "$target" ] || { fail "the reference holds no rendered file to plant a difference in"; return 1; }
+  smoke_plant_one_byte "$target" || return 1
+  name="${target#"$planted/"}"
+  echo "planted: the first byte of $name"
+  if smoke_compare_trees "$planted" "$workspace"; then
+    fail "the comparison found no difference after one byte of $name was changed, so its pass above proves nothing"
+    return 1
+  fi
+  echo "ok: the comparison reports the planted difference"
+}
+
 check_example() {
-  local log="$LOGS/example" planted target="" had_globstar=0 entry
+  local log="$LOGS/example"
   mkdir -p "$WORK/example"
   cp -R "$INPUTS/example/input/." "$WORK/example/"
   smoke_build_example "$FULL" "$WORK/example" "$RELEASE" "$log" --progress || return 1
@@ -341,34 +381,11 @@ check_example() {
     fail "the pull or the build with --progress printed no progress line, so the escape check over their output read none"
     return 1
   fi
-  if ! smoke_compare_trees "$INPUTS/example/reference" "$WORK/example"; then
-    fail "what this machine built differs from what the release's build machine built"
-    return 1
-  fi
-  echo "ok: the $TARGET build is byte-identical to the reference"
-
-  echo "The same comparison against the reference with one byte changed must report it:"
-  mkdir -p "$WORK/planted"
-  cp -R "$INPUTS/example/reference/." "$WORK/planted/"
-  shopt -q globstar && had_globstar=1
-  shopt -s globstar
-  for entry in "$WORK/planted/dist/"**; do
-    if [ -f "$entry" ] && [ -s "$entry" ]; then target="$entry"; break; fi
-  done
-  [ "$had_globstar" = 1 ] || shopt -u globstar
-  [ -n "$target" ] || { fail "the reference holds no rendered file to plant a difference in"; return 1; }
-  smoke_plant_one_byte "$target" || return 1
-  planted="${target#"$WORK/planted/"}"
-  echo "planted: the first byte of $planted"
-  if smoke_compare_trees "$WORK/planted" "$WORK/example"; then
-    fail "the comparison found no difference after one byte of $planted was changed, so its pass above proves nothing"
-    return 1
-  fi
-  echo "ok: the comparison reports the planted difference"
+  compare_with_reference "$INPUTS/example/reference" "$WORK/example" "$WORK/planted"
 }
 
 check_path() {
-  smoke_require_space_and_non_ascii "$ODD" || { fail "the directory steps 5 to 7 work in is not the one they need"; return 1; }
+  smoke_require_space_and_non_ascii "$ODD" || { fail "the directory steps 5 to 8 work in is not the one they need"; return 1; }
   mkdir -p "$ODD"
   echo "The same check over a plain path must refuse it:"
   if smoke_require_space_and_non_ascii "/plain/path"; then
@@ -523,6 +540,14 @@ check_catalog() {
   echo "ok: the notice check refuses a planted shadow notice"
 }
 
+check_chart() {
+  local ws="$ODD/chart example"
+  mkdir -p "$ws"
+  cp -R "$INPUTS/chart/input/." "$ws/"
+  smoke_build_example "$FULL" "$ws" "$CHART_RELEASE" "$LOGS/chart" || return 1
+  compare_with_reference "$INPUTS/chart/reference" "$ws" "$ODD/chart planted"
+}
+
 check_escapes() {
   local source="$LOGS/example/build.err" planted="$LOGS/escapes/build.err.planted"
   mkdir -p "$LOGS/escapes"
@@ -530,7 +555,7 @@ check_escapes() {
   printf 'planted \033[2mline\033[0m\n' >> "$planted"
   echo "The escape check over a copy of the example build's standard error with an escape byte planted must refuse it:"
   if smoke_refuse_escapes "$planted"; then
-    fail "the escape check accepted a planted escape byte, so its passes in steps 3 to 7 prove nothing"
+    fail "the escape check accepted a planted escape byte, so its passes in steps 3 to 8 prove nothing"
     return 1
   fi
   echo "ok: the escape check refuses a planted escape byte"
@@ -624,8 +649,9 @@ run_step "4. path: a directory whose path holds a space and a letter outside ASC
 run_step "5. configuration: config init where the $GOOS_T rule alone places it" check_configuration isolated
 run_step "6. entity cache: pull $REGISTRY_REFERENCE from a registry on this machine, then build from the cache" check_entity_cache isolated
 run_step "7. catalog: the catalog named by configuration and by flag, read once" check_catalog isolated
-run_step "8. escapes: the escape check refuses a planted escape byte" check_escapes
-run_step "9. tests" check_tests
+run_step "8. chart: validate, pull and build the chart-backed $CHART_RELEASE, and compare with the reference" check_chart isolated
+run_step "9. escapes: the escape check refuses a planted escape byte" check_escapes
+run_step "10. tests" check_tests
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
   printf '\nplatform-smoke: %s: with the binaries in %s, %d step(s) failed:\n' "$TARGET" "$SUBSTITUTE" "${#FAILED[@]}" >&2

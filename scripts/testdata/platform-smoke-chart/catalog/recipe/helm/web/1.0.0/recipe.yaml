@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web
+  version: 1.0.0
+  description: >
+    The web server realized by the Helm chart in source/ beside this Recipe, which
+    the helm provider renders with the values mapped below.
+spec:
+  capability: helm
+  implements: smoke/compute/web
+  source: ./source
+  valuesMapping: |
+    {
+      "image": "registry.example/smoke/web:1.0.0",
+      "replicas": {{ optional .infra `replicas` 1 }},
+      "port": {{ optional .infra `port` 8080 }}
+    }

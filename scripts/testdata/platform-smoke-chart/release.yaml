@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# The second worked example of the platform smoke run: one web server realized by
+# a Helm chart its Recipe carries, laid out as a catalog of one's own must be — each
+# entity in a version directory of its own, and the Recipe's chart beside it with
+# the entity.lock that `aggrega pin` writes. It needs no registry: every entity
+# comes from catalog/ and its provider is the helm provider built into aggrega.
+# After any change to a file of the chart, run `aggrega pin` on the Recipe again.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: smoke-chart
+  environment: production
+  version: 1.0.0
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    web:
+      directory: web
+      annotations:
+        aggrega.ai/namespace: smoke
+      components:
+        web:
+          infra:
+            replicas: 2
+            port: 8080

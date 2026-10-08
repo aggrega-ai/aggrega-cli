@@ -1,0 +1,4 @@
+apiVersion: v2
+name: web
+version: 1.0.0
+description: The web server of the platform smoke run's chart-backed example.

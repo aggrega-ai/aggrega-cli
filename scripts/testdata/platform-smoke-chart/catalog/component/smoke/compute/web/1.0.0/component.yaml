@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: smoke/compute/web
+  version: 1.0.0
+  description: >
+    A web server, for the platform smoke run alone: it is realized by a Helm chart
+    its Recipe carries, so building it on another platform renders that chart there.
+  labels:
+    component.aggrega.ai/type: server
+    component.aggrega.ai/category: compute
+    component.aggrega.ai/upstream-licensing: not-applicable
+spec:
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }

@@ -65,19 +65,19 @@ name: Publish and sign core plugins
 # directory whose path holds a space and a letter outside ASCII, config init
 # with only the platform's own rule able to place the global configuration, a
 # pull from a registry the job starts on its own loopback address that writes
-# the workspace's entity cache and a build from that cache, and a pull naming
-# one catalog directory twice; every command's output is redirected and must
-# carry no escape byte; and last the tests that prove each platform split
-# behaves on that platform, all through one script. They need nothing the build
-# needs — no sibling repository, no toolchain, no secret, no network beyond
-# their own loopback address — because the build job stages everything each
-# runs as one workflow artifact per target. They publish nothing, and
-# sign-and-publish waits for all of them: it starts only when the Windows run
-# and both macOS runs have passed, on a release tag and on a dispatch, a dry
-# run's included. So a binary that fails on its own platform stops the release
-# before anything is pushed, and a smoke job that never starts holds
-# sign-and-publish back with it. A dry run proves the binaries the same way
-# before a tag is pushed.
+# the workspace's entity cache and a build from that cache, a pull naming one
+# catalog directory twice, and a second, chart-backed example built and compared
+# the same way; every command's output is redirected and must carry no escape
+# byte; and last the tests that prove each platform split behaves on that
+# platform, all through one script. They need nothing the build needs — no
+# sibling repository, no toolchain, no secret, no network beyond their own
+# loopback address — because the build job stages everything each runs as one
+# workflow artifact per target. They publish nothing, and sign-and-publish
+# waits for all of them: it starts only when the Windows run and both macOS
+# runs have passed, on a release tag and on a dispatch, a dry run's included.
+# So a binary that fails on its own platform stops the release before anything
+# is pushed, and a smoke job that never starts holds sign-and-publish back with
+# it. A dry run proves the binaries the same way before a tag is pushed.
 #
 # A dry run may also name, in smoke_binaries_from, the tag of an earlier
 # release: windows-smoke then runs that release's Windows binaries in place of
@@ -686,17 +686,17 @@ jobs:
         # directory: the three Windows binaries above; a Windows test executable
         # for each package whose tests prove a platform split, cross-compiled
         # here because the Windows runner has no toolchain and no sibling
-        # repositories; the worked example, with the workspace this machine's
-        # validate, pull and build of it leave — the bytes the Windows run must
-        # reproduce; and, for the entity-cache check, a registry program built
-        # for Windows from a module go.mod already pins, one entity to publish to
-        # it, and a copy of the example that pulls that entity from it. The
-        # example builds from a catalog in this repository and the guests the
-        # full binary embeds, offline and with no configuration of this machine
-        # read, so the Windows run needs no registry but the one it starts on
-        # its own loopback address. The script builds that reference twice, in
-        # two directories, and refuses when the two differ. No external side
-        # effect; a dry run stages too.
+        # repositories; the two worked examples, each with the workspace this
+        # machine's validate, pull and build of it leave — the bytes the Windows
+        # run must reproduce; and, for the entity-cache check, a registry program
+        # built for Windows from a module go.mod already pins, one entity to
+        # publish to it, and a copy of the first example that pulls that entity
+        # from it. The examples build from catalogs in this repository and the
+        # guests the full binary embeds, offline and with no configuration of
+        # this machine read, so the Windows run needs no registry but the one it
+        # starts on its own loopback address. The script builds each reference
+        # twice, in two directories, and refuses when the two differ. No external
+        # side effect; a dry run stages too.
         id: windows-smoke-inputs
         run: |
           set -euo pipefail
@@ -725,10 +725,10 @@ jobs:
         # Everything each macos-smoke job runs, staged by the same script as the
         # Windows inputs, once per macOS target into a directory of its own: the
         # full and light binaries above for that target, its test executables,
-        # cross-compiled here, and the worked example with the workspace this
-        # machine's validate, pull and build of it leave. The tests listed for
-        # Windows alone are left out and named in the log. No external side
-        # effect; a dry run stages too.
+        # cross-compiled here, and the two worked examples, each with the
+        # workspace this machine's validate, pull and build of it leave. The tests
+        # listed for Windows alone are left out and named in the log. No external
+        # side effect; a dry run stages too.
         id: macos-smoke-inputs
         run: |
           set -euo pipefail
@@ -1378,16 +1378,16 @@ jobs:
           path: ${{ runner.temp }}/substituted-binaries
 
       - name: Run the Windows binaries and tests
-        # The versions, the handshake, the example and its byte comparison —
-        # with a planted one-byte difference shown turning the comparison red —
-        # then config init with no HOME, a pull from a registry on this machine
-        # into the entity cache and a build from it, a catalog directory named
-        # twice, all in a path with a space and an accented letter, every
-        # command's redirected output free of escape bytes, each check shown
-        # refusing a planted fault; then the named tests, any of which skipping
-        # or not running fails the step. On a dry run naming
-        # smoke_binaries_from, the binaries downloaded above run instead, and
-        # the step fails whatever they do. aggrega-cli/scripts/platform-smoke.sh
+        # The versions, the handshake, the first example and its byte comparison
+        # — with a planted one-byte difference shown turning it red — then config
+        # init with no HOME, a pull from a registry on this machine into the
+        # entity cache and a build from it, a catalog directory named twice, and
+        # the chart-backed example compared the same way, all in a path with a
+        # space and an accented letter, every command's redirected output free of
+        # escape bytes, each check shown refusing a planted fault; then the named
+        # tests, any of which skipping or not running fails the step. On a dry run
+        # naming smoke_binaries_from, the binaries downloaded above run instead,
+        # and the step fails whatever they do. aggrega-cli/scripts/platform-smoke.sh
         # --help says what each check asserts.
         env:
           SUBSTITUTE_TAG: ${{ inputs.smoke_binaries_from }}
@@ -1475,16 +1475,16 @@ jobs:
           fi
 
       - name: Run the macOS binaries and tests
-        # The machine check, the versions, the handshake, the example and its
-        # byte comparison — with a planted one-byte difference shown turning the
-        # comparison red — then config init placed by HOME alone, a pull from a
-        # registry on this machine into the entity cache and a build from it, a
-        # catalog directory named twice, all in a path with a space and an
-        # accented letter, every command's redirected output free of escape
-        # bytes, each check shown refusing a planted fault; then the named
-        # tests, any of which skipping or not running fails the step.
-        # aggrega-cli/scripts/platform-smoke.sh --help says what each check
-        # asserts.
+        # The machine check, the versions, the handshake, the first example and
+        # its byte comparison — with a planted one-byte difference shown turning
+        # it red — then config init placed by HOME alone, a pull from a registry
+        # on this machine into the entity cache and a build from it, a catalog
+        # directory named twice, and the chart-backed example compared the same
+        # way, all in a path with a space and an accented letter, every command's
+        # redirected output free of escape bytes, each check shown refusing a
+        # planted fault; then the named tests, any of which skipping or not
+        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
+        # says what each check asserts.
         env:
           TARGET: ${{ matrix.target }}
         run: |

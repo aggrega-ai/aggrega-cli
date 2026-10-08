@@ -19,6 +19,8 @@
 #               pull writes; reference/, that workspace after this machine's
 #               validate, pull and build — the bytes the target machine must
 #               reproduce
+#   chart/      the second worked example, whose workload is a Helm chart its
+#               Recipe carries: input/ and reference/, as for example/
 #   tools/      registry (registry.exe for windows/amd64), go-containerregistry's
 #               in-memory registry server built for the target from the module
 #               this repository's go.mod already requires, which the smoke run
@@ -29,16 +31,23 @@
 #               entity and whose Manifest names it by provider, so its pull fetches
 #               the entity from the registry and writes it into its entity cache
 #   smoke.env   the target, the version every binary must report, the commit the
-#               example and the tests come from, the example's Release, the staged
+#               examples and the tests come from, the example's Release, the
+#               chart-backed example's Release (chart_release), the staged
 #               entity's path (registry_entity) and the reference its pull
 #               resolves (registry_reference)
 #
-# The worked example is a test fixture of this repository whose catalog sits beside
-# it and whose providers the full binary embeds, so it builds with no registry at
-# all: every run of it here is offline and reads no configuration of this machine.
-# The reference is built twice, in two directories of different depth, and the two
-# trees compared; a difference refuses, because a reference that does not reproduce
-# on this machine would make any comparison against it meaningless.
+# The two worked examples are of two shapes. The first is a test fixture of this
+# repository whose helm workload the provider synthesizes from what its Recipes
+# declare. The second, scripts/testdata/platform-smoke-chart, renders a Helm chart
+# its one Recipe carries, and is laid out as a catalog of one's own must be: the
+# Recipe in a directory of its own, its chart beside it, and the entity.lock that
+# `aggrega pin` writes, which its pull verifies every chart file against. Each has
+# its catalog beside it and its provider embedded in the full binary, so it builds
+# with no registry at all: every run of either here is offline and reads no
+# configuration of this machine. Each reference is built twice, in two directories
+# of different depth, and the two trees compared; a difference refuses, because a
+# reference that does not reproduce on this machine would make any comparison
+# against it meaningless.
 #
 # Run it from the release build's checkout after the target's binaries are built:
 # it needs ./aggrega (the full binary for this machine), the target's binaries
@@ -74,6 +83,13 @@ EXAMPLE_FIXTURE="internal/compiler/testdata/fullstack-app"
 EXAMPLE_RELEASE="release.yaml"
 # The Manifest that Release names.
 EXAMPLE_MANIFEST="manifest.yaml"
+
+# The chart-backed example and its Release. Its entity.lock is committed beside its
+# Recipe, so the pull below verifies the chart against it; a chart file changed
+# without running `aggrega pin` on the Recipe again refuses the staging, naming
+# that command.
+CHART_EXAMPLE="scripts/testdata/platform-smoke-chart"
+CHART_RELEASE="release.yaml"
 
 # The entity the smoke run serves from a registry of its own: a FeatureRecipe the
 # example's Release builds. In the consumer copy the Manifest's mapping to it is
@@ -226,24 +242,34 @@ for entry in "${TESTS[@]}"; do
 done
 [ -s "$OUT/tests/tests.txt" ] || { fail "no listed test is staged for $TARGET"; exit 1; }
 
-echo "==> the worked example: $EXAMPLE_FIXTURE, $EXAMPLE_RELEASE"
-smoke_isolate "$OUT/.smoke-config"
-mkdir -p "$OUT/example/input"
-cp -R "$EXAMPLE_FIXTURE/." "$OUT/example/input/"
-# The input carries the lockfile an offline pull writes, so the runs that follow,
-# here and on the target machine, start from one lockfile and re-resolve onto it.
-( cd "$OUT/example/input" &&
-  "$CLI_ROOT/aggrega" --no-color --plain --workspace-root "$OUT/example/input" pull --release "$EXAMPLE_RELEASE" )
+# stage_example <fixture> <release> <name> — stage one worked example into
+# $OUT/<name>: input/, a copy of <fixture> carrying the lockfile an offline pull of
+# <release> writes, so the runs that follow, here and on the target machine, start
+# from one lockfile and re-resolve onto it; and reference/, built from input/ and
+# checked against a second build of it in a directory of different depth.
+stage_example() {
+  local fixture="$1" release="$2" name="$3"
+  local recheck="$OUT/.smoke-recheck/$name/a/b/c/reference"
+  echo "==> the worked example $name/: $fixture, $release"
+  mkdir -p "$OUT/$name/input"
+  cp -R "$fixture/." "$OUT/$name/input/"
+  ( cd "$OUT/$name/input" &&
+    "$CLI_ROOT/aggrega" --no-color --plain --workspace-root "$OUT/$name/input" pull --release "$release" )
 
-mkdir -p "$OUT/example/reference" "$OUT/.smoke-recheck/a/b/c/reference"
-cp -R "$OUT/example/input/." "$OUT/example/reference/"
-cp -R "$OUT/example/input/." "$OUT/.smoke-recheck/a/b/c/reference/"
-smoke_build_example "$CLI_ROOT/aggrega" "$OUT/example/reference" "$EXAMPLE_RELEASE" "$OUT/.smoke-logs/reference"
-smoke_build_example "$CLI_ROOT/aggrega" "$OUT/.smoke-recheck/a/b/c/reference" "$EXAMPLE_RELEASE" "$OUT/.smoke-logs/recheck"
-if ! smoke_compare_trees "$OUT/example/reference" "$OUT/.smoke-recheck/a/b/c/reference"; then
-  fail "the example does not build to the same bytes in two directories on this machine; a comparison on $TARGET against it would mean nothing"
-  exit 1
-fi
+  mkdir -p "$OUT/$name/reference" "$recheck"
+  cp -R "$OUT/$name/input/." "$OUT/$name/reference/"
+  cp -R "$OUT/$name/input/." "$recheck/"
+  smoke_build_example "$CLI_ROOT/aggrega" "$OUT/$name/reference" "$release" "$OUT/.smoke-logs/$name/reference"
+  smoke_build_example "$CLI_ROOT/aggrega" "$recheck" "$release" "$OUT/.smoke-logs/$name/recheck"
+  if ! smoke_compare_trees "$OUT/$name/reference" "$recheck"; then
+    fail "the $name example does not build to the same bytes in two directories on this machine; a comparison on $TARGET against it would mean nothing"
+    exit 1
+  fi
+}
+
+smoke_isolate "$OUT/.smoke-config"
+stage_example "$EXAMPLE_FIXTURE" "$EXAMPLE_RELEASE" example
+stage_example "$CHART_EXAMPLE" "$CHART_RELEASE" chart
 rm -rf "$OUT/.smoke-recheck" "$OUT/.smoke-config" "$OUT/.smoke-logs"
 
 echo "==> the registry the smoke run starts: $REGISTRY_PROGRAM"
@@ -274,6 +300,7 @@ echo "  registry/consumer/, its $EXAMPLE_MANIFEST mapping to $REGISTRY_REFERENCE
   printf 'version=%s\n' "$VERSION"
   printf 'commit=%s\n' "$COMMIT"
   printf 'release=%s\n' "$EXAMPLE_RELEASE"
+  printf 'chart_release=%s\n' "$CHART_RELEASE"
   printf 'registry_entity=%s\n' "registry/publish/$entity_name/$entity_name.yaml"
   printf 'registry_reference=%s\n' "$REGISTRY_REFERENCE"
 } > "$OUT/smoke.env"
