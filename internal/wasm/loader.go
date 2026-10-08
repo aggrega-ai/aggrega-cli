@@ -66,6 +66,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	extism "github.com/extism/go-sdk"
 	"github.com/tetratelabs/wazero"
@@ -333,27 +334,24 @@ const (
 	compileCacheDirName  = "wasm-compile"
 	describeCacheDirName = "plugin-describe"
 
-	// userCacheRootDirName is the directory the CLI owns beneath the user cache
-	// directory.
-	userCacheRootDirName = "aggrega"
-
-	// testCacheRootDirName is the directory, beneath the user cache directory,
-	// that holds every cache while a test binary is running. It is a sibling of
-	// the directory a normal invocation owns rather than a directory inside it, so
-	// the two never share a byte in either direction.
+	// testCacheRootSuffix names the directory that holds every cache while a test
+	// binary is running: the directory a normal invocation owns, with this
+	// appended, beside it. It is a sibling of that directory rather than a
+	// directory inside it, so the two never share a byte in either direction.
 	//
 	// It is a fixed name rather than a per-process one so all test processes share
 	// one set of caches and a whole run compiles each guest at most once.
-	testCacheRootDirName = "aggrega-test"
+	testCacheRootSuffix = "-test"
 )
 
-// userCacheDirAtStart is the user cache directory as this process found it when it
-// started, together with the error the standard library reported if none resolves.
-// Every cache location in the process derives from this one capture.
+// cacheRootAtStart is the root this process keeps its persistent caches under,
+// as the environment stated it when the process started, together with what was
+// missing when no root resolves. Every cache location in the process derives from
+// this one capture.
 //
 // It is captured once rather than asked for on each call, and the reason is that
-// the standard library answers from the environment, so the answer can change
-// while the process runs. Two things depend on it not changing. The process-wide
+// the root is read from the environment, so the answer can change while the
+// process runs. Two things depend on it not changing. The process-wide
 // compiled-module cache is built once, on first use, and holds the directory it
 // was built with for the whole process — so a later caller resolving a different
 // directory would write to a path the built cache never opened, or to one that has
@@ -361,29 +359,44 @@ const (
 // executable, so where it lives should be settled before any code in the process
 // has had the chance to move it, rather than being whatever the environment says
 // at the moment the first guest happens to load.
-var userCacheDirAtStart, userCacheDirAtStartErr = os.UserCacheDir()
+//
+// Where the root is on each platform is not decided here: machinedirs decides it,
+// for this process's own platform and environment, and that same decision is what
+// `aggrega config init` reports — so the caches and the report cannot name
+// different directories.
+var cacheRootAtStart, cacheRootAtStartErr = processCacheRoot(machinedirs.Host(), os.Getenv)
+
+// processCacheRoot is the cache root a process running on p, with the
+// environment lookup reads, keeps its caches under: the machine-wide root a
+// normal invocation owns, or its test sibling within a test binary.
+func processCacheRoot(p machinedirs.Platform, lookup func(string) string) (string, error) {
+	if testing.Testing() {
+		return machinedirs.SiblingCacheRoot(p, lookup, testCacheRootSuffix)
+	}
+	return machinedirs.CacheRoot(p, lookup)
+}
 
 // cacheRoot returns the root directory this process's persistent caches live
 // under and whether one could be resolved.
 //
-// It is the single site that decides that root. Every cache — the compiled-module
-// store, the plugin-describe store, the provenance index, the compile-attribution
-// index — derives its own location from this one answer, so the read side and the
-// write side of any one cache cannot disagree about where it lives, and a cache
-// added later inherits the decision instead of repeating it. The answer is also
-// the same whenever it is asked, because the parent it is built on is captured at
-// process start (see userCacheDirAtStart).
+// It is the single site every cache reads that root from. Every cache — the
+// compiled-module store, the plugin-describe store, the provenance index, the
+// compile-attribution index — derives its own location from this one answer, so
+// the read side and the write side of any one cache cannot disagree about where
+// it lives, and a cache added later inherits the decision instead of repeating it.
+// The answer is also the same whenever it is asked, because it is captured at
+// process start (see cacheRootAtStart).
 //
 // A test binary and a normal invocation differ in exactly one thing: the name of
-// the directory they take beneath the user cache directory. Both resolve that same
-// parent rather than a shared system location every local account may write to,
-// and that matters more here than for an ordinary cache. A compiled-module entry
-// is machine code, which the runtime maps as executable memory and jumps into
-// after checking a magic number, a version string and a checksum — all three of
-// which anyone able to write the entry can produce. So a cache directory a second
-// local account could write to would hand that account code execution inside this
-// process, and placing the directory where only its owner can write is what
-// removes the possibility rather than policing it.
+// the directory they take beneath the per-user cache directory. Both resolve that
+// same per-user parent rather than a shared system location every local account
+// may write to, and that matters more here than for an ordinary cache. A
+// compiled-module entry is machine code, which the runtime maps as executable
+// memory and jumps into after checking a magic number, a version string and a
+// checksum — all three of which anyone able to write the entry can produce. So a
+// cache directory a second local account could write to would hand that account
+// code execution inside this process, and placing the directory where only its
+// owner can write is what removes the possibility rather than policing it.
 //
 // The two names are siblings, never nested, and that is what keeps a test run away
 // from a developer's own bytes: those are expensive to rebuild, nothing a test
@@ -395,17 +408,13 @@ var userCacheDirAtStart, userCacheDirAtStartErr = os.UserCacheDir()
 // set of caches and a whole run compiles each guest at most once, with later
 // processes reusing the machine code rather than each paying its own cold compile.
 //
-// A false return (no resolvable user cache directory) signals the caller to fall
-// back to a non-persistent path rather than fail.
+// A false return (no resolvable per-user cache directory) signals the caller to
+// fall back to a non-persistent path rather than fail.
 func cacheRoot() (string, bool) {
-	if userCacheDirAtStartErr != nil {
+	if cacheRootAtStartErr != nil {
 		return "", false
 	}
-	name := userCacheRootDirName
-	if testing.Testing() {
-		name = testCacheRootDirName
-	}
-	return filepath.Join(userCacheDirAtStart, name), true
+	return cacheRootAtStart, true
 }
 
 // AggregaCacheRoot returns the root directory the CLI's persistent caches live

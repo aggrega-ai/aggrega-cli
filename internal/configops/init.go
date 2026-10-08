@@ -90,6 +90,12 @@ type InitResult struct {
 	// a write would have produced. The file that document is for is the target on
 	// this same value, so nothing here carries a second copy of the path.
 	Registration registryops.AddResult
+
+	// Existed reports that the configuration file was already there when the
+	// seeding began, so a writing seeding wrote into it rather than creating it.
+	// Only a seeding with Force set proceeds over an existing file, so a seeding
+	// without it that succeeded always created its file.
+	Existed bool
 }
 
 // Init seeds a working configuration by registering Registry and its signature
@@ -143,13 +149,14 @@ func Init(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts InitO
 	if err != nil {
 		return res, err
 	}
-	if !opts.Force {
-		switch _, statErr := os.Stat(dest); {
-		case statErr == nil:
+	switch _, statErr := os.Stat(dest); {
+	case statErr == nil:
+		if !opts.Force {
 			return res, &ConfigFileExistsError{path: dest}
-		case !os.IsNotExist(statErr):
-			return res, fmt.Errorf("aggrega config init: stat %s: %w", dest, statErr)
 		}
+		res.Existed = true
+	case !opts.Force && !os.IsNotExist(statErr):
+		return res, fmt.Errorf("aggrega config init: stat %s: %w", dest, statErr)
 	}
 
 	// The registration's result is returned even alongside an error: the

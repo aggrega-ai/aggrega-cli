@@ -11,14 +11,18 @@
 //
 // The configuration home. The workspaceconfig package resolves a global
 // configuration layer beneath every workspace tree: it reads $AGGREGA_CONFIG
-// when that is set, otherwise $XDG_CONFIG_HOME/aggrega/config.yaml, falling
-// back to $HOME/.config/aggrega/config.yaml. That layer loads unconditionally,
-// so a test that resolves a workspace would otherwise merge the developer's
-// global configuration beneath its temporary fixtures. Pointing
-// $XDG_CONFIG_HOME at an empty throwaway directory and clearing
-// $AGGREGA_CONFIG makes the default global file absent (so reads stay clean)
+// when that is set, otherwise the platform's default location —
+// %APPDATA%\aggrega\config.yaml on Windows, and elsewhere
+// $XDG_CONFIG_HOME/aggrega/config.yaml, falling back to
+// $HOME/.config/aggrega/config.yaml. That layer loads unconditionally, so a test
+// that resolves a workspace would otherwise merge the developer's global
+// configuration beneath its temporary fixtures. Pointing both $XDG_CONFIG_HOME
+// and $APPDATA at one empty throwaway directory and clearing $AGGREGA_CONFIG
+// makes the default global file absent on every platform (so reads stay clean)
 // and confines any default-scoped write to the throwaway (so writes stay
-// contained).
+// contained). The two variables name the same directory because the file sits at
+// the same place beneath either — aggrega/config.yaml — so ConfigHome answers
+// for whichever one the platform reads.
 //
 // The credential home. Every remote registry target authenticates through the
 // container-registry credential file: $DOCKER_CONFIG/config.json when
@@ -49,6 +53,10 @@ import (
 const (
 	// envConfigHome is the variable carrying the redirected configuration home.
 	envConfigHome = "XDG_CONFIG_HOME"
+
+	// envWindowsConfigHome is the variable the configuration home is read from
+	// on Windows. The redirect points it at the same directory as envConfigHome.
+	envWindowsConfigHome = "APPDATA"
 
 	// envConfigOverride is the variable that, when set, overrides the
 	// configuration home outright with a single file path. The redirect clears
@@ -99,6 +107,7 @@ func RunHermetic(m *testing.M) int {
 		path string
 	}{
 		{envConfigHome, filepath.Join(dir, "config")},
+		{envWindowsConfigHome, filepath.Join(dir, "config")},
 		{envCredentialHome, filepath.Join(dir, "credentials")},
 	} {
 		if err := os.MkdirAll(redirect.path, 0o700); err != nil {
@@ -134,6 +143,7 @@ func Isolate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(envConfigHome, filepath.Join(home, "config"))
+	t.Setenv(envWindowsConfigHome, filepath.Join(home, "config"))
 	t.Setenv(envCredentialHome, filepath.Join(home, "credentials"))
 	t.Setenv(envConfigOverride, "")
 }
@@ -175,6 +185,7 @@ func AssertRedirected(t *testing.T) {
 		path string
 	}{
 		{envConfigHome, ConfigHome()},
+		{envWindowsConfigHome, os.Getenv(envWindowsConfigHome)},
 		{envCredentialHome, CredentialHome()},
 	} {
 		if redirect.path == "" {

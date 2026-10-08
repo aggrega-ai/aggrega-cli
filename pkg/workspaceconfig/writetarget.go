@@ -4,10 +4,12 @@
 package workspaceconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -65,34 +67,50 @@ func (op ConfigOperation) Nature() ConfigNature {
 }
 
 // GlobalConfigPath resolves the path of the global config file that sits beneath
-// every workspace-tree config: the explicit $AGGREGA_CONFIG path when that
-// variable is set, otherwise the XDG default
-// ($XDG_CONFIG_HOME/aggrega/config.yaml, falling back to
-// $HOME/.config/aggrega/config.yaml). It reports false only when neither
-// $AGGREGA_CONFIG nor a home base directory can be resolved, so a caller writing
-// the global layer surfaces an actionable error instead of writing to a bogus
-// relative path. Every environment read goes through lookup so resolution is
-// deterministic and parallel-safe; pass nil to read the live process
-// environment. This is the single home for the global config path — the
-// $AGGREGA_CONFIG-else-XDG rule lives here and reuses the XDG path primitive.
+// every workspace-tree config, on the platform this program runs on: the
+// explicit AGGREGA_CONFIG path when that variable is set, otherwise the
+// platform's default location (machinedirs.GlobalConfigFile). It reports false
+// only when neither resolves, so a caller writing the global layer surfaces an
+// actionable error instead of writing to a bogus relative path. Every
+// environment read goes through lookup so resolution is deterministic and
+// parallel-safe; pass nil to read the live process environment.
+//
+// A caller holding a resolution asks it instead ([ResolvedWorkspace.GlobalConfigFile]),
+// which answers for the platform and the environment that resolution was taken
+// against.
 func GlobalConfigPath(lookup func(string) string) (string, bool) {
 	if lookup == nil {
 		lookup = os.Getenv
 	}
+	return globalConfigPath(machinedirs.Host(), lookup)
+}
+
+// globalConfigPath is the single home of the global file's location: the
+// AGGREGA_CONFIG path when lookup carries one, otherwise the default location p
+// keeps it in.
+func globalConfigPath(p machinedirs.Platform, lookup func(string) string) (string, bool) {
 	if v := lookup(EnvConfigOverride); v != "" {
 		return v, true
 	}
-	return xdgConfigPath(lookup)
+	return machinedirs.GlobalConfigFile(p, lookup)
 }
+
+// errNoGlobalConfigLocation is the answer when no location resolves for the
+// global configuration file. It names the variables in words that read the same
+// on every platform — no shell's variable syntax — because the reader may be at
+// a Windows prompt or a Unix one.
+var errNoGlobalConfigLocation = errors.New("no location resolves for the global configuration file: " +
+	"pass --config, or set the " + EnvConfigOverride + " environment variable, or APPDATA on Windows / " +
+	"XDG_CONFIG_HOME or HOME elsewhere")
 
 // WriteDestination resolves the config file a mutating operation writes to. The
 // operation's nature sets the default (tool → global, build → workspace); the
 // global and workspace overrides, when set, force the destination regardless of
 // nature. Setting both overrides is a usage error. The global destination is
-// GlobalConfigPath (the $AGGREGA_CONFIG path or the XDG default); the workspace
-// destination is ConfigFilename at root, the resolved workspace root. lookup
-// reads the environment for the global-path resolution; pass nil for the live
-// process environment.
+// GlobalConfigPath (the AGGREGA_CONFIG path or the default location of the
+// platform this program runs on); the workspace destination is ConfigFilename at
+// root, the resolved workspace root. lookup reads the environment for the
+// global-path resolution; pass nil for the live process environment.
 //
 // This is the write-target POLICY, and it is not the form a command reaches for:
 // taking the root and the environment reader as parameters, it lets a caller
@@ -100,6 +118,15 @@ func GlobalConfigPath(lookup func(string) string) (string, bool) {
 // configuration was read through. The method below binds both to one resolution
 // and is the form every config-mutating command uses.
 func WriteDestination(op ConfigOperation, global, workspace bool, root string, lookup func(string) string) (string, error) {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
+	return writeDestination(op, global, workspace, root, machinedirs.Host(), lookup)
+}
+
+// writeDestination is the write-target policy for a stated platform; see
+// WriteDestination.
+func writeDestination(op ConfigOperation, global, workspace bool, root string, p machinedirs.Platform, lookup func(string) string) (string, error) {
 	if global && workspace {
 		return "", fmt.Errorf("workspaceconfig: --global and --workspace cannot be combined; choose at most one")
 	}
@@ -113,9 +140,9 @@ func WriteDestination(op ConfigOperation, global, workspace bool, root string, l
 	}
 
 	if toGlobal {
-		path, ok := GlobalConfigPath(lookup)
+		path, ok := globalConfigPath(p, lookup)
 		if !ok {
-			return "", fmt.Errorf("workspaceconfig: cannot resolve a global config path; set $AGGREGA_CONFIG or a home directory ($HOME / $XDG_CONFIG_HOME)")
+			return "", errNoGlobalConfigLocation
 		}
 		return path, nil
 	}
@@ -166,5 +193,47 @@ func (r *ResolvedWorkspace) WorkspaceConfigDestination() (string, error) {
 // and the setting the caller asked to change is not the one the next read will
 // see.
 func (r *ResolvedWorkspace) WriteDestination(op ConfigOperation, global, workspace bool) (string, error) {
-	return WriteDestination(op, global, workspace, r.root, r.lookup)
+	return writeDestination(op, global, workspace, r.root, r.machinePlatform(), r.environment())
+}
+
+// GlobalConfigFile returns the global configuration file THIS resolution reads
+// beneath its cascade and a global write goes to: the file --config or
+// AGGREGA_CONFIG names, otherwise the default location on the platform the
+// resolution was taken for. When no location resolves the error says, in words
+// valid on every platform, what to set.
+//
+// It answers whether or not the file exists, because a caller about to create
+// the file needs its location as much as one about to read it.
+func (r *ResolvedWorkspace) GlobalConfigFile() (string, error) {
+	path, ok := globalConfigPath(r.machinePlatform(), r.environment())
+	if !ok {
+		return "", errNoGlobalConfigLocation
+	}
+	return path, nil
+}
+
+// MachineCacheRoot returns the root the machine-wide caches are kept under, on
+// the platform and in the environment THIS resolution was taken against
+// (machinedirs.CacheRoot). When no root resolves the error names what is
+// missing, and the caches are then kept in memory for the run alone.
+func (r *ResolvedWorkspace) MachineCacheRoot() (string, error) {
+	return machinedirs.CacheRoot(r.machinePlatform(), r.environment())
+}
+
+// environment is the lookup this resolution read the environment through, or
+// the process's own when it carries none.
+func (r *ResolvedWorkspace) environment() func(string) string {
+	if r.lookup == nil {
+		return os.Getenv
+	}
+	return r.lookup
+}
+
+// machinePlatform is the platform this resolution was taken for, or the host's
+// when it records none.
+func (r *ResolvedWorkspace) machinePlatform() machinedirs.Platform {
+	if r.platform == "" {
+		return machinedirs.Host()
+	}
+	return r.platform
 }

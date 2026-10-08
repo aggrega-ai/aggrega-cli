@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
@@ -99,7 +100,7 @@ func ResolveOrHold(start, flagRoot string, f FlagOverlay) (*ResolvedWorkspace, *
 		return nil, nil, err
 	}
 	hold := &configurationHold{}
-	resolved, herr := resolve(start, flagRoot, f.Lookup(nil), false, hold)
+	resolved, herr := resolve(start, flagRoot, f.Lookup(nil), machinedirs.Host(), false, hold)
 	if herr != nil {
 		return nil, nil, herr
 	}

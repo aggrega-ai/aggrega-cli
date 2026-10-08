@@ -148,8 +148,8 @@ func TestConfigInitRefusesARegistryItCannotPinOffline(t *testing.T) {
 			host := workspaceconfig.HubBaselineHost
 			want := fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (registrytrust: fetch %s: %s)\n",
 				host, host, egress.ErrOfflineEgress().Error())
-			if got := strings.SplitAfter(out.String(), "\n")[0]; got != want {
-				t.Errorf("the seeding's first line = %q; want the one baseline notice %q", got, want)
+			if got := strings.SplitAfter(afterSeedingLocations(t, out.String()), "\n")[0]; got != want {
+				t.Errorf("the seeding's first line after its locations = %q; want the one baseline notice %q", got, want)
 			}
 			if errOut.Len() != 0 {
 				t.Errorf("a writing seeding put %q on the error stream; its answer stream is free for the notice", errOut.String())

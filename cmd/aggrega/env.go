@@ -103,7 +103,7 @@ func flagOverlayFromCobra(cmd *cobra.Command, offline bool, configPath string) w
 // configPath is set it wins: a request for the config-override variable returns
 // configPath, and every other variable falls through to base. When configPath is
 // empty the flag is unset and the returned lookup IS base, so $AGGREGA_CONFIG
-// (else the XDG default) governs — the flag overrides the environment only when
+// (else the default location) governs — the flag overrides the environment only when
 // the operator sets it. This is the single construction site for the flag-aware
 // lookup; command bodies read the result from the context rather than rebuilding
 // it. base is the underlying reader; pass nil for the live process environment.

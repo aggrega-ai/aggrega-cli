@@ -469,7 +469,7 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 	// is the SAME sentence the answer stream carries under a writing delivery. A
 	// second phrasing written for the new stream would make these differ, and the
 	// remedy is exactly what such a rewrite tends to shorten away.
-	writtenAdvisoryLine := strings.SplitAfter(writeAbsentAnswer, "\n")[0]
+	writtenAdvisoryLine := strings.SplitAfter(afterSeedingLocations(t, writeAbsentAnswer), "\n")[0]
 	if reportAbsentAdvisory != writtenAdvisoryLine {
 		t.Errorf("the advisory is phrased twice rather than composed once\non the error stream:\n%q\non the answer stream:\n%q", reportAbsentAdvisory, writtenAdvisoryLine)
 	}
@@ -491,7 +491,7 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 	// reached, so it advertised nothing; the entry carries its baseline anyway, and
 	// the notice says so rather than sending the reader to pin identities by hand.
 	writeBaselineAnswer, writeBaselineAdvisory := trustAdvisoryStreams(t, false, workspaceconfig.HubBaselineHost, offlineTrustClient())
-	if !strings.HasPrefix(writeBaselineAnswer, baseline) {
+	if !strings.HasPrefix(afterSeedingLocations(t, writeBaselineAnswer), baseline) {
 		t.Errorf("a writing delivery must say the built-in baseline was pinned; it carried:\n%s", writeBaselineAnswer)
 	}
 	if strings.Contains(writeBaselineAnswer, absence) || strings.Contains(writeBaselineAnswer, remedy) {

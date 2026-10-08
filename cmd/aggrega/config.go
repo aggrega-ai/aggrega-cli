@@ -18,6 +18,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/configops"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -42,12 +43,12 @@ that block is what marks the root — holds how this project builds: its catalog
 directories, its provider bindings, which lint rules it relaxes. It is
 committed, so a teammate who clones the project builds it the same way.
 
-One global file at ~/.config/aggrega/config.yaml is shared across every
-workspace on this machine. It holds what belongs to the machine rather than to
-any one project: the registries you pull from and the signature trust policy
-for each, how large the compiled-module store may grow, any command extension
-you have installed. It loads automatically when it is there, and nothing
-breaks when it is not.
+One global file is shared across every workspace on this machine:
+~/.config/aggrega/config.yaml, or %APPDATA%\aggrega\config.yaml on Windows. It
+holds what belongs to the machine rather than to any one project: the
+registries you pull from and the signature trust policy for each, how large the
+compiled-module store may grow, any command extension you have installed. It
+loads automatically when it is there, and nothing breaks when it is not.
 
 Your project's file wins over the global one, an environment variable wins
 over both, and a flag wins over everything.
@@ -169,7 +170,6 @@ off, so it names the first layer that turns it on.`,
 			}
 			return configShowRun(configShowConfig{
 				ws:        rw,
-				lookup:    configLookupFromContext(cmd.Context()),
 				Global:    global,
 				Workspace: workspace,
 				Origin:    origin,
@@ -185,11 +185,11 @@ off, so it names the first layer that turns it on.`,
 
 // configShowConfig is the input contract for `aggrega config show`.
 type configShowConfig struct {
+	// ws is the resolution this show reports. --global prints the global file
+	// this same resolution read beneath its cascade, asked of the resolution
+	// rather than worked out again here, so the file printed is the file whose
+	// settings the default view merges — including one --config named.
 	ws *workspaceconfig.ResolvedWorkspace
-	// lookup carries the --config flag as the flag form of the global-config-path
-	// override, so --global and the resolution seam resolve the same path the
-	// workspace resolution used. Nil selects the live process environment.
-	lookup func(string) string
 	// Global and Workspace select a single-layer verbatim dump; Origin selects
 	// the per-value provenance view. Global and Workspace are mutually exclusive,
 	// and neither combines with Origin. With none set, the default effective view
@@ -215,9 +215,11 @@ func configShowRun(cfg configShowConfig) error {
 	case cfg.Origin && (cfg.Global || cfg.Workspace):
 		return fmt.Errorf("aggrega config show: --origin cannot be combined with --global or --workspace")
 	case cfg.Global:
-		path, ok := workspaceconfig.GlobalConfigPath(cfg.lookup)
-		if !ok {
-			fmt.Fprintln(cfg.Out, "No global config path can be resolved; set $AGGREGA_CONFIG or a home directory ($HOME / $XDG_CONFIG_HOME).")
+		path, err := rw.GlobalConfigFile()
+		if err != nil {
+			// No location resolves, so there is no file to print; the sentence says
+			// what to set, in the words the write path uses for the same condition.
+			fmt.Fprintln(cfg.Out, err.Error())
 			return nil
 		}
 		return configShowVerbatim(cfg.Out, path, "global")
@@ -331,6 +333,13 @@ instead. If the target config file already exists, init refuses rather than
 overwrite it — pass --force to write anyway (the registry entry is merged into
 the existing file, other settings preserved).
 
+Before anything else, init says where things are: the configuration file it
+created — or, under --force, the one already there that it wrote into — and
+the directory the machine-wide caches are kept in. That directory is
+%LOCALAPPDATA%\aggrega\cache on Windows, and a directory named aggrega under
+the per-user cache directory elsewhere: ~/.cache/aggrega on Linux unless
+XDG_CACHE_HOME names another, and ~/Library/Caches/aggrega on macOS.
+
 A seeded configuration is a document you own and go on editing, so --dry-run does
 everything init does except write: it hands the content back, creating and
 modifying nothing. The answer names the file the content is for — which matters
@@ -360,7 +369,8 @@ itself and produces no notice.`,
 			// resolved off the resolution — so the file init creates is the file a
 			// later read of this same invocation would consult.
 			lookup := configLookupFromContext(cmd.Context())
-			rw, err := workspaceconfig.ResolveWithoutGlobal("", workspaceRootFromContext(cmd.Context()), lookup)
+			rw, err := workspaceconfig.ResolveWithoutGlobalOn(platformFromContext(cmd.Context()), "",
+				workspaceRootFromContext(cmd.Context()), lookup)
 			if err != nil {
 				return err
 			}
@@ -441,7 +451,49 @@ func configInitRun(ctx context.Context, cfg configInitConfig) error {
 		Delivery:    delivery,
 		TrustClient: cfg.trustClient,
 	})
+	if initErr == nil && !delivery.Reports() {
+		writeConfigLocations(cfg.Out, rw, res)
+	}
 	return writeRegistrationOutcome(cfg.Out, cfg.ErrOut, delivery, res.Registration, initErr)
+}
+
+// writeConfigLocations says where a seeding left the files that belong to the
+// machine: the configuration file it wrote, and the root the machine-wide caches
+// are kept under. They lead the seeding's answer, ahead of the registration's
+// own lines, because they are what a reader on a fresh machine is looking for.
+//
+// Writing the file is what seeding is for, so its line is a statement rather
+// than a warning: "Created" when the file was not there, and "Using" when it was
+// and Force let the seeding write into it. Each line ends with its path and
+// nothing after it, so a reader can copy the path as it stands.
+//
+// It is written for a seeding that wrote, and for no other outcome. A refused
+// seeding created nothing, so its refusal is its whole answer; and a seeding that
+// hands its content back rather than writing leaves standard output holding that
+// one document, which names the file the content is for.
+//
+// Both paths come from the resolution the seeding ran on — the file from the
+// write it performed, the cache root from the platform and environment that
+// resolution was taken against — so what is printed is where the files are, on
+// every platform, rather than a second answer worked out here.
+func writeConfigLocations(out io.Writer, rw *workspaceconfig.ResolvedWorkspace, res configops.InitResult) {
+	if out == nil {
+		return
+	}
+	action := "Created"
+	if res.Existed {
+		action = "Using"
+	}
+	file := "global"
+	if res.Registration.Target.Scope == registryops.ScopeWorkspace {
+		file = "workspace"
+	}
+	fmt.Fprintf(out, "%s the %s configuration file at %s\n", action, file, res.Registration.Target.Path)
+	if root, err := rw.MachineCacheRoot(); err == nil {
+		fmt.Fprintf(out, "Machine-wide caches are kept in %s\n", root)
+	} else {
+		fmt.Fprintf(out, "Machine-wide caches are not kept between runs: %v\n", err)
+	}
 }
 
 // newConfigCaptureCmd builds the `config capture` command: it freezes the

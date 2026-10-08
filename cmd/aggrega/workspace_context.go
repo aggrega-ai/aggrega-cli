@@ -10,6 +10,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -28,6 +29,10 @@ type lazyWorkspace struct {
 	// global layer and any config-mutating command resolve that path through the
 	// same ladder. Nil selects the production environment inside Resolve.
 	lookup func(string) string
+	// platform is the platform whose conventions place the machine's own files —
+	// the global configuration file and the machine-wide caches. It is the host
+	// on every production invocation; withMachine states another for a test.
+	platform machinedirs.Platform
 	// flags carries the command-line layer of the precedence ladder — the
 	// settings the reader set on this invocation — composed onto the resolution
 	// below. It is empty on an invocation that set none, which is the ordinary
@@ -67,7 +72,7 @@ func (l *lazyWorkspace) advisoryWriter() io.Writer {
 
 func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 	l.once.Do(func() {
-		l.ws, l.err = workspaceconfig.Resolve("", l.flagRoot, l.lookup)
+		l.ws, l.err = workspaceconfig.ResolveOn(l.platform, "", l.flagRoot, l.lookup)
 		if l.err == nil {
 			// The flag layer is composed here, on the one resolution every
 			// command reads, which is what makes it the ladder's top layer
@@ -103,11 +108,62 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 // cascade it would have resolved anyway. Omitted and empty mean the same thing,
 // so there is no third state for a caller to get wrong.
 func withWorkspaceResolver(ctx context.Context, flagRoot string, lookup func(string) string, flags ...workspaceconfig.FlagOverlay) context.Context {
-	l := &lazyWorkspace{flagRoot: flagRoot, lookup: lookup}
+	platform, _ := machineFromContext(ctx)
+	l := &lazyWorkspace{flagRoot: flagRoot, lookup: lookup, platform: platform}
 	if len(flags) > 0 {
 		l.flags = flags[0]
 	}
 	return context.WithValue(ctx, workspaceCtxKey{}, l)
+}
+
+// machineCtxKey is the private context key under which a caller states the
+// machine an invocation runs against — its platform and its environment — in
+// place of the process's own.
+type machineCtxKey struct{}
+
+// machineView is a stated machine: the platform whose conventions place the
+// machine's own files, and the reader its environment is read through.
+type machineView struct {
+	platform machinedirs.Platform
+	lookup   func(string) string
+}
+
+// withMachine returns ctx carrying a stated platform and environment for the
+// command tree to resolve its configuration against, in place of the process's
+// own.
+//
+// No production path sets it: the root command then resolves on the platform
+// this program was built for, through the process environment. A test sets it
+// on the context it executes the real command tree with, to run an invocation as
+// a whole machine of another kind — a Windows machine's variables and
+// conventions on a Linux host — without changing the process it runs in, which
+// keeps such a test parallel-safe.
+func withMachine(ctx context.Context, platform machinedirs.Platform, lookup func(string) string) context.Context {
+	return context.WithValue(ctx, machineCtxKey{}, machineView{platform: platform, lookup: lookup})
+}
+
+// machineFromContext returns the machine stated on ctx: its platform, and the
+// environment reader to build the invocation's lookup on. With none stated it
+// returns the host and a nil reader, which every lookup builder here reads as
+// the process environment.
+func machineFromContext(ctx context.Context) (machinedirs.Platform, func(string) string) {
+	if m, ok := ctx.Value(machineCtxKey{}).(machineView); ok {
+		return m.platform, m.lookup
+	}
+	return machinedirs.Host(), nil
+}
+
+// platformFromContext returns the platform the workspace resolver attached to
+// ctx resolves on, so a command that resolves its workspace off the shared
+// path — the seeding command, which must not read the global file it is about
+// to create — resolves on the same platform the root command's resolver would.
+// It falls back to the host when no resolver is attached, which happens only
+// when a command helper is invoked directly outside the root wiring (tests).
+func platformFromContext(ctx context.Context) machinedirs.Platform {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok && l.platform != "" {
+		return l.platform
+	}
+	return machinedirs.Host()
 }
 
 // withholdFirstRunNotice marks the resolver attached to ctx so this invocation

@@ -28,7 +28,7 @@ func writeShowFile(t *testing.T, dir, name, body string) string {
 
 // showGlobalOnly resolves a workspace with a global config and a pinned root that
 // carries no workspace-tree config, so the global file is the only contributor.
-func showGlobalOnly(t *testing.T, globalBody string) (*workspaceconfig.ResolvedWorkspace, string, func(string) string) {
+func showGlobalOnly(t *testing.T, globalBody string) (*workspaceconfig.ResolvedWorkspace, string) {
 	t.Helper()
 	root := t.TempDir()
 	global := writeShowFile(t, filepath.Join(t.TempDir(), "aggrega"), "config.yaml", globalBody)
@@ -37,7 +37,7 @@ func showGlobalOnly(t *testing.T, globalBody string) (*workspaceconfig.ResolvedW
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	return rw, global, lookup
+	return rw, global
 }
 
 // TestConfigShowGlobalOnly covers scenario (a): a global config and no workspace
@@ -46,11 +46,11 @@ func showGlobalOnly(t *testing.T, globalBody string) (*workspaceconfig.ResolvedW
 func TestConfigShowGlobalOnly(t *testing.T) {
 	t.Parallel()
 	globalBody := "default_registry: global.example\noffline: true\n"
-	rw, global, lookup := showGlobalOnly(t, globalBody)
+	rw, global := showGlobalOnly(t, globalBody)
 
 	// Default view.
 	var def bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Out: &def}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Out: &def}); err != nil {
 		t.Fatalf("default show: %v", err)
 	}
 	out := def.String()
@@ -66,7 +66,7 @@ func TestConfigShowGlobalOnly(t *testing.T) {
 
 	// Single-layer verbatim dump.
 	var glob bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Global: true, Out: &glob}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Global: true, Out: &glob}); err != nil {
 		t.Fatalf("--global show: %v", err)
 	}
 	if glob.String() != globalBody {
@@ -102,7 +102,7 @@ func TestConfigShowWorkspaceCascade(t *testing.T) {
 
 	// Default view: both files, global before tree; effective reflects override.
 	var def bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Out: &def}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Out: &def}); err != nil {
 		t.Fatalf("default show: %v", err)
 	}
 	out := def.String()
@@ -116,7 +116,7 @@ func TestConfigShowWorkspaceCascade(t *testing.T) {
 
 	// --workspace verbatim dump.
 	var ws bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Workspace: true, Out: &ws}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Workspace: true, Out: &ws}); err != nil {
 		t.Fatalf("--workspace show: %v", err)
 	}
 	if ws.String() != treeBody {
@@ -163,7 +163,7 @@ func TestConfigShowEnvOverlay(t *testing.T) {
 
 	// The env value is what --origin displays for the setting.
 	var buf bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Origin: true, Out: &buf}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Origin: true, Out: &buf}); err != nil {
 		t.Fatalf("--origin show: %v", err)
 	}
 	if !strings.Contains(buf.String(), "from-env.io") {
@@ -209,11 +209,11 @@ func TestConfigShowDeterministic(t *testing.T) {
 	}
 
 	// The workspace is declared in each literal rather than patched in here, so
-	// every call site says which workspace it renders. Only the sink and the
-	// environment lookup, which are the same for every run, are filled in.
+	// every call site says which workspace it renders. Only the sink, which is
+	// the same for every run, is filled in.
 	run := func(cfg configShowConfig) string {
 		var buf bytes.Buffer
-		cfg.lookup, cfg.Out = lookup, &buf
+		cfg.Out = &buf
 		if err := configShowRun(cfg); err != nil {
 			t.Fatalf("show: %v", err)
 		}
@@ -241,15 +241,15 @@ func TestConfigShowModeGuards(t *testing.T) {
 		t.Fatalf("ResolveWithoutGlobal: %v", err)
 	}
 
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Global: true, Workspace: true, Out: &bytes.Buffer{}}); err == nil {
+	if err := configShowRun(configShowConfig{ws: rw, Global: true, Workspace: true, Out: &bytes.Buffer{}}); err == nil {
 		t.Error("--global and --workspace together should be refused")
 	}
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Origin: true, Global: true, Out: &bytes.Buffer{}}); err == nil {
+	if err := configShowRun(configShowConfig{ws: rw, Origin: true, Global: true, Out: &bytes.Buffer{}}); err == nil {
 		t.Error("--origin with --global should be refused")
 	}
 
 	var glob bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Global: true, Out: &glob}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Global: true, Out: &glob}); err != nil {
 		t.Fatalf("--global on a missing file should not error: %v", err)
 	}
 	if !strings.Contains(glob.String(), "No global config file exists") {
@@ -257,7 +257,7 @@ func TestConfigShowModeGuards(t *testing.T) {
 	}
 
 	var ws bytes.Buffer
-	if err := configShowRun(configShowConfig{ws: rw, lookup: lookup, Workspace: true, Out: &ws}); err != nil {
+	if err := configShowRun(configShowConfig{ws: rw, Workspace: true, Out: &ws}); err != nil {
 		t.Fatalf("--workspace on a missing file should not error: %v", err)
 	}
 	if !strings.Contains(ws.String(), "No workspace config file exists") {

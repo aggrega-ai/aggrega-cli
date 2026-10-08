@@ -6,12 +6,14 @@ package wasm_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 )
 
 // pathIsInside reports whether path lies at or beneath root, comparing both after
@@ -169,9 +171,10 @@ func TestTestBinaryCannotResolveTheDeveloperCache(t *testing.T) {
 
 // TestEveryCacheLocationStaysInsideOneRootUnderTest is the completeness guard on
 // the cache-location decision: within a test binary EVERY resolvable cache path
-// must lie inside the one cache root, that root must sit directly beneath the user
-// cache directory, and no path may lie inside the directory a normal invocation
-// owns.
+// must lie inside the one cache root, the directory that root is named for must
+// sit directly beneath the user cache directory (the root being that directory
+// itself, or on Windows the cache directory inside it), and no path may lie
+// inside the directory a normal invocation owns.
 //
 // The three claims are separate and each catches something the others do not.
 //
@@ -216,14 +219,29 @@ func TestEveryCacheLocationStaysInsideOneRootUnderTest(t *testing.T) {
 		t.Fatal("the cache-location census yielded no locations, so this guard proved nothing")
 	}
 
-	if parent := filepath.Dir(filepath.Clean(root)); parent != filepath.Clean(userCache) {
-		t.Errorf("the cache root must sit directly beneath the user cache directory, one level down.\n"+
-			"  cache root = %s\n  its parent = %s\n  user cache directory = %s\n"+
+	// The directory the root is named for sits directly beneath the user cache
+	// directory. On Windows the root is a directory named cache inside it, because
+	// the user cache directory there holds an application's local data of every
+	// kind rather than its caches alone; elsewhere the named directory is itself
+	// the root. Spelled here from the platform rather than asked of the resolver,
+	// for the reason developerCacheRootDirName is.
+	owner := filepath.Clean(root)
+	if runtime.GOOS == "windows" {
+		if base := filepath.Base(owner); base != "cache" {
+			t.Errorf("on Windows the cache root must be a directory named cache inside the directory it is "+
+				"named for.\n  cache root = %s\n  its last element = %s", root, base)
+		}
+		owner = filepath.Dir(owner)
+	}
+	if parent := filepath.Dir(owner); parent != filepath.Clean(userCache) {
+		t.Errorf("the directory the cache root is named for must sit directly beneath the user cache "+
+			"directory, one level down.\n"+
+			"  cache root = %s\n  the directory it is named for = %s\n  its parent = %s\n  user cache directory = %s\n"+
 			"A root deeper than that is nested inside some other directory beneath the user cache "+
 			"directory, which is how a test run reaches bytes it does not own; a root outside the "+
 			"user cache tree is a store of executable machine code somewhere another local account "+
 			"may be able to write.",
-			root, parent, userCache)
+			root, owner, parent, userCache)
 	}
 
 	devRoot, devOK := developerCacheRoot()
@@ -246,6 +264,37 @@ func TestEveryCacheLocationStaysInsideOneRootUnderTest(t *testing.T) {
 					loc.name, loc.path, devRoot)
 			}
 		})
+	}
+}
+
+// TestTheMachineWideCacheRootFollowsTheStandardLibraryOnTheHost holds the root a
+// normal invocation keeps its machine-wide caches under to the per-user cache
+// directory the standard library reports for this process, asked here
+// independently for the reason developerCacheRoot asks it.
+//
+// The location rule restates the standard library's per-user cache rule so it
+// can be read for any platform and from any environment; on the host and with
+// the process's own environment it must land exactly where the standard library
+// says — the directory named aggrega beneath it, and on Windows the cache
+// directory inside that — or fail to resolve exactly where the standard library
+// fails. A drift between the two is what would move the caches a Linux or macOS
+// machine already has.
+func TestTheMachineWideCacheRootFollowsTheStandardLibraryOnTheHost(t *testing.T) {
+	userCache, userCacheErr := os.UserCacheDir()
+	root, err := machinedirs.CacheRoot(machinedirs.Host(), os.Getenv)
+	if (err == nil) != (userCacheErr == nil) {
+		t.Fatalf("the cache root resolves as %q, %v on %s; the standard library's per-user cache directory resolves as %q, %v",
+			root, err, machinedirs.Host(), userCache, userCacheErr)
+	}
+	if err != nil {
+		return
+	}
+	want := filepath.Join(userCache, developerCacheRootDirName)
+	if runtime.GOOS == "windows" {
+		want = filepath.Join(want, "cache")
+	}
+	if filepath.Clean(root) != filepath.Clean(want) {
+		t.Errorf("the machine-wide cache root is %s; beneath the standard library's per-user cache directory it is %s", root, want)
 	}
 }
 

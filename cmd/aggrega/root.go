@@ -81,9 +81,14 @@ func newRootCmd() *cobra.Command {
 		// configuration never reaches the notice either.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
-			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
+			// The environment is the process's own on every production invocation;
+			// a test running the tree as a stated machine supplies another
+			// (withMachine), and the resolver picks the platform up from the same
+			// context.
+			_, env := machineFromContext(cmd.Context())
+			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, env)
 			ctx := withWorkspaceResolver(cmd.Context(), root,
-				globalConfigLookup(configPathFlag, nil),
+				globalConfigLookup(configPathFlag, env),
 				flagOverlayFromCobra(cmd, offlineFlag, configPathFlag))
 			if cmd.CommandPath() == configInitInvocation {
 				withholdFirstRunNotice(ctx)

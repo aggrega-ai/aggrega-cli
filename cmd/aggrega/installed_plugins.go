@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -168,7 +170,30 @@ func productionCLIPluginRegistrations() []cliCommandReg {
 // configured guest; a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns.
 func productionCLIPluginRegistrationsContext(ctx context.Context) []cliCommandReg {
-	rw, err := workspaceconfig.Resolve("", "")
+	return cliRegistrationsResolving(ctx, "", machinedirs.Host(), envLookupOrGetenv(nil))
+}
+
+// cliRegistrationsResolving resolves the workspace from start, on platform and
+// reading the environment through lookup, and projects its plugins.cli list
+// into the commands to register.
+//
+// A global configuration file named for this run — by AGGREGA_CONFIG — that
+// does not exist yet is not a failure here. It declares no command extension,
+// because it does not exist, while the project's own files may declare some, so
+// the workspace is resolved again without the global layer and theirs are
+// registered. Nothing is said about the missing file, and that is deliberate:
+// this runs while the command tree is built, before the command is known, so a
+// warning here would be printed for every command — including the seeding
+// command, which is about to create the file and says so, and every command that
+// reads its configuration, which halts on the missing file in its own words.
+// Every other failure to resolve is reported once and leaves no command
+// registered.
+func cliRegistrationsResolving(ctx context.Context, start string, platform machinedirs.Platform, lookup func(string) string) []cliCommandReg {
+	rw, err := workspaceconfig.ResolveOn(platform, start, "", lookup)
+	var missing *workspaceconfig.GlobalConfigNotFoundError
+	if errors.As(err, &missing) {
+		rw, err = workspaceconfig.ResolveWithoutGlobalOn(platform, start, "", lookup)
+	}
 	if err != nil {
 		fmt.Fprintf(pluginRegistrationWarnWriter, "warning: ignoring configured CLI plugins: %v\n", err)
 		return nil

@@ -4,7 +4,9 @@
 package workspaceconfig
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +14,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
@@ -148,6 +151,14 @@ type ResolvedWorkspace struct {
 	flagRoot string
 	lookup   func(string) string
 
+	// platform is the platform whose conventions place the files that belong to
+	// the machine rather than to the workspace — the global configuration file
+	// read beneath the cascade and written by a global write, and the root the
+	// machine-wide caches live under. It is the host for every production
+	// resolution, and it travels with the lookup because the two together are
+	// the view of the machine this resolution was taken against.
+	platform machinedirs.Platform
+
 	// flags records the command-line layer WithFlags applied on top of the
 	// merge, so the per-value provenance report can attribute a setting the
 	// invocation determined to the flag that determined it. It is empty on a
@@ -236,12 +247,24 @@ func (r *ResolvedWorkspace) Warnings() []string {
 // config > default. The optional look reads the environment; when omitted (or
 // nil) the production os.Getenv is used. A test or the daemon passes an
 // explicit, frozen lookup so resolution stays deterministic and parallel-safe.
+//
+// The files that belong to the machine rather than to the workspace are placed
+// by the conventions of the platform this program runs on; ResolveOn names
+// another.
 func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWorkspace, error) {
-	lookup := os.Getenv
-	if len(look) > 0 && look[0] != nil {
-		lookup = look[0]
-	}
-	rw, err := resolve(start, flagRoot, lookup, false, nil)
+	return ResolveOn(machinedirs.Host(), start, flagRoot, lookupOrGetenv(look))
+}
+
+// ResolveOn is Resolve for a stated platform rather than the one this program
+// runs on. The platform decides where the global configuration file is looked
+// for when nothing names one, which file a global write goes to, and where the
+// machine-wide caches are kept (see machinedirs). Every production resolution
+// passes the host, which is what Resolve does; a caller states another platform
+// to resolve a whole machine of that kind from a frozen lookup. A nil lookup
+// reads the process environment.
+func ResolveOn(platform machinedirs.Platform, start, flagRoot string, lookup func(string) string) (*ResolvedWorkspace, error) {
+	lookup = lookupOrGetenv([]func(string) string{lookup})
+	rw, err := resolve(start, flagRoot, lookup, platform, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +282,14 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 // the process environment. Only the global-layer read is skipped; a command
 // that needs the merged global config must use Resolve instead.
 func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (*ResolvedWorkspace, error) {
-	lookup := os.Getenv
-	if len(look) > 0 && look[0] != nil {
-		lookup = look[0]
-	}
-	rw, err := resolve(start, flagRoot, lookup, true, nil)
+	return ResolveWithoutGlobalOn(machinedirs.Host(), start, flagRoot, lookupOrGetenv(look))
+}
+
+// ResolveWithoutGlobalOn is ResolveWithoutGlobal for a stated platform, as
+// ResolveOn is Resolve for one. A nil lookup reads the process environment.
+func ResolveWithoutGlobalOn(platform machinedirs.Platform, start, flagRoot string, lookup func(string) string) (*ResolvedWorkspace, error) {
+	lookup = lookupOrGetenv([]func(string) string{lookup})
+	rw, err := resolve(start, flagRoot, lookup, platform, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,10 +299,21 @@ func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (
 	return rw, nil
 }
 
+// lookupOrGetenv returns the first lookup look carries, or the process
+// environment's when it carries none or a nil one — the default every
+// resolution entry point shares.
+func lookupOrGetenv(look []func(string) string) func(string) string {
+	if len(look) > 0 && look[0] != nil {
+		return look[0]
+	}
+	return os.Getenv
+}
+
 // resolve is the single workspace-resolution merge path Resolve wraps. It runs
 // the whole job — root discovery, the tree cascade, the global layer, the
 // `_append` composition, and the environment overlay — against an already-
-// resolved lookup. When skipGlobal is true it omits the global file layer
+// resolved lookup, on the platform whose conventions place the global file.
+// When skipGlobal is true it omits the global file layer
 // (leaving the tree cascade, defaults, and environment overlay untouched), so a
 // second pass can attribute which build-critical bindings originated only in the
 // global file. There is no re-implemented merge: both the full and the tree-only
@@ -291,7 +328,10 @@ func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (
 // resolution stops after the cascade and returns a nil workspace and a nil error:
 // what the remaining layers would merge to is not a configuration anybody wrote,
 // so their merge is used for nothing and is never validated as a whole.
-func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool, hold *configurationHold) (*ResolvedWorkspace, error) {
+func resolve(start, flagRoot string, lookup func(string) string, platform machinedirs.Platform, skipGlobal bool, hold *configurationHold) (*ResolvedWorkspace, error) {
+	if platform == "" {
+		platform = machinedirs.Host()
+	}
 	if start == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -323,12 +363,12 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	var warnings []string
 	var signingPolicy signingPolicyAccumulator
 
-	// Global layer (explicit $AGGREGA_CONFIG or the XDG default), beneath all
-	// tree files. Suppressed for the tree-only provenance pass so the same merge
-	// path yields the workspace-tree-only view against which the full resolution
-	// is diffed.
+	// Global layer (the explicitly named file, or the platform's default
+	// location), beneath all tree files. Suppressed for the tree-only provenance
+	// pass so the same merge path yields the workspace-tree-only view against
+	// which the full resolution is diffed.
 	if !skipGlobal {
-		globalCfg, globalLoaded, globalPath, err := loadGlobalLayer(lookup)
+		globalCfg, globalLoaded, globalPath, err := loadGlobalLayer(platform, lookup)
 		if err != nil {
 			return nil, err
 		}
@@ -507,6 +547,7 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		files:       contributing,
 		warnings:    warnings,
 		configFiles: configFiles,
+		platform:    platform,
 	}, nil
 }
 
@@ -743,19 +784,20 @@ func resolvePluginURIs(refs []PluginRef, dir string) {
 }
 
 // loadGlobalLayer reads the global config layer that sits beneath every
-// tree file. When $AGGREGA_CONFIG is set it names an explicit path: the
-// path overrides the default location, so a missing file is an error
-// rather than a silent fallback. When $AGGREGA_CONFIG is unset the XDG
-// default path is auto-loaded — $XDG_CONFIG_HOME/aggrega/config.yaml,
-// falling back to ~/.config/aggrega/config.yaml when $XDG_CONFIG_HOME is
-// empty — if that file exists; if it does not, there is no global layer
-// (the cascade's tree files and Default() suffice). Every environment
-// read goes through lookup so resolution is deterministic and
-// parallel-safe.
-func loadGlobalLayer(lookup func(string) string) (cfg Config, loaded bool, path string, err error) {
+// tree file. When AGGREGA_CONFIG is set — directly, or by the --config flag the
+// lookup carries — it names an explicit path: the path overrides the default
+// location, so a missing file is an error rather than a silent fallback. When
+// it is unset the platform's default location (machinedirs.GlobalConfigFile) is
+// auto-loaded if that file exists; if it does not, there is no global layer
+// (the cascade's tree files and Default() suffice). Every environment read goes
+// through lookup so resolution is deterministic and parallel-safe.
+func loadGlobalLayer(platform machinedirs.Platform, lookup func(string) string) (cfg Config, loaded bool, path string, err error) {
 	if v := lookup(EnvConfigOverride); v != "" {
 		if _, statErr := os.Stat(v); statErr != nil {
-			return Config{}, false, "", fmt.Errorf("workspaceconfig: $%s config not found at %s: %w", EnvConfigOverride, v, statErr)
+			if errors.Is(statErr, fs.ErrNotExist) {
+				return Config{}, false, "", &GlobalConfigNotFoundError{path: v}
+			}
+			return Config{}, false, "", fmt.Errorf("cannot read the global configuration file named by --config or %s at %s: %w", EnvConfigOverride, v, statErr)
 		}
 		cfg, err = load(v)
 		if err != nil {
@@ -764,37 +806,45 @@ func loadGlobalLayer(lookup func(string) string) (cfg Config, loaded bool, path 
 		return cfg, true, v, nil
 	}
 
-	xdgPath, ok := xdgConfigPath(lookup)
+	defaultPath, ok := machinedirs.GlobalConfigFile(platform, lookup)
 	if !ok {
 		return Default(), false, "", nil
 	}
-	if _, statErr := os.Stat(xdgPath); statErr != nil {
+	if _, statErr := os.Stat(defaultPath); statErr != nil {
 		return Default(), false, "", nil
 	}
-	cfg, err = load(xdgPath)
+	cfg, err = load(defaultPath)
 	if err != nil {
-		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", xdgPath, err)
+		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", defaultPath, err)
 	}
-	return cfg, true, xdgPath, nil
+	return cfg, true, defaultPath, nil
 }
 
-// xdgConfigPath resolves the XDG default global config path from the
-// environment via lookup: $XDG_CONFIG_HOME/aggrega/config.yaml, or
-// $HOME/.config/aggrega/config.yaml when $XDG_CONFIG_HOME is empty. It
-// reports false when neither variable yields a base directory, so the
-// caller treats an unresolvable home as no global layer rather than
-// stat'ing a bogus relative path.
-func xdgConfigPath(lookup func(string) string) (string, bool) {
-	base := lookup("XDG_CONFIG_HOME")
-	if base == "" {
-		home := lookup("HOME")
-		if home == "" {
-			return "", false
-		}
-		base = filepath.Join(home, ".config")
-	}
-	return filepath.Join(base, "aggrega", "config.yaml"), true
+// GlobalConfigNotFoundError reports that the global configuration file named
+// explicitly for this run — by the --config flag or the AGGREGA_CONFIG
+// environment variable — does not exist.
+//
+// A file named on purpose and not there is a loud error rather than a fall back
+// to the default location, because the reader asked for that file. Its message
+// is one sentence ending with the path, so a reader can copy it, and it carries
+// neither the system call that looked nor the operating system's own wording,
+// which varies with the machine's language. It unwraps to fs.ErrNotExist.
+//
+// It is a type so a caller that is about to create the file — or that can do its
+// work without the global layer, such as registering the commands a project's
+// own files declare — can tell this condition apart from every other failure to
+// resolve, with errors.As.
+type GlobalConfigNotFoundError struct{ path string }
+
+func (e *GlobalConfigNotFoundError) Error() string {
+	return fmt.Sprintf("the global configuration file named by --config or %s does not exist: %s", EnvConfigOverride, e.path)
 }
+
+// Path is the named file that does not exist.
+func (e *GlobalConfigNotFoundError) Path() string { return e.path }
+
+// Unwrap reports the condition as fs.ErrNotExist.
+func (e *GlobalConfigNotFoundError) Unwrap() error { return fs.ErrNotExist }
 
 // checkUniqueProviderTargets returns a wrapped ErrDuplicateProviderTarget when
 // the composed provider list binds one capability more than once. The walk

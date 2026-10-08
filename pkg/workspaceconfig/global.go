@@ -31,7 +31,8 @@ const (
 	// SourceGlobal reports that a global config file was loaded and no
 	// workspace config file was loaded. The global file is the explicit
 	// $AGGREGA_CONFIG path when that variable is set, otherwise the
-	// auto-loaded XDG default (~/.config/aggrega/config.yaml).
+	// auto-loaded default location of the platform the resolution was taken
+	// for (machinedirs.GlobalConfigFile).
 	SourceGlobal
 
 	// SourceWorkspace reports that a workspace config file was
@@ -56,11 +57,12 @@ func (s Source) String() string {
 
 // EnvConfigOverride names the environment variable an operator sets to point at
 // an explicit global config path. When set, it overrides the default location;
-// when unset, the global layer is auto-loaded from the XDG default path
-// (`$XDG_CONFIG_HOME/aggrega/config.yaml`, falling back to
-// `~/.config/aggrega/config.yaml`) if that file exists. The `--config` flag is
-// the flag form of this override; the flag wins over the variable when both are
-// set. Either way the workspace-tree config files still layer on top.
+// when unset, the global layer is auto-loaded from the platform's default
+// location if that file exists — `%APPDATA%\aggrega\config.yaml` on Windows,
+// and elsewhere `$XDG_CONFIG_HOME/aggrega/config.yaml`, falling back to
+// `~/.config/aggrega/config.yaml` (machinedirs.GlobalConfigFile). The `--config`
+// flag is the flag form of this override; the flag wins over the variable when
+// both are set. Either way the workspace-tree config files still layer on top.
 const EnvConfigOverride = "AGGREGA_CONFIG"
 
 // appendSlices captures the per-layer slices deferred to the post-overlay
