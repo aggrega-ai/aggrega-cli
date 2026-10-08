@@ -196,6 +196,7 @@ var operations = []Operation{
 	{"connection-candidates", ReachNone, "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
 	{"document-insertion-point", ReachNone, "Report where in an authored document a new entry under a named container belongs."},
 	{"attachment-container", ReachNone, "Report which document and which container a graph node's Feature attachment belongs in."},
+	{"connection-at-position", ReachNone, "Report the graph node and the connection whose entry a position in an Aggregate or a Release falls inside."},
 	{"document-edit", ReachWorkspace, "Apply one bounded structured edit to an authored document, preserving every byte it does not touch."},
 	{"release-candidates", ReachNone, "Report every Release-kind document under the workspace root, by content."},
 	{"active-release", ReachNone, "Report the Release the workspace's disambiguation cascade selected."},

@@ -2299,6 +2299,23 @@ func ConnectionAttachmentContainerSegments(site ConnectionAttachmentSite) []stri
 		site.Socket, site.Alias, authoredKeyFeatures)
 }
 
+// ConnectionEntrySegments returns the segments naming the connection entry a site
+// sits in: the entry's own key, with nothing inside it. The site's slot is not
+// read.
+//
+// It is exported for the reason [ConnectionAttachmentContainerSegments] is, asked
+// from the other side: naming the entry a position in a document falls inside and
+// naming the container an attachment on that entry goes in are one question about
+// one entry, so the two are spelled by one rule and the container is this entry
+// with its attachment key appended — a position answered as being on an entry
+// cannot come to name an entry whose container is somewhere else.
+//
+// A site whose document this rule cannot name yields no segments, which is the
+// mechanical form of not inventing a locator.
+func ConnectionEntrySegments(site ConnectionAttachmentSite) []string {
+	return connectionEntrySegments(site.Document, site.Site, site.ComponentKeys, site.Socket, site.Alias)
+}
+
 // connectionAttachmentSegments returns the segments naming one attachment a
 // connection carries: the connection entry's own attachment container, then the
 // slot the attachment is written under.

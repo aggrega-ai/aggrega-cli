@@ -126,8 +126,15 @@ var curatedToolNames = map[string][]string{
 	"document-insertion-point":  {"insertion-point"},
 	"attachment-container":      {"attachment-container"},
 
-	// The applying half of structured authoring, whose reading half the four
-	// names above are. It is also reachable, for a caller at this machine's
+	// The step before the candidacy and container tools for a connection: a
+	// caller holding a place in a document learns which connection is written
+	// there. The name is the operation's own, which is the name the session
+	// protocol's method is spelled from, because a caller reading both surfaces
+	// should meet one concept under one name.
+	"connection-at-position": {"connection-at-position"},
+
+	// The applying half of structured authoring, whose reading half the names
+	// above are. It is also reachable, for a caller at this machine's
 	// keyboard, as the tool generated from its command, which re-runs that
 	// command in a separate process and answers with the text it printed; this
 	// runs the edit inside this server and answers with where the entry landed,

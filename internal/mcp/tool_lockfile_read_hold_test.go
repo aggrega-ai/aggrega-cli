@@ -14,8 +14,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
-// TestEveryReleaseToolRefusesALockfileThatLeadsOut holds the five tools that read
-// a Release's lockfile to the read every other surface makes of it: a lockfile
+// TestEveryReleaseToolRefusesALockfileThatLeadsOut holds the tools that read a
+// Release's lockfile to the read every other surface makes of it: a lockfile
 // that is a link leading out of the workspace is refused, naming the link, before
 // anything is resolved through the pins it records, and the file it leads to is
 // left as it was.
@@ -40,6 +40,8 @@ func TestEveryReleaseToolRefusesALockfileThatLeadsOut(t *testing.T) {
 		{tool: "describe", args: map[string]any{"release": theLaunchedWorkspacesRelease}},
 		{tool: "attach-candidates", args: map[string]any{"graph_node": "web", "release": theLaunchedWorkspacesRelease}},
 		{tool: "attachment-container", args: map[string]any{"graph_node": "web", "release": theLaunchedWorkspacesRelease}},
+		{tool: connectionAtPositionToolName, args: map[string]any{"file": theLaunchedWorkspacesRelease,
+			"position": map[string]any{"line": 0, "character": 0}, "release": theLaunchedWorkspacesRelease}},
 	} {
 		t.Run(row.tool, func(t *testing.T) {
 			root := rootedWorkspace(t)

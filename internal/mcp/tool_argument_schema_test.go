@@ -287,6 +287,21 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"attachment-container", "a connection's document outside the two", `{"graph_node":"g","release":"r.yaml","connection":{"socket":"s","alias":"a","document":"elsewhere"}}`, false},
 		{"attachment-container", "a connection naming no socket", `{"graph_node":"g","release":"r.yaml","connection":{"alias":"a","document":"release"}}`, false},
 
+		// connection-at-position: a document, a place in it and the Release whose
+		// graph records the connections, all three required. The place is two
+		// halves, both required and neither below zero, and the encoding is one of
+		// three.
+		{connectionAtPositionToolName, "a place in a document with its Release", `{"file":"a.yaml","position":{"line":3,"character":4},"release":"r.yaml"}`, true},
+		{connectionAtPositionToolName, "every optional argument", `{"file":"a.yaml","position":{"line":0,"character":0},"release":"r.yaml","position_encoding":"utf-8","workspace_root":"/w","catalog_dirs":["c"]}`, true},
+		{connectionAtPositionToolName, "no arguments at all", `{}`, false},
+		{connectionAtPositionToolName, "no document", `{"position":{"line":0,"character":0},"release":"r.yaml"}`, false},
+		{connectionAtPositionToolName, "a blank document", `{"file":"","position":{"line":0,"character":0},"release":"r.yaml"}`, false},
+		{connectionAtPositionToolName, "no place", `{"file":"a.yaml","release":"r.yaml"}`, false},
+		{connectionAtPositionToolName, "a place missing its character", `{"file":"a.yaml","position":{"line":0},"release":"r.yaml"}`, false},
+		{connectionAtPositionToolName, "a place on a negative line", `{"file":"a.yaml","position":{"line":-1,"character":0},"release":"r.yaml"}`, false},
+		{connectionAtPositionToolName, "no Release", `{"file":"a.yaml","position":{"line":0,"character":0}}`, false},
+		{connectionAtPositionToolName, "an encoding outside the three", `{"file":"a.yaml","position":{"line":0,"character":0},"release":"r.yaml","position_encoding":"utf-7"}`, false},
+
 		// edit-document: four required arguments, plus two rules that hold only
 		// for some of the edits — the socket a wiring needs, and the non-empty
 		// reference the three entity-carrying edits need. Both are declared as

@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: connection-site-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        gateway:
+          uses:
+            # The connection this Release draws.
+            logs:
+              out:
+                target: sink
+            # The Release's own entry for a connection the Aggregate drew.
+            models:
+              gpt:
+                features:
+                  trace:
+                    type: feature.conn/audit
+        model: {}
+        sink: {}

@@ -413,6 +413,7 @@ var operationAvailability = map[string]serveAvailability{
 	"connection-candidates":       servedAt(at("aggrega/connectionCandidates", (*Server).dispatchConnectionCandidates)),
 	"document-insertion-point":    servedAt(at("aggrega/insertionPoint", (*Server).dispatchInsertionPoint)),
 	"attachment-container":        servedAt(at("aggrega/attachmentContainer", (*Server).dispatchAttachmentContainer)),
+	"connection-at-position":      servedAt(at("aggrega/connectionAtPosition", (*Server).dispatchConnectionAtPosition)),
 	"release-candidates":          servedAt(at("aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates)),
 	"active-release":              servedAt(at("aggrega/activeRelease", (*Server).dispatchActiveRelease)),
 

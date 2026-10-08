@@ -161,6 +161,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"connection-candidates":       opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"document-insertion-point":    opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"attachment-container":        opsurface.Unavailable(unavailabilityReasonEditorViewParity),
+	"connection-at-position":      opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"release-candidates":          opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"active-release":              opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"active-release-set":          opsurface.Unavailable(unavailabilityReasonNoCommandReadsTheMarker),

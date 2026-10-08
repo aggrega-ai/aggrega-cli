@@ -303,10 +303,12 @@ func TestEveryRegisteredToolGuidesAnEmptyCall(t *testing.T) {
 // literal, because a release argument is not always a subject on its own. On a
 // tool that also declares a graph node, the Release says which graph to build and
 // naming it alone is a refusal at the argument stage — which would leave the
-// operation never run and this assertion measuring the wrong channel. Sending the
-// companion is what keeps the call legal so the operation runs and fails on the
-// Release, which is the property under test. The assertions themselves are
-// identical for every tool.
+// operation never run and this assertion measuring the wrong channel. A tool that
+// declares a position is the same case again: the Release says which graph records
+// the connection at a place in a document, so the document and the place go with
+// it. Sending the companion is what keeps the call legal so the operation runs and
+// fails on the Release, which is the property under test. The assertions
+// themselves are identical for every tool.
 func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
 	s := newGuidanceServer(t)
 	drivable := 0
@@ -318,6 +320,10 @@ func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
 		payload := `{"release": "no-such-release.yaml"}`
 		if declaresStringArgument(t, spec, "graph_node") {
 			payload = `{"graph_node": "any-node", "release": "no-such-release.yaml"}`
+		}
+		if declaresObjectArgument(t, spec, "position") {
+			payload = `{"file": "any-document.yaml", "position": {"line": 0, "character": 0}, ` +
+				`"release": "no-such-release.yaml"}`
 		}
 		f := callToolRaw(t, s, spec.name, payload)
 		if !f.failed {
@@ -344,6 +350,21 @@ func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
 // accept a given kind of input without naming those tools here.
 func declaresStringArgument(t *testing.T, spec toolSpec, name string) bool {
 	t.Helper()
+	return declaredArgumentType(t, spec, name) == "string"
+}
+
+// declaresObjectArgument reports whether a tool's own input schema declares the
+// named argument as an object, which is how a case recognises a companion a
+// string-typed reading would pass over.
+func declaresObjectArgument(t *testing.T, spec toolSpec, name string) bool {
+	t.Helper()
+	return declaredArgumentType(t, spec, name) == "object"
+}
+
+// declaredArgumentType is the type a tool's own input schema declares the named
+// argument as, and empty where it declares no such argument.
+func declaredArgumentType(t *testing.T, spec toolSpec, name string) string {
+	t.Helper()
 	var schema struct {
 		Properties map[string]struct {
 			Type string `json:"type"`
@@ -352,8 +373,7 @@ func declaresStringArgument(t *testing.T, spec toolSpec, name string) bool {
 	if err := json.Unmarshal([]byte(spec.inputSchema), &schema); err != nil {
 		t.Fatalf("%s: input schema does not parse as JSON: %v", spec.name, err)
 	}
-	prop, ok := schema.Properties[name]
-	return ok && prop.Type == "string"
+	return schema.Properties[name].Type
 }
 
 // firstStringArgument returns the lexically first string-typed argument a tool

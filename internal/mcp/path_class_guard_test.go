@@ -45,6 +45,12 @@ var workspacePathArguments = map[string]string{
 	"publish-artifact: file":        "the data artifact published",
 	"deprecate-artifact: from":      "the batch file a withdrawal reads its entries from",
 	"insertion-point: file":         "the authored document a position is located in",
+	// The pair the position-to-connection tool takes, each with the reach its
+	// sibling already has: the Release the way the container tool resolves it, and
+	// the document the way the insertion-point tool resolves it — read, never
+	// written.
+	"connection-at-position: release": "the Release whose graph records the connections",
+	"connection-at-position: file":    "the authored document a position is read in",
 	// The one entry here that names a document this surface WRITES rather than
 	// reads, which is why it is spelled out: the reach given is the reach a
 	// caller's own value decides, and every other authored-document argument

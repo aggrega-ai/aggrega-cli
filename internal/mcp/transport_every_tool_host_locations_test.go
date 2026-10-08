@@ -1160,6 +1160,15 @@ func hostLocationEveryTool() []hostLocationTool {
 			{scenario: "a node the graph lacks is refused", args: map[string]any{"graph_node": "no-such-q7x3", "release": release}},
 			{scenario: "no node is refused", args: map[string]any{}},
 		}},
+		{tool: connectionAtPositionToolName, namesALocation: true, calls: []hostLocationCall{
+			{scenario: "a place in the Aggregate", args: map[string]any{"file": "aggregate.yaml",
+				"position": map[string]any{"line": 0, "character": 0}, "release": release}},
+			{scenario: "a place in the Release", args: map[string]any{"file": release,
+				"position": map[string]any{"line": 0, "character": 0}, "release": release}},
+			{scenario: "a missing document is refused", args: map[string]any{"file": "missing-q7x3.yaml",
+				"position": map[string]any{"line": 0, "character": 0}, "release": release}},
+			{scenario: "no document is refused", args: map[string]any{}},
+		}},
 		{tool: "build", namesALocation: true, calls: []hostLocationCall{
 			{scenario: "a Release", args: map[string]any{"release": release, "response_format": "concise"}},
 			{scenario: "a Release in detail", args: map[string]any{"release": release, "response_format": "detailed"}},
@@ -1342,6 +1351,14 @@ func TestAListenerRefusesAPathOutsideTheWorkspaceWithoutNamingAPlaceOnTheHost(t 
 		}},
 		{"attachment-container", "release", func(p string) map[string]any {
 			return map[string]any{"graph_node": "frontend", "release": p}
+		}},
+		{connectionAtPositionToolName, "release", func(p string) map[string]any {
+			return map[string]any{"file": "aggregate.yaml", "position": map[string]any{"line": 0, "character": 0},
+				"release": p}
+		}},
+		{connectionAtPositionToolName, "file", func(p string) map[string]any {
+			return map[string]any{"file": p, "position": map[string]any{"line": 0, "character": 0},
+				"release": "release.yaml"}
 		}},
 		{"publish-entity", "entity", func(p string) map[string]any { return map[string]any{"entity": p, "dry_run": true} }},
 		{"publish-artifact", "file", func(p string) map[string]any {

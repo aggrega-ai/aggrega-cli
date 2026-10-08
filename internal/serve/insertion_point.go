@@ -44,13 +44,15 @@ type InsertionPointResult struct {
 	yamlpos.Insertion
 }
 
-// The conditions on which no insertion point is reported.
+// The conditions on which a document a request names by its file is not read —
+// so no insertion point is reported in it, and no connection is reported at a
+// position in it.
 //
 // They are unexported values rather than registered halting conditions, and the
 // distinction is the one the registry itself draws: a registered condition names
 // a rule that halts a build and carries a code a user quotes off a diagnostic.
 // None of these halts anything. Each says that one request's arguments do not
-// address a place an entry can go in one document, which is what every surface
+// address a document a position can be read in, which is what every surface
 // here already has a refusal channel for — so they travel as the text of that
 // refusal and nothing acquires a code it would then have to keep forever.
 var (
@@ -133,13 +135,21 @@ type insertionPointParams struct {
 // negotiated position encoding, and the parse cache as the fresher-than-disk
 // overlay.
 func (s *Server) insertionPoint(file string, container []string) (InsertionPointResult, error) {
-	return insertionPointIn(s.workspaceRoot, file, container, s.positionEncoding(), func(abs string) ([]byte, bool) {
+	return insertionPointIn(s.workspaceRoot, file, container, s.positionEncoding(), s.documentOverlay())
+}
+
+// documentOverlay is the session's fresher-than-disk view of a document, for the
+// requests that read a document's bytes by name: what the parse cache holds for
+// it, which is what an editor holding the document unsaved last sent, and
+// nothing where the cache holds nothing.
+func (s *Server) documentOverlay() func(abs string) ([]byte, bool) {
+	return func(abs string) ([]byte, bool) {
 		entry, ok := s.parseCache.Get(abs)
 		if !ok {
 			return nil, false
 		}
 		return entry.content, true
-	})
+	}
 }
 
 // InsertionPoint is the whole of insertionPoint with the root and the position
@@ -159,53 +169,13 @@ func InsertionPoint(root, file string, container []string, enc yamlpos.PositionE
 func insertionPointIn(root, file string, container []string, enc yamlpos.PositionEncoding,
 	overlay func(abs string) ([]byte, bool)) (InsertionPointResult, error) {
 
-	// A file address is read as the path it names before anything else looks at
-	// the value, through the one reading every per-document request shares, so an
-	// address and its path are one document here as they are to the parse cache
-	// this answer overlays.
-	file = documentPath(file)
-	if strings.TrimSpace(file) == "" {
-		return InsertionPointResult{}, errInsertionNoFile
-	}
-
-	// The caller may name the file either way, so the containment judgement takes
-	// it in whichever form it arrived and answers with the workspace-relative name.
-	// The absolute form is rebuilt from that name rather than from the argument,
-	// which is what makes it the cleaned path the parse cache is keyed by.
-	rel, inside := pathscope.Relative(root, file)
-	if !inside {
-		return InsertionPointResult{}, errInsertionFileOutsideWorkspace
-	}
-	abs := filepath.Join(root, rel)
-
-	// That judgement is lexical, so the document is then judged with its links
-	// resolved, by the judgement every path a request names for the daemon to read
-	// is held to: a file named inside the root that leads out of it through a link
-	// is refused, whichever of the three spellings named it, and whether or not an
-	// editor holds a copy of it.
-	if leadsOutOfWorkspace(root, abs, nil) {
-		return InsertionPointResult{}, errInsertionFileLeadsOut
-	}
-
-	var content []byte
-	if overlay != nil {
-		content, _ = overlay(abs)
-	}
-	if content == nil {
-		read, err := os.ReadFile(abs)
-		if err != nil {
-			return InsertionPointResult{}, errInsertionFileUnreadable
-		}
-		content = read
-	}
-
-	var doc yaml.Node
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return InsertionPointResult{}, errInsertionFileUnparseable
+	rel, content, doc, err := workspaceDocumentIn(root, file, overlay)
+	if err != nil {
+		return InsertionPointResult{}, err
 	}
 
 	idx := yamlpos.BuildLineIndexWithEncoding(content, enc)
-	insertion, refusal := yamlpos.InsertionPointIn(&doc, idx, container)
+	insertion, refusal := yamlpos.InsertionPointIn(doc, idx, container)
 	if refusal != yamlpos.InsertionAdmitted {
 		return InsertionPointResult{}, errors.New(refusal.Reason())
 	}
@@ -216,4 +186,62 @@ func insertionPointIn(root, file string, container []string, enc yamlpos.Positio
 		PositionEncoding: string(idx.Encoding()),
 		Insertion:        insertion,
 	}, nil
+}
+
+// workspaceDocumentIn reads one document a request named by its file, for every
+// request that answers from a document's own bytes: the document's
+// workspace-relative name, its bytes, and the node tree they parse to — or the
+// refusal saying why there is nothing to read.
+//
+// It is the one reading those requests share, so a document one of them answers
+// about and a document another refuses cannot be two readings of the same name:
+// the address is read as the path it names, the path is held to the workspace
+// lexically and then with its links resolved, the overlay is read before the
+// disk, and a document that does not parse has no structure to answer from.
+func workspaceDocumentIn(root, file string, overlay func(abs string) ([]byte, bool)) (string, []byte, *yaml.Node, error) {
+	// A file address is read as the path it names before anything else looks at
+	// the value, through the one reading every per-document request shares, so an
+	// address and its path are one document here as they are to the parse cache
+	// this answer overlays.
+	file = documentPath(file)
+	if strings.TrimSpace(file) == "" {
+		return "", nil, nil, errInsertionNoFile
+	}
+
+	// The caller may name the file either way, so the containment judgement takes
+	// it in whichever form it arrived and answers with the workspace-relative name.
+	// The absolute form is rebuilt from that name rather than from the argument,
+	// which is what makes it the cleaned path the parse cache is keyed by.
+	rel, inside := pathscope.Relative(root, file)
+	if !inside {
+		return "", nil, nil, errInsertionFileOutsideWorkspace
+	}
+	abs := filepath.Join(root, rel)
+
+	// That judgement is lexical, so the document is then judged with its links
+	// resolved, by the judgement every path a request names for the daemon to read
+	// is held to: a file named inside the root that leads out of it through a link
+	// is refused, whichever of the three spellings named it, and whether or not an
+	// editor holds a copy of it.
+	if leadsOutOfWorkspace(root, abs, nil) {
+		return "", nil, nil, errInsertionFileLeadsOut
+	}
+
+	var content []byte
+	if overlay != nil {
+		content, _ = overlay(abs)
+	}
+	if content == nil {
+		read, err := os.ReadFile(abs)
+		if err != nil {
+			return "", nil, nil, errInsertionFileUnreadable
+		}
+		content = read
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return "", nil, nil, errInsertionFileUnparseable
+	}
+	return rel, content, &doc, nil
 }

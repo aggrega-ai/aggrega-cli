@@ -27,7 +27,9 @@ import (
 // of these — a caller arriving cold could otherwise name nothing and have no way
 // to find out what to name.
 //
-// So candidacy answers when a caller is about to propose an attachment or an
+// So the connection at a position answers when a caller holding a place in a
+// document wants the connection written there, before asking about it;
+// candidacy answers when a caller is about to propose an attachment or an
 // edge; the attachment container answers once it has settled what to attach; the
 // insertion point answers when it is about to write the text; the bounded edit
 // answers when it has settled what to write and where, and applies it; the cache
@@ -51,6 +53,7 @@ import (
 // deterministic.
 var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
+	curated("connection-at-position", connectionAtPositionToolSpec),
 	curated("feature-attach-candidates", attachCandidatesToolSpec),
 	curated("connection-candidates", connectionCandidatesToolSpec),
 	curated("document-insertion-point", insertionPointToolSpec),
