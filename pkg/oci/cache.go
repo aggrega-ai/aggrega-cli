@@ -6,12 +6,11 @@ package oci
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -19,7 +18,7 @@ import (
 // CachePath returns the cache slot for the given URI + version under
 // the workspace's configured cache directory's `entities/` subtree:
 //
-//	<workspaceRoot>/<cacheDir>/entities/<URI-encoded>/<version>/
+//	<workspaceRoot>/<cacheDir>/entities/<encoded-reference>/<encoded-version>/
 //
 // The `entities/` segment partitions the cache root from the
 // sibling `<cacheDir>/source-artifacts/<kind>/<host>/<path>/<version>/<digest-prefix>/`
@@ -29,15 +28,19 @@ import (
 // the future `aggrega pull` invocation populates both axes
 // uniformly.
 //
-// URI encoding replaces the path separators `/` and `\` with
-// URL-percent-encoded forms so the URI occupies one directory level.
-// Two CachePath invocations with the same inputs produce
-// byte-identical paths.
+// The reference, without any `oci://` scheme, occupies one directory, its
+// separators spelled like every other character a name cannot carry, and the
+// version occupies the one beneath it; both are spelled by [JoinCacheLocation]
+// through [pathsegment.Encode], so `core/devtool/adminer:1.0.0` at `1.0.0` is
+// the slot `core+zsdevtool+zsadminer+zx00003a1.0.0/1.0.0`, and a version that
+// is a content digest is spelled `sha256+zx00003a<hex>`. Every name is one
+// Windows, Linux and macOS accept, and two CachePath invocations with the same
+// inputs produce byte-identical paths.
 //
 // The reference and the version each name one directory, and a slot
 // that either would move elsewhere is refused rather than built: a
 // version that carries a separator or names `.` or `..`, or a reference
-// whose encoding is `.` or `..`, returns the refusal
+// that is `.` or `..`, returns the refusal
 // [ErrCacheLocationOutsideCache] names, quoting the value. The version
 // comes from a record read back from disk, from a reference an author
 // wrote, or from a body a registry served, so nothing upstream of this
@@ -45,7 +48,7 @@ import (
 // [JoinCacheLocation].
 func CachePath(workspaceRoot, cacheDir, uri, version string) (string, error) {
 	return JoinCacheLocation(EntitiesRoot(workspaceRoot, cacheDir), fmt.Sprintf("entity %q", uri),
-		CacheSegment{Key: "reference", Value: uri, Segment: encodeURI(uri)},
+		CacheSegment{Key: "reference", Value: uri, Segment: bareReference(uri), Whole: true},
 		CacheSegment{Key: "version", Value: version, Segment: version},
 	)
 }
@@ -79,52 +82,53 @@ func IndexRoot(workspaceRoot, cacheDir string) string {
 // IndexBasePath returns the per-host base path (without file extension) under
 // IndexRoot for a registry host:
 //
-//	<workspaceRoot>/<cacheDir>/index/<host-encoded>
+//	<workspaceRoot>/<cacheDir>/index/<encoded-host>
 //
-// The host is encoded through the same single-segment URI encoder the entity
-// cache uses, so a host maps to one stable filesystem segment. The base path
-// doubles as the directory holding the host's per-repository index files
-// (IndexRepoPath composes each repo file beneath it) and as the stem of the
-// freshness-timestamp sibling (base + ".updated"), which sits beside that
-// directory without colliding with it. The encoder is spelled once here, so an
-// index writer and an index reader cannot disagree about a host's on-disk
-// segment.
+// The host, without any `oci://` scheme, is spelled through the one spelling of
+// a derived name ([pathsegment.Encode]), so a host — `localhost:5000` included —
+// maps to one stable name every platform accepts. The base path doubles as the
+// directory holding the host's per-repository index files (IndexRepoPath
+// composes each repo file beneath it) and as the stem of the freshness-timestamp
+// sibling (base + ".updated"), which sits beside that directory without colliding
+// with it. The spelling is applied once here, so an index writer and an index
+// reader cannot disagree about a host's on-disk name.
 func IndexBasePath(workspaceRoot, cacheDir, host string) string {
-	return filepath.Join(IndexRoot(workspaceRoot, cacheDir), encodeURI(host))
+	return filepath.Join(IndexRoot(workspaceRoot, cacheDir), pathsegment.Encode(bareReference(host)))
 }
 
 // IndexRepoPath returns the per-repository index file path under a host's index
 // directory:
 //
-//	<workspaceRoot>/<cacheDir>/index/<host-encoded>/<repo-encoded>.json
+//	<workspaceRoot>/<cacheDir>/index/<encoded-host>/<encoded-repository>.json
 //
-// The host segment is the same single encoded segment IndexBasePath spells (the
-// per-host base doubles as the directory holding these per-repo files), and the
-// repository is encoded through the same single-segment URI encoder, so a
-// repository maps to one stable filesystem segment. The per-repo spelling lives
-// once here, so an index writer and reader cannot disagree about a repository's
-// on-disk path.
+// The host is the same name IndexBasePath spells (the per-host base doubles as
+// the directory holding these per-repo files), and the repository is spelled
+// whole, its separators included, through [pathsegment.Encode], so a repository
+// maps to one stable file name every platform accepts. The per-repo spelling
+// lives once here, so an index writer and reader cannot disagree about a
+// repository's on-disk path.
 func IndexRepoPath(workspaceRoot, cacheDir, host, repo string) string {
-	return filepath.Join(IndexBasePath(workspaceRoot, cacheDir, host), encodeURI(repo)+".json")
+	return filepath.Join(IndexBasePath(workspaceRoot, cacheDir, host), pathsegment.Encode(bareReference(repo))+".json")
 }
 
 // SignatureBundlePath returns the content-addressed filesystem path of the
 // cached signature-bundle blob named by bundleDigest under the `signatures/`
 // subtree of the workspace's artifact cache:
 //
-//	<workspaceRoot>/<cacheDir>/signatures/<digest>.bundle
+//	<workspaceRoot>/<cacheDir>/signatures/<encoded-digest>.bundle
 //
-// The digest is rendered as a single filesystem segment via the shared
-// digest-segment spelling (digest.Segment), so the blob name is a stable
-// single segment. It is the one site that spells the bundle-blob location,
-// shared by the pull path that writes each verified signature bundle and the
-// build path that re-hashes the cached blob against its recorded digest.
+// The digest is spelled through the one spelling of a derived name
+// ([pathsegment.Encode]), so `sha256:<hex>` is the file
+// `sha256+zx00003a<hex>.bundle`, a name every platform accepts. It is the one
+// site that spells the bundle-blob location, shared by the pull path that writes
+// each verified signature bundle and the build path that re-hashes the cached
+// blob against its recorded digest.
 //
 // The path is joined to the workspace root the way every sibling subtree of the
 // cache is (see [EntitiesRoot]), so the write and the read land on one file
 // whatever directory each was run from.
 func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
-	name := digest.Segment(bundleDigest) + ".bundle"
+	name := pathsegment.Encode(bundleDigest) + ".bundle"
 	return filepath.Join(workspaceRoot, cacheDir, "signatures", name)
 }
 
@@ -261,27 +265,10 @@ func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestB
 	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "manifest", manifestBytes)
 }
 
-// ContentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI
-// tag: a tag may not contain ":", so the algorithm and hex are joined with "-"
-// ("sha256-<hex>") via the shared digest-segment spelling (digest.Segment). An
-// artifact addressed by content can then be tagged by this digest-derived tag,
-// distinct from any version tag in the same repository. The plugin-describe
-// cache uses this transform to address each cached descriptor file by its
-// content pin: the read and the write derive the filename here, so the two
-// sides never disagree on the on-disk name.
-func ContentDigestTag(contentDigest string) string {
-	return digest.Segment(contentDigest)
-}
-
-// encodeURI maps an OCI URI (e.g.,
-// `oci://hub.aggrega.ai/component/core/api-server` or
-// `hub.aggrega.ai/component/core/api-server`) to a single
-// filesystem-safe segment via standard URL path-segment encoding.
-// Slashes within the URI body are percent-encoded so the entire URI
-// occupies one directory level. Two encodings of the same URI are
-// identical; decoding (not implemented here; not needed by current
-// consumers) is round-trippable via url.PathUnescape.
-func encodeURI(uri string) string {
-	uri = strings.TrimPrefix(uri, "oci://")
-	return url.PathEscape(uri)
+// bareReference returns an OCI reference (such as
+// `oci://hub.aggrega.ai/component/core/api-server`) without its `oci://` scheme,
+// so a scheme-qualified and a bare reference to one artifact name one place in
+// the cache.
+func bareReference(uri string) string {
+	return strings.TrimPrefix(uri, "oci://")
 }

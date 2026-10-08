@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -46,7 +47,7 @@ func TestBothFilesOfABundleSlotAreHeldBeforeEitherIsWritten(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			ws, outside := t.TempDir(), t.TempDir()
-			slot := filepath.Join(docscache.DocsBundlesRoot(ws, cacheDir), "reg.example.com%2Fdocs%2Faggrega-docs", testVersion)
+			slot := filepath.Join(docscache.DocsBundlesRoot(ws, cacheDir), pathsegment.Encode(testRef), pathsegment.Encode(testVersion))
 			if err := os.MkdirAll(slot, 0o755); err != nil {
 				t.Fatal(err)
 			}

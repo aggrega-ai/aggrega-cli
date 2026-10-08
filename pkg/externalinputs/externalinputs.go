@@ -38,6 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -408,9 +409,13 @@ func (s *Service) ociPull(ctx context.Context, repoRef, ref string) (*oci.PullRe
 	return oci.Pull(ctx, repo, ref)
 }
 
-// blobPath returns the store path for a hex digest: <root>/sha256/<hex>.
+// blobPath returns the store path for a hex digest: <root>/sha256/<hex>. The
+// digest is spelled through the one spelling of a derived name
+// (pathsegment.Encode), which writes a lowercase hex digest as itself and keeps
+// any other value — one read back from a lockfile an author can edit — to one
+// file name every platform accepts, inside the store.
 func (s *Service) blobPath(hexDigest string) string {
-	return filepath.Join(s.root, "sha256", hexDigest)
+	return filepath.Join(s.root, "sha256", pathsegment.Encode(hexDigest))
 }
 
 // writeBlob atomically writes b to the store under hexDigest: the bytes land
@@ -418,7 +423,8 @@ func (s *Service) blobPath(hexDigest string) string {
 // concurrent reader never observes a partial blob under a digest name.
 func (s *Service) writeBlob(hexDigest string, b []byte) error {
 	dir := filepath.Join(s.root, "sha256")
-	if err := writescope.CheckWrite(s.heldTo, filepath.Join(dir, hexDigest)); err != nil {
+	final := s.blobPath(hexDigest)
+	if err := writescope.CheckWrite(s.heldTo, final); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -442,7 +448,6 @@ func (s *Service) writeBlob(hexDigest string, b []byte) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("externalinputs: chmod temp blob %s: %w", tmpName, err)
 	}
-	final := filepath.Join(dir, hexDigest)
 	if err := os.Rename(tmpName, final); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("externalinputs: rename temp blob into %s: %w", final, err)

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 )
 
 // TestTheWalkThroughIsSaidToBeUnreadBehindALink drives the read-only page read an
@@ -29,7 +31,7 @@ func TestTheWalkThroughIsSaidToBeUnreadBehindALink(t *testing.T) {
 			want: "is not cached for this workspace"},
 		{name: "a bundle behind a cache directory that is a link leading out", want: "is not read",
 			layout: func(t *testing.T, ws, elsewhere string) string {
-				slot := filepath.Join(elsewhere, "docs-bundles", "reg.example.invalid%2Fdocs%2Faggrega-docs", version)
+				slot := filepath.Join(elsewhere, "docs-bundles", pathsegment.Encode(ref), pathsegment.Encode(version))
 				if err := os.MkdirAll(slot, 0o755); err != nil {
 					t.Fatal(err)
 				}

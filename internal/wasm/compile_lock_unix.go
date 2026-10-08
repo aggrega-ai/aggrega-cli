@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // flockGuestCompile takes an exclusive advisory lock on a per-guest lock file
@@ -25,10 +23,9 @@ import (
 //
 // It is best-effort: on any failure to open or lock the file it returns a no-op
 // release, and the compile proceeds without it rather than failing the load. The
-// lock file name is derived from the guest content digest with the algorithm
-// prefix stripped so it is a plain filesystem-safe token.
+// lock file is named by guestCompileLockName.
 func flockGuestCompile(dir, key string) func() {
-	lockPath := filepath.Join(dir, ".compile-"+digest.BareHex(key)+".lock")
+	lockPath := filepath.Join(dir, guestCompileLockName(key))
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return func() {}

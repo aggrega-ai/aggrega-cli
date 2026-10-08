@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // flockGuestCompile takes an exclusive lock on a per-guest lock file under dir
@@ -23,11 +22,10 @@ import (
 // The acquire blocks until the lock is available. It is best-effort: on any
 // failure to open or lock the file it returns a no-op release, and the compile
 // proceeds without it rather than failing the load. It creates no directory, so
-// a cache directory that does not exist means no lock. The lock file name is
-// derived from the guest content digest with the algorithm prefix stripped so it
-// is a plain filesystem-safe token.
+// a cache directory that does not exist means no lock. The lock file is named by
+// guestCompileLockName.
 func flockGuestCompile(dir, key string) func() {
-	return filelock.Lock(filepath.Join(dir, ".compile-"+digest.BareHex(key)+".lock"))
+	return filelock.Lock(filepath.Join(dir, guestCompileLockName(key)))
 }
 
 // flockCompileCacheReclaim tries to take an exclusive lock on the reclamation

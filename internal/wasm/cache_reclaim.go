@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 )
 
 // DefaultCompileCacheCapBytes is the size the compiled-module cache is held to
@@ -41,6 +43,18 @@ const DefaultCompileCacheCapBytes int64 = 50 << 30
 // candidate for removal. "reclaim" is not a content digest, so the name cannot
 // collide with a per-guest lock file.
 const compileCacheReclaimLockName = ".compile-reclaim.lock"
+
+// guestCompileLockName is the name of the lock file one guest's compile takes in
+// the compiled-module cache directory: the `.compile-` prefix, the guest's
+// content digest without its algorithm prefix, and the `.lock` suffix — the shape
+// the leaf-membership test excludes. The digest is spelled through the one
+// spelling of a derived name (pathsegment.Encode), which writes a lowercase hex
+// digest as itself and keeps any other key to one name every platform accepts.
+// Each platform that locks names its lock file here, so two of them cannot name
+// one guest's lock differently.
+func guestCompileLockName(key string) string {
+	return ".compile-" + pathsegment.Encode(digest.BareHex(key)) + ".lock"
+}
 
 // compileCacheCapResolver holds the installed cap resolver, or nothing when none
 // was installed. See SetCompileCacheCapResolver for why the cap arrives as a

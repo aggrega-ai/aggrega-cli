@@ -30,7 +30,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,11 +47,33 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
+
+// readName returns the value a cache entry's name was spelled from — the
+// reference, version or digest the cache was written under — so a listing names
+// an entry the way its reader wrote it. A name this program's spelling did not
+// write is returned as it is: a listing still names what is on disk.
+func readName(name string) string {
+	if value, ok := pathsegment.Decode(name); ok {
+		return value
+	}
+	return name
+}
+
+// readPath applies readName to each name of rel, a path relative to a class's
+// root, and joins the values with a slash.
+func readPath(rel string) string {
+	names := strings.Split(filepath.ToSlash(rel), "/")
+	for i, name := range names {
+		names[i] = readName(name)
+	}
+	return strings.Join(names, "/")
+}
 
 // Reach states how far a cache class's contents are shared, and therefore how
 // far an operation that removes one of its elements travels.
@@ -330,7 +351,8 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 }
 
 // enumEntities enumerates the entity-cache slots. Each slot is an
-// <encoded-uri>/<version> directory holding a content blob; the slot's digest is
+// <encoded-reference>/<encoded-version> directory holding a content blob, labelled
+// with the reference and version its names are read back into; the slot's digest is
 // the one the lockfile row pinning that blob records for it (catalog.PinDigest):
 // for an entity, the digest of what its publication carries, which is what the
 // entity row records, and for a plugin artifact the digest of its bytes. A slot
@@ -358,10 +380,7 @@ func enumEntities(ctx context.Context, root string, hold func(path string) error
 			continue
 		}
 		encoded := ud.Name()
-		display := encoded
-		if dec, derr := url.PathUnescape(encoded); derr == nil {
-			display = dec
-		}
+		display := readName(encoded)
 		versDirs, verr := os.ReadDir(filepath.Join(root, encoded))
 		if verr != nil {
 			continue
@@ -372,7 +391,7 @@ func enumEntities(ctx context.Context, root string, hold func(path string) error
 			}
 			slot := filepath.Join(root, encoded, vd.Name())
 			el := Element{
-				Label: display + "@" + vd.Name(),
+				Label: display + "@" + readName(vd.Name()),
 				Path:  slot,
 				Size:  dirSize(slot),
 			}
@@ -427,7 +446,7 @@ func enumSourceArtifacts(ctx context.Context, root string, hold func(path string
 			rel = p
 		}
 		el := Element{
-			Label:     filepath.ToSlash(rel),
+			Label:     readPath(rel),
 			Path:      p,
 			Size:      dirSize(p),
 			SourceURL: new(string),
@@ -447,8 +466,9 @@ func enumSourceArtifacts(ctx context.Context, root string, hold func(path string
 }
 
 // enumInputs enumerates the external-input store blobs. Each blob file is named
-// by its lowercase-hex content digest, which is exactly the pin a lockfile
-// external-input entry records.
+// by its content digest as the store spells it — a lowercase-hex digest as
+// itself — and read back into the digest (readName), which is exactly the pin a
+// lockfile external-input entry records.
 //
 // The stop is returned as the caller's own reason rather than as fs.SkipAll, for
 // the reason given on enumSourceArtifacts, and so is the refusal of a blob the
@@ -472,10 +492,10 @@ func enumInputs(ctx context.Context, root string, hold func(path string) error) 
 			rel = p
 		}
 		out = append(out, Element{
-			Label:     filepath.ToSlash(rel),
+			Label:     readPath(rel),
 			Path:      p,
 			Size:      fileSize(p),
-			DigestHex: NormalizeDigestHex(d.Name()),
+			DigestHex: NormalizeDigestHex(readName(d.Name())),
 		})
 		return nil
 	})
@@ -513,10 +533,7 @@ func enumDocsBundles(ctx context.Context, root string, _ func(path string) error
 			continue
 		}
 		encoded := rd.Name()
-		display := encoded
-		if dec, derr := url.PathUnescape(encoded); derr == nil {
-			display = dec
-		}
+		display := readName(encoded)
 		versDirs, verr := os.ReadDir(filepath.Join(root, encoded))
 		if verr != nil {
 			continue
@@ -527,7 +544,7 @@ func enumDocsBundles(ctx context.Context, root string, _ func(path string) error
 			}
 			slot := filepath.Join(root, encoded, vd.Name())
 			out = append(out, Element{
-				Label: display + "@" + vd.Name(),
+				Label: display + "@" + readName(vd.Name()),
 				Path:  slot,
 				Size:  dirSize(slot),
 			})
@@ -672,9 +689,9 @@ func identityNames(ids []provindex.Identity) []string {
 	return names
 }
 
-// enumDescribe enumerates the plugin-describe cache. Each entry is a
-// `sha256-<hex>.json` file whose stem is the colon-free tag form of the guest's
-// content digest (the same form the describe-cache writer emits). The stem is
+// enumDescribe enumerates the plugin-describe cache. Each entry is a `.json` file
+// whose stem is the guest's content digest as the describe-cache writer spells it
+// (`sha256+zx00003a<hex>`), read back into the digest (readName). The digest is
 // reduced to the bare-hex comparison key, which equals the pinned digest a
 // lockfile plugin entry records once both are normalized, so a describe entry
 // maps to a lockfile reference by that key.
@@ -692,11 +709,12 @@ func enumDescribe(ctx context.Context, root string) ([]Element, error) {
 			continue
 		}
 		p := filepath.Join(root, e.Name())
+		pin := readName(strings.TrimSuffix(e.Name(), ".json"))
 		out = append(out, Element{
-			Label:     e.Name(),
+			Label:     pin + ".json",
 			Path:      p,
 			Size:      fileSize(p),
-			DigestHex: NormalizeDigestHex(strings.TrimSuffix(e.Name(), ".json")),
+			DigestHex: NormalizeDigestHex(pin),
 		})
 	}
 	sortElements(out)

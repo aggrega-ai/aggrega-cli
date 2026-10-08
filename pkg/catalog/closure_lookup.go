@@ -190,7 +190,7 @@ type EntityPuller interface {
 // order:
 //
 //	Tier 1: in-memory catalog (already loaded into this Catalog).
-//	Tier 2: cache slot at <workspaceRoot>/<cacheDir>/entities/<URI-encoded>/<version>/.
+//	Tier 2: cache slot at <workspaceRoot>/<cacheDir>/entities/<encoded-reference>/<encoded-version>/.
 //	Tier 3: pull via the supplied OCIPuller. When ociPuller is nil
 //	        (build-time hermetic path), Tier 3 returns Resolution{NotFound: true}
 //	        so the closure walker surfaces ErrUnresolvableURI cleanly

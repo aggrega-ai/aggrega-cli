@@ -50,12 +50,26 @@
 // to admit every character an escape emits and must not admit the opener;
 // [NewEncoding] refuses one that does not.
 //
+// # Where a character sits, and names a target refuses whole
+//
+// Some targets refuse a name for where a character sits or for what the whole
+// name spells rather than for any one character in it: a file name may not end
+// in a character it accepts anywhere else, and a handful of names made entirely
+// of accepted characters are reserved. Both are properties of the target, so
+// both are the caller's to state, as options to [NewEncoding]: [AdmitsLast]
+// narrows the alphabet for a segment's last character, and [Reserved] names the
+// segments the target refuses whole. Each is met by writing one more character as
+// an escape — the last one, or the first — so neither costs the encoding its
+// injectivity: an escape always reads back as the character it stands for,
+// whichever position it was written at.
+//
 // Every derivation here is deterministic: identical input yields byte-identical
 // output.
 package namesegment
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -101,10 +115,48 @@ const hexDigits = "0123456789abcdef"
 // the only way to obtain a usable one, which is what keeps an unsound alphabet
 // from reaching [Encoding.Segment].
 type Encoding struct {
-	admits    func(rune) bool
-	opener    rune
-	separator string
-	absent    string
+	admits     func(rune) bool
+	admitsLast func(rune) bool
+	reserved   func(string) bool
+	opener     rune
+	separator  string
+	absent     string
+}
+
+// An Option states a property of the target an encoding writes for beyond the
+// characters it admits. Pass options to [NewEncoding]; an encoding built without
+// any writes exactly what one over the same alphabet and opener always has.
+type Option func(*Encoding)
+
+// AdmitsLast narrows the admitted alphabet for the last character of a segment.
+// A character the alphabet admits and last does not is written as an escape
+// where it ends a segment, and carried as authored everywhere else; a character
+// the alphabet does not admit is escaped wherever it sits, whatever last reports.
+//
+// It is for a target that refuses a name ending in a character it accepts
+// anywhere else, such as a file name ending in a full stop. [NewEncoding] refuses
+// a last alphabet that does not admit every character an escape can end with,
+// because an escape ending a segment would otherwise leave the target's alphabet.
+// last has to be a pure function of its argument.
+func AdmitsLast(last func(rune) bool) Option {
+	return func(e *Encoding) { e.admitsLast = last }
+}
+
+// Reserved names the segments a target refuses whole although it accepts every
+// character in them, such as the device names a file system reserves. Where an
+// encoded segment is one reserved reports true for, its first character is
+// written as an escape rather than as authored, which yields a segment opening
+// with the encoding's opener.
+//
+// reserved has to report false for every segment that opens with the opener —
+// that is the shape the rewrite produces, so a segment the predicate held for in
+// that shape could not be cleared by it — and [NewEncoding] refuses one that holds for the
+// absent-segment mark, the one segment opening with the opener the encoding
+// always writes. It applies to each segment [Encoding.Segment] writes, and so to
+// each segment of a name [Encoding.Name] assembles. reserved has to be a pure
+// function of its argument.
+func Reserved(reserved func(segment string) bool) Option {
+	return func(e *Encoding) { e.reserved = reserved }
 }
 
 // NewEncoding returns the encoding whose escape opener is opener and whose
@@ -146,8 +198,8 @@ type Encoding struct {
 // encounters: they are settled when the caller is written, so a failure is a
 // defect in the caller and the first call reaching this constructor reports it.
 // Returning an error instead would put the report at a call site that has no
-// answer for it.
-func NewEncoding(opener rune, admits func(rune) bool) *Encoding {
+// answer for it. The options are checked the same way, for the same reason.
+func NewEncoding(opener rune, admits func(rune) bool, options ...Option) *Encoding {
 	if admits == nil {
 		panic("namesegment: NewEncoding needs an alphabet, and was given none")
 	}
@@ -165,12 +217,28 @@ func NewEncoding(opener rune, admits func(rune) bool) *Encoding {
 				"so an encoded segment would leave the alphabet it is encoded into", r))
 		}
 	}
-	return &Encoding{
+	e := &Encoding{
 		admits:    admits,
 		opener:    opener,
 		separator: string(opener) + string(opener),
 		absent:    string(opener) + string(escapeMark) + string(escapeAbsent),
 	}
+	for _, option := range options {
+		option(e)
+	}
+	if e.admitsLast != nil {
+		for _, r := range escapeEndings() {
+			if !e.admitsLast(r) {
+				panic(fmt.Sprintf("namesegment: the last-character alphabet does not admit %q, which an escape "+
+					"can end with, so a segment ending in that escape would leave the alphabet", r))
+			}
+		}
+	}
+	if e.reserved != nil && e.reserved(e.absent) {
+		panic(fmt.Sprintf("namesegment: the reserved-name predicate holds for %q, a segment opening with the "+
+			"opener, so writing a reserved segment's first character as an escape could not clear it", e.absent))
+	}
+	return e
 }
 
 // SegmentSeparator returns the sequence joining the encoded segments of a name
@@ -219,12 +287,19 @@ func (e *Encoding) SegmentSeparator() string { return e.separator }
 //
 // An empty input yields the absent-segment mark, which carries a selector that
 // stands for no character and so cannot be produced by any non-empty input.
+//
+// Where the encoding was built with [AdmitsLast], a character ending the segment
+// is carried only where that alphabet admits it too; where it was built with
+// [Reserved], a segment the predicate holds for has its first character written
+// as an escape. Both leave the properties above intact, because an escape reads
+// back as the character it stands for wherever it was written.
 func (e *Encoding) Segment(s string) string {
 	if s == "" {
 		return e.absent
 	}
 	var b strings.Builder
 	b.Grow(len(s))
+	firstAsAuthored := false
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		switch {
@@ -238,7 +313,8 @@ func (e *Encoding) Segment(s string) string {
 			// failure and an authored replacement character, which decodes as
 			// three bytes, are different inputs.
 			e.writeEscape(&b, escapeByte, uint32(s[i]), 2)
-		case e.admits(r):
+		case e.admitsAt(r, i+size == len(s)):
+			firstAsAuthored = firstAsAuthored || i == 0
 			b.WriteRune(r)
 		case r == e.opener && e.keepsAuthoredOpener(s[i+size:]):
 			b.WriteRune(e.opener)
@@ -247,7 +323,81 @@ func (e *Encoding) Segment(s string) string {
 		}
 		i += size
 	}
-	return b.String()
+	encoded := b.String()
+	if firstAsAuthored && e.reserved != nil && e.reserved(encoded) {
+		// The first character was carried as authored, so it occupies the same
+		// bytes at the front of the encoded segment as it does in the input.
+		r, size := utf8.DecodeRuneInString(s)
+		var escaped strings.Builder
+		e.writeEscape(&escaped, selectorFor(r), uint32(r), 6)
+		encoded = escaped.String() + encoded[size:]
+	}
+	return encoded
+}
+
+// ReadSegment returns the segment s is the encoding of, and whether s is exactly
+// what [Encoding.Segment] writes for it.
+//
+// It reverses the scheme: the opener followed by the escape mark opens an escape
+// whose selector fixes how much follows it, and every other byte stands for
+// itself. The second result is false for a string carrying an escape the scheme
+// does not define, and for one that reads back to a segment the encoding would
+// have written differently — a name nothing but this encoding should have
+// written, spelled some other way — so a caller reading names it did not write
+// itself can tell its own apart from the rest. The first result is meaningful
+// only where the second is true.
+func (e *Encoding) ReadSegment(s string) (string, bool) {
+	if s == e.absent {
+		return "", true
+	}
+	open := byte(e.opener)
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] != open || i+2 >= len(s) || s[i+1] != escapeMark {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		switch s[i+2] {
+		case escapeHyphen:
+			b.WriteByte('-')
+			i += 3
+		case escapeUnderscore:
+			b.WriteByte('_')
+			i += 3
+		case escapeDot:
+			b.WriteByte('.')
+			i += 3
+		case escapeSlash:
+			b.WriteByte('/')
+			i += 3
+		case escapeCodePoint:
+			if i+9 > len(s) {
+				return "", false
+			}
+			cp, err := strconv.ParseUint(s[i+3:i+9], 16, 32)
+			if err != nil {
+				return "", false
+			}
+			b.WriteRune(rune(cp))
+			i += 9
+		case escapeByte:
+			if i+5 > len(s) {
+				return "", false
+			}
+			raw, err := strconv.ParseUint(s[i+3:i+5], 16, 8)
+			if err != nil {
+				return "", false
+			}
+			b.WriteByte(byte(raw))
+			i += 5
+		default:
+			return "", false
+		}
+	}
+	segment := b.String()
+	return segment, e.Segment(segment) == s
 }
 
 // Name assembles a name from segments, encoding each with [Encoding.Segment] and
@@ -279,7 +429,8 @@ func (e *Encoding) Name(segments ...string) string {
 //
 // A byte beginning no valid character never qualifies, whatever the alphabet
 // admits, because such a byte is always written as an escape and an escape opens
-// with the opener.
+// with the opener. Nor does a character that ends the segment where the
+// last-character alphabet refuses it, for the same reason.
 func (e *Encoding) keepsAuthoredOpener(rest string) bool {
 	if rest == "" {
 		return false
@@ -288,7 +439,17 @@ func (e *Encoding) keepsAuthoredOpener(rest string) bool {
 	if r == utf8.RuneError && size == 1 {
 		return false
 	}
-	return e.admits(r) && r != escapeMark
+	return e.admitsAt(r, size == len(rest)) && r != escapeMark
+}
+
+// admitsAt reports whether r is carried as authored at its place in a segment:
+// admitted by the alphabet, and — where it ends the segment and the encoding was
+// built with [AdmitsLast] — by the last-character alphabet too.
+func (e *Encoding) admitsAt(r rune, last bool) bool {
+	if !e.admits(r) {
+		return false
+	}
+	return !last || e.admitsLast == nil || e.admitsLast(r)
 }
 
 // selectorFor returns the selector naming the character an escape stands for.
@@ -344,4 +505,16 @@ func escapeCharacters() []rune {
 		emitted = append(emitted, r)
 	}
 	return emitted
+}
+
+// escapeEndings returns every character an escape can end with: a selector that
+// carries no value, or the last of a value's hex digits. A last-character
+// alphabet has to carry all of them, or a segment ending in an escape would leave
+// it.
+func escapeEndings() []rune {
+	endings := []rune{escapeHyphen, escapeUnderscore, escapeDot, escapeSlash, escapeAbsent}
+	for _, r := range hexDigits {
+		endings = append(endings, r)
+	}
+	return endings
 }

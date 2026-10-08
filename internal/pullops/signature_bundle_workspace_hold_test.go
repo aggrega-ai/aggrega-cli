@@ -43,9 +43,10 @@ var (
 // bundleFile is where a bundle with digest d must land beneath the workspace at
 // ws. It is spelled here, rather than asked of the helper that spells it for the
 // product, so a helper that stops joining the workspace root cannot agree with
-// itself.
+// itself: a lowercase-hex digest's colon is the one character the file name
+// spells as an escape.
 func bundleFile(ws, d string) string {
-	return filepath.Join(ws, bundleCacheDir, "signatures", strings.Replace(d, ":", "-", 1)+".bundle")
+	return filepath.Join(ws, bundleCacheDir, "signatures", strings.Replace(d, ":", "+zx00003a", 1)+".bundle")
 }
 
 // TestASignatureBundleIsCachedBeneathTheWorkspaceAndHeldToIt drives the write of
@@ -181,7 +182,7 @@ func TestASignatureBundleBeneathACacheDirectoryOutsideTheWorkspaceIsHeldToIt(t *
 			if err != nil {
 				t.Fatalf("refused a bundle its root holds: %v", err)
 			}
-			got, rerr := os.ReadFile(filepath.Join(cache, "signatures", strings.Replace(bundleDigest, ":", "-", 1)+".bundle"))
+			got, rerr := os.ReadFile(filepath.Join(cache, "signatures", strings.Replace(bundleDigest, ":", "+zx00003a", 1)+".bundle"))
 			if rerr != nil || !bytes.Equal(got, bundle) {
 				t.Errorf("the bundle is not beneath the cache directory: %q (%v)", got, rerr)
 			}

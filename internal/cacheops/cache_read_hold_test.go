@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -78,7 +79,7 @@ func cacheReadLayouts() []struct {
 			return keepOut(t, elsewhere, filepath.Join(store, strings.Repeat("0", 64)), "an input")
 		}},
 		{"a docs-bundle class root that is a link leading out", ".aggrega/cache", func(t *testing.T, _, cache, elsewhere string) string {
-			if err := os.MkdirAll(filepath.Join(elsewhere, "hub.example%2Fdocs", "1.0.0"), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(elsewhere, pathsegment.Encode("hub.example/docs"), "1.0.0"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			linkInto(t, elsewhere, filepath.Join(cache, "docs-bundles"))

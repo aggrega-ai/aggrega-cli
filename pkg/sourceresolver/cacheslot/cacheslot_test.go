@@ -174,7 +174,7 @@ func TestSlotDeterministic(t *testing.T) {
 	}
 }
 
-func TestSlotURLPathPercentEncoded(t *testing.T) {
+func TestSlotURLPathSpacesAreEscaped(t *testing.T) {
 	t.Parallel()
 	got, err := cacheslot.Slot("/ws", ".aggrega/cache", "compose-https-fragment",
 		"https://example.com/some path/with spaces.yaml", "", "", "1.0.0", "sha256:deadbeef")
@@ -182,7 +182,7 @@ func TestSlotURLPathPercentEncoded(t *testing.T) {
 		t.Fatalf("Slot: %v", err)
 	}
 	if strings.Contains(got, " ") {
-		t.Errorf("slot path should percent-encode spaces; got %s", got)
+		t.Errorf("slot path should escape spaces; got %s", got)
 	}
 }
 

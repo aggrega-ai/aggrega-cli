@@ -18,6 +18,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -38,11 +39,12 @@ func ExtractedDir(slot string) string {
 
 // ExtractedTree returns the directory inside [ExtractedDir] where the files of the
 // artifact whose content digest is contentDigest are laid out. Each artifact content
-// has a tree of its own, named by the digest's filesystem spelling, so a slot whose
-// artifact is replaced while a build is still reading the previous one never has that
-// build's tree rewritten to the new content under it.
+// has a tree of its own, named by the digest through the one spelling of a derived
+// name (pathsegment.Encode) — `sha256:<hex>` is the directory `sha256+zx00003a<hex>`
+// — so a slot whose artifact is replaced while a build is still reading the
+// previous one never has that build's tree rewritten to the new content under it.
 func ExtractedTree(slot, contentDigest string) string {
-	return filepath.Join(ExtractedDir(slot), digest.Segment(contentDigest))
+	return filepath.Join(ExtractedDir(slot), pathsegment.Encode(contentDigest))
 }
 
 // RegenerateExtracted lays out the files archive carries — a gzipped tar the caller

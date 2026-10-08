@@ -204,8 +204,8 @@ func builtinCommandNames() map[string]bool {
 // pull-to-first-run window: the running bytes are fixed the moment they are
 // fetched, not trusted on first use. The write is idempotent — re-adding the same
 // plugin re-pins the one entry rather than duplicating it. The describe cache is
-// written once under that same content pin (keyed by its colon-free tag form),
-// so a later run reads the descriptor by the digest the config records.
+// written once under that same content pin (in the entry describeCacheEntry
+// names), so a later run reads the descriptor by the digest the config records.
 func recordInstalledCLIPlugin(configPath string, src resolvedInstallable, desc wasm.PluginDescriptor) error {
 	pin := digest.ContentDigest(src.Bytes)
 	if err := workspaceconfig.UpsertCLIPluginRef(configPath, src.URI, pin); err != nil {

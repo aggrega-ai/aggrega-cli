@@ -5,11 +5,13 @@ package oci
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 )
 
 // ErrCacheLocationOutsideCache is the halt raised when a value a cache location
@@ -49,8 +51,8 @@ const cacheLocationAdvice = "a version, a name, a kind or a host names one direc
 	"its place but may not climb above it. Correct the value where it was written, or, where a registry served it, " +
 	"ask its publisher to publish a version that carries a well-formed one"
 
-// CacheSegment is one value a cache location is composed from, in the three
-// forms the composition and its refusal need.
+// CacheSegment is one value a cache location is composed from, in the forms the
+// composition and its refusal need.
 type CacheSegment struct {
 	// Key names the value for a reader: the key it was written under, such as
 	// "version", "url" or "module_subdir", or what it is, such as "reference".
@@ -58,14 +60,21 @@ type CacheSegment struct {
 	// Value is the value as it was written or served. The refusal quotes it,
 	// because that is the spelling a reader can find in what they wrote.
 	Value string
-	// Segment is the form joined into the location: Value itself, or its escaped
-	// spelling. An empty Segment contributes no directory.
+	// Segment is the part of Value this position names, as written: Value
+	// itself, or the part of it the position takes, such as a URL's host or its
+	// path. It is handed over unescaped — [JoinCacheLocation] spells it as a file
+	// or directory name — and an empty Segment contributes no directory.
 	Segment string
 	// Nested marks a value that names a slash-separated directory path of its
 	// own, such as a URL path or a module subdirectory. Such a value may descend
-	// beneath its place but may not climb above it. A value that is not nested
-	// names exactly one directory.
+	// beneath its place but may not climb above it, and contributes one directory
+	// for each of its slash-separated parts. A value that is neither nested nor
+	// whole names exactly one directory.
 	Nested bool
+	// Whole marks a value that is one identity although it carries separators,
+	// such as an entity's reference: it names exactly one directory, its
+	// separators spelled like every other character a name cannot carry.
+	Whole bool
 }
 
 // JoinCacheLocation joins segments beneath root, in order, and returns the
@@ -84,6 +93,12 @@ type CacheSegment struct {
 // judging it by the separators of the platform at hand would let a value pass on
 // one machine and be refused on another.
 //
+// It is also the one place a cache location's directory names are spelled: each
+// segment it admits is written through [pathsegment.Encode], a nested one part by
+// part, so every directory it names is one Windows, Linux and macOS all accept,
+// two different values never share one even where a file system ignores letter
+// case, and a caller cannot join a value under a spelling of its own.
+//
 // subject says what the location is for, such as `entity "demo/app/web"`; the
 // refusal carries it beside the value.
 func JoinCacheLocation(root, subject string, segments ...CacheSegment) (string, error) {
@@ -96,7 +111,7 @@ func JoinCacheLocation(root, subject string, segments ...CacheSegment) (string, 
 		if !staysInItsPlace(s) {
 			return "", cacheLocationRefusal(subject, s)
 		}
-		parts = append(parts, s.Segment)
+		parts = append(parts, spelled(s)...)
 	}
 	return filepath.Join(parts...), nil
 }
@@ -104,13 +119,36 @@ func JoinCacheLocation(root, subject string, segments ...CacheSegment) (string, 
 // staysInItsPlace reports whether the segment names only the place its position
 // gives it.
 func staysInItsPlace(s CacheSegment) bool {
-	if s.Nested {
+	switch {
+	case s.Nested:
 		// Slash arithmetic over a value whose backslashes are read as separators
 		// too, so the containment predicate decides and the answer does not depend
 		// on the platform.
 		return pathscope.IsLocalSlash(strings.ReplaceAll(s.Segment, `\`, "/"))
+	case s.Whole:
+		return s.Segment != "." && s.Segment != ".."
+	default:
+		return s.Segment != "." && s.Segment != ".." && !strings.ContainsAny(s.Segment, `/\`)
 	}
-	return s.Segment != "." && s.Segment != ".." && !strings.ContainsAny(s.Segment, `/\`)
+}
+
+// spelled returns the directory names an admitted segment contributes: one for a
+// value naming one directory or a whole identity, and one for each part of a
+// nested path once the path is cleaned, so a part naming the current directory, or
+// a parent step the path climbs back out of, contributes nothing.
+func spelled(s CacheSegment) []string {
+	if !s.Nested {
+		return []string{pathsegment.Encode(s.Segment)}
+	}
+	cleaned := path.Clean(s.Segment)
+	if cleaned == "." {
+		return nil
+	}
+	parts := strings.Split(cleaned, "/")
+	for i, part := range parts {
+		parts[i] = pathsegment.Encode(part)
+	}
+	return parts
 }
 
 // cacheLocationRefusal composes the refusal: the condition's sentence, the value

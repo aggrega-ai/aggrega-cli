@@ -6,7 +6,6 @@ package cacheops
 import (
 	"bytes"
 	"errors"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 )
 
 const testCacheDir = ".aggrega/cache"
@@ -37,12 +37,20 @@ func writeCompileLeaf(t *testing.T, dir, name string, size int, mtime time.Time)
 	return p
 }
 
-// TestCacheEntitySlotEncoding guards that an entity slot's display label
-// round-trips the URL-encoded on-disk directory name back to a readable URI.
+// TestCacheEntitySlotEncoding guards that an entity slot's display label reads
+// the spelled on-disk directory names back into the reference and version the
+// slot was written under — a version that is a content digest included — rather
+// than showing the escapes a name carries.
 func TestCacheEntitySlotEncoding(t *testing.T) {
 	wsRoot := t.TempDir()
-	if err := oci.WriteCached(wsRoot, testCacheDir, "oci://hub.aggrega.ai/component/core/api", "1.0.0", []byte("entity-bytes")); err != nil {
-		t.Fatalf("WriteCached: %v", err)
+	pin := digest.ContentDigest([]byte("plugin-bytes"))
+	for _, slot := range []struct{ uri, version string }{
+		{"oci://hub.aggrega.ai/component/core/api", "1.0.0"},
+		{"hub.aggrega.ai/plugin/cli/moo:0.2.4", pin},
+	} {
+		if err := oci.WriteCached(wsRoot, testCacheDir, slot.uri, slot.version, []byte("entity-bytes")); err != nil {
+			t.Fatalf("WriteCached: %v", err)
+		}
 	}
 	loc := Locations{WorkspaceRoot: wsRoot, CacheDir: testCacheDir}
 
@@ -50,13 +58,42 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("enumEntities: %v", err)
 	}
-	if len(els) == 0 {
-		t.Fatal("no entity elements enumerated")
-	}
+	labels := map[string]bool{}
 	for _, el := range els {
-		if _, err := url.PathUnescape(el.Label); err != nil {
-			t.Errorf("entity label not decodable: %q", el.Label)
+		labels[el.Label] = true
+	}
+	for _, want := range []string{
+		"hub.aggrega.ai/component/core/api@1.0.0",
+		"hub.aggrega.ai/plugin/cli/moo:0.2.4@" + pin,
+	} {
+		if !labels[want] {
+			t.Errorf("no entity element is labelled %q; labels: %v", want, labels)
 		}
+	}
+}
+
+// TestCacheSourceSlotLabelReadsItsNamesBack guards that a source-artifact slot's
+// label reads each spelled directory name back into the value it was spelled
+// from — a host carrying a port included — rather than showing the escapes.
+func TestCacheSourceSlotLabelReadsItsNamesBack(t *testing.T) {
+	wsRoot := t.TempDir()
+	const srcURL = "oci://localhost:5000/charts/api"
+	dg := digest.ContentDigest([]byte("src"))
+	slot, err := cacheslot.Slot(wsRoot, testCacheDir, "helm-oci-chart", srcURL, "", "", "2.0.0", dg)
+	if err != nil {
+		t.Fatalf("Slot: %v", err)
+	}
+	if err := cacheslot.WriteBlobAndMetadata(wsRoot, testCacheDir, slot, []byte("src"), "helm-oci-chart", srcURL, "2.0.0", dg, "application/gzip", "", nil); err != nil {
+		t.Fatalf("WriteBlobAndMetadata: %v", err)
+	}
+	loc := Locations{WorkspaceRoot: wsRoot, CacheDir: testCacheDir}
+	els, err := enumSourceArtifacts(t.Context(), loc.sourceArtifactsRoot(), func(p string) error { return holdRead(loc, p) })
+	if err != nil {
+		t.Fatalf("enumSourceArtifacts: %v", err)
+	}
+	want := "helm-oci-chart/localhost:5000/charts/api/2.0.0/" + strings.TrimPrefix(dg, "sha256:")[:cacheslot.DigestPrefixLen]
+	if len(els) != 1 || els[0].Label != want {
+		t.Fatalf("source labels = %+v, want one labelled %q", els, want)
 	}
 }
 

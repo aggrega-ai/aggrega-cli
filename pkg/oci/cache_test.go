@@ -30,7 +30,7 @@ func TestCachePathDeterministic(t *testing.T) {
 		t.Errorf("path should contain the version; got %s", a)
 	}
 	if strings.Contains(a, "/component/core/") {
-		t.Errorf("URI separators should be percent-encoded inside the path segment; got %s", a)
+		t.Errorf("URI separators should be escaped inside the path segment; got %s", a)
 	}
 	if !strings.Contains(a, "/entities/") {
 		t.Errorf("path should contain the entities subtree segment; got %s", a)
@@ -84,10 +84,10 @@ func TestCachePathRefusesAVersionThatLeavesTheCache(t *testing.T) {
 }
 
 // TestCachePathRefusesAReferenceThatEncodesToADotDirectory holds the same builder
-// to refusing a reference whose encoded segment is `.` or `..` — the reference
-// occupies one directory too, and one that names a dot directory would move every
-// slot for it. An ordinary reference encodes to a percent-escaped single segment
-// and is accepted.
+// to refusing a reference that is `.` or `..` — the reference occupies one
+// directory too, and one that names a dot directory would move every slot for
+// it. An ordinary reference is spelled as one escaped directory name and is
+// accepted.
 func TestCachePathRefusesAReferenceThatEncodesToADotDirectory(t *testing.T) {
 	t.Parallel()
 	if _, err := oci.CachePath("/ws", ".aggrega/cache", "..", "1.0.0"); !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
@@ -98,15 +98,15 @@ func TestCachePathRefusesAReferenceThatEncodesToADotDirectory(t *testing.T) {
 	}
 }
 
-// TestSignatureBundlePathStem pins the on-disk bundle filename form so routing
-// the digest transform onto the shared digest-segment spelling stays
-// byte-identical: a colon-form digest renders to the dash-form segment under
-// the signatures/ subtree of the workspace's cache, with the .bundle suffix.
+// TestSignatureBundlePathStem pins the on-disk bundle filename form: a
+// colon-form digest is spelled through the one spelling of a derived name under
+// the signatures/ subtree of the workspace's cache, with the .bundle suffix, and
+// the name carries no colon.
 func TestSignatureBundlePathStem(t *testing.T) {
 	t.Parallel()
 	const hex = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
 	got := oci.SignatureBundlePath("/ws", ".aggrega/cache", "sha256:"+hex)
-	want := filepath.Join("/ws", ".aggrega/cache", "signatures", "sha256-"+hex+".bundle")
+	want := filepath.Join("/ws", ".aggrega/cache", "signatures", "sha256+zx00003a"+hex+".bundle")
 	if got != want {
 		t.Errorf("SignatureBundlePath: got %q; want %q", got, want)
 	}

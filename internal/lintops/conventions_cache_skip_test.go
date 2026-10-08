@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // TestWalkCatalogEntityFiles_SkipsArtifactCache pins the conventions walk to the
@@ -39,7 +41,10 @@ spec:
   inject: ["env"]
 `)
 
-	cacheSlot := filepath.Join(ws, cacheDir, "entities", "core%2Fcached-comp:1.0.0", "1.0.0")
+	cacheSlot, err := oci.CachePath(ws, cacheDir, "core/cached-comp:1.0.0", "1.0.0")
+	if err != nil {
+		t.Fatalf("CachePath: %v", err)
+	}
 	if err := os.MkdirAll(cacheSlot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}

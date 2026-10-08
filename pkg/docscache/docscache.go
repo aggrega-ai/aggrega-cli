@@ -29,7 +29,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,6 +39,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -137,21 +137,17 @@ func Cached(workspaceRoot, cacheDir, ref, version string) (bool, error) {
 // slotPath returns the cache slot for a documentation bundle addressed by
 // reference and version:
 //
-//	<DocsBundlesRoot>/<url-encoded ref>/<version>/
+//	<DocsBundlesRoot>/<encoded-reference>/<encoded-version>/
 //
-// The reference is URL-encoded to a single filesystem-safe segment so the slot
-// is stable across operating systems. Two slotPath calls with the same inputs
-// produce byte-identical paths.
+// The reference, without any oci:// scheme — so a scheme-qualified and a bare
+// reference to the same artifact share a slot — and the version are each spelled
+// as one directory name through the one spelling of a derived name
+// (pathsegment.Encode), so the slot is one every operating system accepts and
+// neither value can name a directory outside it. Two slotPath calls with the
+// same inputs produce byte-identical paths.
 func slotPath(workspaceRoot, cacheDir, ref, version string) string {
-	return filepath.Join(DocsBundlesRoot(workspaceRoot, cacheDir), encodeRef(ref), version)
-}
-
-// encodeRef maps an OCI reference to a single filesystem-safe path segment via
-// standard URL path-segment encoding, stripping any oci:// scheme prefix first
-// so a scheme-qualified and a bare reference to the same artifact share a slot.
-func encodeRef(ref string) string {
-	ref = strings.TrimPrefix(ref, "oci://")
-	return url.PathEscape(ref)
+	return filepath.Join(DocsBundlesRoot(workspaceRoot, cacheDir),
+		pathsegment.Encode(strings.TrimPrefix(ref, "oci://")), pathsegment.Encode(version))
 }
 
 // ResolveAndCache pulls the documentation bundle tagged version from target,

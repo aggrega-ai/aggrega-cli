@@ -159,7 +159,7 @@ func findLockfilePluginRow(t *testing.T, lf *lockfile.Lockfile, uri string) *loc
 // overwriteCachedBlobByDigest walks the workspace artifact cache under cwd,
 // finds the content blob whose SHA-256 matches wantDigest, and overwrites it with
 // tamper bytes. It fails if no matching blob is found. Walking by content digest
-// avoids reconstructing the URI-encoded cache-slot path, so a tamper targets the
+// avoids reconstructing the encoded cache-slot path, so a tamper targets the
 // exact bytes the resolver reads regardless of the slot layout.
 func overwriteCachedBlobByDigest(t *testing.T, cacheRoot, wantDigest string, tamper []byte) {
 	t.Helper()

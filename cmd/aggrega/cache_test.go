@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 )
 
@@ -82,18 +82,17 @@ func writeInputBlob(t *testing.T, wsRoot, hexDigest string, blob []byte) string 
 }
 
 // writeDescribe seeds a plugin-describe cache entry under describeDir. Its
-// parameter is a colon-form content digest ("sha256:<hex>"); the file is named
-// with the exact stem the real describe-cache writer produces — the colon-free
-// tag form of that digest via oci.ContentDigestTag, i.e. "sha256-<hex>.json".
-// Routing the stem through the same transform the writer uses keeps every test
-// exercising the on-disk stem the writer actually emits, never a bare-hex shape
-// the writer never produces.
+// parameter is a colon-form content digest ("sha256:<hex>"); the file is the one
+// the real describe-cache writer names for it (describeCacheEntry), i.e.
+// "sha256+zx00003a<hex>.json". Routing the name through the same function the
+// writer uses keeps every test exercising the on-disk name the writer actually
+// emits, never a shape the writer never produces.
 func writeDescribe(t *testing.T, describeDir, contentDigest string) string {
 	t.Helper()
 	if err := os.MkdirAll(describeDir, 0o755); err != nil {
 		t.Fatalf("mkdir describe: %v", err)
 	}
-	p := filepath.Join(describeDir, oci.ContentDigestTag(contentDigest)+".json")
+	p := describeCacheEntry(describeDir, contentDigest)
 	if err := os.WriteFile(p, []byte(`{"name":"x"}`), 0o644); err != nil {
 		t.Fatalf("write describe: %v", err)
 	}
@@ -125,8 +124,8 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	unrefInputBlob := writeInputBlob(t, wsRoot, unrefInputHex, []byte("unref-input"))
 
 	// Describe cache: referenced == a lockfile plugin digest; unreferenced not.
-	// Seeded in colon form so the on-disk stem is the real "sha256-<hex>.json"
-	// the writer emits, exercising the dash-form stem the retain side must match.
+	// Seeded in colon form so the on-disk name is the real one the writer emits,
+	// exercising the spelled name the retain side must read back.
 	pluginDigest := digest.ContentDigest([]byte("plugin-guest-bytes"))
 	pluginHex := cacheops.NormalizeDigestHex(pluginDigest)
 	refDescribe := writeDescribe(t, describeDir, pluginDigest)
@@ -197,12 +196,12 @@ func exists(p string) bool {
 }
 
 // writeDocsBundleSlot writes a documentation-bundle cache slot (a blob +
-// manifest under docs-bundles/<encoded-ref>/<version>/) and returns the slot
-// dir. The enumeration only walks the slot directory tree, so the file
-// contents are placeholders.
+// manifest under docs-bundles/<encoded-reference>/<encoded-version>/) and
+// returns the slot dir. The enumeration only walks the slot directory tree, so
+// the file contents are placeholders.
 func writeDocsBundleSlot(t *testing.T, wsRoot, ref, version string) string {
 	t.Helper()
-	slot := filepath.Join(docscache.DocsBundlesRoot(wsRoot, cacheTestCacheDir), url.PathEscape(ref), version)
+	slot := filepath.Join(docscache.DocsBundlesRoot(wsRoot, cacheTestCacheDir), pathsegment.Encode(ref), pathsegment.Encode(version))
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir docs slot: %v", err)
 	}
@@ -326,7 +325,7 @@ func TestCachePruneSelective(t *testing.T) {
 }
 
 // TestCachePruneRetainsEmbeddedAndPinnedDescribe drives prune over describe
-// entries seeded in the real "sha256-<hex>.json" stem form and proves the three
+// entries seeded under the real name the writer emits and proves the three
 // retention outcomes that matter for the describe class:
 //
 //   - an actively-embedded provider's describe entry is retained, because the

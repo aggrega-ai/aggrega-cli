@@ -22,13 +22,16 @@
 // <slot>/metadata.yaml. The extracted/ subdirectory is regenerated
 // on every build read by a downstream cache layer (the rebuild
 // discipline lives outside this package).
+//
+// Every directory name in the layout is spelled by oci.JoinCacheLocation through
+// the one spelling of a derived name (pathsegment.Encode), so a host carrying a
+// port, a path part carrying a colon or an uppercase letter, and a version
+// carrying either all yield names Windows, Linux and macOS accept.
 package cacheslot
 
 import (
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -82,14 +85,15 @@ var errEmptyWorkspaceRoot = cerrors.Register("empty-workspace-root", cerrors.Met
 //
 // moduleSubdir is the directory within a git-sourced repository that is the
 // artifact; it becomes its own intermediate segment so two directories of one
-// repository at one commit occupy distinct slots. Its segments are
-// percent-escaped the way URL-path segments are. An empty moduleSubdir is
-// dropped, so every other kind's layout is unchanged.
+// repository at one commit occupy distinct slots. Its slash-separated parts are
+// spelled one directory each, the way a URL path's parts are. An empty
+// moduleSubdir is dropped, so every other kind's layout is unchanged.
 //
 // Every value keeps to the place its position names. The kind, the URL's host,
 // the chart, the version and the digest prefix each name one directory; the
 // URL's path and the module subdirectory may descend beneath their place but
-// not climb above it, since an escaped segment still reads `..` as a step up.
+// not climb above it. Each value is handed to oci.JoinCacheLocation as written,
+// which spells every directory name.
 // A value that would leave its place returns the refusal
 // oci.ErrCacheLocationOutsideCache names, quoting the value under the source
 // key it was written as, and no slot is returned for it — see
@@ -110,7 +114,7 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, moduleSubdir, version
 		oci.CacheSegment{Key: "url", Value: sourceURL, Segment: host},
 		oci.CacheSegment{Key: "url", Value: sourceURL, Segment: urlPath, Nested: true},
 		oci.CacheSegment{Key: "chart", Value: chart, Segment: chart},
-		oci.CacheSegment{Key: "module_subdir", Value: moduleSubdir, Segment: escapeRelPath(moduleSubdir), Nested: true},
+		oci.CacheSegment{Key: "module_subdir", Value: moduleSubdir, Segment: slashPath(moduleSubdir), Nested: true},
 		oci.CacheSegment{Key: "version", Value: version, Segment: version},
 		oci.CacheSegment{Key: "digest", Value: digest, Segment: digestPrefix(digest)},
 	)
@@ -150,27 +154,19 @@ func sourceSubject(kind, sourceURL string) string {
 	return fmt.Sprintf("%s source %q", kind, sourceURL)
 }
 
-// escapeRelPath percent-escapes each segment of a slash-separated relative path
-// so no segment carries a separator of its own and the path contributes exactly
-// as many directory levels as it has segments. Escaping leaves a `..` segment as
-// it is, so it does not keep the path inside its place; Slot's containment does.
-// Empty input returns empty, which filepath.Join drops.
-func escapeRelPath(rel string) string {
-	if rel == "" {
-		return ""
-	}
-	segments := strings.Split(strings.Trim(rel, "/"), "/")
-	encoded := make([]string, 0, len(segments))
-	for _, seg := range segments {
-		if seg == "" {
-			continue
+// slashPath joins the slash-separated parts of rel, dropping the empty parts a
+// leading, trailing or doubled slash leaves, so a path written `/a//b/` names
+// the same directories as `a/b`. A parent step is left for Slot's containment to
+// judge rather than resolved away here. Empty input, or input holding no part,
+// returns empty, which contributes no directory.
+func slashPath(rel string) string {
+	parts := make([]string, 0, strings.Count(rel, "/")+1)
+	for _, part := range strings.Split(rel, "/") {
+		if part != "" {
+			parts = append(parts, part)
 		}
-		encoded = append(encoded, url.PathEscape(seg))
 	}
-	if len(encoded) == 0 {
-		return ""
-	}
-	return path.Join(encoded...)
+	return strings.Join(parts, "/")
 }
 
 // SourceArtifactsRoot returns the root of the source-artifact subtree of
@@ -285,18 +281,7 @@ func splitURL(sourceURL string) (host, urlPath string) {
 		urlPath = ""
 		return
 	}
-	rest := trimmed[idx+1:]
-	rest = strings.TrimSuffix(rest, "/")
-	if rest == "" {
-		urlPath = ""
-		return
-	}
-	segments := strings.Split(rest, "/")
-	encoded := make([]string, len(segments))
-	for i, seg := range segments {
-		encoded[i] = url.PathEscape(seg)
-	}
-	urlPath = path.Join(encoded...)
+	urlPath = slashPath(trimmed[idx+1:])
 	return
 }
 

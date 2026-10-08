@@ -54,7 +54,8 @@ func TestAHostIndexIsReadOnlyFromWhereItsWriteIsHeld(t *testing.T) {
 		}
 	}
 	base := func(p place) string { return oci.IndexBasePath(p.ws, p.cacheDir, host) }
-	recordAt := func(p place) string { return filepath.Join(base(p), "component%2Fcore%2Fapi.json") }
+	recordAt := func(p place) string { return oci.IndexRepoPath(p.ws, p.cacheDir, host, "component/core/api") }
+	recordName := filepath.Base(oci.IndexRepoPath("", "", host, "component/core/api"))
 	build := func(t *testing.T, p place) {
 		t.Helper()
 		put(t, recordAt(p), record)
@@ -77,7 +78,7 @@ func TestAHostIndexIsReadOnlyFromWhereItsWriteIsHeld(t *testing.T) {
 			return p.cache
 		}},
 		{name: "the host's directory a link leading out", cacheDir: ".aggrega/cache", layout: func(t *testing.T, p place) string {
-			put(t, filepath.Join(p.elsewhere, "component%2Fcore%2Fapi.json"), record)
+			put(t, filepath.Join(p.elsewhere, recordName), record)
 			link(t, p.elsewhere, base(p))
 			put(t, base(p)+".updated", []byte(stamp))
 			return base(p)

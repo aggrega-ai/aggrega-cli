@@ -14,6 +14,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -52,11 +53,11 @@ func TestAcquisitionAsksNoRegistryForABundleTheReadHoldRefuses(t *testing.T) {
 	}{
 		{name: "control: no bundle cached is fetched for", asked: true, layout: func(*testing.T, string, string) string { return "" }},
 		{name: "control: a bundle cached inside the workspace is left as it is", layout: func(t *testing.T, ws, _ string) string {
-			seedBundle(t, filepath.Join(docscache.DocsBundlesRoot(ws, cacheDir), "reg.example.invalid%2Fdocs%2Faggrega-docs", version))
+			seedBundle(t, filepath.Join(docscache.DocsBundlesRoot(ws, cacheDir), pathsegment.Encode(ref), pathsegment.Encode(version)))
 			return ""
 		}},
 		{name: "a bundle behind a cache directory that is a link leading out", layout: func(t *testing.T, ws, elsewhere string) string {
-			seedBundle(t, filepath.Join(elsewhere, "docs-bundles", "reg.example.invalid%2Fdocs%2Faggrega-docs", version))
+			seedBundle(t, filepath.Join(elsewhere, "docs-bundles", pathsegment.Encode(ref), pathsegment.Encode(version)))
 			if err := os.MkdirAll(filepath.Join(ws, ".aggrega"), 0o755); err != nil {
 				t.Fatal(err)
 			}
