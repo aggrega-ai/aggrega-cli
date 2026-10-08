@@ -388,7 +388,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		if paramErr != nil {
 			return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 		}
-		runErr = lintops.RunRelease(ctx, s.resolvedWorkspace, abs, nil, io.Discard, io.Discard, collect)
+		runErr = lintops.RunRelease(ctx, s.resolvedWorkspace, abs, nil, nil, io.Discard, io.Discard, collect)
 	default:
 		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, WholeCatalogPasses(s.resolvedWorkspace, nil), io.Discard, io.Discard, collect)
 	}

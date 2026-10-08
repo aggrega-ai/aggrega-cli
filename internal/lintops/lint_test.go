@@ -434,6 +434,9 @@ func TestEffectivePolicies(t *testing.T) {
 		{"allow-undeclared-recipe-provides", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) {
 			c.AllowUndeclaredRecipeProvides = v
 		}, "allow_undeclared_recipe_provides"},
+		{"allow-connection-credential-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) {
+			c.AllowConnectionCredentialMismatches = v
+		}, "allow_connection_credential_mismatches"},
 	}
 	for _, tc := range flagBases {
 		// Cell 1: workspace=true, resolver echoes workspace → effective=true

@@ -289,7 +289,7 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		if refusal != "" {
 			return &pathRefusal{text: refusal}
 		}
-		return lintops.RunRelease(ctx, tw.rw, releasePath, nil, stdout, stderr, req.collect)
+		return lintops.RunRelease(ctx, tw.rw, releasePath, nil, nil, stdout, stderr, req.collect)
 	}
 	pluginPath := req.plugin
 	if pluginPath != "" {

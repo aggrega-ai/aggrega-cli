@@ -50,6 +50,9 @@ type lintFlags struct {
 	allowUndeclaredRecipeProvides   bool
 	noAllowUndeclaredRecipeProvides bool
 
+	allowConnectionCredentialMismatches   bool
+	noAllowConnectionCredentialMismatches bool
+
 	output string
 }
 
@@ -154,7 +157,7 @@ status is the same under either format.`,
 					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
 						"--pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure", nil, nil)
 				}
-				return emit(lintops.RunRelease(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
+				return emit(lintops.RunRelease(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, makeResolverFromCobra(cmd), opOut, os.Stderr, collect))
 			}
 			if path == "" {
 				// No entity argument → whole-catalog conventions, one pass for each
@@ -203,6 +206,8 @@ status is the same under either format.`,
 	c.Flags().BoolVar(&opts.noAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
 	c.Flags().BoolVar(&opts.allowUndeclaredRecipeProvides, "allow-undeclared-recipe-provides", false, "Force allow_undeclared_recipe_provides=true")
 	c.Flags().BoolVar(&opts.noAllowUndeclaredRecipeProvides, "no-allow-undeclared-recipe-provides", false, "Force allow_undeclared_recipe_provides=false")
+	c.Flags().BoolVar(&opts.allowConnectionCredentialMismatches, "allow-connection-credential-mismatches", false, "Force allow_connection_credential_mismatches=true")
+	c.Flags().BoolVar(&opts.noAllowConnectionCredentialMismatches, "no-allow-connection-credential-mismatches", false, "Force allow_connection_credential_mismatches=false")
 
 	return c
 }

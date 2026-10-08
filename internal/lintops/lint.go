@@ -148,13 +148,40 @@ type lintEntityHeader struct {
 // The identifiers are read off the declared rule set rather than written out
 // here — see publishingRules, which is that set's single home and carries the
 // lockstep obligation against the guest's dispatch arms.
+//
+// A rule reading a whole Release is not in either set: it has no entity file to
+// be dispatched over. See releaseRuleIDs.
 func defaultRuleIDs(prePublish bool) []string {
-	ids := make([]string, 0, len(publishingRules))
-	for _, r := range publishingRules {
-		if r.prePublish && !prePublish {
+	return entityRuleIDsOf(publishingRules, prePublish)
+}
+
+// releaseRuleIDs returns the rules a release-scoped run dispatches once over the
+// Release it names, in dispatch order, read off the same declared rule set.
+func releaseRuleIDs() []string {
+	return releaseRuleIDsOf(publishingRules)
+}
+
+// entityRuleIDsOf selects, from rules, those dispatched per entity in the given
+// mode. It takes the set as an argument so the partition between the two scopes
+// is tested over a set holding both, whatever the shipped set holds today.
+func entityRuleIDsOf(rules []publishingRule, prePublish bool) []string {
+	ids := make([]string, 0, len(rules))
+	for _, r := range rules {
+		if r.releaseScoped || (r.prePublish && !prePublish) {
 			continue
 		}
 		ids = append(ids, ruleID(r.condition))
+	}
+	return ids
+}
+
+// releaseRuleIDsOf selects, from rules, those that read a whole Release.
+func releaseRuleIDsOf(rules []publishingRule) []string {
+	var ids []string
+	for _, r := range rules {
+		if r.releaseScoped {
+			ids = append(ids, ruleID(r.condition))
+		}
 	}
 	return ids
 }
@@ -798,6 +825,8 @@ func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve fu
 		"allow_nonstandard_names":           resolve("allow-nonstandard-names", ws.AllowNonstandardNames),
 		"allow_category_mismatches":         resolve("allow-category-mismatches", ws.AllowCategoryMismatches),
 		"allow_undeclared_recipe_provides":  resolve("allow-undeclared-recipe-provides", ws.AllowUndeclaredRecipeProvides),
+		"allow_connection_credential_mismatches": resolve("allow-connection-credential-mismatches",
+			ws.AllowConnectionCredentialMismatches),
 	}
 	out, _ := json.Marshal(policies)
 	return out
@@ -974,6 +1003,14 @@ func implementedComponentJSON(header lintEntityHeader, componentByURI func(uri s
 	if !ok {
 		return nil
 	}
+	return componentLinterJSON(comp)
+}
+
+// componentLinterJSON converts a resolved Component to the JSON a linter payload
+// carries, through the same YAML-to-JSON conversion the proposed entity goes
+// through, so a rule reads one shape whichever field a Component arrives in. It
+// returns nil for a Component that does not convert, which a payload then omits.
+func componentLinterJSON(comp types.Component) json.RawMessage {
 	entityYAML, err := yaml.Marshal(comp)
 	if err != nil {
 		return nil

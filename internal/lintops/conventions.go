@@ -14,6 +14,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -23,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -189,7 +192,39 @@ func writePassedOverKinds(out io.Writer, passedOver map[string]int) {
 // the whole-catalog pass observes it — the tree walk and the per-entity loop —
 // plus once ahead of the closure resolution, which is the step this pass adds
 // and the one that reads the most before any entity is checked.
-func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
+//
+// policyResolve decides each publishing-discipline suppression's effective value
+// from the workspace's own, keyed on the suppression's flag name — the command
+// line's --allow-*/--no-allow-* pairs, for the terminal. nil takes every
+// workspace value as it is, which is what a surface with no such flags passes.
+//
+// This is also the one pass with a whole Release in hand, so it is where the
+// rules that read one are dispatched: once, after the per-entity rules, over the
+// Aggregate the Release deploys, the Release, and the Components the Aggregate's
+// instances use — see releaseRuleDocumentsFor. Their findings are advisory like
+// every other, and are reported against the Release.
+func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, policyResolve func(flagBase string, wsValue bool) bool, out, diagOut io.Writer, collect *FindingCollector) error {
+	return runRelease(ctx, rw, releasePath, catalogFlagDirs, out, diagOut, collect, releaseRun{
+		policyResolve: policyResolve,
+		rules:         releaseRuleIDs(),
+		dispatch:      dispatchLinterAttachments,
+	})
+}
+
+// releaseRun is what a release-scoped run reads beyond its workspace and its
+// Release: the suppression resolver, the rules that read a whole Release, and the
+// dispatch that runs the guests. RunRelease supplies the production values; a
+// test supplies its own rule and a dispatch that records the payload it is
+// handed, which is how a release-scoped rule's input is observed at the point it
+// leaves for a guest.
+type releaseRun struct {
+	policyResolve func(flagBase string, wsValue bool) bool
+	rules         []string
+	dispatch      linterDispatch
+}
+
+// runRelease is RunRelease over an explicit releaseRun.
+func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector, run releaseRun) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -290,7 +325,25 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	lintErr := lintConventionsFiles(ctx, rw, dirs, named, paths, trusted, out, diagOut, collect)
+	// The documents a rule reading a whole Release is handed are assembled only
+	// when some such rule is in the set, so a run whose set holds none does the
+	// per-entity work alone. They resolve each instance's type through this pass's
+	// own view, which carries the lockfile's pins, so an instance reaches the
+	// Component the build would use.
+	var check *releaseRuleCheck
+	if len(run.rules) > 0 {
+		docs, derr := releaseRuleDocumentsFor(rc, lazyView.Component)
+		if derr != nil {
+			return derr
+		}
+		check = &releaseRuleCheck{rules: run.rules, docs: docs, path: releasePath}
+	}
+	lintErr := lintConventions(ctx, rw, dirs, named, paths, conventionsRun{
+		trusted:       trusted,
+		policyResolve: run.policyResolve,
+		releaseRules:  check,
+		dispatch:      run.dispatch,
+	}, out, diagOut, collect)
 
 	// A Manifest mapping the catalog contradicts is reported here rather than
 	// halting ahead of the pass, so the conventions report the author came for
@@ -351,15 +404,64 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // summary line claims a corpus — "conventions checked: N entities" — and
 // printing it after a stop would report a partial walk in the words of a complete
 // one, which is the one thing a reader cannot recover from the output.
+//
+// It applies the workspace's suppression values as they are, which is what the
+// whole-catalog pass runs under; the release-scoped pass, which also takes the
+// command line's suppression overrides and has a whole Release to check, enters
+// at lintConventions.
 func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
+	return lintConventions(ctx, rw, dirs, named, paths, conventionsRun{trusted: trusted}, out, diagOut, collect)
+}
+
+// linterDispatch runs inputs at every resolved linter attachment and returns the
+// findings, one slice per input per attachment. dispatchLinterAttachments is the
+// one production value; it is a type so a test can stand in for it and record
+// the inputs at the point they leave for a guest.
+type linterDispatch func(ctx context.Context, attachments []LinterAttachment, inputs []validator.LinterInput) ([][]abi.Diagnostic, error)
+
+// conventionsRun is what a conventions pass reads beyond the files it checks.
+type conventionsRun struct {
+	// trusted carries the recorded digests, as lintConventionsFiles describes.
+	trusted pluginpath.PinMaps
+	// policyResolve decides each suppression's effective value from its workspace
+	// value, keyed on the suppression's flag name. nil takes the workspace value
+	// as it is.
+	policyResolve func(flagBase string, wsValue bool) bool
+	// releaseRules, when set, is checked once after the entity files, by the rules
+	// that read a whole Release.
+	releaseRules *releaseRuleCheck
+	// dispatch runs the guests. nil is dispatchLinterAttachments.
+	dispatch linterDispatch
+}
+
+// releaseRuleCheck is a release-scoped pass's check over the whole Release: the
+// rules that read one, the documents they read, and the file their findings are
+// reported against.
+type releaseRuleCheck struct {
+	rules []string
+	docs  releaseRuleDocuments
+	path  string
+}
+
+// lintConventions is lintConventionsFiles over an explicit conventionsRun, and
+// the one body both passes run.
+func lintConventions(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, run conventionsRun, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
-	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
-		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))
+	attachments, err := ResolveLinterPlugins("", wsCfg, run.trusted, lazyView.PluginByURI,
+		linterCacheResolve(rw.Root(), wsCfg, run.trusted, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err
 	}
-	policies := effectivePolicies(wsCfg.Lint.PublishingDiscipline, func(_ string, ws bool) bool { return ws })
+	resolve := run.policyResolve
+	if resolve == nil {
+		resolve = func(_ string, ws bool) bool { return ws }
+	}
+	policies := effectivePolicies(wsCfg.Lint.PublishingDiscipline, resolve)
+	dispatch := run.dispatch
+	if dispatch == nil {
+		dispatch = dispatchLinterAttachments
+	}
 
 	findingCount := 0
 	for _, path := range paths {
@@ -381,30 +483,57 @@ func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 			Policies:             policies,
 			EntityPath:           path,
 		})
-		rawFindings, err := dispatchLinterAttachments(ctx, attachments, inputs)
+		rawFindings, err := dispatch(ctx, attachments, inputs)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)
 		}
-		aggregated := downgradeToWarning(aggregateFindings(rawFindings))
-		collect.Add(aggregated, path)
-		if len(aggregated) == 0 {
-			continue
-		}
-		fmt.Fprintf(diagOut, "%s:\n", path)
-		// Every finding was re-severitized to the advisory severity above, so
-		// the report raises nothing and the error is nil by construction. It is
-		// named rather than discarded so that a finding reaching here still
-		// halting stops the pass instead of being printed as advice — which is
-		// the one outcome a reader could not tell from a clean run.
-		if err := reportFindings(aggregated, header.Kind, path, diagOut); err != nil {
+		n, err := reportAdvisories(aggregateFindings(rawFindings), header.Kind, path, diagOut, collect)
+		if err != nil {
 			return err
 		}
-		findingCount += len(aggregated)
+		findingCount += n
+	}
+	if d := run.releaseRules; d != nil && len(d.rules) > 0 {
+		if err := stopped(ctx); err != nil {
+			return err
+		}
+		rawFindings, err := dispatch(ctx, attachments, buildReleaseRuleInputs(d.rules, d.docs, policies))
+		if err != nil {
+			return fmt.Errorf("aggrega lint: dispatch %s: %w", d.path, err)
+		}
+		n, err := reportAdvisories(aggregateFindings(rawFindings), string(entitykind.Release), d.path, diagOut, collect)
+		if err != nil {
+			return err
+		}
+		findingCount += n
 	}
 	collect.Entities(len(paths))
 	fmt.Fprintf(out, "conventions checked: %d entit%s, %d advisory finding(s)\n",
 		len(paths), plural(len(paths), "y", "ies"), findingCount)
 	return nil
+}
+
+// reportAdvisories re-severitizes one dispatch's findings to the advisory
+// severity, gathers them under path, writes them to diagOut beneath a line naming
+// path, and returns how many there were. kind is the kind of the document at
+// path, which decides the concern a halting finding would be filed under.
+//
+// Every finding was re-severitized before the report, so the report raises
+// nothing and the error is nil by construction. It is returned rather than
+// discarded so that a finding reaching the report still halting stops the pass
+// instead of being printed as advice — which is the one outcome a reader could
+// not tell from a clean run.
+func reportAdvisories(findings []abi.Diagnostic, kind, path string, diagOut io.Writer, collect *FindingCollector) (int, error) {
+	aggregated := downgradeToWarning(findings)
+	collect.Add(aggregated, path)
+	if len(aggregated) == 0 {
+		return 0, nil
+	}
+	fmt.Fprintf(diagOut, "%s:\n", path)
+	if err := reportFindings(aggregated, kind, path, diagOut); err != nil {
+		return 0, err
+	}
+	return len(aggregated), nil
 }
 
 // plural picks the singular or plural suffix for n.

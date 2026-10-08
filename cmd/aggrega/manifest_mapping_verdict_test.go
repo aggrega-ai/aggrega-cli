@@ -267,7 +267,7 @@ func TestLintRelease_MappingFindingAdvisesWithNonZeroVerdict(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
 	var out, diagOut bytes.Buffer
-	err := lintops.RunRelease(t.Context(), rw, releasePath, catalogDirs, &out, &diagOut, nil)
+	err := lintops.RunRelease(t.Context(), rw, releasePath, catalogDirs, nil, &out, &diagOut, nil)
 	if err == nil {
 		t.Fatal("advise is not exit zero: lint must still return a non-zero verdict for the mapping")
 	}
@@ -289,7 +289,7 @@ func TestLintRelease_MappingFindingAdvisesWithNonZeroVerdict(t *testing.T) {
 	t.Chdir(cleanRoot)
 	cleanRW := resolveTempWorkspace(t, tempWorkspaceOptions{Root: cleanRoot})
 	var cleanOut, cleanDiag bytes.Buffer
-	if cerr := lintops.RunRelease(t.Context(), cleanRW, cleanRelease, cleanDirs, &cleanOut, &cleanDiag, nil); cerr != nil {
+	if cerr := lintops.RunRelease(t.Context(), cleanRW, cleanRelease, cleanDirs, nil, &cleanOut, &cleanDiag, nil); cerr != nil {
 		t.Fatalf("a consistent mapping must lint without a mapping verdict; got %v\ndiag:\n%s", cerr, cleanDiag.String())
 	}
 }

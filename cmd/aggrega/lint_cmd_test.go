@@ -115,3 +115,28 @@ func TestMakeResolverFromCobraTriState(t *testing.T) {
 		}
 	})
 }
+
+// TestLintCredentialMismatchFlagPairReachesTheResolver parses the real lint
+// command's flags, so the pair is proven registered under the base name the
+// policy assembly asks the resolver about — a pair registered under any other
+// name would parse and still leave the suppression at its workspace value.
+func TestLintCredentialMismatchFlagPairReachesTheResolver(t *testing.T) {
+	const base = "allow-connection-credential-mismatches"
+	resolved := func(t *testing.T, ws bool, args ...string) bool {
+		t.Helper()
+		cmd := newLintCmd()
+		if err := cmd.Flags().Parse(args); err != nil {
+			t.Fatalf("parse %v: %v", args, err)
+		}
+		return makeResolverFromCobra(cmd)(base, ws)
+	}
+	if resolved(t, false) || !resolved(t, true) {
+		t.Error("with neither flag given the workspace value passes through")
+	}
+	if !resolved(t, false, "--"+base) {
+		t.Errorf("--%s must force the suppression on over the workspace", base)
+	}
+	if resolved(t, true, "--no-"+base) {
+		t.Errorf("--no-%s must force the suppression off over the workspace", base)
+	}
+}

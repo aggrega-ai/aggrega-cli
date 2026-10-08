@@ -525,6 +525,9 @@ func originFields() []originField {
 		sc("lint.publishing_discipline.allow_undeclared_recipe_provides", func(c Config) string {
 			return strconv.FormatBool(c.Lint.PublishingDiscipline.AllowUndeclaredRecipeProvides)
 		}),
+		sc("lint.publishing_discipline.allow_connection_credential_mismatches", func(c Config) string {
+			return strconv.FormatBool(c.Lint.PublishingDiscipline.AllowConnectionCredentialMismatches)
+		}),
 		sc("parse_cache.max_entries", func(c Config) string { return strconv.Itoa(c.ParseCache.MaxEntries) }),
 		sc("parse_cache.max_bytes", func(c Config) string { return strconv.Itoa(c.ParseCache.MaxBytes) }),
 		sc("compiled_module_cache.max_bytes", func(c Config) string {

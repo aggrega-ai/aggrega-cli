@@ -32,6 +32,8 @@ pub fn fixture(
         proposed: to_raw_value(&proposed).expect("encode proposed"),
         previous: previous.map(|v| to_raw_value(&v).expect("encode previous")),
         implemented_component: None,
+        release: None,
+        components: Default::default(),
         source_path: source_path.into().unwrap_or_default(),
         policies: policies.unwrap_or_default(),
     }

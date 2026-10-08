@@ -208,15 +208,24 @@ func ErrProvidesDeclaredByComponent() error { return errProvidesDeclaredByCompon
 func ErrPublishBumpBelowClassification() error { return errPublishBumpBelowClassification }
 
 // publishingRule is one rule the publishing-discipline pass dispatches: the
-// condition that names it, and whether it runs only at publish time.
+// condition that names it, whether it runs only at publish time, and whether it
+// reads one entity or a whole Release.
 //
 // prePublish is set for a rule that needs the previously published bytes to
 // compare against. Such a rule cannot run over local content, because in default
 // mode there is no registry to read a predecessor from — the constraint is
 // structural rather than a policy about when the rule is worth running.
+//
+// releaseScoped is set for a rule that reads a whole Release rather than one
+// entity: the Aggregate the Release deploys, that Release, and the Component each
+// of the Aggregate's component instances is an instance of. Such a rule is
+// dispatched once per release-scoped run, over those documents, and never per
+// entity file — so it is reached only from the pass that names a Release, which
+// is the only pass with those documents to hand it.
 type publishingRule struct {
-	condition  cerrors.Identity
-	prePublish bool
+	condition     cerrors.Identity
+	prePublish    bool
+	releaseScoped bool
 }
 
 // publishingRules is the rule set this package dispatches, in dispatch order.

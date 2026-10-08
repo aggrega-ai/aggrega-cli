@@ -59,6 +59,7 @@ var tier3Flags = []string{
 	"allow-nonstandard-names",
 	"allow-category-mismatches",
 	"allow-undeclared-recipe-provides",
+	"allow-connection-credential-mismatches",
 }
 
 // TestTier3FlagsHaveNoEnvBinding is the anti-drift guard: no situational flag

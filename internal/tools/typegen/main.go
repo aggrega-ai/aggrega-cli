@@ -597,23 +597,32 @@ var annotationTransformHostVocabulary = map[string]string{
 	"OrderedMap[string]": "types.OrderedMap[string]",
 }
 
-// linterGuestVocabulary is empty: the linter schema's opaque fields already
-// carry the neutral json.RawMessage spelling, and it declares no host container
-// type. Absence of an entry passes each annotation through verbatim — including
-// the policies field, whose x-aggrega-go-type: Policies annotation resolves to
-// the typed Policies struct the guest realizes.
-var linterGuestVocabulary = map[string]string{}
+// linterGuestVocabulary maps the linter schema's one host container spelling to
+// the neutral guest vocabulary: the order-preserving container a Release's
+// components ride in becomes a plain map (the guest reads a map; key order on the
+// wire is the emitting host's concern). The schema's other opaque fields already
+// carry the neutral json.RawMessage spelling, and absence of an entry passes each
+// annotation through verbatim — including the policies field, whose
+// x-aggrega-go-type: Policies annotation resolves to the typed Policies struct
+// the guest realizes.
+var linterGuestVocabulary = map[string]string{
+	"OrderedMap[json.RawMessage]": "map[string]json.RawMessage",
+}
 
 // linterHostVocabulary maps the linter schema's policies annotation to the host
 // realization. The host assembles the publishing-discipline configuration
 // dynamically from the workspace config plus CLI tri-state overrides and pipes
 // it through as opaque bytes (the proven cross-boundary json.RawMessage carry),
 // so the host LinterInput.Policies is a json.RawMessage rather than the typed
-// Policies struct the guest realizes. The proposed/previous/parent fields
-// already carry json.RawMessage from the schema annotations.
+// Policies struct the guest realizes. A Release's components ride in the
+// order-preserving types.OrderedMap (qualified, since the codec lands in package
+// validator), so the host writes them in the Aggregate's own instance order and
+// the payload is byte-identical across runs of identical input. The entity
+// fields already carry json.RawMessage from the schema annotations.
 var linterHostVocabulary = map[string]string{
-	"Policies":   "json.RawMessage",
-	"Diagnostic": "abi.Diagnostic",
+	"Policies":                    "json.RawMessage",
+	"Diagnostic":                  "abi.Diagnostic",
+	"OrderedMap[json.RawMessage]": "types.OrderedMap[json.RawMessage]",
 }
 
 // irGuestVocabulary maps the IR schema's host container spellings to the neutral

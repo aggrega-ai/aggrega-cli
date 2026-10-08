@@ -66,9 +66,10 @@ var dispatchArmsOutsideRuleModuleDir = map[string]string{
 }
 
 // TestRuleIDsMatchGuestDispatchTable pins the rule set this package dispatches
-// against the set the guest implements. The pre-publish list is the full one
-// (default mode omits only the rule that needs previously-published bytes), so it
-// is the set compared.
+// against the set the guest implements. The full set is the pre-publish entity
+// list (default mode omits only the rule that needs previously-published bytes)
+// together with the rules that read a whole Release, which no entity list holds,
+// so that union is the set compared.
 //
 // It then pins the guest's rule modules against the same dispatch table, in one
 // direction only: every module exposing the classifier entry point has an arm.
@@ -96,7 +97,7 @@ func TestRuleIDsMatchGuestDispatchTable(t *testing.T) {
 	}
 
 	host := map[string]bool{}
-	for _, id := range defaultRuleIDs(true) {
+	for _, id := range append(defaultRuleIDs(true), releaseRuleIDs()...) {
 		host[id] = true
 	}
 

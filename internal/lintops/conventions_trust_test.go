@@ -51,7 +51,7 @@ func TestReleaseConventionsRefusesAGateTheConfigurationDropped(t *testing.T) {
 		t.Fatalf("write trust record: %v", err)
 	}
 
-	err = RunRelease(t.Context(), rw, releasePath, nil, io.Discard, io.Discard, nil)
+	err = RunRelease(t.Context(), rw, releasePath, nil, nil, io.Discard, io.Discard, nil)
 	if err == nil {
 		t.Fatal("a record holding a gate the configuration attaches nowhere must refuse the pass; got a clean run")
 	}
@@ -75,7 +75,7 @@ func TestReleaseConventionsWithoutARecordReachesTheClosure(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 
-	err = RunRelease(t.Context(), rw, filepath.Join(root, "release.yaml"), nil, io.Discard, io.Discard, nil)
+	err = RunRelease(t.Context(), rw, filepath.Join(root, "release.yaml"), nil, nil, io.Discard, io.Discard, nil)
 	if err == nil {
 		t.Fatal("the fixture has no Release, so the pass cannot succeed; the A/B would be vacuous")
 	}

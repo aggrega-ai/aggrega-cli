@@ -832,6 +832,10 @@ type PublishingDisciplineConfig struct {
 	// AllowUndeclaredRecipeProvides relaxes the check that every key a Recipe
 	// publishes is declared by the Component it implements.
 	AllowUndeclaredRecipeProvides bool `yaml:"allow_undeclared_recipe_provides"`
+	// AllowConnectionCredentialMismatches relaxes the check that the two ends of
+	// a key-checked connection — the credential the connection presents and the
+	// key its target holds — reference the same secret.
+	AllowConnectionCredentialMismatches bool `yaml:"allow_connection_credential_mismatches"`
 }
 
 // ParseCacheConfig carries the daemon's parse-cache eviction caps. Both
