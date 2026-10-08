@@ -115,25 +115,130 @@ spec:
     api_key: ` + childParameterMarker + `
 `
 
+// The planted values the Aggregate itself carries: the default its own parameter
+// declaration gives, and the value it passes to the module it imports. Both are
+// parameter values, and neither may reach a plugin.
+const (
+	aggregateDefaultMarker = "AGGREGATE-DEFAULT-MARKER-3f8a"
+	moduleParameterMarker  = "MODULE-PARAMETER-MARKER-7b40"
+)
+
+// probeAggregateWithModule is probeAggregate with a default on one of its
+// parameter declarations and a module it imports, passing that module a
+// parameter value. The module's components are not among the Aggregate's own,
+// so the Component map is the one probeAggregate yields.
+const probeAggregateWithModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: probe-app
+  version: "1.0.0"
+spec:
+  parameters:
+    api_key:
+      type: string
+      required: true
+    region:
+      type: string
+      default: ` + aggregateDefaultMarker + `
+  aggregates:
+    edge:
+      type: probe-module
+      parameters:
+        zone: ` + moduleParameterMarker + `
+  components:
+    web:
+      type: core/compute/web-ui
+    backend:
+      type: core/compute/api-server
+      description: "serves callers holding {{ .parameters.api_key }}"
+`
+
+// probeModulePath is where the workspace keeps the module probeAggregateWithModule
+// imports. A module is imported by its catalog name, so the directory holding it
+// is added to the workspace's catalog directories whenever it is seeded.
+const probeModulePath = "modules/probe-module.yaml"
+
+// probeModule is the module probeAggregateWithModule imports: one parameter it
+// declares and one component.
+const probeModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: probe-module
+  version: "1.0.0"
+spec:
+  parameters:
+    zone:
+      type: string
+  components:
+    gateway:
+      type: core/compute/web-ui
+`
+
+// probeBaseReleaseWithModule is probeBaseRelease routing the module's component
+// into the same boundary.
+const probeBaseReleaseWithModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: base-release
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  parameters:
+    region: ` + baseParameterMarker + `
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        web: {}
+        backend:
+          infra:
+            port: 8080
+      aggregates:
+        edge:
+          components:
+            gateway: {}
+`
+
 // seedProbeWorkspace writes the documents above into a workspace reading the
 // full-stack fixture catalog, with lintBlock appended to its configuration, and
 // returns the resolved workspace and the extending Release's path.
 func seedProbeWorkspace(t *testing.T, lintBlock string) (*workspaceconfig.ResolvedWorkspace, string) {
+	t.Helper()
+	return seedProbeWorkspaceWith(t, lintBlock, nil)
+}
+
+// seedProbeWorkspaceWith is seedProbeWorkspace with some documents replaced or
+// added: each entry of replaced is written at its path in place of, or beside,
+// the documents above, and the module directory joins the catalog directories
+// when the module is among them.
+func seedProbeWorkspaceWith(t *testing.T, lintBlock string, replaced map[string]string) (*workspaceconfig.ResolvedWorkspace, string) {
 	t.Helper()
 	catalogDir, err := filepath.Abs(filepath.Join("..", "compiler", "testdata", "fullstack-app", "catalog"))
 	if err != nil {
 		t.Fatalf("abs catalog: %v", err)
 	}
 	root := t.TempDir()
+	catalogDirs := "workspace:\n  catalog_dirs:\n    - " + catalogDir + "\n"
+	if _, ok := replaced[probeModulePath]; ok {
+		catalogDirs += "    - ./" + filepath.ToSlash(filepath.Dir(probeModulePath)) + "\n"
+	}
 	files := map[string]string{
-		workspaceconfig.ConfigFilename: "workspace:\n  catalog_dirs:\n    - " + catalogDir + "\n" + lintBlock,
+		workspaceconfig.ConfigFilename: catalogDirs + lintBlock,
 		"aggregate.yaml":               probeAggregate,
 		"manifest.yaml":                probeManifest,
 		"base-release.yaml":            probeBaseRelease,
 		"release.yaml":                 probeChildRelease,
 	}
+	for name, body := range replaced {
+		files[name] = body
+	}
 	for name, body := range files {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, filepath.FromSlash(name))), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(body), 0o644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
@@ -343,41 +448,85 @@ func TestReleaseRunHandsAReleaseScopedRuleTheWholeRelease(t *testing.T) {
 	}
 }
 
-// TestReleaseRunWithholdsEveryReleaseParameterValue plants a value in the
-// parameters block of the extending Release and of the base it extends, runs the
-// pass, and asserts neither value appears in any payload the run hands a guest.
+// TestReleaseRunWithholdsEveryReleaseParameterValue plants a parameter value in
+// each of the four places a Release-scoped run reads one from — the parameters
+// block of the extending Release and of the base it extends, the default the
+// Aggregate's own parameter declaration gives, and the value the Aggregate passes
+// to a module it imports — runs the pass, and asserts no value appears in any
+// payload the run hands a guest.
 //
-// The control is the fixture itself: both values are on disk in the Release
-// files the pass reads, and the fold carries both into the Release it resolves,
-// so their absence from the payloads is the removal's doing rather than the
-// fixture's. The plant that removes the removal turns this test red.
+// The control is the fixture itself: every value is on disk in a document the
+// pass reads, and the documents a rule reading a whole Release is handed are those
+// very documents, so their absence from the payloads is the removal's doing rather
+// than the fixture's. The parameter reference in the Aggregate's template text is
+// asserted present beside them, so the removal is shown taking the values and
+// leaving the text that names a parameter. Each plant that removes one removal
+// turns this test red.
 func TestReleaseRunWithholdsEveryReleaseParameterValue(t *testing.T) {
-	rw, releasePath := seedProbeWorkspace(t, "")
+	rw, releasePath := seedProbeWorkspaceWith(t, "", map[string]string{
+		"aggregate.yaml":    probeAggregateWithModule,
+		probeModulePath:     probeModule,
+		"base-release.yaml": probeBaseReleaseWithModule,
+	})
 
-	child, err := os.ReadFile(releasePath)
-	if err != nil {
-		t.Fatalf("read release: %v", err)
+	planted := map[string]string{
+		childParameterMarker:   "release.yaml",
+		baseParameterMarker:    "base-release.yaml",
+		aggregateDefaultMarker: "aggregate.yaml",
+		moduleParameterMarker:  "aggregate.yaml",
 	}
-	base, err := os.ReadFile(filepath.Join(filepath.Dir(releasePath), "base-release.yaml"))
-	if err != nil {
-		t.Fatalf("read base release: %v", err)
-	}
-	if !bytes.Contains(child, []byte(childParameterMarker)) || !bytes.Contains(base, []byte(baseParameterMarker)) {
-		t.Fatal("the planted values are not in the Release files, so their absence below would prove nothing")
+	for marker, file := range planted {
+		body, err := os.ReadFile(filepath.Join(filepath.Dir(releasePath), file))
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		if !bytes.Contains(body, []byte(marker)) {
+			t.Fatalf("the planted value %q is not in %s, so its absence below would prove nothing", marker, file)
+		}
 	}
 
 	rec := &recordingDispatch{}
 	runReleaseProbe(t, rw, releasePath, nil, rec)
-	if len(rec.probeInputs()) != 1 {
-		t.Fatalf("expected one release-scoped input; got %d", len(rec.probeInputs()))
+	probe := rec.probeInputs()
+	if len(probe) != 1 {
+		t.Fatalf("expected one release-scoped input; got %d", len(probe))
 	}
 	for i, payload := range rec.payloads {
-		for _, marker := range []string{childParameterMarker, baseParameterMarker} {
+		for marker := range planted {
 			if bytes.Contains(payload, []byte(marker)) {
 				t.Errorf("payload %d (rule %q) carries the parameter value %q; no parameter value may reach a linter plugin:\n%s",
 					i, rec.inputs[i].RuleID, marker, payload)
 			}
 		}
+	}
+
+	var proposed struct {
+		Spec struct {
+			Parameters json.RawMessage                       `json:"parameters"`
+			Aggregates map[string]map[string]json.RawMessage `json:"aggregates"`
+			Components map[string]struct {
+				Description string `json:"description"`
+			} `json:"components"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(probe[0].Proposed, &proposed); err != nil {
+		t.Fatalf("proposed must be JSON: %v", err)
+	}
+	if len(proposed.Spec.Parameters) != 0 {
+		t.Errorf("proposed carries the Aggregate's parameters block: %s", proposed.Spec.Parameters)
+	}
+	module, ok := proposed.Spec.Aggregates["edge"]
+	if !ok {
+		t.Fatalf("proposed lost the imported module entry itself; only its parameters block is removed: %s", probe[0].Proposed)
+	}
+	if _, ok := module["parameters"]; ok {
+		t.Errorf("proposed carries the parameters passed to the imported module: %s", module["parameters"])
+	}
+	if _, ok := module["type"]; !ok {
+		t.Errorf("the imported module entry lost its type; only its parameters block is removed: %v", module)
+	}
+	if desc := proposed.Spec.Components["backend"].Description; desc != "serves callers holding {{ .parameters.api_key }}" {
+		t.Errorf("template text naming a parameter is kept as written; got %q", desc)
 	}
 }
 

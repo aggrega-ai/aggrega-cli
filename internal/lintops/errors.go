@@ -148,6 +148,17 @@ var (
 			"dispatch neither invokes nor holds a view of."),
 	})
 
+	errConnectionCredentialMatchesTargetKey = cerrors.Register("connection-credential-matches-target-key", cerrors.Meta{
+		ShortCode: "E0329",
+		Message: "a connection and the target it reaches do not name one key: they write different locators for " +
+			"it, or only one of them names one",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates each connection a Release's components draw against " +
+			"the key its target holds, reading the Aggregate, the Release and the Components they name, and this " +
+			"package raises the condition on the finding it returns. The rule runs inside the guest over the " +
+			"authored documents a Release-scoped lint presents, which the rule dispatch neither invokes nor holds " +
+			"a view of."),
+	})
+
 	errPublishBumpBelowClassification = cerrors.Register("publish-bump-below-classification", cerrors.Meta{
 		ShortCode: "E0286",
 		Message: "the version bump being published is smaller than the evolution check's " +
@@ -203,6 +214,11 @@ func ErrSecretSlotDeclaresSensitive() error { return errSecretSlotDeclaresSensit
 // the Component it implements does not declare.
 func ErrProvidesDeclaredByComponent() error { return errProvidesDeclaredByComponent }
 
+// ErrConnectionCredentialMatchesTargetKey fires when a connection whose target
+// declares the key it requires of its callers and that target do not name one
+// key: the two ends write different locators, or only one end names a key.
+func ErrConnectionCredentialMatchesTargetKey() error { return errConnectionCredentialMatchesTargetKey }
+
 // ErrPublishBumpBelowClassification fires when the version bump offered for
 // publication is smaller than the evolution check's classification requires.
 func ErrPublishBumpBelowClassification() error { return errPublishBumpBelowClassification }
@@ -250,6 +266,7 @@ var publishingRules = []publishingRule{
 	{condition: errPluginDefaultLimits},
 	{condition: errSecretSlotDeclaresSensitive},
 	{condition: errProvidesDeclaredByComponent},
+	{condition: errConnectionCredentialMatchesTargetKey, releaseScoped: true},
 }
 
 // ruleConditions keys the rule set by the identifier the guest reports on a

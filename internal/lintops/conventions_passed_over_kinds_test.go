@@ -25,7 +25,7 @@ func catalogWideOutput(t *testing.T, ws string) string {
 		t.Fatalf("resolve the constructed workspace: %v", err)
 	}
 	var out bytes.Buffer
-	if err := RunCatalogWide(t.Context(), rw, rw.WholeCatalogPasses(nil, []string{ws}), &out, io.Discard, nil); err != nil {
+	if err := RunCatalogWide(t.Context(), rw, rw.WholeCatalogPasses(nil, []string{ws}), nil, &out, io.Discard, nil); err != nil {
 		t.Fatalf("whole-catalog conventions pass: %v", err)
 	}
 	return out.String()

@@ -39,6 +39,32 @@ pub fn fixture(
     }
 }
 
+/// `fixture_release` builds the input of a rule that reads a whole Release:
+/// `proposed` is the Aggregate the Release deploys, `release` the Release, and
+/// `components` the Component each named instance is an instance of, keyed by
+/// the instance name. An instance left out of `components` is one whose
+/// Component the host could not resolve.
+pub fn fixture_release(
+    aggregate: Value,
+    release: Value,
+    components: &[(&str, Value)],
+    policies: Option<Policies>,
+) -> LinterInput {
+    LinterInput {
+        release: Some(to_raw_value(&release).expect("encode release")),
+        components: components
+            .iter()
+            .map(|(instance, component)| {
+                (
+                    instance.to_string(),
+                    to_raw_value(component).expect("encode component"),
+                )
+            })
+            .collect(),
+        ..fixture("Aggregate", aggregate, None, policies, None)
+    }
+}
+
 /// `fixture_implementing` builds an input for a rule that compares the
 /// linted entity against a related entity of a DIFFERENT kind — the
 /// Component a Recipe implements — rather than against another version of

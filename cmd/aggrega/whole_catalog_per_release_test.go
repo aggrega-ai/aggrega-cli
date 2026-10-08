@@ -144,7 +144,7 @@ func TestWholeCatalogScopesRefuseWhenNoReleaseReadsADirectory(t *testing.T) {
 		{"aggrega validate (whole catalog)", func() error { return validateCatalogWideFromWorkspace(rw, nil) }},
 		{"aggrega lint (whole catalog)", func() error {
 			var out, diag bytes.Buffer
-			return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), &out, &diag, nil)
+			return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), nil, &out, &diag, nil)
 		}},
 	}
 	for _, s := range scopes {

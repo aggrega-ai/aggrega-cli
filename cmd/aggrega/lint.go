@@ -79,7 +79,10 @@ under workspace.releases, it runs them once for each Release, over the
 directories that Release reads, and reports each pass under a line naming
 its Releases and those directories; Releases reading the same directories
 share one pass. With --release it runs them over the entities that
-Release's closure reaches. In both, findings are advisory (warn severity)
+Release's closure reaches, and also runs the rules that read a whole
+Release: once, over the Aggregate it deploys, the Release and the
+Components the Aggregate's components are instances of, with every
+parameter value removed. In both, findings are advisory (warn severity)
 and never halt.
 
 With an entity path, lint runs the publishing-linter rule set against
@@ -89,7 +92,8 @@ previous registry version is fetched and the schema-evolution
 classification is compared against the proposed version bump; mismatches
 halt. --pre-publish applies to the single-entity shape only. Per-workspace
 policy flags from .aggrega-config.yaml's lint.publishing_discipline block
-can be overridden per invocation via the --allow-*/--no-allow-* flag pairs.
+can be overridden per invocation via the --allow-*/--no-allow-* flag pairs,
+in all three shapes.
 
 All three shapes accept -o json, which replaces the human report on standard
 output with one structured document: every finding with its severity, the rule
@@ -162,7 +166,7 @@ status is the same under either format.`,
 			if path == "" {
 				// No entity argument → whole-catalog conventions, one pass for each
 				// Release where the workspace gives its Releases directories of their own.
-				return emit(lintops.RunCatalogWide(cmd.Context(), rw, serve.WholeCatalogPasses(rw, opts.catalogDirs), opOut, os.Stderr, collect))
+				return emit(lintops.RunCatalogWide(cmd.Context(), rw, serve.WholeCatalogPasses(rw, opts.catalogDirs), makeResolverFromCobra(cmd), opOut, os.Stderr, collect))
 			}
 			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a

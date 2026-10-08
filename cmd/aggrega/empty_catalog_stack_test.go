@@ -118,7 +118,7 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 			run: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) error {
 				t.Helper()
 				var out, diag bytes.Buffer
-				return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), &out, &diag, nil)
+				return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), nil, &out, &diag, nil)
 			},
 		},
 	}

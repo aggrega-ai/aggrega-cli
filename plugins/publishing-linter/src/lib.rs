@@ -83,6 +83,9 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "provides-declared-by-component" => {
             rules::provides_declared_by_component::classify(&input)
         }
+        "connection-credential-matches-target-key" => {
+            rules::connection_credential_matches_target_key::classify(&input)
+        }
         other => vec![Diagnostic {
             rule_id: "unknown_rule".to_string(),
             severity: "halt".to_string(),

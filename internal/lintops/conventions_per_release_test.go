@@ -118,7 +118,7 @@ func TestCatalogWideRunsOncePerRelease(t *testing.T) {
 
 	var out, diag bytes.Buffer
 	collect := &FindingCollector{}
-	if err := RunCatalogWide(t.Context(), rw, passes, &out, &diag, collect); err != nil {
+	if err := RunCatalogWide(t.Context(), rw, passes, nil, &out, &diag, collect); err != nil {
 		t.Fatalf("a per-Release whole-catalog run with a directory to read: %v\nout:\n%s\ndiag:\n%s", err, out.String(), diag.String())
 	}
 
@@ -225,7 +225,7 @@ func TestCatalogWideRefusesOnlyWhenNoPassReads(t *testing.T) {
 				map[string]string{"variant-b/component/api-server.yaml": perReleaseComponent})
 			passes := rw.WholeCatalogPasses(func() []string { return tc.releases }, nil)
 			var out, diag bytes.Buffer
-			err := RunCatalogWide(t.Context(), rw, passes, &out, &diag, nil)
+			err := RunCatalogWide(t.Context(), rw, passes, nil, &out, &diag, nil)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("a run with one pass to read was refused: %v", err)
@@ -242,5 +242,74 @@ func TestCatalogWideRefusesOnlyWhenNoPassReads(t *testing.T) {
 				t.Errorf("a refused run wrote a report:\n%s", out.String())
 			}
 		})
+	}
+}
+
+// TestCatalogWideTakesTheCommandLineSuppressions holds the whole-catalog check to
+// the precedence every conventions check documents — the --no- form of a flag
+// over the flag, and the flag over the workspace value — on both of the check's
+// shapes: one pass over the workspace's own stack, and one pass per Release. The
+// planted variant carries exactly one finding, from the reserved-prefix rule, and
+// each row decides that rule's suppression a different way; the first row, where
+// nothing suppresses it, is the control that makes each silence attributable to
+// the row that produced it.
+func TestCatalogWideTakesTheCommandLineSuppressions(t *testing.T) {
+	t.Parallel()
+	const flag = "allow-aggrega-ai-prefix"
+	forcing := func(v bool) func(string, bool) bool {
+		return func(f string, ws bool) bool {
+			if f == flag {
+				return v
+			}
+			return ws
+		}
+	}
+	layouts := []struct {
+		name     string
+		config   string
+		releases []string
+	}{
+		{"one pass over the workspace's own stack", "workspace:\n  catalog_dirs:\n    - ./variant-b\n", nil},
+		{"one pass per Release", "workspace:\n  releases:\n    release-b.yaml:\n      catalog_dirs:\n        - ./variant-b\n",
+			[]string{"release-b.yaml"}},
+	}
+	rows := []struct {
+		name            string
+		workspaceAllows bool
+		resolve         func(string, bool) bool
+		want            int
+	}{
+		{"nothing suppresses the rule, so it reports", false, nil, 1},
+		{"the workspace value suppresses it", true, nil, 0},
+		{"the flag suppresses it over the workspace", false, forcing(true), 0},
+		{"the no- form restores it over the workspace", true, forcing(false), 1},
+	}
+	for _, layout := range layouts {
+		for _, row := range rows {
+			t.Run(layout.name+"/"+row.name, func(t *testing.T) {
+				t.Parallel()
+				config := layout.config
+				if row.workspaceAllows {
+					config += "lint:\n  publishing_discipline:\n    allow_aggrega_ai_prefix: true\n"
+				}
+				rw := perReleaseWorkspace(t, config, layout.releases,
+					map[string]string{"variant-b/component/api-server.yaml": plantedComponent})
+				passes := rw.WholeCatalogPasses(func() []string { return layout.releases }, nil)
+				if got := len(passes); got != 1 {
+					t.Fatalf("the layout yields %d pass(es); want 1, so the row reads one pass's findings", got)
+				}
+				if passes[0].NamesReleases() != (layout.releases != nil) {
+					t.Fatalf("the layout's pass names Releases = %v; it was built to exercise the other shape", passes[0].NamesReleases())
+				}
+				var out, diag bytes.Buffer
+				collect := &FindingCollector{}
+				if err := RunCatalogWide(t.Context(), rw, passes, row.resolve, &out, &diag, collect); err != nil {
+					t.Fatalf("the whole-catalog check: %v\nout:\n%s\ndiag:\n%s", err, out.String(), diag.String())
+				}
+				if got := collect.Report().Summary.Findings; got != row.want {
+					t.Errorf("the check reported %d finding(s); want %d\ndiag:\n%s", got, row.want, diag.String())
+				}
+			})
+		}
 	}
 }

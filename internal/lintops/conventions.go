@@ -55,13 +55,20 @@ import (
 // collects nothing. For a run of several passes it also gathers each pass on its
 // own, under the Releases it was run for.
 //
+// policyResolve decides each publishing-discipline suppression's effective value
+// from the workspace's own, keyed on the suppression's flag name, exactly as it
+// does for the release-scoped pass and the single-entity check — so a command
+// line's --allow-*/--no-allow-* pair reaches every pass of this check as well.
+// nil takes every workspace value as it is, which is what a surface with no such
+// flags passes.
+//
 // ctx ends the pass where the caller stops wanting it. This is the pass whose
 // cost scales with the catalog — one guest dispatch per entity over every entity
 // the configured directories hold — so it is the one where abandoning the work
 // and discarding the answer are materially different outcomes. Both the tree
 // walk and the per-entity loop observe it, so a stop is honoured whichever of
 // the two the pass is in.
-func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, passes []workspaceconfig.CatalogPass, out, diagOut io.Writer, collect *FindingCollector) error {
+func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, passes []workspaceconfig.CatalogPass, policyResolve func(flagBase string, wsValue bool) bool, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
@@ -76,7 +83,7 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 		return emptyCatalogRefusal(perRelease)
 	}
 	if !perRelease {
-		return lintCatalogPass(ctx, rw, passes[0].Dirs, passes[0].Named, out, diagOut, collect)
+		return lintCatalogPass(ctx, rw, passes[0].Dirs, passes[0].Named, policyResolve, out, diagOut, collect)
 	}
 	for i, pass := range passes {
 		if i > 0 {
@@ -90,7 +97,7 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 		gathered := collect.forPass()
 		var passErr error
 		if len(pass.Dirs) > 0 {
-			passErr = lintCatalogPass(ctx, rw, pass.Dirs, pass.Named, out, diagOut, gathered)
+			passErr = lintCatalogPass(ctx, rw, pass.Dirs, pass.Named, policyResolve, out, diagOut, gathered)
 		}
 		collect.addPass(pass.Releases, pass.Dirs, gathered)
 		if passErr != nil {
@@ -114,10 +121,11 @@ func emptyCatalogRefusal(perRelease bool) error {
 }
 
 // lintCatalogPass is one pass of the whole-catalog conventions check: every
-// catalog entity under dirs, linted against lookups over the same dirs, then the
-// summary and the kinds the walk passed over. named is the part of dirs somebody
-// named, handed on to every walk of them.
-func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, out, diagOut io.Writer, collect *FindingCollector) error {
+// catalog entity under dirs, linted against lookups over the same dirs and under
+// the suppressions policyResolve decides, then the summary and the kinds the walk
+// passed over. named is the part of dirs somebody named, handed on to every walk
+// of them.
+func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, policyResolve func(flagBase string, wsValue bool) bool, out, diagOut io.Writer, collect *FindingCollector) error {
 	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, named, rw.Config().ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
@@ -134,7 +142,10 @@ func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	// The release-scoped pass below is the lint path that does hold them to it, and
 	// it is the same path that reads the lockfile beside the Release, so both files
 	// are read from one place.
-	if err := lintConventionsFiles(ctx, rw, dirs, named, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+	if err := lintConventionsFiles(ctx, rw, dirs, named, paths, conventionsRun{
+		trusted:       pluginpath.PinMaps{},
+		policyResolve: policyResolve,
+	}, out, diagOut, collect); err != nil {
 		return err
 	}
 	// This is the pass whose summary claims a corpus — "every catalog entity under
@@ -338,7 +349,7 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		}
 		check = &releaseRuleCheck{rules: run.rules, docs: docs, path: releasePath}
 	}
-	lintErr := lintConventions(ctx, rw, dirs, named, paths, conventionsRun{
+	lintErr := lintConventionsFiles(ctx, rw, dirs, named, paths, conventionsRun{
 		trusted:       trusted,
 		policyResolve: run.policyResolve,
 		releaseRules:  check,
@@ -366,51 +377,6 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		return fmt.Errorf("release manifest mapping: %d diagnostic(s)", n)
 	}
 	return nil
-}
-
-// lintConventionsFiles runs the structural publishing-linter rules (the default
-// rule set minus schema-evolution — that rule needs a previous registry version
-// and stays single-entity, --pre-publish only) over each entity file in paths, at
-// warn severity, at every linter attachment the workspace configures and under
-// its publishing-discipline policy defaults. It is the shared core of the
-// whole-catalog and release-scoped conventions passes: both resolve a set of
-// entity files, then hand them here, reusing the same per-entity dispatch the
-// single-entity lint runs (buildRuleInputs + dispatchLinterAttachments). A
-// convention finding is advisory and never halts; a plugin-load, read, or parse
-// failure is a real error and does halt. Findings are written to diagOut
-// (os.Stderr in production); the final summary is written to out (os.Stdout).
-// collect optionally gathers the same findings as data; nil collects nothing.
-//
-// trusted carries the digests recorded as trusted for the plugins that return an
-// accept-or-reject verdict, threaded from the caller rather than read here,
-// because only one of the two callers reads the record: it sits beside a Release,
-// and a whole-catalog pass is about the directories it reads rather than any one
-// Release's dependency closure, even where it is run for one. Both arms of the linter socket's
-// resolution receive it, so a recorded digest governs the bytes whichever tier
-// serves them. An empty set is the ordinary case and resolves pin-free.
-//
-// dirs are the catalog directories the caller walked to find paths, and the
-// plugin and Component lookups below read exactly those: a whole-catalog pass run
-// for several Releases that share a stack, and a Release's closure pass, are each
-// handed the one stack they read rather than re-deriving it here — and named, the
-// part of it somebody named, for the same reason.
-//
-// ctx is observed once per entity, at the top of the loop, which is the seam
-// that makes a stop reach the work: this loop is where both passes spend their
-// time, one guest dispatch per entity, and an entity not yet reached is an
-// entity never read, never parsed and never dispatched.
-//
-// A stop returns the caller's own reason and no summary. That is deliberate: the
-// summary line claims a corpus — "conventions checked: N entities" — and
-// printing it after a stop would report a partial walk in the words of a complete
-// one, which is the one thing a reader cannot recover from the output.
-//
-// It applies the workspace's suppression values as they are, which is what the
-// whole-catalog pass runs under; the release-scoped pass, which also takes the
-// command line's suppression overrides and has a whole Release to check, enters
-// at lintConventions.
-func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
-	return lintConventions(ctx, rw, dirs, named, paths, conventionsRun{trusted: trusted}, out, diagOut, collect)
 }
 
 // linterDispatch runs inputs at every resolved linter attachment and returns the
@@ -443,9 +409,47 @@ type releaseRuleCheck struct {
 	path  string
 }
 
-// lintConventions is lintConventionsFiles over an explicit conventionsRun, and
-// the one body both passes run.
-func lintConventions(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, run conventionsRun, out, diagOut io.Writer, collect *FindingCollector) error {
+// lintConventionsFiles runs the structural publishing-linter rules (the default rule
+// set minus schema-evolution — that rule needs a previous registry version and
+// stays single-entity, --pre-publish only) over each entity file in paths, at
+// warn severity, at every linter attachment the workspace configures. It is the
+// one body the whole-catalog and release-scoped conventions passes run: both
+// resolve a set of entity files, then hand them here, reusing the same
+// per-entity dispatch the single-entity lint runs (buildRuleInputs +
+// dispatchLinterAttachments). A convention finding is advisory and never halts;
+// a plugin-load, read, or parse failure is a real error and does halt. Findings
+// are written to diagOut (os.Stderr in production); the final summary is written
+// to out (os.Stdout). collect optionally gathers the same findings as data; nil
+// collects nothing.
+//
+// run.trusted carries the digests recorded as trusted for the plugins that return
+// an accept-or-reject verdict, threaded from the caller rather than read here,
+// because only one of the two callers reads the record: it sits beside a Release,
+// and a whole-catalog pass is about the directories it reads rather than any one
+// Release's dependency closure, even where it is run for one. Both arms of the
+// linter socket's resolution receive it, so a recorded digest governs the bytes
+// whichever tier serves them. An empty set is the ordinary case and resolves
+// pin-free.
+//
+// run.policyResolve decides the suppressions both passes run under, so a command
+// line's --allow-*/--no-allow-* pair reaches each of them on the same terms.
+//
+// dirs are the catalog directories the caller walked to find paths, and the
+// plugin and Component lookups below read exactly those: a whole-catalog pass run
+// for several Releases that share a stack, and a Release's closure pass, are each
+// handed the one stack they read rather than re-deriving it here — and named, the
+// part of it somebody named, for the same reason.
+//
+// ctx is observed once per entity, at the top of the loop, which is the seam
+// that makes a stop reach the work: this loop is where both passes spend their
+// time, one guest dispatch per entity, and an entity not yet reached is an
+// entity never read, never parsed and never dispatched.
+//
+// A stop returns the caller's own reason and no summary. That is deliberate: the
+// summary line claims a corpus — "conventions checked: N entities" — and
+// printing it after a stop would report a partial walk in the words of a complete
+// one, which is the one thing a reader cannot recover from the output.
+func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, run conventionsRun, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 	attachments, err := ResolveLinterPlugins("", wsCfg, run.trusted, lazyView.PluginByURI,

@@ -16,10 +16,19 @@ import (
 )
 
 // releaseRuleDocuments is what a rule reading a whole Release is handed: the
-// Aggregate the Release deploys, as its author wrote it; the Release, with its
-// extends chain folded in and its parameters block removed; and the Component
-// each of the Aggregate's component instances is an instance of, keyed by the
-// instance name in the Aggregate's own order.
+// Aggregate the Release deploys, as its author wrote it but for its parameter
+// blocks, which are removed; the Release, with its extends chain folded in and
+// its parameters block removed; and the Component each of the Aggregate's
+// component instances is an instance of, keyed by the instance name in the
+// Aggregate's own order.
+//
+// No parameter value reaches a rule through these documents. A value can be the
+// credential itself — a realization that delivers a value reads it from a
+// parameter — so the Aggregate's own parameter declarations, which carry its
+// defaults, the values it passes to each module it imports, and the Release's
+// fulfilment are all removed before anything is handed over. A template that
+// reads a parameter keeps its text, so a rule still sees which parameter an
+// authored value reads.
 //
 // It is assembled once per release-scoped run, from the closure the run already
 // resolved, so the documents a rule reads are the ones the build reads rather
@@ -49,7 +58,7 @@ func releaseRuleDocumentsFor(rc *compilerops.ResolvedClosure, componentByURI fun
 	if rc == nil {
 		return releaseRuleDocuments{}, fmt.Errorf("aggrega lint: no resolved Release to hand a release-scoped rule")
 	}
-	aggregateJSON, _, err := yamlToLinterJSON(rc.AggBytes)
+	aggregateJSON, err := aggregateLinterJSON(rc.AggBytes)
 	if err != nil {
 		return releaseRuleDocuments{}, fmt.Errorf("aggrega lint: parse aggregate %s: %w", rc.AggregatePath, err)
 	}
@@ -74,6 +83,57 @@ func releaseRuleDocumentsFor(rc *compilerops.ResolvedClosure, componentByURI fun
 		}
 	}
 	return docs, nil
+}
+
+// aggregateLinterJSON converts the Aggregate's authored bytes to the JSON a
+// linter plugin receives, through the same YAML-to-JSON conversion the proposed
+// entity goes through, and with every parameter value removed: its own
+// parameters block, whose declarations carry their defaults, and the parameters
+// block of each module it imports, which carries the values passed to that
+// module. Everything else — template text that reads a parameter included — is
+// as the author wrote it.
+func aggregateLinterJSON(aggBytes []byte) (json.RawMessage, error) {
+	var raw any
+	if err := yaml.Unmarshal(aggBytes, &raw); err != nil {
+		return nil, fmt.Errorf("yaml unmarshal: %w", err)
+	}
+	tree := convertYAMLMaps(raw)
+	withoutAggregateParameters(tree)
+	out, err := json.Marshal(tree)
+	if err != nil {
+		return nil, fmt.Errorf("json marshal: %w", err)
+	}
+	return out, nil
+}
+
+// withoutAggregateParameters removes spec.parameters and every
+// spec.aggregates.<module>.parameters from a parsed Aggregate document, in
+// place. A document missing any of those levels is left as it is.
+func withoutAggregateParameters(tree any) {
+	spec, ok := specOf(tree)
+	if !ok {
+		return
+	}
+	delete(spec, "parameters")
+	modules, ok := spec["aggregates"].(map[string]any)
+	if !ok {
+		return
+	}
+	for _, m := range modules {
+		if module, ok := m.(map[string]any); ok {
+			delete(module, "parameters")
+		}
+	}
+}
+
+// specOf returns a parsed document's spec mapping, when it has one.
+func specOf(tree any) (map[string]any, bool) {
+	root, ok := tree.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	spec, ok := root["spec"].(map[string]any)
+	return spec, ok
 }
 
 // releaseLinterJSON converts a Release to the JSON a linter plugin receives,
@@ -110,15 +170,9 @@ func releaseLinterJSON(rel *types.Release) (json.RawMessage, error) {
 // document, in place. A document with no spec, or a spec carrying no
 // parameters, is left as it is.
 func withoutReleaseParameters(tree any) {
-	root, ok := tree.(map[string]any)
-	if !ok {
-		return
+	if spec, ok := specOf(tree); ok {
+		delete(spec, "parameters")
 	}
-	spec, ok := root["spec"].(map[string]any)
-	if !ok {
-		return
-	}
-	delete(spec, "parameters")
 }
 
 // buildReleaseRuleInputs builds one LinterInput per rule that reads a whole

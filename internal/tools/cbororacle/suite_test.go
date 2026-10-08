@@ -221,6 +221,12 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.MutatorInput](t, "MutatorInput", false)
 	vec[abi.MutatorOutput](t, "MutatorOutput", false)
 	vec[abi.LinterInput](t, "LinterInput", false)
+	// The input of a rule that reads a whole Release, its Release and Component map
+	// populated. Each crosses as a byte string of the document's JSON bytes — a
+	// raw-message field, which the reference encoder writes as a byte string too —
+	// so the vector stays anchored, and the map's two keys pin the length-first
+	// order against an encoder this schema did not generate.
+	vec[abi.LinterInput](t, "LinterInputRelease", false)
 	vec[abi.LinterOutput](t, "LinterOutput", false)
 	vec[abi.IRGraph](t, "IRGraph", false)
 	vec[abi.PolicyInput](t, "PolicyInput", false)
