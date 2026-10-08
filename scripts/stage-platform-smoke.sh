@@ -11,7 +11,10 @@
 #               scripts/lib/platform-smoke-common.sh lists them: for windows/amd64
 #               aggrega-windows-amd64.exe, aggrega-light-windows-amd64.exe and
 #               aggrega-stripped-windows-amd64.exe; for darwin/<arch>
-#               aggrega-darwin-<arch> and aggrega-light-darwin-<arch>
+#               aggrega-darwin-<arch> and aggrega-light-darwin-<arch>. The
+#               Windows ones are unsigned: the smoke run runs the signed copies
+#               the release attaches, handed to it apart (its --signed), and
+#               holds these as what its signature check must refuse
 #   tests/      one test executable for the target per package listed below,
 #               cross-compiled here, and tests.txt, which names for each executable
 #               its package and the tests it runs there

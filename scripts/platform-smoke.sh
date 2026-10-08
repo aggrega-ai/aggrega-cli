@@ -6,6 +6,13 @@
 # It reads the directory scripts/stage-platform-smoke.sh wrote for the target
 # (--inputs) and runs from a checkout of this repository at the commit that
 # directory names: under the Git for Windows shell on Windows, under bash on macOS.
+# For windows/amd64 it also reads the directory the release's signing wrote
+# (--signed): the Windows binaries with their Authenticode signatures, and
+# SHA256SUMS, the SHA-256 list of them. The signed binaries are the ones every
+# step runs, because they are the ones the release attaches; the unsigned copies
+# the build wrote, staged in bin/, run in no step, and step 11 holds them as what
+# its checks must refuse. The macOS binaries are not signed by the release, so a
+# darwin target runs the staged ones and takes no --signed.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
 # registry but the one it starts on this machine; it does need bash 4.3 or later,
 # which macOS does not ship. Before the checks it holds the inputs and the machine
@@ -14,7 +21,8 @@
 #   - the staged inputs name the target given with --target, and bin/ holds
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
 #     full, light and stripped binaries for windows/amd64; the full and light ones
-#     for darwin/arm64 and darwin/amd64
+#     for darwin/arm64 and darwin/amd64. For windows/amd64 the --signed directory
+#     holds exactly those binaries too, and SHA256SUMS beside them
 #   - on macOS, the machine is the target's: uname -m reports arm64 for
 #     darwin/arm64 and x86_64 for darwin/amd64. A Mac with Apple silicon also runs
 #     an amd64 binary, through Rosetta 2, and that binary still reports
@@ -94,27 +102,44 @@
 #                 -test.timeout 10m and -test.v; every named test must report PASS,
 #                 and a named test that skips, a run that finds no test to run, or a
 #                 count of passes other than the count of names fails the run
+#  11. signature  windows/amd64 only. Each binary the steps above ran must have
+#                 the SHA-256 that SHA256SUMS lists for it, the list naming exactly
+#                 those binaries; and Windows' own Get-AuthenticodeSignature, run
+#                 through Windows PowerShell on each, must report Status Valid, a
+#                 signer certificate whose subject names Cognitio S.r.l. as its
+#                 common name, first, and a timestamp countersignature (a
+#                 TimeStamperCertificate), which keeps the signature valid after
+#                 its certificate, issued for a few days only, expires. Each file's
+#                 status, signer and timestamper are printed. Then the same
+#                 signature check over the unsigned full binary staged in bin/,
+#                 and the same list check over bin/, must refuse them
 #
 # Each binary started in steps 1-8 has every AGGREGA_ setting of the machine
 # unset, the global configuration pointed at an empty directory (XDG_CONFIG_HOME
 # and APPDATA both name it), and the offline posture on, so it reads no
-# configuration of the machine and reaches no network; steps 4 and 9 start no
-# binary. Step 5 replaces that configuration directory with its own, and step 6
+# configuration of the machine and reaches no network; steps 4, 9 and 11 start
+# none. Step 5 replaces that configuration directory with its own, and step 6
 # turns the posture off for its push and its
 # pull alone, with the proxy settings naming a closed port on the loopback
 # address: a request to the registry it started, on that address, goes direct,
 # and any other request fails. The tests run in the environment the shell was
-# given; their own setup isolates what they read.
+# given; their own setup isolates what they read. Step 11 runs Windows PowerShell
+# with -NoProfile, so no profile of the machine shapes what it reports.
 #
 # Usage:
-#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--binaries <dir>]
+#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir>] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
+# --signed <dir> names the directory holding the signed Windows binaries and
+# SHA256SUMS. It is required for windows/amd64 and refused for a darwin target.
+#
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
-# them, in place of the staged ones: the way to show which checks the binaries of
-# another release fail. Each step then runs whatever an earlier one reported, and
-# the run ends naming every step that failed. It exits 1 when one did and 3 when
-# none did — never 0, since what passed is binaries the release does not carry.
+# them, in place of the ones it would run otherwise (the --signed ones for
+# windows/amd64, the staged ones for macOS): the way to show which checks the
+# binaries of another release fail. Each step then runs whatever an earlier one
+# reported, and the run ends naming every step that failed. It exits 1 when one
+# did and 3 when none did — never 0, since what passed is binaries the release
+# does not carry.
 #
 # <goos>/<goarch> is windows/amd64, darwin/arm64 or darwin/amd64. Writes its working
 # files under <dir>/run, which must not exist yet. An argument it cannot use is
@@ -131,7 +156,7 @@ step() { printf '\n==> %s\n' "$*"; }
 . scripts/lib/platform-smoke-common.sh
 smoke_require_bash || exit 1
 
-INPUTS="" SUBSTITUTE=""
+INPUTS="" SIGNED="" SUBSTITUTE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target)
@@ -142,6 +167,11 @@ while [ "$#" -gt 0 ]; do
     --inputs)
       [ -n "${2:-}" ] || { fail "--inputs needs the staged directory"; exit 2; }
       INPUTS="$2"
+      shift 2
+      ;;
+    --signed)
+      [ -n "${2:-}" ] || { fail "--signed needs the directory holding the signed binaries and SHA256SUMS"; exit 2; }
+      SIGNED="$2"
       shift 2
       ;;
     --binaries)
@@ -166,12 +196,23 @@ mapfile -t BINARY_NAMES <<<"$names"
 GOOS_T="${TARGET%/*}" GOARCH_T="${TARGET#*/}"
 EXE_SUFFIX=""
 [ "$GOOS_T" = windows ] && EXE_SUFFIX=".exe"
+# The release signs the Windows binaries and no others, so the signed directory is
+# what a Windows run must be handed and what a macOS run must not be.
+case "$GOOS_T" in
+  windows) [ -n "$SIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones"; exit 2; } ;;
+  *) [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64 alone; the release does not sign the $TARGET binaries"; exit 2; } ;;
+esac
 # The runner names directories in the Windows form; this shell works in its own.
 if command -v cygpath >/dev/null 2>&1; then
   INPUTS="$(cygpath -u "$INPUTS")"
+  [ -z "$SIGNED" ] || SIGNED="$(cygpath -u "$SIGNED")"
   [ -z "$SUBSTITUTE" ] || SUBSTITUTE="$(cygpath -u "$SUBSTITUTE")"
 fi
 [ -f "$INPUTS/smoke.env" ] || { fail "$INPUTS holds no smoke.env; is it the directory stage-platform-smoke.sh wrote?"; exit 2; }
+if [ -n "$SIGNED" ]; then
+  [ -d "$SIGNED" ] || { fail "--signed names $SIGNED, which is not a directory"; exit 2; }
+  SIGNED="$(cd "$SIGNED" && pwd)"
+fi
 if [ -n "$SUBSTITUTE" ]; then
   [ -d "$SUBSTITUTE" ] || { fail "--binaries names $SUBSTITUTE, which is not a directory"; exit 2; }
   SUBSTITUTE="$(cd "$SUBSTITUTE" && pwd)"
@@ -181,6 +222,7 @@ WORK="$INPUTS/run"
 
 TOOLS=(cat cmp cp dd git head sleep tr uname)
 [ "$GOOS_T" = darwin ] && TOOLS+=(chmod xattr)
+[ "$GOOS_T" = windows ] && TOOLS+=(powershell.exe sha256sum)
 for tool in "${TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { fail "$tool not found on PATH"; exit 1; }
 done
@@ -214,12 +256,20 @@ fi
 MACHINE="$(uname -m)"
 echo "platform-smoke: $TARGET, version $VERSION, commit $COMMIT, on $(uname -s) $MACHINE, bash $BASH_VERSION"
 
-# A binaries directory holds exactly the target's binaries: one missing, or one
-# the target does not carry, is a staging that does not match what the release
-# attaches.
-require_binary_set() { # <dir>
+# The SHA-256 list the signing writes beside the signed binaries.
+SUMS_NAME=SHA256SUMS
+
+# A binaries directory holds exactly the target's binaries, and any other file
+# named after <dir>: one missing, or one the target does not carry, is a staging
+# that does not match what the release attaches.
+require_binary_set() { # <dir> [<other file>...]
   local dir="$1" name path
   local -A expected_bin=()
+  shift
+  for name in "$@"; do
+    expected_bin[$name]=1
+    [ -f "$dir/$name" ] || { fail "${dir#"$INPUTS/"} holds no $name"; exit 1; }
+  done
   for name in "${BINARY_NAMES[@]}"; do
     expected_bin[$name]=1
     [ -f "$dir/$name" ] || { fail "${dir#"$INPUTS/"} holds no $name, which the release carries for $TARGET"; exit 1; }
@@ -231,10 +281,15 @@ require_binary_set() { # <dir>
 }
 require_binary_set "$INPUTS/bin"
 BIN_DIR="$INPUTS/bin"
+if [ -n "$SIGNED" ]; then
+  require_binary_set "$SIGNED" "$SUMS_NAME"
+  BIN_DIR="$SIGNED"
+  echo "platform-smoke: running the signed binaries in $SIGNED; bin/ holds the unsigned ones the build wrote"
+fi
 if [ -n "$SUBSTITUTE" ]; then
   require_binary_set "$SUBSTITUTE"
+  echo "platform-smoke: running the binaries in $SUBSTITUTE in place of the ones in ${BIN_DIR#"$INPUTS/"}"
   BIN_DIR="$SUBSTITUTE"
-  echo "platform-smoke: running the binaries in $SUBSTITUTE in place of the staged ones"
 fi
 REGISTRY_PROGRAM="$INPUTS/tools/registry$EXE_SUFFIX"
 [ -f "$REGISTRY_PROGRAM" ] || { fail "tools/ holds no registry$EXE_SUFFIX, the registry step 6 starts"; exit 1; }
@@ -619,6 +674,74 @@ check_tests() {
   done
 }
 
+# The publisher every Windows binary must be signed as. It is stated here rather
+# than read from anything the check looks at, and deliberately so, as step 5
+# states its locations: a check that took the expected name from the signature it
+# checks would accept whichever signer it found.
+SIGNER_CN="Cognitio S.r.l."
+
+# authenticode_report <file> <report> — write to <report>, as key=value lines,
+# what Windows' own Get-AuthenticodeSignature, in Windows PowerShell, says about
+# <file>. The path reaches PowerShell through the environment rather than in the
+# command's text, so no character of it can change what PowerShell runs; a
+# certificate that is absent reports its fields empty.
+authenticode_report() {
+  local script
+  script="\$ErrorActionPreference = 'Stop'; "
+  script+="\$s = Get-AuthenticodeSignature -LiteralPath \$env:SMOKE_SIGNATURE_FILE; "
+  script+="\$c = \$s.SignerCertificate; \$t = \$s.TimeStamperCertificate; "
+  script+="'status=' + \$s.Status; "
+  script+="'status_message=' + (\$s.StatusMessage -replace '[\\r\\n]+', ' '); "
+  script+="'signer_subject=' + \$c.Subject; "
+  script+="'signer_issuer=' + \$c.Issuer; "
+  script+="'signer_thumbprint=' + \$c.Thumbprint; "
+  script+="'signer_serial=' + \$c.SerialNumber; "
+  script+="'signer_not_after=' + \$(if (\$c) { \$c.NotAfter.ToUniversalTime().ToString('u') }); "
+  script+="'timestamper_subject=' + \$t.Subject; "
+  script+="'timestamper_thumbprint=' + \$t.Thumbprint"
+  # MSYS_NO_PATHCONV keeps the Git for Windows shell from rewriting an argument it
+  # takes for a path on its way to a Windows program.
+  SMOKE_SIGNATURE_FILE="$(smoke_native_path "$1")" MSYS_NO_PATHCONV=1 \
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script" > "$2"
+}
+
+check_signature() {
+  local log="$LOGS/signature" name report bad=0
+  mkdir -p "$log"
+  smoke_check_sums "$SIGNED/$SUMS_NAME" "$BIN_DIR" "${BINARY_NAMES[@]}" || bad=1
+  for name in "${BINARY_NAMES[@]}"; do
+    report="$log/$name.txt"
+    printf -- '--- %s: Get-AuthenticodeSignature\n' "$name"
+    if ! authenticode_report "$BIN_DIR/$name" "$report"; then
+      fail "Windows PowerShell could not report the signature of $name"
+      bad=1
+      continue
+    fi
+    tr -d '\r' < "$report"
+    smoke_check_authenticode_report "$report" "$SIGNER_CN" || bad=1
+  done
+  if [ "$bad" != 0 ]; then
+    fail "the binaries are not the listed ones, each signed as $SIGNER_CN with a timestamp Windows reports Valid"
+    return 1
+  fi
+
+  echo "The same signature check over the unsigned ${BINARY_NAMES[0]} staged in bin/ must refuse it:"
+  report="$log/unsigned.txt"
+  authenticode_report "$INPUTS/bin/${BINARY_NAMES[0]}" "$report" ||
+    { fail "Windows PowerShell could not report the signature of the unsigned ${BINARY_NAMES[0]}"; return 1; }
+  tr -d '\r' < "$report"
+  if smoke_check_authenticode_report "$report" "$SIGNER_CN"; then
+    fail "the signature check accepted the unsigned ${BINARY_NAMES[0]}, so its passes above prove nothing"
+    return 1
+  fi
+  echo "The same list check over the unsigned binaries in bin/ must refuse them:"
+  if smoke_check_sums "$SIGNED/$SUMS_NAME" "$INPUTS/bin" "${BINARY_NAMES[@]}"; then
+    fail "the list check accepted the unsigned binaries, so its pass above proves nothing"
+    return 1
+  fi
+  echo "ok: the signature check refuses an unsigned binary, and the list check the unsigned binaries"
+}
+
 # Each step runs in a subshell, so an environment it changes, and a process it
 # starts, end with it. The subshell is not the left side of || or &&: there the
 # shell would stop honouring set -e inside it, and a failing command would no
@@ -652,6 +775,9 @@ run_step "7. catalog: the catalog named by configuration and by flag, read once"
 run_step "8. chart: validate, pull and build the chart-backed $CHART_RELEASE, and compare with the reference" check_chart isolated
 run_step "9. escapes: the escape check refuses a planted escape byte" check_escapes
 run_step "10. tests" check_tests
+if [ "$GOOS_T" = windows ]; then
+  run_step "11. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists" check_signature
+fi
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
   printf '\nplatform-smoke: %s: with the binaries in %s, %d step(s) failed:\n' "$TARGET" "$SUBSTITUTE" "${#FAILED[@]}" >&2

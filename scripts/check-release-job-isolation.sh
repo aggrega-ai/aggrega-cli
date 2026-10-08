@@ -7,9 +7,10 @@
 # image. Every step of a GitHub Actions job can read what that job holds — its
 # environment, a token a checkout leaves in a repository's git configuration,
 # and, in a job granted id-token: write, the request credentials that mint an
-# OIDC identity token, which is the identity keyless signing signs as. So the
-# release workflow keeps the job that signs free of build code, and this script
-# reads the workflow and refuses it, naming the job and the step, when:
+# OIDC identity token, which is the identity a job signs as, keyless or through a
+# token exchanged for it. So the release workflow keeps every job that signs free
+# of build code, and this script reads the workflow and refuses it, naming the
+# job and the step, when:
 #
 #   1. the file-level permissions grant id-token: write (or write-all), which
 #      every job declaring no permissions of its own inherits;
@@ -17,9 +18,11 @@
 #      write-all, or it declares none and the file level grants it — has a step
 #      that runs a build or pack command, in its run: body or in a repository
 #      script that body names, read through every script that one sources or
-#      names in turn; or a step that runs any action but actions/checkout and
-#      actions/download-artifact; or calls a reusable workflow; or declares a
-#      container: or services:, whose images run beside its steps;
+#      names in turn; or a step that runs any action but actions/checkout,
+#      actions/download-artifact and actions/upload-artifact (GitHub's own
+#      artifact actions, the last so that a job which signs files can hand them
+#      on); or calls a reusable workflow; or declares a container: or services:,
+#      whose images run beside its steps;
 #   3. an actions/checkout step, in any job, does not set
 #      persist-credentials: false;
 #   4. a job that may not mint the token but runs third-party code — any step
@@ -41,9 +44,9 @@
 # cannot be read cannot be cleared.
 #
 # What it does not see: a program in another language that a minting job runs
-# (only .sh references are followed, and node or python are not themselves
-# refused); what a binary the job runs does once running, the aggrega binary
-# among them; a command assembled at run time from variables. It reads the
+# (only .sh references are followed, and node, python or java are not
+# themselves refused); what a binary the job runs does once running, the aggrega
+# binary among them; a command assembled at run time from variables. It reads the
 # workflow's structure with yq (mikefarah, version 4), the YAML reader this
 # workspace's record gates use, and needs nothing else.
 #
@@ -207,7 +210,7 @@ secrets_in() {
 
 TOP_GRANTS="$(grants_id_token '.permissions')"
 if [ "$TOP_GRANTS" = yes ]; then
-  violate "file level: permissions grant id-token: write, which every job declaring no permissions of its own inherits; grant it in the one job that signs"
+  violate "file level: permissions grant id-token: write, which every job declaring no permissions of its own inherits; grant it only in the jobs that sign"
 fi
 
 mapfile -t JOBS < <(yq -r '.jobs | keys | .[]' "$WORKFLOW")
@@ -268,11 +271,10 @@ for job in "${JOBS[@]}"; do
 
     if [ -n "$uses" ]; then
       case "$uses" in
-        actions/checkout@*|actions/checkout|actions/download-artifact@*) ;;
-        actions/upload-artifact@*) [ "$holds" = yes ] && violate "$where: uses $uses in a job that may mint the OIDC token; only actions/checkout and actions/download-artifact run there" ;;
+        actions/checkout@*|actions/checkout|actions/download-artifact@*|actions/upload-artifact@*) ;;
         *)
           if [ "$holds" = yes ]; then
-            violate "$where: uses $uses in a job that may mint the OIDC token; only actions/checkout and actions/download-artifact run there"
+            violate "$where: uses $uses in a job that may mint the OIDC token; only actions/checkout, actions/download-artifact and actions/upload-artifact run there"
           elif [ -z "${THIRD_PARTY[$job]}" ]; then
             THIRD_PARTY[$job]="step \"$name\" runs $uses"
           fi
@@ -347,7 +349,7 @@ if [ "${#HOLDER_READ[@]}" -gt 0 ]; then
   mapfile -t read_uniq < <(printf '%s\n' "${HOLDER_READ[@]}" | sort -u)
 fi
 printf 'release job isolation holds in %s:\n' "$(label_of "$WORKFLOW")"
-printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step, no action but checkout and download-artifact\n' \
+printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step, no action but checkout, download-artifact and upload-artifact\n' \
   "${holders[*]:-no job}" "$holder_steps"
 printf '  scripts read for those steps: %s\n' "${read_uniq[*]:-none}"
 printf '  actions/checkout steps: %d, each with persist-credentials: false\n' "$checkouts"

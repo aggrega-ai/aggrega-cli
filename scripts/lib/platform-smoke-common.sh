@@ -12,6 +12,12 @@
 # command printed or wrote live here too, each a function of what it is given, so
 # each can be run on its own over a captured output or a planted fault.
 #
+# The release workflow's sign-and-publish job sources it as well, for
+# smoke_require_bash, smoke_target_binaries and smoke_check_sums: it attaches the
+# signed Windows binaries only once they match the SHA-256 list the Windows smoke
+# run held them to, through the same function, so the two checks cannot read the
+# list differently.
+#
 # Sourcing defines these functions and sets no variables:
 #
 #   smoke_require_bash
@@ -109,6 +115,28 @@
 #   smoke_require_space_and_non_ascii <path>
 #     Returns 1, saying what is missing, unless <path> holds both a space and a
 #     byte outside ASCII.
+#
+#   smoke_check_sums <list> <dir> <name>...
+#     Holds the files <name>... in <dir> to <list>, a SHA-256 list in the form
+#     sha256sum writes ("<digest>  <name>", or "<digest> *<name>", one per line):
+#     the list must name each <name> exactly once and nothing else, and each file
+#     must be in <dir> with the digest the list gives it. Prints each file's
+#     verdict; returns 1, naming every name missing from the list, every line that
+#     names something else or is not in that form, every file missing from <dir>
+#     and every digest that differs. Needs sha256sum, which the Git for Windows
+#     shell and Linux both carry.
+#
+#   smoke_check_authenticode_report <report> <common-name>
+#     Holds a report of what Windows' Get-AuthenticodeSignature says about one
+#     file, written as key=value lines (a trailing carriage return set aside), to
+#     a signature Windows accepts from the publisher <common-name>: status=Valid;
+#     signer_subject naming <common-name> as its common name, first — exactly
+#     "CN=<common-name>" or beginning "CN=<common-name>, ", so a longer name that
+#     merely starts the same way is refused; and timestamper_subject not empty,
+#     since a signature without a timestamp countersignature stops validating
+#     when its certificate expires. Returns 1, naming each that fails; prints the
+#     status, the signer and the timestamper when all hold. Other keys in the
+#     report are read by nobody here and only printed by the caller.
 
 smoke_require_bash() {
   if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }; then
@@ -422,4 +450,101 @@ smoke_require_space_and_non_ascii() {
     *) printf 'smoke: %s holds no byte outside ASCII\n' "$1" >&2; return 1 ;;
   esac
   printf 'ok: %s holds a space and a letter outside ASCII\n' "$1"
+}
+
+smoke_check_sums() {
+  local LC_ALL=C list="$1" dir="$2" line digest name actual bad=0
+  local re='^([0-9a-f]{64}) [ *](.+)$'
+  shift 2
+  local -A wanted=() listed=()
+  for name in "$@"; do wanted[$name]=1; done
+  if [ ! -f "$list" ]; then
+    printf 'smoke: there is no SHA-256 list at %s\n' "$list" >&2
+    return 1
+  fi
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    printf 'smoke: sha256sum not found on PATH\n' >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    [ -n "$line" ] || continue
+    if [[ ! $line =~ $re ]]; then
+      printf 'smoke: %s holds a line that is not "<SHA-256>  <name>": %s\n' "${list##*/}" "$line" >&2
+      bad=1
+      continue
+    fi
+    digest="${BASH_REMATCH[1]}"
+    name="${BASH_REMATCH[2]}"
+    if [ -z "${wanted[$name]+set}" ]; then
+      printf 'smoke: %s lists %s, which is not one of the files it must list\n' "${list##*/}" "$name" >&2
+      bad=1
+    elif [ -n "${listed[$name]+set}" ]; then
+      printf 'smoke: %s lists %s twice\n' "${list##*/}" "$name" >&2
+      bad=1
+    else
+      listed[$name]="$digest"
+    fi
+  done < "$list"
+  for name in "$@"; do
+    if [ -z "${listed[$name]+set}" ]; then
+      printf 'smoke: %s does not list %s\n' "${list##*/}" "$name" >&2
+      bad=1
+      continue
+    fi
+    if [ ! -f "$dir/$name" ]; then
+      printf 'smoke: %s holds no %s, which %s lists\n' "$dir" "$name" "${list##*/}" >&2
+      bad=1
+      continue
+    fi
+    # Read from standard input, so the output carries no file name to unescape.
+    actual="$(sha256sum < "$dir/$name")" || { printf 'smoke: could not read %s\n' "$dir/$name" >&2; bad=1; continue; }
+    actual="${actual%% *}"
+    if [ "$actual" != "${listed[$name]}" ]; then
+      printf 'smoke: %s has SHA-256 %s, but %s lists %s\n' "$name" "$actual" "${list##*/}" "${listed[$name]}" >&2
+      bad=1
+    else
+      printf 'ok: %s has SHA-256 %s, as %s lists\n' "$name" "$actual" "${list##*/}"
+    fi
+  done
+  [ "$bad" = 0 ] || return 1
+  printf 'ok: %s lists exactly the %d file(s), and each in %s matches it\n' "${list##*/}" "$#" "$dir"
+}
+
+smoke_check_authenticode_report() {
+  local report="$1" cn="$2" line status="" subject="" stamper="" bad=0
+  if [ -z "$cn" ]; then
+    printf 'smoke: no publisher was named to hold the signature to\n' >&2
+    return 1
+  fi
+  if [ ! -f "$report" ]; then
+    printf 'smoke: there is no signature report at %s\n' "$report" >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      status=*) status="${line#status=}" ;;
+      signer_subject=*) subject="${line#signer_subject=}" ;;
+      timestamper_subject=*) stamper="${line#timestamper_subject=}" ;;
+    esac
+  done < "$report"
+  if [ "$status" != Valid ]; then
+    printf 'smoke: Windows reports the signature as %s, not Valid\n' "${status:-nothing}" >&2
+    bad=1
+  fi
+  case "$subject" in
+    "CN=$cn" | "CN=$cn, "*) ;;
+    *)
+      printf 'smoke: the signer certificate'"'"'s subject is %s, which does not name %s as its common name first\n' \
+        "${subject:-empty}" "$cn" >&2
+      bad=1
+      ;;
+  esac
+  if [ -z "$stamper" ]; then
+    printf 'smoke: the signature carries no timestamp countersignature\n' >&2
+    bad=1
+  fi
+  [ "$bad" = 0 ] || return 1
+  printf 'ok: Valid, signed by %s, timestamped by %s\n' "$subject" "$stamper"
 }
