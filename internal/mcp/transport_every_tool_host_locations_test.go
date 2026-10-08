@@ -28,6 +28,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -366,7 +367,11 @@ func (fx *hostLocationFixture) sourceSlotDir(t *testing.T, slot hostLocationSour
 }
 
 // sourceSlotLabel is the label the inventory lists a slot under: its location
-// beneath the source-artifact cache.
+// beneath the source-artifact cache, with each directory name read back into the
+// value it was spelled from — the reader's own spelling of the host, path and
+// version, rather than the escapes the names carry on disk. Every name of the
+// slot's location was written by the cache's one spelling, so a name that does
+// not read back fails here rather than being compared as it stands.
 func (fx *hostLocationFixture) sourceSlotLabel(t *testing.T, slot hostLocationSourceSlot) string {
 	t.Helper()
 	rel, err := filepath.Rel(cacheslot.SourceArtifactsRoot(fx.root, workspaceconfig.Config{}.ResolvedArtifactCacheDir()),
@@ -374,7 +379,15 @@ func (fx *hostLocationFixture) sourceSlotLabel(t *testing.T, slot hostLocationSo
 	if err != nil {
 		t.Fatalf("relate the slot for %s to its cache: %v", slot.url, err)
 	}
-	return filepath.ToSlash(rel)
+	names := strings.Split(filepath.ToSlash(rel), "/")
+	for i, name := range names {
+		value, ok := pathsegment.Decode(name)
+		if !ok {
+			t.Fatalf("the slot for %s carries the name %q, which the cache's spelling did not write", slot.url, name)
+		}
+		names[i] = value
+	}
+	return strings.Join(names, "/")
 }
 
 // seedSourceArtifactSlots writes each source slot where a resolution writes one,
@@ -1594,12 +1607,12 @@ func TestTheCacheInventoryKeepsBackAPluginLoadedFromAFileAndAnswersARegistryRefe
 // both transports, slot by slot.
 //
 // A source-artifact slot's label is its location under the cache, composed from
-// the URL its repository was resolved from. A caller that launched this process
-// is told every label. A caller reaching a listener is told the label of a slot
-// cloned over the network whole, and nothing of the label of a slot read from a
-// repository on this host, whether through a file URL or a plain path: that label
-// is absent and marked, while the slot's size and digest, which name no place,
-// are answered.
+// the URL its repository was resolved from and read back out of the names the
+// cache spells it with. A caller that launched this process is told every label.
+// A caller reaching a listener is told the label of a slot cloned over the
+// network whole, and nothing of the label of a slot read from a repository on
+// this host, whether through a file URL or a plain path: that label is absent and
+// marked, while the slot's size and digest, which name no place, are answered.
 func TestTheCacheInventoryKeepsBackTheLabelOfASourceReadFromThisHostAndAnswersARemoteOneWhole(t *testing.T) {
 	fx := newHostLocationFixture(t)
 	streams := fx.overTheProcessStreams(t)
