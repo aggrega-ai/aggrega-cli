@@ -1320,7 +1320,7 @@ jobs:
       REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid' }}
       # Registry credentials. Read via the environment (not interpolated into a
       # run script) to avoid expression injection. The username feeds
-      # `aggrega login` and `docker login`; the password is read by login from
+      # `aggrega login`, which reads the password from
       # AGGREGA_REGISTRY_PASSWORD.
       REGISTRY_USERNAME: ${{ vars.REGISTRY_USERNAME }}
       AGGREGA_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
@@ -1352,16 +1352,16 @@ jobs:
         #
         # The registry credential gets a Docker configuration of this run's own
         # too, made empty in that same directory and named by DOCKER_CONFIG.
-        # aggrega login and docker login both store the credential in Docker's
-        # configuration — the directory DOCKER_CONFIG names, else the user's own
-        # $HOME/.docker — and aggrega push, aggrega sign and docker push read it
-        # from there. Left to the default, a release would leave its publishing
+        # aggrega login stores the credential in Docker's configuration — the
+        # directory DOCKER_CONFIG names, else the user's own $HOME/.docker —
+        # and aggrega push, aggrega sign and docker push read it from there.
+        # Left to the default, a release would leave its publishing
         # credential in the runner user's own Docker configuration, where
         # nothing logs out. Here the credential lives only for the run: no
         # command in this job reads, writes or cleans the runner user's own
         # Docker configuration, and the last step removes the directory
         # RUN_CONFIG_HOME names, the credential with it. The docker commands
-        # this job runs — login, load, image inspect, push and image rm — are
+        # this job runs — load, image inspect, push and image rm — are
         # docker's own and need no CLI plugin. docker reaches its daemon as it
         # does with no configuration of its own: through DOCKER_HOST when the
         # runner's environment sets it, otherwise through the default socket.
@@ -1461,27 +1461,28 @@ jobs:
       - name: Authenticate to the registry
         # Only a real publish logs in. A dry run's one contact with the registry
         # is the credential check that opens the run, which needs no stored
-        # login. Both the tooling-image push (docker) and the plugin publish
-        # (aggrega) authenticate with the same registry credentials; the password
-        # is read from the environment, never placed on a command line or
-        # interpolated.
+        # login. The tooling-image push (docker) and the plugin publish
+        # (aggrega) authenticate with the same registry credential, and one
+        # login stores it for both; the password is read from the environment,
+        # never placed on a command line or interpolated.
         #
-        # Both logins store the credential in this run's own Docker
-        # configuration, which DOCKER_CONFIG names, and the order is what keeps
-        # docker login's copy there. aggrega login runs first and writes the
-        # credential into that configuration's file; docker login, finding a
-        # credential recorded there, keeps to that same file. Run against a
-        # configuration that records no credential, docker login looks for a
-        # credential helper of the machine — on Linux, docker-credential-pass
-        # when pass is installed, else docker-credential-secretservice — and,
-        # when one is installed, stores the credential with it instead: in the
-        # runner user's own password store or keyring, which the last step does
-        # not clean.
+        # aggrega login, given a Docker configuration that names no credential
+        # helper — this run's own, which DOCKER_CONFIG names, made empty above —
+        # writes the credential into that configuration's file, config.json, as
+        # the entry for the registry under auths, the form docker reads. docker
+        # push reads it from there, and the job runs no docker login. So no
+        # command here stores the credential with a credential helper of the
+        # machine, in the runner user's own password store or keyring, which
+        # the last step does not clean: docker login, run against a
+        # configuration that records no credential, looks for one — on Linux,
+        # docker-credential-pass when pass is installed, else
+        # docker-credential-secretservice — and stores the credential with it
+        # when one is installed, while docker push, finding the credential
+        # recorded, looks for none and stores nothing.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
           "$AGGREGA_BIN" login "$REGISTRY" --username "$REGISTRY_USERNAME"
-          printf '%s' "$AGGREGA_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
 
       - name: Mint the Sigstore OIDC identity token
         # Keyless signing needs a short-lived OIDC identity token. Request one
@@ -1491,12 +1492,18 @@ jobs:
         # SIGSTORE_ID_TOKEN so every `aggrega sign` in later steps reads it
         # non-interactively — no browser, no offline key. Only a real publish
         # signs, so a dry run skips this.
+        #
+        # The request credential reaches curl on its standard input, which -H @-
+        # reads as header lines, and never on its command line: a command line
+        # is readable in the process list by every other user of the machine,
+        # which on a persistent self-hosted runner AGGREGA_RUNNER can name may
+        # be someone else. printf is the shell's own, so it starts no process
+        # whose command line carries the credential either.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
-          token_json="$(curl -sSL \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
+          token_json="$(printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" |
+            curl -sSL -H @- "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
           id_token="$(printf '%s' "$token_json" | grep -o '"value":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$id_token" ] || { echo "OIDC: runtime returned no token value" >&2; exit 1; }
           echo "::add-mask::$id_token"
@@ -1730,7 +1737,7 @@ jobs:
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
-        # configuration directory — the registry credential the logins stored
+        # configuration directory — the registry credential aggrega login stored
         # in its Docker configuration among it — is left on a persistent runner
         # for a later run to find.
         if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
