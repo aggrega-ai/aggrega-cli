@@ -43,8 +43,9 @@ import (
 // What each entity declares sensitive is read here, through the catalog this
 // stage already holds, so an assertion whose failure text could carry a declared
 // value reports without it exactly as a Recipe's assertion does: a Component's
-// against what the Component and the Features attached to the node declare, a
-// Feature's against what that Feature declares for the attachment's own pillars.
+// against what the Component, the Features attached to the node and those
+// attached on its connections declare, a Feature's against what that Feature
+// declares for the attachment's own pillars and the node's set for the rest.
 func EvaluateComponentAndFeatureAssertions(
 	graph *types.IRGraph,
 	catalogLookup resolver.CatalogLookup,
@@ -64,6 +65,7 @@ func EvaluateComponentAndFeatureAssertions(
 			component: readers.component(node.Component),
 			own:       ownAttachmentKeys(attachments, readers.feature),
 		}
+		withheld := base.withConnectionDeclarations(declared.assertionKeys(), readers.feature)
 
 		if catalogLookup.Component != nil {
 			if comp, found := catalogLookup.Component(node.Component); found && comp.Spec.Assertions.Len() > 0 {
@@ -76,7 +78,7 @@ func EvaluateComponentAndFeatureAssertions(
 				}
 				// The catalog this stage reads hands back an entity and not the file it
 				// was read from, so a Component's failing assertion names no document.
-				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx, declared.assertionKeys(), ""); err != nil {
+				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx, withheld, ""); err != nil {
 					return err
 				}
 			}
@@ -102,7 +104,7 @@ func EvaluateComponentAndFeatureAssertions(
 				Metadata: featureMetadata(base.Metadata, entry, instanceName),
 			}
 			if err := walkAssertions("Feature", entry.Type, nodeID, feat.Spec.Assertions, ctx,
-				attachmentAssertionKeys(declared, readers.feature(entry.Type)), ""); err != nil {
+				attachmentAssertionKeys(withheld, readers.feature(entry.Type)), ""); err != nil {
 				return err
 			}
 		}
@@ -112,10 +114,10 @@ func EvaluateComponentAndFeatureAssertions(
 
 // attachmentAssertionKeys is the set for an assertion evaluated against one
 // attachment's own values and infra, with the node's other pillars beside them:
-// the attachment's Feature governs the values and infra, and the node's
-// declarations govern everything else the context carries.
-func attachmentAssertionKeys(node nodeDeclaration, leaves resolver.SensitiveLeaves) redact.Keys {
-	keys := node.assertionKeys()
+// the attachment's Feature governs the values and infra, and the node's set
+// governs everything else the context carries.
+func attachmentAssertionKeys(node redact.Keys, leaves resolver.SensitiveLeaves) redact.Keys {
+	keys := node
 	keys.Values = leaves.Values
 	keys.Infra = leaves.Infra
 	return keys

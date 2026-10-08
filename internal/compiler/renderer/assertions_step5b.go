@@ -38,9 +38,9 @@ import (
 //
 // declared answers what each node's entities declare sensitive, so an assertion
 // whose failure text could carry a declared value reports without it: a Recipe's
-// against the node's own declarations, a FeatureRecipe's against the attachment's
-// Feature for the values and infra and the node's for the rest. Its zero value
-// declares nothing.
+// against the node's own declarations and those of the Features attached on its
+// connections, a FeatureRecipe's against the attachment's Feature for the values
+// and infra and the node's set for the rest. Its zero value declares nothing.
 func EvaluateRecipeAndFeatureRecipeAssertions(
 	graph *types.IRGraph,
 	nodeRecipes map[string]*types.Recipe,
@@ -61,6 +61,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 			continue
 		}
 		base := ExtractNodeBaseContext(nodeID, graph)
+		withheld := base.withConnectionDeclarations(declared.node(nodeID).assertionKeys(), declared.attachment)
 		providesForNode := allProvides[nodeID]
 		providesMap := orderedStringMapToAny(providesForNode)
 
@@ -87,7 +88,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Recipe:   recipeCtx,
 			}
 			if err := walkAssertions("Recipe", recipe.Metadata.Name, nodeID, recipe.Spec.Assertions, ctx,
-				declared.node(nodeID).assertionKeys(), recipeLookup.recipeDocument(recipe)); err != nil {
+				withheld, recipeLookup.recipeDocument(recipe)); err != nil {
 				return err
 			}
 		}
@@ -123,7 +124,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Recipe:   frRecipeCtx,
 			}
 			if err := walkAssertions("FeatureRecipe", fr.Metadata.Name, nodeID, fr.Spec.Assertions, ctx,
-				attachmentAssertionKeys(declared.node(nodeID), declared.attachment(entry.Type)),
+				attachmentAssertionKeys(withheld, declared.attachment(entry.Type)),
 				recipeLookup.featureRecipeDocument(fr)); err != nil {
 				return err
 			}

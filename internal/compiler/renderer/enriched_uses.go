@@ -93,14 +93,19 @@ func AssembleEnrichedUses(
 		// share an alias, on one socket or on two: the build refuses such a pair
 		// once the graph is final, before anything renders, so no entry here
 		// replaces another.
-		alias := edge.Alias
-		if alias == "" {
-			alias = edge.Target
-		}
-		result.Set(alias, ee)
+		result.Set(connectionAlias(edge), ee)
 	}
 
 	return result
+}
+
+// connectionAlias is the key a connection is held under in its consumer's uses
+// map: the alias the author gave it, or its target where it carries none.
+func connectionAlias(edge types.IREdge) string {
+	if edge.Alias == "" {
+		return edge.Target
+	}
+	return edge.Alias
 }
 
 // AssembleInboundEdges builds the connections other nodes make TO nodeID: one

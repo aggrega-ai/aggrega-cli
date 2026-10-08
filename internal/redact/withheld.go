@@ -31,8 +31,9 @@ const (
 // coordinates returns every datum the set names, spelled as the dotted path a
 // template reads it by: values.<leaf>, infra.<leaf>, locals.<name>, source or
 // source.<field>, context.inject.<mechanism>.<key>, context.uses.<alias>.provides.<key>,
-// context.uses.<alias>.features.<slot>.<pillar>…, features.<name>.<pillar>… and
-// provides.<key>.
+// context.uses.<alias>.features.<slot>.<pillar>… — and, where the set names the
+// connection's socket, uses.<socket>.<alias>.features.<slot>.<pillar>… —
+// features.<name>.<pillar>… and provides.<key>.
 //
 // It is the ONE statement of where in a template's data each kind of entry in the
 // set sits, and both questions asked of a set in those terms read it: whether a
@@ -50,6 +51,10 @@ const (
 // names — the render context, the assertion context, the locals, provides and
 // self-inject contexts — so one set of coordinates serves each of them, and a
 // coordinate naming a pillar a given context does not carry matches nothing in it.
+// The one spelling two contexts do not share is a connection's: the render context
+// reads it at context.uses.<alias> and the assertion context under its socket, at
+// uses.<socket>.<alias>, so a connection the set places under a socket is named at
+// both.
 func (k Keys) coordinates() map[string]bool {
 	out := map[string]bool{}
 	addPaths(out, rootValues, k.Values)
@@ -76,8 +81,12 @@ func (k Keys) coordinates() map[string]bool {
 		addPaths(out, uses+"."+alias+"."+rootProvides, declared)
 	}
 	for alias, slots := range k.UsesAttachments {
+		socket := k.ConnectionSockets[alias]
 		for slot, declared := range slots {
 			addAttachment(out, uses+"."+alias+"."+rootFeatures+"."+slot, declared)
+			if socket != "" {
+				addAttachment(out, keyUses+"."+socket+"."+alias+"."+rootFeatures+"."+slot, declared)
+			}
 		}
 	}
 	return out

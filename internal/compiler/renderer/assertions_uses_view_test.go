@@ -16,11 +16,15 @@ import (
 // TestExtractNodeBaseContext_UsesKeysEveryConnectionByAliasUnderItsSocket pins
 // the shape of an assertion's `.uses`: one entry per socket, and under it one
 // entry per connection keyed by its alias, so no connection on a socket hides
-// another.
+// another. The targets here are not nodes of the graph, so each entry's labels,
+// values and features are present and empty.
 func TestExtractNodeBaseContext_UsesKeysEveryConnectionByAliasUnderItsSocket(t *testing.T) {
 	t.Parallel()
 	conn := func(target, alias string) map[string]any {
-		return map[string]any{"target": target, "alias": alias}
+		return map[string]any{
+			"target": target, "alias": alias,
+			"labels": map[string]any{}, "values": map[string]any{}, "features": map[string]any{},
+		}
 	}
 	for _, tc := range []struct {
 		name  string
@@ -69,6 +73,7 @@ func TestExtractNodeBaseContext_UsesKeysEveryConnectionByAliasUnderItsSocket(t *
 			edges: []types.IREdge{{Source: "router", Target: "llama", Socket: "models", Alias: "local", OriginFeature: "probe/marker"}},
 			want: map[string]any{"models": map[string]any{"local": map[string]any{
 				"target": "llama", "alias": "local", "origin_feature": "probe/marker",
+				"labels": map[string]any{}, "values": map[string]any{}, "features": map[string]any{},
 			}}},
 		},
 		{

@@ -185,6 +185,88 @@ func TestSubstituteTree_WithholdsTheConnectionViewAndNothingElse(t *testing.T) {
 	}
 }
 
+// TestKeys_AConnectionReadUnderItsSocket covers the one spelling of a connection
+// two contexts do not share: an assertion reads it under its socket, at
+// uses.<socket>.<alias>, where a render context reads it at context.uses.<alias>.
+// Where the set names a connection's socket, the reading and the substitution
+// reach its attachment's declared leaf at both positions; where it names none,
+// the socket position is reached by nothing, so the row cannot pass on a set that
+// withholds every connection by default.
+func TestKeys_AConnectionReadUnderItsSocket(t *testing.T) {
+	t.Parallel()
+	tree := func() map[string]any {
+		credential := func(password string) map[string]any {
+			return map[string]any{
+				"type":   "feature.test/db-credential",
+				"values": map[string]any{"literalPassword": password, "secretName": "conn-locator-public"},
+			}
+		}
+		return map[string]any{"uses": map[string]any{"models": map[string]any{
+			"gpt": map[string]any{"target": "openai", "alias": "gpt", "features": map[string]any{"credential": credential("conn-password-plaintext")}},
+			"nim": map[string]any{"target": "nvidia", "alias": "nim", "features": map[string]any{"credential": credential("nim-password-visible")}},
+		}}}
+	}
+	placed := connectionKeys()
+	placed.ConnectionSockets = map[string]string{"gpt": "models"}
+	unplaced := connectionKeys()
+
+	cases := []struct {
+		name     string
+		ref      string
+		at       []string
+		withheld bool
+		kept     any
+	}{
+		{"the declared leaf under its socket", ".uses.models.gpt.features.credential.values.literalPassword",
+			[]string{"uses", "models", "gpt", "features", "credential", "values", "literalPassword"}, true, nil},
+		{"its undeclared sibling", ".uses.models.gpt.features.credential.values.secretName",
+			[]string{"uses", "models", "gpt", "features", "credential", "values", "secretName"}, false, "conn-locator-public"},
+		{"the same slot on a connection the set names nothing for", ".uses.models.nim.features.credential.values.literalPassword",
+			[]string{"uses", "models", "nim", "features", "credential", "values", "literalPassword"}, false, "nim-password-visible"},
+		{"the connection's identity", ".uses.models.gpt.target",
+			[]string{"uses", "models", "gpt", "target"}, false, "openai"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := placed.ReachedBy([]string{c.ref}); got != c.withheld {
+				t.Errorf("ReachedBy(%s) = %v, want %v", c.ref, got, c.withheld)
+			}
+			substituted := tree()
+			placed.SubstituteTree(substituted)
+			want := c.kept
+			if c.withheld {
+				want = placeholder
+			}
+			if got := dig(substituted, c.at...); got != want {
+				t.Errorf("the substitution left %v at %v, want %v", got, c.at, want)
+			}
+			if unplaced.ReachedBy([]string{c.ref}) {
+				t.Errorf("a set naming no socket reached %s", c.ref)
+			}
+			untouched := tree()
+			unplaced.SubstituteTree(untouched)
+			if got, before := dig(untouched, c.at...), dig(tree(), c.at...); got != before {
+				t.Errorf("a set naming no socket substituted %v at %v", got, c.at)
+			}
+		})
+	}
+
+	// A read of the socket, or of the whole connection, reaches the withheld leaf
+	// beneath it; the render context's spelling of the same connection is reached
+	// as it always is, whether or not a socket is named.
+	for _, ref := range []string{".uses", ".uses.models", ".uses.models.gpt", ".uses.models.gpt.features.credential"} {
+		if !placed.ReachedBy([]string{ref}) {
+			t.Errorf("a read of %s must reach the withheld leaf beneath it", ref)
+		}
+	}
+	for _, keys := range []Keys{placed, unplaced} {
+		if !keys.ReachedBy([]string{".context.uses.gpt.features.credential.values.literalPassword"}) {
+			t.Error("the render context's spelling of the connection must stay reached")
+		}
+	}
+}
+
 // TestNodeKeys_KeepsOnlyConnectionAttachmentsThatDeclareSomething pins the
 // assembly's filter. A connection attachment whose Feature declares nothing must
 // leave the set empty, because the set's emptiness is what a substituted context

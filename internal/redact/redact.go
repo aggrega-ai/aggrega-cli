@@ -255,6 +255,14 @@ type DeliveryKeys map[string]map[string]bool
 // the node holds itself — so it is keyed by alias, then by the slot the
 // attachment fills on the connection's socket, which is how the edge displays it.
 //
+// ConnectionSockets names, by alias, the socket each connection UsesAttachments
+// names is wired into, for a context that reads a connection under its socket
+// rather than at context.uses.<alias> — an assertion's, at uses.<socket>.<alias>.
+// Where a connection's socket is named, its attachments' declarations govern that
+// position too, so one statement of what each attachment declares serves both
+// spellings of the connection. Empty for a context that reads no connection under
+// its socket.
+//
 // Features names the declarations of the Features attached to the node itself,
 // keyed by the instance name each is attached under — how a template reads one,
 // at .features.<name> — each governed by its own Feature's schema. Provides names
@@ -271,15 +279,16 @@ type DeliveryKeys map[string]map[string]bool
 // produce them, so no key-addressed substitution can reach a datum interpolated
 // into it.
 type Keys struct {
-	Values          map[string]bool
-	Infra           map[string]bool
-	Locals          map[string]bool
-	Source          map[string]bool
-	UsesProvides    map[string]map[string]bool
-	UsesAttachments map[string]map[string]AttachmentKeys
-	Features        map[string]AttachmentKeys
-	Provides        map[string]bool
-	Workload        WorkloadDisplay
+	Values            map[string]bool
+	Infra             map[string]bool
+	Locals            map[string]bool
+	Source            map[string]bool
+	UsesProvides      map[string]map[string]bool
+	UsesAttachments   map[string]map[string]AttachmentKeys
+	ConnectionSockets map[string]string
+	Features          map[string]AttachmentKeys
+	Provides          map[string]bool
+	Workload          WorkloadDisplay
 
 	// inject is the delivery marking. See the type's own documentation for why
 	// it is not exported.
