@@ -545,7 +545,7 @@ func TestBoundaryFeaturesProjection_DefaultMaterialises(t *testing.T) {
 			boundaries := types.OrderedMap[types.Boundary]{}
 			boundaries.Set("prod", prod)
 
-			out := buildBoundaryFeaturesProjection(boundaries, defaultsFeatureCatalog(t))
+			out := buildBoundaryFeaturesProjection(boundaries, defaultsFeatureCatalog(t), nil)
 
 			inner, ok := out.Get("prod")
 			if !ok {

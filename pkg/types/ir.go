@@ -158,6 +158,14 @@ type IRBoundaryFeature struct {
 	// nothing at this unit, never that the attachment's infra carries
 	// nothing sensitive.
 	SensitivePayloadLeaves []string `json:"sensitive_payload_leaves,omitempty"`
+
+	// Realization names the FeatureRecipe the Manifest binds to this boundary
+	// attachment, as "<name>:<version>", by the attachment's own name and then
+	// by its Feature type. It is [IRFeatureEntry.Realization] at boundary
+	// scope: one field, recorded from the same lookup, read the same way.
+	// Empty when the Manifest binds the attachment to no FeatureRecipe the
+	// catalog holds.
+	Realization string `json:"realization,omitempty"`
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.
@@ -603,6 +611,25 @@ type IRFeatureEntry struct {
 	// node and whose socket and alias are these. The slot name stays off the
 	// wire, where Binding reports it; see [AttachmentConnection].
 	Connection *AttachmentConnection `json:"connection,omitempty"`
+
+	// Realization names the FeatureRecipe the Manifest binds to this
+	// attachment, as "<name>:<version>": by the attachment's own name where the
+	// Manifest's name tier maps it — for an attachment a connection carries,
+	// its qualified name — otherwise by its Feature type.
+	//
+	// It is recorded when the graph is finalised, from the same lookup the
+	// render binds the attachment by, so the FeatureRecipe it names is the one a
+	// build of the same documents renders the attachment with. The graph
+	// records the binding; it renders nothing and fetches nothing to do so.
+	//
+	// The value is the "<name>:<version>" form the documents that FeatureRecipe
+	// renders carry as their recipe-uri provenance, where the target stamps
+	// one, composed by the one composition of that form, so the attachment
+	// joins to what it renders without a translation between spellings.
+	//
+	// Empty when the Manifest binds the attachment to no FeatureRecipe the
+	// catalog holds.
+	Realization string `json:"realization,omitempty"`
 }
 
 // OnConnection reports whether the attachment was written on one of the

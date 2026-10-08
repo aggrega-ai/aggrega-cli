@@ -99,7 +99,7 @@ func TestBoundaryMarking_AbsentWhenTheFeatureResolvesToNoEntity(t *testing.T) {
 	lookup := resolver.CatalogLookup{
 		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
 	}
-	out := buildBoundaryFeaturesProjection(boundaries, lookup)
+	out := buildBoundaryFeaturesProjection(boundaries, lookup, nil)
 
 	inner, ok := out.Get("prod")
 	if !ok {
@@ -133,7 +133,7 @@ func TestBoundaryMarking_ZeroCatalogDoesNotPanic(t *testing.T) {
 	boundaries := types.OrderedMap[types.Boundary]{}
 	boundaries.Set("prod", types.Boundary{Features: feats})
 
-	out := buildBoundaryFeaturesProjection(boundaries, resolver.CatalogLookup{})
+	out := buildBoundaryFeaturesProjection(boundaries, resolver.CatalogLookup{}, nil)
 	inner, _ := out.Get("prod")
 	bf, ok := inner.Get("guard")
 	if !ok {

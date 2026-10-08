@@ -280,7 +280,7 @@ func compileWithholdingWorkspace(t *testing.T, policy string) withholdingRun {
 		context.Background(),
 		inputs,
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		func(out *stepsOneToFourOutput) error {
 			if len(out.Analysis.Errors) > 0 {

@@ -55,6 +55,35 @@ func TestAttachmentFactsBracket_EveryBindingStateAndBothSensitivities(t *testing
 	}
 }
 
+// TestAttachmentFactsBracket_RealizationIsReadFromTheEntry moves only the
+// entry's realization against a held control, on an attachment of the node's
+// own block and on one whose connection the view shows no line for. The half
+// closes the clause when the entry carries a realization and is absent when it
+// carries none, so a layout that printed a constant, or a realization the entry
+// does not carry, fails one of the pair.
+func TestAttachmentFactsBracket_RealizationIsReadFromTheEntry(t *testing.T) {
+	t.Parallel()
+	gpt := &types.AttachmentConnection{Socket: "models", Alias: "gpt"}
+	for _, tc := range []struct {
+		name  string
+		entry types.IRFeatureEntry
+		want  string
+	}{
+		{"own block, bound", types.IRFeatureEntry{Binding: "credentials", Realization: "db-credential-compose:1.0.0"},
+			"[slot: credentials, realization: db-credential-compose:1.0.0]"},
+		{"own block, unbound", types.IRFeatureEntry{Binding: "credentials"}, "[slot: credentials]"},
+		{"own block, only a realization", types.IRFeatureEntry{Realization: "db-credential-compose:1.0.0"},
+			"[realization: db-credential-compose:1.0.0]"},
+		{"connection with no line, bound", types.IRFeatureEntry{Connection: gpt, Binding: "credential", Sensitive: true,
+			Realization: "conn-token-compose:1.0.0"},
+			"[connection: gpt through socket models, slot: credential, sensitive, realization: conn-token-compose:1.0.0]"},
+	} {
+		if got := attachmentFactsBracket(tc.entry); got != tc.want {
+			t.Errorf("%s: attachmentFactsBracket = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestAttachmentFactsBracket_EmptyBindingIsNotFree pins the distinction the
 // carried field makes and the display must not collapse: free is the positive
 // finding that the resolved Component declares no slot of this name, and empty
@@ -207,9 +236,11 @@ func TestRenderFeatureAttachment_FactsVaryWithTheEntry(t *testing.T) {
 // The fixture attaches a Feature under a name the host Component declares as an
 // attachment slot, and the attached Feature declares one sensitive leaf, so both
 // facts must be present and the marked case is reached from declarations rather
-// than from a literal. The already-golden Release covers the complementary case
-// on the same path: its attachment fills no declared slot, so it renders free
-// and unmarked.
+// than from a literal. Its Manifest maps the Feature's type to a FeatureRecipe
+// the fixture's catalog holds, so the realization the graph records for the
+// attachment closes the clause. The already-golden Release covers the
+// complementary case on the same path: its attachment fills no declared slot,
+// so it renders free and unmarked.
 func TestInspectRelease_AttachmentFactsOverRealPipeline(t *testing.T) {
 	t.Parallel()
 	const (
@@ -223,7 +254,7 @@ func TestInspectRelease_AttachmentFactsOverRealPipeline(t *testing.T) {
 	}
 	got := buf.String()
 
-	want := "    - credentials (feature.test/db-credential:1.0.0)    [slot: credentials, sensitive]    [explicit]"
+	want := "    - credentials (feature.test/db-credential:1.0.0)    [slot: credentials, sensitive, realization: db-credential-compose:1.0.0]    [explicit]"
 	if !strings.Contains(got, want) {
 		t.Errorf("resolved Release view missing %q\n--- output ---\n%s", want, got)
 	}

@@ -616,7 +616,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			PluginPins:        pluginpath.NoPins(),
 		},
 		view.AsCatalogLookup(),
-		view.RecipeLookupWithManifest(resolved.Manifest).Recipe,
+		view.RecipeLookupWithManifest(resolved.Manifest),
 		view.SubAggregateLoader(),
 	)
 	if tier4 == nil || tier4.Analysis == nil {

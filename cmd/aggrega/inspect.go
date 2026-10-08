@@ -930,9 +930,10 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// The view is built with no registry client, so this stays a local read: a slot
 	// the cache does not hold is a clean miss reported as such, never a fetch.
 	catalogLookup.PluginFromCache = catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...).PluginFromCacheByURI
-	// One lookup over this Release's Manifest, read by the graph build for the
-	// Recipes and by the layout for the realization each attachment is bound to,
-	// so the layout names the FeatureRecipe a build of the same documents renders.
+	// One lookup over this Release's Manifest, handed to the graph build whole:
+	// the build reads the Recipes through it and records on each attachment the
+	// FeatureRecipe it binds, so the layout prints the realization a build of the
+	// same documents renders by reading the graph rather than asking again.
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 
 	// Build the graph through the one entry that produces one, so what this
@@ -976,7 +977,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			PluginPins: pluginpath.RecordedPins(pluginpath.PinMaps{}),
 		},
 		catalogLookup,
-		recipeLookup.Recipe,
+		recipeLookup,
 		cat.SubAggregateLoader(),
 		func(gs *pipeline.GraphScope) error {
 			if opts.irGraph {
@@ -987,7 +988,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			if authored {
 				return emitYAMLRoundTrip(opts, releasePath, data)
 			}
-			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup, recipeLookup.FeatureRecipe)
+			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup)
 		},
 	)
 }
@@ -1024,8 +1025,8 @@ func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRF
 // beneath the line naming that connection. The line has the shape every
 // attachment's line has; its facts clause is the connection form, which leaves
 // out what the connection's own line above it already says.
-func renderConnectionAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, realization string, declared resolver.SensitiveLeaves) {
-	writeAttachment(out, "        ", instanceName, connectionAttachmentFactsBracket(entry, realization), entry, declared)
+func renderConnectionAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
+	writeAttachment(out, "        ", instanceName, connectionAttachmentFactsBracket(entry), entry, declared)
 }
 
 // writeAttachment is the one layout of an attachment's line and, where the
@@ -1131,16 +1132,23 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 // records that no declaration marked the attachment, which is a narrower
 // statement than the attachment being free of secret material.
 //
+// The realization half comes last: the FeatureRecipe the Manifest binds to the
+// attachment, read from the entry's realization field, which the graph build
+// records through the lookup the render binds by. An entry carrying none — the
+// Manifest binds the attachment to no FeatureRecipe the catalog holds — prints
+// no half rather than a realization nobody chose.
+//
 // Returns the empty string when the entry carries none of the facts, so an
 // attachment of the node's own block, on a node whose Component does not
-// resolve and whose declarations mark nothing, prints the line it printed
-// before any fact existed.
+// resolve, whose declarations mark nothing and whose Manifest binds it to
+// nothing, prints the line it printed before any fact existed.
 func attachmentFactsBracket(entry types.IRFeatureEntry) string {
 	var parts []string
 	if c := entry.Connection; c != nil {
 		parts = append(parts, "connection: "+c.Alias+" through socket "+c.Socket)
 	}
-	return factsClause(append(parts, slotAndSensitivityHalves(entry.Binding, entry.Sensitive)...))
+	parts = append(parts, slotAndSensitivityHalves(entry.Binding, entry.Sensitive)...)
+	return factsClause(append(parts, realizationHalf(entry)...))
 }
 
 // connectionAttachmentFactsBracket formats the facts clause of an attachment a
@@ -1148,21 +1156,28 @@ func attachmentFactsBracket(entry types.IRFeatureEntry) string {
 //
 // The line above it names the connection by its alias and its target, so the
 // clause leaves the alias out and leads with the socket, which that line does
-// not name — read, like the alias, from the entry's connection field. The slot
-// and sensitivity halves follow exactly as [attachmentFactsBracket] prints them,
-// and the realization last: the FeatureRecipe the Manifest binds for the
-// attachment, which the caller supplies and leaves empty where the Manifest binds
-// none, so an empty one prints nothing rather than a realization nobody chose.
-func connectionAttachmentFactsBracket(entry types.IRFeatureEntry, realization string) string {
+// not name — read, like the alias, from the entry's connection field. The slot,
+// sensitivity and realization halves follow exactly as [attachmentFactsBracket]
+// prints them.
+func connectionAttachmentFactsBracket(entry types.IRFeatureEntry) string {
 	var parts []string
 	if c := entry.Connection; c != nil {
 		parts = append(parts, "socket: "+c.Socket)
 	}
 	parts = append(parts, slotAndSensitivityHalves(entry.Binding, entry.Sensitive)...)
-	if realization != "" {
-		parts = append(parts, "realization: "+realization)
+	return factsClause(append(parts, realizationHalf(entry)...))
+}
+
+// realizationHalf renders the realization half of an attachment's facts clause
+// from the realization the entry carries, or nothing where it carries none. It
+// is the one spelling of the half for both clauses, and it reads the entry
+// rather than asking a lookup, so what inspect prints and what the graph
+// carries cannot disagree.
+func realizationHalf(entry types.IRFeatureEntry) []string {
+	if entry.Realization == "" {
+		return nil
 	}
-	return factsClause(parts)
+	return []string{"realization: " + entry.Realization}
 }
 
 // slotAndSensitivityHalves renders the slot half and the sensitivity half of an

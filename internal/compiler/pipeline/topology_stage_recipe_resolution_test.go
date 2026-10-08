@@ -173,7 +173,7 @@ func describeWithManifest(t *testing.T, aggregate, manifest string) (*Tier4Resul
 		context.Background(),
 		inputs,
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(inputs.Manifest).Recipe,
+		cat.RecipeLookupWithManifest(inputs.Manifest),
 		cat.SubAggregateLoader(),
 	)
 }

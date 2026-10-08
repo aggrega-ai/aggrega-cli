@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: attachment-realization-app
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: conn/gateway
+      values:
+        region: eu
+      features:
+        # An attachment of the component's own block, bound by its Feature type.
+        db_password:
+          type: feature.conn/token
+          values:
+            key: db-key
+        # An attachment of the component's own block whose Feature type the
+        # Manifest maps to nothing, so the build binds it to no FeatureRecipe.
+        audit:
+          type: feature.conn/audit
+          values:
+            note: kept
+      uses:
+        models:
+          gpt:
+            target: model
+            # An attachment written on the connection, keyed `gpt.credential` on
+            # the gateway. The Manifest binds it by that name, to a different
+            # FeatureRecipe from the one its Feature type maps to.
+            features:
+              credential:
+                type: feature.conn/token
+                values:
+                  key: gpt-key
+    model:
+      type: conn/model

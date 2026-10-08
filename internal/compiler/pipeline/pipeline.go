@@ -690,7 +690,7 @@ func runStepsOneToFour(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	recipeFor resolver.RecipeBinding,
+	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*stepsOneToFourOutput) error,
 ) error {
@@ -709,7 +709,7 @@ func runStepsOneToFour(
 	// reporting channel of its own: what the rules raised joins the same
 	// violation slice the governance verdicts below join, so one run reports
 	// both rather than stopping at whichever came first.
-	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(gs *GraphScope) error {
+	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeLookup, subAggregateLoader, func(gs *GraphScope) error {
 		graph := gs.IRGraph
 
 		out := &stepsOneToFourOutput{GraphScope: gs}
@@ -1262,15 +1262,26 @@ type GraphScope struct {
 // nothing about them. That is what the two surfaces taking this entry already do
 // with the conditions concerned, and it is stated rather than left to be
 // inferred from a slice being present on the scope.
+//
+// # The render's own lookup, whether or not this caller renders
+//
+// recipeLookup is the lookup the render binds every Recipe and FeatureRecipe
+// by, taken whole rather than as the one half a check needs. The graph records,
+// on every attachment, which FeatureRecipe the Manifest binds to it, and that
+// record is only worth carrying if it names the FeatureRecipe a build of the
+// same documents renders. Taking the render's lookup is what makes it so on
+// every surface: a surface that renders nothing hands over the lookup it would
+// render with, and cannot hand over a second one. A caller with no Manifest to
+// bind by supplies the zero lookup, and its graph records no binding.
 func BuildGraph(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	recipeFor resolver.RecipeBinding,
+	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*GraphScope) error,
 ) error {
-	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
+	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeLookup, subAggregateLoader,
 		func(gs *GraphScope) error {
 			if err := joinedAnalysisHalt(analyzer.ErrorsFromObjections(gs.Violations)); err != nil {
 				return err
@@ -1298,7 +1309,7 @@ func buildGraphCollectingFindings(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	recipeFor resolver.RecipeBinding,
+	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*GraphScope) error,
 ) error {
@@ -1324,7 +1335,7 @@ func buildGraphCollectingFindings(
 			"the pins address the versioned cache slot a plugin's bytes are read from, " +
 			"so a graph built without one resolves plugins against an empty address")
 	}
-	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
+	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeLookup.Recipe, subAggregateLoader,
 		func(
 			resolveResult *resolver.ResolveResult,
 			topoResult *topology.TopologyResult,
@@ -1351,6 +1362,9 @@ func buildGraphCollectingFindings(
 				// supplied it separately from the rest of its inputs is a surface
 				// that can supply a different one.
 				CompilerVersion: inputs.CompilerVersion,
+				// Read through the render's own FeatureRecipe lookup, so the
+				// realization each attachment records is the one a build renders.
+				Realization: realizationBinding(recipeLookup.FeatureRecipe),
 			})
 			if err != nil {
 				return fmt.Errorf("IR graph construction: %w", err)
@@ -1497,7 +1511,7 @@ func RunTier4Pipeline(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	recipeFor resolver.RecipeBinding,
+	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
 	// The entry point owns the log, for the reason RunPipeline's does: one log per
@@ -1506,7 +1520,7 @@ func RunTier4Pipeline(
 	out := &Tier4Result{}
 	var assertionErr error
 	var emissionViolations []*resolver.ResolverError
-	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Capture the phase outputs inside the resolve scope, which
 		// resolver.ResolveAndUse closes once this returns. Tier-4 runs no
 		// further work in the scope — analyzer errors ride on
@@ -1796,7 +1810,7 @@ func RunPipeline(
 	// Set where Step 5 begins, so a run that stops reports whether it stopped in
 	// its render or ahead of it — see Outcome.ReachedRender.
 	reachedRender := false
-	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup.Recipe, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Step 4: convert analyzer errors to the joined-error shape that
 		// pre-extraction RunPipeline returned. Preserves the first-error-fatal
 		// semantic existing callers (irgraph, CLI build) consume.

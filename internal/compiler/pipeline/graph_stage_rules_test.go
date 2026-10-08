@@ -99,7 +99,7 @@ func compileWorkspace(
 			CompilerVersion: invocationVersion,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		func(out *stepsOneToFourOutput) error {
 			captured = out

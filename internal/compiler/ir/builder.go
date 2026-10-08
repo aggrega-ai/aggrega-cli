@@ -15,8 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// BuildIRConfig is the input bundle for BuildIRContext. The four fields are all
-// required for a successful build:
+// BuildIRConfig is the input bundle for BuildIRContext. These four fields are
+// all required for a successful build:
 //
 //   - Topology supplies the flattened node graph plus edges and per-node
 //     attachments. Step 2 produces it; the IR builder reads Nodes (in author
@@ -41,11 +41,16 @@ import (
 //     emitted IRGraph records the binary that produced it. The orchestrator
 //     at cmd/aggrega/build.go is the production caller and supplies the
 //     CLI's version string here.
+//
+// Realization is the one optional field: the binding each attachment's
+// realization is recorded from, on a node's attachments and a boundary's
+// alike. A nil binding records none, and the graph is otherwise identical.
 type BuildIRConfig struct {
 	Topology        *topology.TopologyResult
 	ResolveResult   *resolver.ResolveResult
 	CatalogLookup   resolver.CatalogLookup
 	CompilerVersion string
+	Realization     RealizationBinding
 }
 
 // FeatureOrder is BuildIRContext's secondary return value: per-node, the ordered
@@ -443,6 +448,12 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			return nil, nil, AttachmentSites{}, err
 		}
 
+		// Which FeatureRecipe the Manifest binds to each merged attachment, read
+		// from the caller's binding — the lookup the render binds the same
+		// attachment by — so every surface handing this graph out names the
+		// FeatureRecipe a build of the same documents renders it with.
+		bindRealizations(&featResult.Features, cfg.Realization)
+
 		if featResult.Features.Len() > 0 {
 			featureValuesMapping.Set(nodeID, featResult.Features)
 			featureOrder[nodeID] = featResult.FeatureOrder
@@ -551,7 +562,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// boundary-FR dispatch read (no Release re-walk on either side).
 	var boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]
 	if res.Release != nil {
-		boundaryFeatures = buildBoundaryFeaturesProjection(res.Release.Spec.Boundaries, cfg.CatalogLookup)
+		boundaryFeatures = buildBoundaryFeaturesProjection(res.Release.Spec.Boundaries, cfg.CatalogLookup, cfg.Realization)
 	}
 
 	graph := &types.IRGraph{

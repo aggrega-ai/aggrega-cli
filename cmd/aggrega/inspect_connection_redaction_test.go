@@ -49,7 +49,7 @@ func TestInspectConnectionAttachment_WithholdsLikeAnOwnAttachment(t *testing.T) 
 		{"an attachment written on a connection", func(buf *bytes.Buffer) {
 			renderConnectionAttachment(buf, "gpt.credential",
 				entry(&types.AttachmentConnection{Socket: "models", Alias: "gpt", Attachment: "credential"}),
-				"conn-token-compose:1.0.0", declared)
+				declared)
 		}},
 	}
 	for _, c := range cases {

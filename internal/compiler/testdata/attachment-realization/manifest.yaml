@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: attachment-realization-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        conn/gateway: conn-gateway-recipe:1.0.0
+        conn/model: conn-model-recipe:1.0.0
+    features:
+      # feature.conn/audit is deliberately mapped by neither tier.
+      type:
+        feature.conn/token: conn-token-compose:1.0.0
+      name:
+        gpt.credential: conn-token-pinned:2.0.0

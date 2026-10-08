@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: conn-token-pinned
+  version: "2.0.0"
+  description: >
+    A second Compose implementation of feature.conn/token, which the Manifest
+    binds to one attachment by its name while every other attachment of the
+    same Feature type binds the one its type maps to.
+spec:
+  capability: compose
+  implements: feature.conn/token
+  provides:
+    key: "{{ .values.key }}"

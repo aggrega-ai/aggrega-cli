@@ -163,7 +163,7 @@ func tier4OverFixtureWithErr(t *testing.T, aggregate []byte) (*pipeline.Tier4Res
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   fixtureCompilerVersion,
-		}, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest).Recipe, nil)
+		}, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), nil)
 	})
 	if out == nil {
 		t.Fatal("the run returned no result, so the channel cannot be read")

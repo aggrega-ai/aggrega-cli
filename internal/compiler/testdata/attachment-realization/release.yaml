@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: attachment-realization-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      # A boundary-level attachment, bound by its Feature type.
+      features:
+        trace:
+          type: feature.conn/token
+      components:
+        gateway: {}
+        model: {}

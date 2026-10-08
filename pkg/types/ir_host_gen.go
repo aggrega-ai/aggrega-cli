@@ -337,6 +337,9 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Connection != nil {
 		n++
 	}
+	if t.Realization != "" {
+		n++
+	}
 	if t.AnnotationKey != "" {
 		n++
 	}
@@ -418,6 +421,10 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 		} else if dst, err = t.Connection.appendCBOR(dst); err != nil {
 			return nil, err
 		}
+	}
+	if t.Realization != "" {
+		dst = appendCBORTextString(dst, "realization")
+		dst = appendCBORTextString(dst, t.Realization)
 	}
 	if t.AnnotationKey != "" {
 		dst = appendCBORTextString(dst, "annotation_key")
@@ -705,6 +712,12 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 				}
 				t.Connection = v
 			}
+		case "realization":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Realization = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -721,7 +734,7 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRFeatureEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_payload_leaves", "connection"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_payload_leaves", "connection", "realization"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -741,6 +754,9 @@ func (t IRBoundaryFeature) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.Infra.IsZero() {
 		n++
 	}
+	if t.Realization != "" {
+		n++
+	}
 	if len(t.SensitivePayloadLeaves) != 0 {
 		n++
 	}
@@ -754,6 +770,10 @@ func (t IRBoundaryFeature) appendCBOR(dst []byte) ([]byte, error) {
 		} else {
 			dst = appendCBORByteString(dst, raw)
 		}
+	}
+	if t.Realization != "" {
+		dst = appendCBORTextString(dst, "realization")
+		dst = appendCBORTextString(dst, t.Realization)
 	}
 	if len(t.SensitivePayloadLeaves) != 0 {
 		dst = appendCBORTextString(dst, "sensitive_payload_leaves")
@@ -818,6 +838,12 @@ func (t *IRBoundaryFeature) decodeCBOR(dec *cborDec) error {
 				}
 				t.SensitivePayloadLeaves = s
 			}
+		case "realization":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Realization = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -834,7 +860,7 @@ func (t *IRBoundaryFeature) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRBoundaryFeature) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "type", "infra", "sensitive_payload_leaves"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "type", "infra", "sensitive_payload_leaves", "realization"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

@@ -30,10 +30,12 @@ import (
 // read, and the sensitivity declarations that govern it are read off the graph's
 // own per-leaf markings rather than derived a second way.
 //
-// realizationOf is the Manifest's FeatureRecipe lookup the graph build rendered
-// against — by attachment name, then by Feature type — so the realization the
-// layout names for an attachment is the one a build of the same documents uses.
-func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult, lookup resolver.CatalogLookup, realizationOf featureRealization) error {
+// The realization the layout names for an attachment is read from the graph
+// too: the graph build records on each attachment the FeatureRecipe the
+// Manifest binds to it, through the lookup the render binds by, so the layout
+// names the realization a build of the same documents renders and asks no
+// lookup of its own.
+func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult, lookup resolver.CatalogLookup) error {
 	identifier := identifierVersion(rel.Metadata.Name, rel.Metadata.Version)
 	renderHeader(opts, "Release", identifier)
 
@@ -72,7 +74,7 @@ func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath 
 			continue
 		}
 		for _, nodeID := range byBoundary[bp] {
-			renderReleaseComponent(opts, nodeID, bp, graph, outgoing, nodeBoundary, lookup, realizationOf)
+			renderReleaseComponent(opts, nodeID, bp, graph, outgoing, nodeBoundary, lookup)
 		}
 	}
 	return nil
@@ -152,11 +154,6 @@ func lookupBoundary(rel *types.Release, boundaryPath string) (types.Boundary, bo
 	return b, true
 }
 
-// featureRealization resolves the FeatureRecipe a Manifest binds for one
-// attachment, by the attachment's name and the Feature type it names, and
-// reports whether it binds one.
-type featureRealization func(instanceName, featureType string) (*types.FeatureRecipe, bool)
-
 // connectionKey names one connection of a node by the socket it is wired
 // through and the alias it is written under — the pair an edge carries and the
 // pair an attachment's connection record carries.
@@ -177,7 +174,7 @@ type connectionKey struct {
 // name, which carries the alias and not the socket. One whose connection matches
 // no such edge is printed among the component's own, where its facts clause names
 // the connection, so no attachment the graph carries leaves the view.
-func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, graph *types.IRGraph, outgoing map[string][]types.IREdge, nodeBoundary map[string]string, lookup resolver.CatalogLookup, realizationOf featureRealization) {
+func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, graph *types.IRGraph, outgoing map[string][]types.IREdge, nodeBoundary map[string]string, lookup resolver.CatalogLookup) {
 	node, _ := graph.Spec.Nodes.Get(nodeID)
 	typeLabel := node.Component
 	if node.ResolvedVersion != "" && !strings.Contains(typeLabel, ":") {
@@ -217,7 +214,6 @@ func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, gr
 			for _, instanceName := range carried[k] {
 				entry, _ := featureMap.Get(instanceName)
 				renderConnectionAttachment(opts.out, instanceName, entry,
-					realizationName(realizationOf, instanceName, entry.Type),
 					declaredFeatureLeaves(opts, lookup, entry.Type))
 			}
 		}
@@ -239,19 +235,4 @@ func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, gr
 		entry, _ := featureMap.Get(instanceName)
 		renderFeatureAttachment(opts.out, instanceName, entry, declaredFeatureLeaves(opts, lookup, entry.Type))
 	}
-}
-
-// realizationName names the FeatureRecipe the Manifest binds for one
-// attachment as `name:version`, or returns the empty string where the Manifest
-// binds none or no lookup was supplied — the realization is then not known, and
-// the view says nothing about it rather than naming one.
-func realizationName(realizationOf featureRealization, instanceName, featureType string) string {
-	if realizationOf == nil {
-		return ""
-	}
-	fr, found := realizationOf(instanceName, featureType)
-	if !found || fr == nil {
-		return ""
-	}
-	return identifierVersion(fr.Metadata.Name, fr.Metadata.Version)
 }

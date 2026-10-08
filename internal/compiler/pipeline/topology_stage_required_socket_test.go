@@ -167,7 +167,7 @@ func compileDocuments(t *testing.T, catalogPath, releasePath string, aggregate [
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		func(*stepsOneToFourOutput) error { return nil },
 	)

@@ -135,9 +135,10 @@ func renderAttachmentNamed(t *testing.T, name string, entry types.IRFeatureEntry
 // written on a connection, each filling a slot declared sensitive — the first a
 // slot the Component declares for its own attachments, the second a slot the
 // connection's socket declares. So the two lines differ in where they sit and in
-// what the clause names, and every fact on the connection's line — the slot, the
-// mark, the realization the Manifest binds — is one the compiler derived from
-// declarations rather than a literal.
+// what the clause names, and every fact on either line — the slot, the mark, the
+// realization the Manifest binds — is one the compiler derived from
+// declarations rather than a literal. The realization is the one the graph
+// records for each attachment, so both lines print it.
 func TestInspectRelease_ConnectionAttachmentOverRealPipeline(t *testing.T) {
 	t.Parallel()
 	const (
@@ -156,7 +157,7 @@ func TestInspectRelease_ConnectionAttachmentOverRealPipeline(t *testing.T) {
 			"        - gpt.credential (feature.conn/token:1.0.0)    [socket: models, slot: credential, sensitive, realization: conn-token-compose:1.0.0]    [explicit]\n" +
 			"    Features:\n",
 		// The component's own attachment, and only it, under Features.
-		"    Features:\n    - db_password (feature.conn/token:1.0.0)    [slot: db_password, sensitive]    [explicit]\n",
+		"    Features:\n    - db_password (feature.conn/token:1.0.0)    [slot: db_password, sensitive, realization: conn-token-compose:1.0.0]    [explicit]\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("resolved Release view missing %q\n--- output ---\n%s", want, got)
@@ -207,23 +208,23 @@ func TestInspectAggregate_ConnectionAttachmentUnderItsConnection(t *testing.T) {
 // TestConnectionAttachmentFactsBracket pins the clause an attachment carries
 // beneath its connection's line: the socket first, read from the entry's
 // connection field, then the slot and sensitivity halves exactly as every
-// attachment prints them, then the realization when one is known. The alias is
-// never in it — the line above names the connection by its alias — and an
-// unknown realization prints nothing rather than an empty value.
+// attachment prints them, then the realization the entry carries when it
+// carries one. The alias is never in it — the line above names the connection by
+// its alias — and an entry carrying no realization prints nothing rather than an
+// empty value.
 func TestConnectionAttachmentFactsBracket(t *testing.T) {
 	t.Parallel()
 	gpt := &types.AttachmentConnection{Socket: "models", Alias: "gpt"}
 	for _, tc := range []struct {
-		name        string
-		entry       types.IRFeatureEntry
-		realization string
-		want        string
+		name  string
+		entry types.IRFeatureEntry
+		want  string
 	}{
 		{
-			name:        "every fact known",
-			entry:       types.IRFeatureEntry{Connection: gpt, Binding: "credential", Sensitive: true},
-			realization: "conn-token-compose:1.0.0",
-			want:        "[socket: models, slot: credential, sensitive, realization: conn-token-compose:1.0.0]",
+			name: "every fact known",
+			entry: types.IRFeatureEntry{Connection: gpt, Binding: "credential", Sensitive: true,
+				Realization: "conn-token-compose:1.0.0"},
+			want: "[socket: models, slot: credential, sensitive, realization: conn-token-compose:1.0.0]",
 		},
 		{
 			name:  "no realization bound",
@@ -231,10 +232,10 @@ func TestConnectionAttachmentFactsBracket(t *testing.T) {
 			want:  "[socket: models, slot: credential, sensitive]",
 		},
 		{
-			name:        "unmarked, a name no slot declares",
-			entry:       types.IRFeatureEntry{Connection: gpt, Binding: types.AttachmentBindingFree},
-			realization: "conn-token-compose:1.0.0",
-			want:        "[socket: models, free, realization: conn-token-compose:1.0.0]",
+			name: "unmarked, a name no slot declares",
+			entry: types.IRFeatureEntry{Connection: gpt, Binding: types.AttachmentBindingFree,
+				Realization: "conn-token-compose:1.0.0"},
+			want: "[socket: models, free, realization: conn-token-compose:1.0.0]",
 		},
 		{
 			name:  "the slot set unknown",
@@ -250,7 +251,7 @@ func TestConnectionAttachmentFactsBracket(t *testing.T) {
 			want: "[socket: gpt, slot: credential]",
 		},
 	} {
-		got := connectionAttachmentFactsBracket(tc.entry, tc.realization)
+		got := connectionAttachmentFactsBracket(tc.entry)
 		if got != tc.want {
 			t.Errorf("%s: connectionAttachmentFactsBracket = %q, want %q", tc.name, got, tc.want)
 		}
@@ -270,15 +271,21 @@ func TestConnectionAttachmentFactsBracket(t *testing.T) {
 // Each is a discriminator: the attachment must sit under the edge the component
 // drew and not under the coinciding one an attachment drew; the one whose
 // connection no edge carries must stay among the component's own, naming its
-// connection; and the realization must be resolved by the attachment's own name,
-// which the lookup below answers differently from its type.
+// connection; and each line's realization must be the one its own entry
+// carries — two entries carry different ones and the third carries none, so a
+// layout that printed one realization for every line, or asked a lookup instead
+// of reading the entry, prints a different block from the one asserted. Which
+// realization the Manifest binds is the graph build's to record, and is held
+// over the real pipeline beside the graph's own tests.
 func TestReleaseComponent_ConnectionAttachmentsSitUnderTheirConnection(t *testing.T) {
 	t.Parallel()
 	gpt := uniformAttachment("credential", true)
 	gpt.Connection = &types.AttachmentConnection{Socket: "models", Alias: "gpt"}
+	gpt.Realization = "by-name:2.0.0"
 	orphan := uniformAttachment("credential", false)
 	orphan.Connection = &types.AttachmentConnection{Socket: "models", Alias: "orphan"}
 	own := uniformAttachment("db_password", true)
+	own.Realization = "by-type:1.0.0"
 
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
 	attachments.Set("db_password", own)
@@ -292,23 +299,17 @@ func TestReleaseComponent_ConnectionAttachmentsSitUnderTheirConnection(t *testin
 		{Source: "gw", Target: "model", Socket: "models", Alias: "gpt"},
 	}}
 	nodeBoundary := map[string]string{"gw": "cluster", "model": "cluster", "audit": "cluster"}
-	byName := func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
-		if instanceName != "gpt.credential" {
-			return nil, false
-		}
-		return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "by-name", Version: "2.0.0"}}, true
-	}
 
 	var buf bytes.Buffer
 	renderReleaseComponent(testInspectOptions(&buf), "gw", "cluster", graph, outgoing, nodeBoundary,
-		resolver.CatalogLookup{}, byName)
+		resolver.CatalogLookup{})
 	want := "  Component: gw  (type: core/gateway)\n" +
 		"    Uses:\n" +
 		"      gpt → audit\n" +
 		"      gpt → model\n" +
 		"        - gpt.credential (feature.test/db-credential)    [socket: models, slot: credential, sensitive, realization: by-name:2.0.0]    [explicit]\n" +
 		"    Features:\n" +
-		"    - db_password (feature.test/db-credential)    [slot: db_password, sensitive]    [explicit]\n" +
+		"    - db_password (feature.test/db-credential)    [slot: db_password, sensitive, realization: by-type:1.0.0]    [explicit]\n" +
 		"    - orphan.credential (feature.test/db-credential)    [connection: orphan through socket models, slot: credential]    [explicit]\n"
 	if got := buf.String(); got != want {
 		t.Errorf("component block:\n got:\n%s\nwant:\n%s", got, want)

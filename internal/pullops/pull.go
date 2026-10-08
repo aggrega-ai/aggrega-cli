@@ -1094,7 +1094,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			PluginPins: pluginpath.NoPins(),
 		},
 		pullLookup,
-		lazyView.RecipeLookupWithManifest(manifest).Recipe,
+		lazyView.RecipeLookupWithManifest(manifest),
 		lazyView.SubAggregateLoader(),
 		func(gs *pipeline.GraphScope) error {
 			topo := gs.Topology

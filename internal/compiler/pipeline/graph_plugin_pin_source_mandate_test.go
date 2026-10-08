@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -33,7 +34,7 @@ func TestTheGraphEntryRefusesARunThatNamedNoPluginPinSource(t *testing.T) {
 		context.Background(),
 		Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()},
 		resolver.CatalogLookup{},
-		nil,
+		renderer.RecipeLookup{},
 		nil,
 		func(*GraphScope) error {
 			reached = true
@@ -104,7 +105,7 @@ func TestTheGraphEntryAcceptsARunThatNamedAPinFreeSource(t *testing.T) {
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		func(gs *GraphScope) error {
 			built = gs.IRGraph != nil

@@ -1877,9 +1877,20 @@ func collectCompFeaturesRecursive(
 // and the boundary-scope context supplies an empty values pillar by
 // construction, so a default materialised for it would be carrying a value
 // nothing can read.
+//
+// # The realization each attachment is bound to
+//
+// The FeatureRecipe the Manifest binds to each attachment is recorded here too,
+// from the binding the caller hands in, by the attachment's instance name and
+// its Feature type — the two strings the boundary-scope dispatch binds the same
+// attachment by. It is taken as a parameter for the reason the catalog is: an
+// attachment reaches the graph through this walk or not at all, so recording it
+// here is what keeps every boundary attachment carrying it. A nil binding
+// records none.
 func buildBoundaryFeaturesProjection(
 	boundaries types.OrderedMap[types.Boundary],
 	catalogLookup resolver.CatalogLookup,
+	realizationOf RealizationBinding,
 ) types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]] {
 	out := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
 	// Memoised per Feature type across the whole walk: the schema compile is
@@ -1937,6 +1948,10 @@ func buildBoundaryFeaturesProjection(
 							infra = mergeSchemaDefaults(bf.Infra, defs)
 						}
 					}
+					var realization string
+					if realizationOf != nil {
+						realization = realizationOf(fname, bf.Type)
+					}
 					inner.Set(fname, types.IRBoundaryFeature{
 						Type:  bf.Type,
 						Infra: infra,
@@ -1947,6 +1962,7 @@ func buildBoundaryFeaturesProjection(
 						SensitivePayloadLeaves: derivePayloadSensitiveLeaves(
 							types.OrderedMap[any]{}, infra, declaredFor(bf.Type),
 						),
+						Realization: realization,
 					})
 				}
 				if inner.Len() > 0 {

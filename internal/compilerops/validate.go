@@ -360,7 +360,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		ctx,
 		inputs,
 		in.View.AsCatalogLookup(),
-		in.View.RecipeLookupWithManifest(in.Manifest).Recipe,
+		in.View.RecipeLookupWithManifest(in.Manifest),
 		in.View.SubAggregateLoader(),
 	)
 	r.Tier4 = tier4

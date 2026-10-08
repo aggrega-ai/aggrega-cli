@@ -134,7 +134,7 @@ func compileBoundaryAnnotation(t *testing.T, releasePath, workspaceRoot string) 
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		func(out *stepsOneToFourOutput) error {
 			captured = out

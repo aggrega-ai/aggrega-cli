@@ -68,7 +68,7 @@ func fullstackBindingRun(t *testing.T, bindings []workspaceconfig.PluginRef) (bu
 			cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(), pipeline.Options{SkipRender: true})
 		buildAdvisories, buildErr = outcome.Advisories(), err
 		tier4, err := pipeline.RunTier4Pipeline(context.Background(), inputs(), wiredLookup(cat, manifest),
-			cat.RecipeLookupWithManifest(manifest).Recipe, cat.SubAggregateLoader())
+			cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader())
 		if tier4 != nil {
 			validateAdvisories = tier4.Advisories
 		}

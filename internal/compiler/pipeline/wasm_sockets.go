@@ -291,8 +291,8 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	// boundary attachment's infra, and a node's own values and infra — arrives
 	// as the withheld marker rather than as the value an author wrote. What a
 	// policy reasons on stays readable: each attachment's type, resolved version,
-	// labels, catalog annotations, binding, connection and origin, the markings
-	// themselves, and every leaf no declaration marks. A plugin judges where a
+	// labels, catalog annotations, binding, connection, realization and origin, the
+	// markings themselves, and every leaf no declaration marks. A plugin judges where a
 	// declared-sensitive datum travels, never the datum itself.
 	//
 	// It is the same withholding the command line applies when it prints the
