@@ -261,6 +261,27 @@ jobs:
       # stages. A failure anywhere below halts the run before sign-and-publish, so
       # no image, plugin, or release is ever produced from an unvalidated build.
 
+      - name: Give aggrega a configuration of this run's own
+        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, the
+        # runner's user may keep a global aggrega configuration of their own,
+        # and every aggrega command reads it: a registry, a trust setting, a CLI
+        # plugin or an offline posture recorded there would shape what this
+        # run builds. So every aggrega command in this job reads its global
+        # configuration from a directory made empty here, the way the platform
+        # smoke runs keep the machine's configuration out: XDG_CONFIG_HOME names
+        # the directory, and AGGREGA_CONFIG, which would name a file in its
+        # place, is emptied, which aggrega reads as unset. Other programs that
+        # look for their settings under XDG_CONFIG_HOME, Go and Git among them,
+        # find none there either. The machine-wide caches are not configuration
+        # and stay where they are. RUN_CONFIG_HOME names the directory too, so
+        # the last step removes this run's directory and never one that
+        # XDG_CONFIG_HOME named before this step.
+        run: |
+          set -euo pipefail
+          config_home="$(mktemp -d "$RUNNER_TEMP/config-home.XXXXXX")"
+          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\n' \
+            "$config_home" "$config_home" >> "$GITHUB_ENV"
+
       - name: Mint org app token for private-sibling access
         # The sibling repositories are private; a GitHub App installation token
         # scoped to the org grants the checkouts read access to all of them. The
@@ -928,6 +949,14 @@ jobs:
         run: |
           rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$RELEASE_INPUTS"
 
+      - name: Remove this run's configuration
+        # Whatever the steps above did, so nothing written to this run's
+        # configuration directory is left on a persistent runner for a later run
+        # to find.
+        if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
+        run: |
+          rm -rf -- "$RUN_CONFIG_HOME"
+
   sign-and-publish:
     # Waits for the build and for every smoke run — windows-smoke and both
     # targets of macos-smoke — and starts only when each one succeeded: a job
@@ -972,6 +1001,23 @@ jobs:
       # external side effect are each gated to a real publish (a push event, or a
       # manual dispatch with dry_run=false); on a dry run they print their plan
       # and push, publish, sign, and release nothing.
+
+      - name: Give aggrega a configuration of this run's own
+        # As in the build job, and for the same reason: on a persistent
+        # self-hosted runner, the runner's user may keep a global aggrega
+        # configuration of their own, which would otherwise shape what this run
+        # publishes and signs. Every aggrega command in this job reads its global
+        # configuration from a directory made empty here instead, named by
+        # XDG_CONFIG_HOME, with AGGREGA_CONFIG emptied. The registry login is
+        # unaffected: aggrega login, like docker login, stores the credential in
+        # Docker's credential store (DOCKER_CONFIG, else $HOME/.docker), which is
+        # where aggrega push and aggrega sign read it. The last step removes the
+        # directory RUN_CONFIG_HOME names.
+        run: |
+          set -euo pipefail
+          config_home="$(mktemp -d "$RUNNER_TEMP/config-home.XXXXXX")"
+          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\n' \
+            "$config_home" "$config_home" >> "$GITHUB_ENV"
 
       - name: Check out the CLI at the commit the build job built
         # For the publishing scripts only, taken from the repository at the
@@ -1278,6 +1324,14 @@ jobs:
         if: ${{ always() && env.INPUTS != '' }}
         run: |
           rm -rf -- "$INPUTS" "$RELEASE_DIR"
+
+      - name: Remove this run's configuration
+        # Whatever the steps above did, so nothing written to this run's
+        # configuration directory is left on a persistent runner for a later run
+        # to find.
+        if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
+        run: |
+          rm -rf -- "$RUN_CONFIG_HOME"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
