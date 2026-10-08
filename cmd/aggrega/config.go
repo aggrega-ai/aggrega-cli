@@ -98,11 +98,11 @@ piece exists for the shape it solves:
   directory; failing everything, your working directory is used.
   --workspace-root skips discovery entirely.
 
-  Naming the global file. --config <path> wins over $AGGREGA_CONFIG, which
-  wins over the default location. Both name a file deliberately, so a path
-  either gives that does not exist is a loud error rather than a silent
-  fallback. Whichever file resolves is also the one a config-writing command
-  writes when it writes globally.`,
+  Naming the global file. --config <path> wins over the AGGREGA_CONFIG
+  environment variable, which wins over the default location. Both name a file
+  deliberately, so a path either gives that does not exist is a loud error
+  rather than a silent fallback. Whichever file resolves is also the one a
+  config-writing command writes when it writes globally.`,
 		Example: `  # What applies right now
   aggrega config show
 
@@ -239,7 +239,7 @@ func configShowVerbatim(out io.Writer, path, label string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(out, "No %s config file exists at %s.\n", label, path)
+			fmt.Fprintf(out, "No %s config file exists at %s\n", label, path)
 			return nil
 		}
 		return fmt.Errorf("aggrega config show: read %s config %s: %w", label, path, err)
@@ -609,7 +609,7 @@ func reportCapture(out io.Writer, res configops.CaptureResult) {
 	section("catalog_dirs", res.CatalogDirs)
 
 	if !wrote {
-		fmt.Fprintf(out, "No build-critical configuration to capture into %s.\n", res.Path)
+		fmt.Fprintf(out, "No build-critical configuration to capture into %s\n", res.Path)
 	}
 }
 

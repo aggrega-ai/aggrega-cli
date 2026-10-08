@@ -106,7 +106,7 @@ func offlinePostureSource(rw *workspaceconfig.ResolvedWorkspace) string {
 		case workspaceconfig.OriginCommandLineFlag:
 			return "the offline posture is set by " + name + " on this invocation"
 		case workspaceconfig.OriginEnvironment:
-			return "the offline posture is set by $" + name
+			return "the offline posture is set by " + workspaceconfig.EnvironmentVariableWords(name)
 		case workspaceconfig.OriginConfigFile:
 			return "the offline posture is set by `" + workspaceconfig.OfflineSettingKey + ": true` in " + name
 		}

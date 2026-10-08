@@ -503,11 +503,11 @@ func renderPublishEntityText(p publishEntityPayload) string {
 		fmt.Fprintf(&b, "Dry run: %s:%s would be published as %s (%s, %d bytes). Nothing was contacted.",
 			p.Reference, p.Tag, p.Kind, p.MediaType, p.Size)
 	case p.AlreadyPublished:
-		fmt.Fprintf(&b, "Already published: %s:%s already points at %s. Nothing was landed.",
+		fmt.Fprintf(&b, "Already published: %s:%s already points at %s, so nothing was landed.",
 			p.Reference, p.Tag, p.Digest)
 	default:
-		fmt.Fprintf(&b, "Published %s:%s as %s (%s, %d bytes) at %s.",
-			p.Reference, p.Tag, p.Kind, p.MediaType, p.Size, p.Digest)
+		fmt.Fprintf(&b, "Published %s:%s at %s as %s (%s, %d bytes).",
+			p.Reference, p.Tag, p.Digest, p.Kind, p.MediaType, p.Size)
 	}
 	if p.WholeDirectorySource != "" {
 		fmt.Fprintf(&b, " It carries every file in the entity's directory, because its source %q is a template "+
@@ -678,11 +678,11 @@ func renderPublishArtifactText(p publishArtifactPayload) string {
 		return fmt.Sprintf("Dry run: %s:%s would be published as %s (%d bytes). Nothing was contacted.",
 			p.Reference, p.Tag, p.MediaType, p.Size)
 	case p.AlreadyPublished:
-		return fmt.Sprintf("Already published: %s:%s already points at %s. Nothing was landed.",
+		return fmt.Sprintf("Already published: %s:%s already points at %s, so nothing was landed.",
 			p.Reference, p.Tag, p.Digest)
 	default:
-		return fmt.Sprintf("Published %s:%s as %s (%d bytes) at %s.",
-			p.Reference, p.Tag, p.MediaType, p.Size, p.Digest)
+		return fmt.Sprintf("Published %s:%s at %s as %s (%d bytes).",
+			p.Reference, p.Tag, p.Digest, p.MediaType, p.Size)
 	}
 }
 
@@ -740,7 +740,7 @@ var signArtifactsToolSpec = toolSpec{
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1},
-      "description": "The already-published references to sign, each a registry address such as registry.example/component/core/api-server:1.0.0."
+      "description": "The already-published references to sign, each a registry address (registry.example/component/core/api-server:1.0.0, for example)."
     },
     "key_path": {
       "type": "string",

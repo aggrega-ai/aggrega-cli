@@ -333,7 +333,7 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 		// prose is then told the way the rest of it is.
 		note := compilerops.LocalCatalogAdvice(tw.rw.LocalCatalogAdviceNote(releasePath), view.SkippedEntities(), name, "")
 		return tw.answer(errorResult(explainDiagnostic(fmt.Sprintf(
-			"No catalog entity named %q resolved, in any kind (%s), in the terms of the Release %s. Check the "+
+			"No catalog entity named %q resolved, in any kind (%s), in the terms of the Release %s; check the "+
 				"type URI and that the catalog directories that Release reads cover it.%s",
 			name, kinds, pathscope.ReportedName(tw.root, releasePath), note), "component")))
 	}

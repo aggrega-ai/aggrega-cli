@@ -34,8 +34,9 @@ manifest*.yaml.
 Configuration is the cascade composition of the .aggrega-config.yaml
 files from the workspace root down to the working directory (nearer
 overrides farther), beneath which the global config file — the one
---config names, else the one $AGGREGA_CONFIG names, else the default
-location when a file is there — and the built-in defaults apply.
+--config names, else the one the AGGREGA_CONFIG environment variable
+names, else the default location when a file is there — and the
+built-in defaults apply.
 
 The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight

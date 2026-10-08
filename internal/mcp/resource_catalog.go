@@ -49,7 +49,7 @@ func catalogResourceTemplate() resourceTemplate {
 		Name:        "catalog-entity",
 		Description: "A catalog entity's authored YAML, served verbatim from the resolved workspace catalog. The first path segment is the entity kind (" +
 			strings.Join(entitykind.Segments(), ", ") +
-			") and the remainder is the entity identity — for example catalog://component/core/compute/api-server or catalog://recipe/helm/mariadb-bitnami:1.0.0.",
+			") and the remainder is the entity identity — for example catalog://component/core/compute/api-server or catalog://recipe/helm/mariadb-bitnami:1.0.0",
 		MimeType: catalogMimeType,
 	}
 }

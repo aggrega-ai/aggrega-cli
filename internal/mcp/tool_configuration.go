@@ -364,7 +364,7 @@ func stringPointer(s string) *string { return &s }
 func renderConfigShowText(p configShowResult) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "Configuration in force for %s.\n", workspaceRootWords(p.WorkspaceRoot))
+	fmt.Fprintf(&b, "Configuration in force for %s\n", workspaceRootWords(p.WorkspaceRoot))
 
 	if len(p.Layers) == 0 {
 		b.WriteString("\nLoaded from: the built-in defaults alone — no config file, environment override or " +

@@ -74,7 +74,7 @@ func (e *placeholderError) Error() string {
 	if len(e.placeholders) == 1 {
 		noun, owes = "placeholder", "it needs one"
 	}
-	fmt.Fprintf(&b, "%d %s still owed in %s. An empty required value is not a value, so %s before the document validates:",
+	fmt.Fprintf(&b, "%d %s still owed in %s; an empty required value is not a value, so %s before the document validates:",
 		len(e.placeholders), noun, e.path, owes)
 	for _, p := range e.placeholders {
 		fmt.Fprintf(&b, "\n    %d:%d: %s takes %s", p.line, p.column, p.path, p.takes)

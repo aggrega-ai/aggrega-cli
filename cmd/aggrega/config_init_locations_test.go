@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/configops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -136,8 +135,8 @@ func runAsMachine(t *testing.T, platform machinedirs.Platform, env map[string]st
 // offline posture keeps it from asking the hub for its advertised policy.
 func hubBaselineNotice() string {
 	host := workspaceconfig.HubBaselineHost
-	return fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (registrytrust: fetch %s: %s)\n",
-		host, host, egress.ErrOfflineEgress().Error())
+	return fmt.Sprintf("%s was not asked for its trust policy, because the workspace is offline; using the built-in trust baseline for %s instead\n",
+		host, host)
 }
 
 // TestConfigInitSaysWhereTheMachinesFilesAreOnEachPlatform drives the real

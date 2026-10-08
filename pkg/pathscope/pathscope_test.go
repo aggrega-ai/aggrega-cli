@@ -485,12 +485,15 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // caller about to use one — ReportedName answers the question after that one,
 // which spelling to put in an answer, for a caller that owes its reader a path
 // either way — ResolvesInside answers where a path leads on disk once its links
-// are followed, the one question here a spelling cannot settle — and WalkDir walks
-// the tree beneath a root, a root that is itself a link walked where it leads as
-// ResolvesInside resolves such a root, which no question of scope covers. A further
-// export is either one of those seven wearing a second name or a class nobody named
-// — and if a genuinely new class is being added, this count moves in the same
-// change that names it, which is exactly the deliberation the pin exists to force.
+// are followed, the one question here a spelling cannot settle — SamePlace answers
+// whether two paths are one place on disk, by the file system's own identity for
+// what each leads to, which neither a spelling nor inside-ness settles where the
+// file system folds case — and WalkDir walks the tree beneath a root, a root that is
+// itself a link walked where it leads as ResolvesInside resolves such a root, which
+// no question of scope covers. A further export is either one of those eight
+// wearing a second name or a class nobody named — and if a genuinely new class is
+// being added, this count moves in the same change that names it, which is exactly
+// the deliberation the pin exists to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
@@ -525,8 +528,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 7 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly seven entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, WalkDir), so an eighth is either a mode in disguise or a class nobody named", exported)
+	if exported != 8 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly eight entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, SamePlace, WalkDir), so a ninth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

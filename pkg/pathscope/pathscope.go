@@ -86,6 +86,12 @@
 // at the moment of asking, while they answer about a spelling and give the same
 // answer on every machine.
 //
+// [SamePlace] answers the question beside it: whether two paths are one place on
+// disk. Like ResolvesInside it asks the filesystem rather than the spelling, so a
+// path written through a link, relative to another directory, or in another case
+// on a file system that does not distinguish case is the same place as the path
+// it leads to.
+//
 // # What this package deliberately does not do
 //
 // It carries no diagnostic. A refusal is reported as a bare false, beside the
@@ -95,9 +101,9 @@
 // another skips a file silently, another halts an operation before it writes.
 // Each attaches its own condition and its own message at its own call site.
 //
-// Every entry point but [ResolvesInside] and [WalkDir] is purely lexical, exactly
-// as [path.Clean] is. Those resolve no symbolic link, so a caller whose root can
-// contain a link out of the tree asks [ResolvesInside] as well.
+// Every entry point but [ResolvesInside], [SamePlace] and [WalkDir] is purely
+// lexical, exactly as [path.Clean] is. Those resolve no symbolic link, so a caller
+// whose root can contain a link out of the tree asks [ResolvesInside] as well.
 package pathscope
 
 import (
@@ -452,6 +458,32 @@ func ResolvesInside(root, path string) (Resolution, bool) {
 		}
 	}
 	return res, false
+}
+
+// SamePlace reports whether a and b are one place on disk: one file or one
+// directory, whatever links either is spelled through.
+//
+// The answer is the file system's own, read from the identity it gives what each
+// path leads to rather than from either spelling. So it holds across a link, a
+// relative and an absolute spelling, a trailing separator, and — on a file system
+// that compares names without regard to case, as Windows and macOS do by default
+// — two spellings that differ only in case, which that file system resolves to
+// one entry. Where the file system does distinguish case, two such spellings name
+// two places, or one that is not there, and are not reported as one.
+//
+// A path that cannot be read names no place, so it is the same place as nothing,
+// itself included: a caller holding two spellings of a path that is not there
+// compares them as spellings if it needs to.
+func SamePlace(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
 }
 
 // within reports whether p is root or lies beneath it. Both are absolute and

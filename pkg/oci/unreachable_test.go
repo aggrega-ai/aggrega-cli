@@ -72,7 +72,7 @@ func TestUnreachableReadsTheTransportFailureNotItsWords(t *testing.T) {
 		{
 			name: "a registry that answered with a server error was reached",
 			err: func(*testing.T) error {
-				return errors.New("registrytrust: fetch trust config from registry.example.test: HTTP 500")
+				return errors.New("registry.example.test answered the request for its trust policy with HTTP 500")
 			},
 			want: false,
 		},

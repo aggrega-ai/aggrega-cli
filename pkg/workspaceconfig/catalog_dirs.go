@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -51,7 +52,10 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // shadows). Prepending the flag dirs makes `--catalog` additive and
 // override-capable in one move: an explicit `--catalog ./x` is searched before
 // the configured directories, shadowing them on collision, while the configured
-// directories still resolve everything `./x` does not carry. Appending the
+// directories still resolve everything `./x` does not carry. A directory named
+// more than once — a flag naming a directory the configuration already lists, say
+// — is one entry, at the position it was first named in ([namedCatalogDirs]), so
+// it is read once and nothing in it is reported as shadowed by itself. Appending the
 // conventional directory last means anything the reader lists wins over it on
 // collision, and appending rather than defaulting means declaring one unrelated
 // directory never silently stops the conventional one being read. It is not
@@ -100,8 +104,8 @@ func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string
 // NamedCatalogDirs returns the part of the catalog search stack
 // [ResolvedWorkspace.ResolveCatalogDirs] returns for release that somebody named:
 // the `--catalog` flag directories and the directories the configuration lists,
-// in the stack's own order and spelling, without the conventional `catalog`
-// directory the stack appends unasked.
+// in the stack's own order and spelling and each directory once, without the
+// conventional `catalog` directory the stack appends unasked.
 //
 // It is what tells a directory named for the workspace to reach — one typed on
 // the command line, or listed in the configuration, and possibly outside the
@@ -173,17 +177,49 @@ func isConventionalCatalogDir(workspaceRoot, dir string) bool {
 // namedCatalogDirs builds the named part of the stack, a fresh list, and returns
 // it with the configured directories it was built from, whose nil-ness
 // [authoredEmpty] reads.
+//
+// A directory named more than once — by a `--catalog` flag and by the
+// configuration, or twice by the configuration — is one entry, at the position it
+// was first named in, spelled as it was named there. It is one directory however
+// often it is named, so it is read once: a second read would meet every file the
+// first read placed and report each as shadowed by itself, and a reader would be
+// told of overrides nobody wrote. Keeping the first position leaves the first-win
+// precedence of every other entry where it was, so no identity resolves to a
+// different file for it. Two directories are one when they are one place on disk
+// ([pathscope.SamePlace]), which is the file system's answer rather than a
+// comparison of spellings: a directory named through a link, relative to another
+// directory, with a trailing separator, or — on a file system that does not
+// distinguish case — in another case, is the directory it leads to. A directory
+// that is not there is compared by its spelling made absolute and cleaned, so
+// naming it twice still names it once, and the load reports it missing once.
+//
+// Only the same directory is folded. A directory that lies beneath another the
+// stack names is a different directory and keeps its own entry, even though the
+// walk of the one above it reads its files too.
 func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) (dirs, configured []string) {
 	configured = r.configuredCatalogDirs(release)
 	dirs = make([]string, 0, len(flagDirs)+len(configured)+1)
 	for _, d := range flagDirs {
 		if abs, err := filepath.Abs(d); err == nil {
-			dirs = append(dirs, abs)
-		} else {
-			dirs = append(dirs, d)
+			d = abs
+		}
+		dirs = appendDistinctDir(dirs, d)
+	}
+	for _, d := range configured {
+		dirs = appendDistinctDir(dirs, d)
+	}
+	return dirs, configured
+}
+
+// appendDistinctDir appends dir to dirs unless an entry of dirs is the same
+// directory, the comparison namedCatalogDirs states.
+func appendDistinctDir(dirs []string, dir string) []string {
+	for _, have := range dirs {
+		if pathscope.SamePlace(have, dir) || filepath.Clean(have) == filepath.Clean(dir) {
+			return dirs
 		}
 	}
-	return append(dirs, configured...), configured
+	return append(dirs, dir)
 }
 
 // authoredEmpty reports whether the merged catalog-directory list is the

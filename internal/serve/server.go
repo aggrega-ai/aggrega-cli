@@ -1444,25 +1444,11 @@ func (s *session) workspaceOrHeldFor(root string) (*Server, error) {
 	// or spelled otherwise than the working directory was — is that workspace, so
 	// it reports what anchored the launch, as the launch's own spelling of it does.
 	// Its entry stays its own: every answer is spelled from the root it names.
-	if launch := s.workspaces.byRoot[filepath.Clean(s.launchRoot)]; launch != nil && sameDirectory(key, launch.workspaceRoot) {
+	if launch := s.workspaces.byRoot[filepath.Clean(s.launchRoot)]; launch != nil && pathscope.SamePlace(key, launch.workspaceRoot) {
 		ws.workspaceMarker = launch.workspaceMarker
 	}
 	s.workspaces.byRoot[key] = ws
 	return ws, nil
-}
-
-// sameDirectory reports whether a and b name one directory on disk, whatever links
-// either is spelled through. A path that cannot be read names none.
-func sameDirectory(a, b string) bool {
-	ai, err := os.Stat(a)
-	if err != nil {
-		return false
-	}
-	bi, err := os.Stat(b)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(ai, bi)
 }
 
 // workspaceRefusal is the refusal a request naming the workspace at root draws
@@ -1525,10 +1511,12 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 	cfg := resolved.Config()
 	root := resolved.Root()
 	// The session lookup reads the workspace's own configured list, every entry of
-	// which the configuration names; its named part is asked of the resolver like
-	// every other stack's rather than assumed here.
+	// which the configuration names, so the list is its own named part. Both are
+	// asked of the resolver like every other stack's rather than read off the
+	// configuration here: the resolver is where a directory the configuration lists
+	// twice becomes one entry, and a lookup handed the raw list would read it twice.
 	sessionNamed := resolved.NamedCatalogDirs("", nil)
-	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil, sessionNamed...)
+	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, sessionNamed, nil, sessionNamed...)
 	return &Server{
 		session:           s,
 		workspaceRoot:     root,
@@ -1539,7 +1527,7 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 		buildOnInspect:    resolveBuildOnInspect(s.buildOnInspectFlag, cfg.Serve.BuildOnInspect),
 		lintOnValidate:    cfg.Serve.LintOnValidate,
 		lazyCatalog:       sessionCatalog,
-		releaseCatalogs:   newReleaseCatalogs(cfg.Workspace.CatalogDirs, sessionNamed, sessionCatalog),
+		releaseCatalogs:   newReleaseCatalogs(sessionNamed, sessionNamed, sessionCatalog),
 		parseCache:        newCache(cfg.ParseCache.MaxEntries, cfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		renderDiags:       map[string][]Diagnostic{},

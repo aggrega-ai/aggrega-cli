@@ -469,7 +469,7 @@ func registryListInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 func renderRegistryListText(p registryListResult) string {
 	var b strings.Builder
 	if len(p.Registries) == 0 {
-		return "No registries are configured for " + workspaceRootWords(p.WorkspaceRoot) + "."
+		return "No registries are configured for " + workspaceRootWords(p.WorkspaceRoot)
 	}
 	fmt.Fprintf(&b, "Registries for %s (%d):\n", workspaceRootWords(p.WorkspaceRoot), len(p.Registries))
 	for _, r := range p.Registries {
@@ -584,7 +584,7 @@ var searchToolSpec = toolSpec{
     },
     "selector": {
       "type": "string",
-      "description": "Label selector over the entity's catalog labels. A category is a label: component.aggrega.ai/category=compute."
+      "description": "Label selector over the entity's catalog labels, which include its category (component.aggrega.ai/category=compute)."
     },
     "capabilities": {
       "type": "array",

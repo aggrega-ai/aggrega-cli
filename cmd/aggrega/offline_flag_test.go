@@ -286,7 +286,7 @@ func TestUpgradeRefusesUnderEveryOfflineLayer(t *testing.T) {
 		wantNamed string
 	}{
 		{name: "set by the configuration file", config: "offline: true\n", wantNamed: workspaceconfig.ConfigFilename},
-		{name: "set by the environment", env: "true", wantNamed: "$AGGREGA_OFFLINE"},
+		{name: "set by the environment", env: "true", wantNamed: "the AGGREGA_OFFLINE environment variable"},
 		{name: "set by the flag", args: []string{"--offline"}, wantNamed: "--offline"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -342,6 +342,11 @@ func assertOfflineRefusal(t *testing.T, err error, wantLayerNamed string) {
 	}
 	if !strings.Contains(text, wantLayerNamed) {
 		t.Errorf("the refusal does not name the layer that set the posture (want %q): %s", wantLayerNamed, text)
+	}
+	// A variable is named in words, never in one shell's syntax: the reader may
+	// be at a Windows prompt, where "$AGGREGA_OFFLINE" is not what they set.
+	if strings.Contains(text, "$AGGREGA_") {
+		t.Errorf("the refusal names a variable in a shell's syntax: %s", text)
 	}
 	// What to do for one run. A refusal a reader cannot act on for this one
 	// invocation is the whole reason the flag was added, so its absence here is
@@ -441,7 +446,7 @@ spec:
 		wantNamed string
 	}{
 		{name: "set by the configuration file", config: "offline: true\n", wantNamed: workspaceconfig.ConfigFilename},
-		{name: "set by the environment", env: "true", wantNamed: "$AGGREGA_OFFLINE"},
+		{name: "set by the environment", env: "true", wantNamed: "the AGGREGA_OFFLINE environment variable"},
 		{name: "set by the flag", args: []string{"--offline"}, wantNamed: "--offline"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

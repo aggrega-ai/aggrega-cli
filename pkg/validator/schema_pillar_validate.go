@@ -92,7 +92,7 @@ func ValidateSchemaPillars(
 			cerrors.SourceLocation{File: filePath, Line: node.Line},
 			fmt.Sprintf(
 				"%s %q: spec.schema must be a YAML map of pillars (values / infra / provides), not a %s. "+
-					"Compact-form authoring uses inline YAML mapping; see vocabulary/compact-form-authoring.md.",
+					"Compact-form authoring uses inline YAML mapping, as vocabulary/compact-form-authoring.md describes.",
 				entityKind, entityName, yamlNodeKindName(node.Kind),
 			),
 			nil, nil,

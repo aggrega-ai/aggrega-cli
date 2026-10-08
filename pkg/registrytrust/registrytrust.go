@@ -210,6 +210,14 @@ const fetchTimeout = 15 * time.Second
 // no policy" (a normal, tolerated outcome) from a transport failure (returned
 // wrapped). Any non-2xx other than 404 is treated as a fetch failure.
 //
+// Every failure that leaves the registration proceeding without an advertised
+// policy is worded as what happened to this registry's request, opening with the
+// registry's name, because that sentence is what a registration reports as its
+// reason — beside the policy it took instead, or the flags that supply one by
+// hand. So it says what the registry answered, or why it was not asked, in the
+// reader's terms: a registry that asks for credentials is said to, rather than
+// reported by its status code alone.
+//
 // host is the registry authority (e.g. "hub.aggrega.ai" or "localhost:5000"),
 // as produced by pkg/registryhost.Of — no scheme, no path. The client passed
 // in transports the request, bounded by fetchTimeout; it comes from pkg/egress,
@@ -222,7 +230,10 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 		// The client is obtained from the network-egress gate (pkg/egress); a nil
 		// client means the workspace is offline, so the well-known trust fetch is
 		// refused before any dial.
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch %s: %w", host, egress.ErrOfflineEgress())
+		return AdvertisedTrust{}, &noPolicyTaken{
+			sentence:  fmt.Sprintf("%s was not asked for its trust policy, because the workspace is offline", host),
+			condition: egress.ErrOfflineEgress(),
+		}
 	}
 	client.Timeout = fetchTimeout
 
@@ -234,29 +245,66 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: build request for %s: %w", host, err)
+		return AdvertisedTrust{}, fmt.Errorf("%s could not be asked for its trust policy: %w", host, err)
 	}
 	req.Header.Set("Accept", mediaType)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch trust config from %s: %w", host, err)
+		return AdvertisedTrust{}, fmt.Errorf("%s did not return its trust policy: %w", host, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return AdvertisedTrust{}, ErrNoTrustAdvertised()
+		return AdvertisedTrust{}, &noPolicyTaken{
+			sentence:  fmt.Sprintf("%s publishes no trust policy (HTTP %d)", host, resp.StatusCode),
+			condition: ErrNoTrustAdvertised(),
+		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch trust config from %s: HTTP %d", host, resp.StatusCode)
+		return AdvertisedTrust{}, statusRefusal(host, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: read trust config from %s: %w", host, err)
+		return AdvertisedTrust{}, fmt.Errorf("%s sent a trust policy that could not be read: %w", host, err)
 	}
 	return Decode(body)
 }
+
+// statusRefusal is a registry's answer to the trust-policy request with a status
+// that is neither success nor not-found, said as what the answer means to the
+// reader where the status has one meaning: an answer asking for credentials says
+// so, and one refusing access says that. Any other status is reported as the
+// status the registry answered with.
+func statusRefusal(host string, status int) error {
+	switch status {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%s requires credentials to read its trust policy (HTTP %d)", host, status)
+	case http.StatusForbidden:
+		return fmt.Errorf("%s refuses access to its trust policy (HTTP %d)", host, status)
+	}
+	return fmt.Errorf("%s answered the request for its trust policy with HTTP %d", host, status)
+}
+
+// noPolicyTaken is a trust fetch that took no policy for a reason a registered
+// condition names, said as what happened to this registry's request.
+//
+// It is the condition — errors.Is and the condition's short code read through it —
+// but it does not repeat the condition's own sentence. That sentence describes
+// the condition in general and, for the offline refusal, carries the remedy for
+// work that needs the network; this one is read as the reason a registration took
+// the policy it took, and the registration states the outcome and what to do
+// about it itself — the built-in baseline it pinned, or the flags that supply a
+// policy by hand — so the general remedy beside it would be advice the reader
+// does not need.
+type noPolicyTaken struct {
+	sentence  string
+	condition error
+}
+
+func (e *noPolicyTaken) Error() string { return e.sentence }
+func (e *noPolicyTaken) Unwrap() error { return e.condition }
 
 // maxBodyBytes caps the advertised-trust body the fetch reads. A trust
 // document is a small list of identities; the cap keeps a misbehaving or

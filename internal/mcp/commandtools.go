@@ -506,7 +506,7 @@ func commandArgumentSchema(a commandArgument) string {
 		desc = "The --" + a.flag + " flag."
 	}
 	if d := strings.TrimSpace(a.def); d != "" && d != "false" && d != "[]" && d != "0" {
-		desc += " Defaults to " + d + "."
+		desc += " Defaults to " + d
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "{\n      \"type\": %s", jsonQuote(a.jsonType))

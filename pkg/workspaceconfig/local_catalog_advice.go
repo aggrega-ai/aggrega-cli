@@ -56,8 +56,8 @@ func (r *ResolvedWorkspace) LocalCatalogAdviceNote(release string) string {
 		return ""
 	}
 	where := fmt.Sprintf(
-		"local entities are read from `%s/` at the workspace root and from every directory listed under `%s` in %s.",
-		ConventionalCatalogDir, CatalogDirsSetting, ConfigFilename)
+		"local entities are read from `%s/` at the workspace root and from every directory %s lists under `%s`.",
+		ConventionalCatalogDir, ConfigFilename, CatalogDirsSetting)
 	remedy := fmt.Sprintf(
 		"Put the entity under `%s/`, or list the directory holding it under `%s`.",
 		ConventionalCatalogDir, CatalogDirsSetting)

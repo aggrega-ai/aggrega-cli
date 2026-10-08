@@ -117,7 +117,7 @@ left out.`,
 		},
 	}
 	c.Flags().StringArrayVar(&opts.Kinds, "kind", nil, "Entity kind to match (component|feature|recipe|featurerecipe|workload|plugin). Repeatable; a record matching any one is kept. Case-insensitive.")
-	c.Flags().StringVarP(&opts.Selector, "selector", "l", "", "Label selector over the entity's catalog labels. Category is a label: -l component.aggrega.ai/category=compute.")
+	c.Flags().StringVarP(&opts.Selector, "selector", "l", "", "Label selector over the entity's catalog labels, which include its category (-l component.aggrega.ai/category=compute).")
 	c.Flags().StringArrayVar(&opts.Capabilities, "capability", nil, "Plugin capability to match. Repeatable; a record declaring any one is kept.")
 	c.Flags().StringVar(&opts.PluginType, "plugin-type", "", "Plugin socket type to match (for example provider, governance, linter).")
 	c.Flags().StringVar(&opts.Registry, "registry", "", "Search only this registry, addressed by host or friendly alias. Default searches every configured registry.")

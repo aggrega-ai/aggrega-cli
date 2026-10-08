@@ -68,7 +68,7 @@ func validateProviderSchemaField(entityKind, fieldName, entityName, filePath, bo
 			cerrors.SourceLocation{File: filePath},
 			fmt.Sprintf("%s %q: spec.%s body is not valid YAML: %s. "+
 				"Authored as JSON Schema 2020-12; "+
-				"see vocabulary/compact-form-authoring.md.",
+				"vocabulary/compact-form-authoring.md describes the authoring surface.",
 				entityKind, entityName, fieldName, err.Error()))
 	}
 	if _, err := compactform.Compile(&bodyNode, compactform.WithConsumerFile(filePath)); err != nil {

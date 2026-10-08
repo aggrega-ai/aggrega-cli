@@ -18,7 +18,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/configops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -255,7 +254,7 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			if tc.identity && !res.Trust.Skipped {
 				t.Errorf("a registration pinned by hand fetched anyway: %+v", res.Trust)
 			}
-			offlineReason := "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error()
+			offlineReason := host + " was not asked for its trust policy, because the workspace is offline"
 			if gotOffline := res.Trust.Reason == offlineReason; gotOffline != tc.wantOffline {
 				t.Errorf("reason = %q; want the offline refusal as the reason: %v", res.Trust.Reason, tc.wantOffline)
 			}
@@ -269,7 +268,7 @@ func TestRegistryAddOnTheDaemonEstablishesTrustAsEverySurfaceDoes(t *testing.T) 
 			case tc.wantOffline:
 				wantWire["reason"] = offlineReason
 			case tc.wantNotAdvertised:
-				wantWire["reason"] = registrytrust.ErrNoTrustAdvertised().Error()
+				wantWire["reason"] = host + " publishes no trust policy (HTTP 404)"
 			}
 			if tc.wantNotAdvertised {
 				wantWire["notAdvertised"] = true
@@ -378,7 +377,7 @@ func TestConfigInitOnTheDaemonRefusesARegistryItCannotPinOffline(t *testing.T) {
 			wantWire := map[string]any{
 				"pinned":   false,
 				"baseline": true,
-				"reason":   "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error(),
+				"reason":   host + " was not asked for its trust policy, because the workspace is offline",
 			}
 			if got := trustOnTheWire(t, resp); !reflect.DeepEqual(got, wantWire) {
 				t.Errorf("the daemon's trust object for the hub seeded offline = %v; want %v", got, wantWire)

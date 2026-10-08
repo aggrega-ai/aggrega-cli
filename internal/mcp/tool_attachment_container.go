@@ -231,7 +231,7 @@ func renderAttachmentContainerText(p attachmentContainerPayload) string {
 	if p.FileWithheld {
 		file = keptBackLocationWords
 	}
-	fmt.Fprintf(&b, "An attachment for %s belongs in %s, under %s.\n",
+	fmt.Fprintf(&b, "An attachment for %s belongs in %s, under %s\n",
 		p.Node, file, renderContainerPath(p.Container))
 	b.WriteString("  the container path is a list of segments; pass it and the file to insertion-point to learn " +
 		"where in that document the text goes\n")

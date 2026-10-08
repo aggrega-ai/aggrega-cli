@@ -176,7 +176,7 @@ func TestADefaultRegistryIsRefusedWhereItIsNeitherAnEntryNorALocation(t *testing
 					doc += "default_registry: " + tc.value + "\n"
 				} else {
 					env["AGGREGA_DEFAULT_REGISTRY"] = tc.value
-					names = "$AGGREGA_DEFAULT_REGISTRY"
+					names = "the AGGREGA_DEFAULT_REGISTRY environment variable: "
 				}
 				writeFile(t, path, doc)
 				_, err := Resolve(root, "", fakeEnv(env))

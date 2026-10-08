@@ -235,7 +235,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		// The resolved location is named rather than the value as sent: a relative
 		// source resolves against the workspace root, and a reader looking for the
 		// file needs the place that was actually opened.
-		return tw.answer(errorResult(explainToolError("Could not read the source at "+path+".", err, "")))
+		return tw.answer(errorResult(explainToolError("Could not read the source at "+path, err, "")))
 	}
 
 	// The format is selected before the attachment inputs because the with-config

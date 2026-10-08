@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -184,9 +183,9 @@ func TestTheRegistrationTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			want := tc.wantTrust
 			switch {
 			case tc.wantOfflineReason:
-				want.Reason = "registrytrust: fetch " + host + ": " + egress.ErrOfflineEgress().Error()
+				want.Reason = host + " was not asked for its trust policy, because the workspace is offline"
 			case tc.wantNotFoundReason:
-				want.Reason = registrytrust.ErrNoTrustAdvertised().Error()
+				want.Reason = host + " publishes no trust policy (HTTP 404)"
 			}
 			// The property the hub's offline row exists for, named on its own so a
 			// failure says which fact went wrong rather than only that two values differ.

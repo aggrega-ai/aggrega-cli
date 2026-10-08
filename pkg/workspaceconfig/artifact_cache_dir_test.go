@@ -118,8 +118,11 @@ func TestEnvRefusesAbsoluteArtifactCacheDir(t *testing.T) {
 	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("refusal is not category-consistent with other config rejections: %v", err)
 	}
-	if !strings.Contains(err.Error(), "AGGREGA_ARTIFACT_CACHE_DIR") {
-		t.Errorf("the diagnostic does not name the variable that carried the value:\n%s", err.Error())
+	// The variable is named in words valid at every platform's prompt, never
+	// behind a shell's "$".
+	if !strings.HasPrefix(err.Error(), "the AGGREGA_ARTIFACT_CACHE_DIR environment variable: ") ||
+		strings.Contains(err.Error(), "$AGGREGA_") {
+		t.Errorf("the diagnostic does not name the variable that carried the value in words:\n%s", err.Error())
 	}
 
 	// Non-vacuity: the same overlay accepts a relative value.

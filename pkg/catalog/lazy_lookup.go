@@ -2838,8 +2838,15 @@ func cachedLibraryRemedy(names []string) string {
 //
 // Entities are walked in sorted-URI order (deterministic; the warnings never
 // enter the lockfile or rendered output, but their emission order must be
-// stable). The URI is the per-entity locator — a registry-pinned closure entity
-// has no local file path. Narrowing-on-extend advisories are a separate
+// stable).
+//
+// Each entity is linted ONCE, keyed by the identity it resolved to rather than by
+// the reference that reached it. A closure can reach one entity through more than
+// one reference — the bare name an Aggregate writes and the versioned reference a
+// lockfile pin records — and linting per reference would report the same overlap
+// once for each. The notice names the entity by that identity, its name and
+// version, which is also the locator a registry-pinned entity is reported by,
+// since it has no local file path. Narrowing-on-extend advisories are a separate
 // composition surface and are not included here.
 func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 	l.mu.Lock()
@@ -2861,15 +2868,26 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 	sort.Strings(uris)
 
 	var out []string
+	linted := map[string]bool{}
 	for _, uri := range uris {
 		if comp, ok := l.component(uri); ok {
+			identity := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
+			if linted[entityBytesKey("Component", identity)] {
+				continue
+			}
+			linted[entityBytesKey("Component", identity)] = true
 			out = append(out, validator.ValidateSchemaPillarOverlap(
-				"Component", comp.Metadata.Name, uri, comp.Spec.Schema)...)
+				"Component", comp.Metadata.Name, identity, comp.Spec.Schema)...)
 			continue
 		}
 		if feat, ok := l.feature(uri); ok {
+			identity := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
+			if linted[entityBytesKey("Feature", identity)] {
+				continue
+			}
+			linted[entityBytesKey("Feature", identity)] = true
 			out = append(out, validator.ValidateSchemaPillarOverlap(
-				"Feature", feat.Metadata.Name, uri, feat.Spec.Schema)...)
+				"Feature", feat.Metadata.Name, identity, feat.Spec.Schema)...)
 		}
 	}
 	return out

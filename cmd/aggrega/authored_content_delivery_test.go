@@ -405,9 +405,9 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 
 	// The remedy is the half of the advisory that cannot be recovered from
 	// content: an absence conveys neither that a policy is missing nor what to do.
-	const remedy = "--identity/--key"
-	const absence = "advertises no trust config"
-	const baseline = "Pinned the built-in trust baseline for " + workspaceconfig.HubBaselineHost
+	const remedy = "--identity or --key"
+	const absence = "pin its trust by hand"
+	const baseline = "; using the built-in trust baseline for " + workspaceconfig.HubBaselineHost + " instead\n"
 
 	// A registry other than the hub, which carries no baseline, so a registry that
 	// cannot be reached leaves its entry with no policy at all.
@@ -491,7 +491,7 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 	// reached, so it advertised nothing; the entry carries its baseline anyway, and
 	// the notice says so rather than sending the reader to pin identities by hand.
 	writeBaselineAnswer, writeBaselineAdvisory := trustAdvisoryStreams(t, false, workspaceconfig.HubBaselineHost, offlineTrustClient())
-	if !strings.HasPrefix(afterSeedingLocations(t, writeBaselineAnswer), baseline) {
+	if first := strings.SplitAfter(afterSeedingLocations(t, writeBaselineAnswer), "\n")[0]; !strings.HasSuffix(first, baseline) {
 		t.Errorf("a writing delivery must say the built-in baseline was pinned; it carried:\n%s", writeBaselineAnswer)
 	}
 	if strings.Contains(writeBaselineAnswer, absence) || strings.Contains(writeBaselineAnswer, remedy) {

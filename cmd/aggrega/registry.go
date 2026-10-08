@@ -371,7 +371,7 @@ Existing settings in the target config file are preserved.`,
 			})
 		},
 	}
-	c.Flags().StringArrayVar(&identities, "identity", nil, "Trusted keyless identity as `identity=issuer` (repeatable; OR-set). E.g. dev@example.com=https://accounts.google.com. Overrides the fetched trust policy.")
+	c.Flags().StringArrayVar(&identities, "identity", nil, "Trusted keyless identity as `identity=issuer`, for example dev@example.com=https://accounts.google.com (repeatable; OR-set). Overrides the fetched trust policy.")
 	c.Flags().StringVar(&name, "name", "", "Optional friendly alias for this registry. The host stays the identity; the alias resolves to it wherever a registry is named (e.g. --registry). Must be unique across registries.")
 	c.Flags().StringVar(&keyPath, "key", "", "Path to a pinned cosign-compatible public-key PEM for keyed verification. Overrides the fetched trust policy.")
 	c.Flags().StringVar(&trustedRoot, "trusted-root", "", "Path to a pinned Sigstore trust-root bundle for air-gapped keyless verification")
@@ -566,14 +566,20 @@ func writeTrustFetchNotice(out, errOut io.Writer, delivery authoredcontent.Deliv
 // agreement is what would hide the divergence — so the words a reader needs,
 // the flags that supply a policy by hand among them, exist here and nowhere
 // else.
+//
+// The baseline and not-advertised sentences open with the reason, which is the
+// registration's own account of what happened to the request — what the registry
+// answered, or why it was not asked — already opening with the registry's name in
+// the reader's terms, and go on to say what follows for the entry. The reason is
+// used as the registration worded it; nothing is cut from it here.
 func trustFetchNotice(host string, t registryops.TrustFetchOutcome) string {
 	switch {
 	case t.Pinned:
 		return fmt.Sprintf("Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
 	case t.Baseline:
-		return fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (%s)\n", host, t.Reason)
+		return fmt.Sprintf("%s; using the built-in trust baseline for %s instead\n", t.Reason, host)
 	case t.NotAdvertised:
-		return fmt.Sprintf("Notice: registry %s advertises no trust config (%s); pin identities manually with --identity/--key\n", host, t.Reason)
+		return fmt.Sprintf("Notice: %s; pin its trust by hand with --identity or --key\n", t.Reason)
 	}
 	return ""
 }

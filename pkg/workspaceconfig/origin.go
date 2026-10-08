@@ -25,6 +25,18 @@ const originDefaultsLabel = "(built-in defaults)"
 // file path, and carries the variable's own name after it.
 const originEnvPrefix = "env:"
 
+// EnvironmentVariableWords names the environment variable name in a sentence a
+// reader is shown: "the NAME environment variable".
+//
+// It writes no shell's variable syntax — neither a leading "$" nor a pair of
+// "%" — because what the reader sets is the name itself, and the reader may be at
+// a Windows prompt or a Unix one, where each spelling is wrong at the other. A
+// refusal that names the environment variable which carried a value names it
+// here, so those refusals read alike.
+func EnvironmentVariableWords(name string) string {
+	return "the " + name + " environment variable"
+}
+
 // originLayerLabel renders one entry of the resolved cascade as the source label
 // a setting attributed to that layer carries.
 //

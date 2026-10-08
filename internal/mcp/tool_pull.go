@@ -174,13 +174,13 @@ var pullToolSpec = toolSpec{
     },
     "verify": {
       "type": "boolean",
-      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, the plugin trust record or any entity.lock. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets or pin_sources."
+      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, any entity.lock or the plugin trust record. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets or pin_sources."
     },
     "upgrade_targets": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
-      "description": "Entity URIs to re-resolve, in the bare authored form such as core/database. Each named pin is dropped and re-resolved to the highest available version; all other pins and the recorded external inputs are held. Omit to reconcile instead. Cannot be combined with verify."
+      "description": "Entity URIs to re-resolve, in the bare authored form (core/database, for example). Each named pin is dropped and re-resolved to the highest available version; all other pins and the recorded external inputs are held. Omit to reconcile instead. Cannot be combined with verify."
     },
     "pin_sources": {
       "type": "boolean",
@@ -252,7 +252,7 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		trimmed := strings.TrimSpace(t)
 		if trimmed == "" {
 			return errorResult("pull was given a blank entry in 'upgrade_targets'. Every entry names an entity " +
-				"URI to re-resolve, in the bare authored form such as core/database.")
+				"URI to re-resolve, in the bare authored form (core/database, for example).")
 		}
 		targets = append(targets, trimmed)
 	}

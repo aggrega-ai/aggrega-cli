@@ -174,8 +174,8 @@ func (c Config) checkDefaultRegistryLocation(value string) error {
 
 // defaultRegistryLayer names the layer that set the default registry, followed by
 // ": ", for the opening of a refusal — a configuration file's path, or the
-// environment variable behind a "$" — or returns the empty string when the
-// built-in default is what applies. It asks the per-value provenance report, the
+// environment variable named in words that read the same at every platform's
+// prompt — or returns the empty string when the built-in default is what applies. It asks the per-value provenance report, the
 // one answer to which layer determined a setting, rather than working it out a
 // second way, and it is reached only on the path that refuses, so the files it
 // reads again are read only when there is something to report.
@@ -193,7 +193,7 @@ func defaultRegistryLayer(cfg Config, layers []string, lookup func(string) strin
 		case OriginConfigFile:
 			return name + ": "
 		case OriginEnvironment:
-			return "$" + name + ": "
+			return EnvironmentVariableWords(name) + ": "
 		}
 	}
 	return ""

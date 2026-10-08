@@ -71,7 +71,8 @@ spec:
 
 // TestLazyLookup_ClosureLintWarnings_CoversAllClosureEntities pins the cover-all
 // behavior: every closure Component/Feature is linted (no partition), a clean
-// entity emits nothing, and the URI is the per-entity locator in the notice.
+// entity emits nothing, and the entity's identity — name and version — is the
+// locator in the notice.
 func TestLazyLookup_ClosureLintWarnings_CoversAllClosureEntities(t *testing.T) {
 	ws := t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
@@ -95,7 +96,7 @@ func TestLazyLookup_ClosureLintWarnings_CoversAllClosureEntities(t *testing.T) {
 		t.Fatalf("expected exactly 1 overlap warning (overlap component only; clean emits none); got %d: %v",
 			len(warnings), warnings)
 	}
-	// The notice names the kind, the entity name, the URI locator, and the
+	// The notice names the kind, the entity name, the identity locator, and the
 	// overlapping property.
 	for _, want := range []string{"Component", "test/overlap-comp", "test/overlap-comp:1.0.0", "port"} {
 		if !strings.Contains(warnings[0], want) {
@@ -135,5 +136,59 @@ func TestLazyLookup_ClosureLintWarnings_DeterministicOrder(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0], "test/aaa-overlap") || !strings.Contains(warnings[1], "test/overlap-comp") {
 		t.Errorf("warnings not in sorted-URI order: %v", warnings)
+	}
+}
+
+// TestLazyLookup_ClosureLintWarnings_OneEntityReachedTwiceIsLintedOnce holds the
+// lint to one notice per entity when the closure reaches that entity through more
+// than one reference — the bare name an Aggregate writes and the versioned
+// reference a Manifest mapping or a lockfile pin records. Both resolve to the one
+// document, so the overlap it carries is reported once, naming the entity by its
+// identity rather than by whichever reference happened to reach it.
+//
+// The rows hold the two halves apart: the same entity reached twice is one notice,
+// and two different entities are still two, so a fix that keyed on the name alone
+// — folding two versions of one name together — fails the second row.
+func TestLazyLookup_ClosureLintWarnings_OneEntityReachedTwiceIsLintedOnce(t *testing.T) {
+	ws := t.TempDir()
+	catalogDir := filepath.Join(ws, "catalog")
+	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogFile(t, catalogDir, "overlap.yaml", overlapComponentYAML)
+	writeCatalogFile(t, catalogDir, "aaa.yaml", overlapComponentBYAML)
+	lazy := NewLazyLookup(ws, ".aggrega/cache", []string{catalogDir}, nil)
+
+	for _, tc := range []struct {
+		name string
+		uris []string
+		want []string // the identity each notice names, in order
+	}{
+		{
+			name: "one entity reached by its bare name and by its versioned reference",
+			uris: []string{"test/overlap-comp", "test/overlap-comp:1.0.0"},
+			want: []string{"test/overlap-comp:1.0.0"},
+		},
+		{
+			name: "two entities, each reached twice, are two notices",
+			uris: []string{"test/overlap-comp:1.0.0", "test/aaa-overlap", "test/overlap-comp", "test/aaa-overlap:1.0.0"},
+			want: []string{"test/aaa-overlap:1.0.0", "test/overlap-comp:1.0.0"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cl closure.Closure
+			for _, u := range tc.uris {
+				cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: u})
+			}
+			warnings := lazy.ClosureLintWarnings(cl)
+			if len(warnings) != len(tc.want) {
+				t.Fatalf("got %d notice(s), want %d: %v", len(warnings), len(tc.want), warnings)
+			}
+			for i, identity := range tc.want {
+				if !strings.Contains(warnings[i], " at "+identity+" ") {
+					t.Errorf("notice %d does not name the entity by its identity %q: %s", i, identity, warnings[i])
+				}
+			}
+		})
 	}
 }

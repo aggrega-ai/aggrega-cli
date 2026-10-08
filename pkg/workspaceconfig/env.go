@@ -84,7 +84,7 @@ var envBindings = []envBinding{
 		configPath: "artifact_cache_dir",
 		kind:       envKindString,
 		apply: func(cfg *Config, raw string) error {
-			if err := validateArtifactCacheDir(raw, "$AGGREGA_ARTIFACT_CACHE_DIR"); err != nil {
+			if err := validateArtifactCacheDir(raw, EnvironmentVariableWords("AGGREGA_ARTIFACT_CACHE_DIR")); err != nil {
 				return err
 			}
 			cfg.ArtifactCacheDir = raw
@@ -153,7 +153,7 @@ var envBindings = []envBinding{
 		kind:       envKindPathList,
 		apply: func(cfg *Config, raw string) error {
 			kinds := splitPathList(raw)
-			if err := validateSigningKinds(kinds, "$AGGREGA_SIGNING_KINDS"); err != nil {
+			if err := validateSigningKinds(kinds, EnvironmentVariableWords("AGGREGA_SIGNING_KINDS")); err != nil {
 				return err
 			}
 			cfg.Signing.Kinds = kinds
@@ -178,7 +178,7 @@ func applyEnvOverlay(cfg *Config, look func(string) string) ([]string, error) {
 			continue
 		}
 		if err := b.apply(cfg, raw); err != nil {
-			return nil, fmt.Errorf("workspaceconfig: $%s: %w", b.envVar, err)
+			return nil, fmt.Errorf("%s: %w", EnvironmentVariableWords(b.envVar), err)
 		}
 		contributing = append(contributing, b.envVar)
 	}

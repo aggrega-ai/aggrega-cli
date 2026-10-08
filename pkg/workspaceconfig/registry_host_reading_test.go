@@ -232,8 +232,8 @@ func TestTheRegistryHostPatternAgreesWithThePredicate(t *testing.T) {
 			env                map[string]string
 		}{
 			{label: "in a file", path: writeFixture(t, string(doc))},
-			{label: "through $AGGREGA_DEFAULT_REGISTRY", path: writeFixture(t, string(entriesOnly)),
-				names: "$AGGREGA_DEFAULT_REGISTRY", env: map[string]string{"AGGREGA_DEFAULT_REGISTRY": row.value}},
+			{label: "through AGGREGA_DEFAULT_REGISTRY", path: writeFixture(t, string(entriesOnly)),
+				names: "the AGGREGA_DEFAULT_REGISTRY environment variable: ", env: map[string]string{"AGGREGA_DEFAULT_REGISTRY": row.value}},
 		}
 		for _, layer := range layers {
 			names := layer.names
@@ -286,10 +286,10 @@ func checkDefaultLayers(t *testing.T, s string, accepted bool, spelling, path st
 		return
 	}
 	envPath := writeFixture(t, "workspace: {}\n")
-	checkLayer(t, "$AGGREGA_DEFAULT_REGISTRY", s, accepted, spelling, "$AGGREGA_DEFAULT_REGISTRY", func() error {
+	checkLayer(t, "AGGREGA_DEFAULT_REGISTRY", s, accepted, spelling, "the AGGREGA_DEFAULT_REGISTRY environment variable: ", func() error {
 		cfg, err := resolveFixture(envPath, map[string]string{"AGGREGA_DEFAULT_REGISTRY": s})
 		if err == nil && cfg.DefaultRegistry != s {
-			t.Errorf("$AGGREGA_DEFAULT_REGISTRY %q was accepted but the resolved default is %q", s, cfg.DefaultRegistry)
+			t.Errorf("AGGREGA_DEFAULT_REGISTRY %q was accepted but the resolved default is %q", s, cfg.DefaultRegistry)
 		}
 		return err
 	})

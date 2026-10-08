@@ -122,7 +122,7 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if err := recordInstalledCLIPlugin(configPath, src, desc); err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
-	fmt.Fprintf(out, "Added %q as command(s) %s in %s.\n", ref, quoteCommandNames(desc), configPath)
+	fmt.Fprintf(out, "Added %q as command(s) %s in %s\n", ref, quoteCommandNames(desc), configPath)
 	return nil
 }
 

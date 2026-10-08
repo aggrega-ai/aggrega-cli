@@ -101,7 +101,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
 		"absolute path to use as the workspace root (skips discovery)")
 	root.PersistentFlags().StringVar(&configPathFlag, workspaceconfig.ConfigFlagName, "",
-		"path to the global config file, overriding $AGGREGA_CONFIG and the default location. Workspace-tree config files still layer on top")
+		"path to the global config file, overriding the AGGREGA_CONFIG environment variable and the default location. Workspace-tree config files still layer on top")
 	root.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
 		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
 	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,

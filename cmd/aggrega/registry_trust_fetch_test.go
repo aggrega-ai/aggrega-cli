@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -177,8 +176,11 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 	if len(pol.TrustedIdentities) != 0 || pol.Signing.Required {
 		t.Errorf("fallback should write an empty policy; got %+v", pol)
 	}
-	if !strings.Contains(out.String(), "advertises no trust config") {
-		t.Errorf("expected the manual-pinning notice; got %q", out.String())
+	// The notice is the first line, worded whole, and it is said once; the
+	// registration's own confirmation follows it on a line of its own.
+	notice := "Notice: " + host + " publishes no trust policy (HTTP 404); pin its trust by hand with --identity or --key"
+	if first, _, _ := strings.Cut(out.String(), "\n"); first != notice || strings.Count(out.String(), notice) != 1 {
+		t.Errorf("output = %q; want it to open with the one manual-pinning notice %q", out.String(), notice)
 	}
 }
 
@@ -209,8 +211,14 @@ func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 	if _, found := reloaded.Config().RegistryTrustPolicy(host); !found {
 		t.Fatal("registry should still be registered after a transport-failure fallback")
 	}
-	if !strings.Contains(out.String(), "advertises no trust config") {
-		t.Errorf("expected the manual-pinning notice on transport failure; got %q", out.String())
+	// The transport error's own words vary by platform, so the first line is
+	// pinned at both ends rather than whole; the notice is said once.
+	got := out.String()
+	first, _, _ := strings.Cut(got, "\n")
+	if !strings.HasPrefix(first, "Notice: "+host+" did not return its trust policy: ") ||
+		!strings.HasSuffix(first, "; pin its trust by hand with --identity or --key") ||
+		strings.Count(got, "; pin its trust by hand with --identity or --key") != 1 {
+		t.Errorf("output = %q; want it to open with the one manual-pinning notice naming the failed request", got)
 	}
 }
 
@@ -371,9 +379,9 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 				if issuer := workspaceconfig.DefaultBaseline().TrustedIdentities[0].Issuer; !strings.Contains(string(written), host) || !strings.Contains(string(written), issuer) {
 					t.Errorf("the hub was not written on its built-in baseline:\n%s", written)
 				}
-				want := fmt.Sprintf("Pinned the built-in trust baseline for %s instead of an advertised policy (registrytrust: fetch %s: %s)\n",
-					host, host, egress.ErrOfflineEgress().Error())
-				if !strings.HasPrefix(out.String(), want) || strings.Contains(out.String(), "advertises no trust config") {
+				want := fmt.Sprintf("%s was not asked for its trust policy, because the workspace is offline; using the built-in trust baseline for %s instead\n",
+					host, host)
+				if !strings.HasPrefix(out.String(), want) || strings.Contains(out.String(), "pin its trust by hand") {
 					t.Errorf("output = %q; want it to open with the one baseline notice %q", out.String(), want)
 				}
 				return
@@ -393,7 +401,7 @@ func TestRegistryAddTakesItsTrustClientFromTheEgressGate(t *testing.T) {
 			if pol.Signing.Required {
 				t.Errorf("the entry carries the advertised signing requirement, which only a fetch could have supplied: %+v", pol)
 			}
-			if strings.Contains(out.String(), "Pinned advertised") || strings.Contains(out.String(), "advertises no trust config") {
+			if strings.Contains(out.String(), "Pinned advertised") || strings.Contains(out.String(), "pin its trust by hand") {
 				t.Errorf("a registration pinned by hand reported a fetch outcome: %q", out.String())
 			}
 		})

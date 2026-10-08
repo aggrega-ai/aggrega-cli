@@ -263,8 +263,8 @@ func VerifySourceReferences(prior *Lockfile, resolved []closure.SourceArtifact) 
 			// an independently-actionable finding, which is what one moved
 			// reference is.
 			moved = append(moved, fmt.Errorf(
-				"source-artifact %s: reference %q moved — the lockfile pins %s, and it now resolves to %s. "+
-					"Adopt where it now points with `aggrega pull --upgrade --release <release>`",
+				"source-artifact %s: reference %q moved — the lockfile pins %s, and it now resolves to %s; "+
+					"adopt where it now points with `aggrega pull --upgrade --release <release>`",
 				sourceArtifactLabel(sa), ref.RequestedRef, was, sa.PinnedVersion))
 		}
 	}
