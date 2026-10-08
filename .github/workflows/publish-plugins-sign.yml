@@ -1008,16 +1008,32 @@ jobs:
         # configuration of their own, which would otherwise shape what this run
         # publishes and signs. Every aggrega command in this job reads its global
         # configuration from a directory made empty here instead, named by
-        # XDG_CONFIG_HOME, with AGGREGA_CONFIG emptied. The registry login is
-        # unaffected: aggrega login, like docker login, stores the credential in
-        # Docker's credential store (DOCKER_CONFIG, else $HOME/.docker), which is
-        # where aggrega push and aggrega sign read it. The last step removes the
-        # directory RUN_CONFIG_HOME names.
+        # XDG_CONFIG_HOME, with AGGREGA_CONFIG emptied.
+        #
+        # The registry credential gets a Docker configuration of this run's own
+        # too, made empty in that same directory and named by DOCKER_CONFIG.
+        # aggrega login and docker login both store the credential in Docker's
+        # configuration — the directory DOCKER_CONFIG names, else the user's own
+        # $HOME/.docker — and aggrega push, aggrega sign and docker push read it
+        # from there. Left to the default, a release would leave its publishing
+        # credential in the runner user's own Docker configuration, where
+        # nothing logs out. Here the credential lives only for the run: no
+        # command in this job reads, writes or cleans the runner user's own
+        # Docker configuration, and the last step removes the directory
+        # RUN_CONFIG_HOME names, the credential with it. The docker commands
+        # this job runs — login, load, image inspect, push and image rm — are
+        # docker's own and need no CLI plugin. docker reaches its daemon as it
+        # does with no configuration of its own: through DOCKER_HOST when the
+        # runner's environment sets it, otherwise through the default socket.
+        # Docker keeps its contexts in its configuration, so none of the user's
+        # is available here: a runner whose daemon is reached only through a
+        # context needs DOCKER_HOST set in its environment.
         run: |
           set -euo pipefail
           config_home="$(mktemp -d "$RUNNER_TEMP/config-home.XXXXXX")"
-          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\n' \
-            "$config_home" "$config_home" >> "$GITHUB_ENV"
+          mkdir -m 0700 "$config_home/docker"
+          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\nDOCKER_CONFIG=%s\n' \
+            "$config_home" "$config_home" "$config_home/docker" >> "$GITHUB_ENV"
 
       - name: Check out the CLI at the commit the build job built
         # For the publishing scripts only, taken from the repository at the
@@ -1083,6 +1099,18 @@ jobs:
         # (aggrega) authenticate with the same registry credentials; the password
         # is read from the environment, never placed on a command line or
         # interpolated.
+        #
+        # Both logins store the credential in this run's own Docker
+        # configuration, which DOCKER_CONFIG names, and the order is what keeps
+        # docker login's copy there. aggrega login runs first and writes the
+        # credential into that configuration's file; docker login, finding a
+        # credential recorded there, keeps to that same file. Run against a
+        # configuration that records no credential, docker login looks for a
+        # credential helper of the machine — on Linux, docker-credential-pass
+        # when pass is installed, else docker-credential-secretservice — and,
+        # when one is installed, stores the credential with it instead: in the
+        # runner user's own password store or keyring, which the last step does
+        # not clean.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
@@ -1327,8 +1355,9 @@ jobs:
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
-        # configuration directory is left on a persistent runner for a later run
-        # to find.
+        # configuration directory — the registry credential the logins stored
+        # in its Docker configuration among it — is left on a persistent runner
+        # for a later run to find.
         if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
         run: |
           rm -rf -- "$RUN_CONFIG_HOME"
