@@ -521,3 +521,62 @@ func TestConfigInitOnTheDaemonSeedsTheDefaultRegistry(t *testing.T) {
 		t.Errorf("host = %q; want the official hub the command line's flag defaults to", res.Host)
 	}
 }
+
+// TestConfigInitOnTheDaemonSaysWhetherTheFileWasAlreadyThere drives the seeding
+// over a file that does not exist and over one that does, writing and dry-running
+// each, and reads whether the answer says the file was already there.
+//
+// The command line says it — it creates the file, or uses the one it found — and
+// the two surfaces carry one capability, so the answer here carries the same fact.
+// It is read from the response bytes rather than from a decode: a decode into a
+// struct whose field defaults to false reads an answer that never carried the key
+// exactly as one that carried false, so only the bytes show the key was sent.
+// A request that did not send force never proceeds over an existing file, so the
+// key is absent from those answers and present and true wherever the file was
+// there; the existing-file refusal itself has its own test above.
+func TestConfigInitOnTheDaemonSaysWhetherTheFileWasAlreadyThere(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		scenario   string
+		fileExists bool
+		dryRun     bool
+	}{
+		{"a seeding that creates the file", false, false},
+		{"a forced seeding over the file already there", true, false},
+		{"a dry run for a file that does not exist", false, true},
+		{"a forced dry run over the file already there", true, true},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			t.Parallel()
+			srv, globalPath, _ := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
+			params := map[string]any{"registry": seededRegistry}
+			if tc.fileExists {
+				params["force"] = true
+			} else if err := os.Remove(globalPath); err != nil {
+				t.Fatalf("clear the global layer: %v", err)
+			}
+			if tc.dryRun {
+				params["dryRun"] = true
+			}
+
+			resp := callDaemonMethod(t, srv, "aggrega/configInit", params)
+			var res configInitResult
+			decodeDaemonResult(t, resp, &res)
+			raw := string(resp.Result)
+
+			switch {
+			case tc.fileExists && !strings.Contains(raw, `"existed":true`):
+				t.Errorf("the file was already there and the answer does not say so:\n%s", raw)
+			case !tc.fileExists && strings.Contains(raw, `"existed"`):
+				t.Errorf("the file did not exist and the answer says it was there:\n%s", raw)
+			}
+			if res.Existed != tc.fileExists {
+				t.Errorf("existed: got %v, want %v", res.Existed, tc.fileExists)
+			}
+			if res.Scope.ConfigFile != globalPath {
+				t.Errorf("configFile: got %q, want the file the answer is about, %q", res.Scope.ConfigFile, globalPath)
+			}
+		})
+	}
+}

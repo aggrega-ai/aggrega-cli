@@ -57,11 +57,20 @@ type configInitParams struct {
 // official hub. A caller deciding whether the configuration it just seeded is
 // usable needs to know which, and a registry that advertises nothing is not a
 // failure — the seeding proceeds and says so.
+//
+// Existed says the configuration file was already there when the seeding began,
+// so the seeding merged the registry entry into it rather than creating it — the
+// fact the command line states as using the file rather than creating it. Only a
+// request sending force proceeds over an existing file, so it is absent from
+// every answer to a request that did not. Under a dry run it describes the file
+// the content is for, so a caller knows whether the content is a merge or a new
+// document.
 type configInitResult struct {
 	Host    string                        `json:"host"`
 	Scope   configWriteScope              `json:"scope"`
 	Trust   registryops.TrustFetchOutcome `json:"trust"`
 	Written bool                          `json:"written"`
+	Existed bool                          `json:"existed,omitempty"`
 	Content string                        `json:"content,omitempty"`
 }
 
@@ -151,6 +160,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 		Scope:   s.scopeOfWriteTarget(res.Registration.Target),
 		Trust:   res.Registration.Trust,
 		Written: !delivery.Reports(),
+		Existed: res.Existed,
 		Content: string(res.Registration.Content),
 	})
 }
