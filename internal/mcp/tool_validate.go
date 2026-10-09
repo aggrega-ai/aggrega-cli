@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -376,6 +377,13 @@ func validateReleaseScope(
 // entity in that Release's terms: the core is handed the stack the workspace
 // configuration gives that Release instead of the workspace's own, and changes
 // nothing else.
+//
+// A directory the workspace configuration lists for that stack where nothing
+// exists is not in it, so the check reads it as holding nothing and gives the
+// verdict it gives with that directory not listed. The line naming it, the one
+// `aggrega pull` and `aggrega build` print for it (absentCatalogDirLines), leads
+// Notices ahead of the check's own advisory lines, since the stack is decided
+// before the check reads anything. It never moves Valid.
 func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity, release string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
@@ -399,6 +407,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		}
 		dirs, named = tw.catalogDirsFor(releasePath), tw.namedCatalogDirsFor(releasePath)
 	}
+	absent := tw.absentCatalogDirLines(releasePath)
 
 	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false)
 
@@ -415,7 +424,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		Valid:       len(diags) == 0,
 		Diagnostics: tw.reportedTexts(diags),
 		Artifacts:   artifactKeys,
-		Notices:     tw.reportedTexts(res.Notes),
+		Notices:     tw.reportedTexts(slices.Concat(absent, res.Notes)),
 	}
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(entityPath)
 	if releasePath != "" {

@@ -213,6 +213,14 @@ func validatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 // release is the --release value as typed, or empty. It names the Release whose
 // terms the entity is checked in, and selects nothing else: the checks are this
 // scope's either way.
+//
+// A directory the workspace configuration lists for that stack where nothing
+// exists is not in the stack the check is handed, so the check reads it as holding
+// nothing and gives the verdict it gives with that directory not listed. The line
+// naming it is the one `aggrega pull` and `aggrega build` print for it, composed by
+// the resolver that left it out and written to stderr ahead of the check's own
+// advisory notes, since the stack is decided before the check reads anything. It
+// changes what a reader is told and never the verdict or the exit code.
 func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path, release string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
@@ -231,6 +239,7 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	}
 	dirs := rw.ResolveCatalogDirs(release, catalogFlagDirs)
 	named := rw.NamedCatalogDirs(release, catalogFlagDirs)
+	rw.NoteAbsentCatalogDirs(os.Stderr, release, catalogFlagDirs)
 
 	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {
