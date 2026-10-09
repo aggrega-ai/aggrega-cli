@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/check-release-job-isolation.sh — refuse a release workflow
-# in which third-party code can reach the credentials that sign and publish.
+# in which third-party code can reach a credential: the ones that sign and
+# publish, or any secret the workflow names.
 #
 # Building runs code this repository does not control: packages fetched from a
 # package registry, a toolchain's and its dependencies' build logic, a base
@@ -25,11 +26,18 @@
 #      whose images run beside its steps;
 #   3. an actions/checkout step, in any job, does not set
 #      persist-credentials: false;
-#   4. a job that may not mint the token but runs third-party code — any step
-#      that is not a checkout, an artifact download or upload, or a run: step
-#      free of build commands — carries a secret or github.token in an env: or a
-#      run: body, or names anywhere a secret that a job minting the token also
-#      names. A secret reaches such a job only through an action's with:;
+#   4. a job that may not mint the token but runs third-party code — a step that
+#      runs any action but actions/checkout, actions/download-artifact,
+#      actions/upload-artifact and actions/create-github-app-token (GitHub's own
+#      action that mints an App installation token from the secrets its with:
+#      is handed), a run: step that runs a build or pack command (read as in
+#      rule 2), or a call to a reusable workflow — names a secret or github.token
+#      in any string of the job: a step's with:, env: or run: body, the job's
+#      env:, container:, services: or outputs:, any other field; or hands a
+#      reusable workflow secrets:; or the file-level env: names one, which every
+#      job sees. So a secret is named only in a job that runs nothing but those
+#      four actions and run: steps free of build commands, or in a job rule 2 or
+#      rule 5 holds;
 #   5. the file-level permissions grant actions: write (or write-all); or a job
 #      that may delete the run's artifacts — its permissions grant actions:
 #      write or write-all — is granted anything besides actions: write, runs
@@ -45,17 +53,21 @@
 # string too: this reads text, so where a line merely names one it refuses
 # rather than guesses. A repository script is any token ending in .sh, with a
 # shell variable before it ("$SCRIPT_DIR/lib/x.sh") dropped, looked up against
-# the module root, its scripts/ and .github/scripts/ directories and the
-# directory of the script naming it, a leading aggrega-cli/ standing for the
-# module root; a token found in none of them is refused, since a script that
-# cannot be read cannot be cleared.
+# the root of the repository the script naming it sits in (a directory beside
+# the module root, the module root itself for this repository's own), then the
+# module root, its scripts/ and .github/scripts/ directories and the directory
+# of the script naming it, a leading aggrega-cli/ standing for the module root;
+# a token found in none of them is refused, since a script that cannot be read
+# cannot be cleared.
 #
 # What it does not see: a program in another language that a minting job runs
 # (only .sh references are followed, and node, python or java are not
 # themselves refused); what a binary the job runs does once running, the aggrega
-# binary among them; a command assembled at run time from variables. It reads the
-# workflow's structure with yq (mikefarah, version 4), the YAML reader this
-# workspace's record gates use, and needs nothing else.
+# binary among them; a command assembled at run time from variables; a
+# credential handed on as a value rather than named — a token minted in one job
+# and passed to another through a job output or a file it leaves behind. It
+# reads the workflow's structure with yq (mikefarah, version 4), the YAML reader
+# this workspace's record gates use, and needs nothing else.
 #
 # Usage:
 #   scripts/check-release-job-isolation.sh [<workflow.yml>]
@@ -126,6 +138,14 @@ resolve_script() {
   local -a cands=()
   case "$tok" in
     aggrega-cli/*) cands+=("$CLI_ROOT/${tok#aggrega-cli/}") ;;
+  esac
+  # A script in a repository checked out beside the module root names others
+  # from that repository's root, as aggrega-hub's scripts name their own.
+  case "$dir" in
+    "$LABEL_ROOT"/*)
+      local repo="${dir#"$LABEL_ROOT"/}"
+      cands+=("$LABEL_ROOT/${repo%%/*}/$rel")
+      ;;
   esac
   cands+=("$CLI_ROOT/$rel" "$CLI_ROOT/scripts/$rel" "$CLI_ROOT/.github/scripts/$rel" "$dir/$rel")
   for cand in "${cands[@]}"; do
@@ -229,7 +249,6 @@ declare -A HOLDS=() DELETES=() THIRD_PARTY=()
 checkouts=0
 holder_steps=0
 deleter_steps=0
-declare -A HOLDER_SECRETS=()
 HOLDER_READ=()
 
 # Pass 1: which jobs may mint the token and which may delete the run's
@@ -283,9 +302,6 @@ for job in "${JOBS[@]}"; do
         esac
       fi
     done
-    while IFS= read -r ref; do
-      [ -n "$ref" ] && HOLDER_SECRETS[$ref]="$job"
-    done < <(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")")
   elif [ "$(yq -r '.jobs[strenv(J)] | has("uses")' "$WORKFLOW")" = true ]; then
     THIRD_PARTY[$job]="it calls a reusable workflow"
   fi
@@ -321,7 +337,14 @@ for job in "${JOBS[@]}"; do
           if [ "$holds" = yes ]; then
             violate "$where: uses $uses in a job that may mint the OIDC token; only actions/checkout, actions/download-artifact and actions/upload-artifact run there"
           elif [ -z "${THIRD_PARTY[$job]}" ]; then
-            THIRD_PARTY[$job]="step \"$name\" runs $uses"
+            # GitHub's own token action is trusted as the checkout and the
+            # artifact actions are, so it does not make a job one that runs
+            # third-party code; rules 2 and 5 still refuse it in the jobs they
+            # hold.
+            case "$uses" in
+              actions/create-github-app-token@*) ;;
+              *) THIRD_PARTY[$job]="step \"$name\" runs $uses" ;;
+            esac
           fi
           ;;
       esac
@@ -350,36 +373,57 @@ for job in "${JOBS[@]}"; do
   done
 done
 
-# Pass 2: what a job running third-party code can reach.
+# Pass 2: what a job running third-party code names. Every string of the job is
+# read wherever it stands — a step's with:, env: or run: body, the job's env:,
+# container:, services:, outputs: or any other field — each reference reported
+# with the path it stands at; and the file-level env:, which every job sees.
+# NAMED_AT prints "<path from the job>\t<reference>" for each, in document order.
+# shellcheck disable=SC2016 # $v and $p are yq's own variables, not the shell's.
+NAMED_AT='.jobs[strenv(J)] | .. | select(tag == "!!str") | . as $v | (path | .[2:] | map(tostring) | join(".")) as $p | $v | match("secrets[.][A-Za-z_][A-Za-z0-9_]*|github[.]token"; "g") | $p + "\t" + .string'
+
+# where_in_job <path from the job>: the path, a step's index replaced by its name.
+where_in_job() {
+  local at="$1" index rest name
+  case "$at" in
+    steps.*)
+      index="${at#steps.}"
+      rest="${index#*.}"
+      index="${index%%.*}"
+      [ "$rest" = "$index" ] && rest=""
+      name="$(I="$index" yq -r '.jobs[strenv(J)].steps[env(I)] | .name // .id // ""' "$WORKFLOW")"
+      [ -n "$name" ] || name="step $((index + 1))"
+      printf 'step "%s"%s\n' "$name" "${rest:+, $rest}"
+      ;;
+    *) printf '%s\n' "$at" ;;
+  esac
+}
+
 TP_REPORT=()
+NAMING_REPORT=()
+TOP_ENV="$(yq -o=json '.env // {}' "$WORKFLOW")"
 for job in "${JOBS[@]}"; do
+  export J="$job"
+  # Every job naming a secret, for the summary.
+  named="$(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")" | sort -u)"
+  named_secrets=""
+  while IFS= read -r ref; do
+    case "$ref" in secrets.*) named_secrets="${named_secrets:+$named_secrets }$ref" ;; esac
+  done <<< "$named"
+  [ -z "$named_secrets" ] || NAMING_REPORT+=("$job ($named_secrets)")
+
   [ "${HOLDS[$job]}" = yes ] && continue
   [ -n "${THIRD_PARTY[$job]}" ] || continue
-  export J="$job"
   TP_REPORT+=("$job (${THIRD_PARTY[$job]})")
-  # The environment every step of the job sees, and each step's own.
-  exposed="$(yq -o=json '.env // {}' "$WORKFLOW")"$'\n'"$(yq -o=json '.jobs[strenv(J)].env // {}' "$WORKFLOW")"
   while IFS= read -r ref; do
-    [ -n "$ref" ] && violate "job $job: an env: at the file or job level carries $ref into a job that runs third-party code (${THIRD_PARTY[$job]})"
-  done < <(secrets_in "$exposed")
-  nsteps="$(yq -r '.jobs[strenv(J)].steps | length' "$WORKFLOW")"
-  case "$nsteps" in ''|null) nsteps=0 ;; esac
-  for ((i = 0; i < nsteps; i++)); do
-    export I="$i"
-    name="$(yq -r '.jobs[strenv(J)].steps[env(I)].name // ""' "$WORKFLOW")"
-    [ -n "$name" ] || name="step $((i + 1))"
-    step_exposed="$(yq -o=json '.jobs[strenv(J)].steps[env(I)].env // {}' "$WORKFLOW")"$'\n'"$(yq -r '.jobs[strenv(J)].steps[env(I)].run // ""' "$WORKFLOW")"
-    while IFS= read -r ref; do
-      [ -n "$ref" ] && violate "job $job, step \"$name\": its env: or run: carries $ref into a job that runs third-party code (${THIRD_PARTY[$job]}); a secret reaches such a job only through an action's with:"
-    done < <(secrets_in "$step_exposed")
-  done
-  # A secret a minting job holds, named anywhere in this one.
-  while IFS= read -r ref; do
+    [ -n "$ref" ] && violate "job $job: the file-level env: carries $ref into a job that runs third-party code (${THIRD_PARTY[$job]})"
+  done < <(secrets_in "$TOP_ENV")
+  if [ "$(yq -r '.jobs[strenv(J)] | has("secrets")' "$WORKFLOW")" = true ]; then
+    violate "job $job: hands secrets: to the reusable workflow it calls, which this check cannot read (${THIRD_PARTY[$job]})"
+  fi
+  while IFS=$'\t' read -r at ref; do
     [ -n "$ref" ] || continue
-    if [ -n "${HOLDER_SECRETS[$ref]:-}" ] && [ "$ref" != github.token ]; then
-      violate "job $job: names $ref, which job ${HOLDER_SECRETS[$ref]} holds to sign or publish; a publishing credential stays out of a job that runs third-party code (${THIRD_PARTY[$job]})"
-    fi
-  done < <(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")" | sort -u)
+    violate "job $job, $(where_in_job "$at"): names $ref in a job that runs third-party code (${THIRD_PARTY[$job]}); no secret and no github.token is named in such a job"
+  done < <(yq -r "$NAMED_AT" "$WORKFLOW")
 done
 
 if [ "${#violations[@]}" -gt 0 ]; then
@@ -408,6 +452,7 @@ printf '  scripts read for those steps: %s\n' "${read_uniq[*]:-none}"
 printf '  may delete the run'"'"'s artifacts: %s — %d step(s), granted actions: write alone, no action, none a build or pack step, no secret\n' \
   "${deleters[*]:-no job}" "$deleter_steps"
 printf '  actions/checkout steps: %d, each with persist-credentials: false\n' "$checkouts"
-printf '  jobs running third-party code, each reaching a secret only through an action'"'"'s with: — %s\n' "${TP_REPORT[*]:-none}"
+printf '  jobs running third-party code, each naming no secret and no github.token: %s\n' "${TP_REPORT[*]:-none}"
+printf '  jobs naming a secret, none of them running third-party code: %s\n' "${NAMING_REPORT[*]:-none}"
 RC=0
 exit $RC

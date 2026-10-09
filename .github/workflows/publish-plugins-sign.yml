@@ -22,9 +22,22 @@ name: Publish and sign core plugins
 #                        check script and nothing else but, first, the refusal
 #                        of a run with no self-hosted runner named for the local
 #                        jobs.
+#   sources              Checks out the sibling repositories the CLI builds
+#                        against, at the refs the CLI's go.mod pins once the CLI
+#                        tree is on the release tag, with a read token minted
+#                        from the organization App's secrets, and hands the four
+#                        checkouts, without a token, to the build job in the
+#                        hand-over folder described below, with a SHA-256 list
+#                        of them. It runs nothing but GitHub's own checkout and
+#                        token actions, git and the shell's own utilities, so
+#                        the App's secrets share a job with no third-party code,
+#                        and the build job, which runs such code, names no
+#                        secret at all.
 #   build                Compiles, packs and stages everything the release
-#                        carries, holding no registry or signing credential and
-#                        no permission to mint an OIDC token: it checks that
+#                        carries, naming no secret and holding no permission to
+#                        mint an OIDC token: it builds the commit the sources job
+#                        pinned, against the sibling checkouts that job handed
+#                        over, once they match its list; it checks that
 #                        every build script stamping a version takes it from
 #                        the one shared recipe, builds the binary and its
 #                        embedded guests (plus the light no-embed binary),
@@ -107,15 +120,19 @@ name: Publish and sign core plugins
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
 #
-# The build, sign-windows, sign-and-publish, record-published and clean-up jobs
-# run on one machine, the self-hosted runner AGGREGA_RUNNER names, and hand files
-# to each other on its disk, in the hand-over folder:
+# The sources, build, sign-windows, sign-and-publish, record-published and
+# clean-up jobs run on one machine, the self-hosted runner AGGREGA_RUNNER names,
+# and hand files to each other on its disk, in the hand-over folder:
 # aggrega-release-handover/<run id>-<attempt>
 # beside the runner's temporary directory, which the runner empties at the start
-# and end of every job. The build job makes it, readable by the runner's user
-# alone, and writes the list last, after every third-party step of that job has
-# run; each job that reads it holds it to that list first. A run with no such
-# runner stops in its first job, saying so: nothing falls back to a hosted
+# and end of every job. The sources job makes it, readable by the runner's user
+# alone, and writes into it the sibling checkouts and a SHA-256 list of them,
+# which the build job holds them to before it takes them out and removes the
+# list. The build job then writes into it what the jobs after it read, and a
+# list of that last, after every third-party step of that job has run; each job
+# that reads the folder holds it to the list it finds there first. Both lists
+# are written by one function of the repository's smoke library. A run with no
+# such runner stops in its first job, saying so: nothing falls back to a hosted
 # runner or to artifacts. Only what a GitHub-hosted job runs is uploaded — the
 # Windows and macOS smoke inputs, the signed Windows binaries, and the earlier
 # release's binaries smoke_binaries_from names — and clean-up deletes it all when
@@ -137,9 +154,10 @@ name: Publish and sign core plugins
 # job that may mint the OIDC token runs a build or pack step, directly or through
 # a repository script, when such a job runs any action but checkout and the
 # artifact download and upload, when a checkout keeps its token, when a job
-# that runs third-party code can reach a secret, or when the job that may delete
-# the run's artifacts is granted anything else, runs any action or a build step,
-# or names a secret.
+# that runs third-party code names a secret or the run's token anywhere in it —
+# in an action's with: as well as in an environment or a run body — or when the
+# job that may delete the run's artifacts is granted anything else, runs any
+# action or a build step, or names a secret.
 #
 # Two more jobs prove the Windows and macOS binaries on GitHub-hosted machines
 # of each platform: windows-smoke on a Windows runner, and macos-smoke on an
@@ -207,16 +225,16 @@ name: Publish and sign core plugins
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
 #              REGISTRY_USERNAME         the registry username
 #              AGGREGA_RUNNER            the label of the self-hosted runner
-#                                        build, sign-windows, sign-and-publish,
-#                                        record-published and clean-up run on
-#                                        (required; one machine)
+#                                        sources, build, sign-windows,
+#                                        sign-and-publish, record-published and
+#                                        clean-up run on (required; one machine)
 #              CLI_PUBLISH_OVERLAY_DIR   the per-plugin overlay directory
 #                                        (optional, aggrega-hub/plugin-overlays
 #                                        by default)
-#              CLI_PUBLISH_HUB_REF       the aggrega-hub ref the overlays are
-#                                        read at, and record-published takes
-#                                        aggrega-hub's writer from (optional,
-#                                        main by default)
+#              CLI_PUBLISH_HUB_REF       the aggrega-hub ref sources checks out
+#                                        for the overlays, and record-published
+#                                        takes aggrega-hub's writer from
+#                                        (optional, main by default)
 #              AZURE_TENANT_ID           the Microsoft Entra tenant of the
 #                                        identity sign-windows signs as
 #              AZURE_CLIENT_ID           that identity's client ID: an app
@@ -235,7 +253,7 @@ name: Publish and sign core plugins
 #                                        (registry-credential and
 #                                        sign-and-publish only)
 #              SUBMODULE_APP_CLIENT_ID   the organization App that reads the
-#              SUBMODULE_APP_PRIVATE_KEY private sibling repositories (build
+#              SUBMODULE_APP_PRIVATE_KEY private sibling repositories (sources
 #                                        only, handed to the action that mints
 #                                        the read token and to nothing else)
 #              HUB_PUBLISHED_APP_CLIENT_ID   the App installed on aggrega-hub
@@ -285,7 +303,9 @@ on:
 # a tag. clean-up replaces it with actions:write alone, which lets it list and
 # delete this run's artifacts and does not let it read the repository.
 # record-published keeps contents:read: what it writes is aggrega-hub's published
-# branch, with the App token it mints, never this repository.
+# branch, with the App token it mints, never this repository. sources keeps
+# contents:read too: it reads the sibling repositories with the App token it
+# mints.
 permissions:
   contents: read
 
@@ -308,20 +328,20 @@ jobs:
       contents: read
     steps:
       - name: Require the runner the local jobs share
-        # build, sign-windows, sign-and-publish, record-published and clean-up
-        # hand files to each other on one machine's disk, so the release runs
-        # only where AGGREGA_RUNNER names that machine; with it unset the run
-        # stops here, before anything is built, rather than falling back to a
-        # hosted runner or to artifacts.
+        # sources, build, sign-windows, sign-and-publish, record-published and
+        # clean-up hand files to each other on one machine's disk, so the release
+        # runs only where AGGREGA_RUNNER names that machine; with it unset the run
+        # stops here, before anything is checked out or built, rather than falling
+        # back to a hosted runner or to artifacts.
         env:
           AGGREGA_RUNNER: ${{ vars.AGGREGA_RUNNER }}
         run: |
           set -euo pipefail
           if [ -z "$AGGREGA_RUNNER" ]; then
-            echo "publish-plugins: the release needs its self-hosted runner: set the repository variable AGGREGA_RUNNER to that runner's label, since the build, signing, publishing, recording and clean-up jobs hand files to each other on its disk" >&2
+            echo "publish-plugins: the release needs its self-hosted runner: set the repository variable AGGREGA_RUNNER to that runner's label, since the sources, build, signing, publishing, recording and clean-up jobs hand files to each other on its disk" >&2
             exit 1
           fi
-          echo "publish-plugins: the build, signing, publishing, recording and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
+          echo "publish-plugins: the sources, build, signing, publishing, recording and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
 
       - name: Check out the CLI
         # Only for the check script. The launched ref, not the release tag: a
@@ -351,44 +371,33 @@ jobs:
             --username-setting REGISTRY_USERNAME \
             --password-setting REGISTRY_PASSWORD
 
-  build:
+  sources:
     needs: registry-credential
-    # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback:
-    # building the embedded guests is heavy, and sign-windows and
-    # sign-and-publish read what this job builds from that machine's disk, in the
-    # hand-over folder. Every later step that needs this build's outputs reads
-    # them in this job, from the hand-over folder, or, on a GitHub-hosted runner,
-    # from the artifacts it uploads.
+    # The sibling repositories the CLI builds against are private, and are read
+    # with an installation token of the organization's GitHub App, minted from
+    # the App's two secrets. A job holds every secret it names for its whole run,
+    # within reach of each of its later steps, so the token is minted here, in a
+    # job that runs nothing but GitHub's own checkout and token actions, git and
+    # the shell's own utilities, and not in the build job, whose third-party build
+    # code would otherwise run beside the App's private key. This job moves the
+    # CLI tree onto the release tag, reads the sibling refs from that tree's
+    # go.mod, checks the four siblings out at them, and hands the checkouts,
+    # which keep no token, to the build job in this run's hand-over folder, with
+    # a SHA-256 list of every file in them. It makes the folder.
+    #
+    # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback: the
+    # build job takes the checkouts from that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     permissions:
       contents: read
 
-    # The commit this job built, which sign-and-publish checks out for its
-    # scripts, and the commits the Windows and the macOS smoke inputs were staged
-    # from, which the windows-smoke and macos-smoke jobs check out: on a dispatch
-    # naming a tag the tree here is moved onto that tag, so the commit the run was
-    # launched at may not be it.
+    # The commit the build job checks out and builds: the release tag's on a tag
+    # push or a dispatch naming a tag, otherwise the commit the run was launched
+    # at. Its go.mod is the one the sibling refs are read from.
     outputs:
-      commit: ${{ steps.built.outputs.commit }}
-      smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
-      macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
+      commit: ${{ steps.pinned.outputs.commit }}
 
-    # No secret appears here: this job runs third-party build code, so it holds
-    # no registry or signing credential at all.
     env:
-      # Destination registry host, a variable rather than a secret: the tooling
-      # image is built under its references, and the archive carries them to the
-      # job that pushes it.
-      REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid' }}
-      # Authored per-plugin overlay directory that catalog generation merges with
-      # each guest's machine-derived contract fields. This is a REQUIRED input: the
-      # overlays supply the OCI identity, runtime limits, and provider block that
-      # the guests deliberately do not carry, and the generate step halts, naming
-      # the guest, when one has no overlay. Each overlay's plugin identity must
-      # name a guest present in the decompressed guest set below (the publish
-      # pairs them by that identity). The overlays live in the aggrega-hub sibling
-      # checkout.
-      OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'aggrega-hub/plugin-overlays' }}
       # aggrega-hub carries no CLI-side version pin, so it is always checked out at
       # HUB_REF (operator-overridable via a repository variable). The schemas, abi,
       # and pdk siblings are NOT configured here: the CLI's own go.mod is the single
@@ -402,71 +411,16 @@ jobs:
       EVENT_NAME: ${{ github.event_name }}
       # The release tag requested by a manual dispatch (empty on a tag push).
       DISPATCH_TAG: ${{ inputs.tag }}
-      # The pushed ref name (the tag on a push event), for the tag-equals-version
-      # assertion.
+      # The pushed ref name (the tag on a push event).
       REF_NAME: ${{ github.ref_name }}
 
     steps:
-      # Nothing in this job has an external side effect: it builds, validates and
-      # stages. A failure anywhere below halts the run before sign-and-publish, so
-      # no image, plugin, or release is ever produced from an unvalidated build.
-
-      - name: Give aggrega a configuration of this run's own
-        # On the persistent self-hosted runner AGGREGA_RUNNER names, the
-        # runner's user may keep a global aggrega configuration of their own,
-        # and every aggrega command reads it: a registry, a trust setting, a CLI
-        # plugin or an offline posture recorded there would shape what this
-        # run builds. So every aggrega command in this job reads its global
-        # configuration from a directory made empty here, the way the platform
-        # smoke runs keep the machine's configuration out: XDG_CONFIG_HOME names
-        # the directory, and AGGREGA_CONFIG, which would name a file in its
-        # place, is emptied, which aggrega reads as unset. Other programs that
-        # look for their settings under XDG_CONFIG_HOME, Go and Git among them,
-        # find none there either. The machine-wide caches are not configuration
-        # and stay where they are. RUN_CONFIG_HOME names the directory too, so
-        # the last step removes this run's directory and never one that
-        # XDG_CONFIG_HOME named before this step.
-        run: |
-          set -euo pipefail
-          config_home="$(mktemp -d "$RUNNER_TEMP/config-home.XXXXXX")"
-          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\n' \
-            "$config_home" "$config_home" >> "$GITHUB_ENV"
-
-      - name: Mint org app token for private-sibling access
-        # The sibling repositories are private; a GitHub App installation token
-        # scoped to the org grants the checkouts read access to all of them. The
-        # App's secrets are handed to this action and to no step, and its token
-        # to the checkouts below, none of which keeps it; like everything a job
-        # holds, both stay within reach of the job's later steps, which is why
-        # this job holds no publishing credential.
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
-      - name: Check out the CLI with full history and tags
-        # This workflow runs in the CLI repository; check it out into aggrega-cli/
-        # so its build driver and manifests sit under that path. Full history and
-        # every tag are fetched here, so the build stamps the release version from
-        # the tag and the pin step below needs no fetch of its own. The CLI cannot
-        # build alone: its module resolves the sibling modules through
-        # parent-relative replace directives (../aggrega-schemas,
-        # ../aggrega-pdk/go, ../aggrega-abi/go), so the sibling repositories are
-        # checked out beside it below.
-        uses: actions/checkout@v5
-        with:
-          path: aggrega-cli
-          fetch-depth: 0
-          fetch-tags: true
-          persist-credentials: false
-
       - name: Require a tag for a real manual publish
         # A real manual publish (a dispatch that is not a dry run) targets a past
-        # release tag, so it MUST name one. Fail fast here, before any build,
-        # when the tag input is empty. A manual dry run needs no tag: it builds
-        # the checked-out CLI tree as-is and prints the plan.
+        # release tag, so it MUST name one. Fail fast here, before anything is
+        # checked out or built, when the tag input is empty. A manual dry run
+        # needs no tag: it builds the checked-out CLI tree as-is and prints the
+        # plan.
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.tag == '' }}
         run: |
           set -euo pipefail
@@ -477,22 +431,33 @@ jobs:
         # smoke_binaries_from has windows-smoke prove an earlier release's
         # binaries rather than the ones this run builds, so it proves nothing
         # about what a publish would ship: a dispatch that would publish is
-        # refused for naming one, here, before anything is built.
+        # refused for naming one, here, before anything is checked out or built.
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.smoke_binaries_from != '' }}
         run: |
           set -euo pipefail
           echo "publish-plugins: smoke_binaries_from runs only on a dry run (dry_run=true)" >&2
           exit 2
 
+      - name: Check out the CLI with full history and tags
+        # For the release tag's go.mod, which decides the sibling refs, and for
+        # the smoke library's SHA-256 list writer. Full history and every tag are
+        # fetched here, so the pin step below needs no fetch of its own.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
       - name: Pin the CLI tree to the release tag
-        # Move the CLI tree onto the release tag before building so the build's
-        # `git describe` stamps the released version, and so the sibling pins are
-        # read from the tag's go.mod. On a manual dispatch that supplies a tag
-        # input the run targets a past release. The effective tag is the pushed
-        # tag (push) or the tag input (dispatch). A manual dry run with no tag
-        # input skips this and builds the checked-out tree as-is. The checkout
-        # above fetched every tag and kept no credential, so this moves the tree
-        # without contacting the remote.
+        # Move the CLI tree onto the release tag so the sibling pins are read
+        # from the tag's go.mod, and so the commit recorded below, which the build
+        # job checks out and stamps the released version from, is the tag's. On a
+        # manual dispatch that supplies a tag input the run targets a past
+        # release. The effective tag is the pushed tag (push) or the tag input
+        # (dispatch). A manual dry run with no tag input skips this and builds the
+        # checked-out tree as-is. The checkout above fetched every tag and kept no
+        # credential, so this moves the tree without contacting the remote.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
         run: |
           set -euo pipefail
@@ -504,29 +469,15 @@ jobs:
           git -C aggrega-cli checkout --force "refs/tags/${TAG}"
 
       - name: Record the commit this run builds
-        # sign-and-publish runs its publishing scripts from this same commit.
-        id: built
+        # The build job checks out exactly this commit, whose go.mod the sibling
+        # refs below are read from, and sign-and-publish runs its publishing
+        # scripts from it.
+        id: pinned
         run: |
           set -euo pipefail
-          printf 'commit=%s\n' "$(git -C aggrega-cli rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Check that the version recipe has one home
-        # The binary, the embedded guests' self-reported version, the plugin
-        # entities generated from them and the desktop extension package are
-        # each stamped by a different build script, and a release ships them
-        # together. They agree only while every one of those scripts takes the
-        # version from the one shared recipe; a script that derived it by its
-        # own git invocation could ship a release whose outputs disagree on
-        # their version. The check refuses, naming each offending script and
-        # line, when a stamping script does not source the shared recipe or
-        # derives the version inline. It sits after the step that moves the tree
-        # onto the release tag, so it judges the tree this run builds, and before
-        # the build, so a forked recipe halts the run before anything is
-        # stamped. It reads only the CLI tree, with no toolchain and no network,
-        # so it needs nothing the later steps install. It runs on a dry run too.
-        run: |
-          set -euo pipefail
-          aggrega-cli/scripts/check-version-single-source.sh
+          commit="$(git -C aggrega-cli rev-parse HEAD)"
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+          echo "this run builds aggrega-cli at $commit"
 
       - name: Resolve sibling checkout refs from the CLI's go.mod
         # The CLI's own manifests decide the sibling versions: read the schemas,
@@ -564,6 +515,21 @@ jobs:
             echo "pdk_ref=$pdk_ref"
           } >> "$GITHUB_OUTPUT"
           echo "resolved sibling refs: schemas=$schemas_ref abi=$abi_ref pdk=$pdk_ref hub=$HUB_REF"
+
+      - name: Mint org app token for private-sibling access
+        # The sibling repositories are private; a GitHub App installation token
+        # scoped to the org grants the checkouts read access to all of them. The
+        # App's secrets are handed to this action and to no step, and its token
+        # to the checkouts below, none of which keeps it; like everything a job
+        # holds, both stay within reach of the job's later steps, which is why
+        # this job runs nothing but those checkouts, git and the shell's own
+        # utilities after it.
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: Check out the schemas sibling
         # Satisfies the CLI go.mod replace ../aggrega-schemas.
@@ -607,6 +573,217 @@ jobs:
           ref: ${{ env.HUB_REF }}
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
+
+      - name: Make this run's hand-over folder
+        # The folder in which this run's jobs on the self-hosted runner hand files
+        # to each other, beside the runner's temporary directory, which the runner
+        # empties when this job ends. It is made here, by the first job that
+        # writes into it, readable by the runner's user alone, and refused if it
+        # already exists; the root that holds every run's folder must be that
+        # user's own, and is kept readable by them alone. clean-up removes the
+        # folder when the run ends.
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_HANDOVER" ] || { echo "publish-plugins: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          root="$(dirname "$handover")"
+          mkdir -p "$root"
+          if [ ! -O "$root" ]; then
+            echo "publish-plugins: $root, which holds the hand-over folders, is not owned by the runner's user" >&2
+            exit 1
+          fi
+          chmod 0700 "$root"
+          if ! mkdir -m 0700 "$handover"; then
+            echo "publish-plugins: this run's hand-over folder $handover already exists; a run attempt makes its own once" >&2
+            exit 1
+          fi
+          printf 'HANDOVER=%s\n' "$handover" >> "$GITHUB_ENV"
+          echo "hand-over folder: $handover"
+
+      - name: Hand the sibling checkouts to the build job
+        # Moves the four checkouts into the hand-over folder's sources/, each
+        # refused if its git configuration still carries an authorization header,
+        # so no token reaches the build job with them; then writes the folder's
+        # SHA-256 list, through the smoke library's one writer of it, which the
+        # build job holds the checkouts to before it takes them.
+        run: |
+          set -euo pipefail
+          mkdir "$HANDOVER/sources"
+          for repo in aggrega-schemas aggrega-abi aggrega-pdk aggrega-hub; do
+            config="$GITHUB_WORKSPACE/$repo/.git/config"
+            if [ ! -f "$config" ]; then
+              echo "publish-plugins: $GITHUB_WORKSPACE/$repo holds no checkout to hand over" >&2
+              exit 1
+            fi
+            if git config --file "$config" --get-regexp '^http\..*\.extraheader$' >/dev/null; then
+              echo "publish-plugins: the checkout of $repo still carries an authorization header in its git configuration; it is not handed over" >&2
+              exit 1
+            else
+              status=$?
+              if [ "$status" != 1 ]; then
+                echo "publish-plugins: could not read $config (git config exited $status)" >&2
+                exit 1
+              fi
+            fi
+            mv -- "$GITHUB_WORKSPACE/$repo" "$HANDOVER/sources/$repo"
+          done
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          smoke_write_tree_sums "$HANDOVER"
+
+  build:
+    needs: sources
+    # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback:
+    # building the embedded guests is heavy, the sibling checkouts this job
+    # builds against are the ones the sources job left on that machine's disk,
+    # and sign-windows and sign-and-publish read what this job builds from that
+    # disk, in the hand-over folder. Every later step that needs this build's
+    # outputs reads them in this job, from the hand-over folder, or, on a
+    # GitHub-hosted runner, from the artifacts it uploads.
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
+    permissions:
+      contents: read
+
+    # The commit this job built — the one the sources job recorded, whose go.mod
+    # chose the sibling checkouts — which sign-and-publish checks out for its
+    # scripts, and the commits the Windows and the macOS smoke inputs were staged
+    # from, which the windows-smoke and macos-smoke jobs check out: on a dispatch
+    # naming a tag the tree is moved onto that tag, so the commit the run was
+    # launched at may not be it.
+    outputs:
+      commit: ${{ needs.sources.outputs.commit }}
+      smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
+      macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
+
+    # No secret appears anywhere in this job, the App's that reads the sibling
+    # repositories included: it runs third-party build code, so it holds no
+    # registry, signing or repository credential beyond the run's own read
+    # token, and builds against the checkouts the sources job handed over.
+    env:
+      # Destination registry host, a variable rather than a secret: the tooling
+      # image is built under its references, and the archive carries them to the
+      # job that pushes it.
+      REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid' }}
+      # Authored per-plugin overlay directory that catalog generation merges with
+      # each guest's machine-derived contract fields. This is a REQUIRED input: the
+      # overlays supply the OCI identity, runtime limits, and provider block that
+      # the guests deliberately do not carry, and the generate step halts, naming
+      # the guest, when one has no overlay. Each overlay's plugin identity must
+      # name a guest present in the decompressed guest set below (the publish
+      # pairs them by that identity). The overlays live in the aggrega-hub sibling
+      # checkout.
+      OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'aggrega-hub/plugin-overlays' }}
+      # Event data surfaced as env so run scripts read it from the environment
+      # rather than interpolating expressions into shell.
+      EVENT_NAME: ${{ github.event_name }}
+      # The release tag requested by a manual dispatch (empty on a tag push).
+      DISPATCH_TAG: ${{ inputs.tag }}
+      # The pushed ref name (the tag on a push event), for the tag-equals-version
+      # assertion.
+      REF_NAME: ${{ github.ref_name }}
+
+    steps:
+      # Nothing in this job has an external side effect: it builds, validates and
+      # stages. A failure anywhere below halts the run before sign-and-publish, so
+      # no image, plugin, or release is ever produced from an unvalidated build.
+
+      - name: Give aggrega a configuration of this run's own
+        # On the persistent self-hosted runner AGGREGA_RUNNER names, the
+        # runner's user may keep a global aggrega configuration of their own,
+        # and every aggrega command reads it: a registry, a trust setting, a CLI
+        # plugin or an offline posture recorded there would shape what this
+        # run builds. So every aggrega command in this job reads its global
+        # configuration from a directory made empty here, the way the platform
+        # smoke runs keep the machine's configuration out: XDG_CONFIG_HOME names
+        # the directory, and AGGREGA_CONFIG, which would name a file in its
+        # place, is emptied, which aggrega reads as unset. Other programs that
+        # look for their settings under XDG_CONFIG_HOME, Go and Git among them,
+        # find none there either. The machine-wide caches are not configuration
+        # and stay where they are. RUN_CONFIG_HOME names the directory too, so
+        # the last step removes this run's directory and never one that
+        # XDG_CONFIG_HOME named before this step.
+        run: |
+          set -euo pipefail
+          config_home="$(mktemp -d "$RUNNER_TEMP/config-home.XXXXXX")"
+          printf 'RUN_CONFIG_HOME=%s\nXDG_CONFIG_HOME=%s\nAGGREGA_CONFIG=\n' \
+            "$config_home" "$config_home" >> "$GITHUB_ENV"
+
+      - name: Check out the CLI at the commit the sources job recorded
+        # This workflow runs in the CLI repository; check it out into aggrega-cli/
+        # so its build driver and manifests sit under that path, at exactly the
+        # commit the sources job recorded — the release tag's, whenever one is in
+        # play — whose go.mod chose the sibling checkouts that job handed over.
+        # Full history and every tag are fetched here, so the build stamps the
+        # release version from the tag. The CLI cannot build alone: its module
+        # resolves the sibling modules through parent-relative replace directives
+        # (../aggrega-schemas, ../aggrega-pdk/go, ../aggrega-abi/go), so the next
+        # step places the handed-over checkouts beside it.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.sources.outputs.commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Take the sibling checkouts from the hand-over folder
+        # The four checkouts the sources job left in this run's hand-over folder,
+        # on this machine, are used only once every file there is one the
+        # folder's list names, each once, with the SHA-256 it gives, and the list
+        # names nothing else — so a file changed, added or removed since the
+        # sources job wrote the list is refused before anything is built from it.
+        # The list is read through the smoke library from this job's own
+        # checkout. Each checkout is then moved beside the CLI, in place of
+        # whatever an earlier run left at that path on the persistent runner,
+        # the list is removed, since it described a hand-over now taken, and the
+        # folder must then be empty, for the build to write into. A folder that
+        # is not here means the sources job ran on another machine or in another
+        # attempt, and is refused.
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_HANDOVER" ] || { echo "publish-plugins: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
+            echo "build: this run's hand-over folder $handover, with its list, is not on this machine: the sources job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            exit 1
+          fi
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          smoke_check_tree_sums "$handover"
+          for repo in aggrega-schemas aggrega-abi aggrega-pdk aggrega-hub; do
+            if [ -e "$GITHUB_WORKSPACE/$repo" ]; then
+              chmod -R u+w -- "$GITHUB_WORKSPACE/$repo" 2>/dev/null || true
+              rm -rf -- "${GITHUB_WORKSPACE:?}/$repo"
+            fi
+            mv -- "$handover/sources/$repo" "$GITHUB_WORKSPACE/$repo"
+          done
+          rmdir -- "$handover/sources"
+          rm -f -- "$handover/SHA256SUMS"
+          if [ -n "$(find "$handover" -mindepth 1 -print -quit)" ]; then
+            echo "build: the hand-over folder $handover holds more than the sources job's checkouts:" >&2
+            find "$handover" -mindepth 1 -printf '  %P\n' >&2
+            exit 1
+          fi
+          printf 'HANDOVER=%s\n' "$handover" >> "$GITHUB_ENV"
+          echo "build: took aggrega-schemas, aggrega-abi, aggrega-pdk and aggrega-hub from $handover, each file as the sources job listed it"
+
+      - name: Check that the version recipe has one home
+        # The binary, the embedded guests' self-reported version, the plugin
+        # entities generated from them and the desktop extension package are
+        # each stamped by a different build script, and a release ships them
+        # together. They agree only while every one of those scripts takes the
+        # version from the one shared recipe; a script that derived it by its
+        # own git invocation could ship a release whose outputs disagree on
+        # their version. The check refuses, naming each offending script and
+        # line, when a stamping script does not source the shared recipe or
+        # derives the version inline. It sits after the checkout of the commit
+        # the sources job recorded, so it judges the tree this run builds, and
+        # before the build, so a forked recipe halts the run before anything is
+        # stamped. It reads only the CLI tree, with no toolchain and no network,
+        # so it needs nothing the later steps install. It runs on a dry run too.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/check-version-single-source.sh
 
       - name: Set up Go
         # Pin the toolchain to the (tag-pinned) module's declared version and
@@ -840,7 +1017,7 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/amd64 --expect-version "$BIN_VERSION"
 
-      - name: Make this run's own staging directories and its hand-over folder
+      - name: Make this run's own staging directories
         # On the persistent self-hosted runner AGGREGA_RUNNER names, a fixed name
         # can still hold an earlier run's files, which the smoke staging refuses
         # to stage over and the release inputs would otherwise carry as this
@@ -849,32 +1026,19 @@ jobs:
         # the last steps remove them; and what sign-windows and sign-and-publish
         # read — the unsigned Windows binaries and the release inputs — goes into
         # this run's hand-over folder, beside that directory, since the runner
-        # empties it when this job ends. The folder is made here, readable by the
-        # runner's user alone, and refused if it already exists; the root that
-        # holds every run's folder must be that user's own, and is kept readable
-        # by them alone. clean-up removes the folder when the run ends. The steps
-        # below read every directory from the environment.
+        # empties it when this job ends. The sources job made the folder, and the
+        # step that took the sibling checkouts from it left it empty; its two
+        # directories are made here. clean-up removes the folder when the run
+        # ends. The steps below read every directory from the environment.
         run: |
           set -euo pipefail
-          [ -n "$RELEASE_HANDOVER" ] || { echo "publish-plugins: RELEASE_HANDOVER is empty" >&2; exit 1; }
-          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
-          root="$(dirname "$handover")"
-          mkdir -p "$root"
-          if [ ! -O "$root" ]; then
-            echo "publish-plugins: $root, which holds the hand-over folders, is not owned by the runner's user" >&2
-            exit 1
-          fi
-          chmod 0700 "$root"
-          if ! mkdir -m 0700 "$handover"; then
-            echo "publish-plugins: this run's hand-over folder $handover already exists; a run attempt makes its own once" >&2
-            exit 1
-          fi
-          mkdir "$handover/windows-unsigned" "$handover/release-inputs"
+          [ -d "${HANDOVER:-}" ] || { echo "publish-plugins: this run's hand-over folder is not here" >&2; exit 1; }
+          mkdir "$HANDOVER/windows-unsigned" "$HANDOVER/release-inputs"
           windows_smoke="$(mktemp -d "$RUNNER_TEMP/windows-smoke.XXXXXX")"
           macos_smoke="$(mktemp -d "$RUNNER_TEMP/macos-smoke.XXXXXX")"
-          printf 'HANDOVER=%s\nWINDOWS_UNSIGNED=%s\nRELEASE_INPUTS=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\n' \
-            "$handover" "$handover/windows-unsigned" "$handover/release-inputs" "$windows_smoke" "$macos_smoke" >> "$GITHUB_ENV"
-          echo "hand-over folder: $handover"
+          printf 'WINDOWS_UNSIGNED=%s\nRELEASE_INPUTS=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\n' \
+            "$HANDOVER/windows-unsigned" "$HANDOVER/release-inputs" "$windows_smoke" "$macos_smoke" >> "$GITHUB_ENV"
+          echo "hand-over folder: $HANDOVER"
 
       - name: Collect the Windows binaries for signing
         # The three Windows binaries the steps above wrote, unsigned, under the
@@ -1133,27 +1297,18 @@ jobs:
         # image archive and its references) — by its path from the folder, in
         # bytewise order, in the form sha256sum writes. It is written under
         # another name and then renamed, so a list present means the hand-over
-        # is complete. sign-windows and sign-and-publish hold what they read to
-        # it before using any of it, so a file changed, added or removed after
-        # this step is refused. Anything in the folder that is neither a file nor
-        # a directory refuses the list, since no list can hold it.
+        # is complete. sign-windows, sign-and-publish and record-published hold
+        # what they read to it before using any of it, so a file changed, added
+        # or removed after this step is refused. Anything in the folder that is
+        # neither a file nor a directory refuses the list, since no list can hold
+        # it. The list is written by the smoke library's one writer of it, the
+        # one the sources job wrote its own list with.
         run: |
           set -euo pipefail
-          cd "$HANDOVER"
-          if [ -n "$(find . -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
-            echo "publish-plugins: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
-            find . -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
-            exit 1
-          fi
-          mapfile -d '' -t files < <(find . -type f -printf '%P\0' | LC_ALL=C sort -z)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "publish-plugins: the hand-over folder $HANDOVER holds no file" >&2
-            exit 1
-          fi
-          sha256sum -- "${files[@]}" > SHA256SUMS.partial
-          mv SHA256SUMS.partial SHA256SUMS
-          echo "hand-over folder $HANDOVER: ${#files[@]} file(s), $(du -sb . | cut -f1) bytes, each listed in SHA256SUMS:"
-          cat SHA256SUMS
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          smoke_write_tree_sums "$HANDOVER"
+          cat "$HANDOVER/SHA256SUMS"
 
       - name: Remove this run's staging directories
         # Whatever the steps above did, so nothing this run staged in the
@@ -1284,7 +1439,7 @@ jobs:
           signed="$RUNNER_TEMP/windows-signed"
           read -r -a names <<<"$WINDOWS_BINARIES"
           if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
-            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           if ! verified="$(cd "$handover" && sha256sum --check --strict SHA256SUMS 2>&1)"; then
@@ -1621,27 +1776,22 @@ jobs:
         # hand-over folder, on this machine, must be one SHA256SUMS names, each
         # once, with the SHA-256 it gives, and the list must name nothing else —
         # so a file changed, added or removed since the build job wrote the list
-        # is refused. It is read by smoke_check_sums, the same function that
-        # holds the signed Windows binaries to theirs below, from the
-        # repository's own smoke library at the commit the build job built. A
-        # folder that is not here means the build ran on another machine or in
-        # another attempt, and is refused; so is anything in the folder that is
-        # neither a file nor a directory. A dry run checks too.
+        # is refused. It is read by smoke_check_tree_sums, through
+        # smoke_check_sums, the same function that holds the signed Windows
+        # binaries to theirs below, from the repository's own smoke library at
+        # the commit the build job built. A folder that is not here means the
+        # build ran on another machine or in another attempt, and is refused; so
+        # is anything in the folder that is neither a file nor a directory. A dry
+        # run checks too.
         run: |
           set -euo pipefail
           if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
-            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
-            exit 1
-          fi
-          if [ -n "$(find "$HANDOVER" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
-            echo "sign-and-publish: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
-            find "$HANDOVER" -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
+            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
           smoke_require_bash
-          mapfile -d '' -t files < <(cd "$HANDOVER" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
-          smoke_check_sums "$HANDOVER/SHA256SUMS" "$HANDOVER" "${files[@]}"
+          smoke_check_tree_sums "$HANDOVER"
 
       - name: Download the signed Windows binaries
         # The artifact sign-windows uploaded and windows-smoke ran: the three
@@ -2067,27 +2217,21 @@ jobs:
       - name: Hold the hand-over folder to the build job's list
         # Before anything in it is read: every file in this run's hand-over
         # folder must be one SHA256SUMS names, each once, with the SHA-256 it
-        # gives, and the list must name nothing else, checked by smoke_check_sums
-        # from the repository's own smoke library at the commit the build job
-        # built. So the entities recorded are byte for byte the ones the build
-        # job generated and sign-and-publish published. A folder that is not
-        # here, or anything in it that is neither a file nor a directory, is
-        # refused.
+        # gives, and the list must name nothing else, checked by
+        # smoke_check_tree_sums from the repository's own smoke library at the
+        # commit the build job built. So the entities recorded are byte for byte
+        # the ones the build job generated and sign-and-publish published. A
+        # folder that is not here, or anything in it that is neither a file nor
+        # a directory, is refused.
         run: |
           set -euo pipefail
           if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
-            echo "record-published: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
-            exit 1
-          fi
-          if [ -n "$(find "$HANDOVER" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
-            echo "record-published: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
-            find "$HANDOVER" -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
+            echo "record-published: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
           smoke_require_bash
-          mapfile -d '' -t files < <(cd "$HANDOVER" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
-          smoke_check_sums "$HANDOVER/SHA256SUMS" "$HANDOVER" "${files[@]}"
+          smoke_check_tree_sums "$HANDOVER"
 
       - name: Mint the token that writes aggrega-hub
         # A GitHub App installation token for aggrega-hub alone, asking for
@@ -2442,7 +2586,7 @@ jobs:
     # image to an archive and loads nothing, and sign-and-publish's publish
     # script removes every reference it loads when it exits, a refusal
     # included.
-    needs: [registry-credential, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke]
+    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
@@ -2539,7 +2683,7 @@ jobs:
           exit 1
 
       - name: Remove this run's hand-over folder
-        # Whatever the steps and jobs before did: the folder the build job made
+        # Whatever the steps and jobs before did: the folder the sources job made
         # for this run attempt, made writable first, so no directory made
         # read-only survives. The root that holds every run's folder goes too
         # once it is empty; a folder of another run is left to that run's own

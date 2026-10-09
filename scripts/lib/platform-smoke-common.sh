@@ -12,11 +12,14 @@
 # command printed or wrote live here too, each a function of what it is given, so
 # each can be run on its own over a captured output or a planted fault.
 #
-# The release workflow's sign-and-publish job sources it as well, for
-# smoke_require_bash, smoke_target_binaries and smoke_check_sums: it attaches the
-# signed Windows binaries only once they match the SHA-256 list the Windows smoke
-# run held them to, through the same function, so the two checks cannot read the
-# list differently.
+# The release workflow's jobs on its self-hosted runner source it as well. The
+# publishing job attaches the signed Windows binaries only once they match the
+# SHA-256 list the Windows smoke run held them to, through the same function,
+# smoke_check_sums, so the two checks cannot read the list differently. And the
+# folder in which those jobs hand files to each other is listed where files enter
+# it by smoke_write_tree_sums, in the form smoke_check_sums reads, and held to
+# that list where they leave by smoke_check_tree_sums, which reads it through
+# smoke_check_sums.
 #
 # Sourcing defines these functions and sets no variables:
 #
@@ -124,6 +127,25 @@
 #     names something else or is not in that form, every file missing from <dir>
 #     and every digest that differs. Needs sha256sum, which the Git for Windows
 #     shell and Linux both carry.
+#
+#   smoke_write_tree_sums <dir>
+#     Writes <dir>/SHA256SUMS: the SHA-256 of every file beneath <dir>, by its
+#     path from <dir>, in bytewise order, in the form sha256sum writes. It is
+#     written under another name and then renamed, so a list present is a list
+#     complete. Returns 1, writing no list, when <dir> holds anything that is
+#     neither a file nor a directory, since no list can hold it, when it holds no
+#     file, or when it already holds a list, since a list is written once, after
+#     the last file is in place. Prints how many files and bytes it listed. Needs
+#     GNU find, sha256sum and bash 4.4 (mapfile -d), which the Linux machine that
+#     builds a release carries; no smoke run calls it.
+#
+#   smoke_check_tree_sums <dir>
+#     Holds every file beneath <dir> to <dir>/SHA256SUMS through
+#     smoke_check_sums: the list must name each file but itself exactly once and
+#     nothing else, each with the digest it gives, so a file changed, added or
+#     removed since the list was written is refused. Returns 1, naming each, when
+#     <dir> holds anything that is neither a file nor a directory, and otherwise
+#     as smoke_check_sums does. Needs what smoke_write_tree_sums needs.
 #
 #   smoke_check_authenticode_report <report> <common-name>
 #     Holds a report of what Windows' Get-AuthenticodeSignature says about one
@@ -508,6 +530,54 @@ smoke_check_sums() {
   done
   [ "$bad" = 0 ] || return 1
   printf 'ok: %s lists exactly the %d file(s), and each in %s matches it\n' "${list##*/}" "$#" "$dir"
+}
+
+# smoke_tree_refuse_special <dir> — returns 1, naming each, when <dir> holds
+# anything that is neither a file nor a directory: a symbolic link, a device, a
+# pipe or a socket, none of which a SHA-256 list can hold.
+smoke_tree_refuse_special() {
+  local dir="$1" found
+  if [ ! -d "$1" ]; then
+    printf 'smoke: %s is not a directory\n' "$dir" >&2
+    return 1
+  fi
+  if ! found="$(find "$dir" -mindepth 1 ! -type f ! -type d -printf '  %P\n')"; then
+    printf 'smoke: could not read every entry beneath %s\n' "$dir" >&2
+    return 1
+  fi
+  [ -z "$found" ] && return 0
+  printf 'smoke: %s holds what is neither a file nor a directory:\n%s\n' "$dir" "$found" >&2
+  return 1
+}
+
+smoke_write_tree_sums() {
+  local dir="$1" bytes
+  local -a files=()
+  smoke_tree_refuse_special "$dir" || return 1
+  if [ -e "$dir/SHA256SUMS" ] || [ -e "$dir/SHA256SUMS.partial" ]; then
+    printf 'smoke: %s already holds a SHA-256 list; a list is written once, after the last file is in place\n' "$dir" >&2
+    return 1
+  fi
+  mapfile -d '' -t files < <(cd "$dir" && find . -type f -printf '%P\0' | LC_ALL=C sort -z)
+  if [ "${#files[@]}" -eq 0 ]; then
+    printf 'smoke: %s holds no file\n' "$dir" >&2
+    return 1
+  fi
+  if ! (cd "$dir" && sha256sum -- "${files[@]}" > SHA256SUMS.partial && mv SHA256SUMS.partial SHA256SUMS); then
+    rm -f -- "$dir/SHA256SUMS.partial"
+    printf 'smoke: could not write the SHA-256 list of %s\n' "$dir" >&2
+    return 1
+  fi
+  bytes="$(du -sb "$dir")"
+  printf 'ok: %s: %d file(s), %s bytes, each listed in SHA256SUMS\n' "$dir" "${#files[@]}" "${bytes%%[[:space:]]*}"
+}
+
+smoke_check_tree_sums() {
+  local dir="$1"
+  local -a files=()
+  smoke_tree_refuse_special "$dir" || return 1
+  mapfile -d '' -t files < <(cd "$dir" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
+  smoke_check_sums "$dir/SHA256SUMS" "$dir" "${files[@]}"
 }
 
 smoke_check_authenticode_report() {
