@@ -40,8 +40,8 @@
 # a Linux target, so a Linux stripped binary is the same bytes whichever script
 # writes it; the one a release attaches is the copy --keep-stripped keeps here.
 # scripts/build.sh decides, per target format, how a stripped binary is made,
-# and says there why a Windows one is linked without its debug information
-# instead. The binary given by --binary is never modified.
+# and says there why a Windows or macOS one is linked without its debug
+# information instead. The binary given by --binary is never modified.
 # The copy must report the same `version` and `abiVersion` in
 # `aggrega version -o json` as the original, or the script refuses. It strips on
 # every run, a dry run included: stripping is local, and a dry run exists to

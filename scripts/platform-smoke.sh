@@ -20,8 +20,8 @@
 #
 #   - the staged inputs name the target given with --target, and bin/ holds
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
-#     full, light and stripped binaries for windows/amd64; the full and light ones
-#     for darwin/arm64 and darwin/amd64. For windows/amd64 the --signed directory
+#     full, light and stripped binaries, for windows/amd64, darwin/arm64 and
+#     darwin/amd64 alike. For windows/amd64 the --signed directory
 #     holds exactly those binaries too, and SHA256SUMS beside them
 #   - on macOS, the machine is the target's: uname -m reports arm64 for
 #     darwin/arm64 and x86_64 for darwin/amd64. A Mac with Apple silicon also runs

@@ -27,11 +27,10 @@
 #
 #   smoke_target_binaries <goos>/<goarch>
 #     Prints, one per line, the file names of the binaries the release carries for
-#     the target, as the build writes them, the full binary first: for
-#     windows/amd64 the full, light and stripped binaries; for darwin/arm64 and
-#     darwin/amd64 the full and light ones, since the build writes no stripped
-#     binary for macOS. A target the smoke run does not cover is refused with exit
-#     2, naming the targets it does cover.
+#     the target, as the build writes them, the full binary first, then the light
+#     and the stripped ones: for windows/amd64, darwin/arm64 and darwin/amd64
+#     alike. A target the smoke run does not cover is refused with exit 2, naming
+#     the targets it does cover.
 #
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
@@ -153,7 +152,7 @@ smoke_target_binaries() {
       printf '%s\n' aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe
       ;;
     darwin/arm64 | darwin/amd64)
-      printf '%s\n' "aggrega-${1%/*}-${1#*/}" "aggrega-light-${1%/*}-${1#*/}"
+      printf '%s\n' "aggrega-${1%/*}-${1#*/}" "aggrega-light-${1%/*}-${1#*/}" "aggrega-stripped-${1%/*}-${1#*/}"
       ;;
     *)
       printf 'smoke: no smoke run covers the target %s; it covers windows/amd64, darwin/arm64 and darwin/amd64\n' "$1" >&2

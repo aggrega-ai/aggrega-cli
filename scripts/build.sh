@@ -52,12 +52,10 @@
 # without its debug information (the symbol table and the program stay), named
 # ./aggrega-stripped, or ./aggrega-stripped-<goos>-<goarch>[.exe] with --target.
 # How it is made depends on the target's executable format, and one place in this
-# script decides it and says why. For a Windows target the linker writes it, with
-# the full binary's own flags and -w added. With a darwin target it is refused
-# before anything is built: GNU strip cannot read a macOS (Mach-O) binary, so the
-# stripped macOS binary is not produced. For any other target, and for this
-# machine, it is a copy of the full binary stripped by the one recipe in
-# scripts/lib/strip-debug.sh, which the tooling image's build uses too, and
+# script decides it and says why. For a Windows or a macOS target the linker
+# writes it, with the full binary's own flags and -w added. For any other target,
+# and for this machine, it is a copy of the full binary stripped by the one recipe
+# in scripts/lib/strip-debug.sh, which the tooling image's build uses too, and
 # `strip` (GNU binutils) must be on PATH. However it is made, the script refuses a
 # stripped binary whose stamped version differs from the full binary's. It does
 # not combine with --light, because the stripped binary is the full one, debug
@@ -90,8 +88,9 @@
 #                               # aggrega-stripped-windows-amd64.exe
 #   scripts/build.sh --light --target windows/amd64
 #                               # aggrega-light-windows-amd64.exe
-#   scripts/build.sh --target darwin/arm64
-#                               # aggrega-darwin-arm64
+#   scripts/build.sh --target darwin/arm64 --stripped
+#                               # aggrega-darwin-arm64 and
+#                               # aggrega-stripped-darwin-arm64
 #   scripts/build.sh --light --target darwin/arm64
 #                               # aggrega-light-darwin-arm64
 #   scripts/build.sh … --expect-version <version>
@@ -119,7 +118,7 @@ export GOWORK=off
 . scripts/lib/build-version.sh
 
 # The stripped-copy recipe (strip_debug_copy), shared with the tooling image's
-# build; --stripped for any target but Windows is its only use here.
+# build; --stripped for any target but Windows and macOS is its only use here.
 . scripts/lib/strip-debug.sh
 
 BINPATH="./cmd/aggrega"
@@ -202,28 +201,28 @@ fi
 #           strip_debug_copy, the recipe in scripts/lib/strip-debug.sh that the
 #           tooling image's build uses too, so the Linux stripped binary is the
 #           same bytes whichever of the two scripts writes it.
-#   linker  Windows: the linker writes the stripped binary itself, from the full
-#           binary's own build with -w added, which leaves the debug information
-#           out — the same sources, embedded guests, flags and version stamp. A
-#           Windows (PE) binary cannot be stripped after it is linked. The Go
-#           linker places its debug sections in the middle of a Windows image,
-#           before the import table, the relocations and the symbol table, and
-#           removing them afterwards cannot move the sections that follow, so
-#           the image is left with a gap in its addresses where they were; the
-#           Windows format requires an image's sections to be adjacent, and
-#           Windows refuses to run one that leaves such a gap.
-#   macOS   refused here, before anything is built: GNU strip cannot read a
-#           macOS (Mach-O) binary, so the stripped macOS binary is not produced.
+#   linker  Windows and macOS: the linker writes the stripped binary itself, from
+#           the full binary's own build with -w added, which leaves the debug
+#           information out — the same sources, embedded guests, flags and
+#           version stamp. Neither format can be stripped after it is linked.
+#           Windows (PE): the Go linker places its debug sections in the middle
+#           of a Windows image, before the import table, the relocations and the
+#           symbol table, and removing them afterwards cannot move the sections
+#           that follow, so the image is left with a gap in its addresses where
+#           they were; the Windows format requires an image's sections to be
+#           adjacent, and Windows refuses to run one that leaves such a gap.
+#           macOS (Mach-O): GNU strip cannot read the format, and the Go linker
+#           signs an Apple silicon binary ad hoc, with a signature whose hashes
+#           cover the file's pages, so a binary changed after linking carries a
+#           signature that no longer matches its bytes, which a Mac with Apple
+#           silicon refuses to run until the binary is signed again. Linked with
+#           -w, the binary is signed by the linker over the bytes it writes, as
+#           the full one is.
 STRIPPED_BY=""
 if [ "$STRIPPED" = 1 ]; then
   case "${TARGET%%/*}" in
-    windows)
+    windows | darwin)
       STRIPPED_BY="linker"
-      ;;
-    darwin)
-      fail "--stripped --target $TARGET: the stripped binary is not produced for macOS yet;"
-      fail "  GNU strip, which writes it for Linux, cannot read a macOS (Mach-O) binary"
-      exit 2
       ;;
     *)
       STRIPPED_BY="strip"
@@ -268,10 +267,10 @@ stamp_ldflags() {
 
 # go_build <output> <more linker flags> [go build flags…] — the one final go build
 # every binary this script writes runs: trimmed paths and the version stamp, then
-# <more linker flags> when it is not empty (the stripped Windows binary's -w), and
-# for a --target build the target's environment. An empty <more linker flags>
-# leaves the linker flags exactly the stamp's. The guards keep an empty
-# TARGET_ENV from expanding under set -u in older bash.
+# <more linker flags> when it is not empty (the -w of a stripped binary the linker
+# writes), and for a --target build the target's environment. An empty <more
+# linker flags> leaves the linker flags exactly the stamp's. The guards keep an
+# empty TARGET_ENV from expanding under set -u in older bash.
 go_build() {
   local out="$1" more="$2" ldflags
   shift 2

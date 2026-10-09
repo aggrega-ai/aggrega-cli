@@ -11,7 +11,8 @@
 #               scripts/lib/platform-smoke-common.sh lists them: for windows/amd64
 #               aggrega-windows-amd64.exe, aggrega-light-windows-amd64.exe and
 #               aggrega-stripped-windows-amd64.exe; for darwin/<arch>
-#               aggrega-darwin-<arch> and aggrega-light-darwin-<arch>. The
+#               aggrega-darwin-<arch>, aggrega-light-darwin-<arch> and
+#               aggrega-stripped-darwin-<arch>. The
 #               Windows ones are unsigned: the smoke run runs the signed copies
 #               the release attaches, handed to it apart (its --signed), and
 #               holds these as what its signature check must refuse
@@ -196,7 +197,7 @@ OUT="$(cd "$OUT" && pwd)"
 # What this stages from must already be built.
 [ -x ./aggrega ] || { fail "./aggrega is not built; run scripts/build.sh first"; exit 1; }
 for bin in "${BINARIES[@]}"; do
-  [ -f "$bin" ] || { fail "./$bin is not built; run scripts/build.sh --target $TARGET (and --light) first"; exit 1; }
+  [ -f "$bin" ] || { fail "./$bin is not built; run scripts/build.sh --target $TARGET --stripped (and --light) first"; exit 1; }
 done
 if ! bash scripts/check-embedded-guests.sh >/dev/null 2>&1; then
   fail "the embedded guests are stale or missing; run scripts/build.sh first, so the test executables embed what the binaries embed"

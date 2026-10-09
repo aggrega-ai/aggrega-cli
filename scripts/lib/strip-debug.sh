@@ -7,9 +7,9 @@
 # copy a release also attaches as the Linux stripped binary, and
 # `scripts/build.sh --stripped`, which writes the stripped binary with it for a
 # Linux target and for the machine it runs on. Sourcing one recipe means a
-# stripped copy is made the same way whichever script made it. A Windows binary
-# is not stripped here: scripts/build.sh has the linker write the stripped
-# Windows binary instead, and says why where it decides how each target's
+# stripped copy is made the same way whichever script made it. A Windows or macOS
+# binary is not stripped here: scripts/build.sh has the linker write those
+# stripped binaries instead, and says why where it decides how each target's
 # stripped binary is made.
 #
 # Sourcing defines one function and sets no variables:

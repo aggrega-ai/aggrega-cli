@@ -767,22 +767,25 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target windows/amd64 --expect-version "$BIN_VERSION"
 
-      - name: Build the macOS arm64 binary for the release
+      - name: Build the full and stripped macOS arm64 binaries for the release
         # The release also carries the CLI for macOS on Apple silicon
-        # (darwin/arm64) and on Intel (darwin/amd64), in the full and light
-        # variants, built by the same build script as the Linux and Windows
-        # binaries with the target named; the full binary embeds the guests the
-        # Linux build above regenerated. A macOS binary cannot run on this
-        # runner, so the script reads each binary's stamped version from the
-        # binary itself and refuses, naming both, unless it is the version the
-        # Linux binary reports — which, whenever a release tag is in play, the
-        # ABI gate above has already held to that tag. There is no stripped macOS
-        # binary: the strip recipe's GNU strip cannot read a macOS binary, and the
-        # script refuses --stripped with a darwin target. The Go linker signs an
-        # arm64 binary ad hoc, which an Apple silicon Mac requires before it runs
-        # one; no macOS binary carries a Developer ID signature or is notarized.
-        # Writes aggrega-cli/aggrega-darwin-arm64. No external side effect: a dry
-        # run builds it, and the release step attaches it.
+        # (darwin/arm64) and on Intel (darwin/amd64), in the full, light and
+        # stripped variants, built by the same build script as the Linux and
+        # Windows binaries with the target named; the full binary embeds the
+        # guests the Linux build above regenerated. --stripped also writes the
+        # stripped binary, the full binary without its debug information, which
+        # for macOS, as for Windows, the linker writes from the full binary's own
+        # build with -w added, rather than strip after linking as for Linux; the
+        # build script says why. A macOS binary cannot run on this runner, so the
+        # script reads each binary's stamped version from the binary itself and
+        # refuses, naming both, unless it is the version the Linux binary
+        # reports — which, whenever a release tag is in play, the ABI gate above
+        # has already held to that tag. The Go linker signs an arm64 binary ad
+        # hoc, the stripped one included, which an Apple silicon Mac requires
+        # before it runs one; no macOS binary carries a Developer ID signature or
+        # is notarized. Writes aggrega-cli/aggrega-darwin-arm64 and
+        # aggrega-cli/aggrega-stripped-darwin-arm64. No external side effect: a
+        # dry run builds both, and the release step attaches them.
         run: |
           set -euo pipefail
           # Whitespace is stripped before the match so the extraction is insensitive to
@@ -791,7 +794,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/scripts/build.sh --target darwin/arm64 --expect-version "$BIN_VERSION"
+          aggrega-cli/scripts/build.sh --target darwin/arm64 --stripped --expect-version "$BIN_VERSION"
 
       - name: Build the light macOS arm64 binary for the release
         # The light no-embed binary for darwin/arm64, by the same build script
@@ -807,12 +810,12 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/arm64 --expect-version "$BIN_VERSION"
 
-      - name: Build the macOS amd64 binary for the release
-        # The full binary for darwin/amd64, by the same build script and held to
-        # the same version as the macOS arm64 steps above, for the same reasons;
-        # an amd64 binary carries no signature, which an Intel Mac does not
-        # require. Writes aggrega-cli/aggrega-darwin-amd64; a dry run builds it
-        # too.
+      - name: Build the full and stripped macOS amd64 binaries for the release
+        # The full and stripped binaries for darwin/amd64, by the same build
+        # script and held to the same version as the macOS arm64 steps above,
+        # for the same reasons; an amd64 binary carries no signature, which an
+        # Intel Mac does not require. Writes aggrega-cli/aggrega-darwin-amd64 and
+        # aggrega-cli/aggrega-stripped-darwin-amd64; a dry run builds both too.
         run: |
           set -euo pipefail
           # Whitespace is stripped before the match so the extraction is insensitive to
@@ -821,7 +824,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/scripts/build.sh --target darwin/amd64 --expect-version "$BIN_VERSION"
+          aggrega-cli/scripts/build.sh --target darwin/amd64 --stripped --expect-version "$BIN_VERSION"
 
       - name: Build the light macOS amd64 binary for the release
         # The light no-embed binary for darwin/amd64, by the same build script
@@ -932,11 +935,11 @@ jobs:
       - name: Stage the macOS smoke runs' inputs
         # Everything each macos-smoke job runs, staged by the same script as the
         # Windows inputs, once per macOS target into a directory of its own: the
-        # full and light binaries above for that target, its test executables,
-        # cross-compiled here, and the two worked examples, each with the
-        # workspace this machine's validate, pull and build of it leave. The tests
-        # listed for Windows alone are left out and named in the log. No external
-        # side effect; a dry run stages too.
+        # full, light and stripped binaries above for that target, its test
+        # executables, cross-compiled here, and the two worked examples, each
+        # with the workspace this machine's validate, pull and build of it leave.
+        # The tests listed for Windows alone are left out and named in the log.
+        # No external side effect; a dry run stages too.
         id: macos-smoke-inputs
         run: |
           set -euo pipefail
@@ -1114,7 +1117,8 @@ jobs:
           BIN="$RELEASE_INPUTS/bin"
           mkdir -p "$BIN"
           for built in aggrega aggrega-light \
-              aggrega-darwin-arm64 aggrega-light-darwin-arm64 aggrega-darwin-amd64 aggrega-light-darwin-amd64; do
+              aggrega-darwin-arm64 aggrega-light-darwin-arm64 aggrega-stripped-darwin-arm64 \
+              aggrega-darwin-amd64 aggrega-light-darwin-amd64 aggrega-stripped-darwin-amd64; do
             cp "aggrega-cli/$built" "$BIN/$built"
           done
           ls -l "$BIN"
@@ -1831,15 +1835,15 @@ jobs:
 
       - name: Create the GitHub release and upload the binaries and the extension package
         # The final side effect: attach the full, light and stripped binaries for
-        # linux/amd64 and for windows/amd64, the full and light binaries for
-        # darwin/arm64 and for darwin/amd64, and the desktop extension package,
-        # to the GitHub release for this tag so they are downloadable from the
-        # release page. A stripped binary is the full binary without its debug
-        # information. The Linux one is the very file the tooling image carries,
-        # which the build job's image step kept; this step copies that file and
-        # never strips, so the asset and the image cannot differ. The macOS ones
-        # are the files the build job's macOS steps wrote, each already held to
-        # the Linux binary's version. The Windows ones are the files the build
+        # linux/amd64, for windows/amd64, for darwin/arm64 and for darwin/amd64,
+        # and the desktop extension package, to the GitHub release for this tag
+        # so they are downloadable from the release page. A stripped binary is
+        # the full binary without its debug information. The Linux one is the
+        # very file the tooling image carries, which the build job's image step
+        # kept; this step copies that file and never strips, so the asset and the
+        # image cannot differ. The macOS ones, the stripped ones among them, are
+        # the files the build job's macOS steps wrote, each already held to the
+        # Linux binary's version. The Windows ones are the files the build
         # job's Windows steps wrote, held to that version too, as sign-windows
         # signed them: the step above held them to sign-windows' SHA-256 list,
         # so they are byte for byte the files windows-smoke ran and whose
@@ -1919,9 +1923,11 @@ jobs:
           # rather than release without one when it is missing.
           MAC_ARM_FULL="$BIN/aggrega-darwin-arm64"
           MAC_ARM_LIGHT="$BIN/aggrega-light-darwin-arm64"
+          MAC_ARM_STRIPPED="$BIN/aggrega-stripped-darwin-arm64"
           MAC_AMD_FULL="$BIN/aggrega-darwin-amd64"
           MAC_AMD_LIGHT="$BIN/aggrega-light-darwin-amd64"
-          for built in "$MAC_ARM_FULL" "$MAC_ARM_LIGHT" "$MAC_AMD_FULL" "$MAC_AMD_LIGHT"; do
+          MAC_AMD_STRIPPED="$BIN/aggrega-stripped-darwin-amd64"
+          for built in "$MAC_ARM_FULL" "$MAC_ARM_LIGHT" "$MAC_ARM_STRIPPED" "$MAC_AMD_FULL" "$MAC_AMD_LIGHT" "$MAC_AMD_STRIPPED"; do
             if [ ! -f "$built" ]; then
               echo "the macOS build steps wrote no $(basename "$built") (expected at '$built')" >&2
               exit 1
@@ -1938,8 +1944,10 @@ jobs:
           WIN_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-windows-amd64.exe"
           MAC_ARM_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-darwin-arm64"
           MAC_ARM_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-darwin-arm64"
+          MAC_ARM_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-darwin-arm64"
           MAC_AMD_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-darwin-amd64"
           MAC_AMD_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-darwin-amd64"
+          MAC_AMD_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-darwin-amd64"
           BUNDLE_ASSET="$RELEASE_DIR/$(basename "$MCP_BUNDLE")"
           cp "$BIN/aggrega" "$FULL_ASSET"
           cp "$BIN/aggrega-light" "$LIGHT_ASSET"
@@ -1949,8 +1957,10 @@ jobs:
           cp "$WIN_STRIPPED" "$WIN_STRIPPED_ASSET"
           cp "$MAC_ARM_FULL" "$MAC_ARM_FULL_ASSET"
           cp "$MAC_ARM_LIGHT" "$MAC_ARM_LIGHT_ASSET"
+          cp "$MAC_ARM_STRIPPED" "$MAC_ARM_STRIPPED_ASSET"
           cp "$MAC_AMD_FULL" "$MAC_AMD_FULL_ASSET"
           cp "$MAC_AMD_LIGHT" "$MAC_AMD_LIGHT_ASSET"
+          cp "$MAC_AMD_STRIPPED" "$MAC_AMD_STRIPPED_ASSET"
           cp "$MCP_BUNDLE" "$BUNDLE_ASSET"
 
           # The one list of what the release carries: the dry run prints it, and
@@ -1958,8 +1968,8 @@ jobs:
           ASSETS=(
             "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET"
             "$WIN_FULL_ASSET" "$WIN_LIGHT_ASSET" "$WIN_STRIPPED_ASSET"
-            "$MAC_ARM_FULL_ASSET" "$MAC_ARM_LIGHT_ASSET"
-            "$MAC_AMD_FULL_ASSET" "$MAC_AMD_LIGHT_ASSET"
+            "$MAC_ARM_FULL_ASSET" "$MAC_ARM_LIGHT_ASSET" "$MAC_ARM_STRIPPED_ASSET"
+            "$MAC_AMD_FULL_ASSET" "$MAC_AMD_LIGHT_ASSET" "$MAC_AMD_STRIPPED_ASSET"
             "$BUNDLE_ASSET"
           )
 
@@ -1979,7 +1989,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for linux/amd64, for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and, for linux/amd64 and windows/amd64, aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
+              --notes "Release $TAG. Downloadable binaries for linux/amd64, for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
           fi
 
       - name: Remove this run's directories
