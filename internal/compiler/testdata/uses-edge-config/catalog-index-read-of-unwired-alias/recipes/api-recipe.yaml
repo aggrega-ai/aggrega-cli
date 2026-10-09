@@ -1,0 +1,35 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/api
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 8080
+  # Identical to the api-recipe in catalog/base except for one read: CACHE_POOL
+  # reads the "primary" connection alias through `index` rather than through
+  # `optional`. A Release that leaves the caches socket unwired has no "primary"
+  # alias, so that read halts. Listed ahead of catalog/base, this Recipe shadows
+  # the one there and is the only difference between the two builds.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: api:1.0
+        variables:
+          DB_PROTOCOL: '{{ with optional .context.uses "main" "" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}'
+          DB_STATEMENT_CACHE: '{{ with optional .context.uses "main" "" }}{{ with .values }}{{ .statement_cache }}{{ end }}{{ end }}'
+          DB_POOL_SIZE: '{{ with optional .context.uses "main" "" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+          DB_TLS_MODE: '{{ with optional .context.uses "main" "" }}{{ with .infra }}{{ .tls_mode }}{{ end }}{{ end }}'
+          CACHE_POOL: '{{ with index .context.uses "primary" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+        ports:
+          p: 8080
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          p: 8080

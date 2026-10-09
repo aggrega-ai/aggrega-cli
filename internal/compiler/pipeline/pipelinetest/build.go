@@ -35,6 +35,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -78,11 +79,17 @@ type Input struct {
 // plus Trace when in.IncludeTrace is set). It fails the test on any error —
 // including a Step-4c resolution-completeness failure, which is the whole
 // point: a build-invalid workspace fails here the way it fails a real build.
+//
+// The failure names every frame of the error's cause chain, the way the build
+// command prints it, rather than the outermost frame alone. A diagnostic's own
+// Error method renders a single frame by design, so formatting the error
+// directly reports which node halted and drops what halted it — the template,
+// the key, the condition.
 func Build(t *testing.T, in Input) *pipeline.Result {
 	t.Helper()
 	result, err := compile(in)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: %v", err)
+		t.Fatalf("pipelinetest.Build: %s", cerrors.CauseChain(err))
 	}
 	return result
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/usesedge"
 )
@@ -158,6 +160,60 @@ func TestUsesEdgeConfig_TargetRenderInvariant(t *testing.T) {
 	if reflect.DeepEqual(apiWith, apiWithout) {
 		t.Errorf("consumer api service did not change with per-edge config; projection not reaching output")
 	}
+}
+
+// TestUsesEdgeConfig_IndexReadOfAnUnwiredAliasHaltsNamingTheCause proves that a
+// build halted by a template's `index` read of a connection alias the Release
+// leaves unwired carries what halted it in its error, not only the node it was
+// rendering: the condition, the key the read did not find, the action as the
+// template spells it, and the template it sits in.
+//
+// The halting build's one fault is a Recipe identical to the base one except
+// that it reads the unwired "primary" alias through `index`; listed first, it
+// shadows the base Recipe. The control builds the same Release against the base
+// catalog alone, where every alias is read through `optional`, and must succeed.
+func TestUsesEdgeConfig_IndexReadOfAnUnwiredAliasHaltsNamingTheCause(t *testing.T) {
+	t.Parallel()
+	const (
+		release   = "testdata/uses-edge-config/release-no-edge-config.yaml"
+		base      = "testdata/uses-edge-config/catalog/base"
+		indexRead = "testdata/uses-edge-config/catalog-index-read-of-unwired-alias"
+	)
+
+	t.Run("control: the presence-tested read builds", func(t *testing.T) {
+		t.Parallel()
+		_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+			ReleasePath:  release,
+			CatalogPaths: []string{base},
+		})
+		if err != nil {
+			t.Fatalf("the Release must build when the unwired alias is read through optional; got %s", cerrors.CauseChain(err))
+		}
+	})
+
+	t.Run("an index read of the unwired alias halts naming the key", func(t *testing.T) {
+		t.Parallel()
+		_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+			ReleasePath:  release,
+			CatalogPaths: []string{indexRead, base},
+		})
+		if err == nil {
+			t.Fatal("an index read of an unwired alias must halt the build; it built")
+		}
+		chain := cerrors.CauseChain(err)
+		if !errors.Is(err, gotmpl.ErrIndexOfAbsentMapKey()) {
+			t.Fatalf("want the absent-map-key condition in the build's error; got %s", chain)
+		}
+		for _, want := range []string{
+			`key "primary"`,                   // the key the read did not find
+			`<index .context.uses "primary">`, // the action, as the template spells it
+			`workload[api-recipe]`,            // the template it sits in
+		} {
+			if !strings.Contains(chain, want) {
+				t.Errorf("the build's error does not carry %s; got %s", want, chain)
+			}
+		}
+	})
 }
 
 // composeService unmarshals the merged docker-compose document and returns the

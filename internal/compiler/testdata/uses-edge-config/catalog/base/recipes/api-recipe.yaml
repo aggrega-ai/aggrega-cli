@@ -11,9 +11,11 @@ spec:
     port: 8080
   # The workload reads connection-scoped per-edge config from the topology pipe:
   # developer `values` and operator `infra` on the `databases` edge (alias "main"),
-  # and operator `infra` on the Release-wired `caches` edge (alias "primary"). The
-  # nested `with` guards keep rendering clean when an edge or pillar is absent
-  # (the fields are omitempty in the enriched edge).
+  # and operator `infra` on the Release-wired `caches` edge (alias "primary"). A
+  # Release may leave either socket unwired, so each alias is read through
+  # `optional`, which tests for the key before reading it. The nested `with`
+  # guards keep rendering clean when an edge or pillar is absent (the fields are
+  # omitempty in the enriched edge).
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -21,11 +23,11 @@ spec:
       main:
         image: api:1.0
         variables:
-          DB_PROTOCOL: '{{ with index .context.uses "main" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}'
-          DB_STATEMENT_CACHE: '{{ with index .context.uses "main" }}{{ with .values }}{{ .statement_cache }}{{ end }}{{ end }}'
-          DB_POOL_SIZE: '{{ with index .context.uses "main" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
-          DB_TLS_MODE: '{{ with index .context.uses "main" }}{{ with .infra }}{{ .tls_mode }}{{ end }}{{ end }}'
-          CACHE_POOL: '{{ with index .context.uses "primary" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+          DB_PROTOCOL: '{{ with optional .context.uses "main" "" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}'
+          DB_STATEMENT_CACHE: '{{ with optional .context.uses "main" "" }}{{ with .values }}{{ .statement_cache }}{{ end }}{{ end }}'
+          DB_POOL_SIZE: '{{ with optional .context.uses "main" "" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+          DB_TLS_MODE: '{{ with optional .context.uses "main" "" }}{{ with .infra }}{{ .tls_mode }}{{ end }}{{ end }}'
+          CACHE_POOL: '{{ with optional .context.uses "primary" "" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
         ports:
           p: 8080
     services:
