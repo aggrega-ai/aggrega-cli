@@ -281,11 +281,12 @@ type publishEntityArgs struct {
 // publishEntityPayload is the catalog-entity publication's structured result: the
 // facts themselves rather than the status lines a terminal reads.
 //
-// digest is empty on a dry run, whose digest is stated in its status line, and the
-// two booleans say which path ran — a dry run published nothing, and an
-// already-published call found the tag pointing at byte-identical content,
-// uploaded none, and attached only what that publication still lacked: its
-// publication date, and its signature where this one signs, which signed reports.
+// On a dry run digest is the digest a publication of the same content would land,
+// the one the command line's dry run prints. The two booleans say which path ran —
+// a dry run published nothing, and an already-published call found the tag
+// pointing at byte-identical content, uploaded none, and attached only what that
+// publication still lacked: its publication date, and its signature where this one
+// signs, which signed reports.
 type publishEntityPayload struct {
 	Reference        string           `json:"reference"`
 	Tag              string           `json:"tag"`
@@ -314,16 +315,16 @@ var publishEntityToolSpec = toolSpec{
 		"anyone who has already fetched it. Pass the entity document as `entity`, absolute or relative to the " +
 		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest. The " +
 		"destination is `registry`, defaulting to the workspace's configured one. Set `dry_run` to compute the " +
-		"bundle and publish nothing. Signing follows the destination registry's policy unless `sign` says " +
-		"otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
+		"bundle and the digest a publication of it would land, and publish nothing. Signing follows the " +
+		"destination registry's policy unless `sign` says otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
 		"there is no argument that bypasses that refusal. Keyless signing resolves an identity from " +
 		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Set " +
 		"`pin_sources` to run the entity author's pin step first — the pin tool's step, writing the entity.lock " +
 		"beside the entity inside your workspace so it is part of what is published; a publication that does not " +
 		"run the step refuses a Recipe or FeatureRecipe whose entity.lock is missing a pin, a dry run included. " +
 		"The result carries where " +
-		"the entity landed, the tag, the published digest, whether it was signed, what the pin step did, and " +
-		"how far the call reached.",
+		"the entity landed, the tag, the published digest — under `dry_run`, the digest a publication would land — " +
+		"whether it was signed, what the pin step did, and how far the call reached.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -343,7 +344,7 @@ var publishEntityToolSpec = toolSpec{
     },
     "dry_run": {
       "type": "boolean",
-      "description": "Compute the bundle and report what would be published without contacting the registry."
+      "description": "Compute the bundle and report what would be published, with the digest a publication would land, without contacting the registry."
     },
     "sign": {
       "type": "boolean",
@@ -501,8 +502,8 @@ func renderPublishEntityText(p publishEntityPayload) string {
 	var b strings.Builder
 	switch {
 	case p.DryRun:
-		fmt.Fprintf(&b, "Dry run: %s:%s would be published as %s (%s, %d bytes). Nothing was contacted.",
-			p.Reference, p.Tag, p.Kind, p.MediaType, p.Size)
+		fmt.Fprintf(&b, "Dry run: %s:%s would be published at %s as %s (%s, %d bytes). Nothing was contacted.",
+			p.Reference, p.Tag, p.Digest, p.Kind, p.MediaType, p.Size)
 	case p.AlreadyPublished:
 		fmt.Fprintf(&b, "Already published: %s:%s already points at %s, so its content was not landed again; "+
 			"a publication date, and a signature where this publication signs, are attached only where the version lacked one.",

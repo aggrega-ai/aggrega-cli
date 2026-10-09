@@ -80,8 +80,8 @@ type PushArtifactResult struct {
 	MediaType string
 	// Size is the published file's byte count.
 	Size int
-	// Digest is the published manifest's digest, and EMPTY on a dry run for the
-	// same reason PushResult.Digest is.
+	// Digest is the published manifest's digest, and EMPTY on a dry run, which
+	// returns before the immutability guard computes the proposed digest.
 	Digest string
 	// AlreadyPublished reports that the tag already pointed at byte-identical
 	// content, so no content was uploaded. A publication date the version still

@@ -205,9 +205,11 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		// is the result would either move these bytes or carry facts the result
 		// does not hold. What must stay in step is the wording, and the two agree
 		// on every label they share. The header line carries the manifest digest
-		// exactly where the publication line carries it.
+		// exactly where the publication line carries it, and prints the result's own
+		// field, so the line and the answer a caller reads are one value.
+		result.Digest = proposedDigest
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s (%s)\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
-			reference, version, proposedDigest, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
+			reference, version, result.Digest, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
 		result.DryRun = true
 		result.Signed = false
 		return result, nil

@@ -305,10 +305,11 @@ type PushResult struct {
 	// and zero for every other kind. A Plugin publishes entity and executable as
 	// one manifest, so a single size would describe neither.
 	PluginSize int
-	// Digest is the published manifest's digest, and it is EMPTY on a dry run,
-	// which publishes nothing. The digest a dry run computes is the one a
-	// publication would land, and it is stated on the dry run's status line beside
-	// the reference rather than here, where a caller reads what was published.
+	// Digest is the published manifest's digest. On a dry run, which publishes
+	// nothing, it is the digest a publication of the same content would land: the
+	// one value the immutability guard compares and the signer signs, computed from
+	// the content alone, and the one the dry run's status line states beside the
+	// reference.
 	Digest string
 	// Signed reports that this call attached a signature: on a publication, the
 	// one it made before publishing; on a version already published, the one it
@@ -450,7 +451,8 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 //
 // When cfg.DryRun is true, Push prints the proposed <reference>:<tag> with the
 // manifest digest a publication would land, then the mediatype and bundle byte
-// count, and returns without constructing a remote target. The digest is the one
+// count, reports that digest as the result's Digest, and returns without
+// constructing a remote target. The digest is the one
 // the immutability guard compares and the signer signs, computed once from the
 // content alone, so a dry run previews it without contacting anything. Useful
 // for authoring, for comparing content with a published version's digest, and
@@ -678,10 +680,13 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	}
 
 	if cfg.DryRun {
+		// The result carries the digest and the line prints the result's own field,
+		// so the line a terminal reads and the answer a caller reads are one value.
 		// The digest follows the reference in the shape the publication line gives
 		// it, so the reference stays at the field a reader of either line takes it
 		// from and the digest is the field after it.
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s (%s)\n", reference, tag, proposedDigest)
+		result.Digest = proposedDigest
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s (%s)\n", reference, tag, result.Digest)
 		writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
 		writeWholeDirectoryNote(out, result.WholeDirectory)
 		result.DryRun = true

@@ -125,6 +125,11 @@ func keyedSigningWorkspace(t *testing.T) (workspaceYAML string, pubPEM []byte) {
 //
 // The reach is the load-bearing assertion. A dry run reached nothing, and an
 // answer that said it had would be worse than one that said nothing at all.
+//
+// The digest is the other one: a dry run answers with the digest a publication of
+// the same content would land, the one the command line's dry run prints, so it
+// is held against a real publication made through the same request projection
+// into a destination this test holds.
 func TestPublishEntityOnTheDaemonAnswersWithTheFactsOfADryRun(t *testing.T) {
 	t.Parallel()
 	srv, _ := publishFixture(t, defaultRegistryWorkspace)
@@ -151,14 +156,33 @@ func TestPublishEntityOnTheDaemonAnswersWithTheFactsOfADryRun(t *testing.T) {
 	if !res.DryRun {
 		t.Error("a dry run must say so")
 	}
-	if res.Digest != "" {
-		t.Errorf("a dry run computes no digest; got %q", res.Digest)
-	}
 	if res.Reach.BeyondThisMachine {
 		t.Errorf("a dry run reached nothing; the answer says otherwise: %+v", res.Reach)
 	}
 	if res.Reach.Registry != publishTestRegistry {
 		t.Errorf("reach.registry: got %q, want %q", res.Reach.Registry, publishTestRegistry)
+	}
+
+	// The digest is the one a publication of the same content lands. The expected
+	// value comes from a real publication into a destination this test holds and
+	// from what that destination resolves the tag to, never from the dry run
+	// itself, so an answer leaving the field empty or filling it with any other
+	// digest fails here.
+	store := memory.New()
+	published := publishThroughDaemon(t, srv, store)
+	landed, exists, err := oci.Resolve(context.Background(), store, "1.0.0")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !exists || landed == "" {
+		t.Fatal("the publication the dry run is compared against landed nothing, so the comparison proves nothing")
+	}
+	if published.Digest != landed {
+		t.Fatalf("the publication reports %q and the destination resolves the tag to %q", published.Digest, landed)
+	}
+	if res.Digest != landed {
+		t.Errorf("a dry run answers with the digest a publication of the same content lands; got %q, the publication landed %q",
+			res.Digest, landed)
 	}
 }
 

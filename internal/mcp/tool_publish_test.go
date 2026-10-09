@@ -119,7 +119,11 @@ func keyedSigningWorkspace(t *testing.T) (workspaceYAML, keyPath string, pubPEM 
 // A dry run is what can be driven through the wire without a destination — every
 // other path constructs a remote repository from the reference — so the reach is the
 // load-bearing assertion: a dry run reached nothing, and an answer that said it had
-// would be worse than one that said nothing at all.
+// would be worse than one that said nothing at all. A catalog entity's dry run also
+// answers with the digest a publication of the same content would land, the one the
+// command line's dry run prints, so that digest is held against a real publication
+// made through the tool's own argument projection into a destination this test
+// holds.
 func TestThePublicationToolsAnswerWithFactsRatherThanText(t *testing.T) {
 	s, root := publishFixture(t, defaultRegistryWorkspace)
 
@@ -147,14 +151,38 @@ func TestThePublicationToolsAnswerWithFactsRatherThanText(t *testing.T) {
 		if !got.DryRun {
 			t.Error("a dry run must say so")
 		}
-		if got.Digest != "" {
-			t.Errorf("a dry run computes no digest; got %q", got.Digest)
-		}
 		if got.Reach.BeyondThisMachine {
 			t.Errorf("a dry run reached nothing; the answer says otherwise: %+v", got.Reach)
 		}
 		if got.Reach.Registry != publishTestRegistry {
 			t.Errorf("reach.registry: got %q, want %q", got.Reach.Registry, publishTestRegistry)
+		}
+
+		// The digest is the one a publication of the same content lands. The
+		// expected value comes from a real publication into a destination this test
+		// holds and from what that destination resolves the tag to, never from the
+		// dry run itself, so an answer leaving the field empty or filling it with any
+		// other digest fails here.
+		store := memory.New()
+		published := publishThroughTool(t, s, root, store)
+		landed, exists, err := oci.Resolve(context.Background(), store, "1.0.0")
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if !exists || landed == "" {
+			t.Fatal("the publication the dry run is compared against landed nothing, so the comparison proves nothing")
+		}
+		if published.Digest != landed {
+			t.Fatalf("the publication reports %q and the destination resolves the tag to %q", published.Digest, landed)
+		}
+		if got.Digest != landed {
+			t.Errorf("a dry run answers with the digest a publication of the same content lands; got %q, the publication landed %q",
+				got.Digest, landed)
+		}
+		// The text a caller is shown states the same digest the structured answer
+		// carries.
+		if text := res.Content[0].Text; !strings.Contains(text, landed) {
+			t.Errorf("the dry run's text does not state the digest %s:\n%s", landed, text)
 		}
 	})
 
