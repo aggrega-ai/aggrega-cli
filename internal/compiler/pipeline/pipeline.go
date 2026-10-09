@@ -1005,8 +1005,7 @@ func releaseSourcePath(in Inputs) string {
 // It is the single source of the resolve+flatten wiring, and it is unexported
 // so that it stays one. A flattened topology is the input a graph build takes,
 // so a caller holding one is one short step from assembling a graph of its own
-// — which is how two command-layer surfaces came to build graphs outside the
-// sequence the pipeline runs around that step. BuildGraph is the exported
+// outside the sequence the pipeline runs around that step. BuildGraph is the exported
 // continuation of this function and the only way to reach a graph from outside
 // this package; keeping this one private is what leaves no second route to the
 // same place.

@@ -319,10 +319,9 @@ func expandBoundaries(
 }
 
 // annotationSourcePath formats the source location for an annotation
-// declaration written in the Release, in the shape [annotationSource] composes;
-// line numbers are deferred until yaml.Node access lands in the resolver
-// pipeline. componentName empty signals a boundary-level annotation; non-empty
-// signals a component-level annotation under that boundary.
+// declaration written in the Release, in the shape [annotationSource] composes,
+// with no line number. componentName empty signals a boundary-level annotation;
+// non-empty signals a component-level annotation under that boundary.
 func annotationSourcePath(releasePath, boundaryPath, componentName, key string, synthesized bool) string {
 	// A synthesized-default boundary holds components authored at the top-level
 	// `.spec.components` surface; attribute their annotations to that root shape
@@ -876,8 +875,7 @@ func expandAggregateSubsystems(
 
 // aggregateAnnotationSourcePath formats the source location for an
 // Aggregate-authored annotation, in the shape [annotationSource] composes, the
-// key path being <canonical-dotted-path>.annotations.<key>; line numbers are
-// deferred until yaml.Node access lands in the resolver pipeline.
+// key path being <canonical-dotted-path>.annotations.<key>, with no line number.
 // componentPath is the canonical dotted path of the authoring scope (the
 // subsystem path for a subsystem-level annotation or the component path for a
 // component-level annotation).

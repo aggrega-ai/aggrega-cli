@@ -4,10 +4,9 @@
 // End-to-end proof that a delivery entry naming a key the target does not
 // publish is refused wherever the connection was written.
 //
-// The same authoring mistake used to behave differently depending on the surface
-// it was written on: written in a component's own dependency block it halted,
-// and contributed by a Feature attachment it built, rendered, and delivered
-// nothing — a defect whose only outward sign was an empty value in the output.
+// The same authoring mistake halts on every surface it can be written on — a
+// component's own dependency block and a Feature attachment alike — rather than
+// building and delivering an empty value.
 // Each case below is one authoring surface, built through the real pipeline.
 
 package pipeline_test
@@ -329,13 +328,13 @@ func TestOneAttachmentNameAtTwoScopesLeavesNoDeliveryUnexamined(t *testing.T) {
 	}
 }
 
-// TestAFindingOnAnAttachmentDrawnConnectionNamesTheAttachmentsBlock is the
-// locator repair, proved on a rule this item did not otherwise touch.
+// TestAFindingOnAnAttachmentDrawnConnectionNamesTheAttachmentsBlock proves a
+// finding on a connection an attachment drew names the attachment's block.
 //
-// The socket-selector rule is asked once per connection the graph holds, and it
-// built every locator from the consuming component's own dependency block. For a
-// connection an attachment drew, that block does not exist: the finding named a
-// path no file contains, on every one of the components the scope reaches.
+// The socket-selector rule is asked once per connection the graph holds. For a
+// connection an attachment drew, the consuming component has no dependency block
+// for it, so a locator built from that block would name a path no file contains,
+// on every one of the components the scope reaches.
 //
 // The fixture's attachment wires its socket to a component the socket's selector
 // rejects, so the finding is a property of the compiled document rather than of
@@ -352,8 +351,8 @@ func TestAFindingOnAnAttachmentDrawnConnectionNamesTheAttachmentsBlock(t *testin
 	if !strings.Contains(refusal, want) {
 		t.Errorf("the refusal does not name %q; got: %s", want, refusal)
 	}
-	// The shape it used to name: the consuming component's own dependency block,
-	// which these components do not have.
+	// A path through the consuming component's own dependency block names a key
+	// these components do not have, so the refusal must not carry it.
 	for _, stale := range []string{
 		".spec.subsystems.tier.components.api.uses.backend",
 		".spec.subsystems.tier.components.web.uses.backend",

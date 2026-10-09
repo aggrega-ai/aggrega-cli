@@ -21,9 +21,8 @@ type AnnotationProvenance struct {
 	// where the run named no file for that document. For an
 	// inherited boundary-level annotation, the key-path points to the
 	// boundary's annotations map (where the author wrote the
-	// annotation, not where it took effect). Line numbers are not yet
-	// tracked through the resolver pipeline; the format upgrades when
-	// yaml.Node access lands in a follow-up implementation pass.
+	// annotation, not where it took effect). The location carries no
+	// line number.
 	AnnotationSource string
 
 	// InjectedByPlugin, when non-empty, is the URI of the
