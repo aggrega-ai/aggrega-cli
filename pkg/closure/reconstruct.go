@@ -73,22 +73,24 @@ func DescendPinnedAxes(
 	if pluginLookup == nil {
 		pluginLookup = lookup
 	}
+	// Each pass's error is prefixed with what it was resolving, in the terms a reader
+	// of the Release knows, because the prefix is the first thing a refusal prints.
 	if err := DescendSubAggregates(ctx, cl, aggLoader, lookup); err != nil {
-		return fmt.Errorf("sub-aggregate descent: %w", err)
+		return fmt.Errorf("resolving the sub-aggregates the Aggregate imports: %w", err)
 	}
 	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver, entityLocalArtifact); err != nil {
-		return fmt.Errorf("pipeline-plugin entity descent: %w", err)
+		return fmt.Errorf("resolving the plugins the Release depends on: %w", err)
 	}
 	artifactLoader := recipeLoader
 	if refold != nil {
 		loader2, err := refold()
 		if err != nil {
-			return fmt.Errorf("re-fold plugin pins: %w", err)
+			return fmt.Errorf("reading the plugins just resolved: %w", err)
 		}
 		artifactLoader = loader2
 	}
 	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup, artifactLocalArtifact); err != nil {
-		return fmt.Errorf("pipeline-plugin artifact descent: %w", err)
+		return fmt.Errorf("resolving the .wasm of each plugin the Release depends on: %w", err)
 	}
 	return nil
 }

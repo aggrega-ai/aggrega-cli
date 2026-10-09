@@ -261,9 +261,9 @@ func TestPluginDescent_Tier1LocalNotPinned(t *testing.T) {
 }
 
 // TestPluginDescent_NotFoundSkipped proves a plugin entity that resolves through no
-// tier is skipped rather than halting the pull (a local-path entity the lock-time
-// lookup does not see resolves at build; the build-time loader gate halts a
-// genuinely-absent one).
+// tier is skipped when the descent is handed no question — a build's posture, whose
+// load of the step halts on a genuinely-absent one; a pull's refusal of it is
+// TestTheEntityDescentRefusesAPluginNoSourceHoldsWhenAPullAsks.
 func TestPluginDescent_NotFoundSkipped(t *testing.T) {
 	const unknownEntity = "core/frp/unknown:1.0.0"
 	loader := &fakeRecipeLoader{

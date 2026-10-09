@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -76,8 +77,12 @@ const pluginKindHint = "plugin"
 // supplies the same question to the artifact descent, so the pin a pull records and
 // the pin the build's drift check expects are computed alike.
 //
-// A nil value asks nothing: the entity descent refuses nothing, and the artifact
-// descent leaves such an entity's artifact out rather than asking a registry for it.
+// Handed to the entity descent, it is also what marks that descent as the one a pull
+// runs before it writes: with it, the descent refuses there what the build would
+// refuse at load — this question's refusal, and a Plugin entity no source holds (see
+// DescendRecipePluginEntities). A nil value asks nothing: the entity descent refuses
+// nothing, and the artifact descent leaves such an entity's artifact out rather than
+// asking a registry for it.
 type LocalPluginArtifact func(entityURI, artifactRef string) (Resolution, error)
 
 // resolvedInLocalCatalog reports whether a resolution came from a local catalog
@@ -203,10 +208,19 @@ func shapesRenderedOutput(declaredType plugintype.Type) bool {
 // binary carries, which resolves at build from the binary — the only plugin type an
 // entity resolver reports that way, because the build likewise selects its rendering
 // engine from the binary. Every other socket's plugin entity keeps its ordinary
-// cascade and is pinned when a registry serves it. A reference that resolves through
-// no tier (NotFound) is skipped rather than halting the pull: a local-path entity the
-// lock-time lookup does not see resolves at build, and the build-time loader gate
-// halts on a genuinely-absent reference.
+// cascade and is pinned when a registry serves it.
+//
+// A reference the lookup resolves through no tier (NotFound) — no catalog directory,
+// no cache slot, no registry — is asked of loader, which reads entities where the
+// build does. An entity the binary carries is the one it holds there: the lookup
+// sends every plugin type but a provider to the registry tiers, while the build reads
+// the binary's copy, so such an entity is left unpinned and resolves at build from the
+// binary. An entity the loader cannot load either is one no tier holds, and the
+// build's load of the step would refuse it; with a localArtifact supplied — a pull,
+// before it writes — the descent refuses it here with the loader's refusal, naming
+// the Recipes and FeatureRecipes that name it, so the pull writes no lockfile its
+// build refuses. A build supplies none, asks nothing here, and raises the same
+// condition where it loads the step.
 //
 // An entity authored in a local catalog directory is left out of the closure, and
 // localArtifact is asked about it first: nothing fetches such an entity's artifact
@@ -243,12 +257,16 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 		if err != nil {
 			return fmt.Errorf("resolve: resolve wasm plugin entity %q: %w", entityURI, err)
 		}
-		// A plugin entity referenced by a recipe but resolvable through no tier is not
-		// a closure gap here: it may resolve at build through a local catalog the
-		// lock-time lookup does not see, and the build-time loader gate halts on a
-		// genuinely-absent entity. Skip an unresolved entity rather than halt the pull.
-		// (A workspace-socket entity already passed ComputeClosure's fatal resolve.)
+		// No catalog directory, cache slot or registry answered. The loader reads
+		// entities where the build does, the binary included, so what it holds stays
+		// unpinned and resolves at build; what it cannot load, a pull refuses before
+		// it writes, with the loader's refusal — the one the build's load would raise.
 		if entRes.NotFound {
+			if localArtifact != nil {
+				if _, lerr := loader.LoadPlugin(entityURI); lerr != nil {
+					return unheldPluginEntity(entityURI, recipeFromSet, lerr)
+				}
+			}
 			continue
 		}
 		// An entity authored in a local catalog directory is read from there at every
@@ -293,6 +311,22 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 
 	canonicaliseClosure(c)
 	return nil
+}
+
+// unheldPluginEntity carries a refusal for a Plugin entity no source holds,
+// naming the Recipes and FeatureRecipes that name it, in sorted order, so a reader
+// is told where the reference was written. The refusal itself is carried beneath
+// unchanged, and with it the condition it names.
+func unheldPluginEntity(entityURI string, namedBy map[string]struct{}, refusal error) error {
+	if len(namedBy) == 0 {
+		return fmt.Errorf("resolve: plugin %q: %w", entityURI, refusal)
+	}
+	refs := make([]string, 0, len(namedBy))
+	for r := range namedBy {
+		refs = append(refs, r)
+	}
+	sort.Strings(refs)
+	return fmt.Errorf("resolve: plugin named by %s: %w", strings.Join(refs, ", "), refusal)
 }
 
 // DescendRecipePluginArtifacts is the artifact descent of the two-pass
@@ -385,7 +419,7 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI, entityPath string, pluginIndex map[string]int, localArtifact LocalPluginArtifact) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {
-		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
+		return fmt.Errorf("resolve: load wasm plugin entity %q to read its .wasm: %w", entityURI, err)
 	}
 	artifactURI := wp.ArtifactReference()
 	if artifactURI == "" {
@@ -508,7 +542,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 		case "recipe":
 			r, err := loader.LoadRecipe(ent.URI)
 			if err != nil {
-				return nil, nil, fmt.Errorf("resolve: load recipe %q for plugin descent: %w", ent.URI, err)
+				return nil, nil, fmt.Errorf("resolve: load recipe %q to read the plugins it names: %w", ent.URI, err)
 			}
 			for _, step := range r.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
@@ -519,7 +553,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 		case "feature_recipe":
 			fr, err := loader.LoadFeatureRecipe(ent.URI)
 			if err != nil {
-				return nil, nil, fmt.Errorf("resolve: load feature recipe %q for plugin descent: %w", ent.URI, err)
+				return nil, nil, fmt.Errorf("resolve: load feature recipe %q to read the plugins it names: %w", ent.URI, err)
 			}
 			for _, step := range fr.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)

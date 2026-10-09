@@ -140,6 +140,94 @@ func TestEntityLookup_MalformedPin(t *testing.T) {
 	}
 }
 
+// The two sentences the plugin-entity-not-found condition is reported with. The
+// first is for a reference written in the form a Plugin entity is named by, which
+// nothing holds; the second is for any other reference.
+const (
+	unheldEntitySentence = "is a Plugin entity URI, but no catalog directory holds the entity it names, " +
+		"the binary does not carry it, and no pull has fetched it into the content cache; " +
+		"place the Plugin entity in a catalog directory, or publish it to a registry and run `aggrega pull`"
+	malformedEntitySentence = "must be a plugin-type-scoped Plugin entity URI"
+)
+
+// TestUnresolvedEntitySaysWhatTheReferenceIs holds the refusal for a reference no
+// Plugin entity answers to its form: one condition, two sentences. A well-formed
+// `<pluginType>/<name>` reference — exact, caret or unversioned, on either surface —
+// is reported as an entity URI nothing holds, with the two ways to supply it, and
+// never told to take the form it already has. A reference that is not in that form
+// is told to take it. The entity-only surface keeps its two earlier answers: a
+// filesystem path or an artifact reference is refused for its form, and a pin that
+// names no version is reported as that malformation and not as this condition.
+//
+// Every row also drives the front EntityLookup returns over a lookup that holds
+// nothing and asserts it refuses with exactly the same text, so the sentence the
+// build's load prints and the one a pull prints are one composition.
+func TestUnresolvedEntitySaysWhatTheReferenceIs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		policy   SurfacePolicy
+		ref      string
+		want     error
+		sentence string
+	}{
+		{"entity-only: an exact pin nothing holds", SurfaceEntityOnly, "pipeline-step/nowhere:1.0.0", ErrPluginEntityNotFound(), unheldEntitySentence},
+		{"entity-only: a caret pin nothing holds", SurfaceEntityOnly, "pipeline-step/nowhere:^1.0.0", ErrPluginEntityNotFound(), unheldEntitySentence},
+		{"entity-only: an unversioned reference nothing holds", SurfaceEntityOnly, "pipeline-step/nowhere", ErrPluginEntityNotFound(), unheldEntitySentence},
+		{"permissive: a well-formed reference nothing holds", SurfacePermissive, "governance/nowhere:1.0.0", ErrPluginEntityNotFound(), unheldEntitySentence},
+		{"entity-only: an unscoped reference", SurfaceEntityOnly, "nowhere:1.0.0", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"entity-only: a reference with three segments", SurfaceEntityOnly, "core/frp/patch:1.0.0", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"entity-only: a registry-qualified reference", SurfaceEntityOnly, "localhost:5000/pipeline-step/nowhere", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"entity-only: an empty scope reads as an absolute path", SurfaceEntityOnly, "/nowhere:1.0.0", ErrPluginEntityNotFound(), "is a filesystem path"},
+		{"entity-only: an empty name", SurfaceEntityOnly, "pipeline-step/:1.0.0", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"permissive: an artifact reference", SurfacePermissive, "frp-step-patch-rust.wasm", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"permissive: a malformed pin keeps the not-found condition", SurfacePermissive, "pipeline-step/nowhere:^garbage", ErrPluginEntityNotFound(), malformedEntitySentence},
+		{"entity-only: a filesystem path is refused for its form", SurfaceEntityOnly, "./nowhere.wasm", ErrPluginEntityNotFound(), "is a filesystem path"},
+		{"entity-only: an artifact reference is refused for its form", SurfaceEntityOnly, "nowhere.wasm", ErrPluginEntityNotFound(), "is an artifact reference"},
+		{"entity-only: a malformed pin is that malformation", SurfaceEntityOnly, "pipeline-step/nowhere:^garbage", types.ErrMalformedVersionPin(), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := UnresolvedEntity(tc.ref, tc.policy)
+			if err == nil {
+				t.Fatalf("UnresolvedEntity(%q) = nil; a reference nothing answers is always refused", tc.ref)
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("UnresolvedEntity(%q) = %v; want it to match %v", tc.ref, err, tc.want)
+			}
+			if malformed := errors.Is(tc.want, types.ErrMalformedVersionPin()); malformed == errors.Is(err, ErrPluginEntityNotFound()) {
+				t.Errorf("UnresolvedEntity(%q) = %v; exactly one of the malformed-pin and not-an-entity conditions applies", tc.ref, err)
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, `"`+tc.ref+`"`) {
+				t.Errorf("UnresolvedEntity(%q) = %q; the refusal must name the reference", tc.ref, msg)
+			}
+			if tc.sentence != "" && !strings.Contains(msg, tc.sentence) {
+				t.Errorf("UnresolvedEntity(%q) = %q; want it to say %q", tc.ref, msg, tc.sentence)
+			}
+			if tc.sentence == unheldEntitySentence && strings.Contains(msg, malformedEntitySentence) {
+				t.Errorf("UnresolvedEntity(%q) = %q; a well-formed reference must not be told to take the form it already has", tc.ref, msg)
+			}
+			if tc.sentence == malformedEntitySentence && strings.Contains(msg, unheldEntitySentence) {
+				t.Errorf("UnresolvedEntity(%q) = %q; a reference not in the entity form must not be reported as one nothing holds", tc.ref, msg)
+			}
+
+			cascadeRan := false
+			front := EntityLookup(func(string) (string, *PluginContractClaim, *PluginRuntimeLimits, *[]PluginCommandMirror, bool) {
+				return "", nil, nil, nil, false
+			}, func(string) (ResolvedPlugin, error) {
+				cascadeRan = true
+				return ResolvedPlugin{}, nil
+			}, tc.policy)
+			_, frontErr := front(tc.ref)
+			if frontErr == nil || frontErr.Error() != msg {
+				t.Errorf("the entity front refused %q with %v; want the same refusal UnresolvedEntity composes, %q", tc.ref, frontErr, msg)
+			}
+			if cascadeRan {
+				t.Errorf("the entity front ran the cascade for %q, which names no entity", tc.ref)
+			}
+		})
+	}
+}
+
 // TestEntityLookup_NilTranslatorHaltsLoudly proves a nil entity translator (a
 // catalog-less path) halts every reference as not-an-entity rather than panicking.
 func TestEntityLookup_NilTranslatorHaltsLoudly(t *testing.T) {

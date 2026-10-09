@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -40,10 +41,16 @@ func (l *catalogRecipeLoader) LoadFeatureRecipe(uri string) (*types.FeatureRecip
 	return &fr, nil
 }
 
+// LoadPlugin reads a Plugin entity through PluginByURI, the accessor the build's
+// own plugin lookup reads, so a reference it cannot load is one the build cannot
+// load either. Its refusal is therefore the build's for the same reference, and
+// is composed where the build's is: a pull that asks this loader about a Plugin
+// no other source answered refuses with the condition and sentence the build
+// would raise at load.
 func (l *catalogRecipeLoader) LoadPlugin(uri string) (*types.Plugin, error) {
 	wp, ok := l.catalog.PluginByURI(uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: Plugin %q not found (check the Manifest provider mapping, or run `aggrega pull --release <release>` to fetch it)", uri)
+		return nil, pluginpath.UnresolvedEntity(uri, pluginpath.SurfaceEntityOnly)
 	}
 	return &wp, nil
 }

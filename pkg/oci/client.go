@@ -96,7 +96,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedM
 func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, tag string) (ocispec.Descriptor, error) {
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
-		if errors.Is(err, errdef.ErrNotFound) {
+		if isNotFoundResponse(err) {
 			return ocispec.Descriptor{}, fmt.Errorf("%q: %w", tag, ErrFetchNotFound())
 		}
 		if isUnauthorized(err) {
@@ -438,6 +438,19 @@ func isUnauthorized(err error) bool {
 	return false
 }
 
+// isNotFoundResponse reports whether a raw oras-go error says the registry holds
+// nothing at the address asked: the not-found condition a resolve reports, or a
+// registry response answering 404 — which is how a registry answers a tag listing
+// for a repository it does not hold, since a listing reports its status as a
+// response rather than as that condition.
+func isNotFoundResponse(err error) bool {
+	if errors.Is(err, errdef.ErrNotFound) {
+		return true
+	}
+	var ec *errcode.ErrorResponse
+	return errors.As(err, &ec) && ec.StatusCode == http.StatusNotFound
+}
+
 // ociManifestView is the subset of an OCI image manifest this package reads:
 // the artifact type, the config descriptor, the layer descriptors, and the
 // manifest-level annotations. It is the single shape every manifest parse in
@@ -579,6 +592,13 @@ func selectContentLayer(layers []ocispec.Descriptor, expected string) (ocispec.D
 // typed error names the missing capability when it does not.
 //
 // Returns an empty slice (not nil) when the target has zero tags.
+//
+// A registry that holds no repository at the target answers the listing not
+// found, and that is reported as ErrFetchNotFound — the condition a resolve
+// reports for a tag the registry does not hold (resolveReference). So a reader
+// that lists the tags to choose a version for a reference naming none meets the
+// same condition, for an artifact the registry does not publish, as a reader
+// that resolves the version a reference names.
 func ListTags(ctx context.Context, target oras.ReadOnlyTarget) ([]string, error) {
 	lister, ok := target.(registry.TagLister)
 	if !ok {
@@ -586,6 +606,9 @@ func ListTags(ctx context.Context, target oras.ReadOnlyTarget) ([]string, error)
 	}
 	tags, err := registry.Tags(ctx, lister)
 	if err != nil {
+		if isNotFoundResponse(err) {
+			return nil, fmt.Errorf("oci: list tags: %v: %w", err, ErrFetchNotFound())
+		}
 		return nil, fmt.Errorf("oci: list tags: %w", err)
 	}
 	if tags == nil {

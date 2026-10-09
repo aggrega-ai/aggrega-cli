@@ -5,6 +5,7 @@ package pluginpath
 
 import (
 	"fmt"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -19,7 +20,10 @@ import (
 // is what makes the entity resolvable. The entity's .wasm artifact reference is
 // derived from its bare identity. A bare .wasm reference or an artifact
 // reference names no Plugin entity, so the build halts here naming the offending
-// reference.
+// reference. So does a well-formed reference that no catalog directory, the
+// binary or the content cache holds, and a pull refuses that reference with this
+// same condition before it writes a lockfile, so a pull and the build it feeds
+// refuse one reference alike.
 func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
 var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerrors.Meta{
@@ -69,10 +73,10 @@ var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerror
 // that sentinel behaves identically whether the reference was rejected early for
 // its form or late for naming no entity.
 //
-// A reference that does not match a Plugin entity halts with
-// ErrPluginEntityNotFound, naming the offending reference and stating that a
-// Plugin entity URI is required — except, on the entity-only surface, one whose
-// version pin is malformed, which halts with that malformation instead. A nil entityToArtifact disables the entity
+// A reference that does not match a Plugin entity halts with the refusal
+// UnresolvedEntity composes for it — ErrPluginEntityNotFound, naming the
+// offending reference, or, on the entity-only surface, the malformation of a
+// version pin that names no version. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
 func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, commands *[]PluginCommandMirror, ok bool), cascade Lookup, policy SurfacePolicy) Lookup {
@@ -89,22 +93,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 			artifactURI, claim, limits, commands, ok = entityToArtifact(entityURI)
 		}
 		if !ok {
-			// On the entity-only surface the form gate above has already refused a
-			// path and an artifact reference, so what reaches here is an entity URI,
-			// and one whose version pin is malformed is reported as that
-			// malformation: the pin names no version, so no Plugin entity could
-			// answer it. A permissive surface is not asked, because its reference
-			// may be an artifact reference whose last colon ends a digest, and its
-			// callers fall back on the not-found condition to resolve exactly those.
-			if policy == SurfaceEntityOnly {
-				if pe, malformed := types.ParseVersionPin(entityURI).Malformed(); malformed {
-					return ResolvedPlugin{}, pe
-				}
-			}
-			return ResolvedPlugin{}, fmt.Errorf(
-				"%w: %q must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`); "+
-					"a bare `.wasm` reference or an artifact reference names no Plugin entity",
-				ErrPluginEntityNotFound(), entityURI)
+			return ResolvedPlugin{}, entityNotFound(entityURI, policy)
 		}
 		resolved, err := cascade(artifactURI)
 		if err != nil {
@@ -115,4 +104,67 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 		resolved.Commands = commands
 		return resolved, nil
 	}
+}
+
+// UnresolvedEntity returns the refusal for a plugin reference that no Plugin
+// entity answers, on a surface governed by policy. It is the one composition of
+// that refusal: the front EntityLookup returns raises it when its entity lookup
+// finds nothing, and a caller asking the same entity lookup ahead of a build — a
+// pull resolving the Plugin a pipeline step names — raises it too, so a pull and
+// the build it feeds report one reference with one condition and one sentence.
+//
+// The reference's form chooses what is said about it. A form the surface refuses
+// is reported as AcceptReferenceForm reports it, and on the entity-only surface a
+// version pin that names no version is reported as that malformation. A
+// well-formed `<pluginType>/<name>` reference, optionally versioned, names a
+// Plugin entity that nothing holds, so it is reported as one, with the two ways to
+// supply the entity. Any other reference is reported as one that must be written
+// in that form.
+func UnresolvedEntity(entityURI string, policy SurfacePolicy) error {
+	if err := AcceptReferenceForm(entityURI, policy); err != nil {
+		return err
+	}
+	return entityNotFound(entityURI, policy)
+}
+
+// entityNotFound is UnresolvedEntity past the form gate, for a caller that has
+// already applied it.
+//
+// A permissive surface's reference is not judged for a malformed pin, because it
+// may be an artifact reference whose last colon ends a digest, and its callers
+// fall back on the not-found condition to resolve exactly those.
+func entityNotFound(entityURI string, policy SurfacePolicy) error {
+	if policy == SurfaceEntityOnly {
+		if pe, malformed := types.ParseVersionPin(entityURI).Malformed(); malformed {
+			return pe
+		}
+	}
+	if scopedEntityURI(entityURI) {
+		return fmt.Errorf(
+			"%w: %q is a Plugin entity URI, but no catalog directory holds the entity it names, the binary does not carry it, "+
+				"and no pull has fetched it into the content cache; place the Plugin entity in a catalog directory, "+
+				"or publish it to a registry and run `aggrega pull`",
+			ErrPluginEntityNotFound(), entityURI)
+	}
+	return fmt.Errorf(
+		"%w: %q must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`); "+
+			"a bare `.wasm` reference or an artifact reference names no Plugin entity",
+		ErrPluginEntityNotFound(), entityURI)
+}
+
+// scopedEntityURI reports whether a reference is written in the form a Plugin
+// entity is named by: the entity form ClassifyReference reports, a base of
+// exactly two non-empty segments — the plugin type and the name — and, where it
+// carries a version pin, one that parses. It judges the text alone; whether
+// anything holds the entity is the lookup's question.
+func scopedEntityURI(uri string) bool {
+	if ClassifyReference(uri) != FormEntityURI {
+		return false
+	}
+	pin := types.ParseVersionPin(uri)
+	if _, malformed := pin.Malformed(); malformed {
+		return false
+	}
+	pluginType, name, ok := strings.Cut(pin.Base(), "/")
+	return ok && pluginType != "" && name != "" && !strings.Contains(name, "/")
 }
