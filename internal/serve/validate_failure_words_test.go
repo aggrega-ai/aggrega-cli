@@ -5,11 +5,13 @@ package serve
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -238,4 +240,111 @@ func TestValidatePublishesADependencyFailureOnlyOnAggregaDocuments(t *testing.T)
 			}
 		})
 	}
+}
+
+// TestValidateNamesTheReleaseADocumentIsCheckedAgainstWhereItIsNotTheReleasesOwn is
+// the invocation proof of what the entry reporting a Release whose dependencies
+// cannot be resolved says on each document checked against that Release: one
+// request over the real framing per row, and the entry read whole.
+//
+// On the Release's own document the entry is the resolution's account behind the
+// prefix and nothing else. On every other document the daemon reads as one of its
+// own — another Release, the Aggregate, the workspace configuration — the entry says
+// the document is checked against that Release, names it as a request names it, and
+// then gives the same account. The account is read off the failure itself, not off
+// any answer, so the first row pins the Release's own entry to the failure's words
+// and every other row pins the sentence around them: a defect that dropped the
+// Release's name from the sentence fails each of those rows and leaves the first
+// green.
+//
+// Two failures reach the entry, and each has its rows: the closure that does not
+// resolve, because the workspace holds no Manifest, and a lockfile that is a link
+// leading out of the workspace, which is refused before the resolution runs.
+func TestValidateNamesTheReleaseADocumentIsCheckedAgainstWhereItIsNotTheReleasesOwn(t *testing.T) {
+	t.Parallel()
+	const release = "release-sized.yaml"
+	named := "Dependencies: this document is checked against the Release " + release +
+		", whose dependencies cannot be resolved: "
+	failures := []struct {
+		name string
+		// arrange turns the workspace into one where the Release fails this way, and
+		// returns the failure's own words.
+		arrange func(t *testing.T, srv *Server, root string) string
+	}{
+		{name: "the closure does not resolve",
+			arrange: func(t *testing.T, srv *Server, _ string) string {
+				releasePath := releasePathAsTheDaemonResolvesIt(t, srv, release)
+				_, envelope := srv.resolveReleaseClosure(context.Background(), srv.catalogFor(releasePath).ForRequest(nil), releasePath)
+				if envelope == nil || envelope.Message == "" {
+					t.Fatal("precondition: the Release's closure resolves, so no row would report a failure")
+				}
+				return envelope.Message
+			}},
+		{name: "the lockfile leads out of the workspace",
+			arrange: func(t *testing.T, srv *Server, _ string) string {
+				lock := lockfile.PathFor(releasePathAsTheDaemonResolvesIt(t, srv, release))
+				kept := filepath.Join(t.TempDir(), filepath.Base(lock))
+				writeFixtureFile(t, kept, "version: 1\n")
+				if err := os.Symlink(kept, lock); err != nil {
+					t.Skipf("symbolic links are not available here: %v", err)
+				}
+				_, err := lockfile.LoadIfReadable(srv.workspaceRoot, lock)
+				if err == nil {
+					t.Fatal("precondition: the lockfile leading out is read rather than refused")
+				}
+				return err.Error()
+			}},
+	}
+	for _, failure := range failures {
+		t.Run(failure.name, func(t *testing.T) {
+			t.Parallel()
+			srv, root := entityCheckWorkspace(t)
+			account := failure.arrange(t, srv, root)
+			cases := []struct {
+				name, file, want string
+			}{
+				{name: "the Release's own document carries the account alone",
+					file: release, want: "Dependencies: " + account},
+				{name: "another Release names the Release it is checked against",
+					file: "release-plain.yaml", want: named + account},
+				{name: "the Aggregate names the Release it is checked against",
+					file: "aggregate.yaml", want: named + account},
+				{name: "the workspace configuration names the Release it is checked against",
+					file: workspaceconfig.ConfigFilename, want: named + account},
+			}
+			// Not parallel: the rows share one daemon.
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					file := filepath.Join(root, tc.file)
+					res := validateContentOverTheWire(t, srv, file, mustRead(t, file), release)
+					var entries []Diagnostic
+					for _, d := range res.Diagnostics {
+						if strings.HasPrefix(d.Message, "Dependencies: ") {
+							entries = append(entries, d)
+						}
+					}
+					if len(entries) != 1 {
+						t.Fatalf("want one dependency entry; the answer carries %q", diagMessages(res.Diagnostics))
+					}
+					if got := entries[0]; got.Message != tc.want || got.Severity != editorSeverityError ||
+						got.Line != 1 || got.Column != 1 {
+						t.Errorf("the entry is %q at %d:%d, severity %v; want %q at 1:1, an error",
+							got.Message, got.Line, got.Column, got.Severity, tc.want)
+					}
+				})
+			}
+		})
+	}
+}
+
+// releasePathAsTheDaemonResolvesIt is the path the daemon reads the Release a
+// request names as release at, resolved by the rule every request's Release goes
+// through, so a failure read off it is the failure that request meets.
+func releasePathAsTheDaemonResolvesIt(t *testing.T, srv *Server, release string) string {
+	t.Helper()
+	releasePath, refusal := resolveReleaseParam(srv.workspaceRoot, srv.wsConfig, release)
+	if refusal != nil {
+		t.Fatalf("resolve the Release %s: %+v", release, refusal)
+	}
+	return releasePath
 }

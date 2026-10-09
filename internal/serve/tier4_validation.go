@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -67,10 +68,29 @@ import (
 //
 // A closure that does not resolve is reported at the head of the named Release's
 // own document and of every document the daemon reads as one of Aggrega's own —
-// the Aggregate, the Manifest, a library, the workspace configuration — and on no
-// other: YAML the daemon reads as no kind of its own (classifyBuffer) is answered
-// with an empty slice whether the closure resolves or not.
+// the Aggregate, the Manifest, a library, another Release, the workspace
+// configuration — and on no other: YAML the daemon reads as no kind of its own
+// (classifyBuffer) is answered with an empty slice whether the closure resolves or
+// not. On every document but the Release's own, the entry names the Release the
+// document was checked against (dependencyFailureMessage).
 func (s *Server) runTier4Validation(ctx context.Context, releasePath, file string, content []byte, doc *yaml.Node) []Diagnostic {
+	// The validated file and the named Release's own document, in the
+	// workspace-relative form every comparison below is made in. Both are read off
+	// the request rather than off the resolution, so the failure returns below can
+	// ask which of them they are answering before anything has resolved.
+	// catalog.RelativeToWorkspace is the single source of truth for the conversion,
+	// and the pipeline names the Release by this same rule — it renders this
+	// request's Release path against this daemon's workspace root — so a finding
+	// about what the Release wrote carries exactly relRelease as its file.
+	//
+	// onReleaseDocument is the one statement of whether this request is answering
+	// the named Release's own document. Every branch below that treats that document
+	// apart from the rest reads it, so no two of them can disagree about which
+	// document it is.
+	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+	relRelease := catalog.RelativeToWorkspace(s.workspaceRoot, releasePath)
+	onReleaseDocument := relFile == relRelease
+
 	// Build the per-request catalog view, seeded with the named Release's
 	// lockfile pins, so every Tier-4 resolution read below verifies-on-read
 	// against THIS Release's pins and a concurrent request resolving a different
@@ -105,15 +125,14 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	var pins map[string]catalog.Pin
 	lf, lfErr := lockfile.LoadIfReadable(s.workspaceRoot, lockfile.PathFor(releasePath))
 	if lfErr != nil {
-		if _, ours := classifyBuffer(file, releasePath, doc); !ours &&
-			catalog.RelativeToWorkspace(s.workspaceRoot, file) != catalog.RelativeToWorkspace(s.workspaceRoot, releasePath) {
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours && !onReleaseDocument {
 			return nil
 		}
 		return []Diagnostic{{
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
-			Message:        "Dependencies: " + lfErr.Error(),
+			Message:        s.dependencyFailureMessage(releasePath, onReleaseDocument, lfErr.Error()),
 			ConditionCodes: conditionCodesOf(lfErr),
 		}}
 	}
@@ -149,17 +168,6 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		deprecationDiags = append(deprecationDiags, closureAdvisoryDiagnostic(f.Notice()))
 	}
 
-	// The validated file and the named Release's own document, in the
-	// workspace-relative form every comparison below is made in. Both are read off
-	// the request rather than off the resolution, so the failure return below can
-	// ask which of them it is answering. catalog.RelativeToWorkspace is the single
-	// source of truth for the conversion, and the pipeline names the Release by
-	// this same rule — it renders this request's Release path against this
-	// daemon's workspace root — so a finding about what the Release wrote carries
-	// exactly relRelease as its file.
-	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
-	relRelease := catalog.RelativeToWorkspace(s.workspaceRoot, releasePath)
-
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
 	// resolution. Drift is surfaced by the graph request, which reconstructs the
 	// closure axes and verifies against them.
@@ -173,7 +181,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		// document is the exception and keeps both whatever its buffer holds, since
 		// it is the document the request named, and one whose header no longer
 		// classifies mid-edit is still the place its dependencies' failure belongs.
-		if _, ours := classifyBuffer(file, releasePath, doc); !ours && relFile != relRelease {
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours && !onReleaseDocument {
 			return nil
 		}
 		// Closure-level failure (catalog load, Release/Manifest load,
@@ -187,7 +195,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
-			Message:        "Dependencies: " + envelope.Message,
+			Message:        s.dependencyFailureMessage(releasePath, onReleaseDocument, envelope.Message),
 			ConditionCodes: conditionCodesOf(envelope.cause),
 		})
 	}
@@ -215,7 +223,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// and withholds them as an empty result, which reads as a file with nothing
 	// wrong rather than as a comparison that failed.
 	onAggregate := relFile == relAggPath
-	if !onAggregate && relFile != relRelease {
+	if !onAggregate && !onReleaseDocument {
 		return nil
 	}
 
@@ -483,6 +491,35 @@ func closureAdvisoryDiagnostic(text string) Diagnostic {
 		Severity: editorSeverityWarning,
 		Message:  "Dependencies: " + text,
 	}
+}
+
+// dependencyFailureMessage is the text of the entry a failure to resolve the named
+// Release's dependencies is published as, given account, the resolution's own
+// words for what stopped it.
+//
+// On the Release's own document the entry is the account behind the
+// "Dependencies: " prefix every closure-level entry carries. Every other document
+// carrying it — an Aggregate or a Manifest several Releases may share, a library,
+// another Release, the workspace configuration — carries it only because the
+// request checked that document against this Release, and nothing in the document
+// says which Release that was. So there the entry says so and names the Release,
+// and a reader can tell a Release that does not resolve from a fault of the
+// document in front of them. Which document is the Release's own is decided by
+// the caller's one comparison, passed in as onReleaseDocument, rather than here.
+//
+// The Release is spelled as every answer spells a document it names
+// (pathscope.ReportedName), so a Release inside the workspace is named relative to
+// its root, the form a request names it in.
+//
+// Both closure-level failure returns of runTier4Validation compose their entry
+// here, so the two cannot come to word one fact two ways.
+func (s *Server) dependencyFailureMessage(releasePath string, onReleaseDocument bool, account string) string {
+	if onReleaseDocument {
+		return "Dependencies: " + account
+	}
+	return "Dependencies: this document is checked against the Release " +
+		pathscope.ReportedName(s.workspaceRoot, releasePath) +
+		", whose dependencies cannot be resolved: " + account
 }
 
 // analyzerErrorsToDiagnostics maps the analyzer's structured
