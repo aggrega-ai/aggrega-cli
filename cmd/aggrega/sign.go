@@ -39,8 +39,12 @@ func newSignCmd() *cobra.Command {
 			"offline from a held ECDSA P-256 key; without --key the keyless flow is used, which requires a live " +
 			"identity provider, Fulcio, and Rekor. Multiple references are signed in one invocation: the keyless " +
 			"identity is acquired once and reused across every artifact, and a fresh short-lived certificate is " +
-			"issued per artifact. Every signable reference is signed; failures are collected and reported at the " +
-			"end, and the command exits non-zero if any reference failed.",
+			"issued per artifact. A reference that already carries a signature its registry's trust policy verifies " +
+			"is reported as already signed, naming who signed it and when, and nothing is attached to it; a registry " +
+			"whose policy pins no public key or trusted identity gives nothing to judge a signature against, so a " +
+			"reference there is signed. Every other signable reference is signed; failures are collected and reported " +
+			"at the end, and the command exits non-zero if any reference failed — including one whose existing " +
+			"signatures could not be read, which is not signed.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -72,8 +76,8 @@ func newSignCmd() *cobra.Command {
 //
 // The facts the operation reports are discarded here because the operation has
 // already written them one at a time: each reference is reported as it is signed,
-// with the digest its signature commits to, and the batch records that same pair
-// for that same reference. There is a line for every reference the batch signed
+// or as it is found already signed, with the digest its signature commits to, and
+// the batch records that same pair for that same reference. There is a line for every reference the batch signed
 // and a reference for every line, so the result holds nothing this surface has
 // not already shown — including on a batch that failed partway, where the
 // successes were reported as they happened and the failures are named in the

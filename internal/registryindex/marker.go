@@ -159,7 +159,10 @@ func VerifyMarkerSignature(
 }
 
 // VerifiedArtifactSigner recovers a published version's OWN verified signer from
-// its signature referrers, best-effort, returning nil when none verifies.
+// its signature referrers, best-effort, returning nil when none verifies. Where
+// several verify, the signer is the earliest of them, as FindVerifiedSigner orders
+// them, so a signature attached later — by any identity — never becomes the
+// original signer whose withdrawals the version honors.
 //
 // The dependency-resolution discovery pass gets this for free: a signature pass
 // has already run over the same artifacts and recorded each verified signer. The
@@ -194,8 +197,9 @@ func VerifiedArtifactSigner(
 // VerifiedSignerAt is VerifiedArtifactSigner for a caller that has already
 // resolved subjectRef to its manifest digest, so the resolve is not repeated. The
 // signature is verified against that digest, which is what a bundle commits to,
-// and it is the same best-effort answer: nil when no signature verifies, and nil
-// as well when FindVerifiedSigner could not finish the question.
+// and it is the same best-effort answer: the earliest signature that verifies,
+// nil when none does, and nil as well when FindVerifiedSigner could not finish the
+// question.
 func VerifiedSignerAt(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -208,9 +212,19 @@ func VerifiedSignerAt(
 }
 
 // FindVerifiedSigner is the one walk over a published version's signature
-// referrers that asks whether one of them verifies under policy, against digest,
-// the manifest digest a bundle commits to. It returns the verified signer of the
-// first that does. VerifiedSignerAt is this walk read best-effort.
+// referrers. It asks whether any of them verifies under policy, against digest,
+// the manifest digest a bundle commits to, and returns the verified signer of the
+// EARLIEST that does. VerifiedSignerAt is this walk read best-effort.
+//
+// Earliest is decided by earlierSignature and never by the order the registry
+// lists referrers in, which says nothing about when each was attached. So a
+// version signed again — by the same identity or another — keeps the signature the
+// transparency log recorded first, and every reader of this walk reads that same
+// one: the index records its signer and its log time as the version's publication
+// date, and the withdrawal check honors markers from its signer as the original
+// one. Every signature is therefore read and judged rather than the walk stopping
+// at the first that verifies: a version carrying one more signature costs one more
+// referrer fetch and one more verification.
 //
 // Unlike that reading it says when it could not finish: it returns nil and a nil
 // error only when every signature referrer was read and judged and none verifies,
@@ -222,9 +236,15 @@ func VerifiedSignerAt(
 // this rather than the best-effort answer, because to it a registry that failed to
 // answer must not look like a version that carries no signature.
 //
+// Where one signature verifies and another could not be read or judged, the
+// version carries a signature that verifies, so the answer is known and no error is
+// returned: the earliest is taken among the signatures that were read, as the
+// publisher's own date statements are (oci.ReadPublishedAt).
+//
 // A bundle that does not verify — a wrong signer, a broken or tampered signature,
 // a policy admitting no signer, or a payload that is not a bundle at all — is an
-// answer about that bundle, and the walk moves on to the next.
+// answer about that bundle, and the walk moves on to the next; it is never a
+// candidate for the earliest.
 func FindVerifiedSigner(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -236,7 +256,10 @@ func FindVerifiedSigner(
 	if err != nil {
 		return nil, fmt.Errorf("list signature referrers: %w", err)
 	}
-	var unanswered error
+	var (
+		earliest   *pullverify.Result
+		unanswered error
+	)
 	for _, ref := range sigRefs {
 		bundle, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
@@ -244,14 +267,48 @@ func FindVerifiedSigner(
 			continue
 		}
 		res, verr := pullverify.VerifyBundle(wsCfg, bundle, digest, policy)
-		if verr == nil {
-			return res, nil
+		if verr != nil {
+			if !doesNotVerify(bundle, verr) {
+				unanswered = fmt.Errorf("verify signature %s: %w", ref.Digest, verr)
+			}
+			continue
 		}
-		if !doesNotVerify(bundle, verr) {
-			unanswered = fmt.Errorf("verify signature %s: %w", ref.Digest, verr)
+		if earliest == nil || earlierSignature(res, earliest) {
+			earliest = res
 		}
 	}
+	if earliest != nil {
+		return earliest, nil
+	}
 	return nil, unanswered
+}
+
+// earlierSignature reports whether verified signature a ranks before b in the
+// order that decides which of a version's signatures is its own.
+//
+// A signature carrying a transparency-log time ranks before one carrying none,
+// and of two that carry one the earlier time ranks first. This is the publication
+// date's own rule (PublicationDate): an attested log time is the date wherever a
+// counted signature carries one, so preferring a signature without one would set
+// the date aside while another verified signature attests it. A keyed signature
+// carries no log time, but a keyed and a keyless signature never verify under one
+// policy — pullverify.VerifyBundle verifies keyed against a pinned key and keyless
+// only where none is pinned — so in practice the rule orders keyless signatures by
+// their log time, and among keyed ones, all of them the pinned key's, decides
+// nothing but which bundle is recorded.
+//
+// A tie — two equal log times, which the log records to the second, or two
+// signatures carrying none — breaks on the lower bundle digest, an order the
+// registry's referrer listing does not affect.
+func earlierSignature(a, b *pullverify.Result) bool {
+	aLogged, bLogged := !a.LoggedAt.IsZero(), !b.LoggedAt.IsZero()
+	if aLogged != bLogged {
+		return aLogged
+	}
+	if aLogged && !a.LoggedAt.Equal(b.LoggedAt) {
+		return a.LoggedAt.Before(b.LoggedAt)
+	}
+	return a.BundleDigest < b.BundleDigest
 }
 
 // doesNotVerify reports whether a verification failure is a verdict on the bundle

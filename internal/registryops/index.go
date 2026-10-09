@@ -705,12 +705,14 @@ func indexRepo(
 //
 // A signature is judged through the one verification home, against the host's
 // own trust policy, and is best-effort: a version whose signatures do not verify
-// is recorded with no signer, never with an unverified one. The date is the
-// verified signature's log time where it carries one, and otherwise what the
-// version's published-at referrers state (registryindex.PublicationDate); that
-// second read needs no trust anchor, so it is made on every host, and it too is
-// best-effort. Only manifests, signature referrers and published-at referrers
-// are read; no entity content is fetched.
+// is recorded with no signer, never with an unverified one. Where several verify,
+// the one recorded is the earliest (registryindex.VerifiedSignerAt), and the date
+// is read from that same signature, so a version signed again keeps both its
+// signer and its date. The date is the verified signature's log time where it
+// carries one, and otherwise what the version's published-at referrers state
+// (registryindex.PublicationDate); that second read needs no trust anchor, so it
+// is made on every host, and it too is best-effort. Only manifests, signature
+// referrers and published-at referrers are read; no entity content is fetched.
 func readPublishedVersions(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -777,7 +779,8 @@ func equalStrings(a, b []string) bool {
 // Each version's marker is selected by the same newest-issuedOn rule the closure
 // discovery pass uses (with the manifest digest as the deterministic tiebreak), and
 // verified through the same single verification home, so the two passes cannot
-// disagree about which marker is authoritative or which signer is honored.
+// disagree about which marker is authoritative or how its signature is judged
+// against the signers they honor.
 //
 // Recording implies verification, and that invariant is what the record is for: a
 // consumer reading the index offline — including the discovery step that refuses to
@@ -794,7 +797,14 @@ func equalStrings(a, b []string) bool {
 // The original artifact's own signer is recovered only on a keyless policy, where
 // the honored set folds it in so a publisher can withdraw their own artifact. A
 // keyed policy pins one key, so the same key already IS the same signer and the two
-// extra reads are skipped.
+// extra reads are skipped. The original signer is the earliest of the version's
+// signatures that verify (registryindex.VerifiedArtifactSigner) — the one whose
+// log time the index records as the version's date — so a signature attached later
+// by another trusted identity never makes that identity's markers count. The
+// closure discovery pass reads its original signer from the pull-time signature
+// pass instead, which takes the first signature that verifies in the order the
+// registry lists them; where two different trusted identities have signed one
+// version, the two passes can therefore fold different signers in.
 //
 // Every step stays best-effort: a referrer-listing, decode or verification failure
 // skips that version rather than failing the index build, mirroring the walk's

@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -128,8 +129,7 @@ func completePublication(ctx context.Context, out io.Writer, c completion) (bool
 // owed because none counts. completePublication states which signature counts
 // under which policy.
 func countedSignature(ctx context.Context, c completion) (counted []byte, owed bool, err error) {
-	if registryops.TrustOf(c.policy).Anchor != "" {
-		res, ferr := registryindex.FindVerifiedSigner(ctx, c.wsCfg, c.target, c.tag, c.digest, c.policy)
+	if res, judged, ferr := verifyingSignature(ctx, c.wsCfg, c.target, c.tag, c.digest, c.policy); judged {
 		if ferr != nil {
 			return nil, false, fmt.Errorf("%s:%s is already published, but whether it carries a signature that verifies could not be read: %w",
 				c.reference, c.tag, ferr)
@@ -159,4 +159,25 @@ func countedSignature(ctx context.Context, c completion) (counted []byte, owed b
 		}
 	}
 	return nil, false, nil
+}
+
+// verifyingSignature asks whether the version tag resolves to, at digest, already
+// carries a signature its destination's trust policy verifies, and returns the
+// earliest that does, through the one signature walk
+// (registryindex.FindVerifiedSigner). It is the question a publication completing
+// itself and a signing batch both ask before they sign, answered in one place so
+// the two cannot come to count different signatures.
+//
+// judged is false where the policy pins no trust anchor — no public key and no
+// keyless identities — because no signature could verify against it, so the
+// question has no answer there and each caller decides what an unjudged version
+// gets. Where judged is true, the walk's own contract holds: a nil result with a
+// nil error means every signature was read and none verifies, and an error means
+// the answer is not known and must not be read as "none".
+func verifyingSignature(ctx context.Context, wsCfg workspaceconfig.Config, target oras.ReadOnlyTarget, tag, digest string, policy workspaceconfig.RegistryConfig) (res *pullverify.Result, judged bool, err error) {
+	if registryops.TrustOf(policy).Anchor == "" {
+		return nil, false, nil
+	}
+	res, err = registryindex.FindVerifiedSigner(ctx, wsCfg, target, tag, digest, policy)
+	return res, true, err
 }

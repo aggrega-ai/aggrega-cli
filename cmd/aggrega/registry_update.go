@@ -74,15 +74,18 @@ Every strict-SemVer version a recorded repository publishes is listed too, each
 with the manifest digest its tag resolves to — the address of the exact bytes
 published under that version. Where the registry's trust policy pins a public key
 or trusted identities, and verification is not switched off, each version's own
-signature is verified against that policy and the signer is recorded when one
+signatures are verified against that policy and the signer is recorded when one
 verifies; a version with no signature, or none that verifies, is recorded with no
-signer.
+signer. Where several verify, the signer recorded is the one the transparency log
+recorded earliest, whatever order the registry lists them in, so signing a version
+again never changes its recorded signer.
 
-Each version's publication date is recorded too, with its source. Where the
-version's keyless signature verified, the date is the time the transparency log
-recorded that signature, as the verified log entry attests it (source
-'transparency-log'). Otherwise it is the date the publication itself stated
-beside what it published (source 'publisher'): the publishing machine's own
+Each version's publication date is recorded too, with its source. Where one of the
+version's keyless signatures verified, the date is the time the transparency log
+recorded that earliest signature, as the verified log entry attests it (source
+'transparency-log') — so signing a version again never moves its date. Otherwise
+it is the date the publication itself stated beside what it published (source
+'publisher'), the earliest where several are stated: the publishing machine's own
 clock, which nothing attests, read from any registry whatever its trust policy.
 A version with neither — published without stating a date, and not signed
 keyless in a way this policy verifies — is recorded with no date.

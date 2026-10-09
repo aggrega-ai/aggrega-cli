@@ -70,7 +70,10 @@ type Record struct {
 // was published, where anything records it, with the source that says so.
 //
 // Signer is set only for a signature that verified, so its presence is a trust
-// decision already made, as it is on a recorded deprecation. It is absent for a
+// decision already made, as it is on a recorded deprecation. Where several
+// verified it is the earliest (FindVerifiedSigner), the same signature a
+// transparency-log date is read from, so the two never describe different
+// signatures and a version signed again keeps both. It is absent for a
 // version with no signature, for one whose signatures do not verify, and on a
 // host whose policy pins no trust anchor or switches verification off. None of
 // those gives a basis for naming a signer, and a reader must not read the absence

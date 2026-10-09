@@ -14,6 +14,8 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -102,7 +104,9 @@ func (cfg SignConfig) signerRequest(registry string) SignerRequest {
 
 // SignResult reports which references the batch signed, in the order they were
 // given, as the facts themselves rather than as the status lines Sign also writes
-// to cfg.Out.
+// to cfg.Out. A reference found already carrying a signature its registry's trust
+// policy verifies is reported here too, with the digest that signature commits to:
+// it is signed, though this batch attached nothing to it.
 //
 // It reports the SUCCESSES only. A batch with any failure returns an error naming
 // every one of them, so a caller never reads a partial batch as a whole one — and
@@ -125,7 +129,9 @@ type SignedArtifact struct {
 // Sign signs every reference in cfg.References, attaching each signature
 // bundle as an OCI referrer of its already-published artifact. The published
 // artifacts are never re-published or mutated; each referrer is a sibling
-// manifest, so signing is immutability-safe.
+// manifest, so signing is immutability-safe. A reference that already carries a
+// signature its registry's trust policy verifies is reported signed and gets
+// nothing attached; signRef states when that holds.
 //
 // One authentication serves the whole batch: on the keyless path the identity
 // is resolved once before the loop — a static token, or a live source that
@@ -134,8 +140,9 @@ type SignedArtifact struct {
 // signer. The keyed path resolves no identity.
 //
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
-// attach is recorded and the batch proceeds to the next reference; after the
-// loop, if any reference failed, a summary naming each failure is returned.
+// attach — or whose existing signatures could not be judged — is recorded and the
+// batch proceeds to the next reference; after the loop, if any reference failed, a
+// summary naming each failure is returned.
 func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	if len(cfg.References) == 0 {
 		return SignResult{}, fmt.Errorf("at least one reference required")
@@ -273,6 +280,23 @@ func (b *batchSigner) prepare() error {
 // keyless failure whose cause is a token without a usable signing subject is
 // mapped to a precise diagnostic; every other failure is returned as-is so the
 // batch continues and reports it.
+//
+// A reference that already carries a signature its registry's trust policy
+// verifies — made by any identity — is not signed again. Before building a signer
+// it asks the one signature walk, and where a signature verifies it writes who
+// signed it and, where the transparency log timed it, when (the earliest such
+// signature, the one a reader dates the version by), attaches nothing, and returns
+// the digest, so the batch reports the reference signed. A second signature would
+// add a transparency-log entry and a referrer and change nothing a reader takes
+// from the version.
+//
+// A registry whose policy pins no trust anchor — no public key and no keyless
+// identities — gives nothing to judge a signature against, so a reference there is
+// signed as one carrying no signature is. And where the walk could not finish — the
+// referrer listing could not be completed, or no signature verified while one could
+// not be read or judged — the reference is reported as failed and nothing is
+// signed: an unanswered question is not read as "unsigned", so a run never adds a
+// signature on the strength of a registry that failed to answer.
 func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 	target := b.cfg.Target
 	if target == nil {
@@ -306,6 +330,15 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 		return "", fmt.Errorf("%s is not published; nothing to sign", ref)
 	}
 
+	existing, err := b.existingSignature(ctx, target, ref, subjectRef, digest)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		fmt.Fprintf(b.out, "Already signed: %s (%s) by %s%s; nothing attached\n", ref, digest, existing.Identity, loggedClause(existing))
+		return digest, nil
+	}
+
 	signer, err := b.buildRefSigner(ref)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ref, err)
@@ -330,6 +363,35 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 
 	fmt.Fprintf(b.out, "Signature attached: %s (%s)\n", ref, digest)
 	return digest, nil
+}
+
+// existingSignature returns the earliest signature ref already carries that its
+// registry's trust policy verifies, or nil where it carries none or the policy
+// pins no trust anchor to judge one against. The policy is the one this workspace
+// holds for the registry ref names. An error means the answer is not known, and it
+// names the reference and that nothing was signed.
+func (b *batchSigner) existingSignature(ctx context.Context, target oras.ReadOnlyTarget, ref, subjectRef, digest string) (*pullverify.Result, error) {
+	rw, err := requireWorkspace(b.cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ref, err)
+	}
+	wsCfg := rw.Config()
+	policy, _ := wsCfg.RegistryTrustPolicy(registryhost.Of(ref))
+	res, _, err := verifyingSignature(ctx, wsCfg, target, subjectRef, digest, policy)
+	if err != nil {
+		return nil, fmt.Errorf("%s: whether it already carries a signature that verifies could not be read, so nothing was signed: %w", ref, err)
+	}
+	return res, nil
+}
+
+// loggedClause states when the transparency log recorded a signature, for the
+// line naming a signature already attached; a signature the log did not time — a
+// keyed one — has no clause.
+func loggedClause(sig *pullverify.Result) string {
+	if sig.LoggedAt.IsZero() {
+		return ""
+	}
+	return ", logged " + oci.FormatPublishedAt(sig.LoggedAt)
 }
 
 // buildRefSigner returns the signer for one reference. A supplied signer is
