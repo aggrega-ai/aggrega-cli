@@ -86,7 +86,7 @@ var publishedByteReaders = map[string]string{
 	"pkg/catalog.catalogLookup.tier3Library":            "pins the library's own metadata.version, read through oci.EntityYAML",
 	"pkg/catalog.PullAndCacheAggregate":                 "pins and returns the Aggregate document, both read through oci.EntityYAML",
 	"pkg/catalog.catalogLookup.LoadAggregate":           "parses a sub-aggregate from its cache slot, read through oci.EntityYAML",
-	"pkg/catalog.LazyLookup.foldPinnedCacheEntities":    "folds pinned slots by kind, each read through oci.EntityYAML; a Recipe or FeatureRecipe is laid out in its slot through oci.EntityFile",
+	"pkg/catalog.LazyLookup.foldPinnedSlot":             "folds one pinned slot by kind, read through oci.EntityYAML; a Recipe or FeatureRecipe is laid out in its slot through oci.EntityFile",
 	"pkg/catalog.LazyLookup.localComponentTiers":        "the cascade's local tiers: parses a Component from a pin-verified slot, laid out and read through registryDocument (oci.EntityFile)",
 	"pkg/catalog.LazyLookup.resolveComponentContext":    "parses a Component laid out in its slot, read through registryDocument (oci.EntityFile)",
 	"pkg/catalog.LazyLookup.resolveFeatureContext":      "parses a Feature laid out in its slot, read through registryDocument (oci.EntityFile)",
