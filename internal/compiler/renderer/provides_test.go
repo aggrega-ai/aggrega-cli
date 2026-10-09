@@ -302,6 +302,78 @@ func TestEvaluateAllProvides_ProvidesIndirectLocalsReadStillRenders(t *testing.T
 	}
 }
 
+// A provides template that fails to evaluate halts under the provides-evaluation
+// condition, and the halt's own line carries what the evaluation said: the key a
+// read did not find and the action that read it. The halt wraps its condition
+// rather than the evaluation's error, so that line is the only place the reason
+// survives — a halt carrying only its own frame would reach a reader as the node
+// and the entry with nothing after them. The line is asserted rather than the
+// whole chain because the outermost frame is the one every surface prints,
+// however few of the frames beneath it a surface goes on to render.
+//
+// Each fault row reads an absent key through a different pillar, so the text
+// asserted is that row's own answer rather than a constant every failure carries.
+// The control is the same read of a key the block holds, and it renders.
+func TestEvaluateAllProvides_FailingTemplateHaltCarriesTheReason(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		template string
+		// want is nil for the control, whose output is rendered; otherwise it is
+		// the text the halt's own line carries beside the entry it names.
+		want     []string
+		rendered string
+	}{
+		{name: "an absent local read through index", template: `{{ index .locals "replica_host" }}.svc`,
+			want: []string{`key "replica_host"`, `<index .locals "replica_host">`}},
+		{name: "an absent value read through index", template: `{{ index .values "port" }}`,
+			want: []string{`key "port"`, `<index .values "port">`}},
+		{name: "the control: a local the block holds, read through index",
+			template: `{{ index .locals "db_identifier" }}.svc`, rendered: "db-main.svc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			nodes := types.OrderedMap[types.IRNode]{}
+			nodes.Set("db", types.IRNode{})
+			vm := types.OrderedMap[json.RawMessage]{}
+			vm.Set("db", json.RawMessage(`{"zone":"eu-west-1"}`))
+			graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes, ValuesMapping: vm}}
+
+			locals := types.OrderedMap[string]{}
+			locals.Set("db_identifier", `{{ .context.instance_id }}-main`)
+			provides := types.OrderedMap[string]{}
+			provides.Set("host", tc.template)
+			recipes := map[string]*types.Recipe{
+				"db": {Metadata: types.RecipeMetadata{Name: "postgres-recipe"}, Spec: types.RecipeSpec{Locals: locals, Provides: provides}},
+			}
+
+			result, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
+			if tc.want == nil {
+				if err != nil {
+					t.Fatalf("the control halted: %v", err)
+				}
+				dbProv := result["db"]
+				if got, _ := dbProv.Get("host"); got != tc.rendered {
+					t.Errorf("the control rendered %q, want %q", got, tc.rendered)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("%s rendered; want a halt naming what the evaluation could not read", tc.template)
+			}
+			if !errors.Is(err, ErrProvidesEvaluation()) {
+				t.Fatalf("the halt is not the provides-evaluation condition: %v", err)
+			}
+			line := err.Error()
+			for _, want := range append([]string{`provides["host"]`}, tc.want...) {
+				if !strings.Contains(line, want) {
+					t.Errorf("the halt's line omits %q: %s", want, line)
+				}
+			}
+		})
+	}
+}
+
 func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
