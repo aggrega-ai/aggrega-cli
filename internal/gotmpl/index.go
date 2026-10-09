@@ -34,7 +34,10 @@ func ErrIndexOfAbsentMapKey() error { return errIndexOfAbsentMapKey }
 var errIndexOfAbsentMapKey = cerrors.Register("index-of-absent-map-key", cerrors.Meta{
 	ShortCode: "E0327",
 	Message:   "template indexes a map with a key the map does not hold",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A template's index call evaluates the rule, at the moment it runs, on every surface " +
+		"that evaluates a template — a render, a source template pinned by a pull, a schema predicate, a parameter " +
+		"interpolation. The map and the key it judges exist only inside that one evaluation, and the key may itself be " +
+		"computed by the template, so no declared stage of a compilation holds them as facts."),
 })
 
 // absentMapKeyAdvice is what a halted read is told to do instead. It names the
