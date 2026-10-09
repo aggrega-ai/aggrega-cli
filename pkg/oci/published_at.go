@@ -86,7 +86,9 @@ func FormatPublishedAt(at time.Time) string {
 // AttachPublishedAt attaches a published-at referrer recording at to the
 // artifact subjectRef resolves to. The artifact itself is not re-pushed,
 // re-tagged or changed: the referrer is a sibling manifest pointing back at it,
-// through the one attach path signatures and deprecation markers take.
+// through the one attach path signatures and deprecation markers take, so its
+// writes retry a transient registry failure as that path's do. The payload is
+// encoded once, before the first attempt, so every attempt sends the same date.
 func AttachPublishedAt(ctx context.Context, target oras.Target, subjectRef string, at time.Time) (ocispec.Descriptor, error) {
 	payload, err := MarshalPublishedAt(at)
 	if err != nil {

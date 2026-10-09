@@ -14,6 +14,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/retry"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -343,8 +344,22 @@ func checkIDTokenSubject(rawToken string) error {
 // signature is computed through one path. The digest string is the only thing
 // committed to; the bundle is identical whether produced before or after the
 // bytes land.
+//
+// It is also the one place a signing call is retried. A transient failure of
+// the signing authority or of the network (IsRetryablePublishError) is retried
+// with the shared budget and backoff, so a single flaky token mint loses
+// neither a publication nor one reference of a batch. The classifier sees the
+// signer's raw error; whatever a caller maps it to acts on the error that
+// survives the last attempt.
 func signDigest(ctx context.Context, signer signing.Signer, digest string) (bundle []byte, artifactType string, err error) {
-	return signer.Sign(ctx, digest)
+	res, err := retry.Transient(ctx, func() (signBundle, error) {
+		b, at, serr := signer.Sign(ctx, digest)
+		return signBundle{bytes: b, artifactType: at}, serr
+	}, IsRetryablePublishError)
+	if err != nil {
+		return nil, "", err
+	}
+	return res.bytes, res.artifactType, nil
 }
 
 // attachBundle is the shared attach atom: it attaches a signature bundle as an
@@ -418,16 +433,9 @@ func resolvePublishSigner(req SignerRequest) (signing.Signer, error) {
 // via resolvePublishSigner and call this per digest so both signatures share the
 // signer. reference and tag name the artifact in any rejection message.
 func signPublishDigestWith(ctx context.Context, signer signing.Signer, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
-	// Retry the raw signing call on a transient certificate-authority or
-	// network failure so a long publication is not lost to a single flaky token
-	// mint. The retry wraps signDigest BEFORE the refusal mapping below, so the
-	// classifier sees the raw underlying error; the subject-failure mapping and
-	// terminal wrapping act on the error that survives retry exhaustion.
-	res, err := RetryTransient(ctx, func() (signBundle, error) {
-		b, at, serr := signDigest(ctx, signer, proposedDigest)
-		return signBundle{bytes: b, artifactType: at}, serr
-	}, IsRetryablePublishError)
-	bundle, artifactType = res.bytes, res.artifactType
+	// signDigest retries a transient signing failure itself, so the mapping below
+	// acts on the error that survives its last attempt.
+	bundle, artifactType, err = signDigest(ctx, signer, proposedDigest)
 	if err != nil {
 		// A token without a usable signing subject is misdiagnosed by a generic
 		// rejection message; name the real cause — the identity the OIDC flow

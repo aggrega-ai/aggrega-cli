@@ -243,8 +243,10 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	}
 
 	// Sign-before-publish: when signing is requested, sign the proposed manifest
-	// digest before any bytes land, so an unsigned artifact never leaks onto a
-	// signature-requiring registry. The digest is previewed via
+	// digest before any bytes land, so a failed signing leaves no unsigned
+	// content on the registry. The signature is attached after the manifest
+	// lands, so an attach still failing after its retries leaves the Plugin
+	// published without it, and the error says so. The digest is previewed via
 	// oci.PluginManifestDigest (deterministic and equal to the digest the publication
 	// will land), and because it commits to the inline .wasm layer, the one
 	// signature transitively covers the executable — no separate .wasm signature
@@ -266,10 +268,9 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 
 	// Publish the one manifest — entity config plus inline .wasm layer — tagged
 	// by the entity's version. The returned digest is the manifest the signature
-	// (if any) commits to.
-	manifestDigest, err := RetryTransient(ctx, func() (string, error) {
-		return oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
-	}, IsRetryablePublishError)
+	// (if any) commits to. Each write it makes retries a transient failure
+	// inside pkg/oci, so nothing here wraps it again.
+	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
 	}

@@ -35,8 +35,11 @@ import (
 // statement. A nil now reads the live clock. The line announcing the date is
 // written to out, in the form the signature line takes.
 //
-// A failed attachment fails the publication's command, as a failed signature
-// attachment does: the entity is published, and the error names what was not.
+// The clock is read once, before the attach, so the attach's own retry of a
+// transient registry failure sends the same date on every attempt and lands one
+// referrer. An attachment still failing after those attempts fails the
+// publication's command, as a failed signature attachment does: the entity is
+// published, and the error names what was not.
 func recordPublicationDate(ctx context.Context, out io.Writer, target oras.Target, reference, tag string, signatureBundle []byte, now func() time.Time) error {
 	if signing.CarriesLogTime(signatureBundle) {
 		return nil

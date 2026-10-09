@@ -31,7 +31,9 @@ import (
 //
 // Like Push, the referrer manifest pins its creation annotation, so a
 // re-attach of byte-identical payload to the same subject is
-// deterministic.
+// deterministic. Its two writes retry a transient registry failure as
+// AttachReferrerToDescriptor describes; resolving the subject is a read and is
+// not retried.
 func AttachReferrer(ctx context.Context, target oras.Target, subjectRef string, artifactType string, payload []byte) (ocispec.Descriptor, error) {
 	subjectDesc, err := target.Resolve(ctx, subjectRef)
 	if err != nil {
@@ -61,23 +63,24 @@ func AttachReferrer(ctx context.Context, target oras.Target, subjectRef string, 
 // pulling the referrer writes the payload to a named file — a signature bundle
 // to signature.json, a deprecation marker to deprecation.json (see
 // contentTitle).
+//
+// The payload upload and the referrer manifest each retry a transient registry
+// failure (see IsTransientRegistryError) up to three attempts with a short
+// backoff, each attempt a new upload of the same bytes. Because the referrer
+// manifest pins its creation annotation, a retried attach packs the same
+// manifest, so an attempt whose response was lost after it landed leaves one
+// referrer, not two. A write still failing after its last attempt fails the
+// attach, and the error names the step: the payload or the referrer manifest.
 func AttachReferrerToDescriptor(ctx context.Context, target oras.Target, subjectDesc ocispec.Descriptor, artifactType string, payload []byte) (ocispec.Descriptor, error) {
-	payloadDesc, err := oras.PushBytes(ctx, target, artifactType, payload)
+	payloadDesc, err := pushBlob(ctx, target, artifactType, payload)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push referrer payload: %w", err)
 	}
 
-	manifestDesc, err := oras.PackManifest(
-		ctx,
-		target,
-		oras.PackManifestVersion1_1,
-		artifactType,
-		oras.PackManifestOptions{
-			Subject:             &subjectDesc,
-			Layers:              []ocispec.Descriptor{withTitle(payloadDesc, contentTitle(artifactType))},
-			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
-		},
-	)
+	manifestDesc, err := packManifest(ctx, target, artifactType, oras.PackManifestOptions{
+		Subject: &subjectDesc,
+		Layers:  []ocispec.Descriptor{withTitle(payloadDesc, contentTitle(artifactType))},
+	})
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: pack referrer manifest: %w", err)
 	}

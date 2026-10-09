@@ -31,12 +31,20 @@ import (
 // previews the digest with PluginManifestDigest before pushing MUST pass the
 // same annotations map to both, or the previewed digest will not equal the
 // pushed digest.
+//
+// Each write it makes to the target — the entity config blob, the .wasm layer,
+// the manifest, the tag — retries a transient registry failure (see
+// IsTransientRegistryError) up to three attempts with a short backoff. A
+// retried upload is a new upload of the same bytes, and a retried manifest is
+// the same manifest, so a retry lands the digest one attempt would. A write
+// still failing after its last attempt fails the push, and the error names the
+// step.
 func PushPluginManifest(ctx context.Context, target oras.Target, tag string, entityYAML, wasm []byte, annotations map[string]string) (string, error) {
 	manifestDesc, err := packPluginManifest(ctx, target, entityYAML, wasm, annotations)
 	if err != nil {
 		return "", err
 	}
-	if err := target.Tag(ctx, manifestDesc, tag); err != nil {
+	if err := tagManifest(ctx, target, manifestDesc, tag); err != nil {
 		return "", fmt.Errorf("oci: tag %q: %w", tag, err)
 	}
 	return manifestDesc.Digest.String(), nil
@@ -77,28 +85,25 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotati
 // `annotations` carries the searchable catalog annotations (see
 // SearchableMetadata); it is merged with the pinned creation annotation into
 // one manifest-annotation map. A nil or empty map stamps only the creation pin.
+//
+// The two uploads and the manifest pack each retry a transient registry failure
+// (see IsTransientRegistryError), each attempt a new upload of the same bytes.
 func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, wasm []byte, annotations map[string]string) (ocispec.Descriptor, error) {
-	configDesc, err := oras.PushBytes(ctx, target, MediaTypePlugin, entityYAML)
+	configDesc, err := pushBlob(ctx, target, MediaTypePlugin, entityYAML)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin entity config: %w", err)
 	}
 	configDesc = withTitle(configDesc, contentTitle(MediaTypePlugin))
-	wasmDesc, err := oras.PushBytes(ctx, target, MediaTypeWasm, wasm)
+	wasmDesc, err := pushBlob(ctx, target, MediaTypeWasm, wasm)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin wasm layer: %w", err)
 	}
 	wasmDesc = withTitle(wasmDesc, contentTitle(MediaTypeWasm))
-	manifestDesc, err := oras.PackManifest(
-		ctx,
-		target,
-		oras.PackManifestVersion1_1,
-		MediaTypePlugin,
-		oras.PackManifestOptions{
-			ConfigDescriptor:    &configDesc,
-			Layers:              []ocispec.Descriptor{wasmDesc},
-			ManifestAnnotations: mergeCreatedAnnotations(annotations),
-		},
-	)
+	manifestDesc, err := packManifest(ctx, target, MediaTypePlugin, oras.PackManifestOptions{
+		ConfigDescriptor:    &configDesc,
+		Layers:              []ocispec.Descriptor{wasmDesc},
+		ManifestAnnotations: annotations,
+	})
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: pack plugin manifest: %w", err)
 	}

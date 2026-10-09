@@ -189,21 +189,20 @@ func mergeCreatedAnnotations(annotations map[string]string) map[string]string {
 // the creation pin. Because the digest preview and the real push route through
 // this one helper, both stamp identical annotations and produce an identical
 // digest.
+//
+// The content upload and the manifest pack each retry a transient registry
+// failure (see IsTransientRegistryError) up to three attempts with a short
+// backoff, each attempt a new upload of the same bytes; a step still failing
+// after that returns its error, wrapped with the step it was.
 func packArtifact(ctx context.Context, target oras.Target, mediaType, fileName string, content []byte, annotations map[string]string) (ocispec.Descriptor, error) {
-	contentDesc, err := oras.PushBytes(ctx, target, mediaType, content)
+	contentDesc, err := pushBlob(ctx, target, mediaType, content)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push content: %w", err)
 	}
-	manifestDesc, err := oras.PackManifest(
-		ctx,
-		target,
-		oras.PackManifestVersion1_1,
-		mediaType,
-		oras.PackManifestOptions{
-			Layers:              []ocispec.Descriptor{withTitle(contentDesc, fileName)},
-			ManifestAnnotations: mergeCreatedAnnotations(annotations),
-		},
-	)
+	manifestDesc, err := packManifest(ctx, target, mediaType, oras.PackManifestOptions{
+		Layers:              []ocispec.Descriptor{withTitle(contentDesc, fileName)},
+		ManifestAnnotations: annotations,
+	})
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: pack manifest: %w", err)
 	}
@@ -233,6 +232,9 @@ func packArtifact(ctx context.Context, target oras.Target, mediaType, fileName s
 // entity.yaml or entity.tar.gz according to its transport shape (see
 // contentTitle). A media type this package derives no title for stamps none, so
 // a caller publishing content of such a type supplies the name with PushNamed.
+//
+// Each write it makes — the content upload, the manifest, the tag — retries a
+// transient registry failure as PushNamed describes.
 func Push(ctx context.Context, target oras.Target, tag string, mediaType string, content []byte, annotations map[string]string) (string, error) {
 	return PushNamed(ctx, target, tag, mediaType, contentTitle(mediaType), content, annotations)
 }
@@ -244,12 +246,20 @@ func Push(ctx context.Context, target oras.Target, tag string, mediaType string,
 // registry client writes the content to; an empty name stamps no title. The name
 // is part of the manifest and therefore of its digest, so a caller that previews
 // the digest with ManifestDigestNamed MUST pass the same name to both.
+//
+// Each write it makes to the target — the content upload, the manifest, the
+// tag — retries a transient registry failure (see IsTransientRegistryError) up
+// to three attempts with a short backoff. A retried upload is a new upload of
+// the same bytes, and a retried manifest is the same manifest, so a retry lands
+// the digest one attempt would. A write still failing after its last attempt
+// fails the push, and the error names the step: the content, the manifest or
+// the tag.
 func PushNamed(ctx context.Context, target oras.Target, tag, mediaType, fileName string, content []byte, annotations map[string]string) (string, error) {
 	manifestDesc, err := packArtifact(ctx, target, mediaType, fileName, content, annotations)
 	if err != nil {
 		return "", err
 	}
-	if err := target.Tag(ctx, manifestDesc, tag); err != nil {
+	if err := tagManifest(ctx, target, manifestDesc, tag); err != nil {
 		return "", fmt.Errorf("oci: tag %q: %w", tag, err)
 	}
 	return manifestDesc.Digest.String(), nil

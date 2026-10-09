@@ -397,11 +397,22 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // Signing is sign-before-publish: when signing is requested, Push computes
 // the proposed manifest digest, constructs the signer, and signs the digest
 // BEFORE any bytes reach the registry. If the signer cannot be constructed or
-// signing fails, Push refuses before publishing — zero bytes land, so an
-// unsigned artifact can never leak onto a signature-requiring registry. The
-// signature bundle is attached as a referrer only after the publication
-// succeeds; the bundle commits to the digest string, so the pre-publication
-// signature is valid for the published bytes.
+// signing fails, Push refuses before publishing — zero bytes land, so a failed
+// signing never leaves unsigned content on the registry. The signature bundle
+// is attached as a referrer only after the publication succeeds; the bundle
+// commits to the digest string, so the pre-publication signature is valid for
+// the published bytes. An attach that still fails after its retries leaves the
+// content published without its signature: Push returns an error naming the
+// signature it could not attach, a consumer of a signature-requiring registry
+// refuses the version until one is attached, and a second Push of the same
+// content finds it already published and attaches nothing — Sign attaches one
+// by reference.
+//
+// Every write to the registry — the content, the manifest, the tag, the
+// signature and the date — retries a transient failure inside pkg/oci (see
+// oci.IsTransientRegistryError), each attempt a new upload of the same bytes,
+// so Push itself wraps none of them; a write still failing fails Push with an
+// error naming the step.
 //
 // A publication then states when it landed, as a published-at referrer, unless
 // the signature it attached carries a transparency log's attested time — a
@@ -711,8 +722,8 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// the registry. The manifest digest is known in advance, and the bundle
 	// commits to the digest string, so the signature is valid for the bytes
 	// that will land. If the signer cannot be constructed or signing fails,
-	// refuse here — nothing is published, so an unsigned artifact never leaks
-	// onto a signature-requiring registry. The bundle is held and attached
+	// refuse here — nothing is published, so a failed signing leaves no
+	// unsigned content on the registry. The bundle is held and attached
 	// as a referrer only after the publication succeeds.
 	var (
 		signatureBundle []byte
@@ -725,9 +736,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 	}
 
-	digest, err := RetryTransient(ctx, func() (string, error) {
-		return oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
-	}, IsRetryablePublishError)
+	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("push %s:%s: %w", reference, tag, err)
 	}

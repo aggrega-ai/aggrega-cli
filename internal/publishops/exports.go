@@ -72,7 +72,9 @@ func KeylessSubjectFailure(err error) bool {
 }
 
 // SignDigest is the shared sign atom: it produces the signature bundle for a
-// manifest digest, so every verb computes a signature through one path.
+// manifest digest, so every verb computes a signature through one path. A
+// transient signing failure (IsRetryablePublishError) is retried with the
+// shared budget before its error is returned.
 func SignDigest(ctx context.Context, signer signing.Signer, digest string) (bundle []byte, artifactType string, err error) {
 	return signDigest(ctx, signer, digest)
 }

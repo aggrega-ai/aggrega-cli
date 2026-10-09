@@ -27,9 +27,12 @@ import (
 // from the read leaves the shape of the thing stated in two places, free to
 // drift on the one detail that decides whether a withdrawal is ever seen.
 //
-// The signature is produced by calling the signer directly, which is what the
-// shared sign step does — it is a pass-through to this same method — so no
-// second computation of the bundle exists.
+// The signature is produced by calling the signer directly. The shared sign
+// step computes its bundle through this same method, so no second computation
+// of the bundle exists; the retry of a transient signing failure that step adds
+// does not reach this call, because this package sits below the one that holds
+// it and is handed the signer rather than the step. The two attachments are
+// registry writes and retry a transient failure inside pkg/oci.
 //
 // Its diagnostics name what went wrong and not the verb a person would have run:
 // a caller reaching this may never have typed a command, so each surface adds its
