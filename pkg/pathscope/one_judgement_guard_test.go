@@ -104,6 +104,8 @@ var decidersOfInside = map[string]string{
 	"internal/serve:Server.workspacePath":         "every path a language-server request names for the daemon to write",
 	"internal/serve:Server.pickedOrWorkspacePath": "a relative key file or trust root a registration names",
 	"internal/serve:insertionPointIn":             "the document an insertion point is located in",
+	"internal/serve:connectionAtPositionIn":       "the document a connection at a position is located in",
+	"internal/serve:workspaceDocumentIn":          "the document an insertion point or a connection at a position is read from",
 	"internal/mcp:toolWorkspace.workspacePath":    "every path an assistant-tool call names over the listener",
 	"internal/editops:resolveInside":              "the document an edit reads and writes back, on every surface",
 
@@ -141,7 +143,7 @@ var judgementsOfInside = map[string][]string{
 // value it holds — keyed by the package directory. Each is itself a decider above,
 // so the chain from every request resolver to the definition is held link by link.
 var judgementsWithinAPackage = map[string][]string{
-	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath"},
+	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath", "workspaceDocumentIn"},
 	"pkg/readscope":  {"checkRead"},
 	"pkg/resolver":   {"resolveManifest", "resolveReleaseExtendsRef", "LoadParametersImport"},
 }
