@@ -14,7 +14,7 @@ import (
 )
 
 // LibrarySource is the resolved-closure read surface the library-discovery
-// producers use to fetch each in-closure entity body by URI. Every method
+// producers use to fetch each in-closure entity body by URI. Every read method
 // returns a pkg/types value plus a found flag; a false found return means the
 // closure does not reach that URI through the source. Implementations resolve
 // the body from a locally-authored catalog or from the content cache (a remote
@@ -29,6 +29,13 @@ type LibrarySource interface {
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
 	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
 	ArtifactLibrary(uri string) (types.ArtifactLibrary, bool)
+	// HoldResolvedLibrary makes a library the discovery has just resolved on axis
+	// readable through the per-kind read above, at the version and content digest
+	// its resolution recorded, where the source does not already hold it. A
+	// library read from a catalog directory is held already; one the resolution
+	// served from the content cache or a registry may be held by nothing else yet,
+	// and its body is what the discovery descends next.
+	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary)
 }
 
 // AugmentClosure resolves the cross-document library axes the entity walk does not
@@ -173,13 +180,13 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 	consumers := append(compConsumers, featConsumers...)
 
 	// Transitive body accessor: a discovered library's own entry bodies, for
-	// descending its cross-document $ref:s, resolved through the lazy library walk
-	// (Tier-1 + pinned Tier-2). A library the closure does not reach is not found
-	// here and its transitive descent lands with the lookup's Tier-3 path.
-	body := func(lib ResolvedLibrary) ([]*yaml.Node, bool, error) {
-		sl, ok := src.SchemaLibrary(lib.URI)
+	// descending its cross-document $ref:s, read through the source at the
+	// resolution the discovery just made (heldLibraryBodies).
+	axis := LibraryAxisNamed("SchemaLibraries")
+	body := heldLibraryBodies(src, axis, func(uri string) ([]*yaml.Node, bool) {
+		sl, ok := src.SchemaLibrary(uri)
 		if !ok {
-			return nil, false, nil
+			return nil, false
 		}
 		keys := sl.Spec.Schemas.Keys()
 		bodies := make([]*yaml.Node, 0, len(keys))
@@ -188,10 +195,27 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			node := entry.Content
 			bodies = append(bodies, &node)
 		}
-		return bodies, true, nil
-	}
+		return bodies, true
+	})
 
 	return cl.DiscoverSchemaLibraries(ctx, lookup, consumers, body)
+}
+
+// heldLibraryBodies is the body accessor every library axis hands the discovery
+// fixpoint: it has the source hold the library at the resolution the fixpoint just
+// made, then reads that library's entry bodies with read. A library resolved from
+// a catalog directory and one served from the content cache or a registry are
+// therefore read alike, and a library reached only through another is discovered
+// whichever source served that other one: a chain of any depth resolves from a
+// registry as it resolves from a catalog directory.
+//
+// A library the source cannot read even then stops the descent through it.
+func heldLibraryBodies[B any](src LibrarySource, axis LibraryAxis, read func(uri string) ([]B, bool)) func(ResolvedLibrary) ([]B, bool, error) {
+	return func(lib ResolvedLibrary) ([]B, bool, error) {
+		src.HoldResolvedLibrary(axis, lib)
+		bodies, ok := read(lib.URI)
+		return bodies, ok, nil
+	}
 }
 
 // discoverClosureMappingLibraries is the single producer of the closure's
@@ -211,20 +235,21 @@ func discoverClosureMappingLibraries(ctx context.Context, cl *Closure, src Libra
 			return importConsumer(uri, fr.Spec.ValuesMapping.Import)
 		})
 
-	body := func(lib ResolvedLibrary) ([]string, bool, error) {
-		ml, ok := src.MappingLibrary(lib.URI)
+	axis := LibraryAxisNamed("MappingLibraries")
+	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
+		ml, ok := src.MappingLibrary(uri)
 		if !ok {
-			return nil, false, nil
+			return nil, false
 		}
 		bodies := make([]string, 0, ml.Spec.Mappings.Len())
 		for _, k := range ml.Spec.Mappings.Keys() {
 			entry, _ := ml.Spec.Mappings.Get(k)
 			bodies = append(bodies, entry.Body)
 		}
-		return bodies, true, nil
-	}
+		return bodies, true
+	})
 
-	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)
 }
 
 // discoverClosureWorkloadLibraries is the single producer of the closure's
@@ -244,20 +269,21 @@ func discoverClosureWorkloadLibraries(ctx context.Context, cl *Closure, src Libr
 			return importConsumer(uri, fr.Spec.Workload.Import)
 		})
 
-	body := func(lib ResolvedLibrary) ([]string, bool, error) {
-		wl, ok := src.WorkloadLibrary(lib.URI)
+	axis := LibraryAxisNamed("WorkloadLibraries")
+	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
+		wl, ok := src.WorkloadLibrary(uri)
 		if !ok {
-			return nil, false, nil
+			return nil, false
 		}
 		bodies := make([]string, 0, wl.Spec.Workloads.Len())
 		for _, k := range wl.Spec.Workloads.Keys() {
 			entry, _ := wl.Spec.Workloads.Get(k)
 			bodies = append(bodies, entry.Body)
 		}
-		return bodies, true, nil
-	}
+		return bodies, true
+	})
 
-	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)
 }
 
 // discoverClosureArtifactLibraries is the single producer of the closure's
@@ -274,10 +300,11 @@ func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src Libr
 		})
 
 	// A discovered bundle's own file bodies, flattened across every bundle entry.
-	body := func(lib ResolvedLibrary) ([]string, bool, error) {
-		al, ok := src.ArtifactLibrary(lib.URI)
+	axis := LibraryAxisNamed("ArtifactLibraries")
+	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
+		al, ok := src.ArtifactLibrary(uri)
 		if !ok {
-			return nil, false, nil
+			return nil, false
 		}
 		var bodies []string
 		for _, k := range al.Spec.Artifacts.Keys() {
@@ -287,10 +314,10 @@ func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src Libr
 				bodies = append(bodies, fb)
 			}
 		}
-		return bodies, true, nil
-	}
+		return bodies, true
+	})
 
-	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)
 }
 
 // artifactsImportConsumers carries every artifacts-map entry's `$import:` target

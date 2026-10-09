@@ -97,8 +97,10 @@ type discoverConsumer[B any] struct {
 // It walks the current frontier into a fresh walk state seeded from the libraries
 // already resolved, resolves the whole set so minimum-version selection sees every
 // consumer of every library, merges the result back into the axis's section, and
-// then builds the next frontier from libraries not yet descended. Re-resolution is
-// idempotent, so re-seeding each round is safe.
+// then builds the next frontier from libraries not yet descended. Re-seeding each
+// round is safe: a seeded library the selection still selects keeps the resolution
+// it arrived with (resolveLibraries), so a later round neither asks the lookup for
+// it again nor changes what the first answer recorded.
 //
 // Termination is by a visited-set on the canonical library identity, so each
 // library's body is descended exactly once and a genuine library-to-library cycle

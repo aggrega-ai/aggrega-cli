@@ -634,6 +634,14 @@ func entityNotFound(uri, referencedFrom string) error {
 // names, and a lookup may announce what it finds while it resolves, so an order
 // the runtime randomises would change both from one run to the next over identical
 // input.
+//
+// A library already resolved at the version selection still selects — one the
+// discovery's earlier round resolved, carried into this round by seedLibs — keeps
+// that resolution and is not asked of the lookup again. Asking again would answer
+// from the cache entry the first answer wrote, so a library this run fetched from a
+// registry would be reported as read from the cache, and the pull-time signature
+// verification, which reads that report, would pass it by. A new requirement that
+// moves the selected version still re-resolves it at the new one.
 func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup) error {
 	pending := axis.pendingLibs(s)
 	for _, uri := range slices.Sorted(maps.Keys(pending)) {
@@ -641,6 +649,9 @@ func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, look
 		selected, err := selectMVSVersion(uri, lib.versionByConsumer)
 		if err != nil {
 			return err
+		}
+		if lib.resolution != nil && selected != "" && lib.resolution.ResolvedVersion == selected {
+			continue
 		}
 		// Thread the MVS-selected version (the optional `@version` floor) to the
 		// lookup as a `name:version` URI, so a Tier-3 pull resolves that tag. A
@@ -1037,6 +1048,7 @@ func libraryFromResolved(lib ResolvedLibrary) *pendingLibrary {
 			Resolution: Resolution{
 				ResolvedVersion: lib.ResolvedVersion,
 				Digest:          lib.Digest,
+				ManifestDigest:  lib.ManifestDigest,
 				ResolutionPath:  lib.ResolutionPath,
 			},
 		}

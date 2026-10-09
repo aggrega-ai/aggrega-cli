@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -903,21 +904,31 @@ func PinsFromClosure(cl closure.Closure) map[string]Pin {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
 	for _, sl := range cl.SchemaLibraries {
-		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
+		pins[sl.URI] = libraryPin(sl)
 	}
 	for _, ml := range cl.MappingLibraries {
-		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
+		pins[ml.URI] = libraryPin(ml)
 	}
 	for _, wl := range cl.WorkloadLibraries {
-		pins[wl.URI] = Pin{ResolvedVersion: wl.ResolvedVersion, Digest: wl.Digest}
+		pins[wl.URI] = libraryPin(wl)
 	}
 	for _, al := range cl.ArtifactLibraries {
-		pins[al.URI] = Pin{ResolvedVersion: al.ResolvedVersion, Digest: al.Digest}
+		pins[al.URI] = libraryPin(al)
 	}
 	for _, wp := range cl.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
 	return pins
+}
+
+// libraryPin is the pin a resolved library is held to: the version it resolved to,
+// which addresses its cache slot, and its content digest. It is the one projection
+// of a resolved library onto a pin, read by PinsFromClosure for every library axis
+// and by HoldResolvedLibrary for the one library a dependency resolution has just
+// resolved, so a library is held to the same pin while its dependencies are being
+// discovered as once the closure is pinned whole.
+func libraryPin(lib closure.ResolvedLibrary) Pin {
+	return Pin{ResolvedVersion: lib.ResolvedVersion, Digest: lib.Digest}
 }
 
 // tier2Outcome is the verify-on-read decision for a Tier-2 cache slot.
@@ -2091,40 +2102,48 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 	}
 	sort.Strings(uris)
 	for _, uri := range uris {
-		pin := l.pins[uri]
-		// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
-		// with a separate ResolvedVersion) addresses its versioned cache slot via
-		// versionedSlotURI — the same key the cache→catalog bridge reads.
-		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
-		if err != nil {
-			if unwrapRefusal(err) {
-				l.recordRecipeSkip("lockfile-pinned:"+uri, err)
-			}
-			continue
-		}
-		// The verified read above succeeded through this same derivation, so the slot
-		// is there; an empty one would fold a pinned entity as a catalog-directory
-		// file, which is why the case is skipped rather than passed on.
-		slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
-		if serr != nil || !ok {
-			continue
-		}
-		parseData, uerr := oci.EntityYAML(blob)
-		if uerr != nil {
-			l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
-			continue
-		}
-		kind := peekEntityKind(parseData)
-		if !allowed[kind] {
-			continue
-		}
-		if kind == "SchemaLibrary" {
-			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot)
-			continue
-		}
-		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, noCatalogDirectory)
+		l.foldPinnedSlot(uri, l.pins[uri], allowed)
 	}
+}
+
+// foldPinnedSlot folds the one cache slot pin names for uri, when its kind is in
+// allowed, under the discipline foldPinnedCacheEntities states for the whole pin
+// set. It is the single reading of a pinned slot into this view's enumerated maps:
+// the pin-set fold runs it for every pin, and HoldResolvedLibrary runs it for the
+// one library a dependency resolution has just resolved.
+func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool) {
+	// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
+	// with a separate ResolvedVersion) addresses its versioned cache slot via
+	// versionedSlotURI — the same key the cache→catalog bridge reads.
+	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
+	blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+	if err != nil {
+		if unwrapRefusal(err) {
+			l.recordRecipeSkip("lockfile-pinned:"+uri, err)
+		}
+		return
+	}
+	// The verified read above succeeded through this same derivation, so the slot
+	// is there; an empty one would fold a pinned entity as a catalog-directory
+	// file, which is why the case is skipped rather than passed on.
+	slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+	if serr != nil || !ok {
+		return
+	}
+	parseData, uerr := oci.EntityYAML(blob)
+	if uerr != nil {
+		l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
+		return
+	}
+	kind := peekEntityKind(parseData)
+	if !allowed[kind] {
+		return
+	}
+	if kind == "SchemaLibrary" {
+		l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot)
+		return
+	}
+	l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, noCatalogDirectory)
 }
 
 // unwrapRefusal reports whether err is one of the refusals reading an entity out
@@ -2580,30 +2599,49 @@ func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
 func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_ = l.buildSchemaLibraries()
-	lib, ok := l.schemaLibraries[uri]
-	return lib, ok
+	return l.schemaLibraryLocked(uri)
 }
 
 func (l *LazyLookup) MappingLibrary(uri string) (types.MappingLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.buildRecipeIndex()
-	lib, ok := l.mappingLibraries[uri]
-	return lib, ok
+	return l.mappingLibraryLocked(uri)
 }
 
 func (l *LazyLookup) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.buildRecipeIndex()
-	lib, ok := l.workloadLibraries[uri]
-	return lib, ok
+	return l.workloadLibraryLocked(uri)
 }
 
 func (l *LazyLookup) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.artifactLibraryLocked(uri)
+}
+
+// schemaLibraryLocked, mappingLibraryLocked, workloadLibraryLocked and
+// artifactLibraryLocked are the per-kind reads above for a caller already holding
+// the lock: each builds the enumeration its kind lives in, then reads it.
+func (l *LazyLookup) schemaLibraryLocked(uri string) (types.SchemaLibrary, bool) {
+	_ = l.buildSchemaLibraries()
+	lib, ok := l.schemaLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) mappingLibraryLocked(uri string) (types.MappingLibrary, bool) {
+	l.buildRecipeIndex()
+	lib, ok := l.mappingLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) workloadLibraryLocked(uri string) (types.WorkloadLibrary, bool) {
+	l.buildRecipeIndex()
+	lib, ok := l.workloadLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) artifactLibraryLocked(uri string) (types.ArtifactLibrary, bool) {
 	l.buildRecipeIndex()
 	lib, ok := l.artifactLibraries[uri]
 	return lib, ok
@@ -2612,27 +2650,71 @@ func (l *LazyLookup) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
 // LibraryName returns the declared name of an in-closure library on the given
 // axis, so a caller that treats the axes alike can resolve one without naming
 // which axis it is holding.
-//
-// This is the single place the axis set is bound to the per-kind accessors above.
-// A caller that instead reached for those accessors directly would have to name
-// each axis, and naming them is exactly how a caller comes to cover some and not
-// others.
 func (l *LazyLookup) LibraryName(axis closure.LibraryAxis, uri string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.libraryNameLocked(axis, uri)
+}
+
+// libraryNameLocked is LibraryName for a caller already holding the lock.
+//
+// This is the single place the axis set is bound to the per-kind reads above. A
+// caller that instead reached for those reads directly would have to name each
+// axis, and naming them is exactly how a caller comes to cover some and not
+// others.
+func (l *LazyLookup) libraryNameLocked(axis closure.LibraryAxis, uri string) (string, bool) {
 	switch axis.Kind {
 	case "SchemaLibrary":
-		lib, ok := l.SchemaLibrary(uri)
+		lib, ok := l.schemaLibraryLocked(uri)
 		return lib.Metadata.Name, ok
 	case "MappingLibrary":
-		lib, ok := l.MappingLibrary(uri)
+		lib, ok := l.mappingLibraryLocked(uri)
 		return lib.Metadata.Name, ok
 	case "WorkloadLibrary":
-		lib, ok := l.WorkloadLibrary(uri)
+		lib, ok := l.workloadLibraryLocked(uri)
 		return lib.Metadata.Name, ok
 	case "ArtifactLibrary":
-		lib, ok := l.ArtifactLibrary(uri)
+		lib, ok := l.artifactLibraryLocked(uri)
 		return lib.Metadata.Name, ok
 	}
 	return "", false
+}
+
+// HoldResolvedLibrary makes a library that a dependency resolution has just
+// resolved readable through this view, held to the version and content digest the
+// resolution recorded, so the discovery can read the library's own body and find
+// the libraries it references in turn. A library resolved from a catalog directory
+// is in this view already; one resolved from the content cache or fetched from a
+// registry is in it only once a pin names it, and a pull pins its closure after
+// that discovery has run. Without this, a library reached only through another
+// library served by a registry is never discovered, while the same chain resolves
+// from a catalog directory.
+//
+// It does nothing where the view already holds the library, and nothing where a
+// pin already names it: a lockfile's pin is what a build holds the library to,
+// and it is never replaced by the resolution's. Otherwise the view's pins gain the
+// library's pin — the projection the closure's pins use for it (libraryPin) — and
+// the one pinned slot is folded through the same reading as every other pin
+// (foldPinnedSlot), verified against that pin. A slot that does not verify is not
+// folded, and the library stays unreadable, as it would under a lockfile's pin.
+//
+// The pin set is replaced rather than written into, because SetPins keeps the
+// caller's map and that map may be shared beyond this view.
+func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.ResolvedLibrary) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, held := l.libraryNameLocked(axis, lib.URI); held {
+		return
+	}
+	if _, pinned := l.pins[lib.URI]; pinned {
+		return
+	}
+	pin := libraryPin(lib)
+	pins := make(map[string]Pin, len(l.pins)+1)
+	maps.Copy(pins, l.pins)
+	pins[lib.URI] = pin
+	l.pins = pins
+	l.foldPinnedSlot(lib.URI, pin, map[string]bool{axis.Kind: true})
 }
 
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
