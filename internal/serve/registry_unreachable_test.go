@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 )
 
 // releasedLoopbackRegistry returns a loopback address nothing listens on: a port
@@ -204,7 +203,7 @@ func TestTheDaemonSaysWhichRegistryCouldNotBeReached(t *testing.T) {
 					want := map[string]any{
 						"pinned":        false,
 						"notAdvertised": true,
-						"reason":        registrytrust.ErrNoTrustAdvertised().Error(),
+						"reason":        host + " publishes no trust policy (HTTP 404)",
 					}
 					if !reflect.DeepEqual(trust, want) {
 						t.Errorf("the control's trust object = %v; want %v", trust, want)

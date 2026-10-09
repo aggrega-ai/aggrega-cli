@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"oras.land/oras-go/v2/registry/remote/errcode"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 )
 
 // releasedLoopbackPort returns a loopback address nothing listens on: a port
@@ -184,8 +182,9 @@ func TestRegistrationSaysWhetherTheRegistryCouldBeReached(t *testing.T) {
 		wantPinned        bool
 		wantNotAdvertised bool
 		wantUnreachable   bool
-		// reason pins the answered rows to their own answer.
-		reason func(reason string) bool
+		// reason pins the answered rows to their own answer, which names the host
+		// the row registered.
+		reason func(host, reason string) bool
 	}{
 		{
 			name: "control: a registry advertising a policy has it pinned",
@@ -202,7 +201,9 @@ func TestRegistrationSaysWhetherTheRegistryCouldBeReached(t *testing.T) {
 				return answeringRegistry(t, func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 			},
 			wantNotAdvertised: true,
-			reason:            func(reason string) bool { return reason == registrytrust.ErrNoTrustAdvertised().Error() },
+			reason: func(host, reason string) bool {
+				return reason == host+" publishes no trust policy (HTTP 404)"
+			},
 		},
 		{
 			name: "a registry answering a server error advertised no policy and was reached",
@@ -212,7 +213,9 @@ func TestRegistrationSaysWhetherTheRegistryCouldBeReached(t *testing.T) {
 				})
 			},
 			wantNotAdvertised: true,
-			reason:            func(reason string) bool { return strings.HasSuffix(reason, ": HTTP 500") },
+			reason: func(host, reason string) bool {
+				return reason == host+" answered the request for its trust policy with HTTP 500"
+			},
 		},
 		{
 			name:              "a registry nothing listens for advertised no policy because it could not be reached",
@@ -245,7 +248,7 @@ func TestRegistrationSaysWhetherTheRegistryCouldBeReached(t *testing.T) {
 			if got.Unreachable != row.wantUnreachable {
 				t.Errorf("unreachable = %v; want %v (trust %+v)", got.Unreachable, row.wantUnreachable, got)
 			}
-			if row.reason != nil && !row.reason(got.Reason) {
+			if row.reason != nil && !row.reason(host, got.Reason) {
 				t.Errorf("reason = %q is not this row's own answer", got.Reason)
 			}
 		})
