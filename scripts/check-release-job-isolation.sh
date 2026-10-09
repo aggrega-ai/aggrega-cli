@@ -29,7 +29,14 @@
 #      that is not a checkout, an artifact download or upload, or a run: step
 #      free of build commands — carries a secret or github.token in an env: or a
 #      run: body, or names anywhere a secret that a job minting the token also
-#      names. A secret reaches such a job only through an action's with:.
+#      names. A secret reaches such a job only through an action's with:;
+#   5. the file-level permissions grant actions: write (or write-all); or a job
+#      that may delete the run's artifacts — its permissions grant actions:
+#      write or write-all — is granted anything besides actions: write, runs
+#      any action at all, calls a reusable workflow, declares a container: or
+#      services:, has a step that runs a build or pack command (read as in rule
+#      2), or names a secret anywhere. Such a job holds the run's own token,
+#      github.token, which it may name, and nothing else.
 #
 # The build and pack commands are npx, npm, pnpm, yarn, cargo, make, tinygo;
 # go build, go run, go test, go generate, go install, go get; and docker build,
@@ -185,14 +192,14 @@ scan_step_run() {
   scan_text "$1" "run" "$LABEL_ROOT"
 }
 
-# grants_id_token <yq path of a permissions node>: yes when it grants
-# id-token: write, directly or through write-all.
-grants_id_token() {
+# grants_write <yq path of a permissions node> <scope>: yes when it grants
+# <scope>: write, directly or through write-all.
+grants_write() {
   local node="$1" tag
   tag="$(yq -r "$node | tag" "$WORKFLOW")"
   case "$tag" in
     '!!str') [ "$(yq -r "$node" "$WORKFLOW")" = write-all ] && echo yes || echo no ;;
-    '!!map') [ "$(yq -r "$node.\"id-token\" // \"\"" "$WORKFLOW")" = write ] && echo yes || echo no ;;
+    '!!map') [ "$(SCOPE="$2" yq -r "${node}[strenv(SCOPE)] // \"\"" "$WORKFLOW")" = write ] && echo yes || echo no ;;
     *) echo no ;;
   esac
 }
@@ -208,29 +215,64 @@ secrets_in() {
   done
 }
 
-TOP_GRANTS="$(grants_id_token '.permissions')"
+TOP_GRANTS="$(grants_write '.permissions' id-token)"
 if [ "$TOP_GRANTS" = yes ]; then
   violate "file level: permissions grant id-token: write, which every job declaring no permissions of its own inherits; grant it only in the jobs that sign"
 fi
+TOP_DELETES="$(grants_write '.permissions' actions)"
+if [ "$TOP_DELETES" = yes ]; then
+  violate "file level: permissions grant actions: write, which every job declaring no permissions of its own inherits; grant it only in the job that deletes the run's artifacts"
+fi
 
 mapfile -t JOBS < <(yq -r '.jobs | keys | .[]' "$WORKFLOW")
-declare -A HOLDS=() THIRD_PARTY=()
+declare -A HOLDS=() DELETES=() THIRD_PARTY=()
 checkouts=0
 holder_steps=0
+deleter_steps=0
 declare -A HOLDER_SECRETS=()
 HOLDER_READ=()
 
-# Pass 1: which jobs may mint the token, the steps of those jobs, and every
-# checkout.
+# Pass 1: which jobs may mint the token and which may delete the run's
+# artifacts, the steps of those jobs, and every checkout.
 for job in "${JOBS[@]}"; do
   export J="$job"
   if [ "$(yq -r '.jobs[strenv(J)] | has("permissions")' "$WORKFLOW")" = true ]; then
-    HOLDS[$job]="$(grants_id_token '.jobs[strenv(J)].permissions')"
+    HOLDS[$job]="$(grants_write '.jobs[strenv(J)].permissions' id-token)"
+    DELETES[$job]="$(grants_write '.jobs[strenv(J)].permissions' actions)"
   else
     HOLDS[$job]="$TOP_GRANTS"
+    DELETES[$job]="$TOP_DELETES"
   fi
   THIRD_PARTY[$job]=""
   holds="${HOLDS[$job]}"
+  deletes="${DELETES[$job]}"
+
+  if [ "$deletes" = yes ]; then
+    # Granted actions: write and nothing else: no other scope at any level, and
+    # not write-all.
+    case "$(yq -r '.jobs[strenv(J)].permissions | tag' "$WORKFLOW")" in
+      '!!map')
+        while IFS= read -r grant; do
+          [ -n "$grant" ] && violate "job $job: may delete the run's artifacts (actions: write) and is granted $grant as well; that job is granted actions: write and nothing else"
+        done < <(yq -r '.jobs[strenv(J)].permissions | to_entries | .[] | select(.key != "actions") | .key + ": " + (.value | tostring)' "$WORKFLOW")
+        ;;
+      '!!str') violate "job $job: may delete the run's artifacts and is granted $(yq -r '.jobs[strenv(J)].permissions' "$WORKFLOW"); that job is granted actions: write and nothing else" ;;
+      *) violate "job $job: may delete the run's artifacts through the file-level permissions; that job declares actions: write and nothing else of its own" ;;
+    esac
+    for key in container services uses; do
+      if [ "$(KEY="$key" yq -r '.jobs[strenv(J)] | has(strenv(KEY))' "$WORKFLOW")" = true ]; then
+        case "$key" in
+          uses) violate "job $job: calls a reusable workflow, whose steps this check cannot read, while it may delete the run's artifacts" ;;
+          *) violate "job $job: declares $key:, whose images run beside its steps, while it may delete the run's artifacts" ;;
+        esac
+      fi
+    done
+    while IFS= read -r ref; do
+      case "$ref" in
+        secrets.*) violate "job $job: names $ref, while it may delete the run's artifacts; that job holds the run's own token and no secret" ;;
+      esac
+    done < <(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")" | sort -u)
+  fi
 
   if [ "$holds" = yes ]; then
     for key in container services uses; do
@@ -269,6 +311,9 @@ for job in "${JOBS[@]}"; do
         ;;
     esac
 
+    if [ -n "$uses" ] && [ "$deletes" = yes ]; then
+      violate "$where: uses $uses in a job that may delete the run's artifacts; no action runs there"
+    fi
     if [ -n "$uses" ]; then
       case "$uses" in
         actions/checkout@*|actions/checkout|actions/download-artifact@*|actions/upload-artifact@*) ;;
@@ -284,6 +329,12 @@ for job in "${JOBS[@]}"; do
 
     if [ -n "$run" ]; then
       scan_step_run "$run"
+      if [ "$deletes" = yes ]; then
+        deleter_steps=$((deleter_steps + 1))
+        for hit in ${HITS[@]+"${HITS[@]}"}; do
+          violate "$where: $hit, in a job that may delete the run's artifacts"
+        done
+      fi
       if [ "$holds" = yes ]; then
         holder_steps=$((holder_steps + 1))
         for s in ${READ_SCRIPTS[@]+"${READ_SCRIPTS[@]}"}; do HOLDER_READ+=("$s"); done
@@ -341,8 +392,10 @@ if [ "${#violations[@]}" -gt 0 ]; then
 fi
 
 holders=()
+deleters=()
 for job in "${JOBS[@]}"; do
   [ "${HOLDS[$job]}" = yes ] && holders+=("$job")
+  [ "${DELETES[$job]}" = yes ] && deleters+=("$job")
 done
 read_uniq=()
 if [ "${#HOLDER_READ[@]}" -gt 0 ]; then
@@ -352,6 +405,8 @@ printf 'release job isolation holds in %s:\n' "$(label_of "$WORKFLOW")"
 printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step, no action but checkout, download-artifact and upload-artifact\n' \
   "${holders[*]:-no job}" "$holder_steps"
 printf '  scripts read for those steps: %s\n' "${read_uniq[*]:-none}"
+printf '  may delete the run'"'"'s artifacts: %s — %d step(s), granted actions: write alone, no action, none a build or pack step, no secret\n' \
+  "${deleters[*]:-no job}" "$deleter_steps"
 printf '  actions/checkout steps: %d, each with persist-credentials: false\n' "$checkouts"
 printf '  jobs running third-party code, each reaching a secret only through an action'"'"'s with: — %s\n' "${TP_REPORT[*]:-none}"
 RC=0

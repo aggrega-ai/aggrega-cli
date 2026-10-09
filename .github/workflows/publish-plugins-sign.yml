@@ -19,7 +19,9 @@ name: Publish and sign core plugins
 #                        first act, a dry run's included, so a manual dry run
 #                        is also how to prove that the stored credential
 #                        matches the registry. It runs the repository's own
-#                        check script and nothing else.
+#                        check script and nothing else but, first, the refusal
+#                        of a run with no self-hosted runner named for the local
+#                        jobs.
 #   build                Compiles, packs and stages everything the release
 #                        carries, holding no registry or signing credential and
 #                        no permission to mint an OIDC token: it checks that
@@ -31,48 +33,75 @@ name: Publish and sign core plugins
 #                        inputs, packs the desktop extension package, generates
 #                        the core Plugin catalog entities and pairs each with
 #                        its guest, and builds the tooling image into an
-#                        archive. Everything the publish needs leaves it as one
-#                        workflow artifact, release-inputs, except the three
-#                        Windows binaries, which leave it unsigned as an
-#                        artifact of their own, windows-binaries-unsigned.
+#                        archive. Everything the publish needs, and the three
+#                        Windows binaries, unsigned, it leaves in the hand-over
+#                        folder described below, with a SHA-256 list of every
+#                        file in it; it uploads only what the GitHub-hosted
+#                        smoke jobs run.
 #   sign-windows         Signs those three Windows binaries with Authenticode,
 #                        as Cognitio S.r.l., through Azure Artifact Signing,
 #                        every signature carrying an RFC 3161 timestamp, and
 #                        hands them on with a SHA-256 list of them as
-#                        windows-binaries-signed. It runs on a GitHub-hosted
-#                        Ubuntu runner, never the AGGREGA_RUNNER label, because a
-#                        persistent runner keeps state between runs. It may mint
-#                        the OIDC token, which it exchanges with Microsoft Entra
-#                        ID for the token that signs, and holds no secret, no
-#                        registry password and no release token. It checks out
-#                        nothing and runs no action but download-artifact and
+#                        windows-binaries-signed. It runs on the runner the
+#                        AGGREGA_RUNNER label names, after the build, and reads
+#                        the three from the hand-over folder once they match its
+#                        list. It may mint the OIDC token, which it exchanges
+#                        with Microsoft Entra ID for the token that signs, and
+#                        holds no secret, no registry password and no release
+#                        token. It checks out nothing and runs no action but
 #                        upload-artifact; the programs it runs, beside the
-#                        shell's own utilities, are curl, and jsign under the
-#                        hosted image's Java: jsign is fetched at one version
-#                        and refused unless its SHA-256 is the one written
-#                        here. It is a job of its own so that jsign and the
-#                        token exchange share a job with nothing else, and so
-#                        that the Windows smoke run and the release both see
-#                        the bytes it signed. It does not confine the signing
-#                        identity to itself: no claim of the OIDC token names
-#                        the job that minted it, so Azure accepts the token of
-#                        any job of this workflow on a ref it admits, and
-#                        sign-and-publish, which may mint the token for its
-#                        Sigstore signatures, could exchange one too.
-#   sign-and-publish     Once every smoke job below has passed, downloads
-#                        release-inputs and windows-binaries-signed and
-#                        publishes them: it pushes the tooling image from the
-#                        archive, publishes each plugin with its guest, signs
-#                        both, and creates the GitHub release with the
-#                        downloadable binaries and the extension package. It
-#                        may mint the OIDC token, for those Sigstore signatures,
-#                        and alone holds the token that writes the release; the
-#                        registry password it holds is otherwise held only by
-#                        registry-credential. It runs no build or pack step and
-#                        no action but checkout and download-artifact: the
-#                        programs it runs, beside the shell's own utilities, are
-#                        the aggrega binary the build job built, docker (to load
-#                        and push the image archive), gh and curl.
+#                        shell's own utilities, are curl, and jsign under a Java
+#                        runtime of its own: each is fetched at one version and
+#                        refused unless its SHA-256 is the one written here, so
+#                        no Java the machine carries is run. It is a job of its
+#                        own so that jsign and the token exchange share a job
+#                        with nothing else, and so that the Windows smoke run
+#                        and the release both see the bytes it signed. It does
+#                        not confine the signing identity to itself: no claim of
+#                        the OIDC token names the job that minted it, so Azure
+#                        accepts the token of any job of this workflow on a ref
+#                        it admits, and sign-and-publish, which may mint the
+#                        token for its Sigstore signatures, could exchange one
+#                        too.
+#   sign-and-publish     Once every smoke job below has passed, reads the
+#                        release inputs from the hand-over folder once every
+#                        file there matches its list, downloads
+#                        windows-binaries-signed, and publishes them: it pushes
+#                        the tooling image from the archive, publishes each
+#                        plugin with its guest, signs both, and creates the
+#                        GitHub release with the downloadable binaries and the
+#                        extension package. It may mint the OIDC token, for
+#                        those Sigstore signatures, and alone holds the token
+#                        that writes the release; the registry password it
+#                        holds is otherwise held only by registry-credential. It
+#                        runs no build or pack step and no action but checkout
+#                        and download-artifact: the programs it runs, beside the
+#                        shell's own utilities, are the aggrega binary the build
+#                        job built, docker (to load and push the image archive),
+#                        gh and curl.
+#   clean-up             Runs last, whatever every other job did, a failure or a
+#                        cancellation included: deletes every artifact this run
+#                        uploaded, through the REST API with the run's own token,
+#                        removes the hand-over folder, and empties the runner's
+#                        temporary directory of anything the runner left there.
+#                        It may delete the run's artifacts (actions: write) and
+#                        holds nothing else: no checkout, no action, no secret.
+#
+# The build, sign-windows, sign-and-publish and clean-up jobs run on one machine,
+# the self-hosted runner AGGREGA_RUNNER names, and hand files to each other on
+# its disk, in the hand-over folder: aggrega-release-handover/<run id>-<attempt>
+# beside the runner's temporary directory, which the runner empties at the start
+# and end of every job. The build job makes it, readable by the runner's user
+# alone, and writes the list last, after every third-party step of that job has
+# run; each job that reads it holds it to that list first. A run with no such
+# runner stops in its first job, saying so: nothing falls back to a hosted
+# runner or to artifacts. Only what a GitHub-hosted job runs is uploaded — the
+# Windows and macOS smoke inputs, the signed Windows binaries, and the earlier
+# release's binaries smoke_binaries_from names — and clean-up deletes it all when
+# the run ends, so no artifact outlives the run that made it; the one-day
+# retention each upload names is what removes them should clean-up never run. A
+# re-run must re-run every job: a re-run of the failed jobs alone finds the
+# folder and the artifacts gone.
 #
 # Everything sign-and-publish signs is signed keyless via the GitHub Actions
 # OIDC identity against the public Sigstore instance (Fulcio + Rekor). The
@@ -86,8 +115,10 @@ name: Publish and sign core plugins
 # scripts/check-release-job-isolation.sh reads this file and refuses it when a
 # job that may mint the OIDC token runs a build or pack step, directly or through
 # a repository script, when such a job runs any action but checkout and the
-# artifact download and upload, when a checkout keeps its token, or when a job
-# that runs third-party code can reach a secret.
+# artifact download and upload, when a checkout keeps its token, when a job
+# that runs third-party code can reach a secret, or when the job that may delete
+# the run's artifacts is granted anything else, runs any action or a build step,
+# or names a secret.
 #
 # Two more jobs prove the Windows and macOS binaries on GitHub-hosted machines
 # of each platform: windows-smoke on a Windows runner, and macos-smoke on an
@@ -151,9 +182,10 @@ name: Publish and sign core plugins
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
 #              REGISTRY_USERNAME         the registry username
-#              AGGREGA_RUNNER            the runner label for build and
-#                                        sign-and-publish (optional, a hosted
-#                                        runner by default)
+#              AGGREGA_RUNNER            the label of the self-hosted runner
+#                                        build, sign-windows, sign-and-publish
+#                                        and clean-up run on (required; one
+#                                        machine)
 #              CLI_PUBLISH_OVERLAY_DIR   the per-plugin overlay directory
 #                                        (optional, aggrega-hub/plugin-overlays
 #                                        by default)
@@ -218,19 +250,45 @@ on:
 # expected, not a leak), and contents:write, which lets it create the GitHub
 # release and upload the built binaries as release assets on this repository.
 # contents:write grants no other git write: the workflow never creates or pushes
-# a tag.
+# a tag. clean-up replaces it with actions:write alone, which lets it list and
+# delete this run's artifacts and does not let it read the repository.
 permissions:
   contents: read
+
+# The hand-over folder's name and its key, this run and this attempt: the one
+# statement of it. Each job on the runner AGGREGA_RUNNER names finds the folder
+# at "$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER", beside the runner's
+# temporary directory — the runner's work directory — since the runner empties
+# the temporary directory itself at the start and end of every job.
+env:
+  RELEASE_HANDOVER: aggrega-release-handover/${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   registry-credential:
     # A hosted runner, as the other publishers' credential checks run: the job is
     # one request, and it holds the registry password in a job that runs no
-    # third-party code.
+    # third-party code. It is the run's first job, so it is also where a run with
+    # no runner for the local jobs stops.
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Require the runner the local jobs share
+        # build, sign-windows, sign-and-publish and clean-up hand files to each
+        # other on one machine's disk, so the release runs only where
+        # AGGREGA_RUNNER names that machine; with it unset the run stops here,
+        # before anything is built, rather than falling back to a hosted runner
+        # or to artifacts.
+        env:
+          AGGREGA_RUNNER: ${{ vars.AGGREGA_RUNNER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$AGGREGA_RUNNER" ]; then
+            echo "publish-plugins: the release needs its self-hosted runner: set the repository variable AGGREGA_RUNNER to that runner's label, since the build, signing, publishing and clean-up jobs hand files to each other on its disk" >&2
+            exit 1
+          fi
+          echo "publish-plugins: the build, signing, publishing and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
+
       - name: Check out the CLI
         # Only for the check script. The launched ref, not the release tag: a
         # dispatch naming an earlier tag still runs the check from the launched
@@ -261,14 +319,13 @@ jobs:
 
   build:
     needs: registry-credential
-    # Configurable runner label. Building the embedded guests is heavy; point the
-    # AGGREGA_RUNNER repository variable at a self-hosted label to run the
-    # build off metered hosted minutes. The default hosted runner is unlikely to
-    # complete the guest build within the free-tier budget — if the build proves
-    # infeasible on a hosted runner, provision a self-hosted one. Every later
-    # step that needs this build's outputs reads them in this job, or from the
-    # artifacts it uploads.
-    runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
+    # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback:
+    # building the embedded guests is heavy, and sign-windows and
+    # sign-and-publish read what this job builds from that machine's disk, in the
+    # hand-over folder. Every later step that needs this build's outputs reads
+    # them in this job, from the hand-over folder, or, on a GitHub-hosted runner,
+    # from the artifacts it uploads.
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
     permissions:
       contents: read
 
@@ -321,7 +378,7 @@ jobs:
       # no image, plugin, or release is ever produced from an unvalidated build.
 
       - name: Give aggrega a configuration of this run's own
-        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, the
+        # On the persistent self-hosted runner AGGREGA_RUNNER names, the
         # runner's user may keep a global aggrega configuration of their own,
         # and every aggrega command reads it: a registry, a trust setting, a CLI
         # plugin or an offline posture recorded there would shape what this
@@ -746,44 +803,53 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/amd64 --expect-version "$BIN_VERSION"
 
-      - name: Make this run's own staging directories
-        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, a
-        # fixed name in the runner's temporary directory can still hold an
-        # earlier run's files, which the smoke staging refuses to stage over and
-        # the release inputs would otherwise carry as this run's own. This run
-        # stages into directories of its own, made empty here: the steps below,
-        # the uploads included, read them from the environment, and the last
-        # step removes them.
+      - name: Make this run's own staging directories and its hand-over folder
+        # On the persistent self-hosted runner AGGREGA_RUNNER names, a fixed name
+        # can still hold an earlier run's files, which the smoke staging refuses
+        # to stage over and the release inputs would otherwise carry as this
+        # run's own. So the smoke inputs, which are uploaded, are staged into
+        # directories of this run's own in the runner's temporary directory, and
+        # the last steps remove them; and what sign-windows and sign-and-publish
+        # read — the unsigned Windows binaries and the release inputs — goes into
+        # this run's hand-over folder, beside that directory, since the runner
+        # empties it when this job ends. The folder is made here, readable by the
+        # runner's user alone, and refused if it already exists; the root that
+        # holds every run's folder must be that user's own, and is kept readable
+        # by them alone. clean-up removes the folder when the run ends. The steps
+        # below read every directory from the environment.
         run: |
           set -euo pipefail
-          windows_unsigned="$(mktemp -d "$RUNNER_TEMP/windows-unsigned.XXXXXX")"
+          [ -n "$RELEASE_HANDOVER" ] || { echo "publish-plugins: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          root="$(dirname "$handover")"
+          mkdir -p "$root"
+          if [ ! -O "$root" ]; then
+            echo "publish-plugins: $root, which holds the hand-over folders, is not owned by the runner's user" >&2
+            exit 1
+          fi
+          chmod 0700 "$root"
+          if ! mkdir -m 0700 "$handover"; then
+            echo "publish-plugins: this run's hand-over folder $handover already exists; a run attempt makes its own once" >&2
+            exit 1
+          fi
+          mkdir "$handover/windows-unsigned" "$handover/release-inputs"
           windows_smoke="$(mktemp -d "$RUNNER_TEMP/windows-smoke.XXXXXX")"
           macos_smoke="$(mktemp -d "$RUNNER_TEMP/macos-smoke.XXXXXX")"
-          release_inputs="$(mktemp -d "$RUNNER_TEMP/release-inputs.XXXXXX")"
-          printf 'WINDOWS_UNSIGNED=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\nRELEASE_INPUTS=%s\n' \
-            "$windows_unsigned" "$windows_smoke" "$macos_smoke" "$release_inputs" >> "$GITHUB_ENV"
+          printf 'HANDOVER=%s\nWINDOWS_UNSIGNED=%s\nRELEASE_INPUTS=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\n' \
+            "$handover" "$handover/windows-unsigned" "$handover/release-inputs" "$windows_smoke" "$macos_smoke" >> "$GITHUB_ENV"
+          echo "hand-over folder: $handover"
 
       - name: Collect the Windows binaries for signing
         # The three Windows binaries the steps above wrote, unsigned, under the
-        # names they wrote them, into a directory of their own: sign-windows
-        # downloads exactly these, and nothing else this job built. A missing
-        # file fails the copy.
+        # names they wrote them, into the hand-over folder's windows-unsigned/:
+        # sign-windows reads exactly these, and nothing else this job built. A
+        # missing file fails the copy.
         run: |
           set -euo pipefail
           for built in aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe; do
             cp "aggrega-cli/$built" "$WINDOWS_UNSIGNED/$built"
           done
           ls -l "$WINDOWS_UNSIGNED"
-
-      - name: Upload the Windows binaries for signing
-        # One workflow artifact, read only by sign-windows of this same run and
-        # kept for a day.
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-binaries-unsigned
-          path: ${{ env.WINDOWS_UNSIGNED }}
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Stage the Windows smoke run's inputs
         # Everything the windows-smoke job runs, staged by one script into one
@@ -817,8 +883,10 @@ jobs:
 
       - name: Upload the Windows smoke run's inputs
         # One workflow artifact, read only by the windows-smoke job of this same
-        # run and kept for a day. Hidden files are included so the example
-        # reaches the Windows run exactly as it was built here.
+        # run, which runs on a GitHub-hosted machine, and deleted by clean-up
+        # when the run ends (kept a day at most should clean-up never run).
+        # Hidden files are included so the example reaches the Windows run
+        # exactly as it was built here.
         uses: actions/upload-artifact@v4
         with:
           name: windows-smoke-inputs
@@ -852,7 +920,8 @@ jobs:
 
       - name: Upload the macOS arm64 smoke run's inputs
         # One workflow artifact per macOS target, read only by that target's
-        # macos-smoke job of this same run and kept for a day. Hidden files are
+        # macos-smoke job of this same run and deleted by clean-up when the run
+        # ends (kept a day at most should clean-up never run). Hidden files are
         # included so the example reaches the macOS run exactly as it was built
         # here. An artifact keeps the bytes of each file, the signature the
         # linker embeds in an arm64 executable among them, but not its mode; the
@@ -998,13 +1067,14 @@ jobs:
 
       - name: Collect the binaries the release carries
         # The binaries the steps above wrote, under the names they wrote them,
-        # into the artifact sign-and-publish downloads: aggrega (which
-        # sign-and-publish also runs to log in, publish and sign), aggrega-light,
-        # and the macOS binaries. The stripped Linux binary is already there,
-        # kept by the image step. The Windows binaries are not: the release
-        # attaches them signed, from sign-windows' artifact, so this one leaves
-        # them out and the unsigned ones have no way to the release. A missing
-        # file fails the copy.
+        # into the release inputs sign-and-publish reads from the hand-over
+        # folder: aggrega (which sign-and-publish also runs to log in, publish
+        # and sign), aggrega-light, and the macOS binaries. The stripped Linux
+        # binary is already there, kept by the image step. The Windows binaries
+        # are not: the release attaches them signed, from sign-windows' artifact,
+        # so the release inputs leave them out and the unsigned ones have no way
+        # to the release. A copy keeps each file's mode, so aggrega stays
+        # executable. A missing file fails the copy.
         run: |
           set -euo pipefail
           BIN="$RELEASE_INPUTS/bin"
@@ -1015,26 +1085,48 @@ jobs:
           done
           ls -l "$BIN"
 
-      - name: Upload the release inputs
-        # One workflow artifact, read only by sign-and-publish of this same run
-        # and kept for a day: bin/ (the binaries), mcp-bundle/ (the extension
-        # package), plugins/ (the entities, their guests and the pairing) and
-        # image/ (the tooling image archive and its references). An artifact
-        # keeps each file's bytes but not its mode; sign-and-publish makes the
-        # binary it runs executable again.
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-inputs
-          path: ${{ env.RELEASE_INPUTS }}
-          if-no-files-found: error
-          retention-days: 1
+      - name: Write the hand-over folder's list
+        # The last step that writes into the hand-over folder, after every step
+        # of this job that runs third-party code. SHA256SUMS, at the folder's
+        # root, gives the SHA-256 of every file beneath it — windows-unsigned/
+        # with the three unsigned Windows binaries, and release-inputs/ with
+        # bin/ (the binaries), mcp-bundle/ (the extension package), plugins/
+        # (the entities, their guests and the pairing) and image/ (the tooling
+        # image archive and its references) — by its path from the folder, in
+        # bytewise order, in the form sha256sum writes. It is written under
+        # another name and then renamed, so a list present means the hand-over
+        # is complete. sign-windows and sign-and-publish hold what they read to
+        # it before using any of it, so a file changed, added or removed after
+        # this step is refused. Anything in the folder that is neither a file nor
+        # a directory refuses the list, since no list can hold it.
+        run: |
+          set -euo pipefail
+          cd "$HANDOVER"
+          if [ -n "$(find . -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
+            echo "publish-plugins: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
+            find . -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
+            exit 1
+          fi
+          mapfile -d '' -t files < <(find . -type f -printf '%P\0' | LC_ALL=C sort -z)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "publish-plugins: the hand-over folder $HANDOVER holds no file" >&2
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" > SHA256SUMS.partial
+          mv SHA256SUMS.partial SHA256SUMS
+          echo "hand-over folder $HANDOVER: ${#files[@]} file(s), $(du -sb . | cut -f1) bytes, each listed in SHA256SUMS:"
+          cat SHA256SUMS
 
       - name: Remove this run's staging directories
-        # Whatever the steps above did, so nothing this run staged is left on a
-        # persistent runner for a later run to find.
-        if: ${{ always() && env.RELEASE_INPUTS != '' }}
+        # Whatever the steps above did, so nothing this run staged in the
+        # runner's temporary directory is left on the persistent runner for a
+        # later run to find; a directory made read-only is made writable first.
+        # The hand-over folder is not one of them: sign-windows and
+        # sign-and-publish read it after this job, and clean-up removes it.
+        if: ${{ always() && env.WINDOWS_SMOKE_INPUTS != '' }}
         run: |
-          rm -rf -- "$WINDOWS_UNSIGNED" "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$RELEASE_INPUTS"
+          chmod -R u+w -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -1042,6 +1134,7 @@ jobs:
         # to find.
         if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
         run: |
+          chmod -R u+w -- "$RUN_CONFIG_HOME" 2>/dev/null || true
           rm -rf -- "$RUN_CONFIG_HOME"
 
   sign-windows:
@@ -1067,12 +1160,21 @@ jobs:
     # profile. Which refs of which workflow may make that exchange is decided by
     # the identity's federated credentials in Azure, and stated nowhere here.
     # Everything that runs in this job can reach those tokens, so what runs is
-    # kept to the shell's own utilities, curl, GitHub's own artifact download and
-    # upload, and jsign — one jar, fetched at one version and refused unless its
-    # SHA-256 is the one written below — under the Java the hosted image
-    # provides. No checkout, no secret, no build step. It runs on a GitHub-hosted
-    # runner, a fresh machine for every job, and never on the AGGREGA_RUNNER
-    # label, because a persistent runner keeps state between runs.
+    # kept to the shell's own utilities, curl, GitHub's own artifact upload, and
+    # jsign — one jar, fetched at one version and refused unless its SHA-256 is
+    # the one written below — under a Java runtime fetched and held the same
+    # way, so no Java the machine carries runs here. No checkout, no secret, no
+    # build step.
+    #
+    # It runs on the runner AGGREGA_RUNNER names, the machine the build ran on,
+    # and reads the three unsigned binaries from the hand-over folder there, once
+    # every file the folder's list names matches it: nothing the build wrote is
+    # uploaded for it. That machine keeps state between runs, and the build's
+    # third-party code ran on it, as the runner's user, before this job: what
+    # this job holds is its own, what the machine holds is shared. The publishing
+    # job, on the same machine, can already exchange its own token for the
+    # signing identity (above), so signing here adds no reach to the identity
+    # that the machine did not have.
     #
     # Signing changes the files: a signed binary differs from one signing to the
     # next, in its certificate and its timestamp, while its Authenticode digest,
@@ -1080,7 +1182,7 @@ jobs:
     # are the unsigned ones, and the bytes that run on Windows and ship are the
     # ones this job signs, which its SHA-256 list names.
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -1099,6 +1201,14 @@ jobs:
       # refused before it runs; moving to another version changes both lines.
       JSIGN_URL: https://repo1.maven.org/maven2/net/jsign/jsign/7.5/jsign-7.5.jar
       JSIGN_SHA256: 602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c
+      # The Java runtime jsign runs under: Eclipse Temurin 21.0.12.1+1, the JRE
+      # for x64 Linux, from Adoptium's release on GitHub, and the SHA-256 of that
+      # archive, which is also the digest GitHub publishes for it, the release's
+      # own .sha256.txt and Adoptium's API. An archive with any other digest is
+      # refused before it is unpacked; moving to another version changes both
+      # lines.
+      JAVA_URL: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz
+      JAVA_SHA256: 2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500
       # The binaries this job signs, under the names the build wrote them.
       WINDOWS_BINARIES: aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe
     steps:
@@ -1117,21 +1227,43 @@ jobs:
           [ "$missing" = 0 ] || exit 1
           echo "sign-windows: signing with the profile $ARTIFACT_SIGNING_PROFILE of the account $ARTIFACT_SIGNING_ACCOUNT at $ARTIFACT_SIGNING_ENDPOINT"
 
-      - name: Download the Windows binaries the build job built
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-binaries-unsigned
-          path: ${{ runner.temp }}/windows-unsigned
-
-      - name: Hold the download to the three Windows binaries
-        # Exactly the three, and nothing beside them, are copied to the
-        # directory they are signed in; the digests printed are the unsigned
-        # bytes the build wrote.
+      - name: Hold the hand-over's Windows binaries to the build job's list
+        # The three unsigned binaries the build job left in this run's hand-over
+        # folder, on this machine, are signed only once every file the folder's
+        # list names still has the SHA-256 the list gives it and the list names
+        # all three; and exactly the three, nothing beside them, are copied to
+        # the directory of this job's own they are signed in. The list is read by
+        # sha256sum itself: this job checks out nothing, so it cannot read it
+        # through the smoke library's smoke_check_sums, which sign-and-publish
+        # holds the whole folder to. A folder that is not here means the build
+        # ran on another machine or in another attempt, and is refused. The
+        # digests printed are the unsigned bytes the build wrote.
         run: |
           set -euo pipefail
-          unsigned="$RUNNER_TEMP/windows-unsigned"
+          [ -n "$RELEASE_HANDOVER" ] || { echo "sign-windows: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          unsigned="$handover/windows-unsigned"
           signed="$RUNNER_TEMP/windows-signed"
           read -r -a names <<<"$WINDOWS_BINARIES"
+          if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
+            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            exit 1
+          fi
+          if ! verified="$(cd "$handover" && sha256sum --check --strict SHA256SUMS 2>&1)"; then
+            printf '%s\n' "$verified" >&2
+            echo "sign-windows: the hand-over folder $handover no longer matches the list the build job wrote" >&2
+            exit 1
+          fi
+          printf '%s\n' "$verified"
+          for name in "${names[@]}"; do
+            case $'\n'"$verified"$'\n' in
+              *$'\n'"windows-unsigned/$name: OK"$'\n'*) ;;
+              *)
+                echo "sign-windows: the hand-over folder's list does not name windows-unsigned/$name" >&2
+                exit 1
+                ;;
+            esac
+          done
           shopt -s nullglob dotglob
           found=("$unsigned"/*)
           shopt -u nullglob dotglob
@@ -1141,7 +1273,7 @@ jobs:
             [ -f "$unsigned/$name" ] || exact=0
           done
           if [ "$exact" != 1 ]; then
-            echo "sign-windows: the download holds ${#found[@]} file(s), not exactly ${names[*]}:" >&2
+            echo "sign-windows: $unsigned holds ${#found[@]} file(s), not exactly ${names[*]}:" >&2
             for path in "${found[@]}"; do
               echo "  ${path##*/}" >&2
             done
@@ -1152,7 +1284,36 @@ jobs:
             cp "$unsigned/$name" "$signed/$name"
           done
           echo "unsigned, as the build job wrote them:"
-          (cd "$unsigned" && sha256sum "${names[@]}")
+          (cd "$signed" && sha256sum "${names[@]}")
+
+      - name: Fetch the Java runtime and hold it to its SHA-256
+        # The runtime jsign runs under, fetched for this job rather than taken
+        # from the machine: an archive whose digest is not the one written above
+        # is removed before anything in it is unpacked, and the step names both
+        # digests. The archive is
+        # for x64 Linux, so another machine is refused, naming what it is.
+        run: |
+          set -euo pipefail
+          machine="$(uname -s)/$(uname -m)"
+          if [ "$machine" != Linux/x86_64 ]; then
+            echo "sign-windows: the Java runtime this workflow pins is for x64 Linux, and this runner is $machine" >&2
+            exit 1
+          fi
+          archive="$RUNNER_TEMP/java-runtime.tar.gz"
+          runtime="$RUNNER_TEMP/java"
+          curl -sSfL --retry 3 -o "$archive" "$JAVA_URL"
+          actual="$(sha256sum < "$archive")"
+          actual="${actual%% *}"
+          if [ "$actual" != "$JAVA_SHA256" ]; then
+            rm -f -- "$archive"
+            echo "sign-windows: $JAVA_URL has SHA-256 $actual, not $JAVA_SHA256, the digest this workflow pins; refusing to unpack it" >&2
+            exit 1
+          fi
+          mkdir -p "$runtime"
+          tar -xzf "$archive" -C "$runtime" --strip-components=1
+          rm -f -- "$archive"
+          echo "java: $JAVA_URL, SHA-256 $actual, the pinned digest, unpacked at $runtime"
+          "$runtime/bin/java" -version
 
       - name: Fetch jsign and hold it to its SHA-256
         # A jar whose digest is not the one written above is removed unrun, and
@@ -1170,17 +1331,6 @@ jobs:
             exit 1
           fi
           echo "jsign: $JSIGN_URL, SHA-256 $actual, the pinned digest"
-
-      - name: Show the Java jsign runs under
-        # The hosted Ubuntu image provides Java; its version goes in the log.
-        run: |
-          set -euo pipefail
-          if ! command -v java >/dev/null 2>&1; then
-            echo "sign-windows: no java on PATH, so jsign cannot run; this job expects the hosted Ubuntu image's Java" >&2
-            exit 1
-          fi
-          echo "java: $(command -v java)"
-          java -version
 
       - name: Sign the Windows binaries
         # Mints the run's OIDC token, exchanges it with Microsoft Entra ID for a
@@ -1261,7 +1411,7 @@ jobs:
           for name in "${names[@]}"; do
             files+=("$signed/$name")
           done
-          ARTIFACT_SIGNING_TOKEN="$access_token" java -jar "$RUNNER_TEMP/jsign/jsign.jar" \
+          ARTIFACT_SIGNING_TOKEN="$access_token" "$RUNNER_TEMP/java/bin/java" -jar "$RUNNER_TEMP/jsign/jsign.jar" \
             --storetype TRUSTEDSIGNING \
             --keystore "$ARTIFACT_SIGNING_ENDPOINT" \
             --storepass env:ARTIFACT_SIGNING_TOKEN \
@@ -1286,14 +1436,31 @@ jobs:
           ls -l "$signed"
 
       - name: Upload the signed Windows binaries and their list
-        # One workflow artifact, read by windows-smoke and sign-and-publish of
-        # this same run and kept for a day.
+        # One workflow artifact, read by windows-smoke, on a GitHub-hosted
+        # Windows machine, and by sign-and-publish of this same run, so the
+        # release attaches the very bytes the Windows run ran; deleted by
+        # clean-up when the run ends (kept a day at most should clean-up never
+        # run).
         uses: actions/upload-artifact@v4
         with:
           name: windows-binaries-signed
           path: ${{ runner.temp }}/windows-signed
           if-no-files-found: error
           retention-days: 1
+
+      - name: Remove this job's directories
+        # Whatever the steps above did, so neither the binaries this job copied
+        # and signed nor the Java runtime and jsign it fetched are left in the
+        # runner's temporary directory on the persistent runner; a directory
+        # made read-only is made writable first. The hand-over folder is
+        # clean-up's to remove.
+        if: ${{ always() }}
+        run: |
+          for dir in "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/java" "$RUNNER_TEMP/jsign"; do
+            chmod -R u+w -- "$dir" 2>/dev/null || true
+            rm -rf -- "$dir"
+          done
+          rm -f -- "$RUNNER_TEMP/java-runtime.tar.gz"
 
   sign-and-publish:
     # Waits for the build, for sign-windows and for every smoke run —
@@ -1308,8 +1475,9 @@ jobs:
     # attaches the Windows binaries it signed; from the smoke jobs this job
     # reads nothing but their result.
     needs: [build, sign-windows, windows-smoke, macos-smoke]
-    # The same runner label as the build.
-    runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
+    # The runner the build ran on, with no hosted fallback: this job reads the
+    # release inputs from the hand-over folder on that machine's disk.
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
     permissions:
       contents: write
       id-token: write
@@ -1385,26 +1553,51 @@ jobs:
           persist-credentials: false
 
       - name: Make this run's own directories
-        # On a persistent self-hosted runner, which AGGREGA_RUNNER can name, a
-        # fixed name in the runner's temporary directory can still hold an
-        # earlier run's files, which this run would then read as inputs it was
-        # handed or release beside its own. The
-        # inputs arrive in a directory of this run's own, INPUTS, the signed
-        # Windows binaries in another, WINDOWS_SIGNED, and the release assets
-        # are assembled in a third, RELEASE_DIR, all made empty here; the steps
-        # below read them from the environment, and the last step removes them.
+        # On the persistent self-hosted runner AGGREGA_RUNNER names, a fixed
+        # name in the runner's temporary directory can still hold an earlier
+        # run's files, which this run would then read as inputs it was handed or
+        # release beside its own. The signed Windows binaries arrive in a
+        # directory of this run's own, WINDOWS_SIGNED, and the release assets
+        # are assembled in another, RELEASE_DIR, both made empty here; the steps
+        # below read them from the environment, and the last steps remove them.
+        # The release inputs are read where the build job left them, in this
+        # run's hand-over folder, INPUTS, once the next step has held that
+        # folder to its list; clean-up removes the folder.
         run: |
           set -euo pipefail
-          inputs="$(mktemp -d "$RUNNER_TEMP/release-inputs.XXXXXX")"
+          [ -n "$RELEASE_HANDOVER" ] || { echo "sign-and-publish: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
           windows_signed="$(mktemp -d "$RUNNER_TEMP/windows-signed.XXXXXX")"
           release="$(mktemp -d "$RUNNER_TEMP/release.XXXXXX")"
-          printf 'INPUTS=%s\nWINDOWS_SIGNED=%s\nRELEASE_DIR=%s\n' "$inputs" "$windows_signed" "$release" >> "$GITHUB_ENV"
+          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nRELEASE_DIR=%s\n' \
+            "$handover" "$handover/release-inputs" "$windows_signed" "$release" >> "$GITHUB_ENV"
 
-      - name: Download the release inputs
-        uses: actions/download-artifact@v4
-        with:
-          name: release-inputs
-          path: ${{ env.INPUTS }}
+      - name: Hold the hand-over folder to the build job's list
+        # Before anything in it is used or run: every file in this run's
+        # hand-over folder, on this machine, must be one SHA256SUMS names, each
+        # once, with the SHA-256 it gives, and the list must name nothing else —
+        # so a file changed, added or removed since the build job wrote the list
+        # is refused. It is read by smoke_check_sums, the same function that
+        # holds the signed Windows binaries to theirs below, from the
+        # repository's own smoke library at the commit the build job built. A
+        # folder that is not here means the build ran on another machine or in
+        # another attempt, and is refused; so is anything in the folder that is
+        # neither a file nor a directory. A dry run checks too.
+        run: |
+          set -euo pipefail
+          if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
+            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            exit 1
+          fi
+          if [ -n "$(find "$HANDOVER" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
+            echo "sign-and-publish: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
+            find "$HANDOVER" -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
+            exit 1
+          fi
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          mapfile -d '' -t files < <(cd "$HANDOVER" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
+          smoke_check_sums "$HANDOVER/SHA256SUMS" "$HANDOVER" "${files[@]}"
 
       - name: Download the signed Windows binaries
         # The artifact sign-windows uploaded and windows-smoke ran: the three
@@ -1431,28 +1624,30 @@ jobs:
           mapfile -t windows_binaries <<<"$names"
           smoke_check_sums "$WINDOWS_SIGNED/SHA256SUMS" "$WINDOWS_SIGNED" "${windows_binaries[@]}"
 
-      - name: Make the built binary runnable and hold it to the release
-        # The artifact keeps no file modes, so the binary this job runs is made
-        # executable again. Whenever a release tag is in play, the binary must
-        # report that tag's version, as the build job's ABI gate held it to, so
-        # the job publishes the build it was handed and no other. Later steps
-        # find the binary through AGGREGA_BIN, and the inputs through INPUTS.
+      - name: Hold the built binary to the release
+        # The hand-over folder keeps each file's mode, so the binary this job
+        # runs is executable as the build job wrote it, and one that is not is
+        # refused rather than made so. Whenever a release tag is in play, the
+        # binary must report that tag's version, as the build job's ABI gate held
+        # it to, so the job publishes the build it was handed and no other. Later
+        # steps find the binary through AGGREGA_BIN, and the inputs through
+        # INPUTS.
         run: |
           set -euo pipefail
-          chmod 0755 "$INPUTS/bin/aggrega"
+          [ -x "$INPUTS/bin/aggrega" ] || { echo "the build job handed over no executable aggrega at $INPUTS/bin/aggrega" >&2; exit 1; }
           # Whitespace is stripped before the match so the extraction is insensitive to
           # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
           # only where the extracted value contains no whitespace, which holds for the
           # version string read here.
           BIN_VERSION="$("$INPUTS/bin/aggrega" version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
-          [ -n "$BIN_VERSION" ] || { echo "the downloaded binary reported no version" >&2; exit 1; }
+          [ -n "$BIN_VERSION" ] || { echo "the handed-over binary reported no version" >&2; exit 1; }
           if [ "$EVENT_NAME" = "push" ]; then
             TAG="$REF_NAME"
           else
             TAG="$DISPATCH_TAG"
           fi
           if [ -n "$TAG" ] && [ "$BIN_VERSION" != "${TAG#v}" ]; then
-            echo "the downloaded binary reports version '$BIN_VERSION', not the release tag '${TAG#v}'" >&2
+            echo "the handed-over binary reports version '$BIN_VERSION', not the release tag '${TAG#v}'" >&2
             exit 1
           fi
           echo "AGGREGA_BIN=$INPUTS/bin/aggrega" >> "$GITHUB_ENV"
@@ -1496,7 +1691,7 @@ jobs:
         # The request credential reaches curl on its standard input, which -H @-
         # reads as header lines, and never on its command line: a command line
         # is readable in the process list by every other user of the machine,
-        # which on a persistent self-hosted runner AGGREGA_RUNNER can name may
+        # which on the persistent self-hosted runner AGGREGA_RUNNER names may
         # be someone else. printf is the shell's own, so it starts no process
         # whose command line carries the credential either.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
@@ -1730,10 +1925,14 @@ jobs:
 
       - name: Remove this run's directories
         # Whatever the steps above did, so nothing this run received or
-        # assembled is left on a persistent runner for a later run to find.
-        if: ${{ always() && env.INPUTS != '' }}
+        # assembled in the runner's temporary directory is left on the persistent
+        # runner for a later run to find; a directory made read-only is made
+        # writable first. The hand-over folder, which INPUTS lies in, is
+        # clean-up's to remove.
+        if: ${{ always() && env.RELEASE_DIR != '' }}
         run: |
-          rm -rf -- "$INPUTS" "$WINDOWS_SIGNED" "$RELEASE_DIR"
+          chmod -R u+w -- "$WINDOWS_SIGNED" "$RELEASE_DIR" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SIGNED" "$RELEASE_DIR"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -1742,6 +1941,7 @@ jobs:
         # for a later run to find.
         if: ${{ always() && env.RUN_CONFIG_HOME != '' }}
         run: |
+          chmod -R u+w -- "$RUN_CONFIG_HOME" 2>/dev/null || true
           rm -rf -- "$RUN_CONFIG_HOME"
 
   smoke-binaries:
@@ -1974,3 +2174,181 @@ jobs:
         run: |
           set -euo pipefail
           aggrega-cli/scripts/platform-smoke.sh --target "$TARGET" --inputs "$RUNNER_TEMP/macos-smoke"
+
+  clean-up:
+    # Runs last, once every other job has ended, whatever each did — passed,
+    # failed, was skipped or was cancelled — so a run leaves nothing behind it:
+    # no artifact on GitHub, whose storage every artifact counts against until
+    # it is deleted, and nothing on the runner AGGREGA_RUNNER names, whose disk
+    # the build fills. The release's own assets are attached to the GitHub
+    # release, not to the run, and nothing here touches them. With
+    # AGGREGA_RUNNER unset the run stopped in its first job, before anything was
+    # built or uploaded, so this job is skipped then.
+    #
+    # It may list and delete this run's artifacts (actions: write) and holds
+    # nothing else: it cannot read the repository, checks out nothing, runs no
+    # action, names no secret, and its token reaches curl on standard input.
+    # It touches no container image and no Docker configuration: the run leaves
+    # no image in the machine's image store — the build job writes the tooling
+    # image to an archive and loads nothing, and sign-and-publish's publish
+    # script removes every reference it loads when it exits, a refusal
+    # included.
+    needs: [registry-credential, build, sign-windows, sign-and-publish, smoke-binaries, windows-smoke, macos-smoke]
+    if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
+    timeout-minutes: 15
+    permissions:
+      actions: write
+    steps:
+      - name: Delete every artifact this run uploaded
+        # Lists this run's artifacts through the REST API, a hundred at a time,
+        # prints each one's name and size, deletes each, and lists them again
+        # until none is left, so the run ends keeping none. The run's token
+        # reaches curl on its standard input as a header line, never on its
+        # command line. Only an artifact carries a url ending in
+        # /actions/artifacts/<id>, a name and a size, so each is read from those,
+        # with the whitespace of the answer set aside and no jq. An artifact
+        # already gone is reported and passes; any other refusal fails the step,
+        # naming the HTTP status.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ARTIFACTS_URL: ${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts
+          ARTIFACTS_URL: ${{ github.api_url }}/repos/${{ github.repository }}/actions/artifacts
+        run: |
+          set -euo pipefail
+          response="$(mktemp "$RUNNER_TEMP/artifacts.XXXXXX")"
+          trap 'rm -f -- "$response"' EXIT
+          api() {
+            printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$GH_TOKEN" |
+              curl -sS --retry 3 -X "$1" -H @- -o "$response" -w '%{http_code}' "$2"
+          }
+          list() {
+            local page=1 status body rest n
+            local re_url='"url":"[^"]*/actions/artifacts/([0-9]+)"' re_name='"name":"([^"]*)"' re_size='"size_in_bytes":([0-9]+)'
+            ids=() names=() sizes=()
+            while :; do
+              status="$(api GET "$RUN_ARTIFACTS_URL?per_page=100&page=$page")"
+              if [ "$status" != 200 ]; then
+                echo "clean-up: listing this run's artifacts answered HTTP $status" >&2
+                return 1
+              fi
+              body="$(tr -d '[:space:]' < "$response")"
+              n=0
+              rest="$body"
+              while [[ $rest =~ $re_url ]]; do
+                ids+=("${BASH_REMATCH[1]}")
+                rest="${rest#*"${BASH_REMATCH[0]}"}"
+                n=$((n + 1))
+              done
+              rest="$body"
+              while [[ $rest =~ $re_name ]]; do
+                names+=("${BASH_REMATCH[1]}")
+                rest="${rest#*"${BASH_REMATCH[0]}"}"
+              done
+              rest="$body"
+              while [[ $rest =~ $re_size ]]; do
+                sizes+=("${BASH_REMATCH[1]}")
+                rest="${rest#*"${BASH_REMATCH[0]}"}"
+              done
+              [ "$n" -eq 100 ] || return 0
+              page=$((page + 1))
+            done
+          }
+
+          list || exit 1
+          echo "this run uploaded ${#ids[@]} artifact(s):"
+          for i in "${!ids[@]}"; do
+            if [ "${#names[@]}" -eq "${#ids[@]}" ] && [ "${#sizes[@]}" -eq "${#ids[@]}" ]; then
+              echo "  ${names[$i]}, ${sizes[$i]} bytes (id ${ids[$i]})"
+            else
+              echo "  id ${ids[$i]}"
+            fi
+          done
+          failed=0
+          for id in "${ids[@]}"; do
+            status="$(api DELETE "$ARTIFACTS_URL/$id")"
+            case "$status" in
+              204) echo "deleted artifact $id" ;;
+              404) echo "artifact $id was already gone" ;;
+              *)
+                echo "clean-up: deleting artifact $id answered HTTP $status" >&2
+                failed=1
+                ;;
+            esac
+          done
+          [ "$failed" = 0 ] || exit 1
+          for attempt in 1 2 3 4 5; do
+            list || exit 1
+            if [ "${#ids[@]}" -eq 0 ]; then
+              echo "ok: this run keeps no artifact"
+              exit 0
+            fi
+            echo "listed again ($attempt): ${#ids[@]} artifact(s) still shown"
+            sleep 3
+          done
+          echo "clean-up: ${#ids[@]} artifact(s) of this run are still listed after their deletion: ${names[*]:-${ids[*]}}" >&2
+          exit 1
+
+      - name: Remove this run's hand-over folder
+        # Whatever the steps and jobs before did: the folder the build job made
+        # for this run attempt, made writable first, so no directory made
+        # read-only survives. The root that holds every run's folder goes too
+        # once it is empty; a folder of another run is left to that run's own
+        # clean-up, which may still be to come, and named in the log.
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_HANDOVER" ] || { echo "clean-up: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          root="$(dirname "$handover")"
+          if [ -e "$handover" ]; then
+            chmod -R u+w -- "$handover"
+            rm -rf -- "$handover"
+            echo "removed this run's hand-over folder $handover"
+          else
+            echo "this run attempt left no hand-over folder at $handover"
+          fi
+          if [ -e "$handover" ]; then
+            echo "clean-up: $handover is still there after its removal" >&2
+            exit 1
+          fi
+          [ ! -d "$root" ] || rmdir -- "$root" 2>/dev/null || true
+          if [ -d "$root" ]; then
+            echo "other runs' hand-over folders remain in $root, each left to its own run's clean-up:"
+            ls -la -- "$root"
+          fi
+
+      - name: Empty the runner's temporary directory of what the run left there
+        # The runner empties its temporary directory itself when every job starts
+        # and ends, of everything its user may delete, so what is found here is
+        # what it could not remove — a directory made read-only, most often.
+        # Each such entry is named, made writable and removed. Entries whose
+        # names begin with an underscore are the runner's own, the files it reads
+        # this job's step commands from among them, and stay, as does this step's
+        # own script. What the runner's user may still not remove is named in a
+        # warning.
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob dotglob
+          left=()
+          for entry in "$RUNNER_TEMP"/*; do
+            case "${entry##*/}" in _*) continue ;; esac
+            [ "$entry" -ef "$0" ] && continue
+            left+=("$entry")
+          done
+          if [ "${#left[@]}" -eq 0 ]; then
+            echo "ok: the runner's temporary directory $RUNNER_TEMP holds nothing the run left"
+            exit 0
+          fi
+          echo "left in the runner's temporary directory $RUNNER_TEMP, now removed:"
+          remaining=()
+          for entry in "${left[@]}"; do
+            echo "  ${entry##*/}"
+            chmod -R u+w -- "$entry" 2>/dev/null || true
+            rm -rf -- "$entry" 2>/dev/null || true
+            [ ! -e "$entry" ] || remaining+=("${entry##*/}")
+          done
+          if [ "${#remaining[@]}" -gt 0 ]; then
+            echo "::warning::the runner's user may not remove ${remaining[*]} from $RUNNER_TEMP"
+          fi
