@@ -83,9 +83,11 @@ func discoverClosureDeprecations(
 
 	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
 	// discovered marker reaches every section that can record one without this pass
-	// naming the sections.
+	// naming the sections, and it reaches every row pinning an artifact this pass
+	// asked about, by the same join the signature fold uses: see verifiedJoin.
+	markers := joinVerified(verifiable, recordByURI)
 	for _, row := range lf.VerifiedFactRows() {
-		if rec, ok := recordByURI[row.URI]; ok {
+		if rec, ok := markers.answer(row); ok {
 			row.RecordDeprecation(rec)
 		}
 	}

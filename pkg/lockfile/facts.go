@@ -12,8 +12,8 @@ package lockfile
 // the view addresses the row in place: recording a fact through it writes the
 // lockfile row itself, and a copied-out field would silently record nothing.
 type VerifiedFactRow struct {
-	// URI is the row's canonical identity — the key a pull's discovered facts are
-	// joined onto the row by.
+	// URI is the row's canonical identity — the first key a pull's discovered facts
+	// are joined onto the row by; a row's ManifestDigest is the second.
 	URI string
 	// Digest is the row's pinned content digest. A caller carrying a fact forward
 	// across pulls compares it, because a changed pin is a different artifact whose

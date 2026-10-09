@@ -1281,7 +1281,8 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// re-discovered below, because both passes read the registry and a cache
 			// hit does not touch it; the prior facts hold for a pin that is unchanged.
 			// An entry fetched from the registry is verified and re-discovered below,
-			// and what that finds overwrites whatever was carried. Without this, a
+			// and what that finds overwrites whatever was carried, on its own row and
+			// on every row pinning the same bytes. Without this, a
 			// warm re-pull — or a build's honoring automatic fill — would silently drop
 			// a recorded signature and a recorded deprecation, the second of which
 			// masks a deprecated dependency.

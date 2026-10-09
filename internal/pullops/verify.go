@@ -48,10 +48,14 @@ import (
 // recovered here from the same binding the puller used — while a content-pinned
 // .wasm plugin already carries its host in the URI. All are verified against
 // the resolved registry's trust policy. A Tier-1 / Tier-2 / local / external
-// item is skipped: it was already verified when first fetched, or never carries
-// a registry signature. A fatal verification failure (a required signature that
-// is missing, untrusted, or invalid for a non-advisory registry) returns a
-// non-nil error and halts the pull.
+// item is not asked about: it was already verified when its bytes were fetched,
+// or never carries a registry signature. Where those bytes were fetched by this
+// very pull, under another reference to the same artifact, the answer this pass
+// got for them is recorded on the item's row too (see verifiedJoin), so every
+// row pinning bytes this pull verified records that it did. A fatal
+// verification failure (a required signature that is missing, untrusted, or
+// invalid for a non-advisory registry) returns a non-nil error and halts the
+// pull.
 //
 // Verification warning notices are written to diagOut (os.Stderr in production).
 //
@@ -76,10 +80,11 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, axis := range axes {
 		for _, e := range axis.Refs {
 			// Verify only items freshly resolved from a registry (Tier-3).
-			// A Tier-1 catalog or Tier-2 cache hit was already verified on
-			// the pull that first fetched it (its lockfile entry carries the
-			// fact); a local / external item never carries a registry
-			// signature.
+			// A Tier-2 cache hit was verified on the pull that fetched its
+			// bytes — an earlier one, whose lockfile entry carries the fact
+			// forward, or this one, under another reference to the same
+			// artifact, whose answer the fold below records on it; a local /
+			// external item never carries a registry signature.
 			if !isRegistryResolved(e.ResolutionPath) {
 				continue
 			}
@@ -142,24 +147,23 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, r := range results {
 		factByURI[r.URI] = r
 	}
-	asked := make(map[string]struct{}, len(verifiable))
-	for _, e := range verifiable {
-		asked[e.URI] = struct{}{}
-	}
 	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
 	// verified fact reaches every section that can record one without this pass
-	// naming the sections.
+	// naming the sections, and it reaches every row pinning an artifact this pass
+	// asked about, whichever reference the row records: see verifiedJoin.
 	//
-	// For a row this pass asked the registry about, the answer it got is the row's
-	// fact, and that includes getting none: a signature carried forward from the
-	// prior lockfile is replaced, and cleared where this run found no signature to
-	// record. A row this pass did not ask about — one the content cache or a local
-	// catalog served — keeps whatever was carried onto it.
+	// For a row whose artifact this pass asked the registry about, the answer it got
+	// is the row's fact, and that includes getting none: a signature carried forward
+	// from the prior lockfile is replaced, and cleared where this run found no
+	// signature to record. A row whose artifact this pass did not ask about — one the
+	// content cache or a local catalog served, pinned by no reference this run fetched
+	// — keeps whatever was carried onto it.
+	facts := joinVerified(verifiable, factByURI)
 	for _, row := range lf.VerifiedFactRows() {
-		if _, ok := asked[row.URI]; !ok {
+		if !facts.askedAbout(row) {
 			continue
 		}
-		r, ok := factByURI[row.URI]
+		r, ok := facts.answer(row)
 		if !ok {
 			row.RecordSignature(nil)
 			continue
@@ -180,6 +184,86 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		return err
 	}
 	return nil
+}
+
+// verifiedJoin carries the answers one registry-touching pass got onto the lockfile
+// rows they belong to. Both passes over the closure — the signature verification and
+// the deprecation-marker discovery — fold through it, so the two facts reach the
+// same rows by the same rule.
+//
+// A pass asks the registry once per reference it fetched, but what it learns is a
+// fact about the artifact that reference resolved to, read off its manifest: a
+// signature and a deprecation marker are both referrers of the manifest. One
+// artifact can be pinned under more than one reference — written with its version in
+// one place and without it in another — and only a reference fetched from the
+// registry is asked about. Another reference to the same artifact is served from the
+// content the first fetch cached, in the same pull, so the registry is never asked
+// about it under that reference. The answer belongs to it all the same: it is an
+// answer about the bytes the row pins. So a row takes the answer for its manifest
+// digest whatever reference the row records; a join on the reference alone would
+// leave a row pinned to bytes this pull verified with no record that it did.
+//
+// Where the pass holds an answer for the row's own reference, that one is taken, so a
+// row keeps the answer for the reference that fetched it; otherwise the row takes the
+// answer held for its manifest digest, the first in the order the pass asked.
+type verifiedJoin[T any] struct {
+	byURI         map[string]T
+	byManifest    map[string]T
+	askedURI      map[string]struct{}
+	askedManifest map[string]struct{}
+}
+
+// joinVerified builds the join for one pass from the references it asked the
+// registry about, in the order it asked, and its answers keyed by reference. A
+// reference the pass asked about and holds no answer for is still asked: getting
+// nothing is an answer.
+func joinVerified[T any](asked []pullverify.Entity, answers map[string]T) verifiedJoin[T] {
+	j := verifiedJoin[T]{
+		byURI:         answers,
+		byManifest:    make(map[string]T, len(asked)),
+		askedURI:      make(map[string]struct{}, len(asked)),
+		askedManifest: make(map[string]struct{}, len(asked)),
+	}
+	for _, e := range asked {
+		j.askedURI[e.URI] = struct{}{}
+		j.askedManifest[e.ManifestDigest] = struct{}{}
+		a, ok := answers[e.URI]
+		if !ok {
+			continue
+		}
+		if _, held := j.byManifest[e.ManifestDigest]; !held {
+			j.byManifest[e.ManifestDigest] = a
+		}
+	}
+	return j
+}
+
+// askedAbout reports whether the pass asked the registry about the artifact the row
+// pins, under the row's own reference or under any other.
+func (j verifiedJoin[T]) askedAbout(row lockfile.VerifiedFactRow) bool {
+	if _, ok := j.askedURI[row.URI]; ok {
+		return true
+	}
+	if row.ManifestDigest == "" {
+		return false
+	}
+	_, ok := j.askedManifest[row.ManifestDigest]
+	return ok
+}
+
+// answer returns the pass's answer for the artifact the row pins, and false where it
+// holds none.
+func (j verifiedJoin[T]) answer(row lockfile.VerifiedFactRow) (T, bool) {
+	if a, ok := j.byURI[row.URI]; ok {
+		return a, true
+	}
+	if row.ManifestDigest != "" {
+		if a, ok := j.byManifest[row.ManifestDigest]; ok {
+			return a, true
+		}
+	}
+	var none T
+	return none, false
 }
 
 // verifySubjectBinding resolves one closure reference's catalog kind and the
