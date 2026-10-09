@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"bytes"
 	"strings"
 	"sync"
 
@@ -163,6 +164,27 @@ func (s *Server) catalogDirsFor(releasePath string) []string {
 		return s.wsConfig.Workspace.CatalogDirs
 	}
 	return s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
+}
+
+// absentCatalogDirLines returns one line for each directory the workspace
+// configuration lists for the Release at releasePath where nothing exists, or none
+// where every listed directory exists. Those are the directories the stack
+// catalogDirsFor returns leaves out, so a request reads them as holding nothing,
+// and each line is what tells a reader so: the line `aggrega pull` and `aggrega
+// build` print for that directory, without the indentation a terminal nests it
+// under (noticeLines). releasePath is absolute, and the empty string asks for the
+// workspace's own stack.
+//
+// The lines are the resolver's own (NoteAbsentCatalogDirs), asked for the same
+// Release and with the same absence of command-line directories catalogDirsFor
+// asks the stack with. So what they name and what the stack leaves out cannot come
+// to disagree, and a line here reads exactly as the line a dependency resolution
+// writes for the same directory. A Server holding no resolved workspace — the
+// in-memory test harness — has no resolver to ask, and answers none.
+func (s *Server) absentCatalogDirLines(releasePath string) []string {
+	var lines bytes.Buffer
+	s.resolvedWorkspace.NoteAbsentCatalogDirs(&lines, releasePath, nil)
+	return noticeLines(lines.String())
 }
 
 // namedCatalogDirsFor returns the part of catalogDirsFor's stack somebody named,

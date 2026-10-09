@@ -53,9 +53,14 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // gathers while reading the catalog, which never fail its verdict, at the warning
 // tier ahead of it, the order they were decided in. A configured catalog directory
 // where nothing exists is not in the stack the check is handed, so it is read as
-// holding nothing, as the command line's check reads it. A clean check reports nothing. A request
-// withdrawn while the check runs reports nothing either, and the caller leaves
-// what the file last showed in place.
+// holding nothing, as the command line's check reads it, and the verdict is the one
+// given with that directory not listed. Each such directory is named at the warning
+// tier ahead of every other entry — the stack is decided before the check reads
+// anything — in the line `aggrega pull` and `aggrega build` print for it, so an
+// author whose listing is mistyped is told which directory was not read. A clean
+// check over a stack that leaves none out reports nothing. A request withdrawn while
+// the check runs reports nothing either, and the caller leaves what the file last
+// showed in place.
 func (s *Server) runEntityValidation(ctx context.Context, releasePath, file string, content []byte) []Diagnostic {
 	if _, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil); err != nil {
 		return []Diagnostic{{
@@ -66,12 +71,16 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 			ConditionCodes: conditionCodesOf(err),
 		}}
 	}
+	dirs, named, absent := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath), s.absentCatalogDirLines(releasePath)
 	res, err := validateops.ValidateEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
-		s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath), file, content, false)
+		dirs, named, file, content, false)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
 	var diags []Diagnostic
+	for _, line := range absent {
+		diags = append(diags, closureAdvisoryDiagnostic(line))
+	}
 	for _, note := range res.Notes {
 		diags = append(diags, closureAdvisoryDiagnostic(strings.TrimSpace(note)))
 	}

@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -503,6 +504,25 @@ func (tw *toolWorkspace) namedCatalogDirsFor(release string) []string {
 		return tw.named
 	}
 	return tw.rw.NamedCatalogDirs(release, tw.flagDirs)
+}
+
+// absentCatalogDirLines returns one line for each directory the workspace
+// configuration lists for release where nothing exists, or none where every listed
+// directory exists. Those are the directories the stack catalogDirsFor returns
+// leaves out, so the call reads them as holding nothing, and each line is what
+// tells a caller so: the line `aggrega pull` and `aggrega build` print for that
+// directory, without the indentation a terminal nests it under (diagnosticLines).
+// An empty release is the workspace's own stack.
+//
+// The lines are the resolver's own (NoteAbsentCatalogDirs), asked for the same
+// Release and this call's own catalog_dirs argument, exactly as catalogDirsFor
+// asks the stack, so what they name and what the stack leaves out cannot come to
+// disagree, and a line here reads exactly as the line a dependency resolution
+// writes for the same directory.
+func (tw *toolWorkspace) absentCatalogDirLines(release string) []string {
+	var lines bytes.Buffer
+	tw.rw.NoteAbsentCatalogDirs(&lines, release, tw.flagDirs)
+	return diagnosticLines(lines.String())
 }
 
 // releaseReach reports which workspace documents an answer given in the terms of

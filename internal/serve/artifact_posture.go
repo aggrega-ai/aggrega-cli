@@ -286,6 +286,36 @@ func buildNotices(preview *compilerops.PreviewResult) []buildNotice {
 	return out
 }
 
+// absentCatalogDirNotices carries the lines naming each directory the workspace
+// configuration lists for a Release where nothing exists (absentCatalogDirLines)
+// onto a build's answer, under the catalog surface, for the Release the request
+// value release names. They lead the answer's notices, because the stack they are
+// about is read before anything else a build does — which is also where `aggrega
+// build` prints them.
+//
+// A build whose dependency fill runs does not ask for them. The fill is a
+// dependency resolution, which writes the same line among the lines it writes
+// about its own work, so that build's answer carries it once already, under the
+// resolution's surface; asking here as well would carry it twice.
+//
+// A value that cannot name a Release answers none: every request asking this has
+// already been refused for such a value, by the same rule, before it gets here.
+func (s *Server) absentCatalogDirNotices(release string) []buildNotice {
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
+	if paramErr != nil {
+		return nil
+	}
+	lines := s.absentCatalogDirLines(releasePath)
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]buildNotice, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, buildNotice{Class: noticeClassCatalog, Text: line})
+	}
+	return out
+}
+
 // noticeClass names the advisory surface a warning came from.
 //
 // The empty string is the honest answer for a surface this daemon does not name,

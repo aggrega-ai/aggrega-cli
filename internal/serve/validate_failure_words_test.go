@@ -45,44 +45,49 @@ func listedDirWorkspace(t *testing.T, config string) (*Server, string) {
 // the real framing per row, and the answer read whole.
 //
 // A listed directory where nothing exists is not in the stack the check is
-// handed, so the check answers exactly what it answers with that directory not
+// handed, so the check's verdict is the one it gives with that directory not
 // listed at all — wherever the configuration lists it, for the workspace or for
-// the Release the request named. A clean Component stays clean, and a finding the
-// check makes keeps the check's own words, with nothing about the directory.
+// the Release the request named. A clean Component stays free of any error, and a
+// finding the check makes keeps the check's own words, with nothing about the
+// directory. The directory is named instead in one warning entry, leading the
+// answer, whose text is the line the resolver composes for that Release's stack —
+// the line `aggrega pull` and `aggrega build` print for it.
 //
 // The first row is the positive control: every directory there, the Component is
-// clean. The last row is the control on the other side: a Component the check
-// does refuse is refused for its own fault, the listing beside it notwithstanding.
-// Each row in between carries one listing where nothing exists, somewhere
-// different, and must answer as the control does.
+// clean and the answer carries no entry at all. The last row is the control on the
+// other side: a Component the check does refuse is refused for its own fault, the
+// listing beside it notwithstanding. Each row in between carries one listing where
+// nothing exists, somewhere different, and must reach the control's verdict.
 func TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name    string
 		config  string
 		release string
-		// clean is a row whose answer carries no entry at all.
-		clean bool
-		// carries are phrases the entry must carry, and lacks phrases it may not.
+		// absent is the listed directory where nothing exists, empty for the row
+		// listing none.
+		absent string
+		// carries are phrases the error entry must carry, and lacks phrases it may
+		// not. A row with neither must carry no error entry.
 		carries []string
 		lacks   []string
 	}{
-		{name: "every directory the Release reads exists, and the Component is clean",
+		{name: "every directory the Release reads exists, and the answer carries no entry",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
-			release: "release-sized.yaml", clean: true},
-		{name: "a directory the workspace's list names where nothing exists leaves the Component clean",
+			release: "release-sized.yaml"},
+		{name: "a directory the workspace's list names where nothing exists leaves the Component clean and is named once",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			release: "release-sized.yaml", clean: true},
-		{name: "a directory the Release's own list names where nothing exists leaves the Component clean",
+			release: "release-sized.yaml", absent: "no-such-catalog"},
+		{name: "a directory the Release's own list names where nothing exists leaves the Component clean and is named once",
 			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
-			release: "release-sized.yaml", clean: true},
-		{name: "a directory the workspace's list names, for a Release given no list of its own, leaves the Component clean",
+			release: "release-sized.yaml", absent: "gone-for-sized"},
+		{name: "a directory the workspace's list names, for a Release given no list of its own, leaves the Component clean and is named once",
 			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n" +
 				"  releases:\n    release-plain.yaml:\n      catalog_dirs:\n        - variant-plain\n",
-			release: "release-sized.yaml", clean: true},
+			release: "release-sized.yaml", absent: "no-such-catalog"},
 		{name: "a finding the check makes keeps the check's own words beside a listing where nothing exists",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n    - no-such-catalog\n",
-			release: "release-sized.yaml",
+			release: "release-sized.yaml", absent: "no-such-catalog",
 			carries: []string{"SchemaLibrary Sizing not found in catalog"},
 			lacks:   []string{"no-such-catalog", "does not exist"}},
 	}
@@ -93,17 +98,50 @@ func TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing(
 			file := filepath.Join(root, "variant-sized", "component", "db.yaml")
 			res := validateContentOverTheWire(t, srv, file, mustRead(t, file), tc.release)
 			messages := diagMessages(res.Diagnostics)
-			if tc.clean {
-				if len(res.Diagnostics) != 0 {
-					t.Fatalf("want a clean answer; got %q", messages)
+
+			// The line the resolver composes for this Release's stack, as the entry
+			// naming the directory must read once the editor's prefix is laid on it.
+			var composed bytes.Buffer
+			srv.resolvedWorkspace.NoteAbsentCatalogDirs(&composed, filepath.Join(root, tc.release), nil)
+			line := strings.TrimSpace(composed.String())
+			if tc.absent == "" {
+				if line != "" || len(res.Diagnostics) != 0 {
+					t.Fatalf("want a clean answer over a stack leaving nothing out; the resolver composes %q and the answer carries %q",
+						line, messages)
 				}
 				return
 			}
+			// The directory as the line names it: its last element, then the setting.
+			names := string(filepath.Separator) + tc.absent + " is listed under "
+			if !strings.Contains(line, names) {
+				t.Fatalf("precondition: the resolver composes %q, which does not name %s", line, tc.absent)
+			}
+			want := closureAdvisoryDiagnostic(line).Message
+			var named []int
+			for i, d := range res.Diagnostics {
+				if strings.Contains(d.Message, names) {
+					named = append(named, i)
+				}
+			}
+			if len(named) != 1 {
+				t.Fatalf("want one entry naming %s; the answer carries %q", tc.absent, messages)
+			}
+			if got := res.Diagnostics[named[0]]; named[0] != 0 || got.Severity != editorSeverityWarning || got.Message != want {
+				t.Errorf("the entry naming %s is entry %d at severity %v reading %q; want the first entry, a warning, reading %q",
+					tc.absent, named[0], got.Severity, got.Message, want)
+			}
+
 			var entry string
 			for _, d := range res.Diagnostics {
 				if d.Severity == editorSeverityError {
 					entry = d.Message
 				}
+			}
+			if len(tc.carries) == 0 {
+				if entry != "" {
+					t.Errorf("want no error entry beside a listing where nothing exists; got %q", entry)
+				}
+				return
 			}
 			if entry == "" {
 				t.Fatalf("want an error entry; the answer carries %q", messages)

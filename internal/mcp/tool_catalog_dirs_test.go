@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -67,6 +69,14 @@ func writeCatalogDirsConfig(t *testing.T, root, config string) {
 // listing that changed what a call reads fails here even where it refuses
 // nothing. A row listing a directory where nothing exists also holds the stack
 // the call reads to leaving it out.
+//
+// A building row is held to naming such a directory exactly once, in the line the
+// resolver composes for the call's stack — the line `aggrega build` prints for it:
+// as the first of the build's advisories, at warning severity, where no fill runs,
+// and among the resolution's own diagnostics where the fill runs and writes that
+// line itself. A building row with the directory there names it nowhere. A lookup
+// by name answers in a shape that carries no advisory, so its whole answer is held
+// to the one given over the fixture's own list, which names no directory.
 //
 // A refusing row is held to the whole of what the twin does with the same stack:
 // the refusal is a failure naming the directory, the load and the filesystem's
@@ -191,8 +201,61 @@ func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *test
 					}
 					return
 				}
-				if gotFiles, wantFiles := unmarshalBuildPayload(t, got).Files, unmarshalBuildPayload(t, want).Files; !reflect.DeepEqual(gotFiles, wantFiles) || len(wantFiles) == 0 {
+				payload := unmarshalBuildPayload(t, got)
+				if gotFiles, wantFiles := payload.Files, unmarshalBuildPayload(t, want).Files; !reflect.DeepEqual(gotFiles, wantFiles) || len(wantFiles) == 0 {
 					t.Errorf("the listing changed what the build renders\n with it:    %v\n without it: %v", gotFiles, wantFiles)
+				}
+
+				// The line the resolver composes for the stack this call reads, with
+				// the indentation a terminal nests it under dropped.
+				var composed bytes.Buffer
+				tw.rw.NoteAbsentCatalogDirs(&composed, stackRelease, callDirs)
+				line := strings.TrimSpace(composed.String())
+				absentHere := !tc.present && !tc.byCall && listedHere
+				if (line != "") != absentHere {
+					t.Fatalf("precondition: the resolver composes %q for this stack, and whether it names %s is not what the row is about",
+						line, listedDir)
+				}
+				names := string(filepath.Separator) + listed + " is listed under "
+				var advised []buildAdvisory
+				for _, a := range payload.Advisories {
+					if strings.Contains(a.Message, names) {
+						advised = append(advised, a)
+					}
+				}
+				var resolved []string
+				if payload.DependencyResolution != nil {
+					for _, d := range payload.DependencyResolution.Diagnostics {
+						if strings.Contains(d, names) {
+							resolved = append(resolved, d)
+						}
+					}
+				}
+				wantAdvised, wantResolved := 0, 0
+				if absentHere {
+					if tc.autoPull {
+						wantResolved = 1
+					} else {
+						wantAdvised = 1
+					}
+				}
+				if len(advised) != wantAdvised || len(resolved) != wantResolved {
+					t.Fatalf("the build names %s in %d advisory(ies) and %d resolution line(s); want %d and %d\nadvisories: %+v\nresolution: %+v",
+						listedDir, len(advised), len(resolved), wantAdvised, wantResolved, payload.Advisories, payload.DependencyResolution)
+				}
+				for _, a := range advised {
+					if a.Severity != abi.SeverityWarn || a.Message != line || a.Code != "" || a.KeyPath != "" {
+						t.Errorf("the advisory naming %s is %+v; want severity %q, no code and no key, reading the resolver's own line %q",
+							listedDir, a, abi.SeverityWarn, line)
+					}
+					if payload.Advisories[0] != a {
+						t.Errorf("the advisory naming %s does not lead the build's advisories: %+v", listedDir, payload.Advisories)
+					}
+				}
+				for _, d := range resolved {
+					if d != line {
+						t.Errorf("the resolution's line naming %s reads %q; want the resolver's own line %q", listedDir, d, line)
+					}
 				}
 				return
 			}

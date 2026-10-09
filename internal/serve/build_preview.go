@@ -104,7 +104,9 @@ func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) 
 // write over such a stack would name files no build writes. The stack is asked
 // (catalogDirsRefusal) right after the field this request refuses, which is the
 // order the command line's dry run reaches the two in. A configured directory
-// where nothing exists is not in the stack, so neither refuses it.
+// where nothing exists is not in the stack, so neither refuses it; the answer's
+// notices name it instead, under the catalog surface and ahead of the rest, in the
+// line the command line's dry run prints for it. No fill runs here to name it.
 func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewParams) (buildPreviewResult, *jsonRPCError) {
 	if params.AutoPull {
 		return buildPreviewResult{}, &jsonRPCError{
@@ -118,6 +120,7 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
 	}
+	absent := s.absentCatalogDirNotices(params.Release)
 
 	// The fill is refused above, so nothing on this path can have filled a
 	// lockfile: one the render finds was on disk before the request. For the same
@@ -131,6 +134,6 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 	// names the artifact set this method reports and then drops.
 	return buildPreviewResult{
 		Files:   renderedArtifactNames(preview.PipelineOutcome().Completed()),
-		Notices: buildNotices(preview),
+		Notices: append(absent, buildNotices(preview)...),
 	}, nil
 }

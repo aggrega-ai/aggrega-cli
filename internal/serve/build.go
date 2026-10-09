@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -100,7 +101,11 @@ type buildParams struct {
 // Notices carry the advisories that reach no document position. The findings
 // that DO carry one travel on aggrega/publishDiagnostics instead, under the
 // build layer's source, so a client puts them on its problems surface beside the
-// findings the same layer raises while a graph is inspected.
+// findings the same layer raises while a graph is inspected. A catalog directory
+// the workspace configuration lists for the Release where nothing exists is named
+// by one of them, in the line `aggrega build` prints for it: under the catalog
+// surface, leading the rest, on a build that did not fill, and among the fill's
+// own lines on one that did.
 //
 // DependencyResolution is what the build's own fill step resolved, in the shape
 // aggrega/resolveDependencies answers with, and it is absent on a build that did
@@ -242,7 +247,10 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // writes the lockfile, which is why the question cannot wait for the shared
 // render — and a build refused there has written no lockfile and no artifact. A
 // configured directory where nothing exists is not in the stack, so this build,
-// the fill and `aggrega build` all read it as holding nothing.
+// the fill and `aggrega build` all read it as holding nothing, and the answer's
+// notices name it once, as `aggrega build` prints it once: under the catalog
+// surface where no fill runs, and among the fill's own lines where one does,
+// because the fill is the dependency resolution that writes that line itself.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
 	// The destination is resolved before anything else runs, so a request naming
 	// one this session may not write to is refused having rendered nothing and,
@@ -283,6 +291,14 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	fill := params.AutoPull
 	if s.resolvedWorkspace != nil {
 		fill = s.resolvedWorkspace.Config().FillsLockfile(params.AutoPull)
+	}
+	// Whether this build names a listed catalog directory where nothing exists is
+	// read off the same decision that runs the fill, so the two cannot disagree: a
+	// fill names it among its own lines, and a build that does not fill names it
+	// here.
+	var absent []buildNotice
+	if !fill {
+		absent = s.absentCatalogDirNotices(params.Release)
 	}
 	if fill {
 		notices, report, render, errEnvelope := s.fillDependencies(ctx, params.Release)
@@ -360,7 +376,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	return buildResult{
 		OutputDirectory:      outRoot,
 		Files:                renderedArtifactNames(completed),
-		Notices:              append(dependencyResolutionNotices(fillNotices), buildNotices(preview)...),
+		Notices:              slices.Concat(absent, dependencyResolutionNotices(fillNotices), buildNotices(preview)),
 		DependencyResolution: fillReport,
 	}, nil
 }
