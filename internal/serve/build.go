@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -285,13 +286,20 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	// the two identically, so a workspace configured to fill is not a workspace
 	// where only one of its surfaces does.
 	//
-	// A daemon holding no resolved workspace has no setting to read, so the request
-	// field is the whole of the decision; that case is refused by the fill itself,
+	// A daemon holding no resolved workspace has no setting to read, so the decision
+	// is asked of an empty configuration, where the request field is the whole of
+	// it — still the one decision, rather than a restatement of it that would stop
+	// agreeing the day it gained an input; that case is refused by the fill itself,
 	// which names what is missing.
-	fill := params.AutoPull
+	//
+	// The offline posture is not read here: a fill under it is the same resolution
+	// aggrega/resolveDependencies runs, which draws only on what the machine already
+	// holds and halts naming a reference nothing here satisfies.
+	var wsCfg workspaceconfig.Config
 	if s.resolvedWorkspace != nil {
-		fill = s.resolvedWorkspace.Config().FillsLockfile(params.AutoPull)
+		wsCfg = s.resolvedWorkspace.Config()
 	}
+	fill := wsCfg.FillsLockfile(params.AutoPull)
 	// Whether this build names a listed catalog directory where nothing exists is
 	// read off the same decision that runs the fill, so the two cannot disagree: a
 	// fill names it among its own lines, and a build that does not fill names it

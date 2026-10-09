@@ -126,9 +126,9 @@ type DeprecationRecord struct {
 // pull time, and how. It is the durable answer to "why is this entity
 // trusted": the mode that verified it, the identity/issuer (keyless) or
 // pinned-key fingerprint (keyed) that matched, and the content-addressed
-// digest of the signature bundle cached in the closure for air-gapped
-// re-verification. Build does not re-run verification; it reads this fact
-// and re-verifies the cached bundle's digest only.
+// digest of the signature bundle cached in the closure. Build does not
+// re-run verification, and checks this fact only on a Plugins row: it
+// re-hashes the cached bundle against BundleDigest before the guest loads.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
@@ -143,8 +143,8 @@ type DeprecationRecord struct {
 // issuer — is omitted from either encoding rather than written as an empty value.
 type VerifiedSignature struct {
 	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
-	// bundle blob stored in the closure. It both names the cache blob and
-	// is the integrity gate for an air-gapped re-verify.
+	// bundle blob stored in the closure. It names the cache blob, and on a
+	// Plugins row it is what a build re-hashes that blob against.
 	BundleDigest string `yaml:"bundle_digest" json:"bundleDigest"`
 	// Identity is the verified signer of the signature: the certificate
 	// subject for a keyless signature, or a stable fingerprint of the

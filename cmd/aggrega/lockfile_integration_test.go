@@ -147,7 +147,12 @@ func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
 	}
 }
 
-func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
+// TestBuildOfflineWithMissingLockfileHaltsNamingThePullThatFillsIt holds a build
+// asked for no fill to the read-only default's halt under the offline posture
+// too. The posture adds no halt of its own: the remedy is the same pull, or
+// --auto-pull, which under the posture fills from what the machine already holds
+// — and nothing is fetched or written on the way to saying so.
+func TestBuildOfflineWithMissingLockfileHaltsNamingThePullThatFillsIt(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
@@ -157,8 +162,14 @@ func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected halt on offline + missing lockfile; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound()) {
-		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
+	if !strings.Contains(err.Error(), "aggrega pull --release") || !strings.Contains(err.Error(), "--auto-pull") {
+		t.Errorf("error should name the pull that fills the lockfile and --auto-pull; got %v", err)
+	}
+	if errors.Is(err, oci.ErrFetchNotFound()) {
+		t.Errorf("error carries a fetch that found nothing, but no fill ran and nothing was fetched; got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "release.lock")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("a build asked for no fill must not create a lockfile; stat err = %v", statErr)
 	}
 }
 

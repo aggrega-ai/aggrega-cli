@@ -365,11 +365,12 @@ func assertOfflineRefusal(t *testing.T, err error, wantLayerNamed string) {
 // completes it without reaching out at all. An airgapped workspace holding a
 // local copy of its catalog is exactly that case, which is why the vocabulary
 // distinguishes the two: refusing the fill when the posture is set would refuse
-// it for a reason that is not true of it.
+// it for a reason that is not true of it. That holds for the fill a build runs
+// as much as for the pull run on its own, since the build's fill is that pull.
 //
-// The three rows are the whole of the split rather than its margins, and the
-// pair of build rows is the acceptance rather than either one alone. One half
-// passing proves only that something happened.
+// The rows are the whole of the split rather than its margins, and the refusing
+// row and the filling rows are the acceptance together rather than any one alone.
+// One half passing proves only that something happened.
 func TestTheIncrementalFillDoesNotRefuseUnderTheOfflinePosture(t *testing.T) {
 	// Not parallel: it sets the process environment and drives the command tree, whose pre-run writes the process-global display decision.
 	root := t.TempDir()
@@ -392,19 +393,32 @@ func TestTheIncrementalFillDoesNotRefuseUnderTheOfflinePosture(t *testing.T) {
 		return cmd.Execute()
 	}
 
-	// A build with no lockfile refuses, and names the posture as the cause. It
-	// is the negative control for the row below: without it, a success there
-	// would not distinguish a fill that worked from a build that never needed
-	// anything.
-	if err := run("build", "--auto-pull", "--offline"); err == nil {
-		t.Error("a build with no lockfile succeeded under the offline posture; there was nothing pinned to render against")
-	} else if !strings.Contains(err.Error(), "offline") {
-		t.Errorf("the refusal does not name the posture as the cause: %v", err)
+	// A build asked for no fill, with no lockfile, refuses and names the pull that
+	// would fill it. It is the negative control for the rows below: without it, a
+	// success there would not distinguish a fill that worked from a build that
+	// never needed anything.
+	if err := run("build", "--offline"); err == nil {
+		t.Error("a build with no lockfile and no fill asked for succeeded under the offline posture; there was nothing pinned to render against")
+	} else if !strings.Contains(err.Error(), "aggrega pull --release") || !strings.Contains(err.Error(), "--auto-pull") {
+		t.Errorf("the refusal does not name the pull that would fill the lockfile: %v", err)
+	}
+	if _, err := os.Stat(lockPath); !stderrors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refused build left a lockfile behind (stat: %v)", err)
 	}
 
-	// The fill itself, with the posture set by the flag: it resolves the whole
-	// closure from the local catalog and writes the lockfile. This is the row
-	// that a parse-time refusal on the fill would have turned red.
+	// The fill, asked of the build, with the posture set by the flag: the build
+	// runs the pull, which resolves the whole closure from the local catalog and
+	// writes the lockfile. This is the row a build that stood its fill down under
+	// the posture would turn red.
+	if err := run("build", "--auto-pull", "--offline"); err != nil {
+		t.Fatalf("a build asked to fill refused under the offline posture over a locally satisfiable closure: %v", err)
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("the build's fill reported success and wrote no lockfile: %v", err)
+	}
+
+	// The fill itself, run on its own: this is the row that a parse-time refusal
+	// on the fill would have turned red.
 	if err := run("pull", "--offline"); err != nil {
 		t.Fatalf("the incremental fill refused under the offline posture over a locally satisfiable closure: %v", err)
 	}

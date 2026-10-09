@@ -17,10 +17,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -811,8 +809,16 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 // auto_pull — the fill runs in-process before the build proceeds whether or not
 // one is present, honoring existing pins and resolving what has none; Upgrade
 // makes it a full refresh, floating every dependency to the highest satisfying
-// version instead. Under offline a missing lockfile always halts, regardless of
-// the pull step, because the fill itself needs network access.
+// version instead.
+//
+// The offline posture adds no rule of its own here. A fill under it is the same
+// pull, and that pull reads only what the machine already holds — the catalog
+// directories and the cache — so a Release those satisfy is filled and built,
+// and a reference neither holds halts the pull naming it. Upgrade, whose whole
+// job is to ask a registry what it offers now, is refused by that pull before it
+// resolves anything. Deciding offline a second time here would make this build
+// refuse a fill the pull, the daemon's build and the tool protocol's build all
+// run.
 //
 // DryRun suppresses the fill outright: the fill writes, and a dry run writes
 // nothing. It is read here rather than inferred from AutoPull because the two
@@ -837,18 +843,6 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 	preexisted := statErr == nil
 	if statErr != nil && !stderrors.Is(statErr, os.ErrNotExist) {
 		return false, nil, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
-	}
-
-	// Offline: never network. Build is frozen against whatever lockfile exists;
-	// a missing one cannot be filled here. The offline decision is read from the
-	// egress gate (the sole home of that decision), not from the config field
-	// directly, so this pre-flight and the actual fill cannot diverge.
-	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress()) {
-		if preexisted {
-			return true, nil, nil
-		}
-		return false, nil, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
-			lockfilePath, releasePath, oci.ErrFetchNotFound())
 	}
 
 	// build's auto-pull is the opt-in fill: it runs when the caller's AutoPull knob
@@ -908,14 +902,14 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 		lockfilePath, releasePath)
 }
 
-// fillRuns reports whether this build's lockfile step runs the dependency fill:
-// the workspace is not offline, the run is not a dry run, and the fill was asked
-// for, by the caller's knob or the workspace's auto_pull. It is the one statement
-// of that decision, read by the lockfile step that runs the fill and by every
-// earlier step that has to know whether the fill will speak for it.
+// fillRuns reports whether this build's lockfile step runs the dependency fill.
+// The answer is the workspace configuration's FillsLockfile — the decision the
+// daemon's build and the tool protocol's build read as well — with the one rule
+// this command adds on top: a dry run writes nothing, so it runs no fill however
+// the fill was asked for. It reads no offline posture, because the pull the fill
+// runs enforces that posture itself. It is read by the lockfile step that runs
+// the fill and by every earlier step that has to know whether the fill will speak
+// for it.
 func fillRuns(wsCfg workspaceconfig.Config, run RunOptions) bool {
-	if _, err := egress.RoundTripper(wsCfg); stderrors.Is(err, egress.ErrOfflineEgress()) {
-		return false
-	}
 	return !run.DryRun && wsCfg.FillsLockfile(run.AutoPull)
 }
