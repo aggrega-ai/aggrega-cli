@@ -281,7 +281,7 @@ type publishEntityArgs struct {
 // publishEntityPayload is the catalog-entity publication's structured result: the
 // facts themselves rather than the status lines a terminal reads.
 //
-// digest is empty on a dry run, which stops before a digest is computed, and the
+// digest is empty on a dry run, whose digest is stated in its status line, and the
 // two booleans say which path ran — a dry run published nothing, and an
 // already-published call found the tag pointing at byte-identical content,
 // uploaded none, and attached only what that publication still lacked: its

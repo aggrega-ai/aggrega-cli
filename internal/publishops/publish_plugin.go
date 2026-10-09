@@ -186,6 +186,16 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		Signed:     wantSign,
 	}
 
+	// The digest this publication would land, derived from the whole manifest — the
+	// config entity plus the inline .wasm layer — and computed once ahead of the
+	// dry-run branch, so the digest a dry run states is the very value the
+	// immutability guard compares and the signer signs below. It packs into an
+	// in-memory store and contacts nothing.
+	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations)
+	if err != nil {
+		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, version, err)
+	}
+
 	if cfg.DryRun {
 		// This account is spelled here rather than through the shared
 		// continuation-line writer, and the duplication is deliberate: it reports
@@ -194,9 +204,10 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		// the ones a publication shares. Routing it through a writer whose subject
 		// is the result would either move these bytes or carry facts the result
 		// does not hold. What must stay in step is the wording, and the two agree
-		// on every label they share.
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
-			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
+		// on every label they share. The header line carries the manifest digest
+		// exactly where the publication line carries it.
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s (%s)\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
+			reference, version, proposedDigest, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
 		result.DryRun = true
 		result.Signed = false
 		return result, nil
@@ -224,10 +235,6 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	existingDigest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, version, err)
-	}
-	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations)
-	if err != nil {
-		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, version, err)
 	}
 	if exists {
 		if existingDigest == proposedDigest {

@@ -305,10 +305,10 @@ type PushResult struct {
 	// and zero for every other kind. A Plugin publishes entity and executable as
 	// one manifest, so a single size would describe neither.
 	PluginSize int
-	// Digest is the published manifest's digest, and it is EMPTY on a dry run.
-	// A dry run stops before the immutability guard, which is where the proposed
-	// digest is first computed, and computing one here to fill the field would add
-	// work to a path whose whole purpose is not to do any.
+	// Digest is the published manifest's digest, and it is EMPTY on a dry run,
+	// which publishes nothing. The digest a dry run computes is the one a
+	// publication would land, and it is stated on the dry run's status line beside
+	// the reference rather than here, where a caller reads what was published.
 	Digest string
 	// Signed reports that this call attached a signature: on a publication, the
 	// one it made before publishing; on a version already published, the one it
@@ -448,12 +448,15 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // publishing), and publication failure. The directory's name is not judged: an
 // entity alone in its directory publishes wherever that directory sits.
 //
-// When cfg.DryRun is true, Push prints the proposed
-// <reference>:<tag> + mediatype + bundle byte count and returns
-// without constructing a remote target. Useful for authoring and
-// for verifying the reference-shape construction without binding to
-// a registry. Everything a dry run reaches, it judges as a publication would,
-// the unpinned-entity halt included.
+// When cfg.DryRun is true, Push prints the proposed <reference>:<tag> with the
+// manifest digest a publication would land, then the mediatype and bundle byte
+// count, and returns without constructing a remote target. The digest is the one
+// the immutability guard compares and the signer signs, computed once from the
+// content alone, so a dry run previews it without contacting anything. Useful
+// for authoring, for comparing content with a published version's digest, and
+// for verifying the reference-shape construction without binding to a registry.
+// Everything a dry run reaches, it judges as a publication would, the
+// unpinned-entity halt included.
 func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if cfg.EntityPath == "" {
 		return PushResult{}, fmt.Errorf("entity path required (pass as positional arg or via --entity)")
@@ -665,8 +668,20 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		return PushResult{}, fmt.Errorf("%s: %w", cfg.EntityPath, err)
 	}
 
+	// The digest this publication would land, computed once and ahead of the dry-run
+	// branch, so the digest a dry run states is the very value the immutability
+	// guard compares and the signer signs below rather than a second computation of
+	// it. It packs into an in-memory store and contacts nothing.
+	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes, annotations)
+	if err != nil {
+		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, tag, err)
+	}
+
 	if cfg.DryRun {
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n", reference, tag)
+		// The digest follows the reference in the shape the publication line gives
+		// it, so the reference stays at the field a reader of either line takes it
+		// from and the digest is the field after it.
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s (%s)\n", reference, tag, proposedDigest)
 		writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
 		writeWholeDirectoryNote(out, result.WholeDirectory)
 		result.DryRun = true
@@ -710,10 +725,6 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, tag, err)
-	}
-	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes, annotations)
-	if err != nil {
-		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, tag, err)
 	}
 	if exists {
 		if existingDigest == proposedDigest {

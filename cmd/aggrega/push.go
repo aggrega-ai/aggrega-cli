@@ -180,7 +180,7 @@ published; --pin-sources=false skips it for one run.`,
 	}
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
 	c.Flags().StringVar(&opts.registry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag> without contacting the registry. An entity the publication would refuse for a missing pin is refused here too")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag> with the digest a publication would land, without contacting the registry. An entity the publication would refuse for a missing pin is refused here too")
 	c.Flags().BoolVar(&opts.sign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
 	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
 	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")

@@ -125,8 +125,8 @@ type publishEntityParams struct {
 //
 // It answers with the facts rather than with the status lines a terminal reads:
 // where the entity landed, what it landed as, and what the destination now
-// resolves that tag to. Digest is empty on a dry run, which stops before a digest
-// is computed, and the two booleans say which path ran — dryRun published nothing,
+// resolves that tag to. Digest is empty on a dry run, whose digest is stated in
+// its status line, and the two booleans say which path ran — dryRun published nothing,
 // and alreadyPublished found the tag already pointing at byte-identical content,
 // uploaded none, and attached only what that publication still lacked: its
 // publication date, and its signature where this one signs, which signed reports.

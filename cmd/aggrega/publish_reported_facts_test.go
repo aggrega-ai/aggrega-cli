@@ -182,12 +182,13 @@ func TestPushReportsTheFactsItsResultCarries(t *testing.T) {
 // TestPushDryRunAccountIsUnchangedByTheSharedWriter pins the control: routing the
 // dry-run account through the same writer the publication uses leaves its bytes
 // exactly as they were, so the three facts are stated identically whether a
-// publication was simulated or performed.
+// publication was simulated or performed. The header carries the digest the
+// separate publication landed, in the place the publication line carries it.
 func TestPushDryRunAccountIsUnchangedByTheSharedWriter(t *testing.T) {
 	want := pushEntityResult(t, reportedFactsComponent)
 	got, _ := pushEntityFixture(t, reportedFactsComponent, true)
-	expected := fmt.Sprintf("aggrega push (dry-run): example.com/component/core/api-server:1.0.0\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
-		want.Kind, want.MediaType, want.Size)
+	expected := fmt.Sprintf("aggrega push (dry-run): example.com/component/core/api-server:1.0.0 (%s)\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
+		want.Digest, want.Kind, want.MediaType, want.Size)
 	if got != expected {
 		t.Errorf("dry-run account moved:\n got: %q\nwant: %q", got, expected)
 	}
