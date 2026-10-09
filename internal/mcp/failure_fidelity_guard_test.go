@@ -137,6 +137,19 @@ var proseOnlyFailureReturns = map[string]int{
 	// reason, which the prose carries.
 	"tool_candidates.go":           18,
 	"tool_attachment_container.go": 10,
+	// The connection at a position, which answers in the terms those two tools take
+	// and refuses as they do. Eight are decided before anything is read: a call
+	// naming no document, no position or one missing a half, no Release, an encoding
+	// this surface does not read, a withdrawal the caller signalled, a workspace that
+	// could not be resolved, and a document or a Release path this session may not
+	// name. The ninth refuses the lockfile beside that Release where it is a link
+	// leading out of the root its write is held to; it is read ahead of the preview,
+	// to build the view the preview resolves through, so no graph is in hand. The
+	// tenth is the preview's own refusal, which hands back no graph to report a
+	// connection from. The eleventh is the shared answer's refusal after the
+	// preview: the graph is in hand, but no connection was drawn from it, and the
+	// reason is carried in the prose.
+	"tool_connection_at_position.go": 11,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
 	// promise a validity field a consumer reads across scopes.
