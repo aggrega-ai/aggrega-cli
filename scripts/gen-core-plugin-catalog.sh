@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/gen-core-plugin-catalog.sh
 #
-# Regenerates the committed core-plugin catalog entities from the compiler
-# binary's embedded guests and the authored per-plugin overlays. This is a
-# release/maintenance-time step, NOT part of the ordinary build or test cycle:
-# it writes into the sibling aggrega-hub catalog and is run deliberately when the
-# embedded guests or the overlays change and the committed entities need to catch
-# up. The tag-driven publish CI performs the same generation before signing and
-# publishing the core plugins.
+# Generates the core-plugin catalog entities from the compiler binary's embedded
+# guests and the authored per-plugin overlays, into the sibling aggrega-hub
+# catalog; NOT part of the ordinary build or test cycle. The release step runs it
+# in a scratch checkout, to check the release's overlays and render docs pages.
+# The copy aggrega-hub commits comes from the tag-driven publish CI, which runs the
+# same generation before signing and publishing the core plugins and records it on
+# the hub's published branch, from which the sync commit takes it into main.
 #
 # The generated entity's contract fields (pluginType, abiVersion, capabilities,
 # exports, contract) come from each guest's describe() self-report; its

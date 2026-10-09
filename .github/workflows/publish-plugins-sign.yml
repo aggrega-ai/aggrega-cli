@@ -78,7 +78,27 @@ name: Publish and sign core plugins
 #                        and download-artifact: the programs it runs, beside the
 #                        shell's own utilities, are the aggrega binary the build
 #                        job built, docker (to load and push the image archive),
-#                        gh and curl.
+#                        gh and curl. On a real publish it hands the plugin
+#                        publish's own output on, as its plugin_push_output, to
+#                        record-published.
+#   record-published     After a real publish only — on a dry run it is skipped —
+#                        records what sign-and-publish published on aggrega-hub's
+#                        published branch: each plugin's reference, version and
+#                        digest, read from the push's own output by aggrega-hub's
+#                        row reader, and the generated core plugin entities, read
+#                        from the hand-over folder once it matches its list. It
+#                        writes through aggrega-hub's one writer,
+#                        scripts/record-published.sh, which pushes one commit as a
+#                        fast-forward of the branch and never forces, and never
+#                        writes aggrega-hub's main branch. Its one credential
+#                        beside the run's own read-only token is a GitHub App
+#                        installation token for aggrega-hub alone, asking for its
+#                        contents alone, minted here by GitHub's own
+#                        create-github-app-token action; it holds no registry
+#                        password, no release token and no permission to mint an
+#                        OIDC token, and runs no action but checkout and that one.
+#                        The token reaches the writer's git commands through their
+#                        environment and is never written to disk.
 #   clean-up             Runs last, whatever every other job did, a failure or a
 #                        cancellation included: deletes every artifact this run
 #                        uploaded, through the REST API with the run's own token,
@@ -87,9 +107,10 @@ name: Publish and sign core plugins
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
 #
-# The build, sign-windows, sign-and-publish and clean-up jobs run on one machine,
-# the self-hosted runner AGGREGA_RUNNER names, and hand files to each other on
-# its disk, in the hand-over folder: aggrega-release-handover/<run id>-<attempt>
+# The build, sign-windows, sign-and-publish, record-published and clean-up jobs
+# run on one machine, the self-hosted runner AGGREGA_RUNNER names, and hand files
+# to each other on its disk, in the hand-over folder:
+# aggrega-release-handover/<run id>-<attempt>
 # beside the runner's temporary directory, which the runner empties at the start
 # and end of every job. The build job makes it, readable by the runner's user
 # alone, and writes the list last, after every third-party step of that job has
@@ -168,29 +189,34 @@ name: Publish and sign core plugins
 # This workflow NEVER creates or pushes a git tag. Deciding the version and
 # cutting the tag is a human action; this workflow publishes the OCI artifacts and
 # attaches the built binaries and the extension package to the GitHub release
-# for the already-pushed tag.
+# for the already-pushed tag. Its one git write is record-published's, after a
+# real publish: one commit on aggrega-hub's published branch, never on a main
+# branch.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image included — signs the
 # Windows binaries as a real run does, so the signing and the signature check
 # are proven before a tag exists, runs the Windows and macOS smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads the image archive and
-# prints what it would push, publish, sign and release, doing none of it. A
-# dispatch from a ref the signing identity's federated credentials in Azure do
-# not admit fails in sign-windows, naming the ref.
+# prints what it would push, publish, sign and release, doing none of it, and
+# record-published is skipped. A dispatch from a ref the signing identity's
+# federated credentials in Azure do not admit fails in sign-windows, naming the
+# ref.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
 #              REGISTRY_USERNAME         the registry username
 #              AGGREGA_RUNNER            the label of the self-hosted runner
-#                                        build, sign-windows, sign-and-publish
-#                                        and clean-up run on (required; one
-#                                        machine)
+#                                        build, sign-windows, sign-and-publish,
+#                                        record-published and clean-up run on
+#                                        (required; one machine)
 #              CLI_PUBLISH_OVERLAY_DIR   the per-plugin overlay directory
 #                                        (optional, aggrega-hub/plugin-overlays
 #                                        by default)
 #              CLI_PUBLISH_HUB_REF       the aggrega-hub ref the overlays are
-#                                        read at (optional, main by default)
+#                                        read at, and record-published takes
+#                                        aggrega-hub's writer from (optional,
+#                                        main by default)
 #              AZURE_TENANT_ID           the Microsoft Entra tenant of the
 #                                        identity sign-windows signs as
 #              AZURE_CLIENT_ID           that identity's client ID: an app
@@ -212,6 +238,12 @@ name: Publish and sign core plugins
 #              SUBMODULE_APP_PRIVATE_KEY private sibling repositories (build
 #                                        only, handed to the action that mints
 #                                        the read token and to nothing else)
+#              HUB_PUBLISHED_APP_CLIENT_ID   the App installed on aggrega-hub
+#              HUB_PUBLISHED_APP_PRIVATE_KEY alone, with its contents' write
+#                                        permission, that writes its published
+#                                        branch (record-published only, handed
+#                                        to the action that mints the write
+#                                        token and to nothing else)
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -252,6 +284,8 @@ on:
 # contents:write grants no other git write: the workflow never creates or pushes
 # a tag. clean-up replaces it with actions:write alone, which lets it list and
 # delete this run's artifacts and does not let it read the repository.
+# record-published keeps contents:read: what it writes is aggrega-hub's published
+# branch, with the App token it mints, never this repository.
 permissions:
   contents: read
 
@@ -274,20 +308,20 @@ jobs:
       contents: read
     steps:
       - name: Require the runner the local jobs share
-        # build, sign-windows, sign-and-publish and clean-up hand files to each
-        # other on one machine's disk, so the release runs only where
-        # AGGREGA_RUNNER names that machine; with it unset the run stops here,
-        # before anything is built, rather than falling back to a hosted runner
-        # or to artifacts.
+        # build, sign-windows, sign-and-publish, record-published and clean-up
+        # hand files to each other on one machine's disk, so the release runs
+        # only where AGGREGA_RUNNER names that machine; with it unset the run
+        # stops here, before anything is built, rather than falling back to a
+        # hosted runner or to artifacts.
         env:
           AGGREGA_RUNNER: ${{ vars.AGGREGA_RUNNER }}
         run: |
           set -euo pipefail
           if [ -z "$AGGREGA_RUNNER" ]; then
-            echo "publish-plugins: the release needs its self-hosted runner: set the repository variable AGGREGA_RUNNER to that runner's label, since the build, signing, publishing and clean-up jobs hand files to each other on its disk" >&2
+            echo "publish-plugins: the release needs its self-hosted runner: set the repository variable AGGREGA_RUNNER to that runner's label, since the build, signing, publishing, recording and clean-up jobs hand files to each other on its disk" >&2
             exit 1
           fi
-          echo "publish-plugins: the build, signing, publishing and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
+          echo "publish-plugins: the build, signing, publishing, recording and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
 
       - name: Check out the CLI
         # Only for the check script. The launched ref, not the release tag: a
@@ -1246,7 +1280,7 @@ jobs:
           signed="$RUNNER_TEMP/windows-signed"
           read -r -a names <<<"$WINDOWS_BINARIES"
           if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
-            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           if ! verified="$(cd "$handover" && sha256sum --check --strict SHA256SUMS 2>&1)"; then
@@ -1482,6 +1516,12 @@ jobs:
       contents: write
       id-token: write
 
+    # What the plugin publish printed, on a real publish: record-published reads
+    # each published plugin's reference, version and digest from it. Empty on a
+    # dry run, which publishes nothing.
+    outputs:
+      plugin_push_output: ${{ steps.plugins.outputs.push_output }}
+
     env:
       # Destination registry host, the same variable the build named the image
       # under.
@@ -1586,7 +1626,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
-            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           if [ -n "$(find "$HANDOVER" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
@@ -1748,6 +1788,15 @@ jobs:
         # was resolved by the build job, so publishing it needs only the binary.
         # A dry run prints the reference set and the sign plan without any
         # network call or signing.
+        #
+        # A real publish also hands what it printed, unchanged, to
+        # record-published as this job's plugin_push_output: each push's
+        # "Push complete:" or "Already published:" line carries the reference,
+        # the version and the digest exactly as the push computed and published
+        # it, and record-published reads them from there rather than computing
+        # anything again. The output is written under a delimiter drawn at
+        # random for this run, so no line the push prints can end it early.
+        id: plugins
         run: |
           set -euo pipefail
 
@@ -1760,15 +1809,25 @@ jobs:
           args=(--pairs "$INPUTS/plugins/pairs.tsv" --registry "$REGISTRY")
           if [ "$DRY" = "true" ]; then
             args+=(--dry-run)
-          else
-            # Keyless signing: each pair is signed through
-            # `aggrega push --plugin --sign`, which reads the identity token from
-            # SIGSTORE_ID_TOKEN (minted above) and uses the binary's public
-            # Sigstore defaults for Fulcio and Rekor.
-            args+=(--sign)
+            aggrega-cli/scripts/publish-plugin-pairs.sh "${args[@]}"
+            exit 0
           fi
 
-          aggrega-cli/scripts/publish-plugin-pairs.sh "${args[@]}"
+          # Keyless signing: each pair is signed through
+          # `aggrega push --plugin --sign`, which reads the identity token from
+          # SIGSTORE_ID_TOKEN (minted above) and uses the binary's public
+          # Sigstore defaults for Fulcio and Rekor.
+          args+=(--sign)
+          printed="$(mktemp "$RUNNER_TEMP/plugin-push-output.XXXXXX")"
+          trap 'rm -f -- "$printed"' EXIT
+          aggrega-cli/scripts/publish-plugin-pairs.sh "${args[@]}" | tee "$printed"
+
+          delimiter="plugin-push-output-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            printf 'push_output<<%s\n' "$delimiter"
+            awk 1 "$printed"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create the GitHub release and upload the binaries and the extension package
         # The final side effect: attach the full, light and stripped binaries for
@@ -1943,6 +2002,186 @@ jobs:
         run: |
           chmod -R u+w -- "$RUN_CONFIG_HOME" 2>/dev/null || true
           rm -rf -- "$RUN_CONFIG_HOME"
+
+  record-published:
+    # Records what sign-and-publish published on aggrega-hub's published branch,
+    # the branch the publish workflows alone write and a workspace's sync commit
+    # takes into aggrega-hub's main branch: each plugin's reference, version and
+    # digest beside the catalog's, and the core plugin entities this run
+    # generated and published, at aggrega-catalog/plugin, the path they occupy on
+    # the main branch.
+    #
+    # It runs after a real publish only, and only once sign-and-publish has
+    # succeeded: a dry run publishes nothing, so this job is skipped and nothing
+    # is written. A job of its own, so the token that writes aggrega-hub shares
+    # a job with no other credential but the run's own token, which here reads
+    # this repository and nothing more: no registry password, no release token,
+    # no permission to mint an OIDC token. It runs no action but checkout and
+    # GitHub's own create-github-app-token, and no program but the shell's own
+    # utilities, git, the smoke library's list check, and aggrega-hub's own
+    # scripts, taken from aggrega-hub itself.
+    #
+    # On the runner the build ran on, because the entities it records are the
+    # ones the build job left in the hand-over folder, read once the folder
+    # matches its list. clean-up waits for it.
+    needs: [build, sign-and-publish]
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Find this run's hand-over folder and make this job's directory
+        # The release inputs are read where the build job left them, in this
+        # run's hand-over folder, INPUTS, once the step after the checkout has
+        # held that folder to its list. The rows this job records are written in
+        # a directory of this run's own, RECORD_DIR, made empty here, which the
+        # last step removes.
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_HANDOVER" ] || { echo "record-published: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          record="$(mktemp -d "$RUNNER_TEMP/record.XXXXXX")"
+          printf 'HANDOVER=%s\nINPUTS=%s\nRECORD_DIR=%s\n' \
+            "$handover" "$handover/release-inputs" "$record" >> "$GITHUB_ENV"
+
+      - name: Check out the CLI at the commit the build job built
+        # For the smoke library's list check only.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Hold the hand-over folder to the build job's list
+        # Before anything in it is read: every file in this run's hand-over
+        # folder must be one SHA256SUMS names, each once, with the SHA-256 it
+        # gives, and the list must name nothing else, checked by smoke_check_sums
+        # from the repository's own smoke library at the commit the build job
+        # built. So the entities recorded are byte for byte the ones the build
+        # job generated and sign-and-publish published. A folder that is not
+        # here, or anything in it that is neither a file nor a directory, is
+        # refused.
+        run: |
+          set -euo pipefail
+          if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
+            echo "record-published: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            exit 1
+          fi
+          if [ -n "$(find "$HANDOVER" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
+            echo "record-published: the hand-over folder $HANDOVER holds what is neither a file nor a directory:" >&2
+            find "$HANDOVER" -mindepth 1 ! -type f ! -type d -printf '  %P\n' >&2
+            exit 1
+          fi
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          mapfile -d '' -t files < <(cd "$HANDOVER" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
+          smoke_check_sums "$HANDOVER/SHA256SUMS" "$HANDOVER" "${files[@]}"
+
+      - name: Mint the token that writes aggrega-hub
+        # A GitHub App installation token for aggrega-hub alone, asking for
+        # write access to its contents and nothing else; the App is installed
+        # on aggrega-hub alone, and a ruleset there admits only it and
+        # aggrega-hub's own workflows as writers of the published branch. The
+        # App's secrets are handed to this action and to no step, and an
+        # installation token expires an hour after it is minted.
+        id: hub-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.HUB_PUBLISHED_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HUB_PUBLISHED_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: aggrega-hub
+          permission-contents: write
+
+      - name: Check out aggrega-hub
+        # For its writer, scripts/record-published.sh, and the branch library
+        # that writer and this job's row reader share. The checkout keeps no
+        # token: the write below hands it to git through the environment.
+        uses: actions/checkout@v5
+        with:
+          repository: aggrega-ai/aggrega-hub
+          path: aggrega-hub
+          ref: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
+          token: ${{ steps.hub-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Record what this release published on aggrega-hub's published branch
+        # The rows: each published plugin's reference, version and digest, read
+        # by aggrega-hub's own row reader, published_rows_from_push, from the
+        # "Push complete:" and "Already published:" lines sign-and-publish
+        # handed on — the digest exactly as the push computed and published it.
+        # They must be one row for each pair the release published, no two for
+        # one reference and version, so a hand-over that lost or repeated any
+        # refuses here, with nothing written.
+        #
+        # The tree: aggrega-catalog/plugin becomes exactly the entities the build
+        # job generated and sign-and-publish published, and the branch owns it.
+        #
+        # aggrega-hub's writer makes one commit on top of the branch as the
+        # remote holds it and pushes it as a fast-forward, never forcing; a
+        # branch another publish moved meanwhile is read again and the commit
+        # rebuilt on it. The token reaches the writer's git commands as an
+        # Authorization header through git's environment configuration
+        # (GIT_CONFIG_COUNT), so it is never placed on a command line or written
+        # to the checkout's configuration; a git too old to read that is
+        # refused, naming its version, before anything is written.
+        env:
+          HUB_TOKEN: ${{ steps.hub-token.outputs.token }}
+          APP_SLUG: ${{ steps.hub-token.outputs.app-slug }}
+          PUSH_OUTPUT: ${{ needs.sign-and-publish.outputs.plugin_push_output }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="$DISPATCH_TAG"
+          fi
+
+          . aggrega-hub/scripts/lib/published-branch.sh
+          printf '%s\n' "$PUSH_OUTPUT" | published_rows_from_push > "$RECORD_DIR/rows.tsv"
+          pairs="$(awk 'NF { n++ } END { print n + 0 }' "$INPUTS/plugins/pairs.tsv")"
+          rows="$(awk -F'\t' '!seen[$1 FS $2]++ { n++ } END { print n + 0 }' "$RECORD_DIR/rows.tsv")"
+          lines="$(awk 'END { print NR }' "$RECORD_DIR/rows.tsv")"
+          if [ "$pairs" -eq 0 ] || [ "$rows" -ne "$pairs" ] || [ "$lines" -ne "$rows" ]; then
+            echo "record-published: sign-and-publish published $pairs plugin(s), and what it handed on carries $lines row(s) for $rows distinct reference(s) and version(s); nothing was recorded" >&2
+            exit 1
+          fi
+          echo "record-published: $rows plugin(s) to record:"
+          awk -F'\t' '{ print "  " $1 ":" $2 " (" $3 ")" }' "$RECORD_DIR/rows.tsv"
+
+          probe="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=recordpublished.probe GIT_CONFIG_VALUE_0=read git config --get recordpublished.probe || true)"
+          if [ "$probe" != read ]; then
+            echo "record-published: this machine's $(git --version) does not read configuration from GIT_CONFIG_COUNT, which is how the token reaches git without being written to disk; git 2.31 or later does. Nothing was recorded." >&2
+            exit 1
+          fi
+          auth="$(printf 'x-access-token:%s' "$HUB_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          # The commit is authored in the App's name, at a no-reply address.
+          author="${APP_SLUG:-aggrega-cli-release}[bot]"
+          export GIT_AUTHOR_NAME="$author" GIT_COMMITTER_NAME="$author"
+          export GIT_AUTHOR_EMAIL="$author@users.noreply.github.com" GIT_COMMITTER_EMAIL="$author@users.noreply.github.com"
+
+          aggrega-hub/scripts/record-published.sh --rows "$RECORD_DIR/rows.tsv" \
+            --tree "aggrega-catalog/plugin=$INPUTS/plugins/entities" \
+            --remote origin \
+            --message "chore(catalog): record the core plugins aggrega-cli $TAG published"
+
+      - name: Remove this job's directory
+        # Whatever the steps above did, so the rows this job wrote are not left
+        # on the persistent runner. The hand-over folder is clean-up's to
+        # remove.
+        if: ${{ always() && env.RECORD_DIR != '' }}
+        run: |
+          chmod -R u+w -- "$RECORD_DIR" 2>/dev/null || true
+          rm -rf -- "$RECORD_DIR"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
@@ -2193,7 +2432,7 @@ jobs:
     # image to an archive and loads nothing, and sign-and-publish's publish
     # script removes every reference it loads when it exits, a refusal
     # included.
-    needs: [registry-credential, build, sign-windows, sign-and-publish, smoke-binaries, windows-smoke, macos-smoke]
+    needs: [registry-credential, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
