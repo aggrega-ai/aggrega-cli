@@ -505,10 +505,14 @@ func runPublishArtifact(ctx context.Context, cfg publishops.PushArtifactConfig) 
 // One authentication serves the whole batch, and nothing is prompted for: the
 // identity is resolved once, from the request or from the environment, before any
 // reference is signed, so a batch with no credential available at all refuses at
-// the start rather than partway through. A credential that is supplied but does
-// not hold up is a different case and is reported later: a supplied token is taken
-// as given here, and its subject is checked when the signer is built, which is
-// after the first reference has been resolved against the registry.
+// the start rather than partway through. So does a batch whose references would
+// need different credentials — a request names no key, so that is the workspace's
+// configuration naming a held key for one registry and none, or another key, for
+// a second — refused before any identity is resolved, naming both registries. A
+// credential that is supplied but does not hold up is a different case and is
+// reported later: a supplied token is taken as given here, and its subject is
+// checked when the signer is built, which is after the first reference has been
+// resolved against the registry.
 func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest) error {
 	var params signArtifactsParams
 	if len(req.Params) > 0 {

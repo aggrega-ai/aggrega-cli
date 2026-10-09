@@ -22,27 +22,25 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// SignerRequest carries the credential inputs one signing posture needs. It is
-// the single input contract for the credential boundary: publication, artifact
-// publication, signing and deprecation marking all resolve their signer from
-// one of these, so the precedence chain and the identity ladder are stated once
-// rather than once per verb.
+// SignerRequest carries a caller's credential inputs. It is the single input
+// contract for the credential boundary: publication, signing and deprecation
+// marking all resolve their signers from one of these through resolveCredential,
+// so the precedence chain and the identity ladder are stated once rather than
+// once per verb.
 //
-// Registry names the host whose per-registry signing configuration applies. Each
-// verb derives it from what it is acting on — a publication from its destination,
-// a signing or a deprecation from the reference it is amending — because the
-// per-registry overlay is keyed on the host the credential will be used against.
+// It names no registry. What a verb acts on — a publication's destination, the
+// references a signing or a deprecation amends — is handed to resolveCredential
+// beside it, because the per-registry overlay is keyed on the host each
+// credential will be used against, and an operation can name several.
 type SignerRequest struct {
 	// Workspace is the resolved workspace the caller threads in. Required: the
 	// boundary refuses a nil rather than resolving one of its own, because
 	// resolving here would make the result depend on a directory no caller named.
 	Workspace *workspaceconfig.ResolvedWorkspace
 
-	// Registry is the host whose per-registry signing overlay applies.
-	Registry string
-
 	// Signer overrides construction entirely. A caller that already holds a signer
-	// supplies it and the precedence chain is not consulted.
+	// supplies it, and neither the precedence chain nor the identity ladder is
+	// consulted.
 	Signer signing.Signer
 
 	// KeyPath selects the offline keyed signer when non-empty. Empty selects the
@@ -174,9 +172,9 @@ func envLookup(look func(string) string) func(string) string {
 // host reference names, as this layer is allowed to see it.
 //
 // It is the ONE route from a workspace's configuration to a signing input in this
-// package, and every verb resolves through it. Two things are single-sourced here
-// rather than at each verb: which host the per-registry overlay is keyed on, and
-// whether the key path that configuration names is reachable at all.
+// package, and resolveCredential is its one caller. Two things are single-sourced
+// here rather than at each verb: which host the per-registry overlay is keyed on,
+// and whether the key path that configuration names is reachable at all.
 //
 // A caller that withheld the configured key gets a view that names none. The key
 // is removed from the VALUE rather than left in it for each reader to remember
@@ -193,9 +191,9 @@ func resolveSigning(cfg workspaceconfig.Config, reference string, configuredKeyN
 	return resolved
 }
 
-// resolveIdentity resolves the keyless identity for one signing posture through
-// the shared precedence ladder, as either a static token or a live source. It is
-// the single identity-resolution site for every verb in this layer.
+// resolveIdentity resolves the keyless identity for one credential through the
+// shared precedence ladder, as either a static token or a live source. Its one
+// caller is resolveCredential, which asks once per operation.
 //
 // The precedence itself, and the refusal that ends it, belong to the signing
 // package. What this adds is only the caller's optional interactive rung, which
@@ -208,7 +206,8 @@ func resolveIdentity(req SignerRequest, cfg workspaceconfig.Config) (idToken str
 }
 
 // buildSigner is the single signer-construction path for every verb in this
-// layer. A non-empty KeyPath selects the offline keyed signer, reading the held
+// layer, reached through (*credential).signerFor. A non-empty KeyPath selects the
+// offline keyed signer, reading the held
 // PEM from disk; otherwise the live keyless signer is constructed. The
 // public-good Sigstore endpoint defaults are applied here — the one home for
 // endpoint defaulting — so an unset Fulcio/Rekor URL falls back to the
@@ -373,56 +372,19 @@ func attachBundle(ctx context.Context, target oras.Target, subjectRef, artifactT
 	return nil
 }
 
-// resolvePublishSigner constructs the publish-time signer ONCE: the caller's
-// supplied signer when present, otherwise one built from the config-resolved
-// keyed/keyless inputs through the precedence chain. The single construction is
-// what guarantees that when one publication signs more than one artifact, both
-// signatures come from the SAME signer — a per-artifact construction would, for
-// keyless, acquire a fresh ephemeral identity per call and silently split the
-// signer. It is called BEFORE any bytes reach the registry, so a signer that
-// cannot be constructed refuses the publication with nothing published.
+// resolvePublishSigner resolves the publish-time signer for the destination
+// registry ONCE, through the one credential home every verb shares. The single
+// resolution is what guarantees that when one publication signs more than one
+// artifact, both signatures come from the SAME signer — a per-artifact resolution
+// would, for keyless, acquire a fresh ephemeral identity per call and silently
+// split the signer. It is called BEFORE any bytes reach the registry, so a signer
+// that cannot be resolved refuses the publication with nothing published.
 //
 // Its failures wrap the unsigned-publication refusal sentinel, because on this
-// path a signer that cannot be built means the artifact would land unsigned.
-func resolvePublishSigner(req SignerRequest) (signing.Signer, error) {
-	if req.Signer != nil {
-		return req.Signer, nil
-	}
-	rw, werr := requireWorkspace(req.Workspace)
-	if werr != nil {
-		return nil, werr
-	}
-	resolved := resolveSigning(rw.Config(), req.Registry, req.ConfiguredKeyNotConsulted)
-	keyPath := firstNonEmpty(req.KeyPath, resolved.KeyPath)
-	// Only the keyless branch resolves an identity; the keyed path never
-	// reaches acquisition. Resolve the identity as a SOURCE before constructing
-	// the signer so a missing token refuses BEFORE any bytes reach the
-	// registry. A static resolution comes back as idToken (validated once at
-	// construction); the ambient resolution comes back as a live source that
-	// stays fresh per signature. The single construction below is what
-	// guarantees both signatures of a multi-artifact publication share one source.
-	var idToken string
-	var tokenSource signing.IdentityTokenSource
-	if keyPath == "" {
-		var terr error
-		idToken, tokenSource, terr = resolveIdentity(req, rw.Config())
-		if terr != nil {
-			return nil, fmt.Errorf("%w: %w", terr, signing.ErrUnsignedPushRefused())
-		}
-	}
-	signer, berr := buildSigner(signerParams{
-		KeyPath:      keyPath,
-		IDToken:      idToken,
-		TokenSource:  tokenSource,
-		FulcioURL:    firstNonEmpty(req.FulcioURL, resolved.FulcioURL),
-		RekorURL:     firstNonEmpty(req.RekorURL, resolved.RekorURL),
-		TimestampURL: firstNonEmpty(req.TimestampURL, resolved.TimestampURL),
-		Config:       rw.Config(),
-	})
-	if berr != nil {
-		return nil, fmt.Errorf("construct signer: %w: %w", berr, signing.ErrUnsignedPushRefused())
-	}
-	return signer, nil
+// path a signer that cannot be had means the artifact would land unsigned. That
+// wrapping is the one thing publication passes the home that no other verb does.
+func resolvePublishSigner(req SignerRequest, registry string) (signing.Signer, error) {
+	return resolveSigner(req, registry, signing.ErrUnsignedPushRefused())
 }
 
 // signPublishDigestWith signs proposedDigest with an already-resolved signer,
@@ -450,13 +412,13 @@ func signPublishDigestWith(ctx context.Context, signer signing.Signer, reference
 }
 
 // signPublishDigest is the shared publish-time signing atom for a single
-// artifact: it resolves a signer and signs proposedDigest, returning the
-// signature bundle and its artifact type. It is called BEFORE any bytes reach
-// the registry, so a signer that cannot be constructed or a signing failure
-// refuses the publication with nothing published. reference and tag name the
-// artifact in any rejection message.
-func signPublishDigest(ctx context.Context, req SignerRequest, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
-	signer, err := resolvePublishSigner(req)
+// artifact: it resolves a signer for the destination registry and signs
+// proposedDigest, returning the signature bundle and its artifact type. It is
+// called BEFORE any bytes reach the registry, so a signer that cannot be
+// constructed or a signing failure refuses the publication with nothing
+// published. reference and tag name the artifact in any rejection message.
+func signPublishDigest(ctx context.Context, req SignerRequest, registry, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
+	signer, err := resolvePublishSigner(req, registry)
 	if err != nil {
 		return nil, "", err
 	}

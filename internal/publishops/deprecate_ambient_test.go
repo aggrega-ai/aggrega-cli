@@ -17,10 +17,8 @@ import (
 // TestDeprecateSignerAmbientSelfMints proves a keyless deprecate in a simulated
 // GitHub Actions environment — no explicit token, non-interactive — resolves the
 // ambient OIDC endpoint as a live source and self-mints, exactly as a push does,
-// rather than refusing. Before the token unification the string-only resolver
-// had no ambient tier, so a non-TTY deprecate without an exported token refused;
-// that this path now returns a signer whose live source fetches a fresh token
-// from the ambient endpoint is the intended behavioral change.
+// rather than refusing: the marker's signer carries a live source that fetches a
+// fresh token from the ambient endpoint.
 func TestDeprecateSignerAmbientSelfMints(t *testing.T) {
 	t.Parallel()
 	jwt := signingtest.SubjectfulIDToken(t)
@@ -44,7 +42,7 @@ func TestDeprecateSignerAmbientSelfMints(t *testing.T) {
 		testActionsIDTokenRequestToken: "ambient-req-token",
 	}
 
-	signer, err := deprecateSigner(DeprecateConfig{
+	signer, err := DeprecateSigner(DeprecateConfig{
 		Reference:   "reg.example.com/x:1.0.0",
 		Workspace:   rw,
 		EnvLookup:   lookMap(env),

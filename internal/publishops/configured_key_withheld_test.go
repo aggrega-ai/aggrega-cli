@@ -135,32 +135,26 @@ func resolvedKeylessWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	return resolveIn(t, "workspace: {}\n", nil)
 }
 
-// signerSite is one of the places this layer builds a signer from a workspace's
-// own configuration. There are four, they belong to three different verbs, and
-// each resolves the configuration for itself — so a case driving one says nothing
-// about the other three.
+// signerSite is one verb's way into the one credential home: its own projection of
+// its inputs onto the shared request, and the call it makes. The home is shared,
+// so what differs per verb — and what a verb can get wrong, by dropping the
+// withholding from its projection — is exactly what each row reads.
 type signerSite struct {
-	// site names the function, so a failure says which one.
+	// site names the verb's path, so a failure says which one.
 	site string
-	// build runs that site with the credential posture given and returns whatever
+	// build runs that path with the credential posture given and returns whatever
 	// it produced. idToken is the identity the caller supplied, empty for a caller
 	// that supplied none.
 	build func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, configuredKeyNotConsulted bool) (signing.Signer, error)
 }
 
-// theFourSignerSites is every place in this package that asks a workspace
-// configuration for a signing key.
-//
-// buildRefSigner is driven without prepare having run, and that is deliberate:
-// prepare stores the batch's once-resolved posture and buildRefSigner resolves the
-// configuration AGAIN for each reference, so driving them together would let
-// either one pass on the other's work. What buildRefSigner does with a
-// configuration is the property here, and it has to be read on its own.
+// theFourSignerSites is every verb that builds a signer from a workspace's own
+// configuration, each reached the way that verb reaches the one credential home.
 func theFourSignerSites() []signerSite {
 	emptyEnv := lookMap(map[string]string{})
 	return []signerSite{
 		{
-			site: "resolvePublishSigner",
+			site: "the publication",
 			build: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, withheld bool) (signing.Signer, error) {
 				t.Helper()
 				cfg := PushConfig{
@@ -169,51 +163,32 @@ func theFourSignerSites() []signerSite {
 					EnvLookup:                 emptyEnv,
 					ConfiguredKeyNotConsulted: withheld,
 				}
-				return resolvePublishSigner(cfg.signerRequest(withheldTestReference))
+				return resolvePublishSigner(cfg.signerRequest(), withheldTestRegistry)
 			},
 		},
 		{
-			site: "batchSigner.prepare",
+			site: "the signing batch",
 			build: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, withheld bool) (signing.Signer, error) {
 				t.Helper()
-				b := &batchSigner{cfg: SignConfig{
+				cfg := SignConfig{
 					References:                []string{withheldTestReference},
 					Workspace:                 rw,
 					IDToken:                   idToken,
 					EnvLookup:                 emptyEnv,
 					ConfiguredKeyNotConsulted: withheld,
-				}}
-				if err := b.prepare(); err != nil {
+				}
+				cred, err := resolveCredential(cfg.signerRequest(), cfg.References, nil)
+				if err != nil {
 					return nil, err
 				}
-				// Built from what prepare STORED, so this row reads prepare's own
-				// decision rather than a second resolution made afterwards.
-				return buildSigner(signerParams{KeyPath: b.keyPath, IDToken: b.idToken, TokenSource: b.tokenSource})
+				return cred.signerFor(withheldTestReference)
 			},
 		},
 		{
-			site: "batchSigner.buildRefSigner",
+			site: "the single deprecation marking",
 			build: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, withheld bool) (signing.Signer, error) {
 				t.Helper()
-				b := &batchSigner{
-					cfg: SignConfig{
-						References:                []string{withheldTestReference},
-						Workspace:                 rw,
-						EnvLookup:                 emptyEnv,
-						ConfiguredKeyNotConsulted: withheld,
-					},
-					// The batch's identity as prepare would have stored it, set here
-					// so this site is read without prepare having run.
-					idToken: idToken,
-				}
-				return b.buildRefSigner(withheldTestReference)
-			},
-		},
-		{
-			site: "deprecateSigner",
-			build: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, withheld bool) (signing.Signer, error) {
-				t.Helper()
-				return deprecateSigner(DeprecateConfig{
+				return DeprecateSigner(DeprecateConfig{
 					Reference:                 withheldTestReference,
 					Workspace:                 rw,
 					IDToken:                   idToken,
@@ -222,11 +197,28 @@ func theFourSignerSites() []signerSite {
 				})
 			},
 		},
+		{
+			site: "the deprecation batch",
+			build: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, idToken string, withheld bool) (signing.Signer, error) {
+				t.Helper()
+				cfg := DeprecateConfig{
+					Workspace:                 rw,
+					IDToken:                   idToken,
+					EnvLookup:                 emptyEnv,
+					ConfiguredKeyNotConsulted: withheld,
+				}
+				cred, err := resolveCredential(cfg.signerRequest(), []string{withheldTestReference}, nil)
+				if err != nil {
+					return nil, err
+				}
+				return cred.signerFor(withheldTestReference)
+			},
+		},
 	}
 }
 
-// TestAWithheldConfiguredKeyIsNotReachedByAnySignerSite walks every place this
-// layer builds a signer against every way a workspace can name a signing key.
+// TestAWithheldConfiguredKeyIsNotReachedByAnySignerSite walks every verb that
+// builds a signer against every way a workspace can name a signing key.
 //
 // The three rows per cell are one property read three ways. With the key
 // reachable, it signs — which is what keeps the other two from passing against a

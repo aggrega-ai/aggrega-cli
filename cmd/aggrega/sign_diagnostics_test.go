@@ -153,9 +153,10 @@ func TestKeylessSubjectFailure(t *testing.T) {
 // TestSignNoSubjectFailureDiagnostic proves a no-subject keyless failure is
 // classified at the batch wrap site: the message names the missing
 // verified-email/subject and never suggests expiry or re-export, because
-// re-minting cannot fix a structurally subject-less identity. The batch resolves
-// the identity exactly once. The injected signer bypasses the pre-sign guard, so
-// this exercises the classifier on the certificate authority's own error text.
+// re-minting cannot fix a structurally subject-less identity. The injected signer
+// bypasses the pre-sign guard, so this exercises the classifier on the
+// certificate authority's own error text; and a supplied signer is the whole
+// credential, so no identity is asked for at all.
 func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
@@ -176,8 +177,8 @@ func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 	if err == nil {
 		t.Fatal("signRun should fail when the token carries no subject")
 	}
-	if acquired != 1 {
-		t.Errorf("token getter called %d times, want exactly 1 (the batch resolves the identity once)", acquired)
+	if acquired != 0 {
+		t.Errorf("token getter called %d times, want 0 (a supplied signer is the whole credential)", acquired)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "no verified email or subject claim") {
@@ -201,7 +202,7 @@ func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 
 // TestSignUnverifiedEmailFailureDiagnostic proves an unverified-email keyless
 // failure is handled in the same no-subject class: the precise diagnostic, no
-// expiry framing, identity resolved once.
+// expiry framing, and no identity asked for beside a supplied signer.
 func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
@@ -222,8 +223,8 @@ func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 	if err == nil {
 		t.Fatal("signRun should fail when the token's email is unverified")
 	}
-	if acquired != 1 {
-		t.Errorf("token getter called %d times, want exactly 1 (the batch resolves the identity once)", acquired)
+	if acquired != 0 {
+		t.Errorf("token getter called %d times, want 0 (a supplied signer is the whole credential)", acquired)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "no verified email or subject claim") {

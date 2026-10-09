@@ -39,7 +39,10 @@ func newSignCmd() *cobra.Command {
 			"offline from a held ECDSA P-256 key; without --key the keyless flow is used, which requires a live " +
 			"identity provider, Fulcio, and Rekor. Multiple references are signed in one invocation: the keyless " +
 			"identity is acquired once and reused across every artifact, and a fresh short-lived certificate is " +
-			"issued per artifact. A reference that already carries a signature its registry's trust policy verifies " +
+			"issued per artifact. Every reference in one invocation is signed with one credential: where the " +
+			"configuration names a held key (signing.key_path) for one reference's registry and none for another's, " +
+			"or two different keys, nothing is signed and the command says to run one invocation per credential; " +
+			"--key applies its key to every reference. A reference that already carries a signature its registry's trust policy verifies " +
 			"is reported as already signed, naming who signed it and when, and nothing is attached to it; a registry " +
 			"whose policy pins no public key or trusted identity gives nothing to judge a signature against, so a " +
 			"reference there is signed. Every other signable reference is signed; failures are collected and reported " +

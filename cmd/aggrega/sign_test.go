@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,9 +38,9 @@ func TestSignAttachesReferrerWithoutMutatingArtifact(t *testing.T) {
 		References:  []string{"hub.aggrega.ai/component/core/api-server:1.0.0"},
 		SubjectRefs: map[string]string{"hub.aggrega.ai/component/core/api-server:1.0.0": "1.0.0"},
 		Target:      store,
-		Signer:      fake,
-		// A supplied token short-circuits the keyless acquire-once block (the
-		// injected signer is keyless: no KeyPath), keeping the test offline.
+		// A supplied signer is the whole credential: nothing is resolved and no
+		// identity is asked for, which keeps the test offline.
+		Signer:    fake,
 		IDToken:   "supplied-token",
 		EnvLookup: func(string) string { return "" },
 	})
@@ -120,9 +122,9 @@ func TestSignWithRealKeyedSignerRoundTrips(t *testing.T) {
 		SubjectRefs: map[string]string{"hub.aggrega.ai/component/core/api-server:2.0.0": "2.0.0"},
 		Target:      store,
 		Signer:      keyed,
-		// The injected signer is keyed; mark the batch keyed so prepare skips
-		// the keyless acquire-once block. KeyPath only gates the path here —
-		// the injected signer is used verbatim, so the value is never read.
+		// The injected signer is keyed, and a supplied signer is the whole
+		// credential, so nothing is resolved. KeyPath only marks the batch keyed
+		// here — the injected signer is used verbatim, so the value is never read.
 		KeyPath: "(injected-keyed-signer)",
 	}); err != nil {
 		t.Fatalf("signRun: %v", err)
@@ -179,33 +181,43 @@ func itoaVer(i int) string {
 }
 
 // TestSignBatchAcquiresTokenOnce proves a keyless batch over N references
-// acquires the identity token at most once (one interactive authentication,
-// many signatures) while signing every reference.
+// acquires the identity token at most once — one interactive authentication for
+// the whole batch — and that every reference's signer is built from that one
+// identity.
+//
+// No signer is supplied, so the batch builds its own, which is the path a user
+// runs. The token the getter hands back is not a usable one, so each reference
+// stops at its own signer's construction: that every reference reports that same
+// failure is what shows each got that far from the single acquisition, and
+// nothing reaches a certificate authority.
 func TestSignBatchAcquiresTokenOnce(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
 	refs, subjects := publishN(t, store, 3)
 
 	var acquired int
-	fake := &signingtest.FakeSigner{}
 	err := signRun(t.Context(), signConfig{
 		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
-		Signer:      fake,
 		EnvLookup:   func(string) string { return "" },
 		IsTTY:       func() bool { return true },
 		TokenGetter: func() (string, error) { acquired++; return "interactive-token", nil },
 	})
-	if err != nil {
-		t.Fatalf("signRun: %v", err)
-	}
 	if acquired != 1 {
 		t.Errorf("token acquired %d times, want exactly 1 for the whole batch", acquired)
 	}
-	if len(fake.Signed) != len(refs) {
-		t.Errorf("signed %d digests, want %d (one per reference)", len(fake.Signed), len(refs))
+	if err == nil {
+		t.Fatal("signRun signed with a token that is not a usable identity")
+	}
+	if got := strings.Count(err.Error(), "not a well-formed JWT"); got != len(refs) {
+		t.Errorf("%d reference(s) built a signer from the one identity, want every one of %d:\n%v", got, len(refs), err)
+	}
+	for _, ref := range refs {
+		if !strings.Contains(err.Error(), ref) {
+			t.Errorf("error summary does not name %s:\n%v", ref, err)
+		}
 	}
 }
 
@@ -265,6 +277,9 @@ func TestSignBatchContinuesAndReports(t *testing.T) {
 
 // TestSignKeyedBatchAcquiresNoToken proves a keyed batch signs every reference
 // without ever acquiring an identity token — the keyed path never authenticates.
+// No signer is supplied: the batch builds its keyed signer from the key path, so
+// the identity is not asked for because the credential is keyed, rather than
+// because a supplied signer skipped the resolution.
 func TestSignKeyedBatchAcquiresNoToken(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -275,9 +290,9 @@ func TestSignKeyedBatchAcquiresNoToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKeyedPEM: %v", err)
 	}
-	keyed, err := signing.LoadKeyedSigner(privPEM, nil)
-	if err != nil {
-		t.Fatalf("LoadKeyedSigner: %v", err)
+	keyPath := filepath.Join(t.TempDir(), "held-key.pem")
+	if err := os.WriteFile(keyPath, privPEM, 0o600); err != nil {
+		t.Fatalf("write the held key: %v", err)
 	}
 
 	var acquired int
@@ -286,8 +301,7 @@ func TestSignKeyedBatchAcquiresNoToken(t *testing.T) {
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
-		Signer:      keyed,
-		KeyPath:     "(injected-keyed-signer)", // mark the batch keyed
+		KeyPath:     keyPath,
 		EnvLookup:   func(string) string { return "" },
 		IsTTY:       func() bool { return true },
 		TokenGetter: func() (string, error) { acquired++; return "should-not-be-called", nil },

@@ -732,7 +732,10 @@ var signArtifactsToolSpec = toolSpec{
 		"Pass the " +
 		"already-published references as `references`; each is a registry address rather than a path. One " +
 		"authentication serves the whole batch, resolved before any reference is signed, so a batch with no usable " +
-		"credential refuses at the start rather than partway through. Keyless signing takes its identity from " +
+		"credential refuses at the start rather than partway through. Every reference in one call is signed with " +
+		"one credential, so references whose registries the configuration gives different signing keys, or a key " +
+		"for one and none for another, are refused before anything is signed: send one call per credential. " +
+		"Keyless signing takes its identity from " +
 		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Signing " +
 		"a reference nothing published is refused rather than attached to nothing. The result names every " +
 		"reference signed with the digest its signature commits to.",
@@ -915,7 +918,9 @@ var deprecateArtifactToolSpec = toolSpec{
 		"a batch file, absolute or relative to the workspace root — not both. The content is required rather than " +
 		"prompted for, because nothing here can ask. The marker is signed by its own digest, so it carries the " +
 		"same irrevocability a signature does: keyless signing takes its identity from `identity_token`, and " +
-		"refuses loudly when nothing carries one. A marker against a reference nothing published is refused " +
+		"refuses loudly when nothing carries one. Every marker of one batch file is signed with one credential, " +
+		"so entries whose registries need different credentials are refused before any marker is attached: send " +
+		"one batch per credential. A marker against a reference nothing published is refused " +
 		"rather than attached. The result names every marker attached with its own digest.",
 	inputSchema: `{
   "type": "object",

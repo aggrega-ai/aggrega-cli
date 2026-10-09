@@ -157,3 +157,21 @@ var errSigningPolicyRequiresSignature = cerrors.Register("signing-policy-require
 		"the push carries none. It reports an operation the policy refuses to perform rather than a " +
 		"rule refusing content."),
 })
+
+// ErrMixedSigningCredentials is returned when the references named together in
+// one signing operation — a signing batch, or a batch of deprecation markers —
+// would be signed with different credentials: the configuration names a held
+// signing key for one reference's registry and none for another's, or names two
+// different keys. The operation is refused before anything is signed, because a
+// signature cannot be recalled from anyone who has fetched it, and taking one
+// reference's credential for the whole operation would sign the others with a
+// credential nobody chose for them. Signing each credential's references in an
+// operation of their own is the remedy.
+func ErrMixedSigningCredentials() error { return errMixedSigningCredentials }
+
+var errMixedSigningCredentials = cerrors.Register("mixed-signing-credentials", cerrors.Meta{
+	ShortCode: "E0330",
+	Message:   "signing: the references named together need different signing credentials, so nothing was signed",
+	RulePlace: cerrors.NotARule("References named together in one signing operation would be signed with different " +
+		"credentials. It reports an operation refused before it starts rather than a rule refusing content."),
+})

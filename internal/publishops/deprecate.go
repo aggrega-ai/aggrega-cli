@@ -111,7 +111,6 @@ type DeprecateConfig struct {
 func (cfg DeprecateConfig) signerRequest() SignerRequest {
 	return SignerRequest{
 		Workspace:                 cfg.Workspace,
-		Registry:                  cfg.Reference,
 		Signer:                    cfg.Signer,
 		KeyPath:                   cfg.KeyPath,
 		FulcioURL:                 cfg.FulcioURL,
@@ -161,11 +160,13 @@ type DeprecationMarked struct {
 // attaches that signature as a referrer of the marker. The subject artifact is
 // never re-published or mutated; both attachments are sibling manifests.
 //
-// The marker is signed through the same sign atom publication and signing use,
-// so the deprecation marker is a signed artifact verifiable by the existing
-// signature-verify machinery. On the keyless path the identity token is resolved
-// once before the marker is attached, so a signer that cannot be constructed
-// refuses the deprecation before anything is written.
+// The marker is signed through the same credential home and sign atom
+// publication and signing use, so the deprecation marker is a signed artifact
+// verifiable by the existing signature-verify machinery. The credential is
+// resolved — and on the keyless path the identity token with it, once — before
+// any marker is attached, so a signer that cannot be constructed refuses the
+// deprecation before anything is written, and a batch whose entries would need
+// different credentials is refused the same way (signing.ErrMixedSigningCredentials).
 func Deprecate(ctx context.Context, cfg DeprecateConfig) (DeprecateResult, error) {
 	out := cfg.Out
 	if out == nil {
@@ -212,7 +213,7 @@ func deprecateSingle(ctx context.Context, cfg DeprecateConfig, out io.Writer, no
 
 	// Build the signer BEFORE the marker is attached so a keyless flow with no
 	// usable token, or a missing key, refuses the deprecation before writing.
-	signer, err := deprecateSigner(cfg)
+	signer, err := resolveSigner(cfg.signerRequest(), cfg.Reference, nil)
 	if err != nil {
 		return DeprecateResult{}, err
 	}
@@ -235,9 +236,14 @@ func markedFrom(reference string, marker deprecation.Marker, digest string) Depr
 }
 
 // deprecateBatch attaches one marker per entry in the file named by cfg.From.
-// The signer is built once from the first entry's registry and reused for every
-// entry, so a keyless flow acquires a single identity for the whole batch. Each
-// entry's issuedOn is stamped at attach time.
+//
+// The credential is resolved once, over every entry's reference, before any
+// marker is attached: entries that would need different credentials refuse the
+// batch with nothing written, and a keyless batch acquires a single identity.
+// Every entry's signer is then built — from that credential and the endpoints its
+// own registry configures — still before the first marker is attached, so a key
+// that cannot be read or an identity with no usable subject refuses the batch
+// with nothing written too. Each entry's issuedOn is stamped at attach time.
 func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now func() time.Time) (DeprecateResult, error) {
 	entries, err := loadDeprecationBatch(cfg.From)
 	if err != nil {
@@ -247,18 +253,26 @@ func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now
 		return DeprecateResult{}, fmt.Errorf("%s carries no deprecation entries", cfg.From)
 	}
 
-	signerCfg := cfg
-	signerCfg.Reference = entries[0].Reference
-	signer, err := deprecateSigner(signerCfg)
-	if err != nil {
-		return DeprecateResult{}, err
-	}
-
-	var marked []DeprecationMarked
+	references := make([]string, len(entries))
 	for i, e := range entries {
 		if e.Reference == "" {
 			return DeprecateResult{}, fmt.Errorf("%s: entry %d is missing its reference", cfg.From, i+1)
 		}
+		references[i] = e.Reference
+	}
+	cred, err := resolveCredential(cfg.signerRequest(), references, nil)
+	if err != nil {
+		return DeprecateResult{}, err
+	}
+	signers := make([]signing.Signer, len(entries))
+	for i, ref := range references {
+		if signers[i], err = cred.signerFor(ref); err != nil {
+			return DeprecateResult{}, err
+		}
+	}
+
+	var marked []DeprecationMarked
+	for i, e := range entries {
 		marker := deprecation.Marker{
 			Severity:    deprecation.Severity(e.Severity),
 			Message:     firstNonEmpty(e.Message, e.Reason),
@@ -270,7 +284,7 @@ func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now
 		if terr != nil {
 			return DeprecateResult{}, terr
 		}
-		digest, aerr := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, e.Reference, marker, signer)
+		digest, aerr := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, e.Reference, marker, signers[i])
 		if aerr != nil {
 			return DeprecateResult{}, aerr
 		}
@@ -375,42 +389,4 @@ func deprecateTargetFor(cfg DeprecateConfig, reference string) (oras.Target, str
 		subjectRef = referenceTag(reference)
 	}
 	return target, subjectRef, nil
-}
-
-// deprecateSigner constructs the signer for the deprecation marker, reusing the
-// single signer-construction path buildSigner. A supplied signer is returned
-// as-is; otherwise the keyed/keyless inputs are resolved through the precedence
-// chain (caller-supplied > per-registry config > global config) and, on the
-// keyless branch, the identity is resolved as a token SOURCE through the single
-// resolution home so an ambient GitHub Actions OIDC endpoint self-mints exactly
-// as it does for a publication. The keyed path never resolves an identity.
-func deprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
-	if cfg.Signer != nil {
-		return cfg.Signer, nil
-	}
-	rw, err := requireWorkspace(cfg.Workspace)
-	if err != nil {
-		return nil, err
-	}
-	resolved := resolveSigning(rw.Config(), cfg.Reference, cfg.ConfiguredKeyNotConsulted)
-	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
-
-	var idToken string
-	var tokenSource signing.IdentityTokenSource
-	if keyPath == "" {
-		var terr error
-		idToken, tokenSource, terr = resolveIdentity(cfg.signerRequest(), rw.Config())
-		if terr != nil {
-			return nil, terr
-		}
-	}
-	return buildSigner(signerParams{
-		KeyPath:      keyPath,
-		IDToken:      idToken,
-		TokenSource:  tokenSource,
-		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
-		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
-		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
-		Config:       rw.Config(),
-	})
 }

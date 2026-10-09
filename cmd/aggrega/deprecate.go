@@ -48,7 +48,10 @@ func newDeprecateCmd() *cobra.Command {
 			"is signed the same way artifacts are: its manifest digest is signed and the signature is attached as a " +
 			"referrer of the marker, so the marker is verifiable the same way artifact signatures are. With " +
 			"--key the signature is produced offline from a held ECDSA P-256 key; without --key the keyless flow is " +
-			"used, which requires a live identity provider, Fulcio, and Rekor.",
+			"used, which requires a live identity provider, Fulcio, and Rekor. Every marker of one --from batch is " +
+			"signed with one credential: where the configuration names a held key (signing.key_path) for one entry's " +
+			"registry and none for another's, or two different keys, no marker is attached and the command says to " +
+			"run one batch per credential.",
 		// One positional reference in the normal path; none with --from, where the
 		// references are read from the batch file.
 		Args: func(cmd *cobra.Command, args []string) error {

@@ -84,11 +84,10 @@ type SignConfig struct {
 }
 
 // signerRequest projects the batch's credential inputs onto the shared
-// credential boundary's input contract for one registry host.
-func (cfg SignConfig) signerRequest(registry string) SignerRequest {
+// credential boundary's input contract.
+func (cfg SignConfig) signerRequest() SignerRequest {
 	return SignerRequest{
 		Workspace:                 cfg.Workspace,
-		Registry:                  registry,
 		Signer:                    cfg.Signer,
 		KeyPath:                   cfg.KeyPath,
 		FulcioURL:                 cfg.FulcioURL,
@@ -133,11 +132,15 @@ type SignedArtifact struct {
 // signature its registry's trust policy verifies is reported signed and gets
 // nothing attached; signRef states when that holds.
 //
-// One authentication serves the whole batch: on the keyless path the identity
-// is resolved once before the loop — a static token, or a live source that
-// mints a fresh token per signature — and reused for every reference, while a
-// fresh short-lived certificate is issued per artifact by the per-reference
-// signer. The keyed path resolves no identity.
+// One credential serves the whole batch, resolved before any reference is read at
+// its registry: a single held key, or a single keyless identity — a static token,
+// or a live source that mints a fresh token per signature — while a fresh
+// short-lived certificate is issued per artifact by each reference's own signer,
+// against the endpoints that reference's registry configures. References that
+// would need different credentials — a key the configuration names for one
+// registry and none for another, or two different keys — refuse the batch with
+// nothing signed (signing.ErrMixedSigningCredentials). The keyed path resolves no
+// identity.
 //
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
 // attach — or whose existing signatures could not be judged — is recorded and the
@@ -152,15 +155,14 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 		out = os.Stdout
 	}
 
-	// Resolve the batch's signing posture once. The identity token is
-	// registry-independent — it identifies the signer, not the destination —
-	// so the keyless branch acquires it a single time here and threads it to
-	// every per-reference signer. The identity resolution runs even when a Signer
-	// is supplied so the acquire-once accounting holds for both paths.
-	b := &batchSigner{cfg: cfg, out: out}
-	if err := b.prepare(); err != nil {
+	// The credential is resolved once, over every reference, through the one home
+	// every signing verb shares. The identity identifies the signer, not the
+	// destination, so a keyless batch asks for it a single time here.
+	cred, err := resolveCredential(cfg.signerRequest(), cfg.References, nil)
+	if err != nil {
 		return SignResult{}, err
 	}
+	b := &batchSigner{cfg: cfg, cred: cred, out: out}
 
 	var (
 		failures []refFailure
@@ -201,85 +203,25 @@ type refFailure struct {
 	err error
 }
 
-// batchSigner carries the once-resolved signing posture across the batch loop:
-// the identity resolved once as either a static token or a live source, reused
-// for every reference's signer.
+// batchSigner carries the batch's once-resolved credential across the batch loop.
 type batchSigner struct {
 	cfg SignConfig
 
-	// keyless reports whether the batch uses the keyless flow. The keyed path
-	// never resolves an identity.
-	keyless bool
-	// idToken is the single static identity token, reused for every reference's
-	// signer. Empty when the identity resolved to a live source instead.
-	idToken string
-	// tokenSource is the live identity source (the ambient GitHub Actions OIDC
-	// endpoint) when the identity resolved to one, reused for every reference's
-	// signer so the batch shares a single source. Nil on the static path.
-	tokenSource signing.IdentityTokenSource
-
-	// keyPath holds the workspace-config signing overlay for the batch. The
-	// per-reference signer applies it together with the caller's inputs.
-	keyPath string
+	// cred is the one credential every reference is signed with, resolved by Sign
+	// over every reference before the loop.
+	cred *credential
 
 	// out is the resolved sink for the per-reference status line, set once by
 	// Sign.
 	out io.Writer
 }
 
-// prepare resolves the batch's signing posture once: it decides keyless vs
-// keyed and, on the keyless branch, resolves the identity a single time through
-// the shared precedence — as a static token (a supplied value, the environment,
-// or one interactive acquisition) or as a live source (the ambient GitHub Actions
-// OIDC endpoint) — and stores it for reuse across every reference. When cfg.Signer
-// is supplied the per-reference signer is that one, but the keyless
-// resolution still runs so the interactive token getter is invoked at most once
-// for the whole batch — the property the batch contract guarantees.
-func (b *batchSigner) prepare() error {
-	if b.cfg.Signer == nil {
-		rw, err := requireWorkspace(b.cfg.Workspace)
-		if err != nil {
-			return err
-		}
-		// The key path is registry-independent in the common case (a single
-		// supplied path or global config entry). Resolve it once from the first
-		// reference's host to decide keyless vs keyed for the whole batch; a
-		// per-registry key path is still applied per reference in signRef.
-		resolved := resolveSigning(rw.Config(), b.cfg.References[0], b.cfg.ConfiguredKeyNotConsulted)
-		b.keyPath = firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath)
-		b.keyless = b.keyPath == ""
-		// Carry the resolved workspace forward so signRef sources the egress
-		// client from the same resolution.
-		b.cfg.Workspace = rw
-	} else {
-		// A supplied signer stands in for whatever the inputs would build. The
-		// keyless acquire-once block still runs unless a key path is supplied,
-		// so the acquire-count assertion holds for that path too.
-		b.keyless = b.cfg.KeyPath == ""
-	}
-
-	if b.keyless {
-		rw, werr := requireWorkspace(b.cfg.Workspace)
-		if werr != nil {
-			return werr
-		}
-		idToken, source, err := resolveIdentity(b.cfg.signerRequest(""), rw.Config())
-		if err != nil {
-			return err
-		}
-		b.idToken = idToken
-		b.tokenSource = source
-	}
-	return nil
-}
-
 // signRef signs one reference and attaches its signature, returning the published
-// digest the signature commits to. It builds the per-reference signer from the
-// batch's once-resolved identity (keyless) or the resolved key path (keyed) —
-// never resolving an identity itself; the single resolution lives in prepare. A
-// keyless failure whose cause is a token without a usable signing subject is
-// mapped to a precise diagnostic; every other failure is returned as-is so the
-// batch continues and reports it.
+// digest the signature commits to. It asks the batch's credential for the
+// reference's signer — never resolving a credential or an identity itself; the one
+// resolution happened in Sign, over every reference. A keyless failure whose cause
+// is a token without a usable signing subject is mapped to a precise diagnostic;
+// every other failure is returned as-is so the batch continues and reports it.
 //
 // A reference that already carries a signature its registry's trust policy
 // verifies — made by any identity — is not signed again. Before building a signer
@@ -339,7 +281,7 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 		return digest, nil
 	}
 
-	signer, err := b.buildRefSigner(ref)
+	signer, err := b.cred.signerFor(ref)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ref, err)
 	}
@@ -351,7 +293,7 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 		// returned — not the token's freshness — is the problem. Name that cause
 		// precisely so the operator is pointed at the identity provider/client/
 		// scope rather than told to re-export a token that cannot help.
-		if b.keyless && keylessSubjectFailure(err) {
+		if b.cred.keyless() && keylessSubjectFailure(err) {
 			return "", fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
 		}
 		return "", fmt.Errorf("%s: %w", ref, err)
@@ -392,32 +334,6 @@ func loggedClause(sig *pullverify.Result) string {
 		return ""
 	}
 	return ", logged " + oci.FormatPublishedAt(sig.LoggedAt)
-}
-
-// buildRefSigner returns the signer for one reference. A supplied signer is
-// reused as-is across the batch; otherwise a fresh signer is built per
-// reference from that reference's resolved endpoint URLs and the batch's
-// once-resolved identity — the static token or the live source (keyless) or key
-// path (keyed). It never resolves an identity — the single keyless resolution is
-// owned by prepare.
-func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
-	if b.cfg.Signer != nil {
-		return b.cfg.Signer, nil
-	}
-	rw, err := requireWorkspace(b.cfg.Workspace)
-	if err != nil {
-		return nil, err
-	}
-	resolved := resolveSigning(rw.Config(), ref, b.cfg.ConfiguredKeyNotConsulted)
-	return buildSigner(signerParams{
-		KeyPath:      firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath),
-		TokenSource:  b.tokenSource,
-		IDToken:      b.idToken,
-		FulcioURL:    firstNonEmpty(b.cfg.FulcioURL, resolved.FulcioURL),
-		RekorURL:     firstNonEmpty(b.cfg.RekorURL, resolved.RekorURL),
-		TimestampURL: firstNonEmpty(b.cfg.TimestampURL, resolved.TimestampURL),
-		Config:       rw.Config(),
-	})
 }
 
 // referenceTag returns the tag or digest portion of an OCI reference.

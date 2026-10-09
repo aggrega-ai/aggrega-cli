@@ -31,11 +31,6 @@ import (
 // reads the annotation back.
 const ComponentCategoryLabel = componentCategoryLabel
 
-// SignerParams carries the resolved signing inputs BuildSigner constructs a
-// signer from. See SignerRequest for the input contract a caller normally
-// supplies; these are the already-resolved values that contract reduces to.
-type SignerParams = signerParams
-
 // ResolveDestination returns the destination registry a publication will use and
 // refuses when the caller requested none and the workspace names no default,
 // naming what supply says this caller can set.
@@ -46,13 +41,6 @@ type SignerParams = signerParams
 // values itself: the condition has one home, and this is it.
 func ResolveDestination(requested, defaultRegistry string, supply DestinationSupply) (string, error) {
 	return resolveDestination(requested, defaultRegistry, supply)
-}
-
-// BuildSigner is the single signer-construction path: a non-empty KeyPath
-// selects the offline keyed signer, otherwise the live keyless signer is
-// constructed with the public-good endpoint defaults applied.
-func BuildSigner(p SignerParams) (signing.Signer, error) {
-	return buildSigner(p)
 }
 
 // CheckIDTokenSubject verifies an identity token carries a usable signing
@@ -86,17 +74,12 @@ func AttachBundle(ctx context.Context, target oras.Target, subjectRef, artifactT
 	return attachBundle(ctx, target, subjectRef, artifactType, bundle)
 }
 
-// SignPublishDigestWith signs a proposed manifest digest with an already-resolved
-// signer, wrapping every failure with the unsigned-publication refusal so the
-// publication is refused with nothing published.
-func SignPublishDigestWith(ctx context.Context, signer signing.Signer, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
-	return signPublishDigestWith(ctx, signer, reference, tag, proposedDigest)
-}
-
-// DeprecateSigner constructs the signer for a deprecation marker through the
-// same precedence chain and identity ladder every other verb uses.
+// DeprecateSigner resolves the signer a single deprecation marking would sign
+// its marker with — through the one credential resolution every signing verb
+// shares — without attaching anything. It reaches no registry: a caller can read
+// which credential a marking would spend before it spends one.
 func DeprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
-	return deprecateSigner(cfg)
+	return resolveSigner(cfg.signerRequest(), cfg.Reference, nil)
 }
 
 // PushPlugin publishes a Plugin entity and its .wasm executable as one OCI

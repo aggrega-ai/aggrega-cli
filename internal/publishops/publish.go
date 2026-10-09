@@ -135,10 +135,9 @@ type PushConfig struct {
 // signerRequest projects the publication's credential inputs onto the shared
 // credential boundary's input contract, so the precedence chain and the identity
 // ladder are consulted through one path rather than re-spelled per verb.
-func (cfg PushConfig) signerRequest(registry string) SignerRequest {
+func (cfg PushConfig) signerRequest() SignerRequest {
 	return SignerRequest{
 		Workspace:                 cfg.Workspace,
-		Registry:                  registry,
 		Signer:                    cfg.Signer,
 		KeyPath:                   cfg.KeyPath,
 		FulcioURL:                 cfg.FulcioURL,
@@ -729,9 +728,9 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 				wsCfg: wsCfg, policy: policy, now: cfg.Now,
 			}
 			if wantSign {
-				req := cfg.signerRequest(dest.Host)
+				req := cfg.signerRequest()
 				c.sign = func(ctx context.Context, digest string) ([]byte, string, error) {
-					return signPublishDigest(ctx, req, reference, tag, digest)
+					return signPublishDigest(ctx, req, dest.Host, reference, tag, digest)
 				}
 			}
 			signed, cerr := completePublication(ctx, out, c)
@@ -757,7 +756,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		signatureType   string
 	)
 	if wantSign {
-		signatureBundle, signatureType, err = signPublishDigest(ctx, cfg.signerRequest(dest.Host), reference, tag, proposedDigest)
+		signatureBundle, signatureType, err = signPublishDigest(ctx, cfg.signerRequest(), dest.Host, reference, tag, proposedDigest)
 		if err != nil {
 			return PushResult{}, err
 		}

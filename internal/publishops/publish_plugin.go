@@ -242,9 +242,9 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 				wsCfg: wsCfg, policy: policy, now: cfg.Now,
 			}
 			if wantSign {
-				req := cfg.signerRequest(dest.Host)
+				req := cfg.signerRequest()
 				c.sign = func(ctx context.Context, digest string) ([]byte, string, error) {
-					return signPublishDigest(ctx, req, reference, version, digest)
+					return signPublishDigest(ctx, req, dest.Host, reference, version, digest)
 				}
 			}
 			signed, cerr := completePublication(ctx, out, c)
@@ -272,7 +272,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		signatureType   string
 	)
 	if wantSign {
-		signer, serr := resolvePublishSigner(cfg.signerRequest(dest.Host))
+		signer, serr := resolvePublishSigner(cfg.signerRequest(), dest.Host)
 		if serr != nil {
 			return PushResult{}, serr
 		}
