@@ -1,10 +1,10 @@
 entities:
-    - uri: adminer-recipe:1.0.0
+    - uri: compose/adminer-recipe:1.0.0
       resolved_version: 1.0.0
       digest: sha256:9eb5837b3fc4556daa1135e3de0f87209e15549f369317cb3ea30efb3eee20ec
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer
-    - uri: compose-bridge-fr:1.0.0
+    - uri: compose/compose-bridge-fr:1.0.0
       resolved_version: 1.0.0
       digest: sha256:0e34faee8ed9873b50a4dfaa0cbd31597741d34cef2bdf1db540a1c3a7fbf1f0
       referenced_from:
@@ -39,7 +39,7 @@ entities:
         - release.spec.aggregate
     - uri: cross-boundary-compose-manifest
       resolved_version: ""
-      digest: sha256:72902e9fee674b8503a83f93607dd0cb65f1e8144ddc29104fd370cfdb76b372
+      digest: sha256:63467ccda2bd74e372bba8211415d8a1f2188f699aa6bb13860ef5b825609abc
       referenced_from:
         - release.spec.manifest
 external_inputs: []

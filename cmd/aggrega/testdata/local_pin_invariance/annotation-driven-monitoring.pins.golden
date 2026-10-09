@@ -19,6 +19,16 @@ entities:
       digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
+    - uri: helm/prometheus-exporter:1.0.0
+      resolved_version: 1.0.0
+      digest: sha256:9969ffb43be158db00e9ba5f4206f9d26b2370952e8be37a5f4c3f45108467c8
+      referenced_from:
+        - manifest.spec.mappings.features.type.core/prometheus-exporter
+    - uri: helm/service:1.0.0
+      resolved_version: 1.0.0
+      digest: sha256:a9777d28e1614844e16932b9730b5777873b8b49b80c542d5c99b73350eb765f
+      referenced_from:
+        - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: monitoring-demo
       resolved_version: ""
       digest: sha256:3f6c12fc3d0514b53ccc15fa837270f19cd6c4c3b326bbe8935e9e17072c490c
@@ -26,19 +36,9 @@ entities:
         - release.spec.aggregate
     - uri: monitoring-manifest
       resolved_version: ""
-      digest: sha256:eaa61bc1998a62405eb10c3c364ba2c245f611e52f02d603733087d658ec2ac1
+      digest: sha256:1e87f8bddba542ebe6283d584eee8c45f776c8e4815088a8cfbf9d5dd85c6bec
       referenced_from:
         - release.spec.manifest
-    - uri: prometheus-exporter:1.0.0
-      resolved_version: 1.0.0
-      digest: sha256:9f084833e8984ff6e085e4572cf4f0d077da7218bc8eca38b9559f9a7c19ab5c
-      referenced_from:
-        - manifest.spec.mappings.features.type.core/prometheus-exporter
-    - uri: service:1.0.0
-      resolved_version: 1.0.0
-      digest: sha256:a9777d28e1614844e16932b9730b5777873b8b49b80c542d5c99b73350eb765f
-      referenced_from:
-        - manifest.spec.mappings.components.type.example/compute/service:1.0.0
 external_inputs: []
 mapping_libraries: []
 mutators: []

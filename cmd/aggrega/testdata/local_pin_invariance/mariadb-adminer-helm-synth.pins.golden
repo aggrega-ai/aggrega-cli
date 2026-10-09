@@ -1,9 +1,4 @@
 entities:
-    - uri: adminer-helm:1.0.0
-      resolved_version: 1.0.0
-      digest: sha256:ea9d2387d0a7ab67c0bb3d21ab9f32f88ad48da47a2a81d9e8b5a022d26948ee
-      referenced_from:
-        - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: aggregate
       resolved_version: ""
       digest: sha256:57b7fb957925cd6ad8e1ff2668340c5dba44144231c155ea3bfd976fefe26f07
@@ -49,11 +44,21 @@ entities:
       digest: sha256:6af12390cdabf71ba3ef239472ed77eef512dd6d9cf6e1b09c87b9df9fdeddec
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
-    - uri: env-secret:1.0.0
+    - uri: helm/adminer-helm:1.0.0
+      resolved_version: 1.0.0
+      digest: sha256:ea9d2387d0a7ab67c0bb3d21ab9f32f88ad48da47a2a81d9e8b5a022d26948ee
+      referenced_from:
+        - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
+    - uri: helm/env-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:b4f5a84bb2d5633b1fb8f837bfa866d2ccc4141e42d9be14834b697c9be8376b
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
+    - uri: helm/mariadb-synth:1.0.0
+      resolved_version: 1.0.0
+      digest: sha256:5ff2b2928b4c2108b7b2eb84ccb9a30e833e06c6c311b24fb53e0c827c9d550b
+      referenced_from:
+        - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: helm/provided-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:1df151df9de6cce5fdbeb3e2184819eef912c022b86fb9b07832299f744cea8b
@@ -61,14 +66,9 @@ entities:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: manifest-helm-synth
       resolved_version: ""
-      digest: sha256:980c9fd6e7210ea94256eceede5d82c800ce5722e8ea176868785b3ffbce7096
+      digest: sha256:f0ce6a757c949f51003dc51aa077726430e4e1a46f36fd747b75387d4225c8eb
       referenced_from:
         - release.spec.manifest
-    - uri: mariadb-synth:1.0.0
-      resolved_version: 1.0.0
-      digest: sha256:5ff2b2928b4c2108b7b2eb84ccb9a30e833e06c6c311b24fb53e0c827c9d550b
-      referenced_from:
-        - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
 external_inputs: []
 mapping_libraries: []
 mutators: []
