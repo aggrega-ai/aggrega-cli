@@ -3,12 +3,12 @@
 
 // Package pullverify runs signature verification at pull/lock time. It is
 // the lock-time half of the signing model: pull discovers each pinned
-// entity's signature referrer, verifies it against the registry's trust
-// policy, records a verified-signature fact, and caches the bundle as a
-// content-addressed blob for air-gapped re-verification. Build never
-// imports this package — verification is a recorded fact build reads from
-// the lockfile, not a step build re-runs (the AOT boundary: build is
-// offline and lockfile-only).
+// entity's signature referrers, verifies them against the registry's trust
+// policy, records a verified-signature fact for the earliest that verifies,
+// and caches its bundle as a content-addressed blob for air-gapped
+// re-verification. Build never imports this package — verification is a
+// recorded fact build reads from the lockfile, not a step build re-runs (the
+// AOT boundary: build is offline and lockfile-only).
 //
 // The verification LOGIC lives in pkg/signing (keyed-bundle and
 // keyless-bundle verify); this package orchestrates it across a closure's
@@ -110,7 +110,9 @@ type Options struct {
 }
 
 // Verify runs the verification pass over entities and returns the verified
-// facts. A fatal verification failure (a required signature that is
+// facts. Where an entity carries several signatures that verify, its fact is
+// the earliest of them by EarlierSignature, never the first the registry
+// happens to list. A fatal verification failure (a required signature that is
 // missing, untrusted, or invalid for a non-advisory registry) returns a
 // non-nil error and halts the pull. A required signature whose lookup could
 // not be completed halts it too: a check that did not run has not passed.
@@ -215,12 +217,23 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 	return results, nil
 }
 
-// verifyEntity fetches and verifies one entity's signature. Returns a nil
-// Result with no error when the entity has no reachable registry (skipped).
-// Returns ErrNoSignatureFound when the registry reports no signature referrer,
-// and an error wrapping oci.ErrReferrerDiscoveryUnavailable when the referrer
-// lookup could not be completed at all — the caller distinguishes the two
-// because only the first is an answer.
+// verifyEntity fetches and verifies one entity's signatures and returns the
+// earliest that verifies, by EarlierSignature. Returns a nil Result with no
+// error when the entity has no reachable registry (skipped). Returns
+// ErrNoSignatureFound when the registry reports no signature referrer, and an
+// error wrapping oci.ErrReferrerDiscoveryUnavailable when the referrer lookup
+// could not be completed at all — the caller distinguishes the two because only
+// the first is an answer.
+//
+// The entity is trusted when ANY of its signatures verifies, and a signature
+// that could not be fetched or does not verify beside one that does changes
+// nothing. Where none verifies, the error is the last failure met in the order
+// the registry lists the signatures. Every signature is read and judged rather
+// than the walk stopping at the first that verifies, so an entity carrying one
+// more signature costs one more fetch and one more verification: the listing
+// order is an order of referrer digests and says nothing about when each
+// signature was attached, so stopping early would let a signature attached
+// later stand in for the entity's own.
 func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, policy workspaceconfig.RegistryConfig, configured bool, targetFor TargetFor) (*Result, error) {
 	if targetFor == nil {
 		return nil, nil
@@ -242,11 +255,12 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 		return nil, signing.ErrNoSignatureFound()
 	}
 
-	// Verify the entity's content digest against any attached signature.
-	// A registry may carry more than one signature referrer; the entity is
-	// trusted if ANY one verifies against the policy. Track the last error
-	// so a wholly-unverifiable set surfaces a meaningful failure.
-	var lastErr error
+	// Track the last error so a wholly-unverifiable set surfaces a meaningful
+	// failure.
+	var (
+		earliest *Result
+		lastErr  error
+	)
 	for _, ref := range refs {
 		bundleBytes, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
@@ -254,11 +268,17 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 			continue
 		}
 		res, verr := VerifyBundle(cfg, bundleBytes, e.ManifestDigest, policy)
-		if verr == nil {
-			res.URI = e.URI
-			return res, nil
+		if verr != nil {
+			lastErr = verr
+			continue
 		}
-		lastErr = verr
+		if earliest == nil || EarlierSignature(res, earliest) {
+			earliest = res
+		}
+	}
+	if earliest != nil {
+		earliest.URI = e.URI
+		return earliest, nil
 	}
 	if lastErr == nil {
 		lastErr = signing.ErrSignatureVerificationFailed()
@@ -324,6 +344,39 @@ func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest
 		Bundle:       bundleBytes,
 		LoggedAt:     matched.LoggedAt,
 	}, nil
+}
+
+// EarlierSignature reports whether verified signature a ranks before b in the
+// order that decides which of an artifact's signatures stands for its
+// publication where more than one verifies. It is the one ordering: the
+// pull-time pass ranks by it when it records an artifact's verified signature,
+// and so does the registry index when it dates a version and names its signer,
+// so a later signature, however it was attached, never displaces the earliest
+// for either of them, and the two rank by one rule rather than by two copies of
+// it free to drift apart.
+//
+// A signature carrying a transparency-log time ranks before one carrying none,
+// and of two that carry one the earlier time ranks first. The log's time is the
+// publication date wherever a verified signature carries one, so a signature
+// without one is never preferred over a signature that attests a time. A keyed
+// signature carries no log time, but a keyed and a keyless signature never both
+// verify under one policy — VerifyBundle verifies keyed against a pinned key and
+// keyless only where none is pinned — so in practice the rule orders keyless
+// signatures by their log time, and among keyed ones, all of them the pinned
+// key's, decides nothing but which bundle is recorded.
+//
+// A tie — two equal log times, which the log records to the second, or two
+// signatures carrying none — breaks on the lower bundle digest, an order the
+// registry's referrer listing does not affect.
+func EarlierSignature(a, b *Result) bool {
+	aLogged, bLogged := !a.LoggedAt.IsZero(), !b.LoggedAt.IsZero()
+	if aLogged != bLogged {
+		return aLogged
+	}
+	if aLogged && !a.LoggedAt.Equal(b.LoggedAt) {
+		return a.LoggedAt.Before(b.LoggedAt)
+	}
+	return a.BundleDigest < b.BundleDigest
 }
 
 // keyedSignerIdentity is the same-signer identity for a keyed verification:

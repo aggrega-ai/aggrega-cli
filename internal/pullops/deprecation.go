@@ -32,6 +32,14 @@ import (
 // security team can retract an artifact the original publisher can no longer
 // reach, without being trusted to sign the artifacts themselves.
 //
+// The original signer is the earliest of the artifact's signatures that verify,
+// because that is the one the signature pass records (pullverify.EarlierSignature).
+// The index build and the verdict-attachment discovery read the earliest through
+// registryindex.VerifiedArtifactSigner, which ranks by the same function, so all
+// three take one original signer from the signatures they read, and a signature
+// the transparency log recorded later, by another trusted identity, makes that
+// identity's markers count on none of them.
+//
 // A marker with no signature, or one whose signature does not verify against the
 // honored set, is NOT recorded. Under a require-signatures (non-advisory) policy
 // an unsigned or untrusted marker is treated as an untrusted signature would be:

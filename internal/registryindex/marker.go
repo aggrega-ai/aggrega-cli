@@ -165,11 +165,12 @@ func VerifyMarkerSignature(
 // original signer whose withdrawals the version honors.
 //
 // The dependency-resolution discovery pass gets this for free: a signature pass
-// has already run over the same artifacts and recorded each verified signer. The
-// index build has not, and it needs the same fact for the same reason — a keyless
-// registry honors a marker signed by the artifact's own publisher, so without it a
-// publisher withdrawing their own artifact would go unhonored and the withdrawal
-// would never be recorded.
+// has already run over the same artifacts and recorded each verified signer, the
+// earliest by the same ordering (pullverify.EarlierSignature), so the two passes
+// honor one original signer. The index build has not, and it needs the same fact
+// for the same reason — a keyless registry honors a marker signed by the
+// artifact's own publisher, so without it a publisher withdrawing their own
+// artifact would go unhonored and the withdrawal would never be recorded.
 //
 // Every step is best-effort and nil is a complete answer: it narrows the honored
 // signer set to the registry's configured deprecation identities rather than
@@ -216,13 +217,16 @@ func VerifiedSignerAt(
 // the manifest digest a bundle commits to, and returns the verified signer of the
 // EARLIEST that does. VerifiedSignerAt is this walk read best-effort.
 //
-// Earliest is decided by earlierSignature and never by the order the registry
-// lists referrers in, which says nothing about when each was attached. So a
-// version signed again — by the same identity or another — keeps the signature the
-// transparency log recorded first, and every reader of this walk reads that same
-// one: the index records its signer and its log time as the version's publication
-// date, and the withdrawal check honors markers from its signer as the original
-// one. Every signature is therefore read and judged rather than the walk stopping
+// Earliest is decided by pullverify.EarlierSignature and never by the order the
+// registry lists referrers in, which says nothing about when each was attached.
+// So a version signed again — by the same identity or another — keeps the
+// signature the transparency log recorded first, and every reader of this walk
+// reads that same one: the index records its signer and its log time as the
+// version's publication date, and the withdrawal check honors markers from its
+// signer as the original one. The pull-time signature pass ranks a pulled
+// artifact's signatures by the same function, so the signature a lockfile
+// records, and the original signer a pull honors withdrawals from, are this one
+// too. Every signature is therefore read and judged rather than the walk stopping
 // at the first that verifies: a version carrying one more signature costs one more
 // referrer fetch and one more verification.
 //
@@ -273,7 +277,7 @@ func FindVerifiedSigner(
 			}
 			continue
 		}
-		if earliest == nil || earlierSignature(res, earliest) {
+		if earliest == nil || pullverify.EarlierSignature(res, earliest) {
 			earliest = res
 		}
 	}
@@ -281,34 +285,6 @@ func FindVerifiedSigner(
 		return earliest, nil
 	}
 	return nil, unanswered
-}
-
-// earlierSignature reports whether verified signature a ranks before b in the
-// order that decides which of a version's signatures is its own.
-//
-// A signature carrying a transparency-log time ranks before one carrying none,
-// and of two that carry one the earlier time ranks first. This is the publication
-// date's own rule (PublicationDate): an attested log time is the date wherever a
-// counted signature carries one, so preferring a signature without one would set
-// the date aside while another verified signature attests it. A keyed signature
-// carries no log time, but a keyed and a keyless signature never verify under one
-// policy — pullverify.VerifyBundle verifies keyed against a pinned key and keyless
-// only where none is pinned — so in practice the rule orders keyless signatures by
-// their log time, and among keyed ones, all of them the pinned key's, decides
-// nothing but which bundle is recorded.
-//
-// A tie — two equal log times, which the log records to the second, or two
-// signatures carrying none — breaks on the lower bundle digest, an order the
-// registry's referrer listing does not affect.
-func earlierSignature(a, b *pullverify.Result) bool {
-	aLogged, bLogged := !a.LoggedAt.IsZero(), !b.LoggedAt.IsZero()
-	if aLogged != bLogged {
-		return aLogged
-	}
-	if aLogged && !a.LoggedAt.Equal(b.LoggedAt) {
-		return a.LoggedAt.Before(b.LoggedAt)
-	}
-	return a.BundleDigest < b.BundleDigest
 }
 
 // doesNotVerify reports whether a verification failure is a verdict on the bundle

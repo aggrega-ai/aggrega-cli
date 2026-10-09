@@ -773,7 +773,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// collectVersionDeprecations scans each conforming version's deprecation
+// CollectVersionDeprecations scans each conforming version's deprecation
 // referrers and records the authoritative marker for every version that carries a
 // marker whose OWN signature verifies, in the ascending version order it is given.
 // Each version's marker is selected by the same newest-issuedOn rule the closure
@@ -802,9 +802,9 @@ func equalStrings(a, b []string) bool {
 // log time the index records as the version's date — so a signature attached later
 // by another trusted identity never makes that identity's markers count. The
 // closure discovery pass reads its original signer from the pull-time signature
-// pass instead, which takes the first signature that verifies in the order the
-// registry lists them; where two different trusted identities have signed one
-// version, the two passes can therefore fold different signers in.
+// pass instead, which ranks a version's verifying signatures by the same function
+// (pullverify.EarlierSignature), so it folds in the same earliest signer rather
+// than whichever signature the registry lists first.
 //
 // Every step stays best-effort: a referrer-listing, decode or verification failure
 // skips that version rather than failing the index build, mirroring the walk's

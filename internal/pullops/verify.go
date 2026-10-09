@@ -57,6 +57,13 @@ import (
 // invalid for a non-advisory registry) returns a non-nil error and halts the
 // pull.
 //
+// Where an artifact carries several signatures that verify, the fact a row
+// records is the earliest of them (pullverify.EarlierSignature) — the signature
+// the registry index dates the version by and names as its signer — and the
+// deprecation discovery below honors markers from that same signer as the
+// original one. Which signature the registry happens to list first decides
+// neither.
+//
 // Verification warning notices are written to diagOut (os.Stderr in production).
 //
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
