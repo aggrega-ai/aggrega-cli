@@ -18,7 +18,7 @@ import (
 // several, because two sockets may hold a plugin of the same name and the scope
 // is what makes the entity resolvable. The entity's .wasm artifact reference is
 // derived from its bare identity. A bare .wasm reference or an artifact
-// reference is no longer accepted: the build halts here naming the offending
+// reference names no Plugin entity, so the build halts here naming the offending
 // reference.
 func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
@@ -103,7 +103,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 			}
 			return ResolvedPlugin{}, fmt.Errorf(
 				"%w: %q must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`); "+
-					"bare-`.wasm` and artifact references are no longer accepted",
+					"a bare `.wasm` reference or an artifact reference names no Plugin entity",
 				ErrPluginEntityNotFound(), entityURI)
 		}
 		resolved, err := cascade(artifactURI)
