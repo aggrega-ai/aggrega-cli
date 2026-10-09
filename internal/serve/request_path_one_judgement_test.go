@@ -9,8 +9,9 @@ import (
 )
 
 // TestAPathARequestReadsIsJudgedByTheDeepestPartOfItThatExists drives the requests
-// that READ a path they name — a lint of an entity, a graph of a Release, and an
-// insertion point in a document — over one real root, naming each path in the
+// that READ a path they name — a lint of an entity, a graph of a Release, an
+// insertion point in a document, and a validation sent without the document's
+// content — over one real root, naming each path in the
 // shapes the one judgement of inside tells apart, and reads back whether the
 // request was refused for where the path leads.
 //
@@ -73,6 +74,23 @@ func TestAPathARequestReadsIsJudgedByTheDeepestPartOfItThatExists(t *testing.T) 
 			method:  "aggrega/insertionPoint",
 			params:  map[string]any{"file": "shared/missing.yaml", "container": []string{"metadata"}},
 			refusal: errInsertionFileLeadsOut.Error(),
+		},
+		{
+			name:   "control: a validation without content of a document inside the root is answered",
+			method: "aggrega/validate",
+			params: map[string]any{"file": "entity.yaml"},
+		},
+		{
+			name:    "a validation without content of a document reached through a link leading out is refused",
+			method:  "aggrega/validate",
+			params:  map[string]any{"file": "linked-entity.yaml"},
+			refusal: errValidateDocumentLeadsOut.Error(),
+		},
+		{
+			name:    "a validation without content of a document not there yet beneath a directory linked out is refused for the link",
+			method:  "aggrega/validate",
+			params:  map[string]any{"file": "shared/missing.yaml"},
+			refusal: errValidateDocumentLeadsOut.Error(),
 		},
 	}
 

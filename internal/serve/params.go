@@ -55,6 +55,22 @@ func decodeParams(req *jsonRPCRequest, dst any) error {
 	return decodeParamsValue(req.Params, dst)
 }
 
+// paramSent reports whether the request's params carry the named key at all, for
+// a method that answers a key sent empty differently from a key not sent. The
+// decode cannot say which it was, because both leave the field at its zero value.
+// A request with no params, or with params that are not an object, sends no key.
+func paramSent(req *jsonRPCRequest, name string) bool {
+	if len(req.Params) == 0 {
+		return false
+	}
+	var supplied map[string]json.RawMessage
+	if err := json.Unmarshal(req.Params, &supplied); err != nil {
+		return false
+	}
+	_, sent := supplied[name]
+	return sent
+}
+
 // decodeParamsValue performs the decode itself, wrapping the shape fault the way
 // every handler already reports one.
 func decodeParamsValue(raw json.RawMessage, dst any) error {

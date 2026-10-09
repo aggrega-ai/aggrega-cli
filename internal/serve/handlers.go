@@ -514,6 +514,13 @@ func selectPositionEncoding(caps clientCapabilities) yamlpos.PositionEncoding {
 // carries the in-memory bytes the IDE editor holds for the file (which
 // may differ from on-disk bytes during active editing).
 //
+// A request that sends no content at all asks about the file as it is on disk,
+// and is answered from those bytes (validationContent). An empty content is not
+// an absent one: it is a buffer the client holds with nothing in it, and it is
+// validated as that buffer. Content alone cannot tell the two apart, so whether
+// the request sent the key is read off the request itself where it arrives and
+// carried in contentAbsent, rather than inferred from an empty value.
+//
 // Release is a path relative to the workspace root naming the Release to
 // validate against — the same value `aggrega/irGraph` takes, and the same
 // value `aggrega build --release` takes when run from the root.
@@ -534,6 +541,11 @@ type validateParams struct {
 	File    string `json:"file"`
 	Content string `json:"content"`
 	Release string `json:"release"`
+
+	// contentAbsent says the request sent no content key. It is set where the
+	// request arrives and is not on the wire. Its zero value is a request whose
+	// Content is the buffer, which is what a caller building one in process means.
+	contentAbsent bool
 }
 
 // validateResult is the response shape for `aggrega/validate`.
@@ -568,6 +580,7 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
+	params.contentAbsent = !paramSent(req, "content")
 	result, errEnvelope := s.handleValidate(ctx, params)
 	if ctx.Err() != nil {
 		// Cancelled mid-flight (shutdown). Drop the response; the
@@ -580,7 +593,8 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 	return s.writeResult(ctx, req.ID, result)
 }
 
-// handleValidate parses the supplied content via yaml.v3 and populates
+// handleValidate parses the document's text via yaml.v3 — the content the
+// request carried, or the file on disk where it carried none — and populates
 // the daemon's parse cache + diagnostic cache for the file, then — when the
 // request named a Release — checks the file in that Release's terms: a catalog
 // entity of a kind the single-entity check accepts gets that check, resolved
@@ -652,6 +666,17 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// read, which reads back as a file with nothing to report rather than as a
 	// request that missed.
 	file := s.canonicalFile(params.File)
+	// The text this validation checks, settled once and before anything classifies
+	// the document, so every kind is read the same way: a document recognized by
+	// its name, as the workspace configuration is, and one recognized by the
+	// apiVersion and kind its bytes carry alike. Were the file read only after
+	// classification, a request without content would leave each kind to meet an
+	// empty buffer in its own way — one recognized by name reported as an empty
+	// document, one recognized by its bytes reported as clean.
+	content, readRefusal := s.validationContent(params, file)
+	if readRefusal != nil {
+		return validateResult{}, readRefusal
+	}
 	// A diagnostics request naming this file while this validation runs waits for
 	// it and is then answered with what it found, rather than being answered from
 	// state this handler is halfway through writing. The signal is registered
@@ -660,14 +685,14 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// writes: this handler leaves by several paths, and a release at any one of
 	// them leaks the signal on the rest.
 	//
-	// It sits below the Release resolution above deliberately. A request refused
-	// there returns without writing anything, so there is nothing for a reader to
-	// wait for and nothing is registered.
+	// It sits below the Release resolution and the read above deliberately. A
+	// request refused at either returns without writing anything, so there is
+	// nothing for a reader to wait for and nothing is registered.
 	releaseValidation := s.validations.begin(file)
 	defer releaseValidation()
 
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
+	if err := yaml.Unmarshal(content, &doc); err != nil {
 		s.setDiagnostics(file, []Diagnostic{yamlErrorToDiagnostic(err)})
 		// A buffer no parser will read is not a catalog entity the conventions rules
 		// can be asked about, so whatever they last said about this file is cleared
@@ -679,7 +704,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// at the parse learned nothing about what a build found here.
 		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
-	s.parseCache.Put(file, &doc, []byte(params.Content))
+	s.parseCache.Put(file, &doc, content)
 	if s.testValidateGateHook != nil {
 		s.testValidateGateHook(file)
 	}
@@ -694,7 +719,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// is the honest coverage for every other file. Foreign YAML, and
 	// envelope-clean documents that owe no value, fall through to the
 	// existing flow unchanged.
-	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, []byte(params.Content), &doc); hasFindings {
+	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, content, &doc); hasFindings {
 		s.setDiagnostics(file, diags)
 		// The document's own shape was rejected, or it still owes a value, so it is
 		// not yet a document the publishing conventions have anything to say about:
@@ -718,7 +743,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// conventions are a question about the document itself. Both answers compose
 	// the layer through the snapshot, so the findings reach the reply whichever of
 	// the two the request asked for.
-	s.refreshConventionDiagnostics(ctx, file, []byte(params.Content), &doc)
+	s.refreshConventionDiagnostics(ctx, file, content, &doc)
 	if releasePath == "" {
 		// The request named no Release, so the half above is the whole answer.
 		// The semantic layer is cleared rather than left standing: this file may
@@ -741,9 +766,9 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// is something the author can read and fix.
 	var diags []Diagnostic
 	if isSingleEntityDocument(&doc) {
-		diags = s.runEntityValidation(ctx, releasePath, file, []byte(params.Content))
+		diags = s.runEntityValidation(ctx, releasePath, file, content)
 	} else {
-		diags = s.runTier4Validation(ctx, releasePath, file, []byte(params.Content), &doc)
+		diags = s.runTier4Validation(ctx, releasePath, file, content, &doc)
 	}
 	if ctx.Err() != nil {
 		// Cancelled mid-pipeline. Leave the prior diagnostic cache

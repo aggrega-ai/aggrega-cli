@@ -409,9 +409,10 @@ func resolveLink(path, root string) linkTarget {
 // held to — every path a request names, whether the request reads it or writes
 // it: a document a request names through resolveWorkspacePathParam, a destination
 // a request names through workspacePath, a document an insertion point is located
-// in, a key file a registration names, and the Release the active-Release marker
-// names. A read and a write are judged alike, because the definition already
-// covers a path that is not there yet: the deepest part of it that exists is
+// in, a document a validation sent without its content reads, a key file a
+// registration names, and the Release the active-Release marker names. A read
+// and a write are judged alike, because the definition already covers a path
+// that is not there yet: the deepest part of it that exists is
 // judged, with its links resolved, against the root resolved the same way. So a
 // path spelled inside the root that leads out through a link, a path not made yet
 // beneath a link leading out, an absolute path elsewhere and a path climbing out of
