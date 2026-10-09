@@ -65,15 +65,11 @@ func TestAnEntityCacheThatCannotBeWrittenIsSaidAsWhatWasBeingDone(t *testing.T) 
 	}
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root})
 	cacheDir := ws.Config().ResolvedArtifactCacheDir()
-	// A regular file stands where the copy's directory goes, under each reference
-	// the walk may key the slot by: the bare one the Aggregate and the Manifest
-	// write, and the versioned one the fetched version pins.
-	blocked := map[string]string{}
-	for _, uri := range []string{staleSlotComponentURI, staleSlotEntry} {
-		slot := mustCachePath(f.root, cacheDir, uri, "1.0.0")
-		writeFixture(t, slot, "in the way\n")
-		blocked[slot] = uri
-	}
+	// A regular file stands where the copy's directory goes. The Aggregate and the
+	// Manifest write the reference bare, and the copy is keyed by it at the version
+	// it resolved to — the slot every reader of its pin addresses.
+	slot := mustCachePath(f.root, cacheDir, staleSlotEntry, "1.0.0")
+	writeFixture(t, slot, "in the way\n")
 
 	var diag, out bytes.Buffer
 	err := pullRun(context.Background(), pullConfig{
@@ -91,13 +87,12 @@ func TestAnEntityCacheThatCannotBeWrittenIsSaidAsWhatWasBeingDone(t *testing.T) 
 	if !errors.As(err, &pathErr) {
 		t.Fatalf("the failure no longer carries the operating system's path error: %v", err)
 	}
-	uri, ok := blocked[pathErr.Path]
-	if !ok {
-		t.Fatalf("the write failed at %s, which is not a slot the fixture blocked: %v", pathErr.Path, err)
+	if pathErr.Path != slot {
+		t.Fatalf("the write failed at %s, which is not the slot the fixture blocked (%s): %v", pathErr.Path, slot, err)
 	}
 
 	printed := formatCompilerError(err)
-	want := fmt.Sprintf("resolve entity %q: create the cache directory %s: %s", uri, pathErr.Path, pathErr.Err.Error())
+	want := fmt.Sprintf("resolve entity %q: create the cache directory %s: %s", staleSlotComponentURI, pathErr.Path, pathErr.Err.Error())
 	if first, _, _ := strings.Cut(printed, "\n"); first != want {
 		t.Errorf("the pull printed\n  %s\nwant\n  %s", first, want)
 	}

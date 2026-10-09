@@ -379,6 +379,14 @@ func (l *catalogLookup) ClosureRecipeLoader() closure.RecipeLoader {
 // bare-name reference gets the resolved version appended. Centralising the rule
 // keeps the bare-name case (a registry-published aggregate referenced by
 // identity) and the versioned-URI case from clashing on a double-appended tag.
+//
+// It is the one derivation of that key for writing a slot and for reading one:
+// the registry tiers write a fetched entity through it (writeEntityToCacheSlot,
+// tier3Slot), and every reader of a pinned entity reads through it — the pull's
+// reuse check (pinnedFetchURI), the lazy view's verified read (tier2Verified),
+// its pinned fold and its integrity gate. So a bare reference a pull fetches
+// with no pin to hand is cached where its pin is read back from, by the pull's
+// own render, by a later pull and by the build alike.
 func versionedSlotURI(uri, version string) string {
 	if _, _, hasV := resolver.SplitVersionedURI(uri); hasV {
 		return uri
@@ -443,7 +451,7 @@ func (l *catalogLookup) pinnedFetchURI(uri string) string {
 	if !ok || pin.ResolvedVersion == "" {
 		return uri
 	}
-	return uri + ":" + pin.ResolvedVersion
+	return versionedSlotURI(uri, pin.ResolvedVersion)
 }
 
 // honorPinDigest enforces honor≠launder: when the entity carried a prior pin and
@@ -1595,7 +1603,9 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 		}
 		// A bare-name reference pins the fetched body's metadata.version (identity);
 		// a floored reference keeps the floor. The cache slot is keyed by the
-		// closure URI (what the build re-reads) plus the pinned version.
+		// closure URI at the pinned version (writeEntityToCacheSlot), the key every
+		// reader of the pin addresses, so a bare reference is cached under the
+		// pinned version appended to it rather than under the reference alone.
 		pinnedVersion := resolvedVersion
 		if !hasFloor {
 			mv, verr := entityMetadataVersion(result.Bytes)
@@ -1672,8 +1682,8 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 	// via the LibraryPuller capability — name→location, then list-tags→highest
 	// (when the URI carries no version) or the asserted floor as the tag (when a
 	// consumer's `@version` threaded a `name:floor` URI here). The cache
-	// slot is keyed `<name>:<version>` — the symmetric key the lazy lookup's
-	// verified Tier-2 read addresses.
+	// slot is keyed `<name>:<version>` (writeEntityToCacheSlot) — the symmetric
+	// key the lazy lookup's verified Tier-2 read addresses.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
 		name, floor, hasFloor := resolver.SplitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(ctx, name, kind, floor)
@@ -1704,8 +1714,7 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 				pinnedVersion = mv
 			}
 		}
-		versionedKey := name + ":" + pinnedVersion
-		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, versionedKey, pinnedVersion, result); err != nil {
+		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, name, pinnedVersion, result); err != nil {
 			return closure.Resolution{}, err
 		}
 		digest := contentDigest(result.Bytes)
@@ -1827,8 +1836,7 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	if version == "" {
 		version = fetchVersion
 	}
-	versionedKey := name + ":" + version
-	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, versionedKey, version, result); werr != nil {
+	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, name, version, result); werr != nil {
 		return nil, "", "", "", false, werr
 	}
 	document, derr := oci.EntityYAML(result.Bytes)
@@ -1877,6 +1885,13 @@ func admitFetchedEntity(kind string, published []byte, coordinate string) error 
 // local-authoring layout); every other mediatype writes via
 // pkg/oci.WriteCached's "blob" filename.
 //
+// The slot is keyed by versionedSlotURI(uri, version), the key every reader of a
+// pinned entity addresses, so a caller hands over the reference it resolved —
+// bare or versioned — and never composes the key itself. A bare reference keyed
+// by itself would be cached where no pinned read looks: the pull that fetched it
+// would pin it, and its own render, a later pull and the build would each find
+// its slot empty.
+//
 // A failed write is returned as pkg/oci words it — what was being done, with which
 // path, and the operating system's reason — and the registry tiers return it as it
 // is, leaving the entity to the frame that asked for it: the dependency walk's frame
@@ -1886,6 +1901,7 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 	if cacheDir == "" {
 		return nil
 	}
+	uri = versionedSlotURI(uri, version)
 	if isLibraryMediaType(result.MediaType) {
 		if err := oci.WriteCachedFile(workspaceRoot, cacheDir, uri, version, "library.yaml", result.Bytes); err != nil {
 			return err
@@ -1967,16 +1983,17 @@ func refusesTheSlot(err error) bool {
 }
 
 // tier3Slot returns the cache slot tier3PullCatalogEntity wrote the bytes it
-// resolved uri to, given the resolution it returned: the slot is keyed by the URI
-// as passed and by the version the resolution records, which is the version the
-// write used. It returns "" where no slot was written, because no cache directory
-// is configured, and the refusal oci.CachePath returns where the version could
-// not address a slot — which the write it follows would have refused first.
+// resolved uri to, given the resolution it returned: the slot is keyed as the
+// write keyed it, by versionedSlotURI over the URI as passed and the version the
+// resolution records, which is the version the write used. It returns "" where
+// no slot was written, because no cache directory is configured, and the refusal
+// oci.CachePath returns where the version could not address a slot — which the
+// write it follows would have refused first.
 func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) (string, error) {
 	if cacheDir == "" {
 		return "", nil
 	}
-	return oci.CachePath(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
+	return oci.CachePath(workspaceRoot, cacheDir, versionedSlotURI(uri, res.ResolvedVersion), res.ResolvedVersion)
 }
 
 // unpackEntitySlot lays out, in the cache slot at slot, the files the published

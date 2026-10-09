@@ -860,7 +860,7 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 	// — it honors every existing pin (resolving to the pinned version, verifying the
 	// pinned digest, halting on a drifted pin), resolves + adds un-pinned references,
 	// refills an empty cache by pin, and prunes stale pins; on a complete,
-	// cache-populated lockfile it is a no-op with NO network (every pin a Tier-2 hit),
+	// cache-populated lockfile it is a no-op that fetches nothing (every pin a Tier-2 hit),
 	// so the build stays hermetic given a complete lockfile. With upgrade the fill
 	// is a full refresh: it discards the existing pin set and re-resolves every
 	// dependency, floating each to the highest satisfying version. There is no

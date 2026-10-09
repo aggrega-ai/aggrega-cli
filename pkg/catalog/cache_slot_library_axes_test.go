@@ -42,7 +42,9 @@ func TestCacheSlotUsesLibraryFilenameOnEveryAxis(t *testing.T) {
 				t.Fatalf("writeEntityToCacheSlot: %v", werr)
 			}
 
-			slot := mustCachePath(ws, cacheDir, uri, version)
+			// The bare name is cached at the version it was written at, under the key
+			// a read of its pin addresses.
+			slot := mustCachePath(ws, cacheDir, uri+":"+version, version)
 			got, rerr := os.ReadFile(filepath.Join(slot, "library.yaml"))
 			if rerr != nil {
 				t.Fatalf("a %s pulled into the cache was not written under the canonical library filename, "+

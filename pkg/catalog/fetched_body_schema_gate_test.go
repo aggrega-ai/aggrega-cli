@@ -66,7 +66,8 @@ spec: {}
 
 // TestTier3PullCachesABodyItsSchemaAccepts is the positive control: a well-formed
 // Component of the same identity is cached, so the gate above refuses on the body's
-// shape rather than on the path being unreachable.
+// shape rather than on the path being unreachable. The bare reference is cached at
+// the version it resolved to, under the key a read of its pin addresses.
 func TestTier3PullCachesABodyItsSchemaAccepts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -89,7 +90,7 @@ spec: {}
 	if res.ResolvedVersion != "1.0.0" || len(bytes) == 0 {
 		t.Fatalf("resolution did not carry the fetched body: version=%q bytes=%d", res.ResolvedVersion, len(bytes))
 	}
-	slot, err := oci.CachePath(root, cacheDir, "remote/db", "1.0.0")
+	slot, err := oci.CachePath(root, cacheDir, "remote/db:1.0.0", "1.0.0")
 	if err != nil {
 		t.Fatalf("CachePath: %v", err)
 	}
