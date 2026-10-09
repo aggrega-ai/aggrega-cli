@@ -194,7 +194,8 @@ func VerifiedArtifactSigner(
 // VerifiedSignerAt is VerifiedArtifactSigner for a caller that has already
 // resolved subjectRef to its manifest digest, so the resolve is not repeated. The
 // signature is verified against that digest, which is what a bundle commits to,
-// and it is the same best-effort answer: nil when no signature verifies.
+// and it is the same best-effort answer: nil when no signature verifies, and nil
+// as well when FindVerifiedSigner could not finish the question.
 func VerifiedSignerAt(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -202,20 +203,69 @@ func VerifiedSignerAt(
 	subjectRef, digest string,
 	policy workspaceconfig.RegistryConfig,
 ) *pullverify.Result {
+	res, _ := FindVerifiedSigner(ctx, wsCfg, target, subjectRef, digest, policy)
+	return res
+}
+
+// FindVerifiedSigner is the one walk over a published version's signature
+// referrers that asks whether one of them verifies under policy, against digest,
+// the manifest digest a bundle commits to. It returns the verified signer of the
+// first that does. VerifiedSignerAt is this walk read best-effort.
+//
+// Unlike that reading it says when it could not finish: it returns nil and a nil
+// error only when every signature referrer was read and judged and none verifies,
+// which includes a version that carries none. It returns an error where the answer
+// is not known — the referrer listing could not be completed, or no signature
+// verified while one could not be fetched or could not be judged because something
+// other than the bundle failed, such as a trust anchor that could not be obtained.
+// A caller that acts on "none verifies" by attaching a signature of its own reads
+// this rather than the best-effort answer, because to it a registry that failed to
+// answer must not look like a version that carries no signature.
+//
+// A bundle that does not verify — a wrong signer, a broken or tampered signature,
+// a policy admitting no signer, or a payload that is not a bundle at all — is an
+// answer about that bundle, and the walk moves on to the next.
+func FindVerifiedSigner(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	target oras.ReadOnlyTarget,
+	subjectRef, digest string,
+	policy workspaceconfig.RegistryConfig,
+) (*pullverify.Result, error) {
 	sigRefs, err := oci.ListReferrers(ctx, target, subjectRef, signing.BundleMediaType)
-	if err != nil || len(sigRefs) == 0 {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("list signature referrers: %w", err)
 	}
+	var unanswered error
 	for _, ref := range sigRefs {
 		bundle, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
+			unanswered = fmt.Errorf("fetch signature %s: %w", ref.Digest, ferr)
 			continue
 		}
-		if res, verr := pullverify.VerifyBundle(wsCfg, bundle, digest, policy); verr == nil {
-			return res
+		res, verr := pullverify.VerifyBundle(wsCfg, bundle, digest, policy)
+		if verr == nil {
+			return res, nil
+		}
+		if !doesNotVerify(bundle, verr) {
+			unanswered = fmt.Errorf("verify signature %s: %w", ref.Digest, verr)
 		}
 	}
-	return nil
+	return nil, unanswered
+}
+
+// doesNotVerify reports whether a verification failure is a verdict on the bundle
+// itself rather than a failure to judge it. The verification sentinels are matched
+// through their accessors; a payload that does not parse as a bundle is a verdict
+// too, since no policy and no anchor could ever verify it.
+func doesNotVerify(bundle []byte, verr error) bool {
+	if errors.Is(verr, signing.ErrSignatureVerificationFailed()) ||
+		errors.Is(verr, signing.ErrUntrustedIdentity()) ||
+		errors.Is(verr, signing.ErrNoTrustedIdentities()) {
+		return true
+	}
+	_, perr := signing.LoadBundle(bundle)
+	return perr != nil
 }
 
 // markerTrustPolicy derives the trust policy a deprecation marker's signature

@@ -216,11 +216,11 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	}
 
 	// Immutability guard on the version tag (mirrors the catalog-kind path): a
-	// re-publication of a byte-identical manifest is an idempotent no-op; a tag already
-	// pointing at different content is refused. The proposed digest is derived
-	// from the whole manifest — the config entity plus the inline .wasm layer —
-	// so a changed executable under an unchanged entity is caught as a conflict
-	// too.
+	// re-publication of a byte-identical manifest uploads nothing and completes what
+	// that publication still lacks (completePublication); a tag already pointing at
+	// different content is refused. The proposed digest is derived from the whole
+	// manifest — the config entity plus the inline .wasm layer — so a changed
+	// executable under an unchanged entity is caught as a conflict too.
 	existingDigest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, version, err)
@@ -235,7 +235,23 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 			writePublicationFacts(out, "Plugin", oci.MediaTypePlugin, len(entityYAML), len(wasmBytes))
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
-			result.Signed = false
+			wsCfg := cfg.Workspace.Config()
+			policy, _ := wsCfg.RegistryTrustPolicy(dest.Host)
+			c := completion{
+				target: target, reference: reference, tag: version, digest: existingDigest,
+				wsCfg: wsCfg, policy: policy, now: cfg.Now,
+			}
+			if wantSign {
+				req := cfg.signerRequest(dest.Host)
+				c.sign = func(ctx context.Context, digest string) ([]byte, string, error) {
+					return signPublishDigest(ctx, req, reference, version, digest)
+				}
+			}
+			signed, cerr := completePublication(ctx, out, c)
+			if cerr != nil {
+				return PushResult{}, cerr
+			}
+			result.Signed = signed
 			return result, nil
 		}
 		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",

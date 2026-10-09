@@ -286,8 +286,9 @@ func ListPublishableKinds(out io.Writer) error {
 // the prose would make a display format into a contract. Every field is filled on
 // every path the operation can take, so a caller reads one shape whichever branch
 // ran, and the two booleans say WHICH branch ran: a dry run computed the digest
-// and published nothing, and an already-published re-publication landed nothing
-// because the bytes were already there.
+// and published nothing, and an already-published re-publication uploaded no
+// content because the bytes were already there, and attached only what that
+// publication still lacked.
 type PushResult struct {
 	// Reference and Tag address the published artifact: the repository reference
 	// and the entity's own metadata.version.
@@ -310,10 +311,16 @@ type PushResult struct {
 	// digest is first computed, and computing one here to fill the field would add
 	// work to a path whose whole purpose is not to do any.
 	Digest string
-	// Signed reports that a signature bundle was produced and attached.
+	// Signed reports that this call attached a signature: on a publication, the
+	// one it made before publishing; on a version already published, the one it
+	// attached because the version carried none that counts as this
+	// publication's. It is false on a dry run and wherever nothing was signed.
 	Signed bool
 	// AlreadyPublished reports that the tag already pointed at byte-identical
-	// content, so the publication was an idempotent no-op.
+	// content, so no content was uploaded. What that publication still lacked —
+	// its publication date, and its signature where this one signs — was attached
+	// beside it, and nothing was where it lacked neither; Signed says whether a
+	// signature was, and the status output names each attachment.
 	AlreadyPublished bool
 	// DryRun reports that nothing was published: the bundle was computed and the
 	// destination was never contacted.
@@ -403,10 +410,16 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // commits to the digest string, so the pre-publication signature is valid for
 // the published bytes. An attach that still fails after its retries leaves the
 // content published without its signature: Push returns an error naming the
-// signature it could not attach, a consumer of a signature-requiring registry
-// refuses the version until one is attached, and a second Push of the same
-// content finds it already published and attaches nothing — Sign attaches one
-// by reference.
+// signature it could not attach, and a consumer of a signature-requiring registry
+// refuses the version until one is attached. A second Push of the same content
+// that signs attaches it, and Sign attaches one by reference.
+//
+// A Push that finds the same content already published uploads nothing and
+// completes the publication instead (completePublication): it attaches the
+// signature, where it signs, if the version carries none that counts as its own
+// under the destination's trust policy, and the publication date, if one is owed
+// and the version carries none. A publication that is already complete gets
+// nothing attached.
 //
 // Every write to the registry — the content, the manifest, the tag, the
 // signature and the date — retries a transient failure inside pkg/oci (see
@@ -418,8 +431,9 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // the signature it attached carries a transparency log's attested time — a
 // keyless one does, a keyed one does not, and an unsigned publication has none
 // (recordPublicationDate). Neither the entity's manifest nor its tag is touched,
-// so the date moves no digest, and a re-publication of the same bytes states
-// nothing, because it returns before anything is written.
+// so the date moves no digest, and a re-publication of the same bytes states a
+// date only where the version carries none, stating its own clock: the time the
+// publication was completed.
 //
 // Returns wrapped errors on workspace-config validation failure,
 // entity-file read / parse failure, the shared-directory halt
@@ -688,12 +702,12 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 
 	// Immutability guard: published bytes are frozen. HEAD the target tag
 	// before publishing and compare the digest it points at with the digest
-	// this content would produce. Re-publishing byte-identical content is an
-	// idempotent no-op; overwriting an existing tag with different content is
-	// refused. Changed content is published under a new version — the
-	// pre-publication lint gates that bump against the previous release. There is no
-	// force escape: the registry has no overwrite path the operator can opt
-	// into, by design.
+	// this content would produce. Re-publishing byte-identical content uploads
+	// nothing and completes what that publication still lacks; overwriting an
+	// existing tag with different content is refused. Changed content is
+	// published under a new version — the pre-publication lint gates that bump
+	// against the previous release. There is no force escape: the registry has no
+	// overwrite path the operator can opt into, by design.
 	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, tag, err)
@@ -709,9 +723,22 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 			writeWholeDirectoryNote(out, result.WholeDirectory)
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
-			// The bytes were already there, so no signature was produced on this
-			// call whatever the policy asked for.
-			result.Signed = false
+			policy, _ := wsCfg.RegistryTrustPolicy(dest.Host)
+			c := completion{
+				target: target, reference: reference, tag: tag, digest: existingDigest,
+				wsCfg: wsCfg, policy: policy, now: cfg.Now,
+			}
+			if wantSign {
+				req := cfg.signerRequest(dest.Host)
+				c.sign = func(ctx context.Context, digest string) ([]byte, string, error) {
+					return signPublishDigest(ctx, req, reference, tag, digest)
+				}
+			}
+			signed, cerr := completePublication(ctx, out, c)
+			if cerr != nil {
+				return PushResult{}, cerr
+			}
+			result.Signed = signed
 			return result, nil
 		}
 		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",

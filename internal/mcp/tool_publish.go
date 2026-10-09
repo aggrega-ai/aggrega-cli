@@ -283,8 +283,9 @@ type publishEntityArgs struct {
 //
 // digest is empty on a dry run, which stops before a digest is computed, and the
 // two booleans say which path ran — a dry run published nothing, and an
-// already-published call found the tag pointing at byte-identical content and
-// landed nothing.
+// already-published call found the tag pointing at byte-identical content,
+// uploaded none, and attached only what that publication still lacked: its
+// publication date, and its signature where this one signs, which signed reports.
 type publishEntityPayload struct {
 	Reference        string           `json:"reference"`
 	Tag              string           `json:"tag"`
@@ -503,7 +504,8 @@ func renderPublishEntityText(p publishEntityPayload) string {
 		fmt.Fprintf(&b, "Dry run: %s:%s would be published as %s (%s, %d bytes). Nothing was contacted.",
 			p.Reference, p.Tag, p.Kind, p.MediaType, p.Size)
 	case p.AlreadyPublished:
-		fmt.Fprintf(&b, "Already published: %s:%s already points at %s, so nothing was landed.",
+		fmt.Fprintf(&b, "Already published: %s:%s already points at %s, so its content was not landed again; "+
+			"a publication date, and a signature where this publication signs, are attached only where the version lacked one.",
 			p.Reference, p.Tag, p.Digest)
 	default:
 		fmt.Fprintf(&b, "Published %s:%s at %s as %s (%s, %d bytes).",
@@ -678,7 +680,8 @@ func renderPublishArtifactText(p publishArtifactPayload) string {
 		return fmt.Sprintf("Dry run: %s:%s would be published as %s (%d bytes). Nothing was contacted.",
 			p.Reference, p.Tag, p.MediaType, p.Size)
 	case p.AlreadyPublished:
-		return fmt.Sprintf("Already published: %s:%s already points at %s, so nothing was landed.",
+		return fmt.Sprintf("Already published: %s:%s already points at %s, so its content was not landed again; "+
+			"a publication date is attached only where the artifact lacked one.",
 			p.Reference, p.Tag, p.Digest)
 	default:
 		return fmt.Sprintf("Published %s:%s at %s as %s (%d bytes).",

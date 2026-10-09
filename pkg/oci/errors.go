@@ -247,8 +247,9 @@ var errCachedManifestIntegrity = cerrors.Register("cached-manifest-integrity", c
 // Call sites wrap this sentinel with the reference, the existing
 // digest, the proposed digest, and a pointer to publish a new version
 // (verified by aggrega lint --pre-publish) instead. Re-pushing
-// byte-identical content under the same tag is not a conflict — it is
-// an idempotent no-op.
+// byte-identical content under the same tag is not a conflict — the
+// publish path uploads nothing, and attaches only what that
+// publication still lacks.
 func ErrImmutableTagConflict() error { return errImmutableTagConflict }
 
 var errImmutableTagConflict = cerrors.Register("immutable-tag-conflict", cerrors.Meta{

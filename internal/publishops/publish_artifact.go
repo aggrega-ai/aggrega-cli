@@ -69,8 +69,8 @@ type PushArtifactConfig struct {
 //
 // It carries the same shape discipline PushResult carries: every field is filled
 // on every path, and the two booleans say which branch ran — a dry run contacted
-// nothing, and an already-published re-publication landed nothing because the
-// bytes were already there.
+// nothing, and an already-published re-publication uploaded no content because
+// the bytes were already there.
 type PushArtifactResult struct {
 	// Reference and Tag address the published artifact.
 	Reference string
@@ -84,7 +84,8 @@ type PushArtifactResult struct {
 	// same reason PushResult.Digest is.
 	Digest string
 	// AlreadyPublished reports that the tag already pointed at byte-identical
-	// content, so the publication was an idempotent no-op.
+	// content, so no content was uploaded. A publication date the version still
+	// lacked was attached beside it, and the status output says so where one was.
 	AlreadyPublished bool
 	// DryRun reports that nothing was published.
 	DryRun bool
@@ -109,7 +110,10 @@ type PushArtifactResult struct {
 // Signing is not performed here: the published artifact is signed by reference
 // with the signing verb, which is kind-agnostic and needs only the reference this
 // operation reports. So the publication states when it landed, as a published-at
-// referrer beside the artifact, which moves no digest.
+// referrer beside the artifact, which moves no digest. A re-publication of the
+// same bytes uploads nothing and attaches that date where the artifact carries
+// none, so running a publication again completes one whose date could not be
+// attached.
 //
 // When cfg.DryRun is true, PushArtifact prints the proposed <reference>:<tag>
 // plus media type and byte count and returns without constructing a remote
@@ -188,8 +192,8 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	}
 
 	// Immutability guard on the version tag: a re-publication of a byte-identical
-	// artifact is an idempotent no-op; a tag already pointing at different
-	// content is refused. The proposed digest is previewed with the SAME
+	// artifact uploads nothing and completes what that publication still lacks; a
+	// tag already pointing at different content is refused. The proposed digest is previewed with the SAME
 	// (mediaType, file name, content, nil-annotations) inputs oci.PushNamed
 	// receives below, so the preview digest equals the digest the publication
 	// would land.
@@ -222,6 +226,13 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 			writePublicationFacts(out, "", mediaType, len(content), 0)
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
+			// This operation signs nothing, so what a publication of it can lack is
+			// its date alone.
+			if _, cerr := completePublication(ctx, out, completion{
+				target: target, reference: reference, tag: cfg.Tag, digest: existingDigest, now: cfg.Now,
+			}); cerr != nil {
+				return PushArtifactResult{}, cerr
+			}
 			return result, nil
 		}
 		return PushArtifactResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
