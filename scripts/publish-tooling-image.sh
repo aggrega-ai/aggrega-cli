@@ -7,12 +7,20 @@
 # image was built under, one per line: the version reference first, then the
 # moving :stable one. This script loads the archive into the local docker image
 # store, checks that every listed reference is now present there and that all of
-# them name one image, pushes each, and then removes them from the local store
-# again, so a machine that publishes release after release keeps no copy. The
-# bytes published are the ones the build wrote: nothing here runs a Dockerfile,
-# so the machine that publishes runs no build. Sign the version reference
-# afterwards; the signature resolves to the shared digest, so it covers :stable
-# too:
+# them name one image, and pushes each. Loading points those references at the
+# loaded image, so before it loads, the script records which image each of them
+# names and which images the store holds, and however it ends, a refusal or an
+# interrupt included, it puts the store back: a reference that named an image
+# names that image again, a reference the load added is removed, and the loaded
+# image is removed unless the store held it before or a tag still names it. An
+# image pulled under :stable before the run is still there under :stable after
+# it, and a machine that publishes release after release keeps no copy. One
+# case is not put back: docker removes an image with its last tag, so an
+# untagged image the store held before is removed when the archive carries it
+# and none of these references named an image before. The bytes published are
+# the ones the build wrote: nothing here runs a Dockerfile, so the machine that
+# publishes runs no build. Sign the version reference afterwards; the signature
+# resolves to the shared digest, so it covers :stable too:
 #   aggrega sign <the first reference>
 #
 # Registry login is the caller's: run `docker login <host>` first.
@@ -26,8 +34,8 @@
 #                        name it, so an archive built for another registry is
 #                        refused before anything is pushed.
 #   --dry-run            Load the archive and check its references as a real
-#                        run does, then remove them and print what would be
-#                        pushed, pushing nothing.
+#                        run does, then print what would be pushed, pushing
+#                        nothing. The store is put back as on a real run.
 #   -h, --help           Show this help.
 #
 # Exit non-zero on the first failing step.
@@ -72,14 +80,44 @@ done < "$REFS_FILE"
 
 command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
 
-# The loaded references are removed however the script ends, a refusal included.
-forget_loaded() {
-  local ref
+# What the store holds before the load, which restore_image_store puts back: the
+# image each reference names, empty where it names none, and every image present.
+PRESENT_BEFORE="$(docker image ls --all --quiet --no-trunc)" || die "could not list the images in the local docker store"
+BEFORE_IDS=()
+for ref in "${REFS[@]}"; do
+  id="$(docker image inspect --format '{{.Id}}' "$ref" 2>/dev/null)" || id=""
+  BEFORE_IDS+=("$id")
+done
+
+# Puts the store back as the script found it, however the script ends, a refusal
+# or an interrupt included; a further interrupt does not stop it part way. The
+# references the load added are removed before the others are pointed back,
+# because docker removes an image with its last tag: in this order an untagged
+# image the store held before keeps a tag until a reference moves off it, which
+# leaves it untagged rather than removed. Each image a reference names after the
+# load is then removed by ID, unless the store held it before or a tag still
+# names it.
+restore_image_store() {
+  local i ref id named=""
+  set +e
+  trap '' INT TERM HUP
   for ref in "${REFS[@]}"; do
-    docker image rm "$ref" >/dev/null 2>&1 || true
+    id="$(docker image inspect --format '{{.Id}}' "$ref" 2>/dev/null)" && named="$named $id"
   done
+  for i in "${!REFS[@]}"; do
+    [ -n "${BEFORE_IDS[$i]}" ] || docker image rm "${REFS[$i]}" >/dev/null 2>&1
+  done
+  for i in "${!REFS[@]}"; do
+    [ -z "${BEFORE_IDS[$i]}" ] || docker tag "${BEFORE_IDS[$i]}" "${REFS[$i]}" >/dev/null 2>&1
+  done
+  for id in $named; do
+    case "$PRESENT_BEFORE" in *"$id"*) continue ;; esac
+    [ "$(docker image inspect --format '{{len .RepoTags}}' "$id" 2>/dev/null)" = 0 ] || continue
+    docker image rm "$id" >/dev/null 2>&1
+  done
+  return 0
 }
-trap forget_loaded EXIT
+trap restore_image_store EXIT
 
 docker load --input "$ARCHIVE"
 
