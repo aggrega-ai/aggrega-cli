@@ -455,9 +455,9 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 
 	// The catalog directories this Release reads, before the fill and the render.
 	// `aggrega build` loads every one of them first and stops at one it cannot walk
-	// — a directory the workspace configuration lists that does not exist — while
-	// the view this tool renders through passes over such a directory and would
-	// build from the ones that remain. So the stack is asked first, the way the
+	// — a directory this call names that does not exist, or one that cannot be read —
+	// while the view this tool renders through passes over such a directory and
+	// would build from the ones that remain. So the stack is asked first, the way the
 	// command line's load asks it, and a refusal there is answered before the fill
 	// below writes a lockfile: what a build refuses, it refuses having written
 	// nothing. It answers in this tool's refusal shape, naming the Release and no

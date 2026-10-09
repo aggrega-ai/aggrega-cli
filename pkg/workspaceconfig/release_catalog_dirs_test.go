@@ -276,6 +276,17 @@ func TestReleaseCatalogEntriesComposeAcrossTheCascade(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "release-a.yaml"), "kind: Release\n")
 	write(t, filepath.Join(root, "release-b.yaml"), "kind: Release\n")
+	// Every directory either file lists is there, because a configured directory
+	// where nothing exists is left out of the stack, and this test is about how the
+	// entries compose rather than about what is on disk.
+	for _, dir := range []string{
+		filepath.Join(global, "far-variant"), filepath.Join(global, "far-extra"), filepath.Join(global, "far-b"),
+		filepath.Join(root, "near-variant"), filepath.Join(root, "near-extra"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
 	globalCfg := filepath.Join(global, "config.yaml")
 	write(t, globalCfg, fmt.Sprintf("workspace:\n  releases:\n"+
 		"    %s:\n      catalog_dirs:\n        - %s\n      catalog_dirs_append:\n        - %s\n"+

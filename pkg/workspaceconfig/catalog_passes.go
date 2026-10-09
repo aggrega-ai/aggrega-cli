@@ -117,8 +117,8 @@ func CatalogDirsSettingWords(perRelease bool) string {
 	return fmt.Sprintf("`%s` in %s", CatalogDirsSetting, ConfigFilename)
 }
 
-// CatalogDirsSettingWordsFor names, for a refusal about the catalog directories
-// one Release reads, where the configuration lists them: CatalogDirsSettingWords,
+// CatalogDirsSettingWordsFor names, for a refusal or a notice about the catalog
+// directories one Release reads, where the configuration lists them: CatalogDirsSettingWords,
 // naming a Release's own list as well wherever the configuration gives release an
 // entry of its own, since such a Release reads that entry's directories. release
 // is the Release file in the form ResolveCatalogDirs takes it. It reads the

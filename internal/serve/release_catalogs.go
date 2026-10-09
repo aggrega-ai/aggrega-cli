@@ -111,10 +111,11 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 }
 
 // catalogDirsRefusal refuses a request naming release whose catalog search stack
-// holds a directory a whole-catalog load cannot walk — one that does not exist,
-// say — with that load's own refusal, and returns nil where every directory can
-// be walked. A release value that cannot name a Release is refused as every
-// Release parameter is.
+// holds a directory a whole-catalog load cannot walk — one that exists and cannot
+// be read, say — with that load's own refusal, and returns nil where every
+// directory can be walked. A configured directory where nothing exists is not in
+// the stack, so it is never refused here. A release value that cannot name a
+// Release is refused as every Release parameter is.
 //
 // The stack is read off the lookup the request is answered from (catalogFor), so
 // the directories checked are the directories resolved through, and the check is

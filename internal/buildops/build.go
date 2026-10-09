@@ -454,6 +454,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// exists. Its named part travels beside it to every reader of it, unjudged.
 	dirs := rw.ResolveCatalogDirs(releasePath, cfg.CatalogDirs)
 	namedDirs := rw.NamedCatalogDirs(releasePath, cfg.CatalogDirs)
+	// A configured directory where nothing exists is not in the stack, so it is read
+	// as holding nothing, as the pull that filled the lockfile read it. The reader is
+	// told which, once: where this build's own fill runs, the fill says it, because
+	// it is the pull and resolves the same stack moments later.
+	if !fillRuns(wsCfg, run) {
+		rw.NoteAbsentCatalogDirs(diagOut, releasePath, cfg.CatalogDirs)
+	}
 
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
 	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
@@ -870,7 +877,7 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 	// preview a render. A missing lockfile then halts with the same pull-first
 	// remediation the read-only default gives, which is the honest outcome: there
 	// is nothing to render against and filling one would be a write.
-	if !run.DryRun && wsCfg.FillsLockfile(run.AutoPull) {
+	if fillRuns(wsCfg, run) {
 		if cfg.Pull == nil {
 			return false, nil, fmt.Errorf("internal: no dependency fill supplied — a build that fills the lockfile needs the caller's pull operation")
 		}
@@ -899,4 +906,16 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 	}
 	return false, nil, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull --release %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
 		lockfilePath, releasePath)
+}
+
+// fillRuns reports whether this build's lockfile step runs the dependency fill:
+// the workspace is not offline, the run is not a dry run, and the fill was asked
+// for, by the caller's knob or the workspace's auto_pull. It is the one statement
+// of that decision, read by the lockfile step that runs the fill and by every
+// earlier step that has to know whether the fill will speak for it.
+func fillRuns(wsCfg workspaceconfig.Config, run RunOptions) bool {
+	if _, err := egress.RoundTripper(wsCfg); stderrors.Is(err, egress.ErrOfflineEgress()) {
+		return false
+	}
+	return !run.DryRun && wsCfg.FillsLockfile(run.AutoPull)
 }

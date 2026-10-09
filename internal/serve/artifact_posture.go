@@ -72,8 +72,8 @@ const (
 //
 // # What each method asks before it
 //
-// A catalog directory the Release reads and nothing can walk is refused by each
-// method at its own head (catalogDirsRefusal), not here. The build may fill its
+// A catalog directory in the Release's stack that nothing can walk is refused by
+// each method at its own head (catalogDirsRefusal), not here. The build may fill its
 // lockfile before it calls this, and a refused build writes nothing, so the
 // refusal has to come ahead of the fill, which this method cannot be: the build
 // hands it what the fill produced. Each method asks once, after refusing a field

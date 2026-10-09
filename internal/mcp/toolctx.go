@@ -551,9 +551,12 @@ func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog
 
 // catalogDirsRefusal returns the refusal a whole-catalog load gives the first
 // directory of the catalog search stack for release that it cannot walk — one the
-// workspace configuration lists and that does not exist, say — or nil where it can
-// walk every one. release is resolved as newView resolves it, and the empty
-// string is the workspace's own stack.
+// call's own catalog directories name and that does not exist, or one that exists
+// and cannot be read, say — or nil where it can walk every one. A directory the
+// workspace configuration lists and where nothing exists is not in the stack, so
+// it is never refused here, as `aggrega build` never refuses it. release is
+// resolved as newView resolves it, and the empty string is the workspace's own
+// stack.
 //
 // A tool asks it where its command-line twin loads the whole catalog, and so
 // refuses such a directory before it does anything else: the build, as `aggrega

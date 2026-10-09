@@ -13,12 +13,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// missingDirWorkspace lays down the shared Release-entity fixture — a Component
+// listedDirWorkspace lays down the shared Release-entity fixture — a Component
 // whose pillar refers to the library Sizing in variant-sized/, the same Component
 // referring to no library in variant-plain/, and a Release file for each — under the
 // workspace configuration given, and opens it the way the daemon opens any
 // workspace a request names.
-func missingDirWorkspace(t *testing.T, config string) (*Server, string) {
+func listedDirWorkspace(t *testing.T, config string) (*Server, string) {
 	t.Helper()
 	src, err := filepath.Abs(filepath.Join("..", "compiler", "testdata", "release-entity-check"))
 	if err != nil {
@@ -39,35 +39,30 @@ func missingDirWorkspace(t *testing.T, config string) (*Server, string) {
 	return srv, root
 }
 
-// TestValidateNamesACatalogDirectoryThatDoesNotExistInWords is the invocation
-// proof of the entry a catalog entity file carries when a catalog directory the
-// Release reads does not exist: one request over the real framing per row, and the
-// answer read whole.
+// TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing is
+// the invocation proof of what a catalog entity file carries when a catalog
+// directory the Release reads is listed and nothing exists there: one request over
+// the real framing per row, and the answer read whole.
 //
-// The entry names the directory, says it does not exist rather than carrying the
-// filesystem's own report, says "catalog load" once, and names where the
-// configuration lists it — the workspace's list, and a Release's own list as well
-// where the configuration gives the Release one, decided for the Release the
-// request named.
+// A listed directory where nothing exists is not in the stack the check is
+// handed, so the check answers exactly what it answers with that directory not
+// listed at all — wherever the configuration lists it, for the workspace or for
+// the Release the request named. A clean Component stays clean, and a finding the
+// check makes keeps the check's own words, with nothing about the directory.
 //
 // The first row is the positive control: every directory there, the Component is
-// clean. The last row is the control on the other side: a finding that is not a
-// missing directory keeps the check's own words. Each row in between carries one
-// fault, a missing directory, listed somewhere different.
-func TestValidateNamesACatalogDirectoryThatDoesNotExistInWords(t *testing.T) {
+// clean. The last row is the control on the other side: a Component the check
+// does refuse is refused for its own fault, the listing beside it notwithstanding.
+// Each row in between carries one listing where nothing exists, somewhere
+// different, and must answer as the control does.
+func TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing(t *testing.T) {
 	t.Parallel()
-	const (
-		workspaceList = "`workspace.catalog_dirs` in .aggrega-config.yaml"
-		releaseList   = "a Release's own `catalog_dirs` under `workspace.releases`"
-	)
 	cases := []struct {
 		name    string
 		config  string
 		release string
 		// clean is a row whose answer carries no entry at all.
 		clean bool
-		// missing is the directory the entry must name as not existing, or empty.
-		missing string
 		// carries are phrases the entry must carry, and lacks phrases it may not.
 		carries []string
 		lacks   []string
@@ -75,31 +70,26 @@ func TestValidateNamesACatalogDirectoryThatDoesNotExistInWords(t *testing.T) {
 		{name: "every directory the Release reads exists, and the Component is clean",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
 			release: "release-sized.yaml", clean: true},
-		{name: "a directory the workspace's list names that does not exist is named, with that list",
+		{name: "a directory the workspace's list names where nothing exists leaves the Component clean",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			release: "release-sized.yaml", missing: "no-such-catalog",
-			carries: []string{workspaceList, "create it or remove the entry naming it"},
-			lacks:   []string{"workspace.releases"}},
-		{name: "a directory the Release's own list names that does not exist names that list as well",
+			release: "release-sized.yaml", clean: true},
+		{name: "a directory the Release's own list names where nothing exists leaves the Component clean",
 			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
-			release: "release-sized.yaml", missing: "gone-for-sized",
-			carries: []string{releaseList}},
-		{name: "a Release the configuration gives no list of its own is told the workspace's list alone",
+			release: "release-sized.yaml", clean: true},
+		{name: "a directory the workspace's list names, for a Release given no list of its own, leaves the Component clean",
 			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n" +
 				"  releases:\n    release-plain.yaml:\n      catalog_dirs:\n        - variant-plain\n",
-			release: "release-sized.yaml", missing: "no-such-catalog",
-			carries: []string{workspaceList},
-			lacks:   []string{"workspace.releases"}},
-		{name: "a finding that is not a missing directory keeps the check's own words",
-			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n",
+			release: "release-sized.yaml", clean: true},
+		{name: "a finding the check makes keeps the check's own words beside a listing where nothing exists",
+			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n    - no-such-catalog\n",
 			release: "release-sized.yaml",
 			carries: []string{"SchemaLibrary Sizing not found in catalog"},
-			lacks:   []string{"does not exist"}},
+			lacks:   []string{"no-such-catalog", "does not exist"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			srv, root := missingDirWorkspace(t, tc.config)
+			srv, root := listedDirWorkspace(t, tc.config)
 			file := filepath.Join(root, "variant-sized", "component", "db.yaml")
 			res := validateContentOverTheWire(t, srv, file, mustRead(t, file), tc.release)
 			messages := diagMessages(res.Diagnostics)
@@ -117,19 +107,6 @@ func TestValidateNamesACatalogDirectoryThatDoesNotExistInWords(t *testing.T) {
 			}
 			if entry == "" {
 				t.Fatalf("want an error entry; the answer carries %q", messages)
-			}
-			if tc.missing != "" {
-				if !strings.Contains(entry, string(filepath.Separator)+tc.missing+" does not exist") {
-					t.Errorf("the entry does not say %s does not exist:\n%s", tc.missing, entry)
-				}
-				if n := strings.Count(entry, "catalog load"); n != 1 {
-					t.Errorf("the entry says \"catalog load\" %d times; want once:\n%s", n, entry)
-				}
-				for _, report := range []string{"lstat", "no such file or directory"} {
-					if strings.Contains(entry, report) {
-						t.Errorf("the entry carries the filesystem's report %q rather than words:\n%s", report, entry)
-					}
-				}
 			}
 			for _, phrase := range tc.carries {
 				if !strings.Contains(entry, phrase) {

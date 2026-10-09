@@ -234,13 +234,15 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // # A catalog directory nothing can walk is refused before anything is written
 //
 // `aggrega build` loads the Release's whole catalog stack before it fills a
-// lockfile or renders, so a configured directory that does not exist stops it
-// with the load's own refusal and nothing written. The lookup this daemon
-// resolves through finds what it can, and would build as though the directory
-// were empty. So the stack is asked first (catalogDirsRefusal), after the
-// destination and before the fill — the fill writes the lockfile, which is why
-// the question cannot wait for the shared render — and a build refused there has
-// written no lockfile and no artifact.
+// lockfile or renders, so a directory in it that cannot be walked — one that
+// exists and cannot be read — stops it with the load's own refusal and nothing
+// written. The lookup this daemon resolves through finds what it can, and would
+// build as though the directory were empty. So the stack is asked first
+// (catalogDirsRefusal), after the destination and before the fill — the fill
+// writes the lockfile, which is why the question cannot wait for the shared
+// render — and a build refused there has written no lockfile and no artifact. A
+// configured directory where nothing exists is not in the stack, so this build,
+// the fill and `aggrega build` all read it as holding nothing.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
 	// The destination is resolved before anything else runs, so a request naming
 	// one this session may not write to is refused having rendered nothing and,

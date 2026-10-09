@@ -1105,13 +1105,15 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 //
 // The graph is the editor's counterpart of `aggrega inspect` on the same Release,
 // and that command loads the Release's whole catalog stack before it reads
-// anything else, so a configured directory that does not exist stops it with the
-// load's own refusal. The lookup a graph resolves through finds what it can, and
-// would draw the graph as though the directory were empty — a graph no build of
-// the same Release reaches, because the build refuses the directory too. So the
-// stack is asked first, through the load's own walk (catalogDirsRefusal), and the
-// refusal is the command's, ahead of the lockfile gate as the command line reaches
-// its stack before any lockfile.
+// anything else, so a directory in it that cannot be walked — one that exists and
+// cannot be read — stops it with the load's own refusal. The lookup a graph
+// resolves through finds what it can, and would draw the graph as though the
+// directory were empty — a graph no build of the same Release reaches, because the
+// build refuses the directory too. So the stack is asked first, through the load's
+// own walk (catalogDirsRefusal), and the refusal is the command's, ahead of the
+// lockfile gate as the command line reaches its stack before any lockfile. A
+// configured directory where nothing exists is not in the stack at all, so the
+// graph, the command and the build all read it as holding nothing.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
 		return irGraphResult{}, errEnvelope

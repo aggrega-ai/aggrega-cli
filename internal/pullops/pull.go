@@ -579,6 +579,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// part travels beside it to every reader of it, unjudged.
 	dirs := rw.ResolveCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs)
 	namedDirs := rw.NamedCatalogDirs(cfg.ReleasePath, cfg.CatalogDirs)
+	// A configured directory where nothing exists is not in the stack, so it is read
+	// as holding nothing — by this run and by the build that reads its lockfile,
+	// since both read the stack from the one resolver. The reader is told which.
+	rw.NoteAbsentCatalogDirs(cfg.DiagOut, cfg.ReleasePath, cfg.CatalogDirs)
 	puller := cfg.Puller
 	if puller == nil {
 		// The discovery step consults the local registry index so a version recorded
