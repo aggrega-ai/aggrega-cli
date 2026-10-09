@@ -15,12 +15,11 @@ import (
 // TestABundleRefusesALinkWhateverListItIsHanded holds the archive itself to the
 // link rule, independently of the walk that names what it carries: a carried path
 // that is a symbolic link to a file is refused under the one link condition rather
-// than packed with the link's own permission bits and the target's bytes. The
-// positive control carries the same bytes as a regular file and packs.
+// than packed with the target's bytes under the link's name. The positive control
+// carries the same bytes as a regular file and packs.
 //
-// A bundle that read through the link would pack it — as 0755, since a link's
-// permission bits on the common filesystems carry every execute bit — and this
-// test would see no error.
+// A bundle that read through the link would pack the file it points to, from
+// outside the entity's directory, and this test would see no error.
 func TestABundleRefusesALinkWhateverListItIsHanded(t *testing.T) {
 	rows := []struct {
 		name    string

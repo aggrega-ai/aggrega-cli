@@ -45,13 +45,13 @@ import (
 //
 // Cross-tier digest semantics: an entity row records one subject at
 // every tier — what a publication of the entity carries, each file by
-// its path, its bytes and whether it is executable. A catalog-directory
-// entity is digested over its declared files and a fetched or cached one
-// over the entries of the bytes it was published as, so identical content
-// does not drift between tiers, between checkouts that differ only in
-// permission bits, or between two compressions of the same entries; drift
+// its path and its bytes. A catalog-directory entity is digested over its
+// declared files and a fetched or cached one over the entries of the bytes
+// it was published as, so identical content does not drift between tiers,
+// between checkouts that differ only in permission bits, the execute bit
+// included, or between two compressions of the same entries; drift
 // surfaces when the content changes (an edited entity, a chart edited
-// under it, a file added to a source it declares, a flipped execute bit).
+// under it, a file added to a source it declares).
 // A registry serving other bytes under a pinned version is not among them:
 // the pull that fetches them refuses them against the pinned digest before
 // any comparison runs. A library row records its document's bytes, the

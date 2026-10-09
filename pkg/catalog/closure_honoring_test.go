@@ -33,8 +33,8 @@ func sha256Hex(b []byte) string {
 
 // documentRowDigest is, independently of production for the reason sha256Hex
 // gives, the digest an entity row records for an entity document published
-// alone: the SHA-256 of its one-entry listing — the entry's mode (644, a document
-// is not executable), the SHA-256 of its bytes and its length-prefixed path,
+// alone: the SHA-256 of its one-entry listing — the entry's mode (644, the one
+// mode every entry records), the SHA-256 of its bytes and its length-prefixed path,
 // under the name a consumer lays a lone document out as.
 func documentRowDigest(document []byte) string {
 	sum := sha256.Sum256(document)

@@ -76,12 +76,12 @@ type Entity struct {
 	URI             string `yaml:"uri"`
 	ResolvedVersion string `yaml:"resolved_version"`
 	// Digest is the digest of what a publication of the entity carries: the
-	// SHA-256 over its files sorted by path, each contributing its path, whether
-	// it is executable, and the SHA-256 of its bytes — a document published alone
-	// as a set of one. It is one subject for every entity, recorded alike by an
-	// author building from a catalog directory and by a consumer building from a
-	// registry, and nothing about the archive's compression or a checkout's
-	// permission bits enters it.
+	// SHA-256 over its files sorted by path, each contributing its path and the
+	// SHA-256 of its bytes — a document published alone as a set of one. It is
+	// one subject for every entity, recorded alike by an author building from a
+	// catalog directory and by a consumer building from a registry, and nothing
+	// about the archive's compression or a checkout's permission bits, the
+	// execute bit included, enters it.
 	Digest string `yaml:"digest"`
 	// ManifestDigest is the OCI manifest digest the artifact's signature
 	// commits to — the verify subject. The manifest names the digest of the

@@ -6,7 +6,6 @@ package oci
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -53,39 +52,40 @@ func PublishedDigest(published []byte) (string, error) {
 
 // DocumentDigest returns the digest a lockfile's entity row records for an entity
 // document that is the whole of what it publishes: a set of one entry, laid out
-// under [SingleDocumentFileName] and not executable, which is what a document
-// published alone is once a consumer lays it out.
+// under [SingleDocumentFileName], which is what a document published alone is once
+// a consumer lays it out.
 func DocumentDigest(document []byte) string {
-	return entriesDigest([]archiveEntry{{relPath: SingleDocumentFileName, mode: 0o644, data: document}})
+	return entriesDigest([]archiveEntry{{relPath: SingleDocumentFileName, data: document}})
 }
 
 // entriesDigest is the one computation of the digest an entity row records: the
-// SHA-256 of the entries sorted by path, each contributing whether it is
-// executable, the SHA-256 of its bytes, and its path, one line per entry.
+// SHA-256 of the entries sorted by path, each contributing the SHA-256 of its
+// bytes and its path, one line per entry. Every line opens with [archiveFileMode],
+// the mode a publication records for every file.
 //
 // Nothing else enters it. The compressed bytes of an archive are not an input, so
 // a recompression of the same entries — a different compression level, another
 // machine's compressor — leaves it unchanged; nor do a modification time,
-// ownership, or any permission bit beyond execute, which is the one mode fact a
-// checkout reproduces. The path is written with its length ahead of it, so no
-// path, whatever it holds, can be read as the end of one entry and the start of
-// the next.
+// ownership, or any permission bit, the execute bit included. The path is written
+// with its length ahead of it, so no path, whatever it holds, can be read as the
+// end of one entry and the start of the next.
 func entriesDigest(entries []archiveEntry) string {
 	sorted := append([]archiveEntry(nil), entries...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].relPath < sorted[j].relPath })
 	var listing bytes.Buffer
 	for _, e := range sorted {
-		fmt.Fprintf(&listing, "%o %s %d:%s\n", uint32(archiveMode(e.mode)), digest.BareHex(digest.ContentDigest(e.data)), len(e.relPath), e.relPath)
+		fmt.Fprintf(&listing, "%o %s %d:%s\n", archiveFileMode, digest.BareHex(digest.ContentDigest(e.data)), len(e.relPath), e.relPath)
 	}
 	return digest.ContentDigest(listing.Bytes())
 }
 
-// archiveMode is the mode a publication records for a file whose mode on disk is
-// m: 0755 where any execute bit is set, and 0644 otherwise. It is the one
-// reading of a file's mode that a publication and its digest share.
-func archiveMode(m os.FileMode) os.FileMode {
-	if m.Perm()&0o111 != 0 {
-		return 0o755
-	}
-	return 0o644
-}
+// archiveFileMode is the mode a publication records for every file it carries,
+// whatever the file's mode on disk. It is the one statement of that mode, read by
+// the archive a publication packs and by the digest a lockfile records for it.
+//
+// No permission bit is carried, the execute bit included, because none is a fact
+// of the content: a checkout writes files by its own umask, and a system that
+// records no execute bit reports none for a file another system checks out as
+// executable. A mode read from disk would make one commit publish, and digest,
+// differently depending on where it was checked out.
+const archiveFileMode = 0o644

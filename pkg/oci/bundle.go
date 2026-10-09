@@ -7,10 +7,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -195,9 +193,11 @@ func declaresPublishableKind(data []byte) bool {
 }
 
 // archiveEntries reads every regular file an archive carries, in the order the
-// archive stores them: its path, its permission bits and its bytes. It is the one
-// reading of a published archive's entries, so the entity located inside one and
-// the digest a lockfile records for one are taken from the same entries.
+// archive stores them: its path and its bytes. It is the one reading of a
+// published archive's entries, so the entity located inside one and the digest a
+// lockfile records for one are taken from the same entries. The mode an archive
+// records for an entry is not read, so an archive another client packed with
+// other modes carries the same entries as one this package packs.
 //
 // An archive that does not unpack returns ErrBundleUnreadable, with the archive
 // error that stopped it carried in the message rather than as a second wrapped
@@ -226,7 +226,7 @@ func archiveEntries(blob []byte) ([]archiveEntry, error) {
 		if rerr != nil {
 			return nil, fmt.Errorf("read %s from the published bundle: %v: %w", hdr.Name, rerr, ErrBundleUnreadable())
 		}
-		entries = append(entries, archiveEntry{relPath: hdr.Name, mode: os.FileMode(hdr.Mode).Perm(), data: data})
+		entries = append(entries, archiveEntry{relPath: hdr.Name, data: data})
 	}
 	return entries, nil
 }
@@ -274,13 +274,13 @@ func describeRootEntries(names []string) string {
 // once.
 //
 // Entries are sorted by path and carry a zeroed modification time and a mode of
-// 0644, or 0755 for a file with any execute bit set. A checkout writes files by
-// its own umask while version control records only whether a file is executable,
-// so the mode is normalised to exactly that: two checkouts of one commit publish
-// identical entries, and two invocations over the same files produce identical
-// archives on one machine. The compressed bytes are not an identity across
-// machines, and nothing compares them as one: what a lockfile records for a
-// publication is [CarriedDigest] over its entries.
+// 0644, whatever the file's permission bits on disk, the execute bit included. A
+// checkout writes files by its own umask, and a system that records no execute
+// bit reports none, so no mode read from disk is carried: two checkouts of one
+// commit publish identical entries on any system, and two invocations over the
+// same files produce identical archives on one machine. The compressed bytes are
+// not an identity across machines, and nothing compares them as one: what a
+// lockfile records for a publication is [CarriedDigest] over its entries.
 func Bundle(kind, entityPath string, carried []string) ([]byte, string, error) {
 	mediaType, err := MediaTypeFor(kind, !publishesAlone(carried))
 	if err != nil {
@@ -328,7 +328,7 @@ func packArchive(entityPath string, carried []string) ([]byte, error) {
 	for _, e := range entries {
 		hdr := &tar.Header{
 			Name: e.relPath,
-			Mode: int64(archiveMode(e.mode)),
+			Mode: archiveFileMode,
 			Size: int64(len(e.data)),
 			// Zero modification time for deterministic output across
 			// runs against the same directory contents.
@@ -353,7 +353,6 @@ func packArchive(entityPath string, carried []string) ([]byte, error) {
 
 type archiveEntry struct {
 	relPath string
-	mode    os.FileMode
 	data    []byte
 }
 
@@ -361,16 +360,15 @@ type archiveEntry struct {
 // once, the document first, so a packed archive is the same one whether the files
 // were reached one by one or by walking their directory.
 //
-// A symbolic link is refused rather than read, wherever it sits among them: its
-// own permission bits would be packed as the entry's mode and the bytes it points
-// to — from wherever it points — under its name. The walk that names the carried
-// set already refuses one; refusing here as well keeps the archive from carrying
-// a link whatever list it is handed.
+// A symbolic link is refused rather than read, wherever it sits among them:
+// reading it would pack the bytes it points to — from wherever it points — under
+// its name. The walk that names the carried set already refuses one; refusing here
+// as well keeps the archive from carrying a link whatever list it is handed.
 //
 // supplied holds bytes to use in place of what is on disk, keyed by carried path:
 // a caller that already holds the document it parsed, or that asks what a file
-// would carry once written, names the bytes here. A supplied file keeps the mode
-// it has on disk, and takes 0644 where it is not on disk yet.
+// would carry once written, names the bytes here, whether or not the file is on
+// disk yet.
 func collectArchiveEntries(entityPath string, carried []string, supplied map[string][]byte) ([]archiveEntry, error) {
 	dir := filepath.Dir(entityPath)
 	names := append([]string{filepath.Base(entityPath)}, carried...)
@@ -389,24 +387,14 @@ func collectArchiveEntries(entityPath string, carried []string, supplied map[str
 			return nil, err
 		}
 		if data, ok := supplied[rel]; ok {
-			mode := os.FileMode(0o644)
-			if info, err := os.Lstat(full); err == nil {
-				mode = info.Mode()
-			} else if !errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("stat %s: %w", full, err)
-			}
-			entries = append(entries, archiveEntry{relPath: rel, mode: mode, data: data})
+			entries = append(entries, archiveEntry{relPath: rel, data: data})
 			continue
-		}
-		info, err := os.Lstat(full)
-		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", full, err)
 		}
 		data, err := os.ReadFile(full)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", full, err)
 		}
-		entries = append(entries, archiveEntry{relPath: rel, mode: info.Mode(), data: data})
+		entries = append(entries, archiveEntry{relPath: rel, data: data})
 	}
 	return entries, nil
 }

@@ -198,8 +198,8 @@ type EntityPuller interface {
 //
 // Digest discipline: every tier returns the digest the row it feeds
 // records, never the manifest digest pkg/oci.Pull also returns. An
-// entity's row records what its publication carries — each file's path,
-// bytes and whether it is executable — so a catalog-directory entity is
+// entity's row records what its publication carries — each file's path
+// and bytes — so a catalog-directory entity is
 // digested over its declared files (AuthoredEntityDigest) and a fetched
 // or cached one over the entries of the bytes it was published as
 // (oci.PublishedDigest), and the two agree for one publication. A
