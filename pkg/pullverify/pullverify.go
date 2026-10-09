@@ -206,7 +206,7 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 				warn(fmt.Sprintf("signature verification failed for %s (advisory; continuing): %v", e.URI, verr))
 				continue
 			}
-			return nil, fmt.Errorf("pullverify: %s: %w", e.URI, verr)
+			return nil, fmt.Errorf("verifying the signature of %s: %w", e.URI, verr)
 		}
 		if res != nil {
 			results = append(results, *res)

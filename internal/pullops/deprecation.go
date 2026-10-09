@@ -211,7 +211,7 @@ func honorDeprecationDiscoveryError(
 		return nil
 	}
 	if configured && policy.SigningRequiredForKind(e.Kind) && !policy.Advisory {
-		return fmt.Errorf("pullverify: %s: %w", e.URI, verr)
+		return fmt.Errorf("verifying the deprecation marker published for %s: %w", e.URI, verr)
 	}
 	fmt.Fprintf(diagOut, "  deprecation: %s: marker present but not honored (%v); not recorded\n", e.URI, verr)
 	return nil

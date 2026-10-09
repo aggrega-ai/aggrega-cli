@@ -1161,7 +1161,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 			featInfra, err := irEntityInfra(graph, manifest, executionScopeOf)
 			if err != nil {
-				return fmt.Errorf("feature source-descent mapping: %w", err)
+				return fmt.Errorf("resolving the FeatureRecipe the Manifest maps each Feature to: %w", err)
 			}
 			for frURI, comps := range featInfra {
 				perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
@@ -1176,7 +1176,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			for _, node := range topo.Nodes.All() {
 				recURI, found, err := catalog.ComponentRecipeURI(manifest, node.InstanceID, node.ComponentType)
 				if err != nil {
-					return fmt.Errorf("component source-descent mapping for %q: %w", node.ComponentType, err)
+					return fmt.Errorf("resolving the Recipe the Manifest maps Component %q to: %w", node.ComponentType, err)
 				}
 				if !found {
 					continue
@@ -1209,7 +1209,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				workspaceRoot, cacheDir,
 			)
 			if err != nil {
-				return fmt.Errorf("source descent: %w", err)
+				return fmt.Errorf("resolving the source of each Recipe and FeatureRecipe the Release uses: %w", err)
 			}
 			cl.SourceArtifacts = sourceArtifacts
 
