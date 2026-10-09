@@ -25,9 +25,6 @@ spec:
               features:
                 bridge:
                   type: core/compose-bridge:1.0.0
-                  infra:
-                    mappedPort: 13306
-                    targetVar: "DB_HOST"
         data-net:
           directory: "{{ .parent_boundary.directory }}"
           annotations:
