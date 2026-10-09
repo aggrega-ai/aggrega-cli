@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-render-facts-namespace
+  version: "1.0.0"
+spec:
+  # Every component connects to the gateway, so a Feature attached to the gateway
+  # reads each of the three others as a caller, and a Feature attached to any of
+  # them reads that component's own render.
+  components:
+    gateway:
+      type: core/probe/service
+    api:
+      type: core/probe/service
+      uses:
+        apis:
+          - gateway
+    web:
+      type: core/probe/service
+      uses:
+        apis:
+          - gateway
+    operator:
+      type: core/probe/service
+      uses:
+        apis:
+          - gateway

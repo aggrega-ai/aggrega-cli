@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-manager
+  namespace: operators-system
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: operator-manager
+  template:
+    metadata:
+      labels:
+        app: operator-manager
+    spec:
+      containers:
+        - name: manager
+          image: example/operator:1
+          ports:
+            - name: metrics
+              containerPort: 9090

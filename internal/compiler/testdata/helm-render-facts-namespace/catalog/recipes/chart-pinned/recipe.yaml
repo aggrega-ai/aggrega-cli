@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-service-chart-pinned
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/probe/service
+  source: ./chart
+  valuesMapping: |
+    {
+      "replicas": {{ optional .infra `replicas` 1 }}
+    }

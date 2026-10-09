@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-render-facts-namespace-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    shop:
+      directory: ./dist/shop
+      annotations:
+        aggrega.ai/namespace: "shop"
+      components:
+        gateway:
+          features:
+            facts:
+              type: feature.myco/fact-reader
+        api:
+          features:
+            facts:
+              type: feature.myco/fact-reader
+        web:
+          features:
+            facts:
+              type: feature.myco/fact-reader
+        operator:
+          features:
+            facts:
+              type: feature.myco/fact-reader

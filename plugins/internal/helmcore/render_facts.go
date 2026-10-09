@@ -28,10 +28,18 @@ const (
 // provider reports about it: the names its resources are addressed by, per key
 // space (see [DeclaredResourceNames]), and its render facts — the labels of every
 // pod template it emitted, each controller's selector, each Service's selector and
-// each container's ports.
+// each container's ports, every entry with the namespace its document writes.
 //
 // Both come from the same walk over the same documents, so a resource is either
 // read by both or by neither; neither reader parses a file of its own.
+//
+// fallbackNamespace is the names reader's alone, and the facts reader is not handed
+// it. A name is compared inside the namespace the resource will be applied into, so
+// a resource writing none is compared where it would land by default. A fact
+// reports what the document says, and a resource writing no namespace lands wherever
+// the tool applying it decides, which nothing at build time knows: a fallback in its
+// entry would point a template at a namespace its pods may not be in, where an absent
+// one lets the template tell that nothing was written.
 //
 // Every fact is reported on every render, as an empty list when the render emitted
 // nothing it describes. An empty list says this provider read the render and found
@@ -52,9 +60,10 @@ func ReportEmitted(files []rendercore.RenderedFile, fallbackNamespace string) (t
 // podTemplateLabels is one entry of pod_template_labels: one pod template the
 // render emitted, named by the resource that carries it.
 type podTemplateLabels struct {
-	Kind   string                    `json:"kind"`
-	Name   string                    `json:"name,omitempty"`
-	Labels *types.OrderedMap[string] `json:"labels,omitempty"`
+	Kind      string                    `json:"kind"`
+	Name      string                    `json:"name,omitempty"`
+	Namespace string                    `json:"namespace,omitempty"`
+	Labels    *types.OrderedMap[string] `json:"labels,omitempty"`
 }
 
 // controllerSelector is one entry of controller_selectors: the label selector one
@@ -62,14 +71,16 @@ type podTemplateLabels struct {
 type controllerSelector struct {
 	Kind        string                    `json:"kind"`
 	Name        string                    `json:"name,omitempty"`
+	Namespace   string                    `json:"namespace,omitempty"`
 	MatchLabels *types.OrderedMap[string] `json:"match_labels,omitempty"`
 }
 
 // serviceSelector is one entry of service_selectors: the pods one Service the
 // render emitted sends its traffic to.
 type serviceSelector struct {
-	Name     string                    `json:"name,omitempty"`
-	Selector *types.OrderedMap[string] `json:"selector,omitempty"`
+	Name      string                    `json:"name,omitempty"`
+	Namespace string                    `json:"namespace,omitempty"`
+	Selector  *types.OrderedMap[string] `json:"selector,omitempty"`
 }
 
 // containerPorts is one entry of container_ports: the ports one container of a
@@ -77,6 +88,7 @@ type serviceSelector struct {
 type containerPorts struct {
 	Kind      string          `json:"kind"`
 	Name      string          `json:"name,omitempty"`
+	Namespace string          `json:"namespace,omitempty"`
 	Container string          `json:"container,omitempty"`
 	Ports     []containerPort `json:"ports"`
 }
@@ -162,9 +174,13 @@ func apiGroup(apiVersion string) (string, bool) {
 // Entries are in the order the walk met the documents, which is the order the
 // render emitted them; a label map keeps the order the document writes its keys.
 // A part a document does not carry is left out of its entry — a resource with no
-// metadata.name has no name in its entry, a controller written with no
-// matchLabels has no match_labels — while a part it carries empty is reported
-// empty, so an entry says exactly what the emitted document says.
+// metadata.name has no name in its entry, one with no metadata.namespace no
+// namespace, a controller written with no matchLabels has no match_labels — while
+// a part it carries empty is reported empty, so an entry says exactly what the
+// emitted document says.
+//
+// It is handed the documents and nothing else, so no namespace this provider would
+// otherwise fall back to can reach an entry: see [ReportEmitted].
 func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 	templates := []podTemplateLabels{}
 	controllers := []controllerSelector{}
@@ -174,12 +190,15 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 	for _, root := range resources {
 		apiVersion := scalarChildValue(root, "apiVersion")
 		kind := scalarChildValue(root, "kind")
-		name := scalarChildValue(childOf(root, "metadata"), "name")
+		metadata := childOf(root, "metadata")
+		name := scalarChildValue(metadata, "name")
+		namespace := writtenNamespace(metadata)
 
 		if isService(apiVersion, kind) {
 			services = append(services, serviceSelector{
-				Name:     name,
-				Selector: stringMapping(pathOf(root, "spec", "selector")),
+				Name:      name,
+				Namespace: namespace,
+				Selector:  stringMapping(pathOf(root, "spec", "selector")),
 			})
 			continue
 		}
@@ -192,6 +211,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 			controllers = append(controllers, controllerSelector{
 				Kind:        kind,
 				Name:        name,
+				Namespace:   namespace,
 				MatchLabels: stringMapping(childOf(pathOf(root, shape.selector...), "matchLabels")),
 			})
 		}
@@ -200,11 +220,12 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 			continue
 		}
 		templates = append(templates, podTemplateLabels{
-			Kind:   kind,
-			Name:   name,
-			Labels: stringMapping(pathOf(template, "metadata", "labels")),
+			Kind:      kind,
+			Name:      name,
+			Namespace: namespace,
+			Labels:    stringMapping(pathOf(template, "metadata", "labels")),
 		})
-		ports = append(ports, containerPortsOf(kind, name, childOf(template, "spec"))...)
+		ports = append(ports, containerPortsOf(kind, name, namespace, childOf(template, "spec"))...)
 	}
 
 	reported := []struct {
@@ -232,7 +253,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 // order the pod spec writes its container lists and each list its containers. A
 // sidecar declared among the init containers serves on its ports like any other
 // container, so leaving them out would hide a port the pod really opens.
-func containerPortsOf(kind, name string, podSpec *yaml.Node) []containerPorts {
+func containerPortsOf(kind, name, namespace string, podSpec *yaml.Node) []containerPorts {
 	if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -254,6 +275,7 @@ func containerPortsOf(kind, name string, podSpec *yaml.Node) []containerPorts {
 			entry := containerPorts{
 				Kind:      kind,
 				Name:      name,
+				Namespace: namespace,
 				Container: scalarChildValue(c, "name"),
 				Ports:     make([]containerPort, 0, len(declared.Content)),
 			}
@@ -272,6 +294,19 @@ func containerPortsOf(kind, name string, podSpec *yaml.Node) []containerPorts {
 		}
 	}
 	return out
+}
+
+// writtenNamespace is the namespace a resource's metadata writes, or "" where it
+// writes none. A namespace written empty or null names no namespace — the resource
+// lands where the tool applying it decides, exactly as one writing no namespace
+// does — so it reads as none rather than as a value, and a null is never read as
+// the text of its spelling.
+func writtenNamespace(metadata *yaml.Node) string {
+	n := findMapChild(metadata, "namespace")
+	if n == nil || n.Kind != yaml.ScalarNode || n.Tag == "!!null" {
+		return ""
+	}
+	return n.Value
 }
 
 // portNumber reads a containerPort as the integer the document writes, or as the

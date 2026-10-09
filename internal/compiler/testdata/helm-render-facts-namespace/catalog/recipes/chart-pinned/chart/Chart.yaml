@@ -1,0 +1,4 @@
+apiVersion: v2
+name: pinned
+version: 0.1.0
+description: A chart whose templates write a namespace of their own.

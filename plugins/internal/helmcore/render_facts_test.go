@@ -25,7 +25,15 @@ var renderFactNames = []string{"pod_template_labels", "controller_selectors", "s
 // all there, in the documented order, and each a list.
 func reportedFacts(t *testing.T, files []rendercore.RenderedFile) map[string]string {
 	t.Helper()
-	_, facts, err := helmcore.ReportEmitted(files, "default")
+	return reportedFactsUnder(t, files, "default")
+}
+
+// reportedFactsUnder is reportedFacts with the namespace the names reader falls
+// back to named by the caller, so a row can hand the report a fallback the facts
+// must never carry.
+func reportedFactsUnder(t *testing.T, files []rendercore.RenderedFile, fallbackNamespace string) map[string]string {
+	t.Helper()
+	_, facts, err := helmcore.ReportEmitted(files, fallbackNamespace)
 	if err != nil {
 		t.Fatalf("ReportEmitted: %v", err)
 	}
@@ -636,5 +644,234 @@ func TestReportEmitted_DeclaresTheSameNamesAsTheNamesReaderAlone(t *testing.T) {
 	}
 	if declared.Len() != 3 {
 		t.Errorf("declared %d spaces (%s), want 3: a Deployment and a Service in the fallback namespace, a Widget in its own", declared.Len(), gotJSON)
+	}
+}
+
+// inNamespace writes a namespace into a document's metadata, right after the name
+// it carries.
+func inNamespace(doc, name, namespace string) string {
+	return strings.Replace(doc, "  name: "+name+"\n", "  name: "+name+"\n  namespace: "+namespace+"\n", 1)
+}
+
+// TestReportEmitted_EveryEntryCarriesTheNamespaceItsDocumentWrites holds the
+// namespace on the entries: each entry describing a resource carries the namespace
+// that resource's document writes at metadata.namespace, after its name, and an
+// entry whose document writes none carries no namespace at all.
+//
+// The rows are each fact reading a namespace written on its document — a
+// controller's three entries, a Service's, a bare Pod's — then a CronJob whose
+// job's pod template writes a namespace of its own, which is not where the pods
+// land: the entry carries the CronJob's. Every row hands the report a fallback the
+// documents never write, so an entry carrying it was filled by a guess.
+func TestReportEmitted_EveryEntryCarriesTheNamespaceItsDocumentWrites(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		files []rendercore.RenderedFile
+		want  map[string]string
+	}{
+		{
+			name:  "a controller writing a namespace",
+			files: []rendercore.RenderedFile{file("d.yaml", inNamespace(controllerDoc("apps/v1", "Deployment", "api"), "api", "shop"))},
+			want: map[string]string{
+				"pod_template_labels":  `[{"kind":"Deployment","name":"api","namespace":"shop","labels":{"app":"api","version":"v2"}}]`,
+				"controller_selectors": `[{"kind":"Deployment","name":"api","namespace":"shop","match_labels":{"app":"api"}}]`,
+				"service_selectors":    `[]`,
+				"container_ports":      `[{"kind":"Deployment","name":"api","namespace":"shop","container":"main","ports":[{"name":"http","container_port":8080,"protocol":"TCP"}]}]`,
+			},
+		},
+		{
+			name: "a Service and a bare Pod, each in its own",
+			files: []rendercore.RenderedFile{file("mixed.yaml", `apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop
+spec:
+  selector:
+    app: api
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe
+  namespace: tools
+  labels:
+    app: probe
+spec:
+  containers:
+    - name: main
+      image: example/app:1
+      ports:
+        - containerPort: 9000
+`)},
+			want: map[string]string{
+				"pod_template_labels":  `[{"kind":"Pod","name":"probe","namespace":"tools","labels":{"app":"probe"}}]`,
+				"controller_selectors": `[]`,
+				"service_selectors":    `[{"name":"api","namespace":"shop","selector":{"app":"api"}}]`,
+				"container_ports":      `[{"kind":"Pod","name":"probe","namespace":"tools","container":"main","ports":[{"container_port":9000}]}]`,
+			},
+		},
+		{
+			name: "a CronJob's entries carry the CronJob's namespace, not the one its pod template writes",
+			files: []rendercore.RenderedFile{file("cj.yaml", `apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly
+  namespace: batch-jobs
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          namespace: elsewhere
+          labels:
+            job: nightly
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: run
+              image: example/reports:1
+`)},
+			want: map[string]string{
+				"pod_template_labels":  `[{"kind":"CronJob","name":"nightly","namespace":"batch-jobs","labels":{"job":"nightly"}}]`,
+				"controller_selectors": `[{"kind":"CronJob","name":"nightly","namespace":"batch-jobs"}]`,
+				"service_selectors":    `[]`,
+				"container_ports":      `[]`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := reportedFactsUnder(t, tc.files, "fallback")
+			for _, name := range renderFactNames {
+				if got[name] != tc.want[name] {
+					t.Errorf("%s =\n  %s\nwant\n  %s", name, got[name], tc.want[name])
+				}
+			}
+		})
+	}
+}
+
+// TestReportEmitted_AnEntryWhoseDocumentWritesNoNamespaceCarriesNone is the
+// absent half, against the fallback the names reader takes. The documents write
+// no namespace, an empty one and a null one in each spelling, none of which names
+// a namespace; the report is handed a fallback, and the names reader does declare
+// the documents writing none under it — so the fallback was in hand — while no fact
+// entry carries a namespace at all, the fallback's or any other.
+func TestReportEmitted_AnEntryWhoseDocumentWritesNoNamespaceCarriesNone(t *testing.T) {
+	t.Parallel()
+
+	files := []rendercore.RenderedFile{
+		file("none.yaml", controllerDoc("apps/v1", "Deployment", "none")),
+		file("empty.yaml", strings.Replace(controllerDoc("apps/v1", "Deployment", "empty"),
+			"  name: empty\n", "  name: empty\n  namespace: \"\"\n", 1)),
+		file("tilde.yaml", strings.Replace(controllerDoc("apps/v1", "StatefulSet", "tilde"),
+			"  name: tilde\n", "  name: tilde\n  namespace: ~\n", 1)),
+		file("null.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: plain\n  namespace: null\nspec:\n  selector:\n    app: none\n"),
+	}
+
+	declared, facts, err := helmcore.ReportEmitted(files, "fallback")
+	if err != nil {
+		t.Fatalf("ReportEmitted: %v", err)
+	}
+	if names, _ := declared.Get("resource-names:Deployment--fallback"); !reflect.DeepEqual(names, []string{"none", "empty"}) {
+		t.Fatalf("the names reader declared %v under the fallback, want [none empty]: the row no longer hands the "+
+			"report a fallback it uses, so the facts' silence about it proves nothing", names)
+	}
+
+	entries := 0
+	for _, f := range facts {
+		var list []map[string]json.RawMessage
+		if err := json.Unmarshal(f.Value, &list); err != nil {
+			t.Fatalf("decode %s: %v", f.Name, err)
+		}
+		for _, entry := range list {
+			entries++
+			if ns, carried := entry["namespace"]; carried {
+				t.Errorf("a %s entry carries namespace %s, but its document writes none: %s", f.Name, ns, f.Value)
+			}
+		}
+	}
+	// Three pod templates, three controllers, one Service, three containers with
+	// ports: every entry was read, so the silence above is about entries that exist.
+	if entries != 10 {
+		t.Errorf("read %d entries, want 10", entries)
+	}
+}
+
+// TestReportEmitted_ASynthesizedWorkloadCarriesTheNamespaceItsNodeRendersInto
+// reads the facts off what the synthesis really emits, handed the fallback the
+// guest hands it. A node whose boundary declares a namespace has the namespace
+// written on every resource, so every entry carries it; a node whose boundary
+// declares none has none written, so no entry carries one, though the names reader
+// is handed the cluster default to fall back to.
+func TestReportEmitted_ASynthesizedWorkloadCarriesTheNamespaceItsNodeRendersInto(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name          string
+		annotations   map[string]string
+		wantNamespace string
+	}{
+		{name: "a boundary declaring a namespace", annotations: map[string]string{rendercore.AnnotationNamespace: "shop"}, wantNamespace: "shop"},
+		{name: "a boundary declaring none", annotations: nil, wantNamespace: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			c := types.ContainerSpec{Image: "example/app:1"}
+			c.Ports.Set("web", types.PortSpec{Port: 8080})
+			w.Containers.Set("main", c)
+			svc := types.ServiceSpec{Type: "ClusterIP"}
+			svc.Ports.Set("web", 8080)
+			w.Services.Set("web", svc)
+
+			nc := nodeCtx("api", nil)
+			nc.Annotations = tc.annotations
+			emitted, err := helmcore.SynthesizeWorkloadCore(w, nil, nc)
+			if err != nil {
+				t.Fatalf("synthesize: %v", err)
+			}
+			files := make([]rendercore.RenderedFile, 0, len(emitted))
+			for _, f := range emitted {
+				files = append(files, rendercore.RenderedFile{Path: f.Name, Content: f.Body})
+			}
+			fallback := helmcore.EffectiveNamespace(nc)
+			if fallback == "" {
+				t.Fatal("the guest's fallback is empty, so this row hands the report nothing it could guess with")
+			}
+			_, facts, err := helmcore.ReportEmitted(files, fallback)
+			if err != nil {
+				t.Fatalf("ReportEmitted: %v", err)
+			}
+
+			read := map[string]int{}
+			for _, f := range facts {
+				var list []map[string]json.RawMessage
+				if err := json.Unmarshal(f.Value, &list); err != nil {
+					t.Fatalf("decode %s: %v", f.Name, err)
+				}
+				for _, entry := range list {
+					read[f.Name]++
+					raw, carried := entry["namespace"]
+					switch {
+					case tc.wantNamespace == "" && carried:
+						t.Errorf("a %s entry carries namespace %s, and the synthesis wrote none (the fallback was %q): %s",
+							f.Name, raw, fallback, f.Value)
+					case tc.wantNamespace != "" && string(raw) != `"`+tc.wantNamespace+`"`:
+						t.Errorf("a %s entry carries namespace %s, want %q: %s", f.Name, raw, tc.wantNamespace, f.Value)
+					}
+				}
+			}
+			for _, name := range renderFactNames {
+				if read[name] == 0 {
+					t.Errorf("the synthesis reported no %s entry, so this row says nothing about that fact", name)
+				}
+			}
+		})
 	}
 }

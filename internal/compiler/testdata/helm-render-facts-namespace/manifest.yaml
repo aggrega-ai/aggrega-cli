@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: helm-render-facts-namespace-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      # One component type, three ways of rendering it: a synthesized Workload by
+      # default, and by instance a chart writing no namespace and a chart writing
+      # one of its own.
+      name:
+        web: helm-service-chart-unpinned:1.0.0
+        operator: helm-service-chart-pinned:1.0.0
+      type:
+        core/probe/service: helm-service-synthesized:1.0.0
+    features:
+      type:
+        feature.myco/fact-reader: fact-reader:1.0.0

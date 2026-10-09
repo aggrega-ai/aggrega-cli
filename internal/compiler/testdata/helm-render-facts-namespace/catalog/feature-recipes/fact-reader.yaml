@@ -1,0 +1,50 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: fact-reader
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.myco/fact-reader
+  # Reads its callers' render facts on .context.used_by, so each attachment renders
+  # once every component has rendered.
+  readsCallerRenderFacts: true
+  # One line per fact entry: the host's own render, then each caller's. The
+  # namespace is read with `optional`, so an entry carrying none prints <absent>
+  # and an entry carrying one prints it — an empty value would print nothing.
+  artifacts:
+    facts.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-facts
+      data:
+        read: |
+          host {{ .context.instance_id }}
+          {{- range .context.render_facts.pod_template_labels }}
+          own pod_template_labels {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .context.render_facts.controller_selectors }}
+          own controller_selectors {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .context.render_facts.service_selectors }}
+          own service_selectors Service/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .context.render_facts.container_ports }}
+          own container_ports {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .context.used_by }}
+          {{- $caller := .component_id }}
+          {{- range .render_facts.pod_template_labels }}
+          caller {{ $caller }} pod_template_labels {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .render_facts.controller_selectors }}
+          caller {{ $caller }} controller_selectors {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .render_facts.service_selectors }}
+          caller {{ $caller }} service_selectors Service/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- range .render_facts.container_ports }}
+          caller {{ $caller }} container_ports {{ .kind }}/{{ .name }} namespace={{ optional . "namespace" "<absent>" }}
+          {{- end }}
+          {{- end }}

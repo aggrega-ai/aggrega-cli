@@ -1,0 +1,4 @@
+apiVersion: v2
+name: unpinned
+version: 0.1.0
+description: A chart whose templates write no namespace.
