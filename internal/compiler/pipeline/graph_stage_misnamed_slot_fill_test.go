@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
@@ -261,11 +262,13 @@ func nearMissKeyPaths(log *AdvisoryLog) []string {
 }
 
 // wantMisnamedFill is one halt a row expects: the authoring key it is positioned
-// at, empty where the row does not pin a position, and the values its message
-// must name.
+// at, empty where the row does not pin a position, the file that key is a path
+// inside, the surface it is filed under, and the values its message must name.
 type wantMisnamedFill struct {
-	locator string
-	names   []string
+	locator  string
+	file     string
+	category cerrors.Category
+	names    []string
 }
 
 // TestAnAttachmentFittingAnEmptySlotUnderAnotherNameHalts drives every shape the
@@ -294,8 +297,10 @@ func TestAnAttachmentFittingAnEmptySlotUnderAnotherNameHalts(t *testing.T) {
 				return attachOnTheBackendInstance(t, readAggregate(t), credentialMisnaming)
 			},
 			wantHalts: []wantMisnamedFill{{
-				locator: ".spec.components.backend.features." + credentialMisnaming,
-				names:   []string{credentialMisnaming, credentialSlot, "backend", misnamedFillFeatureType},
+				locator:  ".spec.components.backend.features." + credentialMisnaming,
+				file:     "aggregate.yaml",
+				category: cerrors.DeveloperError,
+				names:    []string{credentialMisnaming, credentialSlot, "backend", misnamedFillFeatureType},
 			}},
 		},
 		{
@@ -371,11 +376,14 @@ func TestAnAttachmentFittingAnEmptySlotUnderAnotherNameHalts(t *testing.T) {
 			release: func(t *testing.T) []byte {
 				return attachOnTheBackendReleaseEntry(t, baseRelease, freeAttachmentName)
 			},
-			// The position is not pinned: an attachment only the Release writes is
-			// positioned where every attachment on the node's own block is, which is
-			// the framework's choice and not this rule's.
+			// An attachment only the Release writes is positioned at the Release's
+			// entry for the component, in the boundary that entry sits in, and filed
+			// under the operator who wrote it.
 			wantHalts: []wantMisnamedFill{{
-				names: []string{freeAttachmentName, slotName, "backend"},
+				locator:  ".spec.boundaries.backend-ns.components.backend.features." + freeAttachmentName,
+				file:     "release.yaml",
+				category: cerrors.OpsError,
+				names:    []string{freeAttachmentName, slotName, "backend"},
 			}},
 		},
 		{
@@ -426,6 +434,14 @@ func TestAnAttachmentFittingAnEmptySlotUnderAnotherNameHalts(t *testing.T) {
 				}
 				if want.locator != "" && violation.Field != want.locator {
 					t.Errorf("violation %d locator = %q, want %q", i, violation.Field, want.locator)
+				}
+				if want.file != "" && filepath.Base(violation.OriginFile) != want.file {
+					t.Errorf("violation %d is positioned in %q, want %s", i, violation.OriginFile, want.file)
+				}
+				if want.category != "" {
+					if got := violation.ToCompilerError().Category(); got != want.category {
+						t.Errorf("violation %d is filed under %q, want %q", i, got, want.category)
+					}
 				}
 				for _, name := range want.names {
 					if !strings.Contains(violation.Message, `"`+name+`"`) {

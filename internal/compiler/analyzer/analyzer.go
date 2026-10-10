@@ -225,26 +225,17 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 // enforced policy or reconsider its attachment, not to edit a document.
 //
 // Any other violation is filed under the document it was written in, through
-// cerrors.ClassifyEntityKind — the one mapping from an entity kind to the surface
-// its faults belong to, and the one a finding naming its document is filed by
-// when the composition is flattened. So a fault in what the operator wrote on the
-// Release reads as the operator's and a fault in what the developer wrote in the
-// Aggregate as the developer's, whichever stage of the build noticed it.
-//
-// A violation whose site recorded no document is filed under the developer's
-// surface, which is the mapping's answer for the Aggregate: every rule here whose
-// site records none positions its finding at a component's own block, in the
-// Aggregate that component was written in.
+// [constraint.AuthoringDocumentCategory] — the one reading of which surface a
+// finding written in an authoring document belongs to. So a fault in what the
+// operator wrote on the Release reads as the operator's and a fault in what the
+// developer wrote in the Aggregate as the developer's, whichever stage of the
+// build noticed it, and a violation whose site recorded no document is filed under
+// the developer's.
 func (e *AnalysisError) category() cerrors.Category {
 	if e.Kind == AnalysisErrorPolicy {
 		return cerrors.PolicyError
 	}
-	if kind, named := constraint.AuthoringDocumentKind(e.Document); named {
-		if category, covered := cerrors.ClassifyEntityKind(string(kind)); covered {
-			return category
-		}
-	}
-	return cerrors.DeveloperError
+	return constraint.AuthoringDocumentCategory(e.Document)
 }
 
 // PrecalculatedPath is one acyclic path through the IR graph,

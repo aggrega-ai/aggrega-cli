@@ -265,18 +265,19 @@ func (c *GraphStageCoordinates) Attachments(node string) []string {
 	return c.view.MergedAttachmentNames(node)
 }
 
-// ConnectionAttachmentSite returns where one attachment a node carries was
-// declared, for an attachment a connection carries: the connection entry, in the
-// document whose author named its type.
+// AttachmentSite returns where one attachment a node carries was written, as a
+// whole: the block a finding about it names, in the document whose author wrote
+// it — the component's own block, a scope's block in either document, the
+// Release's entry for the component, or a connection entry.
 //
 // It is read from what the cascade's site rule recorded rather than derived here,
 // for the reason the per-leaf sites are: the same rule positions the conformance
 // of the attachment's configuration, and a second derivation beside it would be
-// free to name a different entry. An attachment the node's own block or a scope
-// above it supplied has no such site and reports none, which leaves it at the
+// free to name a different block. An attachment no block wrote — one
+// annotation-driven expansion produced — reports none, which leaves it at the
 // node's own attachment block.
-func (c *GraphStageCoordinates) ConnectionAttachmentSite(node, attachment string) (constraint.ConnectionAttachmentSite, bool) {
-	return c.sites.connectionSiteOf(node, attachment)
+func (c *GraphStageCoordinates) AttachmentSite(node, attachment string) (constraint.AttachmentSite, bool) {
+	return c.sites.attachmentSiteOf(node, attachment)
 }
 
 // Slots returns the attachment slot names a node's component type declares, in
@@ -583,14 +584,14 @@ func originKindOf(edge types.IREdge) string {
 // invoked once per, rather than a comment claiming it: a traversal those rules
 // reach for that this value cannot supply stops compiling here.
 var (
-	_ constraint.NodeEnumerator                     = (*GraphStageCoordinates)(nil)
-	_ constraint.EdgeEnumerator                     = (*GraphStageCoordinates)(nil)
-	_ constraint.OriginatedConnectionEnumerator     = (*GraphStageCoordinates)(nil)
-	_ constraint.AttachmentEnumerator               = (*GraphStageCoordinates)(nil)
-	_ constraint.ConnectionAttachmentSiteEnumerator = (*GraphStageCoordinates)(nil)
-	_ constraint.SlotEnumerator                     = (*GraphStageCoordinates)(nil)
-	_ constraint.MechanismEnumerator                = (*GraphStageCoordinates)(nil)
-	_ constraint.DeliveryKeyEnumerator              = (*GraphStageCoordinates)(nil)
-	_ constraint.AttachmentPillarEnumerator         = (*GraphStageCoordinates)(nil)
-	_ constraint.AttachmentPillarLeafEnumerator     = (*GraphStageCoordinates)(nil)
+	_ constraint.NodeEnumerator                 = (*GraphStageCoordinates)(nil)
+	_ constraint.EdgeEnumerator                 = (*GraphStageCoordinates)(nil)
+	_ constraint.OriginatedConnectionEnumerator = (*GraphStageCoordinates)(nil)
+	_ constraint.AttachmentEnumerator           = (*GraphStageCoordinates)(nil)
+	_ constraint.AttachmentSiteEnumerator       = (*GraphStageCoordinates)(nil)
+	_ constraint.SlotEnumerator                 = (*GraphStageCoordinates)(nil)
+	_ constraint.MechanismEnumerator            = (*GraphStageCoordinates)(nil)
+	_ constraint.DeliveryKeyEnumerator          = (*GraphStageCoordinates)(nil)
+	_ constraint.AttachmentPillarEnumerator     = (*GraphStageCoordinates)(nil)
+	_ constraint.AttachmentPillarLeafEnumerator = (*GraphStageCoordinates)(nil)
 )

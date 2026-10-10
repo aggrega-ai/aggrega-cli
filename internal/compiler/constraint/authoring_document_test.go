@@ -40,7 +40,7 @@ func TestAnObjectionCarriesTheAuthoringDocumentItsSiteRecorded(t *testing.T) {
 		plain := NodeInstance{ID: "plain", SourceFile: "aggregate.yaml", AuthoredName: "plain"}
 		enumeration := connectionAttachmentSites{
 			nodes: []NodeInstance{developer, operator, plain},
-			sites: map[string]ConnectionAttachmentSite{
+			sites: map[string]AttachmentSite{
 				"gw": ConnectionAttachmentSiteInAggregate(developer, "models", "gpt", "credential"),
 				"router": ConnectionAttachmentSiteInRelease(ReleaseEdgeConfigurationInstance{
 					Configuration: ReleaseEdgeConfiguration{

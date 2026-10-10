@@ -63,6 +63,8 @@ import "strings"
 //     see authoredSiteSegments. An attachment's configuration leaf is the case:
 //     it is assembled from every scope reaching its node, so which of them wrote
 //     any one leaf is settled by the fold and by nothing the traversal can see.
+//     So is an attachment a node carries, which reaches it from a block in
+//     either document — see [AttachmentSite].
 //
 // Each shape below states the locator it builds as a template, and every one of
 // them is bounded by the same rule: a segment has to be a key the dialect can
@@ -648,20 +650,49 @@ func RunOnOriginatedConnections[V View](
 	return out, nil
 }
 
+// attachmentSitesOf returns the site enumerator an enumeration also supplies,
+// nil where it supplies none.
+//
+// It is one reading because three traversals ask it of the value they are
+// handed — the attachments a node carries, the slots its component type
+// declares, and the sockets its attachments wire — and the question is the same
+// one each time: where did the author write this attachment.
+func attachmentSitesOf(enumeration any) AttachmentSiteEnumerator {
+	sites, _ := enumeration.(AttachmentSiteEnumerator)
+	return sites
+}
+
+// recordedAttachmentSite returns where an attachment of a node was written, and
+// whether the enumeration recorded a site for it. A nil enumerator records none.
+func recordedAttachmentSite(sites AttachmentSiteEnumerator, node, attachment string) (AttachmentSite, bool) {
+	if sites == nil {
+		return AttachmentSite{}, false
+	}
+	return sites.AttachmentSite(node, attachment)
+}
+
 // RunOnNodeAttachments invokes check once per attachment each node carries, in
 // node order and then attachment order.
 //
-// An attachment's locator is .spec.components.<name>.features.<attachment>.
-//
-// An attachment written on one of the node's connections is the exception, and
-// the enumerator says which those are: where it also supplies
-// [ConnectionAttachmentSiteEnumerator] and reports a site for an attachment, the
-// attachment is positioned at the connection entry it was written in, in the file
-// of the document whose author wrote it —
+// An attachment's locator is the block it was written in, in the file of the
+// document whose author wrote it, and the subject carries that document: where
+// the enumerator also supplies [AttachmentSiteEnumerator] and reports a site, the
+// attachment is positioned there. So an attachment the component's own block in
+// the Aggregate wrote is .spec.components.<name>.features.<attachment>; one an
+// Aggregate subsystem wrote is that subsystem's own block,
+// .spec.subsystems.<subsystem>.features.<attachment>; one the Release wrote is
+// its boundary's block or its entry for the component,
+// .spec.boundaries.<boundary>.components.<name>.features.<attachment>; and one
+// written on a connection is the connection entry,
 // .spec.components.<name>.uses.<socket>.<alias>.features.<slot> in the
-// Aggregate, and the Release's own per-edge entry for one the operator wrote.
-// Such an attachment reaches the node under a composed name no file spells, so
-// the shape above would name a block the component does not have.
+// Aggregate or the Release's own per-edge entry. Which of several contributing
+// blocks positions an attachment as a whole is the producer's to state.
+//
+// An attachment the enumerator reports no site for is positioned at the node's
+// own attachment block, .spec.components.<name>.features.<attachment>, in the
+// node's file and with no document — the shape for an enumeration that knows
+// only the component's own block, and the one an attachment annotation-driven
+// expansion produced keeps.
 func RunOnNodeAttachments[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -669,18 +700,16 @@ func RunOnNodeAttachments[V View](
 	view V,
 	check Check[V, NodeAttachmentSubject],
 ) ([]Objection, error) {
-	sites, _ := attachments.(ConnectionAttachmentSiteEnumerator)
+	sites := attachmentSitesOf(attachments)
 	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSubject {
 		names := attachments.Attachments(node.ID)
 		out := make([]NodeAttachmentSubject, 0, len(names))
 		for _, attachment := range names {
-			if sites != nil {
-				if site, written := sites.ConnectionAttachmentSite(node.ID, attachment); written {
-					out = append(out, newNodeAttachmentSubjectWrittenIn(
-						site.Document, site.SourceFile, node.ID, attachment, connectionAttachmentSegments(site)...,
-					))
-					continue
-				}
+			if site, written := recordedAttachmentSite(sites, node.ID, attachment); written {
+				out = append(out, newNodeAttachmentSubjectWrittenIn(
+					site.Document, site.SourceFile, node.ID, attachment, attachmentSiteSegments(site)...,
+				))
+				continue
 			}
 			out = append(out, newNodeAttachmentSubject(
 				node.SourceFile, node.ID, attachment,
@@ -699,9 +728,13 @@ func RunOnNodeAttachments[V View](
 // Feature declares is a fact keyed by its type, which a rule over one of these
 // sockets reads and compares the socket it was invoked for against.
 //
-// The locator is .spec.components.<name>.features.<attachment>.uses.<socket>,
-// the entry the author wrote inside the attachment's own dependency block. The
-// socket names come from the attached Feature, which is a separate authoring
+// The locator is the entry the author wrote inside the attachment's own
+// dependency block: the attachment's site, then .uses.<socket>. The site is the
+// one [RunOnNodeAttachments] names the attachment by, read the same way from an
+// enumerator also supplying [AttachmentSiteEnumerator], so a finding about a
+// socket and a finding about the attachment wiring it name one block; with no
+// site reported it is .spec.components.<name>.features.<attachment>.uses.<socket>.
+// The socket names come from the attached Feature, which is a separate authoring
 // surface from the component's own dependency block — that is what makes the axis
 // keyed per attachment as well as per node, since the same socket name means
 // different things under two attachments of different Features.
@@ -713,10 +746,19 @@ func RunOnNodeAttachmentSockets[V View](
 	view V,
 	check Check[V, NodeAttachmentSocketSubject],
 ) ([]Objection, error) {
+	sites := attachmentSitesOf(attachments)
 	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSocketSubject {
 		var out []NodeAttachmentSocketSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
+			site, written := recordedAttachmentSite(sites, node.ID, attachment)
 			for _, socket := range sockets.AttachmentSockets(node.ID, attachment) {
+				if written {
+					out = append(out, newNodeAttachmentSocketSubjectWrittenIn(
+						site.Document, site.SourceFile, node.ID, attachment, socket,
+						attachmentSiteSegments(site, authoredKeyUses, socket)...,
+					))
+					continue
+				}
 				out = append(out, newNodeAttachmentSocketSubject(
 					node.SourceFile, node.ID, attachment, socket,
 					componentInnerSegments(
@@ -732,9 +774,16 @@ func RunOnNodeAttachmentSockets[V View](
 // RunOnNodeSlots invokes check once per attachment slot each node's component
 // type declares, in node order and then slot order.
 //
-// A slot's locator is .spec.components.<name>.features.<slot>, the entry in the
-// attachment block that fills it — which is the site the author writes whether
-// or not the slot is currently filled.
+// A slot something fills is positioned at the fill: the attachment of the
+// slot's name, at the block the enumerator reports it was written in, read the
+// same way [RunOnNodeAttachments] reads it — so a finding about the slot and a
+// finding about the attachment filling it name one block, in the document whose
+// author wrote it.
+//
+// A slot nothing fills has no attachment and so no author, and its locator is
+// .spec.components.<name>.features.<slot> in the node's own file: the entry in
+// the component's attachment block that would fill it, which is a site the
+// author can write. An enumeration reporting no site positions every slot there.
 func RunOnNodeSlots[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -742,10 +791,17 @@ func RunOnNodeSlots[V View](
 	view V,
 	check Check[V, NodeSlotSubject],
 ) ([]Objection, error) {
+	sites := attachmentSitesOf(slots)
 	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeSlotSubject {
 		names := slots.Slots(node.ID)
 		out := make([]NodeSlotSubject, 0, len(names))
 		for _, slot := range names {
+			if site, written := recordedAttachmentSite(sites, node.ID, slot); written {
+				out = append(out, newNodeSlotSubjectWrittenIn(
+					site.Document, site.SourceFile, node.ID, slot, attachmentSiteSegments(site)...,
+				))
+				continue
+			}
 			out = append(out, newNodeSlotSubject(
 				node.SourceFile, node.ID, slot,
 				componentInnerSegments(node, authoredKeyFeatures, slot)...,
@@ -2294,14 +2350,14 @@ func connectionEntrySegments(
 //
 // A site whose document this rule cannot name yields no segments, which is the
 // mechanical form of not inventing a locator.
-func ConnectionAttachmentContainerSegments(site ConnectionAttachmentSite) []string {
+func ConnectionAttachmentContainerSegments(site AttachmentSite) []string {
 	return connectionEntrySegments(site.Document, site.Site, site.ComponentKeys,
 		site.Socket, site.Alias, authoredKeyFeatures)
 }
 
 // ConnectionEntrySegments returns the segments naming the connection entry a site
-// sits in: the entry's own key, with nothing inside it. The site's slot is not
-// read.
+// sits in: the entry's own key, with nothing inside it. The site's attachment
+// name is not read.
 //
 // It is exported for the reason [ConnectionAttachmentContainerSegments] is, asked
 // from the other side: naming the entry a position in a document falls inside and
@@ -2312,29 +2368,50 @@ func ConnectionAttachmentContainerSegments(site ConnectionAttachmentSite) []stri
 //
 // A site whose document this rule cannot name yields no segments, which is the
 // mechanical form of not inventing a locator.
-func ConnectionEntrySegments(site ConnectionAttachmentSite) []string {
+func ConnectionEntrySegments(site AttachmentSite) []string {
 	return connectionEntrySegments(site.Document, site.Site, site.ComponentKeys, site.Socket, site.Alias)
 }
 
-// connectionAttachmentSegments returns the segments naming one attachment a
-// connection carries: the connection entry's own attachment container, then the
-// slot the attachment is written under.
-func connectionAttachmentSegments(site ConnectionAttachmentSite) []string {
-	container := ConnectionAttachmentContainerSegments(site)
+// attachmentSiteSegments returns the segments naming one attachment at the block
+// its site records, followed by tail inside the attachment's own entry.
+//
+// One rule for both block shapes, because the attachment's entry is the block's
+// attachment container with the attachment's key appended whichever block it is:
+// a connection entry's container is the one [ConnectionAttachmentContainerSegments]
+// names, and a component's or a scope's own block is the site on its document's
+// nesting axis, the routing keys reaching the component where there are any, and
+// the container key. So a finding about the attachment, one about a socket it
+// wires, and one about the slot it fills cannot come to name three blocks.
+//
+// A site whose document this rule cannot name yields no segments, which is the
+// mechanical form of not inventing a locator: the nesting is selected by the
+// document, and a document outside the closed pair selects none.
+func attachmentSiteSegments(site AttachmentSite, tail ...string) []string {
+	var container []string
+	if site.OnConnection() {
+		container = ConnectionAttachmentContainerSegments(site)
+	} else if nesting, named := originNesting(site.Document); named {
+		keys := make([]string, 0, len(site.ComponentKeys)+1)
+		keys = append(keys, site.ComponentKeys...)
+		keys = append(keys, authoredKeyFeatures)
+		container = authoredSiteSegments(nesting, site.Site, keys...)
+	}
 	if len(container) == 0 {
 		return nil
 	}
-	return append(container, site.Slot)
+	out := make([]string, 0, len(container)+1+len(tail))
+	out = append(out, container...)
+	out = append(out, site.Name)
+	return append(out, tail...)
 }
 
 // Locator returns the locator naming the attachment the site describes, through
 // the same assembly a rule over the attachment is positioned by.
 //
-// It is exported for the finding about such an attachment that is not raised by
-// a rule — the conformance of the attachment's merged configuration, measured
-// once the attachment cascade has folded — so that finding and every rule's
-// finding about the same attachment name one entry rather than two spellings of
-// it.
-func (s ConnectionAttachmentSite) Locator() string {
-	return authoredLocator(connectionAttachmentSegments(s)...)
+// It is exported for the finding about an attachment that is not raised by a
+// rule — the conformance of the attachment's merged configuration, measured once
+// the attachment cascade has folded — so that finding and every rule's finding
+// about the same attachment name one entry rather than two spellings of it.
+func (s AttachmentSite) Locator() string {
+	return authoredLocator(attachmentSiteSegments(s)...)
 }

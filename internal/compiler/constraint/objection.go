@@ -136,6 +136,28 @@ func (o Objection) Locator() string { return o.locator }
 // that only positions a finding reads the file and the locator instead.
 func (o Objection) AuthoringDocument() string { return o.document }
 
+// AuthoringDocumentCategory is the authoring surface a finding written in the
+// given authoring document is filed under: the category that document's entity
+// kind maps to, through cerrors.ClassifyEntityKind — the one mapping from an
+// entity kind to the surface its faults belong to — so a fault in what the
+// operator wrote on the Release reads as the operator's and a fault in what the
+// developer wrote in the Aggregate as the developer's, whichever stage noticed it.
+//
+// A document outside the pair, the empty one included, is filed under the
+// developer's surface, which is the mapping's answer for the Aggregate: every
+// traversal whose site records no document positions its subject at a
+// component's own block, in the Aggregate that component was written in. It is
+// one function because every boundary filing an objection by its document reads
+// it, and two copies of the default would agree only until one changed.
+func AuthoringDocumentCategory(document string) cerrors.Category {
+	if kind, named := AuthoringDocumentKind(document); named {
+		if category, covered := cerrors.ClassifyEntityKind(string(kind)); covered {
+			return category
+		}
+	}
+	return cerrors.DeveloperError
+}
+
 // Advice returns what this occurrence tells the author to do, or the empty
 // string for a rule whose registered sentence says the whole of it.
 //

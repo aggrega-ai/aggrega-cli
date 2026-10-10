@@ -461,7 +461,7 @@ func ConnectionAttachmentContainer(root string, graph *types.IRGraph, release *t
 		return AttachmentContainerResult{}, ConnectionRefusedFeatureCreated
 	}
 
-	var site constraint.ConnectionAttachmentSite
+	var site constraint.AttachmentSite
 	switch connection.Document {
 	case constraint.AuthoringDocumentRelease:
 		file := ""

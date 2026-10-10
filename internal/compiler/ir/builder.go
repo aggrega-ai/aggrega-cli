@@ -114,15 +114,17 @@ type attachmentKey struct {
 // leaf or an attachment apiece, and with the tiers that actually wrote each
 // attachment, rather than with whole authored payloads.
 //
-// # Where an attachment a connection carries was declared
+// # Where each attachment as a whole is positioned
 //
-// It answers a third question for one kind of attachment: where an attachment a
-// connection carries was declared — the connection entry, in the document whose
-// author named its type. Such an attachment reaches its node under a composed name
-// no document spells, so a rule over it cannot be positioned from the node and
-// the name the way every other attachment is. The answer is recorded by the rule
-// that positions the conformance of the same attachment's configuration, so a
-// finding about the attachment and a finding about its values name one entry.
+// It answers a third question: where an attachment as a whole was written — the
+// block a finding about the attachment names, in the document whose author wrote
+// it. The node an attachment lands on cannot say: an attachment reaches it from
+// the component's own block, from a scope of either document, from the
+// Release's entry for the component, or from a connection entry, and only the
+// first is a key in the component's own block. The answer is chosen by the rule
+// that positions the conformance of the same attachment's configuration, from
+// the blocks the cascade recorded each contribution was written in, so a finding
+// about the attachment and a finding about its values name one block.
 //
 // All three are addressed by key only and never iterated, so none has any
 // bearing on the order anything is emitted in. The zero value holds none and
@@ -132,7 +134,7 @@ type attachmentKey struct {
 type AttachmentSites struct {
 	leaves        map[AttachmentLeafKey]constraint.AuthoredSite
 	contributions map[attachmentKey][]constraint.AttachmentContribution
-	connections   map[attachmentKey]constraint.ConnectionAttachmentSite
+	attachments   map[attachmentKey]constraint.AttachmentSite
 }
 
 // newAttachmentSites is the one construction site of a present projection, so
@@ -141,36 +143,34 @@ func newAttachmentSites() AttachmentSites {
 	return AttachmentSites{
 		leaves:        map[AttachmentLeafKey]constraint.AuthoredSite{},
 		contributions: map[attachmentKey][]constraint.AttachmentContribution{},
-		connections:   map[attachmentKey]constraint.ConnectionAttachmentSite{},
+		attachments:   map[attachmentKey]constraint.AttachmentSite{},
 	}
 }
 
-// recordConnectionSites writes, for each attachment one node carries that a
-// connection carries, the connection entry it was declared in — through the same
-// site rule the conformance of its configuration is positioned by, asked for the
-// developer's pillar, which is the pillar whose document names the type.
+// recordAttachmentSites writes, for each attachment one node carries, the block
+// the attachment as a whole is positioned at — through the same site rule the
+// conformance of its configuration is positioned by, asked for the attachment
+// rather than for one pillar. An attachment the rule records no block for — one
+// annotation-driven expansion produced — gets no entry.
 //
 // The walk ranges an ordered map and writes into a map addressed by key, so the
 // order it takes reaches nothing emitted.
-func (s AttachmentSites) recordConnectionSites(
+func (s AttachmentSites) recordAttachmentSites(
 	nodeID string,
 	attachments types.OrderedMap[types.IRFeatureEntry],
-	siteOf connectionAttachmentSite,
+	siteOf attachmentSiteRule,
 ) {
-	for name, entry := range attachments.All() {
-		if entry.Connection == nil {
-			continue
+	for name := range attachments.All() {
+		if _, site, recorded := siteOf(name, ""); recorded {
+			s.attachments[attachmentKey{node: nodeID, attachment: name}] = site
 		}
-		_, site := siteOf(name, *entry.Connection, pillarValues)
-		s.connections[attachmentKey{node: nodeID, attachment: name}] = site
 	}
 }
 
-// connectionSiteOf is where one attachment a connection carries was declared, and
-// whether the projection records one — which it does for exactly the attachments
-// a connection carries. It is the one reader of that half.
-func (s AttachmentSites) connectionSiteOf(node, attachment string) (constraint.ConnectionAttachmentSite, bool) {
-	site, recorded := s.connections[attachmentKey{node: node, attachment: attachment}]
+// attachmentSiteOf is where one attachment as a whole was written, and whether
+// the projection records a block for it. It is the one reader of that half.
+func (s AttachmentSites) attachmentSiteOf(node, attachment string) (constraint.AttachmentSite, bool) {
+	site, recorded := s.attachments[attachmentKey{node: node, attachment: attachment}]
 	return site, recorded
 }
 
@@ -461,20 +461,19 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 
 		featResult.projectAttachmentSites(nodeID, attachmentSites)
 
-		// Where each attachment a connection carries was written. One site rule
-		// serves both readers below it — the conformance gate here, and the rules
-		// over the finalised graph through the recorded declaration sites — so the
-		// two cannot come to name different entries for one attachment.
-		connectionSite := connectionAttachmentSites(NodeInstanceOf(nodeID, irNode), topoNode,
-			featResult.contributions, res, attachmentEntity)
-		attachmentSites.recordConnectionSites(nodeID, featResult.Features, connectionSite)
+		// Where each attachment was written. One site rule serves both readers
+		// below it — the conformance gate here, and the rules over the finalised
+		// graph through the recorded sites — so the two cannot come to name
+		// different blocks for one attachment.
+		siteOf := attachmentSiteRuleFor(topoNode, featResult.places, res, attachmentEntity)
+		attachmentSites.recordAttachmentSites(nodeID, featResult.Features, siteOf)
 
 		// Validate the merged attachment pillars against each attachment's
 		// declared Feature schema (collected across all nodes for one joined
 		// halt below).
 		attachmentErrs = append(attachmentErrs,
 			validateNodeAttachments(nodeID, featResult.Features,
-				attachmentParams, attachmentEntity, compiledFeature, connectionSite)...)
+				attachmentParams, attachmentEntity, compiledFeature, siteOf)...)
 
 		// Ask the slot-shape rule of every fill this node received from a broader
 		// scope. It belongs here and not with the authored-document guards for the

@@ -572,6 +572,12 @@ var ComponentIdentityIsUsable = constraint.Check[
 // same sentence, and the surfaces that render a finding as text do not all carry
 // the locator that separates them — so the slot's name is what makes each
 // finding say which binding point is unbound.
+//
+// An unbound slot has no attachment, so no document wrote anything for it and
+// the finding is positioned at the component's own attachment block, where a
+// fill can be written. Either document can fill it — the Aggregate on the
+// component or a subsystem above it, the Release on its entry for the component
+// or a boundary above it — so the remedy names both.
 var RequiredAttachmentSlotBound = constraint.Check[
 	constraint.GraphView,
 	constraint.NodeSlotSubject,
@@ -591,7 +597,8 @@ var RequiredAttachmentSlotBound = constraint.Check[
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrRequiredSlotUnfilled(),
-			"Attach a Feature at that name, on the component or at a scope above it.",
+			"Attach a Feature at that name, in the Aggregate or in the Release, "+
+				"on the component or at a scope above it.",
 			constraint.Uncaptioned(s.SlotName()),
 			constraint.Captioned("declared required by component type", componentType),
 		)}

@@ -685,6 +685,24 @@ func (c *describedStageCoordinates) boundaryAttachmentFeatureRecipe(
 	return fr, true
 }
 
+// AttachmentSite reports where one attachment a node carries was written, by
+// asking the graph's own enumeration, and reports nothing where that enumeration
+// records no site.
+//
+// It is spelled here rather than inherited because the graph enumeration is
+// embedded as an interface naming the node, attachment and connection axes, and
+// an embedded interface promotes only the methods it names — so without this the
+// traversals over this stage's attachments would find no site and position every
+// attachment at the node's own block whatever wrote it, while the same rule's
+// finding at the graph stage named the block the author wrote.
+func (c *describedStageCoordinates) AttachmentSite(node, attachment string) (constraint.AttachmentSite, bool) {
+	sites, ok := c.GraphCoordinates.(constraint.AttachmentSiteEnumerator)
+	if !ok {
+		return constraint.AttachmentSite{}, false
+	}
+	return sites.AttachmentSite(node, attachment)
+}
+
 // stepCoordinatesOf presents a declared pipeline as the coordinate shape the
 // step traversals take, keeping the order the document declares.
 func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constraint.AuthoredCoordinate {
@@ -713,6 +731,7 @@ var (
 	_ constraint.ProvidesKeyEnumerator                    = (*describedStageCoordinates)(nil)
 	_ constraint.LocalsKeyEnumerator                      = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator                     = (*describedStageCoordinates)(nil)
+	_ constraint.AttachmentSiteEnumerator                 = (*describedStageCoordinates)(nil)
 	_ constraint.PipelineStepEnumerator                   = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentPipelineStepEnumerator         = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryEnumerator                       = (*describedStageCoordinates)(nil)

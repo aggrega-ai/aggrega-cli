@@ -101,6 +101,14 @@ type normalizedView struct {
 	// same identity.
 	releaseComponents map[string]types.BoundaryComponent
 
+	// releaseEntrySites is where the Release wrote each of those entries, by the
+	// same identity: the boundary it sits in with the component key it was
+	// written under, or the boundary and the routing keys reaching a component a
+	// sub-module contributes. It is recorded by the walk that records the
+	// entries' annotations, from the same site, so an attachment on an entry and
+	// an annotation on it are located by one reading of the document.
+	releaseEntrySites map[string]releaseEntrySite
+
 	// subsystemFeatures and boundaryFeatures are the attachments each authoring
 	// document declares at a scope, by that scope's own path.
 	subsystemFeatures map[string]types.OrderedMap[types.FeatureInstance]
@@ -149,6 +157,14 @@ type normalizedView struct {
 	// play, produced once when this value was built and keyed by the type, the
 	// socket and the pillar together.
 	socketContracts map[socketPillarKey]resolvedContract
+}
+
+// releaseEntrySite is where the Release wrote its entry for one component: the
+// site, and the routing keys reaching the component from the site's scope where
+// the scope does not name the component under its own key.
+type releaseEntrySite struct {
+	site       constraint.AuthoredSite
+	routedKeys []string
 }
 
 // authoredAnnotationCoordinates identifies one authored annotation entry as this
@@ -233,6 +249,7 @@ func newNormalizedView(
 		parameters:         parameters,
 		instances:          map[string]types.ComponentInstance{},
 		releaseComponents:  map[string]types.BoundaryComponent{},
+		releaseEntrySites:  map[string]releaseEntrySite{},
 		subsystemFeatures:  map[string]types.OrderedMap[types.FeatureInstance]{},
 		boundaryFeatures:   map[string]types.OrderedMap[types.BoundaryFeature]{},
 		annotationValues:   map[authoredAnnotationCoordinates]any{},
@@ -388,6 +405,7 @@ func (v *normalizedView) collectBoundaryContent(nr types.NormalizedRelease) {
 			} else {
 				routed = decl.Locator
 			}
+			v.releaseEntrySites[decl.ID] = releaseEntrySite{site: site, routedKeys: routed}
 			v.recordAnnotations(
 				constraint.AuthoringDocumentRelease, decl.ID,
 				site, routed, decl.Component.Annotations)

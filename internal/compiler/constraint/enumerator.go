@@ -731,51 +731,82 @@ type ReleaseEdgeConfigurationEnumerator interface {
 	ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance
 }
 
-// ConnectionAttachmentSite names where one attachment a connection carries was
-// written: the connection entry holding it, in the document whose author wrote
-// it, and the slot it is written under there.
+// AttachmentSite names where one attachment a node carries was written: the
+// block holding it, in the document whose author wrote it, and the key it is
+// written under there.
 //
-// It exists because such an attachment reaches the node carrying it under a
-// composed name — the connection's alias, a dot, and the slot — that no key in
-// either document spells. A locator built the way every other attachment's is,
-// from the node's own block and the attachment's name, would name an attachment
-// block the consuming component does not have, and the composed name's dot would
-// cut it short there besides. The connection entry is the one place an author
-// edits it.
+// It exists because the node an attachment lands on does not say where the
+// attachment came from. An attachment reaches a node from the component's own
+// block in the Aggregate, from an Aggregate subsystem, from a Release boundary,
+// from the Release's entry for the component, or from a connection entry in
+// either document — and only the first of those is a key inside the
+// component's own block. A locator built from the node and the attachment's
+// name names that block whatever wrote the attachment, which sends a reader to
+// a key the document does not contain, in a document its author did not write.
+//
+// Two shapes of block, told apart by Socket. An attachment written in a
+// component's or a scope's own attachment block names that block: the scope,
+// the component key where the block is a component's, then the attachment
+// container and the attachment's name. An attachment written on a connection
+// entry names the entry instead, because it reaches the node under a composed
+// name — the connection's alias, a dot, and the slot — that no key in either
+// document spells, and the composed name's dot would cut a locator short
+// besides.
 //
 // The document is carried rather than derived because either may hold the
-// entry: the developer writes an attachment on the Aggregate's connection entry
-// and the operator on the Release's, and a finding names the entry whose author
-// wrote what the finding is about.
-type ConnectionAttachmentSite struct {
-	// Document is the authoring document the entry sits in, one of
+// block, and a finding names the block whose author wrote what the finding is
+// about — which is also what the finding is filed under.
+type AttachmentSite struct {
+	// Document is the authoring document the block sits in, one of
 	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
 	// scope nesting the site path is spelled with.
 	Document string
 
-	// Site names the component entry holding the connection: the scope it sits
-	// in, and the component key it was written under when the scope names the
-	// component directly.
+	// Site names the block's place in that document: the scope it sits in, and
+	// the component key it was written under where the block is a component's.
+	// A scope-wide block names no component.
 	Site AuthoredSite
 
-	// ComponentKeys are the authoring keys reaching the consuming component's own
-	// block from inside the site's scope where the scope does not name the
-	// component under its own key — the routing keys a Release writes for a
-	// component a sub-module contributes — and nothing where it does.
+	// ComponentKeys are the authoring keys reaching the component's own block
+	// from inside the site's scope where the scope does not name the component
+	// under its own key — the routing keys a Release writes for a component a
+	// sub-module contributes — and nothing where it does.
 	ComponentKeys []string
 
-	// Socket and Alias are the keys the connection entry is written under in the
-	// component's dependency block.
+	// Socket and Alias are the keys a connection entry is written under in the
+	// component's dependency block, for an attachment written on one, and empty
+	// for an attachment written in an attachment block.
 	Socket string
 	Alias  string
 
-	// Slot is the key the attachment is written under in the entry's own
-	// attachment block — the slot of the socket it fills.
-	Slot string
+	// Name is the key the attachment is written under in its block's attachment
+	// container: the attachment's own name in a component's or a scope's block,
+	// and the slot of the socket it fills on a connection entry.
+	Name string
 
-	// SourceFile is the workspace-relative file the entry was written in, empty
+	// SourceFile is the workspace-relative file the block was written in, empty
 	// when it has no single-file origin.
 	SourceFile string
+}
+
+// OnConnection reports whether the site names a connection entry rather than an
+// attachment block.
+func (s AttachmentSite) OnConnection() bool { return s.Socket != "" }
+
+// AttachmentSiteInBlock is the site of an attachment written in a component's
+// or a scope's own attachment block, in the given document.
+//
+// site is the block's own place: the scope, and the component key where the
+// block is a component's. A component's block in the Aggregate is named by the
+// site [ComponentSite] gives the component, so the attachment and the component
+// holding it cannot come to be located differently.
+func AttachmentSiteInBlock(document string, site AuthoredSite, name, sourceFile string) AttachmentSite {
+	return AttachmentSite{
+		Document:   document,
+		Site:       site,
+		Name:       name,
+		SourceFile: sourceFile,
+	}
 }
 
 // ConnectionAttachmentSiteInAggregate is the site of an attachment the developer
@@ -786,13 +817,13 @@ type ConnectionAttachmentSite struct {
 // so the entry and the component it sits in cannot come to be located
 // differently. A connection carrying attachments is always written in the long
 // form, whose alias is a key the author typed, so the alias is always a segment.
-func ConnectionAttachmentSiteInAggregate(node NodeInstance, socket, alias, slot string) ConnectionAttachmentSite {
-	return ConnectionAttachmentSite{
+func ConnectionAttachmentSiteInAggregate(node NodeInstance, socket, alias, slot string) AttachmentSite {
+	return AttachmentSite{
 		Document:   AuthoringDocumentAggregate,
 		Site:       ComponentSite(node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem),
 		Socket:     socket,
 		Alias:      alias,
-		Slot:       slot,
+		Name:       slot,
 		SourceFile: node.SourceFile,
 	}
 }
@@ -800,32 +831,37 @@ func ConnectionAttachmentSiteInAggregate(node NodeInstance, socket, alias, slot 
 // ConnectionAttachmentSiteInRelease is the site of an attachment a Release
 // per-edge entry carries, taken from that entry's own site so a finding about
 // the attachment and a finding about the entry name the same entry.
-func ConnectionAttachmentSiteInRelease(entry ReleaseEdgeConfigurationInstance, slot string) ConnectionAttachmentSite {
-	return ConnectionAttachmentSite{
+func ConnectionAttachmentSiteInRelease(entry ReleaseEdgeConfigurationInstance, slot string) AttachmentSite {
+	return AttachmentSite{
 		Document:      entry.Configuration.Document,
 		Site:          entry.Site,
 		ComponentKeys: entry.ComponentKeys,
 		Socket:        entry.Configuration.Socket,
 		Alias:         entry.Configuration.Alias,
-		Slot:          slot,
+		Name:          slot,
 		SourceFile:    entry.SourceFile,
 	}
 }
 
-// ConnectionAttachmentSiteEnumerator supplies, for an attachment a node carries,
-// the connection entry it was written in, where it was written on one.
+// AttachmentSiteEnumerator supplies, for an attachment a node carries, the
+// block it was written in.
 //
 // It is an optional companion of [AttachmentEnumerator] rather than a method of
-// it. The traversal over the attachments a node carries asks it of the
-// enumerator it is handed, and an enumerator that does not implement it — or
-// that reports no site for an attachment — leaves that attachment positioned at
-// the node's own attachment block, which is the right answer for every
-// attachment not written on a connection and the only one an enumeration over a
-// stage before connection attachments are lowered can give.
-type ConnectionAttachmentSiteEnumerator interface {
-	// ConnectionAttachmentSite returns where one attachment of one node was
-	// written, and whether it was written on a connection entry at all.
-	ConnectionAttachmentSite(node, attachment string) (ConnectionAttachmentSite, bool)
+// it. The traversals over a node's attachments, its slots and the sockets its
+// attachments wire ask it of the enumerator they are handed, and an enumerator
+// that does not implement it — or that reports no site for an attachment —
+// leaves that attachment positioned at the node's own attachment block. That is
+// the answer an enumeration over a stage that knows only one document's
+// attachments can give, and the one an attachment no author wrote explicitly
+// keeps.
+//
+// An enumerator that does report a site reports the one place the attachment as
+// a whole is positioned, even where several blocks contributed to it; which of
+// them that is, is the producer's to state.
+type AttachmentSiteEnumerator interface {
+	// AttachmentSite returns where one attachment of one node was written, and
+	// whether a site was recorded for it.
+	AttachmentSite(node, attachment string) (AttachmentSite, bool)
 }
 
 // NodeEnumerator supplies the node set: every component instance in the

@@ -100,7 +100,7 @@ func TestConnectionAttachmentLocatorsExtendTheirEntrysLocator(t *testing.T) {
 // all written on connection entries, one per node, each at the site it carries.
 type connectionAttachmentSites struct {
 	nodes []NodeInstance
-	sites map[string]ConnectionAttachmentSite
+	sites map[string]AttachmentSite
 }
 
 func (c connectionAttachmentSites) Nodes() []NodeInstance { return c.nodes }
@@ -112,10 +112,10 @@ func (c connectionAttachmentSites) Attachments(node string) []string {
 	return []string{"gpt.credential"}
 }
 
-func (c connectionAttachmentSites) ConnectionAttachmentSite(node, attachment string) (ConnectionAttachmentSite, bool) {
+func (c connectionAttachmentSites) AttachmentSite(node, attachment string) (AttachmentSite, bool) {
 	site, written := c.sites[node]
 	if !written || attachment != "gpt.credential" {
-		return ConnectionAttachmentSite{}, false
+		return AttachmentSite{}, false
 	}
 	return site, true
 }
@@ -137,7 +137,7 @@ func TestNodeAttachmentsOnAConnectionArePositionedAtTheirEntry(t *testing.T) {
 	plain := NodeInstance{ID: "plain", SourceFile: "aggregate.yaml", AuthoredName: "plain"}
 	enumeration := connectionAttachmentSites{
 		nodes: []NodeInstance{developer, nested, operator, plain},
-		sites: map[string]ConnectionAttachmentSite{
+		sites: map[string]AttachmentSite{
 			"gw":      ConnectionAttachmentSiteInAggregate(developer, "models", "gpt", "credential"),
 			"edge.gw": ConnectionAttachmentSiteInAggregate(nested, "models", "gpt", "credential"),
 			"router": ConnectionAttachmentSiteInRelease(ReleaseEdgeConfigurationInstance{

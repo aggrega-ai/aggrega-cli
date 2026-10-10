@@ -451,9 +451,9 @@ func (v *topologyView) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConfi
 	return v.edgeConfigurations
 }
 
-// ReleaseConnectionAttachmentSite returns the document and the site naming one
-// attachment the Release wrote on one of a component's connections, and whether
-// the Release wrote an entry for that connection at all.
+// ReleaseConnectionAttachmentSite returns the site naming one attachment the
+// Release wrote on one of a component's connections, and whether the Release
+// wrote an entry for that connection at all.
 //
 // It reads the entry through the same fold the traversal over the Release's
 // per-edge surface is built from, so a finding about an attachment the entry
@@ -465,14 +465,23 @@ func (v *topologyView) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConfi
 func ReleaseConnectionAttachmentSite(
 	rel *types.Release,
 	sourceFile, node, socket, alias, attachment string,
-) (entity string, site constraint.ConnectionAttachmentSite, found bool) {
+) (site constraint.AttachmentSite, found bool) {
 	for _, entry := range resolver.ReleaseEdgeConfigurations(rel, sourceFile) {
 		c := entry.Configuration
 		if c.Node == node && c.Socket == socket && c.Alias == alias {
-			return releaseEntityName(rel), constraint.ConnectionAttachmentSiteInRelease(entry, attachment), true
+			return constraint.ConnectionAttachmentSiteInRelease(entry, attachment), true
 		}
 	}
-	return "", constraint.ConnectionAttachmentSite{}, false
+	return constraint.AttachmentSite{}, false
+}
+
+// ReleaseEntity names the Release document a finding about something the
+// Release wrote is attributed to, in the spelling every finding this package
+// raises against the Release uses — so a finding a later stage raises about an
+// entry the Release wrote names that document exactly as this stage's findings
+// do, and is filed under the same author.
+func ReleaseEntity(rel *types.Release) string {
+	return releaseEntityName(rel)
 }
 
 // releaseBoundaryScope is one boundary a Release declares: the coordinate an axis

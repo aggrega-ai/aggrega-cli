@@ -49,13 +49,38 @@ type featureResult struct {
 	// the order an author reads their own document.
 	contributedFills []contributedFill
 
-	// contributions records, per attachment instance, every place the cascade
-	// took a contribution to it from, in cascade order and without repeats. It is
-	// merge-time bookkeeping of the same kind as leafOwners and is kept for the
-	// same reason: which tiers wrote an attachment is known while they fold and
+	// places records, per attachment instance, every place the cascade took a
+	// contribution to it from, in cascade order and without repeats — each with
+	// the block it was written in. It is merge-time bookkeeping of the same kind as
+	// leafOwners and is kept for the same reason: which tiers wrote an attachment,
+	// and in which document, file and block each did, is known while they fold and
 	// nowhere afterwards. Addressed by key only and never iterated for output, so
 	// it has no bearing on the order anything is emitted in.
-	contributions map[string][]constraint.AttachmentContribution
+	//
+	// It is the one record of where an attachment was written. The places the
+	// graph's presentation reports are projected from it, and so is the site every
+	// diagnostic about the attachment is positioned at, so the two cannot come to
+	// describe one attachment's authorship differently.
+	places map[string][]attachmentPlace
+}
+
+// attachmentPlace is one place the cascade took a contribution to an attachment
+// from: the place as the graph reports it, the block it was written in, and
+// whether it named the attachment's Feature type.
+type attachmentPlace struct {
+	contribution constraint.AttachmentContribution
+
+	// site is the block the contribution was written in. It is the zero site —
+	// no document — for a contribution annotation-driven expansion produced,
+	// which is named by its annotation rather than by a block, and for a block
+	// the cascade could not locate.
+	site constraint.AttachmentSite
+
+	// namesType reports whether the contribution named the attachment's Feature
+	// type. Every contribution naming one names the same type — a disagreement
+	// halts the merge — so the places that named it are where the attachment's
+	// type was written.
+	namesType bool
 }
 
 // contributedFill is one fill a node received from a scope broader than
@@ -101,35 +126,122 @@ type leafOwner struct {
 // verbatim from the topology node read here, so there is one origin and no
 // point at which the two could come to differ.
 func componentOwnSite(topoNode *topology.TopologyNode, nodeID string) constraint.AuthoredSite {
-	if topoNode == nil {
-		return constraint.ComponentSite(constraint.AuthoredComponentName(nodeID), "", false)
-	}
-	return constraint.ComponentSite(
-		constraint.AuthoredComponentName(nodeID),
-		topoNode.SubsystemPath,
-		topoNode.SynthesizedSubsystem,
-	)
+	node := cascadeNode(topoNode, nodeID)
+	return constraint.ComponentSite(node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem)
 }
 
 // newFeatureResult is the one construction site for a per-node result, so
 // no caller can produce one whose merge bookkeeping is unallocated.
 func newFeatureResult() *featureResult {
 	return &featureResult{
-		Features:      types.OrderedMap[types.IRFeatureEntry]{},
-		leafOwners:    map[scopeKey]leafOwner{},
-		contributions: map[string][]constraint.AttachmentContribution{},
+		Features:   types.OrderedMap[types.IRFeatureEntry]{},
+		leafOwners: map[scopeKey]leafOwner{},
+		places:     map[string][]attachmentPlace{},
 	}
 }
 
 // recordContribution notes one place the cascade is about to take a
-// contribution to an attachment from. The same place reached twice is recorded
-// once, because a reader asking where an attachment was written is asking for
-// places and not for how many passes of the cascade reached each.
-func (r *featureResult) recordContribution(instance string, place constraint.AttachmentContribution) {
-	if slices.Contains(r.contributions[instance], place) {
+// contribution to an attachment from, with the block it was written in. The
+// same place reached twice is recorded once, because a reader asking where an
+// attachment was written is asking for places and not for how many passes of the
+// cascade reached each.
+func (r *featureResult) recordContribution(instance string, place attachmentPlace) {
+	if slices.ContainsFunc(r.places[instance], func(p attachmentPlace) bool {
+		return p.contribution == place.contribution
+	}) {
 		return
 	}
-	r.contributions[instance] = append(r.contributions[instance], place)
+	r.places[instance] = append(r.places[instance], place)
+}
+
+// contributionsOf is the places the cascade took contributions to one
+// attachment from, as the graph reports them: in cascade order, each once.
+func contributionsOf(places []attachmentPlace) []constraint.AttachmentContribution {
+	out := make([]constraint.AttachmentContribution, 0, len(places))
+	for _, p := range places {
+		out = append(out, p.contribution)
+	}
+	return out
+}
+
+// placeFrom is one place a contribution with the given provenance was written
+// at: the place as the graph reports it, the block it was written in, and
+// whether it named the attachment's Feature type.
+//
+// A contribution annotation-driven expansion produced is named by its
+// annotation and records no block, whatever block the expansion wrote it onto:
+// the author changes the annotation, not that block, to remove what it produced,
+// so pointing a diagnostic at the block would send them to the wrong edit.
+func placeFrom(
+	surface string,
+	prov featureProvenance,
+	site constraint.AuthoredSite,
+	connection *types.AttachmentConnection,
+	written constraint.AttachmentSite,
+	featureType string,
+) attachmentPlace {
+	place := attachmentPlace{
+		contribution: contributionFrom(surface, prov, site, connection),
+		namesType:    featureType != "",
+	}
+	if prov.Origin != types.OriginAnnotation {
+		place.site = written
+	}
+	return place
+}
+
+// cascadeNode is the framework node instance of the node a cascade folds for,
+// read off the topology node: the values the graph's own node instance is built
+// from, which the build copies verbatim from this same topology node.
+func cascadeNode(topoNode *topology.TopologyNode, nodeID string) constraint.NodeInstance {
+	node := constraint.NodeInstance{ID: nodeID, AuthoredName: constraint.AuthoredComponentName(nodeID)}
+	if topoNode != nil {
+		node.SourceFile = topoNode.SourceFile
+		node.SubsystemPath = topoNode.SubsystemPath
+		node.SynthesizedSubsystem = topoNode.SynthesizedSubsystem
+	}
+	return node
+}
+
+// aggregateComponentSite is the block an attachment the Aggregate wrote for one
+// component was written in: the component's own attachment block, or the
+// connection entry the attachment was written on.
+func aggregateComponentSite(
+	node constraint.NodeInstance,
+	componentSite constraint.AuthoredSite,
+	name string,
+	connection *types.AttachmentConnection,
+) constraint.AttachmentSite {
+	if connection != nil {
+		return constraint.ConnectionAttachmentSiteInAggregate(node, connection.Socket, connection.Alias, connection.Attachment)
+	}
+	return constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentAggregate, componentSite, name, node.SourceFile)
+}
+
+// releaseComponentSite is the block an attachment the Release wrote for one
+// component was written in: the Release's entry for the component, or the
+// per-edge entry of the connection the attachment was written on.
+//
+// A connection's entry is read through the same fold the rules over the
+// Release's per-edge surface are positioned by, so a finding about the
+// attachment and a finding about the entry name one entry. An entry that fold
+// does not hold is a block this cascade cannot locate, and it records none.
+func releaseComponentSite(
+	res *resolver.ResolveResult,
+	nodeID string,
+	entrySite constraint.AuthoredSite,
+	name string,
+	connection *types.AttachmentConnection,
+) constraint.AttachmentSite {
+	if connection == nil {
+		return constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentRelease, entrySite, name, res.ReleasePath)
+	}
+	site, found := topology.ReleaseConnectionAttachmentSite(
+		res.Release, res.ReleasePath, nodeID, connection.Socket, connection.Alias, connection.Attachment)
+	if !found {
+		return constraint.AttachmentSite{}
+	}
+	return site
 }
 
 // contributionFrom is the place a contribution with the given provenance and site
@@ -230,8 +342,8 @@ func (r *featureResult) projectAttachmentSites(nodeID string, into AttachmentSit
 			Leaf:       key.leaf,
 		}] = owner.site
 	}
-	for instance, places := range r.contributions {
-		into.contributions[attachmentKey{node: nodeID, attachment: instance}] = places
+	for instance, places := range r.places {
+		into.contributions[attachmentKey{node: nodeID, attachment: instance}] = contributionsOf(places)
 	}
 }
 
@@ -517,6 +629,12 @@ func collectNodeFeatures(
 ) (*featureResult, error) {
 	result := newFeatureResult()
 
+	// Every tier records, beside the place a contribution came from, the block it
+	// was written in: the document, the file, the scope and the component key are
+	// all in hand here, as the tier reads the document, and nowhere once the
+	// contributions have folded into one attachment.
+	node := cascadeNode(topoNode, nodeID)
+
 	// Collect features in Onion Model order.
 	// Each tier appends FeatureAttachments; we process them in order.
 
@@ -547,8 +665,10 @@ func collectNodeFeatures(
 					}
 				}
 			}
-			result.recordContribution(fa.InstanceName,
-				contributionFrom(constraint.ContributionAggregateComponent, prov, componentOwner.site, fa.Connection))
+			result.recordContribution(fa.InstanceName, placeFrom(
+				constraint.ContributionAggregateComponent, prov, componentOwner.site, fa.Connection,
+				aggregateComponentSite(node, componentOwner.site, fa.InstanceName, fa.Connection),
+				fa.Feature.Type))
 			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentOwner); err != nil {
 				return nil, err
 			}
@@ -570,8 +690,10 @@ func collectNodeFeatures(
 		// contributed an out-of-shape one is a separate edit to make.
 		result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
 		owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
-		result.recordContribution(sf.name,
-			contributionFrom(constraint.ContributionSubsystem, explicitProvenance, owner.site, nil))
+		result.recordContribution(sf.name, placeFrom(
+			constraint.ContributionSubsystem, explicitProvenance, owner.site, nil,
+			constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentAggregate, owner.site, sf.name, node.SourceFile),
+			sf.feat.Type))
 		if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 			return nil, err
 		}
@@ -591,8 +713,11 @@ func collectNodeFeatures(
 			// point at and the boundary's own block is the one place it can be
 			// changed.
 			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: bf.scopePath}}
-			result.recordContribution(bf.name,
-				contributionFrom(constraint.ContributionReleaseBoundary, explicitProvenance, owner.site, nil))
+			result.recordContribution(bf.name, placeFrom(
+				constraint.ContributionReleaseBoundary, explicitProvenance, owner.site, nil,
+				constraint.AttachmentSiteInBlock(
+					constraint.AuthoringDocumentRelease, owner.site, bf.name, resolveResult.ReleasePath),
+				bf.feat.Type))
 			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
@@ -629,8 +754,10 @@ func collectNodeFeatures(
 				scope: scopeComponent,
 				site:  constraint.AuthoredSite{ScopePath: cf.scopePath, Component: nodeID},
 			}
-			result.recordContribution(cf.name,
-				contributionFrom(constraint.ContributionReleaseComponent, prov, owner.site, cf.connection))
+			result.recordContribution(cf.name, placeFrom(
+				constraint.ContributionReleaseComponent, prov, owner.site, cf.connection,
+				releaseComponentSite(resolveResult, nodeID, owner.site, cf.name, cf.connection),
+				cf.feat.Type))
 			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, owner); err != nil {
 				return nil, err
 			}
@@ -702,21 +829,22 @@ func collectNodeFeatures(
 // schema.infra is its complete infra contract. Errors are returned unsorted;
 // joinAttachmentViolations canonicalises the combined set.
 //
-// An attachment a connection carries is measured at the connection entry the
-// pillar was written on, through connectionSite: it is not in the component's
-// own attachment block, so a finding naming that block would send the author to
-// a key the document does not have. Such a finding also carries the file that
-// entry was written in, as every finding positioned at an authored site does, so
-// a surface placing it inside an open document places it in the one the author
-// wrote. A nil connectionSite measures every attachment at the component's
-// block, which is what a caller holding no authoring documents can name.
+// Each pillar is measured at the block the attachment's site rule names for it,
+// in the document whose author wrote that pillar, and the finding carries that
+// document's entity and file — so an attachment the Release wrote is reported at
+// the Release's block and filed under the operator, and a surface placing the
+// finding inside an open document places it in the one the author wrote. An
+// attachment the rule records no site for — one annotation-driven expansion
+// produced — is measured at the component's own block under the entity the
+// caller names, and so is every attachment when siteOf is nil, which is what a
+// caller holding no authoring documents can name.
 func validateNodeAttachments(
 	nodeID string,
 	feats types.OrderedMap[types.IRFeatureEntry],
 	parameters map[string]any,
 	entity string,
 	compiledFor func(featureType string) (compactform.Schema, bool),
-	connectionSite connectionAttachmentSite,
+	siteOf attachmentSiteRule,
 ) []*resolver.ResolverError {
 	var errs []*resolver.ResolverError
 	for name, entry := range feats.All() {
@@ -727,11 +855,10 @@ func validateNodeAttachments(
 		for _, pillar := range []string{pillarValues, pillarInfra} {
 			pillarEntity, prefix := entity, fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
 			file := ""
-			if entry.Connection != nil && connectionSite != nil {
-				var site constraint.ConnectionAttachmentSite
-				pillarEntity, site = connectionSite(name, *entry.Connection, pillar)
-				prefix = site.Locator()
-				file = site.SourceFile
+			if siteOf != nil {
+				if writtenBy, site, recorded := siteOf(name, pillar); recorded {
+					pillarEntity, prefix, file = writtenBy, site.Locator(), site.SourceFile
+				}
 			}
 			payload := entry.Values
 			if pillar == pillarInfra {
@@ -748,64 +875,145 @@ func validateNodeAttachments(
 	return errs
 }
 
-// connectionAttachmentSite names the document and the site one pillar of one
-// connection attachment a node carries was written at.
-type connectionAttachmentSite func(
-	attachment string, connection types.AttachmentConnection, pillar string,
-) (entity string, site constraint.ConnectionAttachmentSite)
+// attachmentSiteRule names where one attachment a node carries is positioned:
+// for one pillar of its configuration, or — for the empty pillar — the
+// attachment as a whole. It returns the entity of the document that block sits
+// in, the block itself, and whether any block was recorded for the attachment.
+type attachmentSiteRule func(attachment, pillar string) (entity string, site constraint.AttachmentSite, recorded bool)
 
-// connectionAttachmentSites returns the site rule for the connection attachments
-// one node carries.
+// positioningOrder is the order an attachment's contributing blocks are
+// preferred in when one of them has to position it: the developer's before the
+// operator's, and on each side the component's own block before the scope that
+// reaches it.
 //
-// The pillar decides the document, as it does for every attachment: values are
-// the developer's and are written on the Aggregate's connection entry, infra is
-// the operator's and is written on the Release's. An attachment one document
-// alone wrote is measured at that document's entry for both pillars, because the
-// other document has no entry to name — which is what puts a Release-only
-// attachment's missing values at the Release entry the operator wrote, rather
-// than at an Aggregate path that does not exist.
+// The developer's comes first because that is where an attachment's type is
+// named wherever the developer wrote one — the Aggregate requires a type on
+// every attachment it writes — and the operator's only for an attachment the
+// Release alone makes. The narrower block comes first on each side because it is
+// the one written for this component; a scope's block is written once for every
+// component the scope holds.
+var positioningOrder = []string{
+	constraint.ContributionAggregateComponent,
+	constraint.ContributionSubsystem,
+	constraint.ContributionReleaseComponent,
+	constraint.ContributionReleaseBoundary,
+}
+
+// pillarDocument is the document whose author writes one pillar of an
+// attachment's configuration: the values are the developer's and are written in
+// the Aggregate, the infrastructure configuration is the operator's and is
+// written in the Release. Any other pillar — the empty one, for the attachment
+// as a whole — names no document.
+func pillarDocument(pillar string) string {
+	switch pillar {
+	case pillarValues:
+		return constraint.AuthoringDocumentAggregate
+	case pillarInfra:
+		return constraint.AuthoringDocumentRelease
+	default:
+		return ""
+	}
+}
+
+// positionedPlace is the place one attachment is positioned at, chosen from the
+// places the cascade recorded it was written at, and whether any of them names a
+// block.
 //
-// The values pillar's answer is also where the attachment itself is declared —
-// the developer's entry wherever the developer wrote one, which is where its type
-// is named, and the operator's only for an attachment the Release alone makes —
-// so a rule over the attachment as a whole is positioned through the same rule
-// (see [AttachmentSites] and [GraphStageCoordinates.ConnectionAttachmentSite]).
+// The attachment as a whole is positioned where its type was written: among the
+// places that named the type, the first in [positioningOrder]. Every place
+// naming one names the same type, so this is a choice among equals and the
+// order is what makes it one answer. Where no place named a type, the same
+// order is read over every place.
 //
-// Which documents wrote the attachment is read from the contributions the
-// cascade recorded while it folded, and the connection from the record the
-// lowering carried; nothing is read out of the attachment's name. The developer's
-// entry sits in the document the component was authored in, so a component a
-// sub-module contributed is measured in that module's document, and a component
-// the Aggregate declares under the Aggregate's own name. The operator's entry is
-// read through the same fold the rules over the Release's per-edge surface are
-// positioned by.
-func connectionAttachmentSites(
-	node constraint.NodeInstance,
+// A pillar is positioned where that pillar's own author wrote it — the
+// narrowest block of the pillar's document, in the same order — and where that
+// document wrote no block for the attachment, where the attachment as a whole
+// is: the other document is then the only one holding a block, so a Release-only
+// attachment's missing values are reported at the Release's block rather than at
+// an Aggregate path that does not exist.
+//
+// A place annotation-driven expansion produced names no block and is never
+// chosen; an attachment no block wrote reports none.
+func positionedPlace(places []attachmentPlace, pillar string) (attachmentPlace, bool) {
+	var written []attachmentPlace
+	for _, p := range places {
+		if p.site.Document != "" {
+			written = append(written, p)
+		}
+	}
+	if document := pillarDocument(pillar); document != "" {
+		var own []attachmentPlace
+		for _, p := range written {
+			if p.site.Document == document {
+				own = append(own, p)
+			}
+		}
+		if p, found := firstInPositioningOrder(own); found {
+			return p, true
+		}
+	}
+	var typed []attachmentPlace
+	for _, p := range written {
+		if p.namesType {
+			typed = append(typed, p)
+		}
+	}
+	if len(typed) > 0 {
+		written = typed
+	}
+	return firstInPositioningOrder(written)
+}
+
+// firstInPositioningOrder returns the place whose surface comes first in
+// [positioningOrder]. Within one surface the innermost place is taken — the
+// cascade records the levels of one scope chain outer before inner, so that is
+// the last of them — because it is the block written closest to the component.
+func firstInPositioningOrder(places []attachmentPlace) (attachmentPlace, bool) {
+	for _, surface := range positioningOrder {
+		chosen, found := attachmentPlace{}, false
+		for _, p := range places {
+			if p.contribution.Surface == surface {
+				chosen, found = p, true
+			}
+		}
+		if found {
+			return chosen, true
+		}
+	}
+	return attachmentPlace{}, false
+}
+
+// attachmentSiteRuleFor returns the site rule for the attachments one node
+// carries, read from the places the cascade recorded while it folded.
+//
+// Nothing is derived here: the block each contribution was written in was
+// recorded where the cascade took the contribution, and this rule only chooses
+// among those blocks. The entity a finding names is the chosen block's document:
+// the Release under its own name; and the Aggregate the component was written in,
+// which for a component a sub-module contributed is that module's document.
+func attachmentSiteRuleFor(
 	topoNode *topology.TopologyNode,
-	contributions map[string][]constraint.AttachmentContribution,
+	places map[string][]attachmentPlace,
 	res *resolver.ResolveResult,
 	aggregateEntity string,
-) connectionAttachmentSite {
-	return func(attachment string, c types.AttachmentConnection, pillar string) (string, constraint.ConnectionAttachmentSite) {
-		wroteBy := func(surface string) bool {
-			return slices.ContainsFunc(contributions[attachment], func(p constraint.AttachmentContribution) bool {
-				return p.Surface == surface
-			})
+) attachmentSiteRule {
+	return func(attachment, pillar string) (string, constraint.AttachmentSite, bool) {
+		place, found := positionedPlace(places[attachment], pillar)
+		if !found {
+			return "", constraint.AttachmentSite{}, false
 		}
-		developer := wroteBy(constraint.ContributionAggregateComponent)
-		operator := wroteBy(constraint.ContributionReleaseComponent)
-		if operator && (pillar == pillarInfra || !developer) && res != nil && res.Release != nil {
-			entity, site, found := topology.ReleaseConnectionAttachmentSite(
-				res.Release, res.ReleasePath, node.ID, c.Socket, c.Alias, c.Attachment)
-			if found {
-				return entity, site
+		if place.site.Document == constraint.AuthoringDocumentRelease {
+			var release *types.Release
+			if res != nil {
+				release = res.Release
 			}
+			return topology.ReleaseEntity(release), place.site, true
 		}
 		entity := aggregateEntity
 		if moduleContributed(topoNode) {
 			entity = resolver.DocumentEntity("Aggregate", topoNode.SourceFile, aggregateEntity)
 		}
-		return entity, constraint.ConnectionAttachmentSiteInAggregate(node, c.Socket, c.Alias, c.Attachment)
+		return entity, place.site, true
 	}
 }
 

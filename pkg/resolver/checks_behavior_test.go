@@ -946,7 +946,7 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
               uses:
                 ghost: [anything]
 `,
-			raised:  []string{".spec.components.web.features.audit.uses.ghost"},
+			raised:  []string{".spec.boundaries.edge.components.web.features.audit.uses.ghost"},
 			sockets: []string{"ghost"},
 		},
 		{
@@ -957,9 +957,10 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
 			// the Aggregate's attachments first and then any the Release
 			// declares that the Aggregate does not.
 			//
-			// The locator is rooted at the component's site on the Aggregate
-			// document while the offending text is in the Release. Recorded
-			// rather than corrected: it is the site the axis presents.
+			// The locator is rooted at the Release's own entry for the
+			// component, in the boundary it sits in, because that is where the
+			// offending text is: the rule is invoked over the set that positions
+			// every attachment at the Release's declaration of it.
 			name:     "an attachment only the Release declares is reported",
 			authored: nil,
 			deployed: `    edge:
@@ -972,7 +973,7 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
               uses:
                 ghost: [anything]
 `,
-			raised:  []string{".spec.components.web.features.ops_audit.uses.ghost"},
+			raised:  []string{".spec.boundaries.edge.components.web.features.ops_audit.uses.ghost"},
 			sockets: []string{"ghost"},
 		},
 		{
@@ -997,8 +998,8 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
                 ghost: [anything]
 `,
 			raised: []string{
-				".spec.components.web.features.zulu.uses.ghost",
-				".spec.components.web.features.alpha.uses.ghost",
+				".spec.boundaries.edge.components.web.features.zulu.uses.ghost",
+				".spec.boundaries.edge.components.web.features.alpha.uses.ghost",
 			},
 			sockets: []string{"ghost", "ghost"},
 		},
@@ -1016,8 +1017,10 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
 			view := newNormalizedView(na, release, catalog, nil)
 			coordinates := newCoordinateSet(view)
 
+			// Invoked over the set the resolve hands the Release's own rules, so the
+			// row positions its findings exactly as a resolve does.
 			objections, err := constraint.RunOnNodeAttachmentSockets[constraint.NormalizedView](
-				nil, coordinates, coordinates, coordinates, view,
+				nil, coordinates, coordinates.inRelease(), coordinates, view,
 				releaseComponentAttachmentSocketDeclared)
 			if err != nil {
 				t.Fatalf("the attachment socket walk returned an error: %v", err)

@@ -531,8 +531,11 @@ func runDeclaredRules(
 		componentAttachmentSocketDeclared)); err != nil {
 		return nil, err
 	}
+	// The Release's own rule is invoked over the set positioning each attachment
+	// at the Release's entry, so its finding names the block the operator wrote;
+	// the axis is the same one the developer's rule above walks.
 	if err := operatorRule(constraint.RunOnNodeAttachmentSockets(
-		cancelled, coordinates, coordinates, coordinates, facts,
+		cancelled, coordinates, coordinates.inRelease(), coordinates, facts,
 		releaseComponentAttachmentSocketDeclared)); err != nil {
 		return nil, err
 	}

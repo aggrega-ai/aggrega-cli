@@ -603,8 +603,7 @@ func newNodeAttachmentSubject(sourceFile, node, attachment string, segments ...s
 
 // newNodeAttachmentSubjectWrittenIn is [newNodeAttachmentSubject] for an
 // attachment whose site records which authoring document it was written in —
-// the connection entry it was written on, for an attachment a connection
-// carries.
+// the block the attachment was written in, a connection entry included.
 func newNodeAttachmentSubjectWrittenIn(document, sourceFile, node, attachment string, segments ...string) NodeAttachmentSubject {
 	return nodeAttachmentSubject{
 		provenance: newProvenanceIn(document, sourceFile, segments...),
@@ -1008,8 +1007,18 @@ func newNodeAttachmentSocketSubject(
 	sourceFile, node, attachment, socket string,
 	segments ...string,
 ) NodeAttachmentSocketSubject {
+	return newNodeAttachmentSocketSubjectWrittenIn("", sourceFile, node, attachment, socket, segments...)
+}
+
+// newNodeAttachmentSocketSubjectWrittenIn is [newNodeAttachmentSocketSubject] for
+// a socket whose attachment's site records which authoring document it was
+// written in.
+func newNodeAttachmentSocketSubjectWrittenIn(
+	document, sourceFile, node, attachment, socket string,
+	segments ...string,
+) NodeAttachmentSocketSubject {
 	return nodeAttachmentSocketSubject{
-		provenance: newProvenance(sourceFile, segments...),
+		provenance: newProvenanceIn(document, sourceFile, segments...),
 		node:       node,
 		attachment: attachment,
 		socket:     socket,
@@ -1048,8 +1057,14 @@ func (s nodeSlotSubject) NodeID() string { return s.node }
 func (s nodeSlotSubject) SlotName() string { return s.slot }
 
 func newNodeSlotSubject(sourceFile, node, slot string, segments ...string) NodeSlotSubject {
+	return newNodeSlotSubjectWrittenIn("", sourceFile, node, slot, segments...)
+}
+
+// newNodeSlotSubjectWrittenIn is [newNodeSlotSubject] for a slot whose fill's
+// site records which authoring document it was written in.
+func newNodeSlotSubjectWrittenIn(document, sourceFile, node, slot string, segments ...string) NodeSlotSubject {
 	return nodeSlotSubject{
-		provenance: newProvenance(sourceFile, segments...),
+		provenance: newProvenanceIn(document, sourceFile, segments...),
 		node:       node,
 		slot:       slot,
 	}

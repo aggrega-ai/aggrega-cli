@@ -70,14 +70,13 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			wantSocket:  "bogus-boundary-socket",
 		},
 		{
-			// 🔴 The locator names the component's site on the AGGREGATE document
-			// while the attachment itself is written on the Release. That follows
-			// from the coordinate this rule is invoked per — a component's
-			// attachment names, taken from both documents and presented under the
-			// component — and the entity beside it says which document to open.
+			// The locator names the Release's own entry for the component, in the
+			// boundary that entry sits in, because that is where the attachment and
+			// the socket it wires are written; the entity beside it names the
+			// Release as the document to open.
 			name:        "release boundary-component attachment",
 			release:     "release-contrib-component.yaml",
-			wantLocator: `.spec.components.consumer.features.compfeat`,
+			wantLocator: `.spec.boundaries.cluster.components.consumer.features.compfeat`,
 			wantSocket:  "bogus-component-socket",
 		},
 		{

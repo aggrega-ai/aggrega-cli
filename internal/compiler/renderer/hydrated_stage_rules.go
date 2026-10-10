@@ -565,9 +565,10 @@ func attachmentArtifactContentPinHalt(
 // # Why the node arrives whole
 //
 // The whole point of reaching through the build's own enumeration is the node's
-// provenance: the locator a finding is positioned at is the attachment's entry
-// inside the component's own block, and it is assembled from the component's
-// authored name and the subsystem path it was reached through. Neither is
+// provenance: where the build records no other block for an attachment, the
+// locator a finding is positioned at is the attachment's entry inside the
+// component's own block, and it is assembled from the component's authored name
+// and the subsystem path it was reached through. Neither is
 // derivable from the node identity alone, and neither is this site's to decide —
 // so the instance is taken from the enumeration the compilation produced rather
 // than rebuilt from what the render happens to hold.
@@ -596,34 +597,34 @@ func (o oneNodesAttachments) Attachments(node string) []string {
 	return o.attachments.Attachments(node)
 }
 
-// ConnectionAttachmentSite reports where one of the narrowed node's attachments
-// was written when it was written on one of the node's connections, by asking the
-// build's own enumeration, and reports nothing for any other node.
+// AttachmentSite reports where one of the narrowed node's attachments was
+// written, by asking the build's own enumeration, and reports nothing for any
+// other node.
 //
 // The narrowing has to carry this answer through, because the traversal asks it of
 // the value it is handed and of nothing else. A narrowing that dropped it would
-// position an attachment a connection carries at the node's own attachment block,
-// under the composed name the build gives it — a block the component does not
-// have — rather than at the connection entry the author wrote it in. An
-// enumeration that supplies no site leaves every attachment at the node's own
-// block, which is the right answer where nothing was written on a connection.
-func (o oneNodesAttachments) ConnectionAttachmentSite(
+// position every attachment at the node's own attachment block whatever wrote it —
+// an attachment a Release wrote at a path in the Aggregate that does not exist,
+// and one a connection carries under the composed name the build gives it, a
+// block the component does not have. An enumeration that supplies no site leaves
+// every attachment at the node's own block.
+func (o oneNodesAttachments) AttachmentSite(
 	node, attachment string,
-) (constraint.ConnectionAttachmentSite, bool) {
+) (constraint.AttachmentSite, bool) {
 	if node != o.node.ID {
-		return constraint.ConnectionAttachmentSite{}, false
+		return constraint.AttachmentSite{}, false
 	}
-	sites, ok := o.attachments.(constraint.ConnectionAttachmentSiteEnumerator)
+	sites, ok := o.attachments.(constraint.AttachmentSiteEnumerator)
 	if !ok {
-		return constraint.ConnectionAttachmentSite{}, false
+		return constraint.AttachmentSite{}, false
 	}
-	return sites.ConnectionAttachmentSite(node, attachment)
+	return sites.AttachmentSite(node, attachment)
 }
 
 var (
-	_ constraint.NodeEnumerator                     = oneNodesAttachments{}
-	_ constraint.AttachmentEnumerator               = oneNodesAttachments{}
-	_ constraint.ConnectionAttachmentSiteEnumerator = oneNodesAttachments{}
+	_ constraint.NodeEnumerator           = oneNodesAttachments{}
+	_ constraint.AttachmentEnumerator     = oneNodesAttachments{}
+	_ constraint.AttachmentSiteEnumerator = oneNodesAttachments{}
 )
 
 // runNodeInjectDeliveryRule asks the rule declared over one node's attributed
@@ -674,7 +675,7 @@ func runNodeInjectDeliveryRule(
 	if err != nil {
 		return err
 	}
-	return objectionsAsDeveloperHalt(
+	return objectionsAsAuthoredHalt(
 		raised, "attachments delivering a key another inject source already delivered")
 }
 
@@ -763,9 +764,10 @@ func runInjectMappingMechanismRule(
 // that reading refuses is still refused by it: an input carrying both faults
 // reports the one it reported before this rule existed.
 //
-// The halt carries the developer category, as the reading over the attachments'
-// own blocks does: the two report one shared space from its two routes, and the
-// attachments whose keys meet are the author's to change.
+// The halt files each finding under the document that wrote the attachment it is
+// positioned at, as the reading over the attachments' own blocks does: the two
+// report one shared space from its two routes, and the attachments whose keys
+// meet are their authors' to change.
 //
 // The two absent inputs are the different questions the sibling readings above
 // keep apart, and each leaves the rule uninvoked for the reason they give. The
@@ -786,7 +788,7 @@ func runNodeInjectMappingDeliveryRule(
 	if err != nil {
 		return err
 	}
-	return objectionsAsDeveloperHalt(
+	return objectionsAsAuthoredHalt(
 		raised, "attachments whose injectMapping writes a key another attachment already delivered")
 }
 
@@ -1061,21 +1063,28 @@ func runProvidesContractRule(
 	return objectionsAsHalt(raised, "Recipes short of the output contract their Component declares")
 }
 
-// objectionsAsDeveloperHalt renders what a rule about what an Aggregate's own
-// author wrote raised as the render's halt, attributing the fault to the
-// Aggregate document.
+// objectionsAsAuthoredHalt renders what a rule about what an authoring
+// document's author wrote raised as the render's halt, attributing each finding
+// to the document its subject was written in.
 //
 // It is the fourth sibling of [objectionsAsHalt] and shares the whole of its
 // per-objection rendering; what it does not share is the category, which is the
 // one thing the four of them genuinely differ on. A rule about what an entity
 // declares sends an author to a catalog document, a rule about output the compiler
 // produced to no document at all, a rule about where a boundary's output landed to
-// the Release document — and this one to the Aggregate, because an injection
-// block and the attachment that duplicates its key are both written there, as two
-// attachments whose deliveries meet on one key ordinarily are, and the remedy is
-// to remove or re-key one of them.
-func objectionsAsDeveloperHalt(objections []constraint.Objection, envelope string) error {
-	return objectionsAsCategorisedHalt(objections, cerrors.DeveloperError, envelope)
+// the Release document — and this one to whichever document wrote the attachment
+// the finding is positioned at, because the remedy is to remove or re-key that
+// attachment: an attachment the Aggregate wrote is the developer's to change and
+// one the Release wrote is the operator's.
+//
+// Each finding is filed by its own document, through
+// [constraint.AuthoringDocumentCategory]. The envelope several findings are
+// joined under takes the first finding's, so the header a reader meets first
+// agrees with the first finding beneath it.
+func objectionsAsAuthoredHalt(objections []constraint.Objection, envelope string) error {
+	return objectionsAsHaltFiledBy(objections, func(o constraint.Objection) cerrors.Category {
+		return constraint.AuthoringDocumentCategory(o.AuthoringDocument())
+	}, envelope)
 }
 
 // artifactFindingFile is the document an artifact finding is positioned at.

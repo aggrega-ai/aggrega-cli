@@ -287,6 +287,53 @@ func (c *coordinateSet) Attachments(node string) []string {
 	return names
 }
 
+// releaseDeclarations is the coordinate set with every attachment the Release
+// declares positioned at the Release's own entry for its component — the
+// enumeration a rule reading only what the Release declared about an
+// attachment is invoked over.
+//
+// It exists because the attachment axis is shared by the rules over both
+// documents, and each of them narrows to its own document's declaration in its
+// own body: a rule judging what the Release declared is judging a block in the
+// Release, so its finding has to name that block, while a rule judging the
+// Aggregate's declaration of the same attachment names the Aggregate's. Which
+// of the two a subject is positioned at is therefore a property of the rule the
+// traversal is invoked for, and handing the Release's rules this set is how that
+// is said — the axis itself is unchanged, so both rules are still asked about
+// every attachment either document declares.
+//
+// The site is the one the Release's walk recorded for the entry, the same site
+// the entry's annotations are positioned at, so the attachment and every other
+// key written on the entry are located by one reading of the document. This is
+// a stage before the attachment cascade: the attachments are the documents' own
+// declarations, not yet folded into what a component carries, so where an
+// attachment as a whole is positioned once the cascade has folded is not this
+// set's question.
+type releaseDeclarations struct {
+	*coordinateSet
+}
+
+// inRelease returns the set as the Release's own rules are invoked over it.
+func (c *coordinateSet) inRelease() releaseDeclarations {
+	return releaseDeclarations{coordinateSet: c}
+}
+
+// AttachmentSite reports where the Release declared one attachment of one
+// component, and whether it declared that attachment there at all.
+func (r releaseDeclarations) AttachmentSite(node, attachment string) (constraint.AttachmentSite, bool) {
+	if _, declared := r.view.releaseAttachment(node, attachment); !declared {
+		return constraint.AttachmentSite{}, false
+	}
+	entry, recorded := r.view.releaseEntrySites[node]
+	if !recorded {
+		return constraint.AttachmentSite{}, false
+	}
+	site := constraint.AttachmentSiteInBlock(
+		constraint.AuthoringDocumentRelease, entry.site, attachment, r.releaseSource)
+	site.ComponentKeys = entry.routedKeys
+	return site, true
+}
+
 // AttachmentSockets returns the sockets one attachment of one node WIRES —
 // never the set the Feature it attaches declares — read from either authoring
 // document: the Aggregate's own entries in author order, then any socket the

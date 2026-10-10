@@ -56,7 +56,7 @@ import (
 type pipeKeyCoordinates struct {
 	nodes       []constraint.NodeInstance
 	attachments map[string][]string
-	sites       map[string]constraint.ConnectionAttachmentSite
+	sites       map[string]constraint.AttachmentSite
 }
 
 func (c pipeKeyCoordinates) Nodes() []constraint.NodeInstance { return c.nodes }
@@ -68,11 +68,11 @@ func (c pipeKeyCoordinates) Attachments(node string) []string { return c.attachm
 // rendered by one provider.
 func (c pipeKeyCoordinates) Edges() []constraint.EdgeInstance { return nil }
 
-func (c pipeKeyCoordinates) ConnectionAttachmentSite(
+func (c pipeKeyCoordinates) AttachmentSite(
 	node, attachment string,
-) (constraint.ConnectionAttachmentSite, bool) {
+) (constraint.AttachmentSite, bool) {
 	if node != "api" {
-		return constraint.ConnectionAttachmentSite{}, false
+		return constraint.AttachmentSite{}, false
 	}
 	site, ok := c.sites[attachment]
 	return site, ok
@@ -92,6 +92,9 @@ type pipeKeyAttachment struct {
 	// FeatureRecipe mapping writes mapValue. An empty mapKey renders the mapping to
 	// nothing at all.
 	mapMechanism, mapKey, mapValue string
+	// releaseBoundary, when set, makes this an attachment the Release wrote, on
+	// its entry for the component inside that boundary.
+	releaseBoundary string
 }
 
 // pipeKeyRow is one cell of the grid, or one of the extra rows beside it.
@@ -108,6 +111,10 @@ type pipeKeyRow struct {
 	refused error
 	// locator is where that finding is positioned.
 	locator string
+	// operator reports that the finding is positioned at an attachment the
+	// Release wrote, so it names the Release's file and is filed under the
+	// operator; every other finding names the Aggregate and the developer.
+	operator bool
 	// detail is what the finding's message carries beyond the registered wording.
 	detail []string
 	// pipe is, where the build renders, lines the rendered pipe must carry.
@@ -147,7 +154,7 @@ func pipeKeyInput(row pipeKeyRow) (renderer.RendererInput, renderer.RecipeLookup
 
 	inner := types.OrderedMap[types.IRFeatureEntry]{}
 	order := make([]string, 0, len(row.attachments))
-	sites := map[string]constraint.ConnectionAttachmentSite{}
+	sites := map[string]constraint.AttachmentSite{}
 	apiInstance := constraint.NodeInstance{ID: "api", AuthoredName: "api", SourceFile: "aggregate.yaml"}
 	for _, a := range row.attachments {
 		values := types.OrderedMap[any]{}
@@ -164,6 +171,10 @@ func pipeKeyInput(row pipeKeyRow) (renderer.RendererInput, renderer.RecipeLookup
 		if a.slot != "" {
 			entry.Connection = &types.AttachmentConnection{Socket: "databases", Alias: "main", Attachment: a.slot}
 			sites[a.name] = constraint.ConnectionAttachmentSiteInAggregate(apiInstance, "databases", "main", a.slot)
+		}
+		if a.releaseBoundary != "" {
+			sites[a.name] = constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentRelease,
+				constraint.AuthoredSite{ScopePath: a.releaseBoundary, Component: "api"}, a.name, "release.yaml")
 		}
 		inner.Set(a.name, entry)
 		order = append(order, a.name)
@@ -372,6 +383,17 @@ func TestRenderAll_TwoDeliveriesOnOneKeyGrid(t *testing.T) {
 			detail:  []string{`"API_KEY"`, `attachment "main.credential"`, `delivered first by attachment "alpha"`},
 		},
 		{
+			name: "EXTRA: an attachment the Release wrote, whose mapping meets another's key, is refused at the Release's entry",
+			attachments: []pipeKeyAttachment{
+				blocked("alpha", key),
+				{name: "beta", mapMechanism: "env", mapKey: key, mapValue: "from-beta-mapping", releaseBoundary: "local"},
+			},
+			refused:  mappingRule,
+			locator:  ".spec.boundaries.local.components.api.features.beta",
+			operator: true,
+			detail:   []string{`"API_KEY"`, `attachment "beta"`, `delivered first by attachment "alpha"`},
+		},
+		{
 			name: "EXTRA: an attachment's mapping rewriting its own block's key displaces nobody and renders",
 			attachments: []pipeKeyAttachment{
 				{name: "alpha", blockKey: key, mapMechanism: "env", mapKey: key, mapValue: "from-alpha-mapping"},
@@ -415,11 +437,16 @@ func TestRenderAll_TwoDeliveriesOnOneKeyGrid(t *testing.T) {
 			if !errors.As(err, &ce) {
 				t.Fatalf("the halt is not a compiler diagnostic: %v", err)
 			}
-			if ce.Category() != cerrors.DeveloperError {
-				t.Errorf("category = %s, want %s", ce.Category(), cerrors.DeveloperError)
+			wantCategory, wantFile := cerrors.DeveloperError, "aggregate.yaml"
+			if row.operator {
+				wantCategory, wantFile = cerrors.OpsError, "release.yaml"
 			}
-			if ce.Source().File != "aggregate.yaml" {
-				t.Errorf("source file = %q, want the document the attachment was written in", ce.Source().File)
+			if ce.Category() != wantCategory {
+				t.Errorf("category = %s, want %s", ce.Category(), wantCategory)
+			}
+			if ce.Source().File != wantFile {
+				t.Errorf("source file = %q, want %q, the document the attachment was written in",
+					ce.Source().File, wantFile)
 			}
 			if ce.Source().Locator != row.locator {
 				t.Errorf("locator = %q, want %q", ce.Source().Locator, row.locator)

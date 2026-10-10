@@ -55,18 +55,38 @@ func objectionsAsHalt(objections []constraint.Objection, envelope string) error 
 	return objectionsAsCategorisedHalt(objections, cerrors.CatalogError, envelope)
 }
 
-// objectionsAsCategorisedHalt is the whole of that rendering, with the fault's
-// attribution supplied.
+// objectionsAsCategorisedHalt is that rendering with one attribution for every
+// finding a reading raises.
 //
 // It is unexported and takes the category as its only variable so no reading can
 // arrive at a different message shape by writing its own loop: the per-objection
 // wrap, the position it is reported at, and the envelope several findings are
-// joined under are one mechanic here and cannot be re-implemented per category.
-// The category itself is genuinely per-reading — a rule about a catalog document
-// and a rule about produced output send an author to different places — which is
-// the one axis on which the callers legitimately differ.
+// joined under are one mechanic, in [objectionsAsHaltFiledBy], and cannot be
+// re-implemented per category. The category itself is genuinely per-reading — a
+// rule about a catalog document and a rule about produced output send an author
+// to different places — which is the one axis on which the callers legitimately
+// differ.
 func objectionsAsCategorisedHalt(
 	objections []constraint.Objection, category cerrors.Category, envelope string,
+) error {
+	return objectionsAsHaltFiledBy(objections, func(constraint.Objection) cerrors.Category {
+		return category
+	}, envelope)
+}
+
+// objectionsAsHaltFiledBy is the whole of that rendering, with each finding's
+// attribution read from the finding by categoryOf.
+//
+// The attribution is per finding rather than per reading for the readings whose
+// findings are filed by the document their subject was written in, where one
+// rule's findings can belong to two authors. The envelope several findings are
+// joined under takes the first finding's attribution, so the header a reader
+// meets first agrees with the first finding beneath it; for a reading with one
+// attribution that is the attribution of all of them.
+func objectionsAsHaltFiledBy(
+	objections []constraint.Objection,
+	categoryOf func(constraint.Objection) cerrors.Category,
+	envelope string,
 ) error {
 	if len(objections) == 0 {
 		return nil
@@ -75,7 +95,7 @@ func objectionsAsCategorisedHalt(
 	for _, o := range objections {
 		halts = append(halts, cerrors.Wrap(
 			o.Sentinel(),
-			category,
+			categoryOf(o),
 			cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()},
 			constraint.ObjectionMessage(o),
 		))
@@ -85,7 +105,7 @@ func objectionsAsCategorisedHalt(
 	}
 	return cerrors.Wrap(
 		stderrors.Join(halts...),
-		category,
+		categoryOf(objections[0]),
 		cerrors.SourceLocation{},
 		envelope,
 	)
