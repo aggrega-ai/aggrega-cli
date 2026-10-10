@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -65,8 +66,8 @@ func TestVerdictPluginIdentityIsTheWasmLayerDigest(t *testing.T) {
 	lazy := catalog.NewLazyLookup(root, cacheDir, nil, nil)
 
 	identity, err := verifyCachedVerdictSocketPlugin(
-		context.Background(), workspaceconfig.Config{}, lazy, seeded.URI, seeded.ManifestDigest,
-		root, cacheDir, nil, io.Discard,
+		context.Background(), workspaceconfig.Config{}, lazy, seeded.URI, closure.Resolution{ManifestDigest: seeded.ManifestDigest},
+		root, cacheDir, nil, askEachRegistry, io.Discard,
 	)
 	if err != nil {
 		t.Fatalf("verify cached verdict plugin %s: %v", seeded.URI, err)

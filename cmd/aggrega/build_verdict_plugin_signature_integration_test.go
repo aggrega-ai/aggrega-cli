@@ -40,14 +40,21 @@ import (
 // compiled guest.
 func publishSignedVerdictPlugin(t *testing.T, host, socket, name, version string, signer signing.Signer) string {
 	t.Helper()
+	return publishSignedVerdictPluginEntity(t, host, socket, name, version, verdicttest.PluginEntityYAML(socket, name, version), signer)
+}
+
+// publishSignedVerdictPluginEntity is publishSignedVerdictPlugin with the Plugin
+// entity supplied by the caller, for a fixture whose entity says something the
+// stub module does not — a host function it does not import, say.
+func publishSignedVerdictPluginEntity(t *testing.T, host, socket, name, version, entityYAML string, signer signing.Signer) string {
+	t.Helper()
 	ctx := context.Background()
 	reference := host + "/" + catalog.OCILocation("Plugin", socket, name)
 	repo, err := oci.NewRemoteRepository(reference, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("open registry repository %s: %v", reference, err)
 	}
-	manifestDigest, err := oci.PushPluginManifest(ctx, repo, version, []byte(verdicttest.PluginEntityYAML(socket, name, version)),
-		verdicttest.HeaderOnlyWasm, nil)
+	manifestDigest, err := oci.PushPluginManifest(ctx, repo, version, []byte(entityYAML), verdicttest.HeaderOnlyWasm, nil)
 	if err != nil {
 		t.Fatalf("publish verdict plugin %s: %v", reference, err)
 	}

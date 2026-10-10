@@ -174,7 +174,7 @@ var pullToolSpec = toolSpec{
     },
     "verify": {
       "type": "boolean",
-      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, any entity.lock or the plugin trust record. Drift, and a missing lockfile, are failures. Cannot be combined with upgrade_targets or pin_sources."
+      "description": "Compare the recorded lockfile against the resolution a reconcile would perform now, honouring the pins it records, without writing the lockfile, any entity.lock or the plugin trust record. Drift — a pin, or a signature the lockfile or the plugin trust record records that a reconcile would record, replace or clear — and a missing lockfile, are failures. Under the offline posture a recorded signature only its registry can confirm is not checked, and the diagnostics name each one. Cannot be combined with upgrade_targets or pin_sources."
     },
     "upgrade_targets": {
       "type": "array",

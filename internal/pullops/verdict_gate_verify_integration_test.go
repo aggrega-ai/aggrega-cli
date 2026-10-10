@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -41,8 +42,8 @@ func verdictGateVerify(t *testing.T, store *memory.Store, wsCfg workspaceconfig.
 	t.Helper()
 	lazy := catalog.NewLazyLookup(t.TempDir(), "", nil, nil)
 	_, err := verifyCachedVerdictSocketPlugin(
-		context.Background(), wsCfg, lazy, uri, manifestDigest,
-		t.TempDir(), "cache", pluginTargetFor(store, "1.0.0"), io.Discard,
+		context.Background(), wsCfg, lazy, uri, closure.Resolution{ManifestDigest: manifestDigest},
+		t.TempDir(), "cache", pluginTargetFor(store, "1.0.0"), askEachRegistry, io.Discard,
 	)
 	return err
 }

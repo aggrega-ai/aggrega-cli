@@ -50,6 +50,14 @@ type Fetched struct {
 	WasmBytes   []byte
 }
 
+// AsksRegistryForSignature reports whether Verify asks a registry for in's
+// signature: in names a registry host and carries the manifest digest a signature
+// commits to. A fetch it does not hold for carries no registry signature, so
+// Verify asks nothing about it.
+func (in Fetched) AsksRegistryForSignature() bool {
+	return IsRegistryHost(in.Host) && in.ManifestDigest != ""
+}
+
 // Verify is the single home every plugin fetch routes through:
 // registry signature verification (against the resolving registry's trust policy)
 // and host-function stamp re-derivation. The verdict-socket cache and the CLI
@@ -66,7 +74,8 @@ type Fetched struct {
 // non-registry / host-less plugin (which carries no registry signature), and under
 // the offline posture the egress gate refuses it. Host-function re-derivation
 // reads the plugin's already content-verified .wasm bytes; it is skipped when the
-// caller supplies no entity stamp or no bytes.
+// caller supplies no entity stamp or no bytes. That second half is
+// VerifyWithoutSignature, which a caller that asks no registry runs alone.
 //
 // It returns the verified result — the fact SignatureFact turns into a record,
 // together with the bundle bytes that fact names — or nil where no signature was
@@ -81,7 +90,7 @@ func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targe
 	// workspace is offline: the signature fetch runs and is refused loudly by the
 	// egress gate (through targetFor / the live-trust-root fetch) rather than
 	// passing as unverified. The offline decision lives at the gate, not here.
-	if IsRegistryHost(in.Host) && in.ManifestDigest != "" {
+	if in.AsksRegistryForSignature() {
 		results, err := pullverify.Verify(ctx, []pullverify.Entity{{
 			URI:            in.URI,
 			ManifestDigest: in.ManifestDigest,
@@ -101,12 +110,28 @@ func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targe
 			verified = &result
 		}
 	}
-	if in.Entity != nil && len(in.WasmBytes) > 0 {
-		if err := VerifyHostFunctionStamp(in.Entity, in.EntityURI, in.ArtifactURI, in.WasmBytes, diagOut); err != nil {
-			return nil, err
-		}
+	if err := VerifyWithoutSignature(in, diagOut); err != nil {
+		return nil, err
 	}
 	return verified, nil
+}
+
+// VerifyWithoutSignature is the half of Verify that asks no registry anything: it
+// re-derives the host functions of in's .wasm and holds them to its entity's
+// stamp (VerifyHostFunctionStamp), and it is a no-op where in carries no entity
+// stamp or no bytes. Verify runs it after the signature pass, so the half run on
+// its own and the half Verify runs cannot come to disagree about when the check
+// applies.
+//
+// On its own it verifies no signature, so it is for a caller that then reports
+// the plugin's signature as not checked, never one about to use the plugin on
+// the strength of this verification: a fetch whose plugin is used goes through
+// Verify. The chokepoint guard pins its callers for that reason.
+func VerifyWithoutSignature(in Fetched, diagOut io.Writer) error {
+	if in.Entity == nil || len(in.WasmBytes) == 0 {
+		return nil
+	}
+	return VerifyHostFunctionStamp(in.Entity, in.EntityURI, in.ArtifactURI, in.WasmBytes, diagOut)
 }
 
 // VerifyHostFunctionStamp re-derives host functions from a plugin's
@@ -114,8 +139,8 @@ func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targe
 // committed in the entity's spec.runtime.hostFunctions, HALTING
 // on any divergence (ErrWasmHostFunctionsStampMismatch). It is the single
 // per-plugin host-function check: the pinned closure pass and the shared fetch
-// verification home both call it, so no tier carries a second copy of the stamp
-// comparison. A stamp-less entity derives against an empty stamp — the same
+// verification home (through VerifyWithoutSignature) both call it, so no tier
+// carries a second copy of the stamp comparison. A stamp-less entity derives against an empty stamp — the same
 // benign match a plugin that declares no host functions produces on either side.
 //
 // entityURI names the plugin in the derivation and any diagnostic; artifactURI

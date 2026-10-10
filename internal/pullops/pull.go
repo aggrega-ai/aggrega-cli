@@ -913,13 +913,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// fetches and caches a registry-served plugin's entity + .wasm, and the build
 	// resolves it from the cache by URI. One authored in a catalog directory is read
 	// from this machine through the same question the descents above asked.
-	verdictHTTPClient, _ := egress.HTTPClient(wsCfg)
+	verdictHTTPClient, verdictEgressErr := egress.HTTPClient(wsCfg)
 	// The identities the caching walk resolved are collected here and recorded
 	// further down, after the verify-only branch has had its chance to return.
 	// Collecting and recording are deliberately separate steps: the caching walk
 	// runs on every invocation and may fill the content cache, and a verify-only
 	// run records no identity and writes no trust record.
-	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, catalogArtifacts, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
+	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, catalogArtifacts, lazyView, workspaceRoot, cacheDir,
+		pluginfetchverify.RemoteTargetFor(verdictHTTPClient), verdictPluginLookupFor(cfg.Verify, verdictEgressErr), cfg.DiagOut)
 	if err != nil {
 		return Result{}, err
 	}
@@ -955,8 +956,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// closure just computed, which honoured the recorded pins exactly as a writing
 		// run does — the reuse decision above makes no distinction between the two,
 		// and nothing here builds a pin set of its own. This branch writes
-		// none of the files a writing run produces; the content cache the walk read
-		// through is the only thing it may have filled.
+		// none of the files a writing run produces; the content cache — read through
+		// by the walk, and given a signature bundle wherever this branch asks a
+		// registry about a recorded signature — is the only thing it may have filled.
 		//
 		// The source-artifact axis is checked separately, and it has to be: this
 		// branch returns before the graph build below, so the closure in hand has
@@ -987,6 +989,17 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// own, so without this a verify reports a match over a workspace whose build
 		// halts on a drifted pin.
 		if verr := verifyEntityLocks(lf, lazyView, cl.Entities); verr != nil {
+			return Result{}, fmt.Errorf("verify: %w", verr)
+		}
+		// The signature facts both files record are held to what a pull would record
+		// now, from the pass's own selection of the rows it asks about and the
+		// record's own computation of what it would become. Nothing above reads them:
+		// the pin comparison holds a row to its reference, version and digest, and the
+		// hold on the record compares identities. It comes after the pins, so a fact
+		// is compared only over a lockfile whose pins are the ones a pull would write.
+		verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
+		if verr := verifyRecordedSignatures(ctx, lf, cl, cfg.ReleasePath, lockfilePath, wsCfg, workspaceRoot, cacheDir,
+			lazyView, verdictResolutions, pinMode, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); verr != nil {
 			return Result{}, fmt.Errorf("verify: %w", verr)
 		}
 		// The toolchain the lockfile records is handed back for the caller to
@@ -1728,6 +1741,40 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 	return out, nil
 }
 
+// verdictPluginLookup is whether the walk over the plugins attached at a verdict
+// role asks each plugin's registry for its signature and its withdrawal marker.
+// Its zero value asks.
+type verdictPluginLookup int
+
+const (
+	// askEachRegistry verifies each registry-served plugin's signature at its
+	// registry and discovers its withdrawal there, as every pull does.
+	askEachRegistry verdictPluginLookup = iota
+	// askNoRegistry asks no registry anything, and marks each plugin whose
+	// signature would have been asked about as not asked.
+	askNoRegistry
+)
+
+// verdictPluginLookupFor is the one decision of whether the walk over verdict
+// plugins asks their registries: every pull asks — offline too, where a plugin no
+// recorded pin addresses halts the walk at its .wasm and any other question is
+// refused by the egress gate — and so does every verify but one under the offline
+// posture, which asks none. Such a verify still holds each plugin's identity to
+// the record and re-checks its host functions, and it reports the signatures it
+// did not check rather than refusing at the gate. A pull that writes asks always,
+// because a resolution that asked nothing carries no fact for the record it
+// writes.
+//
+// The offline posture is read from the egress gate's own answer for this run
+// (egressErr, the error egress.HTTPClient returned), never from a second reading
+// of the configuration.
+func verdictPluginLookupFor(verify bool, egressErr error) verdictPluginLookup {
+	if verify && errors.Is(egressErr, egress.ErrOfflineEgress()) {
+		return askNoRegistry
+	}
+	return askEachRegistry
+}
+
 // cacheVerdictSocketPlugins resolves every verdict-socket (policy / linter) gate
 // plugin the effective config attaches, fetching and caching a registry-served one,
 // WITHOUT recording any of them in the lockfile. A verdict socket renders an accept/reject verdict without
@@ -1775,7 +1822,13 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 // walk runs on every invocation, and only the writing one reaches the recording
 // step. An attachment whose plugin is not in the content cache yields no identity
 // — the same clean-miss skip the verification below takes.
-func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, catalogArtifacts closure.LocalPluginArtifact, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) ([]verdictPluginResolution, error) {
+//
+// registries is whether the walk asks each plugin's registry for its signature
+// and its withdrawal marker (verdictPluginLookupFor): every pull asks, and so does
+// every verify but one under the offline posture, whose resolutions then say
+// they were not asked. That verify alone reads a plugin whose .wasm the artifact
+// resolution found no copy of from the content cache, as a build reads it.
+func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, catalogArtifacts closure.LocalPluginArtifact, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, registries verdictPluginLookup, diagOut io.Writer) ([]verdictPluginResolution, error) {
 	var resolutions []verdictPluginResolution
 	for _, att := range cfg.VerdictAttachments() {
 		ref := att.Ref
@@ -1796,11 +1849,18 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 		if err != nil {
 			return nil, fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
 		}
-		if artRes.NotFound {
+		// The lookup reads a registry-served plugin's cached .wasm only through a
+		// recorded lockfile pin, which a plugin attached at a verdict role never has,
+		// and otherwise fetches it from the plugin's registry. So where no registry is
+		// reached the resolution finds no copy even of a plugin the content cache
+		// holds. A run that asks no registry reads such a plugin from the content
+		// cache as a build reads it instead (verifyCachedVerdictSocketPlugin); every
+		// other run halts here, the offline pull among them.
+		if artRes.NotFound && registries != askNoRegistry {
 			return nil, fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
 				att.Socket, ref.URI, closure.ErrUnresolvableURI())
 		}
-		resolved, err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut)
+		resolved, err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes, workspaceRoot, cacheDir, targetFor, registries, diagOut)
 		if err != nil {
 			return nil, fmt.Errorf("verify %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
@@ -1841,11 +1901,24 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 // resolution, would let the recorded identity and the resolved one disagree while
 // both looked right. A clean cache miss returns the zero value, whose empty
 // coordinate is the caller's signal that there was nothing to identify.
-func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri, manifestDigest, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) (verdictPluginResolution, error) {
+//
+// Where registries is askNoRegistry the plugin's registry is asked nothing: the
+// host functions are still re-derived from the cached bytes and held to the
+// stamp, through the half of the fetch home that asks no registry, and a plugin
+// whose signature that home would have asked about is returned marked as not
+// asked, with no fact and no withdrawal. Its identity is the same cache read's, so
+// the hold of the identity to the record is unchanged.
+//
+// artifact is the walk's resolution of the plugin's .wasm. Its manifest digest is
+// the one the signature is asked about. Where it found no copy — which the walk
+// hands on only where no registry is asked — nothing in this run wrote the .wasm,
+// so the manifest is the one the cache read held the entity to, and the .wasm is
+// read as a build reads it (wasmAsABuildReadsIt).
+func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri string, artifact closure.Resolution, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, registries verdictPluginLookup, diagOut io.Writer) (verdictPluginResolution, error) {
 	var identity verdictPluginResolution
 	fp := pluginfetchverify.Fetched{
 		URI:            uri,
-		ManifestDigest: manifestDigest,
+		ManifestDigest: artifact.ManifestDigest,
 		Kind:           catalog.EntityKindForHint("plugin"),
 		Host:           registryhost.Of(uri),
 	}
@@ -1864,28 +1937,46 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	// host-function re-derivation runs against the identical bytes the build will.
 	// A clean cache miss leaves the host-function inputs zero (skip); only a
 	// verification/parse fault or a non-not-found read error halts.
-	entity, wasmDigest, ok, err := lazyView.PluginFromCacheByURI(uri)
+	read, ok, err := lazyView.CachedPluginByURI(uri)
 	if err != nil {
 		return verdictPluginResolution{}, err
 	}
+	if artifact.NotFound {
+		fp.ManifestDigest = read.ManifestDigest
+	}
 	if ok {
+		entity := read.Entity
 		artifactRef := entity.ArtifactReference()
 		identity = verdictPluginResolution{
 			Coordinate: artifactRef,
 			Version:    entity.Metadata.Version,
-			Digest:     wasmDigest,
+			Digest:     read.WasmDigest,
 		}
-		wasmBytes, rerr := oci.ReadCached(workspaceRoot, cacheDir, artifactRef, wasmDigest)
-		if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound()) {
-			return verdictPluginResolution{}, fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
+		var wasmBytes []byte
+		var rerr error
+		if artifact.NotFound {
+			if wasmBytes, rerr = wasmAsABuildReadsIt(lazyView, read, uri, workspaceRoot, cacheDir); rerr != nil {
+				return verdictPluginResolution{}, rerr
+			}
+		} else {
+			wasmBytes, rerr = oci.ReadCached(workspaceRoot, cacheDir, artifactRef, read.WasmDigest)
+			if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound()) {
+				return verdictPluginResolution{}, fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
+			}
 		}
 		if rerr == nil {
-			ent := entity
-			fp.Entity = &ent
+			fp.Entity = &entity
 			fp.EntityURI = uri
 			fp.ArtifactURI = artifactRef
 			fp.WasmBytes = wasmBytes
 		}
+	}
+	if registries == askNoRegistry {
+		if err := pluginfetchverify.VerifyWithoutSignature(fp, diagOut); err != nil {
+			return verdictPluginResolution{}, err
+		}
+		identity.SignatureNotAsked = fp.AsksRegistryForSignature()
+		return identity, nil
 	}
 	verified, err := pluginfetchverify.Verify(ctx, fp, cfg, targetFor, diagOut)
 	if err != nil {
@@ -1923,6 +2014,35 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 		}
 	}
 	return identity, nil
+}
+
+// wasmAsABuildReadsIt reads the .wasm of a plugin attached at a verdict role from
+// the content cache through the resolution a build loads such a plugin with,
+// resolver.ResolveVerdictPluginFromCache, over the sources a build reads it from.
+// It is handed the cache read of the plugin's entity already taken rather than
+// reading the entity again, so the bytes are held to the .wasm digest that read
+// reported: a .wasm that no longer hashes to it is refused, and so is one no
+// source holds, each as the build refuses it.
+//
+// It is handed no record, so the bytes are held to the cached manifest alone. The
+// walk holds the plugin's identity to the record (holdVerdictPluginsToTheirRecord),
+// and the verify compares the signature the record carries through the build's own
+// check of the record; a record handed here would instead halt the verify on a
+// recorded signature that comparison reports.
+func wasmAsABuildReadsIt(lazyView *catalog.LazyLookup, read catalog.CachedPlugin, uri, workspaceRoot, cacheDir string) ([]byte, error) {
+	resolved, err := resolver.ResolveVerdictPluginFromCache(
+		resolver.VerdictPluginTierSources{
+			ColocatedDirs: lazyView.PluginColocatedDirs(),
+			WorkspaceRoot: workspaceRoot,
+			CacheDir:      cacheDir,
+		},
+		resolver.VerdictPluginTrust{},
+		func(string) (types.Plugin, string, bool, error) { return read.Entity, read.WasmDigest, true, nil },
+		uri)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Bytes, nil
 }
 
 func copyConsumers(in []closure.LibraryConsumer) []lockfile.LibraryConsumer {

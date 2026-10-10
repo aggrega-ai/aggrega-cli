@@ -72,6 +72,9 @@ func trustConditions() []error {
 		// A recorded signature fact whose cached bundle was made for a different
 		// artifact than the one read for the row or entry that records it.
 		oci.ErrSignatureForAnotherArtifact(),
+		// A recorded signature fact a pull would record differently now, reported by
+		// a verifying pull over the lockfile or the record beside it.
+		pullops.ErrRecordedSignatureOutOfDate(),
 		// A registry's advertised trust policy.
 		registrytrust.ErrNoTrustAdvertised(),
 		registrytrust.ErrMalformedTrust(),

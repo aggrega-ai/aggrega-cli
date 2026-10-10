@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -48,7 +49,7 @@ func TestTheVerdictPluginPullCarriesTheSignatureItVerified(t *testing.T) {
 	store, manifestDigest, _, pubPEM := signedPluginStore(t)
 
 	resolved, err := verifyCachedVerdictSocketPlugin(context.Background(), verdictSignatureConfig(pubPEM, true), lazy,
-		seeded.URI, manifestDigest, root, cacheDir, pluginTargetFor(store, "1.0.0"), io.Discard)
+		seeded.URI, closure.Resolution{ManifestDigest: manifestDigest}, root, cacheDir, pluginTargetFor(store, "1.0.0"), askEachRegistry, io.Discard)
 	if err != nil {
 		t.Fatalf("verify the signed verdict plugin: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestTheVerdictPluginPullCarriesNoFactWhereItVerifiedNone(t *testing.T) {
 	}
 
 	resolved, err := verifyCachedVerdictSocketPlugin(context.Background(), verdictSignatureConfig(nil, false), lazy,
-		seeded.URI, manifestDigest, root, cacheDir, pluginTargetFor(store, "1.0.0"), io.Discard)
+		seeded.URI, closure.Resolution{ManifestDigest: manifestDigest}, root, cacheDir, pluginTargetFor(store, "1.0.0"), askEachRegistry, io.Discard)
 	if err != nil {
 		t.Fatalf("an unsigned plugin nothing requires a signature for must be admitted: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestAPullWritesTheVerdictPluginsSignatureFactIntoTheRecord(t *testing.T) {
 	lazy := catalog.NewLazyLookup(root, cacheDir, nil, nil)
 	store, manifestDigest, _, pubPEM := signedPluginStore(t)
 	resolved, err := verifyCachedVerdictSocketPlugin(context.Background(), verdictSignatureConfig(pubPEM, true), lazy,
-		seeded.URI, manifestDigest, root, cacheDir, pluginTargetFor(store, "1.0.0"), io.Discard)
+		seeded.URI, closure.Resolution{ManifestDigest: manifestDigest}, root, cacheDir, pluginTargetFor(store, "1.0.0"), askEachRegistry, io.Discard)
 	if err != nil {
 		t.Fatalf("verify the signed verdict plugin: %v", err)
 	}

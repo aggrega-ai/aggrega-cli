@@ -145,19 +145,26 @@ func enclosingCallers(t *testing.T) map[string]map[string]bool {
 // TestPluginFetchVerificationChokepoint locks the single-verification-home
 // invariant structurally: every plugin fetch reaches verification, and a new
 // fetch path cannot silently skip it. It pins the exact set of functions that
-// call each of the three verification surfaces:
+// call each of the four verification surfaces:
 //
 //   - pluginfetchverify.Verify is the single home the cache-not-pin tiers route
 //     through. Its only callers are the verdict-socket cache verify and the CLI
 //     install fetch. A new cache-not-pin fetch that skips it (or a second copy
 //     that re-implements verification inline) breaks this set.
 //   - pullverify.Verify (the registry-signature primitive) is reachable from
-//     exactly two homes: the closure signature pass (the pinned tier) and
+//     exactly two homes: the closure signature pass (the pinned tier), through
+//     the one call it shares with a verifying pull, recordSignatureAnswers, and
 //     pluginfetchverify.Verify (every other tier). A third caller means a fetch
 //     path grew its own signature-verify copy instead of routing through a home.
+//   - pluginfetchverify.VerifyWithoutSignature (that home's half that asks no
+//     registry) is called by pluginfetchverify.Verify and by the verdict-socket
+//     cache verify alone, which runs it on its own only where it then reports the
+//     signature as not checked. A fetch path that called it to use a plugin would
+//     skip the signature, and breaks this set.
 //   - pluginfetchverify.VerifyHostFunctionStamp (the host-function primitive) is
 //     reachable from exactly two homes: the closure host-function pass and
-//     pluginfetchverify.Verify. A third caller means the same dis-unification.
+//     pluginfetchverify.VerifyWithoutSignature. A third caller means the same
+//     dis-unification.
 //
 // If a legitimate new verification route is added, update the expected sets
 // consciously — the failure is the point: it forces the author to prove the new
@@ -175,11 +182,15 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 		},
 		{
 			callee: "pullverify.Verify",
-			want:   []string{"pluginfetchverify.Verify", "pullops.VerifyClosureSignatures"},
+			want:   []string{"pluginfetchverify.Verify", "pullops.recordSignatureAnswers"},
+		},
+		{
+			callee: "pluginfetchverify.VerifyWithoutSignature",
+			want:   []string{"pluginfetchverify.Verify", "pullops.verifyCachedVerdictSocketPlugin"},
 		},
 		{
 			callee: "pluginfetchverify.VerifyHostFunctionStamp",
-			want:   []string{"pluginfetchverify.Verify", "pullops.verifyPluginHostFunctions"},
+			want:   []string{"pluginfetchverify.VerifyWithoutSignature", "pullops.verifyPluginHostFunctions"},
 		},
 	}
 

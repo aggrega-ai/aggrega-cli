@@ -88,7 +88,7 @@ func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead,
 // recorded digests as the pin maps a resolution verifies against, the digest of
 // each recorded signature's cached bundle, which the load re-hashes, and the hold a
 // plugin the record carries no signature for is put to when it loads
-// (unrecordedVerdictPluginRefusal, the rule the build's check of recorded
+// (unrecordedVerdictPluginRequirement, the rule the build's check of recorded
 // signatures applies to the same plugin). So every surface that composes through
 // here — a build, a Release-scoped validation and a Release-scoped lint, from the
 // command line, the daemon and the assistant tool alike — holds a verdict plugin to
@@ -170,17 +170,19 @@ func verdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 
 // verdictPluginSignatureHold is the hold a verdict plugin's load puts a plugin
 // read from the content cache to when the record carries no signature for it: the
-// build's own rule for the same plugin (unrecordedVerdictPluginRefusal), over the
-// same record and the same configuration. A plugin read from the content cache is
-// what reaches the hold, so the entity is the cache's by construction.
+// build's own refusal for the same plugin (unrecordedVerdictPluginRefusal, over the
+// one rule unrecordedVerdictPluginRequirement), over the same record and the same
+// configuration. A plugin read from the content cache is what reaches the hold, so
+// the entity is the cache's by construction — which is why the hold does not read
+// the tier through the catalog view as the build's walk does: an entity a catalog
+// directory serves whose artifact no tier holds reaches the cache read too.
 func verdictPluginSignatureHold(wsCfg workspaceconfig.Config, releasePath string, record *pluginstrust.Trust) func(uri, coordinate string) error {
-	registry := wsCfg.DefaultRegistryLocation().Prefix()
 	recordPath := pluginstrust.PathFor(releasePath)
 	return func(uri, coordinate string) error {
 		if entry, held := record.Find(coordinate); held && entry.Signature != nil {
 			return nil
 		}
-		return unrecordedVerdictPluginRefusal(wsCfg, registry, verdictPluginRead{coordinate: coordinate, fromCache: true},
+		return unrecordedVerdictPluginRefusal(wsCfg, verdictPluginRead{coordinate: coordinate, fromCache: true},
 			uri, recordPath, releasePath)
 	}
 }

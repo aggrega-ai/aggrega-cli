@@ -55,9 +55,9 @@
 // fetched-plugin verify, and the keyless branch that resolves a live trust root.
 // The one verification that still succeeds offline is the one anchored on a
 // trust root pinned on disk, which reads local material and never fetches.
-// Skipping verification while offline is a separate and explicit choice the
-// workspace makes by setting skip_signature_verification; it is not something
-// being offline decides on the user's behalf.
+// Skipping verification while offline is otherwise an explicit choice the workspace
+// makes by setting skip_signature_verification; the one exception is a verifying
+// pull, which names on a line of its own each signature it did not check.
 //
 // Offline also dominates external-input acquisition, and there is no switch
 // beside it to reconcile: acquisition happens at the pull step and nowhere else,

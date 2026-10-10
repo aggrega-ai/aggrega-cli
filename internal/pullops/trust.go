@@ -6,6 +6,7 @@ package pullops
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -44,15 +45,22 @@ import (
 // bytes this resolution identified: discovered anywhere else it could describe a
 // different artifact than the one recorded beside it.
 //
+// SignatureNotAsked marks a resolution whose registry the walk did not ask, which
+// only a verify under the offline posture does (verdictPluginLookupFor). Its nil
+// Signature and Deprecation are then no answer at all — not a registry saying it
+// attaches none — so a reader holding the record to this resolution leaves its
+// signature out rather than reading a cleared one.
+//
 // An empty Coordinate means the plugin was not in the content cache, so there was
 // nothing to identify.
 type verdictPluginResolution struct {
-	BareURI     string
-	Coordinate  string
-	Version     string
-	Digest      string
-	Deprecation *pluginstrust.Deprecation
-	Signature   *lockfile.VerifiedSignature
+	BareURI           string
+	Coordinate        string
+	Version           string
+	Digest            string
+	Deprecation       *pluginstrust.Deprecation
+	Signature         *lockfile.VerifiedSignature
+	SignatureNotAsked bool
 }
 
 // ErrVerdictPluginIdentityChanged reports that a pull resolved an attachment
@@ -365,11 +373,19 @@ type verdictTrustChange struct {
 // than at the write is the same rule one level down — the site that decides what
 // the record becomes is the site that knows what changed, and a writer working it
 // out again from the file would be a second answer to the same question.
+//
+// NotAsked names each plugin the reduction kept whose resolution the walk did not
+// ask its registry about (verdictPluginResolution.SignatureNotAsked), once, in the
+// order the resolutions came. A signature change Changes carries for such a plugin
+// is no answer — its nil fact is not a registry attaching none — so a reader
+// comparing the record against this outcome leaves those changes out. It is read
+// off the one reduction here, so the comparison filters no resolutions of its own.
 type verdictTrustOutcome struct {
 	Trust      *pluginstrust.Trust
 	Recordable int
 	Changes    []verdictTrustChange
 	Created    bool
+	NotAsked   []string
 }
 
 // Changed reports whether this pull moves the record's content at all, which is
@@ -601,7 +617,11 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 	// record still holds an entry nothing accounts for must be reached so the entry
 	// can go.
 	var changes []verdictTrustChange
+	var notAsked []string
 	for _, r := range recordable {
+		if r.SignatureNotAsked && !slices.Contains(notAsked, r.Coordinate) {
+			notAsked = append(notAsked, r.Coordinate)
+		}
 		fresh := pluginstrust.TrustedPlugin{
 			Plugin:          r.Coordinate,
 			ResolvedVersion: r.Version,
@@ -679,7 +699,7 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 	// them interleaved would put the announcement and the diff in different orders
 	// for no reason a reader could see.
 	sort.SliceStable(changes, func(i, j int) bool { return changes[i].Plugin < changes[j].Plugin })
-	return verdictTrustOutcome{Trust: trust, Recordable: len(recordable), Changes: changes, Created: created}, nil
+	return verdictTrustOutcome{Trust: trust, Recordable: len(recordable), Changes: changes, Created: created, NotAsked: notAsked}, nil
 }
 
 // classifyVerdictTrustUpsert names which change the replacement of the entry at

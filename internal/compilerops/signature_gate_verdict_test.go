@@ -315,3 +315,161 @@ func TestTheBuildDoesNotHoldAVerdictPluginTheBinaryCarries(t *testing.T) {
 		t.Fatalf("with the coordinate not carried the same plugin must be refused; got %v", err)
 	}
 }
+
+// heldAlike asks both readers of the build's rule about the case under cfg, with the
+// plugin attached at the linter socket attachments times and no record beside the
+// Release: how many times VerdictPluginSignatureRefusals lists the plugin as refused
+// for recording no signature, over the record as a reader loads it, and what the
+// build's own check returns.
+func (c verdictGateCase) heldAlike(t *testing.T, cfg workspaceconfig.Config, attachments int) (listed int, checked error) {
+	t.Helper()
+	for range attachments {
+		cfg.Plugins.Linter = append(cfg.Plugins.Linter, workspaceconfig.PluginRef{URI: c.seeded.URI})
+	}
+	record, _, err := pluginstrust.LoadOrStart(pluginstrust.PathFor(c.releasePath))
+	if err != nil {
+		t.Fatalf("load the record: %v", err)
+	}
+	for _, refused := range VerdictPluginSignatureRefusals(c.view, cfg, c.root, c.releasePath, record) {
+		if refused.Plugin == c.seeded.Coordinate && errors.Is(refused.Refusal, lockfile.ErrSignatureNotRecorded()) {
+			listed++
+		}
+	}
+	in := NewPreviewInputs(NoExternalInputs(), c.view, c.releasePath, c.root, cfg, "0.0.0-signature-gate-probe")
+	return listed, enforceRecordedSignatures(in, closure.Closure{})
+}
+
+// TestTheExportedQuestionIsTheBuildsAnswerForAPluginRecordingNoSignature holds the
+// one entry other packages ask — which plugins a build refuses over the record, and
+// for what — to the build's own check, over the record's first-sighting state (no
+// record at all): the plugin is listed as refused for recording no signature exactly
+// where the check refuses it so, and admitted cleanly where it is not. The catalog
+// row is the one a reader of the walk's cache slot would get wrong: the plugin's
+// bytes are in the cache, and the view serves it from a catalog directory.
+func TestTheExportedQuestionIsTheBuildsAnswerForAPluginRecordingNoSignature(t *testing.T) {
+	t.Parallel()
+	rows := []struct {
+		name        string
+		cfg         workspaceconfig.Config
+		catalog     bool
+		attachments int
+		want        bool
+	}{
+		{name: "served from the cache under a requirement: listed and refused", cfg: requiring(), attachments: 1, want: true},
+		{name: "attached at two roles: listed once and refused once", cfg: requiring(), attachments: 2, want: true},
+		{name: "no requirement: neither", cfg: workspaceconfig.Config{DefaultRegistry: gateRegistry}, attachments: 1},
+		{name: "an advisory registry: neither", cfg: workspaceconfig.Config{DefaultRegistry: gateRegistry, Registries: []workspaceconfig.RegistryConfig{{
+			Host: gateRegistry, Signing: workspaceconfig.SigningConfig{Required: true}, Advisory: true,
+		}}}, attachments: 1},
+		{name: "the registry's own skip: neither", cfg: workspaceconfig.Config{DefaultRegistry: gateRegistry, Registries: []workspaceconfig.RegistryConfig{{
+			Host: gateRegistry, Signing: workspaceconfig.SigningConfig{Required: true}, SkipSignatureVerification: true,
+		}}}, attachments: 1},
+		{name: "the global skip: neither", cfg: func() workspaceconfig.Config {
+			cfg := requiring()
+			cfg.SkipSignatureVerification = true
+			return cfg
+		}(), attachments: 1},
+		{name: "served from a catalog directory with its bytes in the cache too: neither", cfg: requiring(), catalog: true, attachments: 1},
+	}
+	for i, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			c := newVerdictGateCase(t, "exported-probe-"+string(rune('a'+i)), row.catalog)
+			listed, err := c.heldAlike(t, row.cfg, row.attachments)
+			if listed > 1 {
+				t.Errorf("the plugin is listed %d times; one plugin is one answer", listed)
+			}
+			if got := listed == 1; got != row.want {
+				t.Errorf("listed=%v, want %v", got, row.want)
+			}
+			if row.want {
+				if !errors.Is(err, lockfile.ErrSignatureNotRecorded()) {
+					t.Fatalf("the build's check must refuse the plugin the entry lists; got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the build's check must admit the plugin the entry leaves out; got %v", err)
+			}
+		})
+	}
+}
+
+// TestTheExportedQuestionLeavesOutAPluginTheBinaryCarries is the binary-carried row
+// of the table above, run alone because it registers a coordinate in the binary's own
+// set for the duration of the test; its control is the same case refused once the
+// coordinate is no longer carried.
+func TestTheExportedQuestionLeavesOutAPluginTheBinaryCarries(t *testing.T) {
+	c := newVerdictGateCase(t, "exported-carried-probe", false)
+	restore := embedded.SeedForTest(c.seeded.Coordinate, verdicttest.HeaderOnlyWasm)
+	t.Cleanup(restore)
+
+	if listed, err := c.heldAlike(t, requiring(), 1); listed != 0 || err != nil {
+		t.Fatalf("a plugin the binary carries must be neither listed nor refused; listed %d times, check %v", listed, err)
+	}
+	restore()
+	if listed, err := c.heldAlike(t, requiring(), 1); listed != 1 || !errors.Is(err, lockfile.ErrSignatureNotRecorded()) {
+		t.Fatalf("with the coordinate not carried the plugin must be listed once and refused; listed %d times, check %v", listed, err)
+	}
+}
+
+// TestTheExportedRefusalsNameEachPluginByItsOwnRefusal holds the entry other
+// packages read to the plugin each refusal belongs to and to the condition it
+// carries, over a record holding two plugins served by the content cache: one whose
+// entry carries the other's signature, which the build refuses as made for another
+// artifact whatever the requirement, and one whose entry carries none, which the
+// build refuses under a requirement only. The plugin whose own signature was copied
+// is admitted, so it is listed under neither, and each refusal names its plugin.
+func TestTheExportedRefusalsNameEachPluginByItsOwnRefusal(t *testing.T) {
+	t.Parallel()
+	for _, required := range []bool{true, false} {
+		t.Run(map[bool]string{true: "under a requirement", false: "under none"}[required], func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			catalogDir := filepath.Join(root, "catalog")
+			suffix := map[bool]string{true: "r", false: "n"}[required]
+			a := verdicttest.SeedCached(t, root, catalogDir, "linter", "refusal-a-"+suffix, "1.0.0")
+			b := verdicttest.SeedCached(t, root, catalogDir, "linter", "refusal-b-"+suffix, "1.0.0")
+			unsigned := verdicttest.SeedCached(t, root, catalogDir, "linter", "refusal-c-"+suffix, "1.0.0")
+			cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
+			releasePath := filepath.Join(root, "release.yaml")
+			factA := signedFactFor(t, root, cacheDir, copiedFactSigner(t), a.ManifestDigest)
+			copied := *factA
+			record := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+			record.Upsert(pluginstrust.TrustedPlugin{Plugin: a.Coordinate, ResolvedVersion: "1.0.0", Digest: a.WasmDigest, Signature: factA})
+			record.Upsert(pluginstrust.TrustedPlugin{Plugin: b.Coordinate, ResolvedVersion: "1.0.0", Digest: b.WasmDigest, Signature: &copied})
+			record.Upsert(pluginstrust.TrustedPlugin{Plugin: unsigned.Coordinate, ResolvedVersion: "1.0.0", Digest: unsigned.WasmDigest})
+			cfg := workspaceconfig.Config{DefaultRegistry: gateRegistry}
+			if required {
+				cfg = requiring()
+			}
+			cfg.Plugins.Linter = []workspaceconfig.PluginRef{{URI: a.URI}, {URI: b.URI}, {URI: unsigned.URI}}
+			view := catalog.NewLazyLookup(root, cacheDir, nil, nil)
+
+			got := map[string]error{}
+			for _, refused := range VerdictPluginSignatureRefusals(view, cfg, root, releasePath, record) {
+				if _, twice := got[refused.Plugin]; twice {
+					t.Errorf("%q is refused twice; one plugin is one refusal", refused.Plugin)
+				}
+				got[refused.Plugin] = refused.Refusal
+				if !strings.Contains(refused.Refusal.Error(), `"`+refused.Plugin+`"`) {
+					t.Errorf("the refusal listed under %q does not name it:\n%v", refused.Plugin, refused.Refusal)
+				}
+			}
+			if err, listed := got[a.Coordinate]; listed {
+				t.Errorf("the plugin whose own signature its entry carries is refused: %v", err)
+			}
+			if !errors.Is(got[b.Coordinate], oci.ErrSignatureForAnotherArtifact()) {
+				t.Errorf("the plugin carrying another plugin's signature: want the signature-for-another-artifact refusal, got %v",
+					got[b.Coordinate])
+			}
+			err, listed := got[unsigned.Coordinate]
+			switch {
+			case required && !errors.Is(err, lockfile.ErrSignatureNotRecorded()):
+				t.Errorf("the plugin recording no signature under a requirement: want the not-recorded refusal, got %v", err)
+			case !required && listed:
+				t.Errorf("the plugin recording no signature under no requirement is refused: %v", err)
+			}
+		})
+	}
+}

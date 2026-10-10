@@ -78,10 +78,9 @@ import (
 // any is returned, so a reader meets every reference in one run rather than one
 // per run.
 func enforceRecordedSignatures(in PreviewInputs, cl closure.Closure) error {
-	hold := signatureHold{in: in, registry: in.workspaceConfig.DefaultRegistryLocation().Prefix(),
-		cacheDir: in.workspaceConfig.ResolvedArtifactCacheDir()}
-	refusals := hold.lockfileRows(cl)
-	verdict, err := hold.verdictPlugins()
+	hold := newSignatureHold(in.workspaceConfig, in.workspaceRoot, in.releasePath)
+	refusals := hold.lockfileRows(in.lockfile, cl)
+	verdict, err := hold.verdictPlugins(in.view, in.composedTrust)
 	if err != nil {
 		return err
 	}
@@ -100,9 +99,20 @@ func enforceRecordedSignatures(in PreviewInputs, cl closure.Closure) error {
 // share, and the two rules they share are its methods, so the stores cannot come
 // to be held by different rules.
 type signatureHold struct {
-	in       PreviewInputs
-	registry string
-	cacheDir string
+	wsCfg         workspaceconfig.Config
+	workspaceRoot string
+	releasePath   string
+	registry      string
+	cacheDir      string
+}
+
+// newSignatureHold is the hold over the Release at releasePath in the workspace at
+// workspaceRoot under wsCfg. The registry a host-less reference is bound under and
+// the cache directory a recorded fact's bundle is read from are both read from wsCfg
+// here, once, so every walk built through it reads them alike.
+func newSignatureHold(wsCfg workspaceconfig.Config, workspaceRoot, releasePath string) signatureHold {
+	return signatureHold{wsCfg: wsCfg, workspaceRoot: workspaceRoot, releasePath: releasePath,
+		registry: wsCfg.DefaultRegistryLocation().Prefix(), cacheDir: wsCfg.ResolvedArtifactCacheDir()}
 }
 
 // holdFact holds a recorded fact through the one decision whether a recorded fact
@@ -120,9 +130,9 @@ type signatureHold struct {
 // names no pull.
 func (h signatureHold) holdFact(name, recordedIn string, fact *lockfile.VerifiedSignature, madeFor oci.MadeFor, fromCache bool) error {
 	recorded := oci.RecordedBundle{Digest: fact.BundleDigest, RecordedIn: recordedIn}
-	if _, err := oci.HoldRecordedSignature(h.in.workspaceRoot, h.cacheDir, recorded, madeFor); err != nil {
+	if _, err := oci.HoldRecordedSignature(h.workspaceRoot, h.cacheDir, recorded, madeFor); err != nil {
 		if fromCache {
-			err = oci.WithPullRemedy(err, h.in.releasePath, recordedIn)
+			err = oci.WithPullRemedy(err, h.releasePath, recordedIn)
 		}
 		return fmt.Errorf("artifact %q: %w", name, err)
 	}
@@ -133,7 +143,7 @@ func (h signatureHold) holdFact(name, recordedIn string, fact *lockfile.Verified
 // fact, the settings that make its missing signature halt — the halt decision a
 // pull makes over the same reference — and false where nothing does.
 func (h signatureHold) requiredBy(subject catalog.SignatureSubject) (string, bool) {
-	return signatureRequiredBy(h.in.workspaceConfig, subject)
+	return signatureRequiredBy(h.wsCfg, subject)
 }
 
 // signatureRequiredBy is the one reading, for either store, of whether a missing
@@ -148,43 +158,145 @@ func signatureRequiredBy(wsCfg workspaceconfig.Config, subject catalog.Signature
 	return check.RequirementSource(), true
 }
 
-// unrecordedVerdictPluginRefusal is the one rule for a plugin attached at a verdict
-// role whose record beside the lockfile carries no signature for it: the refusal it
-// earns, or nil. It is held only where its entity was served by the content cache a
-// pull filled from a registry, the binary does not carry it, it binds to a registry
-// (catalog.PluginSignatureSubjectOf over the attachment's reference — the pull's
+// unrecordedVerdictPluginRequirement is the one rule for a plugin attached at a
+// verdict role whose record beside the lockfile carries no signature for it: whether
+// a build refuses it, and the settings that make it so. It is held only where its
+// entity was served by the content cache a pull filled from a registry, the binary
+// does not carry it, it binds to a registry (catalog.PluginSignatureSubjectOf over
+// the attachment's reference, under the workspace's default registry — the pull's
 // binding), and a missing signature halts there.
 //
-// The build's walk of its verdict attachments asks it, and so does every load of
-// such a plugin through the hold the governance composition hands the pipeline and
-// the linter socket (verdictPluginSignatureHold), so a plugin the build would refuse
-// is refused by whatever surface loads it, by the same rule.
-func unrecordedVerdictPluginRefusal(wsCfg workspaceconfig.Config, registry string, read verdictPluginRead, attachmentURI, recordPath, releasePath string) error {
+// Every reader of that question reaches it through here: the build's walk of its
+// verdict attachments, which a surface outside this package reads too
+// (VerdictPluginSignatureRefusals), and every load of such a plugin through the hold
+// the governance composition hands the pipeline and the linter socket
+// (verdictPluginSignatureHold), both by unrecordedVerdictPluginRefusal. So a plugin
+// the build would refuse is refused, or reported, by whatever surface asks, by the
+// same rule.
+func unrecordedVerdictPluginRequirement(wsCfg workspaceconfig.Config, read verdictPluginRead, attachmentURI string) (string, bool) {
 	if !read.fromCache {
-		return nil
+		return "", false
 	}
 	if _, carried := embedded.Lookup(read.coordinate); carried {
-		return nil
+		return "", false
 	}
-	subject, ok := catalog.PluginSignatureSubjectOf(registry, attachmentURI)
+	subject, ok := catalog.PluginSignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), attachmentURI)
 	if !ok {
-		return nil
+		return "", false
 	}
-	requiredBy, held := signatureRequiredBy(wsCfg, subject)
+	return signatureRequiredBy(wsCfg, subject)
+}
+
+// unrecordedVerdictPluginRefusal is the refusal unrecordedVerdictPluginRequirement
+// earns for a plugin whose record carries no signature for it, naming the plugin,
+// recordPath — the record that records nothing for it — the settings that require
+// the signature and the pull of releasePath that records it; or nil where the rule
+// does not hold the plugin.
+func unrecordedVerdictPluginRefusal(wsCfg workspaceconfig.Config, read verdictPluginRead, attachmentURI, recordPath, releasePath string) error {
+	requiredBy, held := unrecordedVerdictPluginRequirement(wsCfg, read, attachmentURI)
 	if !held {
 		return nil
 	}
 	return lockfile.PluginSignatureNotRecorded(read.coordinate, recordPath, requiredBy, releasePath)
 }
 
+// VerdictPluginSignatureRefusal is the build's refusal of one plugin attached at a
+// verdict role over the signature the record beside the lockfile carries for it:
+// the plugin's identity coordinate — the address that record keeps — and the
+// refusal as the build's check returns it.
+type VerdictPluginSignatureRefusal struct {
+	Plugin  string
+	Refusal error
+}
+
+// VerdictPluginSignatureRefusals is the build's check of the second store, the
+// record beside the lockfile: for each plugin the workspace's attachments that
+// return an accept-or-reject verdict name, read as the build reads them
+// (attachedVerdictPlugins over view: which plugin each names, and which tier serves
+// it), the build's refusal of the signature record carries for it, in attachment
+// order — one for each plugin the build refuses, and none for a plugin it admits.
+//
+//   - An entry carrying a signature is held through holdFact: the cached bundle to
+//     the digest the entry records, refused with oci.ErrSignatureBundleDigestMismatch
+//     where it is missing, unreadable or altered; and, for a plugin the content cache
+//     serves, the bundle to the manifest the build's read held the plugin to
+//     (verdictPluginRead.manifestDigest), refused with
+//     oci.ErrSignatureForAnotherArtifact where it was made for another artifact.
+//   - A plugin whose entry carries none, or which the record holds no entry for, is
+//     held to the build's rule for such a plugin (unrecordedVerdictPluginRefusal),
+//     refused with lockfile.ErrSignatureNotRecorded.
+//
+// It is the build's own walk rather than a reading beside it: the check before a
+// render reaches the record through here (signatureHold.verdictPlugins), so a
+// surface outside this package asking which plugins a build refuses over a record,
+// and for what, meets the build's answer rather than a second one. A caller tells
+// the refusals apart by their conditions (errors.Is), never by their text.
+//
+// view is the catalog view a build of the Release reads the attachments through.
+// Its catalog directories and pins decide which tier serves each plugin, and only a
+// plugin the content cache serves comes with a manifest or is held to a
+// requirement: one the view serves — from a catalog directory, or pinned in the
+// lockfile — is held to the re-hash alone, even where its bytes are in the cache
+// too. record is the record the check reads — the file, or the record a resolution
+// composed and has not yet written — and a nil record holds no entry. workspaceRoot
+// and releasePath locate the cached bundles and the record a refusal names, as the
+// build's own inputs do.
+func VerdictPluginSignatureRefusals(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, workspaceRoot, releasePath string,
+	record *pluginstrust.Trust) []VerdictPluginSignatureRefusal {
+	hold := newSignatureHold(wsCfg, workspaceRoot, releasePath)
+	recordPath := pluginstrust.PathFor(releasePath)
+	var refusals []VerdictPluginSignatureRefusal
+	for _, plugin := range attachedVerdictPlugins(view, wsCfg.VerdictAttachments()) {
+		read := plugin.read
+		var err error
+		if entry, held := record.Find(read.coordinate); held && entry.Signature != nil {
+			err = hold.holdFact(read.coordinate, recordPath, entry.Signature, oci.MadeForManifest(read.manifestDigest), read.fromCache)
+		} else {
+			err = unrecordedVerdictPluginRefusal(wsCfg, read, plugin.attachmentURI, recordPath, releasePath)
+		}
+		if err != nil {
+			refusals = append(refusals, VerdictPluginSignatureRefusal{Plugin: read.coordinate, Refusal: err})
+		}
+	}
+	return refusals
+}
+
+// attachedVerdictPlugin is the plugin one attachment that returns an
+// accept-or-reject verdict names, as the build reads it, and the reference that
+// attachment was authored as — the reference the plugin's signature subject is
+// bound from.
+type attachedVerdictPlugin struct {
+	read          verdictPluginRead
+	attachmentURI string
+}
+
+// attachedVerdictPlugins reads the plugin each of attachments names
+// (readVerdictPlugin over view), once per plugin, in attachment order: a plugin
+// two attachments name is read, and its subject bound, through the first. A
+// reading that cannot identify the plugin at all is left out, for the resolution
+// that halts on it with its own diagnostic.
+func attachedVerdictPlugins(view *catalog.LazyLookup, attachments []workspaceconfig.VerdictAttachment) []attachedVerdictPlugin {
+	plugins := make([]attachedVerdictPlugin, 0, len(attachments))
+	walked := make(map[string]bool, len(attachments))
+	for _, attachment := range attachments {
+		read, identified := readVerdictPlugin(view, attachment.Ref.URI)
+		if !identified || walked[read.coordinate] {
+			continue
+		}
+		walked[read.coordinate] = true
+		plugins = append(plugins, attachedVerdictPlugin{read: read, attachmentURI: attachment.Ref.URI})
+	}
+	return plugins
+}
+
 // lockfileRows walks the first store: every reference the closure enumerates,
-// joined to the lockfile row of its own section.
-func (h signatureHold) lockfileRows(cl closure.Closure) []error {
+// joined to the row of its own section in lf, the Release's loaded lockfile.
+func (h signatureHold) lockfileRows(lf *lockfile.Lockfile, cl closure.Closure) []error {
 	// A section is named the same on both sides — the Lockfile field and the
 	// closure's axis — so a closure reference finds its own row and never the row of
 	// another section recording the same reference.
-	recorded := h.in.lockfile.RecordedSignatures()
-	lockfilePath := lockfile.PathFor(h.in.releasePath)
+	recorded := lf.RecordedSignatures()
+	lockfilePath := lockfile.PathFor(h.releasePath)
 	var refusals []error
 	for _, axis := range cl.VerifiableAxes() {
 		for _, ref := range axis.Refs {
@@ -205,7 +317,7 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 				continue
 			}
 			if requiredBy, held := h.requiredBy(subject); held {
-				refusals = append(refusals, lockfile.SignatureNotRecorded(ref.URI, lockfilePath, requiredBy, h.in.releasePath))
+				refusals = append(refusals, lockfile.SignatureNotRecorded(ref.URI, lockfilePath, requiredBy, h.releasePath))
 			}
 		}
 	}
@@ -214,7 +326,9 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 
 // verdictPlugins walks the second store: the plugin each attachment that returns
 // an accept-or-reject verdict names, joined by its identity coordinate to its
-// entry in the record beside the lockfile — the address that record keeps.
+// entry in the record beside the lockfile — the address that record keeps. The
+// walk is VerdictPluginSignatureRefusals over view, the one a surface outside this
+// package reads too; what this adds is which record it reads.
 //
 // The walk is over the ATTACHMENTS rather than over the record's entries, because
 // the record says nothing about where a plugin came from: which tier serves it is
@@ -235,37 +349,21 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 // file otherwise. A read failure of the file is returned as it is: the record
 // cannot say whether anything is recorded, which is not the same as saying nothing
 // is.
-func (h signatureHold) verdictPlugins() ([]error, error) {
-	attachments := h.in.workspaceConfig.VerdictAttachments()
-	if len(attachments) == 0 {
+func (h signatureHold) verdictPlugins(view *catalog.LazyLookup, composed *pluginstrust.Trust) ([]error, error) {
+	if len(h.wsCfg.VerdictAttachments()) == 0 {
 		return nil, nil
 	}
-	recordPath := pluginstrust.PathFor(h.in.releasePath)
-	record := h.in.composedTrust
+	record := composed
 	if record == nil {
-		read, _, err := pluginstrust.LoadOrStart(recordPath)
+		read, _, err := pluginstrust.LoadOrStart(pluginstrust.PathFor(h.releasePath))
 		if err != nil {
 			return nil, err
 		}
 		record = read
 	}
 	var refusals []error
-	walked := make(map[string]bool, len(attachments))
-	for _, attachment := range attachments {
-		read, identified := readVerdictPlugin(h.in.view, attachment.Ref.URI)
-		if !identified || walked[read.coordinate] {
-			continue
-		}
-		walked[read.coordinate] = true
-		if entry, held := record.Find(read.coordinate); held && entry.Signature != nil {
-			if err := h.holdFact(read.coordinate, recordPath, entry.Signature, oci.MadeForManifest(read.manifestDigest), read.fromCache); err != nil {
-				refusals = append(refusals, err)
-			}
-			continue
-		}
-		if err := unrecordedVerdictPluginRefusal(h.in.workspaceConfig, h.registry, read, attachment.Ref.URI, recordPath, h.in.releasePath); err != nil {
-			refusals = append(refusals, err)
-		}
+	for _, refused := range VerdictPluginSignatureRefusals(view, h.wsCfg, h.workspaceRoot, h.releasePath, record) {
+		refusals = append(refusals, refused.Refusal)
 	}
 	return refusals, nil
 }

@@ -110,7 +110,72 @@ import (
 // reachable by name: the primitives it composes are not exported, so a caller
 // outside this package can run the pass and cannot assemble a second copy of it
 // from the parts.
+//
+// Which rows it asks about, and why, is decided by signatureQuestions, and a
+// verifying pull reads the same decision to report the rows a pull would rewrite,
+// so whatever this pass comes to ask about, a verify reports without a change of
+// its own.
 func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
+	questions, err := signatureQuestions(lf, cl, wsCfg, workspaceRoot, cacheDir)
+	if err != nil {
+		return err
+	}
+	verifiable := askedOnce(questions)
+	if len(verifiable) == 0 {
+		return nil
+	}
+	factByURI, err := recordSignatureAnswers(ctx, lf, verifiable, wsCfg, workspaceRoot, cacheDir, diagOut, targetFor)
+	if err != nil {
+		return err
+	}
+
+	// Retroactive deprecation discovery: at the same registry-touching moment,
+	// discover a signed deprecation marker attached to each verifiable artifact,
+	// verify the marker's OWN signature against the original signer OR the
+	// registry's trusted deprecation identities, and record the verified marker
+	// into the lockfile. Build reads the recorded fact and never re-discovers
+	// (the ahead-of-time boundary).
+	return discoverClosureDeprecations(ctx, lf, verifiable, factByURI, wsCfg, targetFor, diagOut)
+}
+
+// signatureQuestion is one lockfile row the signature pass asks a registry about,
+// and why it asks.
+type signatureQuestion struct {
+	// row names the lockfile row: its section and the reference it records.
+	row lockfile.RowKey
+	// entity is the question as the registry is asked it: the manifest digest the
+	// reference's own resolution reports, and the location, host and kind its
+	// binding gives it.
+	entity pullverify.Entity
+	// fetched reports that this run fetched the row's bytes from a registry.
+	fetched bool
+	// refused is the build's refusal of the fact a row the content cache served
+	// records, which is why such a row is asked about. It is nil for a fetched
+	// row, and for a cache-served row recording no fact, which is asked about
+	// because a missing signature halts for it.
+	refused error
+}
+
+// signatureQuestions is the one decision which lockfile rows a pull asks a
+// registry about for their signature, and why: every row whose bytes this run
+// fetched from a registry; a row the content cache served whose recorded fact the
+// one decision whether a recorded fact is accepted (oci.HoldRecordedSignature)
+// refuses; and a row the content cache served that records no fact, where the one
+// decision a pull makes over a missing signature
+// (workspaceconfig.SignatureCheck.HaltsWithoutSignature) says one is required. The
+// rule for each is stated on VerifyClosureSignatures, which asks what this
+// returns.
+//
+// The rows are read from lf, the lockfile as a pull composes it after carrying the
+// prior lockfile's facts forward, against the closure's own enumeration of its
+// verifiable axes. The questions come back with the fetched rows first and the
+// cache-served ones after, each group in that enumeration's order; askedOnce is
+// what folds them into the questions a registry is put.
+//
+// It returns the halt the pass makes before asking anything, and asks nothing
+// itself: a cache-served row recording a fact a build refuses that binds to no
+// registry, and a registry row whose resolution recorded no manifest digest.
+func signatureQuestions(lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string) ([]signatureQuestion, error) {
 	axes := cl.VerifiableAxes()
 	total := 0
 	for _, axis := range axes {
@@ -121,10 +186,10 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	// recording no fact, or for recording one it does not accept — is a row asked
 	// about here.
 	recorded := lf.RecordedSignatures()
-	verifiable := make([]pullverify.Entity, 0, total)
-	// The cache-served items to ask about are held apart and joined after the
+	questions := make([]signatureQuestion, 0, total)
+	// The cache-served rows to ask about are held apart and joined after the
 	// fetched ones, below.
-	var reasked []pullverify.Entity
+	var reasked []signatureQuestion
 	for _, axis := range axes {
 		for _, e := range axis.Refs {
 			// Only an item whose bytes were acquired from a registry carries a
@@ -161,7 +226,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			subject, ok := catalog.SignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), axis, e)
 			if !ok {
 				if refused != nil {
-					return fmt.Errorf("verify: %q records a signature a build does not accept, and no registry is "+
+					return nil, fmt.Errorf("verify: %q records a signature a build does not accept, and no registry is "+
 						"configured to ask about it again: %w", e.URI, refused)
 				}
 				continue
@@ -183,53 +248,72 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			// which would leave the item unverified under a require-signatures policy)
 			// names the item and points at the missing digest.
 			if e.ManifestDigest == "" {
-				return fmt.Errorf("verify: registry artifact %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
+				return nil, fmt.Errorf("verify: registry artifact %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
 			}
-			item := pullverify.Entity{
-				URI:            e.URI,
-				ManifestDigest: e.ManifestDigest,
-				Host:           subject.Host,
-				Location:       subject.Location,
-				Kind:           subject.Kind,
+			q := signatureQuestion{
+				row: lockfile.RowKey{Section: axis.Axis, URI: e.URI},
+				entity: pullverify.Entity{
+					URI:            e.URI,
+					ManifestDigest: e.ManifestDigest,
+					Host:           subject.Host,
+					Location:       subject.Location,
+					Kind:           subject.Kind,
+				},
+				fetched: fetched,
+				refused: refused,
 			}
 			if fetched {
-				verifiable = append(verifiable, item)
+				questions = append(questions, q)
 			} else {
-				reasked = append(reasked, item)
+				reasked = append(reasked, q)
 			}
 		}
 	}
-	// A cache-served item is asked about only where this pass does not already ask
-	// the same question under another reference — one this run fetched, or a second
-	// cache-served reference to the same artifact. The same question is one whose
-	// answer cannot differ: the same manifest, asked at the same location under the
-	// same host's policy for the same kind. Only the reference differs, and the fold
-	// below records an answer on every row pinning that manifest (verifiedJoin), so
-	// asking again would only repeat the registry request.
+	return append(questions, reasked...), nil
+}
+
+// askedOnce returns what the signature pass puts to a registry for questions, in
+// the order signatureQuestions returns them: every fetched row's question, and a
+// cache-served row's only where no question ahead of it is the same one.
+//
+// A cache-served row is asked about only where the pass does not already ask the
+// same question under another reference — one this run fetched, or a second
+// cache-served reference to the same artifact. The same question is one whose
+// answer cannot differ: the same manifest, asked at the same location under the
+// same host's policy for the same kind. Only the reference differs, and the fold
+// records an answer on every row pinning that manifest (verifiedJoin), so asking
+// again would only repeat the registry request.
+func askedOnce(questions []signatureQuestion) []pullverify.Entity {
 	type question struct{ manifest, host, location, kind string }
-	asked := make(map[question]struct{}, len(verifiable)+len(reasked))
-	for _, e := range verifiable {
-		asked[question{e.ManifestDigest, e.Host, e.Location, e.Kind}] = struct{}{}
-	}
-	for _, e := range reasked {
-		q := question{e.ManifestDigest, e.Host, e.Location, e.Kind}
-		if _, held := asked[q]; held {
+	asked := make(map[question]struct{}, len(questions))
+	out := make([]pullverify.Entity, 0, len(questions))
+	for _, q := range questions {
+		key := question{q.entity.ManifestDigest, q.entity.Host, q.entity.Location, q.entity.Kind}
+		if _, held := asked[key]; held && !q.fetched {
 			continue
 		}
-		asked[q] = struct{}{}
-		verifiable = append(verifiable, e)
+		asked[key] = struct{}{}
+		out = append(out, q.entity)
 	}
-	if len(verifiable) == 0 {
-		return nil
-	}
+	return out
+}
 
-	results, err := pullverify.Verify(ctx, verifiable, pullverify.Options{
+// recordSignatureAnswers asks a registry about each of asked, in one
+// verification run against each registry's trust policy, and records the answers
+// on lf's rows, caching each verified signature bundle — and returns the answers
+// keyed by reference, for the marker discovery that runs at the same moment.
+//
+// lf is the lockfile the answers are recorded in, which is the one the pass
+// composes, or a verifying pull's copy of it: never the file on disk, which only
+// the write at the end of a pull replaces.
+func recordSignatureAnswers(ctx context.Context, lf *lockfile.Lockfile, asked []pullverify.Entity, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) (map[string]pullverify.Result, error) {
+	results, err := pullverify.Verify(ctx, asked, pullverify.Options{
 		Config: wsCfg,
 		Target: targetFor,
 		Warn:   func(notice string) { fmt.Fprintf(diagOut, "  verify: %s\n", notice) },
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	factByURI := make(map[string]pullverify.Result, len(results))
@@ -247,7 +331,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	// signature to record. A row whose artifact this pass did not ask about — one the
 	// content cache or a local catalog served, pinned by no reference this run fetched
 	// or asked about — keeps whatever was carried onto it.
-	facts := joinVerified(verifiable, factByURI)
+	facts := joinVerified(asked, factByURI)
 	for _, row := range lf.VerifiedFactRows() {
 		if !facts.askedAbout(row) {
 			continue
@@ -258,21 +342,11 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			continue
 		}
 		if err := cacheBundleBlob(workspaceRoot, cacheDir, r.BundleDigest, r.Bundle); err != nil {
-			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
+			return nil, fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
 		row.RecordSignature(pluginfetchverify.SignatureFact(r))
 	}
-
-	// Retroactive deprecation discovery: at the same registry-touching moment,
-	// discover a signed deprecation marker attached to each verifiable artifact,
-	// verify the marker's OWN signature against the original signer OR the
-	// registry's trusted deprecation identities, and record the verified marker
-	// into the lockfile. Build reads the recorded fact and never re-discovers
-	// (the ahead-of-time boundary).
-	if err := discoverClosureDeprecations(ctx, lf, verifiable, factByURI, wsCfg, targetFor, diagOut); err != nil {
-		return err
-	}
-	return nil
+	return factByURI, nil
 }
 
 // recordedFactRefusal is the build's answer for a cache-served row that records
