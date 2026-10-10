@@ -458,10 +458,11 @@ func TestReleaseRunHandsAReleaseScopedRuleTheWholeRelease(t *testing.T) {
 // The control is the fixture itself: every value is on disk in a document the
 // pass reads, and the documents a rule reading a whole Release is handed are those
 // very documents, so their absence from the payloads is the removal's doing rather
-// than the fixture's. The parameter reference in the Aggregate's template text is
-// asserted present beside them, so the removal is shown taking the values and
-// leaving the text that names a parameter. Each plant that removes one removal
-// turns this test red.
+// than the fixture's. The parameter reference in the Aggregate's template text and
+// the Aggregate's parameter declarations, without their defaults, are asserted
+// present beside them, so the removal is shown taking the values and leaving what
+// names or declares a parameter. Each plant that removes one removal turns this
+// test red.
 func TestReleaseRunWithholdsEveryReleaseParameterValue(t *testing.T) {
 	rw, releasePath := seedProbeWorkspaceWith(t, "", map[string]string{
 		"aggregate.yaml":    probeAggregateWithModule,
@@ -512,8 +513,8 @@ func TestReleaseRunWithholdsEveryReleaseParameterValue(t *testing.T) {
 	if err := json.Unmarshal(probe[0].Proposed, &proposed); err != nil {
 		t.Fatalf("proposed must be JSON: %v", err)
 	}
-	if len(proposed.Spec.Parameters) != 0 {
-		t.Errorf("proposed carries the Aggregate's parameters block: %s", proposed.Spec.Parameters)
+	if got, want := string(proposed.Spec.Parameters), `{"api_key":{"required":true,"type":"string"},"region":{"type":"string"}}`; got != want {
+		t.Errorf("proposed keeps each parameter declaration and drops its default; got %s, want %s", got, want)
 	}
 	module, ok := proposed.Spec.Aggregates["edge"]
 	if !ok {

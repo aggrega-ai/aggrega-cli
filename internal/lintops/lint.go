@@ -766,22 +766,33 @@ func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, wsC
 	}
 }
 
-// yamlToLinterJSON converts the proposed entity YAML to JSON and extracts the
-// metadata envelope. Returns the JSON bytes the plugin consumes plus the header
-// struct the host inspects for kind, name, version, labels, extends.
+// yamlToLinterJSON converts an entity document's YAML to the JSON a linter plugin
+// receives and extracts the metadata envelope. Returns the JSON bytes the plugin
+// consumes plus the header struct the host inspects for kind, name, version,
+// labels, extends.
+//
+// It is the one conversion every document handed to a linter plugin goes
+// through, on every lint scope: the entity being linted and its previously
+// published version, each entity a whole-catalog or release-scoped pass walks,
+// and the Aggregate, Release and Components a rule reading a whole Release is
+// handed. The JSON it returns carries no parameter value — see
+// withoutParameterValues, keyed on the kind the document declares — so a path
+// that converted a document any other way would hand a plugin whatever that
+// second conversion did not remove.
 func yamlToLinterJSON(yamlBytes []byte) (json.RawMessage, lintEntityHeader, error) {
 	var raw interface{}
 	if err := yaml.Unmarshal(yamlBytes, &raw); err != nil {
 		return nil, lintEntityHeader{}, fmt.Errorf("yaml unmarshal: %w", err)
 	}
-	cleaned := convertYAMLMaps(raw)
-	jsonBytes, err := json.Marshal(cleaned)
-	if err != nil {
-		return nil, lintEntityHeader{}, fmt.Errorf("json marshal: %w", err)
-	}
 	var header lintEntityHeader
 	if err := yaml.Unmarshal(yamlBytes, &header); err != nil {
 		return nil, lintEntityHeader{}, fmt.Errorf("yaml header unmarshal: %w", err)
+	}
+	cleaned := convertYAMLMaps(raw)
+	withoutParameterValues(cleaned, header.Kind)
+	jsonBytes, err := json.Marshal(cleaned)
+	if err != nil {
+		return nil, lintEntityHeader{}, fmt.Errorf("json marshal: %w", err)
 	}
 	return jsonBytes, header, nil
 }
@@ -1007,9 +1018,10 @@ func implementedComponentJSON(header lintEntityHeader, componentByURI func(uri s
 }
 
 // componentLinterJSON converts a resolved Component to the JSON a linter payload
-// carries, through the same YAML-to-JSON conversion the proposed entity goes
-// through, so a rule reads one shape whichever field a Component arrives in. It
-// returns nil for a Component that does not convert, which a payload then omits.
+// carries, through the one conversion every document a linter plugin receives
+// goes through, so a rule reads one shape whichever field a Component arrives in.
+// It returns nil for a Component that does not convert, which a payload then
+// omits.
 func componentLinterJSON(comp types.Component) json.RawMessage {
 	entityYAML, err := yaml.Marshal(comp)
 	if err != nil {
