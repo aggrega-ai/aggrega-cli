@@ -67,20 +67,92 @@ func loginGoroutineFrames() string {
 	}
 }
 
+// requestsInFlight counts the requests currently inside a handler, so a test can
+// wait for the moment a registry has stopped serving instead of sampling the
+// stack and hoping that moment has already come.
+//
+// The count is moved by the handler's closure on either side of the call —
+// entered before it, left after it has returned — and never from a defer inside
+// the handler, which would let the count fall while the handler's own frame was
+// still on the stack, unwinding. It is a count rather than a flag for the reason
+// the handlers announce through a sync.Once: the registry client may open more
+// than one request against the same server, so "stopped serving" means every
+// request that reached the handler has left it, not that one has.
+type requestsInFlight struct {
+	mu   sync.Mutex
+	n    int
+	left chan struct{}
+}
+
+func newRequestsInFlight() *requestsInFlight {
+	return &requestsInFlight{left: make(chan struct{}, 1)}
+}
+
+func (f *requestsInFlight) enter() {
+	f.mu.Lock()
+	f.n++
+	f.mu.Unlock()
+}
+
+// leave never blocks on its nudge: a full buffer means a nudge is already waiting
+// to be taken, and the waiter re-reads the count after taking it, so no departure
+// goes unseen.
+func (f *requestsInFlight) leave() {
+	f.mu.Lock()
+	f.n--
+	f.mu.Unlock()
+	select {
+	case f.left <- struct{}{}:
+	default:
+	}
+}
+
+// drainedBy reports whether no request is inside the handler, waiting until
+// deadline for the last one to leave.
+func (f *requestsInFlight) drainedBy(deadline time.Time) bool {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	for {
+		f.mu.Lock()
+		n := f.n
+		f.mu.Unlock()
+		if n == 0 {
+			return true
+		}
+		select {
+		case <-f.left:
+		case <-timer.C:
+			return false
+		}
+	}
+}
+
 // loginReturnCeiling bounds "returns" against "hangs forever" and is NOT a
 // performance budget: nothing here measures how long a stop takes, only that a
-// stopped login stops at all. A machine slow enough to exceed this is a machine
-// on which the whole suite has already failed.
+// stop takes effect at all — at the login, and at the registry on the far end of
+// its exchange. A machine slow enough to exceed this is a machine on which the
+// whole suite has already failed.
 const loginReturnCeiling = 30 * time.Second
 
 // TestStoppingALoginEndsTheCredentialCheckOnTheWire proves the credential check
 // runs under the caller's context rather than one the command minted.
 //
 // Two logins are driven to the same point — inside the registry's handler — and
-// one is then stopped. A single stack dump, taken while both server goroutines
-// exist, must show the stopped one's handler frame GONE and the control's STILL
-// PRESENT. The control is what makes the absence mean something: without it a
-// dump missing both frames would read as success.
+// one is then stopped. The test waits, within the liveness ceiling, for every
+// request that reached the stopped registry's handler to have left it, and only
+// then takes a single stack dump, which must show the stopped one's handler frame
+// GONE and the control's STILL PRESENT. The control is what makes the absence
+// mean something: without it a dump missing both frames would read as success,
+// and a handler that left because the test let both registries go would read as
+// one that left because its exchange ended.
+//
+// The wait is on the far end rather than on the login, because the two do not
+// end together. The stopped login returns as soon as its client abandons the
+// exchange by closing the connection; the registry learns of that only when its
+// own read of the connection fails, a moment later and on another goroutine. A
+// dump taken in between finds the stopped handler still on the stack although
+// the stop has already reached the wire, so the test waits for the event the
+// assertion is about rather than for one that merely precedes it.
 //
 // Parking on the SERVER is the strengthening. A login that returns on withdrawal
 // proves only that the caller stopped waiting; a registry still inside its
@@ -89,21 +161,44 @@ const loginReturnCeiling = 30 * time.Second
 //
 // A planted defect makes this fail: hand VerifyCredential context.Background()
 // instead of the caller's, and the stopped login's handler parks exactly as the
-// control does, leaving parkedStoppedHandler on the stack.
+// control does. It never stops serving, so the wait runs out at the ceiling and
+// the dump still holds parkedStoppedHandler.
 func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
+
+	// Registered FIRST so it runs LAST, once the registries have let every request
+	// go. A login still running when the test returns would carry on and store its
+	// credential after DOCKER_CONFIG had been restored — into whatever store the
+	// machine running the test is configured with.
+	var logins sync.WaitGroup
+	defer func() {
+		returned := make(chan struct{})
+		go func() {
+			logins.Wait()
+			close(returned)
+		}()
+		select {
+		case <-returned:
+		case <-time.After(loginReturnCeiling):
+			t.Errorf("a login was still running after its registry let it go; left running, it " +
+				"would store its credential after the test had restored DOCKER_CONFIG")
+		}
+	}()
 
 	release := make(chan struct{})
 	var controlOnce, stoppedOnce sync.Once
 	controlEntered := make(chan struct{})
 	stoppedEntered := make(chan struct{})
+	stoppedServing := newRequestsInFlight()
 
 	controlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parkedControlHandler(w, r, &controlOnce, controlEntered, release)
 	}))
 	defer controlSrv.Close()
 	stoppedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stoppedServing.enter()
 		parkedStoppedHandler(w, r, &stoppedOnce, stoppedEntered, release)
+		stoppedServing.leave()
 	}))
 	defer stoppedSrv.Close()
 
@@ -123,23 +218,23 @@ func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 	stoppedWS := resolveTempWorkspace(t, tempWorkspaceOptions{})
 
 	controlDone := make(chan error, 1)
-	go func() {
+	logins.Go(func() {
 		controlDone <- loginRun(context.Background(), loginConfig{
 			ws:       controlWS,
 			Registry: controlHost, Username: "hello", PasswordStdin: true,
 			In: strings.NewReader("world\n"), Out: io.Discard,
 		})
-	}()
+	})
 
 	stopCtx, stop := context.WithCancel(context.Background())
 	stoppedDone := make(chan error, 1)
-	go func() {
+	logins.Go(func() {
 		stoppedDone <- loginRun(stopCtx, loginConfig{
 			ws:       stoppedWS,
 			Registry: stoppedHost, Username: "hello", PasswordStdin: true,
 			In: strings.NewReader("world\n"), Out: io.Discard,
 		})
-	}()
+	})
 
 	// Both credential checks are now inside a handler. Until this point there is
 	// nothing to compare: a frame that has not been entered is absent for a reason
@@ -149,6 +244,10 @@ func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 
 	stop()
 
+	// One ceiling bounds both waits below, so a stop that reaches neither end costs
+	// one ceiling rather than one per wait.
+	deadline := time.Now().Add(loginReturnCeiling)
+
 	// Recorded rather than fatal, so the frame comparison below is still reached
 	// and a failing run reports BOTH what the caller saw and what the stack says.
 	select {
@@ -157,9 +256,18 @@ func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 			t.Errorf("the stopped login returned %v; want an error wrapping context.Canceled — "+
 				"the credential check returned for some reason other than the withdrawal", err)
 		}
-	case <-time.After(loginReturnCeiling):
+	case <-time.After(time.Until(deadline)):
 		t.Errorf("the stopped login never returned within the liveness ceiling: " +
 			"the withdrawal did not reach the credential check")
+	}
+
+	// The login returning is not yet the moment to look: the registry notices the
+	// abandoned connection a moment later, on its own goroutine. Wait for that,
+	// the event the comparison is about. Recorded rather than fatal, for the same
+	// reason as above.
+	if !stoppedServing.drainedBy(deadline) {
+		t.Errorf("the stopped registry's handler was still serving when the liveness ceiling passed: " +
+			"the stop did not reach the exchange on the wire")
 	}
 
 	frames := loginGoroutineFrames()
@@ -171,9 +279,13 @@ func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 		t.Fatalf("the control registry's handler frame is ABSENT from the dump, so the comparison " +
 			"below would pass for the wrong reason; the control must still be serving its request")
 	}
+
+	// When the wait above saw the stopped handler empty, a frame here is a request
+	// that reached it after the stop: a fresh exchange, opened under a context the
+	// stop never reached. When the wait ran out, it is the request never let go.
 	if strings.Contains(frames, "parkedStoppedHandler") {
 		t.Errorf("the stopped login's registry handler is STILL serving while the control's is too: " +
-			"the stop reached the caller but not the exchange on the wire")
+			"the stop did not reach the exchange on the wire")
 	}
 
 	select {
