@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // enforceRecordedSignatures is the build's one check of the signature facts a
@@ -99,11 +100,48 @@ func (h signatureHold) rehash(name string, fact *lockfile.VerifiedSignature) err
 // fact, the settings that make its missing signature halt — the halt decision a
 // pull makes over the same reference — and false where nothing does.
 func (h signatureHold) requiredBy(subject catalog.SignatureSubject) (string, bool) {
-	check := h.in.workspaceConfig.SignatureCheckFor(subject.Host, subject.Kind)
+	return signatureRequiredBy(h.in.workspaceConfig, subject)
+}
+
+// signatureRequiredBy is the one reading, for either store, of whether a missing
+// signature halts for a subject: the decision a pull makes over the same subject
+// (workspaceconfig.SignatureCheck.HaltsWithoutSignature), and the settings that
+// make it halt.
+func signatureRequiredBy(wsCfg workspaceconfig.Config, subject catalog.SignatureSubject) (string, bool) {
+	check := wsCfg.SignatureCheckFor(subject.Host, subject.Kind)
 	if !check.HaltsWithoutSignature() {
 		return "", false
 	}
 	return check.RequirementSource(), true
+}
+
+// unrecordedVerdictPluginRefusal is the one rule for a plugin attached at a verdict
+// role whose record beside the lockfile carries no signature for it: the refusal it
+// earns, or nil. It is held only where its entity was served by the content cache a
+// pull filled from a registry, the binary does not carry it, it binds to a registry
+// (catalog.PluginSignatureSubjectOf over the attachment's reference — the pull's
+// binding), and a missing signature halts there.
+//
+// The build's walk of its verdict attachments asks it, and so does every load of
+// such a plugin through the hold the governance composition hands the pipeline and
+// the linter socket (verdictPluginSignatureHold), so a plugin the build would refuse
+// is refused by whatever surface loads it, by the same rule.
+func unrecordedVerdictPluginRefusal(wsCfg workspaceconfig.Config, registry string, read verdictPluginRead, attachmentURI, recordPath, releasePath string) error {
+	if !read.fromCache {
+		return nil
+	}
+	if _, carried := embedded.Lookup(read.coordinate); carried {
+		return nil
+	}
+	subject, ok := catalog.PluginSignatureSubjectOf(registry, attachmentURI)
+	if !ok {
+		return nil
+	}
+	requiredBy, held := signatureRequiredBy(wsCfg, subject)
+	if !held {
+		return nil
+	}
+	return lockfile.PluginSignatureNotRecorded(read.coordinate, recordPath, requiredBy, releasePath)
 }
 
 // lockfileRows walks the first store: every reference the closure enumerates,
@@ -188,18 +226,8 @@ func (h signatureHold) verdictPlugins() ([]error, error) {
 			}
 			continue
 		}
-		if !read.fromCache {
-			continue
-		}
-		if _, carried := embedded.Lookup(read.coordinate); carried {
-			continue
-		}
-		subject, ok := catalog.PluginSignatureSubjectOf(h.registry, attachment.Ref.URI)
-		if !ok {
-			continue
-		}
-		if requiredBy, held := h.requiredBy(subject); held {
-			refusals = append(refusals, lockfile.PluginSignatureNotRecorded(read.coordinate, recordPath, requiredBy, h.in.releasePath))
+		if err := unrecordedVerdictPluginRefusal(h.in.workspaceConfig, h.registry, read, attachment.Ref.URI, recordPath, h.in.releasePath); err != nil {
+			refusals = append(refusals, err)
 		}
 	}
 	return refusals, nil

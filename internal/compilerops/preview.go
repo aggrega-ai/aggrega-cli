@@ -126,7 +126,8 @@ type PreviewInputs struct {
 
 	// composedTrust is the record of plugin identities beside the lockfile as the
 	// caller has composed it and has not yet written it, or nil, which reads the
-	// record from disk. Only the check of recorded signatures reads it.
+	// record from disk. Only the recorded signatures are read from it: by the check
+	// before the render, and by the load of each plugin attached at a verdict role.
 	composedTrust *pluginstrust.Trust
 
 	// catalogWarnings are advisories the caller's own catalog load produced.
@@ -186,9 +187,10 @@ func WithComposedLockfile(lf *lockfile.Lockfile) PreviewOption {
 // this run records rather than to the record on disk the run is about to replace.
 // The resolution that composes the record writes it only after its render, so a
 // render reading the file would read it as it stood before the run — and on a first
-// resolution, there is none. Nothing else in the preview reads it: the record's
-// identity hold and its withdrawal report read the file, as every other surface
-// does.
+// resolution, there is none. The render's own load of each such plugin reads its
+// recorded signature from it too, for the same reason. Nothing else in the preview
+// reads it: the record's identity hold and its withdrawal report read the file, as
+// every other surface does.
 func WithComposedTrustRecord(trust *pluginstrust.Trust) PreviewOption {
 	return func(in *PreviewInputs) { in.composedTrust = trust }
 }
@@ -900,6 +902,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		Lockfile:                         in.lockfile,
 		CompilerVersion:                  in.compilerVersion,
 		TolerateCatalogViewInconsistency: pol.tolerateCatalogViewInconsistency,
+		composedTrust:                    in.composedTrust,
 	}, opts)
 	// Assigned BEFORE the verdict is read, and that ordering is the whole point
 	// rather than a tidying. Assigned after the error check, the outcome would

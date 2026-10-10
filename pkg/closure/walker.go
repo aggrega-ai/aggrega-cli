@@ -131,7 +131,7 @@ func (s *walkState) walk(in inputs) error {
 	}
 
 	if in.release.Spec.Aggregate != "" {
-		s.addEntity(in.release.Spec.Aggregate, "release.spec.aggregate")
+		s.addEntityKind(in.release.Spec.Aggregate, "release.spec.aggregate", ReleaseAggregateKindHint)
 	}
 	if in.release.Spec.Manifest != "" {
 		s.addEntity(in.release.Spec.Manifest, "release.spec.manifest")
@@ -934,8 +934,11 @@ func (s *walkState) addEntityKind(uri, refPath, kind string) {
 	// an authoritative hint upgrades a previously-recorded weak one. This matters
 	// when one bare URI is shared across kinds (a Component and a Recipe of the
 	// same name): the authoritative kind must win regardless of walk order.
+	//
+	// The Release's own Aggregate hint yields to every other, so a URI another site
+	// names under a kind of its own is recorded exactly as it would be without it.
 	cur := s.entities[uri].kindHint
-	if cur == "" || (isWeakKindHint(cur) && !isWeakKindHint(kind)) {
+	if cur == "" || cur == ReleaseAggregateKindHint || (isWeakKindHint(cur) && !isWeakKindHint(kind)) {
 		s.entities[uri].kindHint = kind
 	}
 }

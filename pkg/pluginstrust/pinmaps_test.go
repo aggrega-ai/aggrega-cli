@@ -6,6 +6,7 @@ package pluginstrust
 import (
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -52,7 +53,8 @@ func TestPinMapsCarriesEveryRecord(t *testing.T) {
 	trust := &Trust{
 		Version: CurrentVersion,
 		Plugins: []TrustedPlugin{
-			{Plugin: "governance/baseline", ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
+			{Plugin: "governance/baseline", ResolvedVersion: "1.0.0", Digest: "sha256:aaa",
+				Signature: &lockfile.VerifiedSignature{Mode: "keyed", Identity: "keyed:sha256:k", BundleDigest: "sha256:bundle-a"}},
 			{Plugin: "linter/publishing", ResolvedVersion: "0.5.0", Digest: "sha256:bbb"},
 			{Plugin: "linter/house-style", ResolvedVersion: "0.1.0", Digest: "sha256:ccc"},
 		},
@@ -71,10 +73,14 @@ func TestPinMapsCarriesEveryRecord(t *testing.T) {
 			t.Errorf("pin for %s: got %q, want %q", want.coordinate, got, want.digest)
 		}
 	}
-	// A signature bundle is not something this record carries, so the conversion
-	// must not invent one.
-	if pins.BundleDigests != nil {
-		t.Errorf("the conversion must leave signature-bundle digests unset; got %v", pins.BundleDigests)
+	// The bundle a recorded signature names is carried for the record that has one,
+	// so the load that resolves the plugin re-hashes it; a record carrying no
+	// signature contributes none, and none is invented for it.
+	if got := pins.BundleDigests["governance/baseline"]; got != "sha256:bundle-a" {
+		t.Errorf("the recorded signature's bundle digest must be carried: got %q", got)
+	}
+	if len(pins.BundleDigests) != 1 {
+		t.Errorf("only the record carrying a signature contributes a bundle digest; got %v", pins.BundleDigests)
 	}
 }
 

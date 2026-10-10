@@ -25,6 +25,36 @@ type VerdictPluginTierSources struct {
 	CacheDir      string
 }
 
+// VerdictPluginTrust is what the record of the plugin identities trusted for the
+// attachments that return an accept-or-reject verdict contributes to resolving
+// one of their plugins from the content cache: the digests the record carries, and
+// the signature requirement a plugin it records no signature for is held to.
+//
+// The two travel as one value because they are one record's contribution to one
+// load. A surface supplied the digests without the requirement would hold a
+// plugin's bytes and its recorded bundle while running one whose signature nothing
+// records, and the gap would be invisible: an unset requirement is an empty field,
+// and an empty field is also what a surface with no record to read supplies.
+//
+// The zero value holds a plugin to nothing beyond its cached manifest — the honest
+// value where no record exists, and the value a transform-role resolution with no
+// lockfile supplies, whose recorded identity is a lockfile pin rather than this.
+type VerdictPluginTrust struct {
+	// PinMaps carries the record's digests keyed by plugin identity: Pins and
+	// PinVersions the digest the plugin's bytes are compared against, and
+	// BundleDigests the digest of the cached signature bundle a recorded signature
+	// names, which is re-hashed before the plugin's bytes are returned.
+	pluginpath.PinMaps
+
+	// HoldUnrecorded holds a plugin read from the content cache to the trust
+	// configuration where the record carries no signature for it: given the
+	// attachment's reference and the plugin's identity coordinate, it returns the
+	// refusal the load halts with, or nil where a signature is recorded or none is
+	// required. It is consulted before any of the plugin's bytes are read. nil holds
+	// nothing.
+	HoldUnrecorded func(uri, coordinate string) error
+}
+
 // ResolveVerdictPluginFromCache resolves a plugin from the pull-populated cache
 // by its entity URI, with no lockfile pin. It reads the Plugin entity from the
 // cache (manifest root of trust) to obtain
@@ -43,9 +73,22 @@ type VerdictPluginTierSources struct {
 // they supply as trusted.
 //
 // trusted carries the digests recorded as trusted for verdict-returning plugins,
-// keyed by plugin identity. The caller derives them from whatever records
+// keyed by plugin identity, and the signature requirement a plugin they record
+// no signature for is held to. The caller derives them from whatever records
 // them — this package stays unaware of where a pin originates, which is what the
 // pin-map type is for. An empty set is the ordinary case and changes nothing.
+//
+// # The recorded signature, at the moment the plugin loads
+//
+// Where the record carries a verified signature for the plugin, the cached
+// signature bundle that signature names is re-hashed against the digest it
+// recorded, by the same resolver step that re-hashes a lockfile-pinned plugin's
+// bundle (pluginpath.Resolver), before the plugin's bytes are returned: a missing,
+// unreadable or altered bundle halts the load. Where the record carries none,
+// trusted.HoldUnrecorded decides, before any byte is read, whether the trust
+// configuration requires one; a required signature nothing records halts the load.
+// So every surface that runs the plugin holds it as a build does, whichever command
+// asked for it.
 //
 // # What a recorded digest adds, and what it does not
 //
@@ -86,7 +129,7 @@ type VerdictPluginTierSources struct {
 // error; the caller supplies it as a closure over its own cache-backed catalog
 // view. A nil pluginFromCache, or a clean cache miss, halts with a message
 // naming the plugin and wrapping oci.ErrFetchNotFound.
-func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted pluginpath.PinMaps, pluginFromCache func(uri string) (types.Plugin, string, bool, error), uri string) (pluginpath.ResolvedPlugin, error) {
+func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted VerdictPluginTrust, pluginFromCache func(uri string) (types.Plugin, string, bool, error), uri string) (pluginpath.ResolvedPlugin, error) {
 	if pluginFromCache == nil {
 		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve cached plugin %q: no cache-backed catalog lookup: %w", uri, oci.ErrFetchNotFound())
 	}
@@ -115,17 +158,28 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted plu
 		// pin of record rather than a fact that was merely consulted.
 		pin = recorded
 	}
+	if trusted.HoldUnrecorded != nil {
+		if err := trusted.HoldUnrecorded(uri, artifactRef); err != nil {
+			return pluginpath.ResolvedPlugin{}, err
+		}
+	}
 	// A fresh resolver keyed only by that pin: it governs the bytes
 	// (verify-on-read) without a lockfile row, so the gate plugin's .wasm resolves
 	// and is integrity-checked whether or not anything recorded a digest for it.
+	// A bundle digest the record carries for the plugin travels with it, so the
+	// resolver re-hashes the cached bundle before returning the bytes.
+	pins := pluginpath.PinMaps{
+		Pins:        map[string]string{artifactRef: pin},
+		PinVersions: map[string]string{artifactRef: pin},
+	}
+	if bundle := trusted.BundleDigests[artifactRef]; bundle != "" {
+		pins.BundleDigests = map[string]string{artifactRef: bundle}
+	}
 	r := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		ColocatedDirs: sources.ColocatedDirs,
 		WorkspaceRoot: sources.WorkspaceRoot,
 		CacheDir:      sources.CacheDir,
-	}, pluginpath.PinPostureVerifyOnRead, pluginpath.PinMaps{
-		Pins:        map[string]string{artifactRef: pin},
-		PinVersions: map[string]string{artifactRef: pin},
-	})
+	}, pluginpath.PinPostureVerifyOnRead, pins)
 	resolved, err := r.Resolve(artifactRef)
 	if err != nil {
 		return pluginpath.ResolvedPlugin{}, err

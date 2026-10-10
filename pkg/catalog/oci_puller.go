@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -355,8 +356,9 @@ func (p DefaultOCIPuller) RegistryPrefix() string {
 // suffix is stripped before binding since the location is version-independent.
 //
 // kindHint is the closure collection-site kind ("component" / "feature" /
-// "recipe" / "feature_recipe" / "plugin" / "aggregate"); it is mapped to the
-// catalog kind the location rule expects. Returns ok=false when registry is
+// "recipe" / "feature_recipe" / "plugin" / "aggregate", or the Release's own
+// closure.ReleaseAggregateKindHint); it is mapped to the catalog kind the
+// location rule expects. Returns ok=false when registry is
 // empty, when the hint does not map to a catalog kind, or when the binding is
 // refused (a registry-qualified identity) — the same conditions under which the
 // puller itself cannot bind a bare identity and falls to the legacy
@@ -379,18 +381,23 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 
 // EntityKindForHint maps a closure KindHint to the catalog kind the OCI location
 // rule expects for a registry-resolved entity, covering both the core-catalog
-// tier (ociKindForHint) and the sub-aggregate tier, whose bare-name pull binds
+// tier (ociKindForHint) and the Aggregate tier, whose bare-name pull binds
 // through the same location rule under the "Aggregate" kind. It is the
 // location-binding counterpart of the pull-tier dispatch, so an entity that
 // resolves from a registry maps to a location for verify exactly as it did for
 // the pull.
+//
+// Both Aggregate hints map to "Aggregate": a sub-aggregate's, and the Release's
+// own (closure.ReleaseAggregateKindHint). One fetch serves both
+// (PullAndCacheAggregate), so the Aggregate a Release names by identity is bound
+// to the location it was fetched from, as a sub-aggregate is.
 //
 // It is the single home for the KindHint-to-catalog-kind normalization: the
 // pull-time verify pass derives an entity's canonical kind through it (to
 // consult the org signing policy), so the kind vocabulary is not re-spelled at
 // the call site.
 func EntityKindForHint(hint string) string {
-	if hint == "aggregate" {
+	if hint == "aggregate" || hint == closure.ReleaseAggregateKindHint {
 		return "Aggregate"
 	}
 	return ociKindForHint(hint)

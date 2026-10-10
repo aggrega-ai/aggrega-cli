@@ -59,6 +59,28 @@ func TestARecordedSourceThreadsEveryPinMap(t *testing.T) {
 	}
 }
 
+// TestTheVerifyOnReadPostureThreadsTheBundleDigest holds the cache-not-pin read to
+// the re-hash: a source other than the lockfile that records a verified signature
+// for a plugin hands its bundle digest to the resolver, which re-hashes the cached
+// bundle exactly as it does for a lockfile row. Dropping the map here is the shape
+// in which a plugin attached at a verdict role loads with its bundle unchecked.
+func TestTheVerifyOnReadPostureThreadsTheBundleDigest(t *testing.T) {
+	r := NewResolver(ResolutionContext{}, PinPostureVerifyOnRead, PinMaps{
+		Pins:          map[string]string{"linter/house-style": "sha256:digest"},
+		PinVersions:   map[string]string{"linter/house-style": "sha256:digest"},
+		BundleDigests: map[string]string{"linter/house-style": "sha256:bundle"},
+	})
+	if got := r.bundleDigests["linter/house-style"]; got != "sha256:bundle" {
+		t.Errorf("the signature-bundle digest did not reach the resolver: got %q", got)
+	}
+	if got := r.pins["linter/house-style"]; got != "sha256:digest" {
+		t.Errorf("the digest pin did not reach the resolver: got %q", got)
+	}
+	if !r.expectsRecordedIdentity {
+		t.Error("the cache-not-pin read expects a recorded identity")
+	}
+}
+
 // TestAPinFreeSourceCarriesNoPinsWhateverItIsHanded holds the pin-free base to
 // its documented contract: the maps are ignored under that posture, so a site
 // that declared itself pin-free cannot carry a pin by accident.

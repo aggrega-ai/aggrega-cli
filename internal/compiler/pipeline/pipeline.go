@@ -224,10 +224,14 @@ type Inputs struct {
 	TolerateCatalogViewInconsistency bool
 
 	// VerdictPluginTrust carries the digests recorded as trusted for the plugins
-	// that return an accept-or-reject verdict, keyed by plugin identity. The
-	// verdict sockets thread it into their cache-not-pin resolution, where a
+	// that return an accept-or-reject verdict, keyed by plugin identity, and the
+	// signature requirement a plugin the record carries no signature for is held
+	// to. The verdict sockets thread it into their cache-not-pin resolution, where a
 	// recorded digest is compared against the digest the plugin's cached manifest
-	// reports and a disagreement halts.
+	// reports and a disagreement halts, the cached signature bundle a recorded
+	// signature names is re-hashed, and a plugin a requirement covers that records no
+	// signature is refused — before the plugin loads, on every surface that runs the
+	// pipeline.
 	//
 	// It is an input rather than something the pipeline reads for itself because
 	// reading the record is the composing surface's concern: the record sits beside
@@ -242,7 +246,7 @@ type Inputs struct {
 	// is supplied through one composition rather than assigned per surface — an
 	// omitted assignment is indistinguishable, to every type checker and to the
 	// resolution itself, from a workspace that has recorded nothing.
-	VerdictPluginTrust pluginpath.PinMaps
+	VerdictPluginTrust resolver.VerdictPluginTrust
 
 	// PluginPathLookup resolves a pipeline step's plugin URI to its verified
 	// .wasm bytes. When nil, RunPipeline binds the shared plugin-resolution

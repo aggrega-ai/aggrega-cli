@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -98,7 +99,7 @@ func TestConventionsPassHonoursADisagreeingRecordedDigest(t *testing.T) {
 		PinVersions: map[string]string{"linter/publishing": wrong},
 	}
 
-	err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), rw.NamedCatalogDirs("", nil), []string{entity}, conventionsRun{trusted: trusted}, io.Discard, io.Discard, nil)
+	err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), rw.NamedCatalogDirs("", nil), []string{entity}, conventionsRun{trusted: resolver.VerdictPluginTrust{PinMaps: trusted}}, io.Discard, io.Discard, nil)
 	if err == nil {
 		t.Fatal("a recorded digest the resolved bytes do not match must not resolve; got a clean pass")
 	}
@@ -111,7 +112,7 @@ func TestConventionsPassStaysPinFreeWithoutRecordedDigests(t *testing.T) {
 	rw := twoAttachmentWorkspace(t, oneLinterAttachment)
 	entity := componentWithOneFinding(t)
 
-	if err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), rw.NamedCatalogDirs("", nil), []string{entity}, conventionsRun{trusted: pluginpath.PinMaps{}}, io.Discard, io.Discard, nil); err != nil {
+	if err := lintConventionsFiles(t.Context(), rw, rw.ResolveCatalogDirs("", nil), rw.NamedCatalogDirs("", nil), []string{entity}, conventionsRun{trusted: resolver.VerdictPluginTrust{}}, io.Discard, io.Discard, nil); err != nil {
 		t.Fatalf("no recorded digest must resolve exactly as before; got %v", err)
 	}
 }

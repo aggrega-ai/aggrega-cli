@@ -559,7 +559,8 @@ func TestAPinNoSourceHoldsHaltsNamingEverySourceItRead(t *testing.T) {
 // no command reports the slot as one it passed over.
 func TestACacheSlotHoldingThePinStillStandsInForARemovedEntity(t *testing.T) {
 	// Not parallel: it asserts what the build writes to the process stderr, which it reads by replacing that stream.
-	f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: staleSlotEntry, config: "offline: true\n"})
+	// The laid slot stands in for a hub fetch that recorded no signature.
+	f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: staleSlotEntry, config: "offline: true\n" + fakeRegistryTrust})
 	if seed := f.pull(t, false, nil); seed.err != nil {
 		t.Fatalf("seed pull: %v\n%s", seed.err, seed.diag)
 	}

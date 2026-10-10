@@ -179,7 +179,11 @@ func TestValidateReleaseHonoursADisagreeingRecordedDigest(t *testing.T) {
 	// governs.
 	gate := verdicttest.SeedCached(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
 
-	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n"
+	// The record written below carries no signature fact, so the configuration
+	// declares the hub's own skip: under the default registry's built-in
+	// requirement the load would otherwise stop on the missing fact, and this pair
+	// is about the recorded digest alone.
+	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n" + fakeRegistryTrust
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}
@@ -220,7 +224,9 @@ func TestValidateReleaseWithTheRecordedDigestResolvesTheGate(t *testing.T) {
 
 	gate := verdicttest.SeedCached(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
 
-	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n"
+	// The same stance as the test above, for the same reason: this row has to reach
+	// the guest's load, which the missing signature fact would otherwise stop first.
+	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n" + fakeRegistryTrust
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}

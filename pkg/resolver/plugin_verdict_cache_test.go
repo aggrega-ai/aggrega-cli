@@ -5,6 +5,8 @@ package resolver
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,10 +64,10 @@ func TestVerdictPluginTrustedDigestDisagreementHalts(t *testing.T) {
 	sources, read, artifactRef, wasmDigest := verdictPluginFixture(t)
 
 	const stale = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	trusted := pluginpath.PinMaps{
+	trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 		Pins:        map[string]string{artifactRef: stale},
 		PinVersions: map[string]string{artifactRef: stale},
-	}
+	}}
 
 	_, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri")
 	if err == nil {
@@ -96,10 +98,10 @@ func TestVerdictPluginTrustedDigestDisagreementHalts(t *testing.T) {
 func TestVerdictPluginAgreeingTrustedDigestStillReadsEntity(t *testing.T) {
 	sources, read, artifactRef, wasmDigest := verdictPluginFixture(t)
 
-	trusted := pluginpath.PinMaps{
+	trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 		Pins:        map[string]string{artifactRef: wasmDigest},
 		PinVersions: map[string]string{artifactRef: wasmDigest},
-	}
+	}}
 
 	resolved, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri")
 	if err != nil {
@@ -129,7 +131,7 @@ func TestVerdictPluginAgreeingTrustedDigestStillReadsEntity(t *testing.T) {
 func TestVerdictPluginWithoutTrustedDigestIsUnchanged(t *testing.T) {
 	sources, read, _, _ := verdictPluginFixture(t)
 
-	resolved, err := ResolveVerdictPluginFromCache(sources, pluginpath.PinMaps{}, read, "any/uri")
+	resolved, err := ResolveVerdictPluginFromCache(sources, VerdictPluginTrust{}, read, "any/uri")
 	if err != nil {
 		t.Fatalf("no recorded digest must resolve exactly as before; got %v", err)
 	}
@@ -147,10 +149,10 @@ func TestVerdictPluginTrustedDigestForAnotherPluginDoesNotApply(t *testing.T) {
 	sources, read, _, _ := verdictPluginFixture(t)
 
 	const stale = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	trusted := pluginpath.PinMaps{
+	trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 		Pins:        map[string]string{"governance/someone-else": stale},
 		PinVersions: map[string]string{"governance/someone-else": stale},
-	}
+	}}
 
 	if _, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri"); err != nil {
 		t.Fatalf("a record addressed to another plugin must not govern this one; got %v", err)
@@ -163,12 +165,117 @@ func TestVerdictPluginTrustedDigestForAnotherPluginDoesNotApply(t *testing.T) {
 func TestVerdictPluginEmptyRecordedDigestIsNotAPinOfZero(t *testing.T) {
 	sources, read, artifactRef, _ := verdictPluginFixture(t)
 
-	trusted := pluginpath.PinMaps{
+	trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 		Pins:        map[string]string{artifactRef: ""},
 		PinVersions: map[string]string{artifactRef: ""},
-	}
+	}}
 
 	if _, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri"); err != nil {
 		t.Fatalf("an empty recorded digest must not halt the resolution; got %v", err)
+	}
+}
+
+// TestVerdictPluginLoadReHashesTheRecordedBundle holds the load to the signature
+// bundle the record names for the plugin: the cached bundle is re-hashed against
+// the recorded digest before the plugin's bytes are handed back, by the same step a
+// lockfile-pinned plugin's bundle goes through. One fault per row, each against the
+// same seeded cache; the first row is the control that keeps the others attributable.
+func TestVerdictPluginLoadReHashesTheRecordedBundle(t *testing.T) {
+	bundle := []byte("a signature bundle the pull cached")
+	bundleDigest := digest.ContentDigest(bundle)
+	rows := []struct {
+		name   string
+		cached []byte
+		want   error
+	}{
+		{name: "the bundle as the pull cached it", cached: bundle},
+		{name: "the bundle altered after the pull", cached: []byte("rewritten after the pull"), want: oci.ErrSignatureBundleDigestMismatch()},
+		{name: "the bundle removed", want: oci.ErrSignatureBundleDigestMismatch()},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			sources, read, artifactRef, wasmDigest := verdictPluginFixture(t)
+			if row.cached != nil {
+				at := oci.SignatureBundlePath(sources.WorkspaceRoot, sources.CacheDir, bundleDigest)
+				if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(at, row.cached, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
+				Pins:          map[string]string{artifactRef: wasmDigest},
+				PinVersions:   map[string]string{artifactRef: wasmDigest},
+				BundleDigests: map[string]string{artifactRef: bundleDigest},
+			}}
+			resolved, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri")
+			if row.want == nil {
+				if err != nil {
+					t.Fatalf("an intact recorded bundle must load; got %v", err)
+				}
+				if resolved.Tier != pluginpath.TierCache {
+					t.Errorf("resolved from %s; want the cache tier", resolved.Tier)
+				}
+				return
+			}
+			if !errors.Is(err, row.want) {
+				t.Fatalf("want %v, got %v", row.want, err)
+			}
+			if !strings.Contains(err.Error(), artifactRef) {
+				t.Errorf("the refusal does not name the plugin %q: %v", artifactRef, err)
+			}
+			if resolved.Bytes != nil {
+				t.Errorf("a refused load handed back the plugin's bytes")
+			}
+		})
+	}
+
+	// A bundle digest recorded for another plugin is not this one's.
+	t.Run("a bundle recorded for another plugin", func(t *testing.T) {
+		sources, read, _, _ := verdictPluginFixture(t)
+		trusted := VerdictPluginTrust{PinMaps: pluginpath.PinMaps{BundleDigests: map[string]string{"governance/someone-else": bundleDigest}}}
+		if _, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri"); err != nil {
+			t.Fatalf("a bundle recorded for another plugin must not govern this one; got %v", err)
+		}
+	})
+}
+
+// TestVerdictPluginLoadConsultsTheSignatureRequirementFirst holds the load to the
+// requirement a plugin whose record carries no signature is held to: the hold is
+// asked with the attachment's reference and the plugin's identity coordinate, its
+// refusal is the load's, returned as itself, and it is asked before any byte is
+// read — the cache below holds no bytes for the plugin at all.
+func TestVerdictPluginLoadConsultsTheSignatureRequirementFirst(t *testing.T) {
+	refused := errors.New("no signature recorded for a plugin that requires one")
+	var gotURI, gotCoordinate string
+	trusted := VerdictPluginTrust{HoldUnrecorded: func(uri, coordinate string) error {
+		gotURI, gotCoordinate = uri, coordinate
+		return refused
+	}}
+	var entity types.Plugin
+	entity.Metadata.Name = "unsigned-gate"
+	entity.Metadata.PluginType = "linter"
+	entity.Metadata.Version = "1.0.0"
+	read := func(string) (types.Plugin, string, bool, error) {
+		return entity, "sha256:3333333333333333333333333333333333333333333333333333333333333333", true, nil
+	}
+	sources := VerdictPluginTierSources{WorkspaceRoot: t.TempDir(), CacheDir: ".aggrega/cache"}
+
+	_, err := ResolveVerdictPluginFromCache(sources, trusted, read, "linter/unsigned-gate:1.0.0")
+	if !errors.Is(err, refused) {
+		t.Fatalf("the hold's refusal must be the load's; got %v", err)
+	}
+	if gotURI != "linter/unsigned-gate:1.0.0" || gotCoordinate != entity.ArtifactReference() {
+		t.Errorf("the hold was asked about (%q, %q); want the attachment's reference and the plugin's coordinate (%q, %q)",
+			gotURI, gotCoordinate, "linter/unsigned-gate:1.0.0", entity.ArtifactReference())
+	}
+
+	// The control: the same load with a hold that admits the plugin goes on to read
+	// the bytes, and fails there, so the refusal above is the hold's.
+	trusted.HoldUnrecorded = func(string, string) error { return nil }
+	_, err = ResolveVerdictPluginFromCache(sources, trusted, read, "linter/unsigned-gate:1.0.0")
+	if err == nil || errors.Is(err, refused) {
+		t.Fatalf("with the hold admitting the plugin the load must reach the cache and miss there; got %v", err)
 	}
 }

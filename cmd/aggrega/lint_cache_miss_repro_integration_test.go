@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -217,7 +218,7 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 		// state (the guest resolves), so it FAILS while the resolver omits the cache
 		// tier and passes once it is wired.
 		pluginByURI := func(string) (types.Plugin, bool) { return entity, true }
-		attachments, err := lintops.ResolveLinterPlugins("", wsCfg, pluginpath.PinMaps{}, pluginByURI)
+		attachments, err := lintops.ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) || errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
 				t.Fatalf("linter socket cannot resolve the pulled+cached guest %s: the content-cache tier is absent from ResolveLinterPlugins' resolver: %v", linterURI, err)

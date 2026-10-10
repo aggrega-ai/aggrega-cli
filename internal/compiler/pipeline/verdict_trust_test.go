@@ -57,10 +57,10 @@ func TestVerdictSocketHonoursADisagreeingRecordedDigest(t *testing.T) {
 	const wrong = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	inputs := Inputs{
 		WorkspaceConfig: &workspaceconfig.Config{},
-		VerdictPluginTrust: pluginpath.PinMaps{
+		VerdictPluginTrust: resolver.VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 			Pins:        map[string]string{coordinate: wrong},
 			PinVersions: map[string]string{coordinate: wrong},
-		},
+		}},
 	}
 
 	_, err := resolveVerdictSocketPluginFromCache(inputs, lookup, "governance/opa-gate:1.2.0")
@@ -100,14 +100,40 @@ func TestVerdictSocketAcceptsAnAgreeingRecordedDigest(t *testing.T) {
 
 	inputs := Inputs{
 		WorkspaceConfig: &workspaceconfig.Config{},
-		VerdictPluginTrust: pluginpath.PinMaps{
+		VerdictPluginTrust: resolver.VerdictPluginTrust{PinMaps: pluginpath.PinMaps{
 			Pins:        map[string]string{coordinate: manifestDigest},
 			PinVersions: map[string]string{coordinate: manifestDigest},
-		},
+		}},
 	}
 
 	_, err := resolveVerdictSocketPluginFromCache(inputs, lookup, "governance/opa-gate:1.2.0")
 	if errors.Is(err, resolver.ErrVerdictPluginTrustMismatch()) {
 		t.Errorf("an agreeing recorded digest must raise no trust disagreement; got %v", err)
+	}
+}
+
+// TestVerdictSocketHoldsAPluginItsRecordCarriesNoSignatureFor is the needle for the
+// pipeline's consumption of the signature requirement the record holds a plugin
+// to: the hold on the inputs is asked about the gate the socket loads, by the
+// attachment's reference and the plugin's coordinate, and its refusal stops the
+// load.
+func TestVerdictSocketHoldsAPluginItsRecordCarriesNoSignatureFor(t *testing.T) {
+	lookup, coordinate, _ := cachedVerdictGate()
+	refused := errors.New("no verified signature is recorded for this gate")
+	var asked []string
+	inputs := Inputs{
+		WorkspaceConfig: &workspaceconfig.Config{},
+		VerdictPluginTrust: resolver.VerdictPluginTrust{HoldUnrecorded: func(uri, c string) error {
+			asked = append(asked, uri, c)
+			return refused
+		}},
+	}
+
+	_, err := resolveVerdictSocketPluginFromCache(inputs, lookup, "governance/opa-gate:1.2.0")
+	if !errors.Is(err, refused) {
+		t.Fatalf("the hold's refusal must stop the load; got %v", err)
+	}
+	if len(asked) != 2 || asked[0] != "governance/opa-gate:1.2.0" || asked[1] != coordinate {
+		t.Errorf("the hold was asked %v; want the attachment's reference and %q", asked, coordinate)
 	}
 }

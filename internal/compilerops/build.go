@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -49,6 +50,13 @@ type BuildInputs struct {
 	Lockfile                         *lockfile.Lockfile
 	CompilerVersion                  string
 	TolerateCatalogViewInconsistency bool
+
+	// composedTrust is the record of plugin identities beside the lockfile as the
+	// caller composed it and has not yet written it, or nil, which reads the record
+	// from disk. The preview hands on the one it was supplied, so a plugin attached at
+	// a verdict role is held at its load to the signature this run records, as the
+	// check of recorded signatures before the render held it.
+	composedTrust *pluginstrust.Trust
 }
 
 // BuildToBuffer runs the full compiler pipeline for the resolved Release and
@@ -125,7 +133,7 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	// calls — this one serves both the daemon and the editor's build tool, and the
 	// command-line build calls the same helper. Composing them here rather than at
 	// each surface is what keeps a surface from acquiring one without the other.
-	if err := ApplyGovernanceComposition(&inputs, view, in.ReleasePath); err != nil {
+	if err := applyGovernanceComposition(&inputs, view, in.ReleasePath, in.composedTrust); err != nil {
 		// A composition failure happens before the pipeline runs, so there is no
 		// run to report findings from and the zero outcome is the truthful answer.
 		return pipeline.Outcome{}, err

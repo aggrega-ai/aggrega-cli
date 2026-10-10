@@ -113,7 +113,7 @@ func TestVerdictTrustRecordedDigestSatisfiesResolution(t *testing.T) {
 			ResolvedVersion: "2.4.1",
 			Digest:          recordedDigest,
 		})
-		_, err := resolver.ResolveVerdictPluginFromCache(sources, trust.PinMaps(), lazy.PluginFromCacheByURI, seeded.URI)
+		_, err := resolver.ResolveVerdictPluginFromCache(sources, resolver.VerdictPluginTrust{PinMaps: trust.PinMaps()}, lazy.PluginFromCacheByURI, seeded.URI)
 		return err
 	}
 

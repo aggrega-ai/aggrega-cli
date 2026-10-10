@@ -35,12 +35,14 @@
 // .wasm content-digest pin governs the bytes, and for a guest that carried a
 // verified signature fact when it was pulled, the cached signature bundle is
 // re-hashed against its recorded digest — a byte/hash integrity check over the
-// cached blob, the same one a build runs over every lockfile row it reads before
-// anything renders, where it also refuses a row a signing requirement covers that
-// records no signature at all. Signature verification itself — the
-// network-touching, trust-root operation — is a pull/lock-time step recorded as a
-// lockfile fact and is never re-run at build; this package performs no signature
-// verification.
+// cached blob, the same one a build runs over every recorded fact it reads before
+// anything renders, where it also refuses a reference a signing requirement covers
+// that records no signature at all. The recorded digest comes from the lockfile
+// row for a pinned plugin, and from the record of plugin identities beside the
+// lockfile for a plugin attached at a verdict role. Signature verification itself —
+// the network-touching, trust-root operation — is a pull/lock-time step recorded as
+// one of those facts and is never re-run at build; this package performs no
+// signature verification.
 package pluginpath
 
 import (
@@ -728,21 +730,22 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 }
 
 // verifyCachedBundle holds a signed guest's cached signature-bundle blob to the
-// digest its lockfile row recorded, before the guest loads, through the one
-// implementation of that check (oci.VerifyCachedSignatureBundle): an offline
-// byte/hash comparison — no signature re-verification, no network, no trust root
-// — so it holds under the hermetic build. A missing or unreadable blob, or a hash
-// that differs from the recorded digest, halts with a wrapped
+// digest its recorded signature names — its lockfile row's, or its entry's in the
+// record of plugin identities beside the lockfile — before the guest loads,
+// through the one implementation of that check (oci.VerifyCachedSignatureBundle):
+// an offline byte/hash comparison — no signature re-verification, no network, no
+// trust root — so it holds under the hermetic build. A missing or unreadable
+// blob, or a hash that differs from the recorded digest, halts with a wrapped
 // oci.ErrSignatureBundleDigestMismatch naming the plugin and where its bytes came
 // from. The blob is read under the same workspace root the cached .wasm is read
 // under, so the slot checked here is the slot the pull path wrote whatever
 // directory either was run from.
 //
-// A build runs the same check over every row it reads before anything renders,
-// so a build reaches here only with a bundle that already matched. This site is
-// kept because it is where a plugin's bytes are resolved on every surface — a
-// validation, a preview, a lint, an extension command's registration — and the
-// surfaces that load a plugin outside a build pass no other.
+// A build runs the same check over every recorded fact it reads before anything
+// renders, so a build reaches here only with a bundle that already matched.
+// This site is kept because it is where a plugin's bytes are resolved on every
+// surface — a validation, a preview, a lint, an extension command's registration
+// — and the surfaces that load a plugin outside a build pass no other.
 //
 // A read-hold refusal — a cache directory, or the blob itself, leading through a
 // link out of the root the pull's write of it is held to — is returned as

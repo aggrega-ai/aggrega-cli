@@ -23,14 +23,16 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // notice. Were the derivation ever to change, the conversion would silently pin
 // nothing; the guard is what makes it fail loudly instead.
 //
-// Both maps carry the recorded digest. Pins is the digest the resolved bytes are
-// verified against. PinVersions addresses the cache slot, whose second segment
-// for a plugin artifact is that same content digest — the recorded version and
-// the recorded digest name the same content for a `.wasm` — so the pinned slot
-// and the recorded one are the same slot. BundleDigests is left empty: the
-// signature bundle a record's Signature names is re-hashed by the build's check of
-// recorded signatures before anything renders, which reads the record itself, and
-// is not re-hashed again when the plugin's bytes are resolved.
+// Both digest maps carry the recorded digest. Pins is the digest the resolved
+// bytes are verified against. PinVersions addresses the cache slot, whose second
+// segment for a plugin artifact is that same content digest — the recorded version
+// and the recorded digest name the same content for a `.wasm` — so the pinned slot
+// and the recorded one are the same slot. BundleDigests carries, for a record
+// whose Signature names a cached signature bundle, that bundle's digest, so the
+// resolution that loads the plugin re-hashes the bundle before returning its bytes
+// — the same re-hash the build's check of recorded signatures runs over the record
+// before anything renders, on every surface that loads the plugin. A record
+// carrying no signature contributes no bundle digest.
 //
 // A record whose coordinate is empty addresses no plugin and is skipped, for the
 // same reason Upsert refuses to write one: every empty address would collide
@@ -58,6 +60,7 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 func (t *Trust) PinMaps() pluginpath.PinMaps {
 	pins := make(map[string]string)
 	versions := make(map[string]string)
+	bundles := make(map[string]string)
 	if t != nil {
 		for _, p := range t.Plugins {
 			if p.Plugin == "" {
@@ -65,7 +68,10 @@ func (t *Trust) PinMaps() pluginpath.PinMaps {
 			}
 			pins[p.Plugin] = p.Digest
 			versions[p.Plugin] = p.Digest
+			if p.Signature != nil && p.Signature.BundleDigest != "" {
+				bundles[p.Plugin] = p.Signature.BundleDigest
+			}
 		}
 	}
-	return pluginpath.PinMaps{Pins: pins, PinVersions: versions}
+	return pluginpath.PinMaps{Pins: pins, PinVersions: versions, BundleDigests: bundles}
 }

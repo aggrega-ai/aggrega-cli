@@ -12,15 +12,16 @@ import (
 )
 
 // TestPullDetailRendersTierKindRef checks the --detail line shape, the tier
-// vocabulary, deterministic sorting, and — the load-bearing case — that a
-// KindHint-empty entity (the top-level aggregate) still prints the correct Kind
-// via the reference-site map.
+// vocabulary, deterministic sorting, and — the load-bearing case — that an
+// entity whose hint the kind table does not name (the top-level aggregate, as the
+// walk records it) still prints the correct Kind via the reference-site map.
 func TestPullDetailRendersTierKindRef(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{
-		{ // top-level aggregate: KindHint empty, kind derived from the site
+		{ // top-level aggregate: its hint is not the table's, kind derived from the site
 			URI:            "hub.aggrega.ai/aggregate/example/app:1.0.0",
 			ResolutionPath: "external",
 			ReferencedFrom: []string{"release.spec.aggregate"},
+			KindHint:       closure.ReleaseAggregateKindHint,
 		},
 		{ // recipe via the Manifest components mapping value
 			URI:            "adminer-helm:1.0.0",
@@ -36,10 +37,10 @@ func TestPullDetailRendersTierKindRef(t *testing.T) {
 	if !strings.Contains(out, "resolved 2 entities (this pull):") {
 		t.Errorf("missing header:\n%s", out)
 	}
-	// The KindHint-empty top-level aggregate must still render Kind=Aggregate.
+	// The top-level aggregate must still render Kind=Aggregate.
 	if !strings.Contains(out, "external") || !strings.Contains(out, "Aggregate") ||
 		!strings.Contains(out, "← release.spec.aggregate") {
-		t.Errorf("top-level aggregate line wrong (KindHint-empty derivation failed):\n%s", out)
+		t.Errorf("top-level aggregate line wrong (reference-site derivation failed):\n%s", out)
 	}
 	if !strings.Contains(out, "fetched-fresh") || !strings.Contains(out, "Recipe") {
 		t.Errorf("recipe line wrong:\n%s", out)

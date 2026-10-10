@@ -272,7 +272,7 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// release-scoped conventions pass is the lint path that names one, and it holds
 	// its attachments to the record. Threading the empty set rather than branching
 	// keeps one call shape.
-	var trusted pluginpath.PinMaps
+	var trusted resolver.VerdictPluginTrust
 	if cfg.PluginPath == "" {
 		pluginByURI = lazyView.PluginByURI
 		cacheResolvers = []func(uri string) (pluginpath.ResolvedPlugin, error){
@@ -538,12 +538,17 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 // # What a recorded trusted digest adds, per case
 //
 // trusted carries the digests recorded as trusted for the plugins that return an
-// accept-or-reject verdict, keyed by plugin identity. Supplied and non-empty, it
-// turns the first arm from a pin-free read into one that verifies the resolved
-// bytes against the recorded digest; supplied empty — the ordinary case, and the
-// case when nothing has recorded anything yet — resolution is pin-free exactly as
-// before. An absent record is a first-run state rather than a fault, and never a
-// pin of zero. The cases differ, and none of them is "unverified until now":
+// accept-or-reject verdict, keyed by plugin identity, the digests of the cached
+// signature bundles their recorded signatures name, and the signature
+// requirement a plugin the record carries no signature for is held to. Supplied
+// and non-empty, it turns the first arm from a pin-free read into one that
+// verifies the resolved bytes against the recorded digest; supplied empty — the
+// ordinary case, and the case when nothing has recorded anything yet —
+// resolution is pin-free exactly as before. An absent record is a first-run
+// state rather than a fault, and never a pin of zero. The second arm, the
+// content cache, re-hashes a recorded signature's bundle and puts a plugin whose
+// record carries none to the requirement, as a build holds the same plugin. The
+// cases differ, and none of them is "unverified until now":
 //
 //   - A configured attachment whose plugin is served from the pull-populated
 //     content cache is already digest-checked today, against a pin synthesized
@@ -584,7 +589,7 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 // A resolution failure at ANY attachment halts the whole resolution: an
 // attachment the operator configured and the gate cannot load is a loud
 // guardrail, never an attachment to quietly drop.
-func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
+func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted resolver.VerdictPluginTrust, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
 	refs := linterAttachmentRefs(wsCfg)
 	// The posture is named from what the caller actually supplied rather than
 	// fixed at the construction: with recorded digests in hand the first arm
@@ -598,7 +603,7 @@ func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted 
 	}
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		Override: cliFlag,
-	}, posture, trusted)
+	}, posture, trusted.PinMaps)
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade
 	// override path sets no Contract/Limits, so the load gets a nil claim and
@@ -699,8 +704,9 @@ func dispatchLinterAttachments(ctx context.Context, attachments []LinterAttachme
 // the first arm verifies against. The two arms are the same socket resolving the
 // same attachment through different tiers, so a record honoured by one and
 // ignored by the other would make the check depend on which tier happened to
-// serve the bytes.
-func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+// serve the bytes. It also carries what the record says of the plugin's signature,
+// which this arm holds the plugin to before its bytes are read.
+func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, trusted resolver.VerdictPluginTrust, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
 	sources := resolver.VerdictPluginTierSources{
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
@@ -715,7 +721,7 @@ func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, trus
 // same catalog view it already built — and otherwise constructs a fallback for a
 // direct invocation, anchored at the working directory and reading the content
 // cache the workspace config names.
-func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, cacheResolve []func(uri string) (pluginpath.ResolvedPlugin, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, trusted resolver.VerdictPluginTrust, cacheResolve []func(uri string) (pluginpath.ResolvedPlugin, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
 	if len(cacheResolve) > 0 && cacheResolve[0] != nil {
 		return cacheResolve[0]
 	}

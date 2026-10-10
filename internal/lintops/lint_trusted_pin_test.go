@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -73,7 +74,7 @@ func TestLinterFirstArmVerifiesAgainstAnAgreeingRecordedDigest(t *testing.T) {
 		PinVersions: map[string]string{artifactRef: guestDigest},
 	}
 
-	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, read)
+	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{PinMaps: trusted}, read)
 	if err != nil {
 		t.Fatalf("an agreeing recorded digest must resolve; got %v", err)
 	}
@@ -101,7 +102,7 @@ func TestLinterFirstArmHaltsOnADisagreeingRecordedDigest(t *testing.T) {
 		PinVersions: map[string]string{artifactRef: wrong},
 	}
 
-	_, err := ResolveLinterPlugins("", wsCfg, trusted, read)
+	_, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{PinMaps: trusted}, read)
 	if err == nil {
 		t.Fatal("a recorded digest the resolved bytes do not match must not silently succeed; got a clean resolution")
 	}
@@ -117,7 +118,7 @@ func TestLinterFirstArmHaltsOnADisagreeingRecordedDigest(t *testing.T) {
 func TestLinterFirstArmStaysPinFreeWithoutRecordedDigests(t *testing.T) {
 	wsCfg, read, _, _ := embeddedLinterAttachment(t)
 
-	attachments, err := ResolveLinterPlugins("", wsCfg, pluginpath.PinMaps{}, read)
+	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, read)
 	if err != nil {
 		t.Fatalf("no recorded digest must resolve exactly as before; got %v", err)
 	}
@@ -152,7 +153,7 @@ func TestLinterOverrideStaysOutOfReachOfAnyRecord(t *testing.T) {
 		},
 	}
 
-	attachments, err := ResolveLinterPlugins(override, wsCfg, records.PinMaps(), nil)
+	attachments, err := ResolveLinterPlugins(override, wsCfg, resolver.VerdictPluginTrust{PinMaps: records.PinMaps()}, nil)
 	if err != nil {
 		t.Fatalf("the override path carries no plugin identity, so no record governs it; got %v", err)
 	}

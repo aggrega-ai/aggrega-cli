@@ -346,8 +346,9 @@ type ResolvedRef struct {
 	ResolutionPath string
 	ReferencedFrom []string
 	// KindHint is the catalog kind known from where the URI was collected —
-	// "recipe" or "feature_recipe" (a Manifest mapping value's position) or
-	// "aggregate" (a sub-aggregate type reference). Empty when the collection
+	// "recipe" or "feature_recipe" (a Manifest mapping value's position),
+	// "aggregate" (a sub-aggregate type reference) or ReleaseAggregateKindHint
+	// (the Release's own spec.aggregate). Empty when the collection
 	// site carried no kind. Source-descent prefers this hint over re-deriving
 	// the kind lexically from the URI, so a short-form Recipe reference (one
 	// without a "/recipe/" path segment) is still recognised for fetching, and

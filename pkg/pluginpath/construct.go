@@ -39,8 +39,9 @@ const (
 	// cached manifest, or taken from a record of the identities trusted for the
 	// gates that return an accept-or-reject verdict — so a guest cached at pull
 	// but never pinned still resolves with its bytes digest-checked on read.
-	// Signature-bundle digests are a lockfile-only fact and do not participate
-	// under this posture.
+	// A signature-bundle digest the source records participates exactly as under
+	// the lockfile posture: that record carries a verified signature fact too, and
+	// the cached bundle it names is re-hashed before the bytes are returned.
 	PinPostureVerifyOnRead
 )
 
@@ -103,7 +104,7 @@ type PinMaps struct {
 
 	// BundleDigests maps a plugin URI to the recorded digest of its cached
 	// signature-bundle blob, re-hashed and compared before the resolved bytes
-	// are returned. Meaningful only under the lockfile posture.
+	// are returned. Meaningful under both pinned postures.
 	BundleDigests map[string]string
 }
 
@@ -178,10 +179,10 @@ func (s *PinSource) Resolver(rc ResolutionContext) Resolver {
 //
 // The posture governs whether the pin maps are threaded, not how the cascade
 // resolves: under PinPostureNone the maps are ignored so a pin-free site cannot
-// carry a pin by accident; under PinPostureLockfile all three maps participate;
-// under PinPostureVerifyOnRead the pin and version maps participate while the
-// signature-bundle digests — a lockfile-only fact — do not. Resolve reads no
-// posture and treats the resulting populated (or empty) Pins map identically.
+// carry a pin by accident; under either pinned posture all three maps
+// participate, the two differing in where the caller's pins come from and in
+// nothing this construction does with them. Resolve reads no posture and treats
+// the resulting populated (or empty) Pins map identically.
 func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolver {
 	r := Resolver{
 		colocatedDirs: rc.ColocatedDirs,
@@ -190,14 +191,10 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		override:      rc.Override,
 	}
 	switch posture {
-	case PinPostureLockfile:
+	case PinPostureLockfile, PinPostureVerifyOnRead:
 		r.pins = pins.Pins
 		r.pinVersions = pins.PinVersions
 		r.bundleDigests = pins.BundleDigests
-		r.expectsRecordedIdentity = true
-	case PinPostureVerifyOnRead:
-		r.pins = pins.Pins
-		r.pinVersions = pins.PinVersions
 		r.expectsRecordedIdentity = true
 	case PinPostureNone:
 		// Pin-free base: no pins participate, whatever the caller passed, and a

@@ -23,8 +23,8 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -143,7 +143,7 @@ func lintCatalogPass(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	// it is the same path that reads the lockfile beside the Release, so both files
 	// are read from one place.
 	if err := lintConventionsFiles(ctx, rw, dirs, named, paths, conventionsRun{
-		trusted:       pluginpath.PinMaps{},
+		trusted:       resolver.VerdictPluginTrust{},
 		policyResolve: policyResolve,
 	}, out, diagOut, collect); err != nil {
 		return err
@@ -290,10 +290,12 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	}
 
 	// Hold this Release's configuration to the record of the plugin identities
-	// trusted for its verdict attachments, and carry the recorded digests into the
-	// linter socket's resolution. It runs before any entity is linted, so a gate
-	// that was reviewed and has since been dropped from the configuration refuses
-	// the pass rather than being discovered after the findings are printed.
+	// trusted for its verdict attachments, and carry the recorded digests and
+	// signatures into the linter socket's resolution, so a linter the pass loads is
+	// held to its recorded signature as a build holds it. It runs before any entity
+	// is linted, so a gate that was reviewed and has since been dropped from the
+	// configuration refuses the pass rather than being discovered after the findings
+	// are printed.
 	//
 	// This is the lint path that names a Release, and therefore the one that can
 	// locate the record — the same reason it is the lint path that reads the
@@ -387,8 +389,8 @@ type linterDispatch func(ctx context.Context, attachments []LinterAttachment, in
 
 // conventionsRun is what a conventions pass reads beyond the files it checks.
 type conventionsRun struct {
-	// trusted carries the recorded digests, as lintConventionsFiles describes.
-	trusted pluginpath.PinMaps
+	// trusted carries the record's contribution, as lintConventionsFiles describes.
+	trusted resolver.VerdictPluginTrust
 	// policyResolve decides each suppression's effective value from its workspace
 	// value, keyed on the suppression's flag name. nil takes the workspace value
 	// as it is.
@@ -423,7 +425,8 @@ type releaseRuleCheck struct {
 // collects nothing.
 //
 // run.trusted carries the digests recorded as trusted for the plugins that return
-// an accept-or-reject verdict, threaded from the caller rather than read here,
+// an accept-or-reject verdict, and what the record says of their signatures,
+// threaded from the caller rather than read here,
 // because only one of the two callers reads the record: it sits beside a Release,
 // and a whole-catalog pass is about the directories it reads rather than any one
 // Release's dependency closure, even where it is run for one. Both arms of the

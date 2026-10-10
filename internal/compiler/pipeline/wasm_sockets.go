@@ -104,7 +104,7 @@ func resolveTransformSocketPluginFromCache(inputs Inputs, catalogLookup resolver
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 	}
-	return resolver.ResolveVerdictPluginFromCache(sources, pluginpath.PinMaps{}, catalogLookup.PluginFromCache, versionedEntityRef(catalogLookup, entityURI))
+	return resolver.ResolveVerdictPluginFromCache(sources, resolver.VerdictPluginTrust{}, catalogLookup.PluginFromCache, versionedEntityRef(catalogLookup, entityURI))
 }
 
 // versionedEntityRef returns the reference the content cache holds a Plugin
@@ -141,10 +141,12 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 	}
-	// The digests recorded as trusted travel in on the pipeline inputs, supplied by
-	// the surface that composed the governance attachments. An empty set is the
-	// ordinary first-run state and resolves against the manifest-derived digest
-	// alone; a recorded digest is compared against it and a disagreement halts.
+	// The digests recorded as trusted, and the signature requirement a plugin the
+	// record holds no signature for is held to, travel in on the pipeline inputs,
+	// supplied by the surface that composed the governance attachments. An empty set
+	// is the ordinary first-run state and resolves against the manifest-derived
+	// digest alone; a recorded digest is compared against it and a disagreement
+	// halts, and a recorded signature's cached bundle is re-hashed.
 	return resolver.ResolveVerdictPluginFromCache(sources, inputs.VerdictPluginTrust, catalogLookup.PluginFromCache, entityURI)
 }
 

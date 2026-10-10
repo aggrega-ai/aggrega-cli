@@ -10,8 +10,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -80,7 +80,15 @@ func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead,
 
 // VerdictPluginTrust reads the record of the plugin identities trusted for this
 // Release's verdict attachments, holds the workspace configuration to it, and
-// returns the recorded digests as the pin maps a resolution verifies against.
+// returns what that record contributes to loading one of their plugins: the
+// recorded digests as the pin maps a resolution verifies against, the digest of
+// each recorded signature's cached bundle, which the load re-hashes, and the hold a
+// plugin the record carries no signature for is put to when it loads
+// (unrecordedVerdictPluginRefusal, the rule the build's check of recorded
+// signatures applies to the same plugin). So every surface that composes through
+// here — a build, a Release-scoped validation and a Release-scoped lint, from the
+// command line, the daemon and the assistant tool alike — holds a verdict plugin to
+// its recorded signature at the moment it loads it.
 //
 // It is the single home of the read side of that record. Both things it does
 // belong to one act and are deliberately not separable by a caller: a surface
@@ -95,9 +103,12 @@ func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead,
 // directory the process happens to be in, and finding none there would report a
 // workspace as unrecorded when it is merely being asked from the wrong place.
 //
-// An absent record yields empty pins and no refusal. That is a first-run state
+// An absent record yields empty pins and no refusal here. That is a first-run state
 // rather than a fault, and the empty result is honest about it: nothing is
-// recorded, so nothing is held to anything. A record that exists and cannot be
+// recorded, so no digest is held to anything. The signature requirement is the one
+// hold an absent record does not escape: a cache-served plugin it requires a
+// signature for is refused when it loads, as the build refuses it, so deleting the
+// record is not a way to run it unverified. A record that exists and cannot be
 // read halts — see pluginstrust.LoadOrStart, which owns that distinction.
 //
 // # What this establishes, and the one thing it does not
@@ -113,19 +124,59 @@ func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead,
 // surface should be written or documented as though it were.
 // pluginstrust.ErrVerdictAttachmentNotConfigured carries the same bound, together
 // with the neighbouring cases that do halt.
-func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, releasePath string) (pluginpath.PinMaps, error) {
+func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, releasePath string) (resolver.VerdictPluginTrust, error) {
+	return verdictPluginTrust(view, wsCfg, releasePath, nil)
+}
+
+// verdictPluginTrust is VerdictPluginTrust with the record the caller composed and
+// has not yet written, or nil, which reads the record from disk.
+//
+// The composed record serves the signature half alone — the bundle digests and the
+// hold — the same half the build's check of recorded signatures reads it for
+// (WithComposedTrustRecord): the resolution that composes it renders before it
+// writes it, so a load in that render reading the file would hold a plugin to the
+// record the run is about to replace, and on a first resolution to none. The
+// identity half — the configuration held to the record, and the digests compared —
+// reads the file, as it does on every surface.
+func verdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, releasePath string, composed *pluginstrust.Trust) (resolver.VerdictPluginTrust, error) {
 	if releasePath == "" {
-		return pluginpath.PinMaps{}, fmt.Errorf("verdict-plugin trust record: no Release path supplied, so the record beside the Release cannot be located")
+		return resolver.VerdictPluginTrust{}, fmt.Errorf("verdict-plugin trust record: no Release path supplied, so the record beside the Release cannot be located")
 	}
 	path := pluginstrust.PathFor(releasePath)
 	trust, _, err := pluginstrust.LoadOrStart(path)
 	if err != nil {
-		return pluginpath.PinMaps{}, err
+		return resolver.VerdictPluginTrust{}, err
 	}
 	if err := trust.HoldConfigurationToRecord(releasePath, wsCfg.VerdictAttachments(), pluginCoordinateReader(view)); err != nil {
-		return pluginpath.PinMaps{}, err
+		return resolver.VerdictPluginTrust{}, err
 	}
-	return trust.PinMaps(), nil
+	signatures := trust
+	if composed != nil {
+		signatures = composed
+	}
+	pins := trust.PinMaps()
+	pins.BundleDigests = signatures.PinMaps().BundleDigests
+	return resolver.VerdictPluginTrust{
+		PinMaps:        pins,
+		HoldUnrecorded: verdictPluginSignatureHold(wsCfg, releasePath, signatures),
+	}, nil
+}
+
+// verdictPluginSignatureHold is the hold a verdict plugin's load puts a plugin
+// read from the content cache to when the record carries no signature for it: the
+// build's own rule for the same plugin (unrecordedVerdictPluginRefusal), over the
+// same record and the same configuration. A plugin read from the content cache is
+// what reaches the hold, so the entity is the cache's by construction.
+func verdictPluginSignatureHold(wsCfg workspaceconfig.Config, releasePath string, record *pluginstrust.Trust) func(uri, coordinate string) error {
+	registry := wsCfg.DefaultRegistryLocation().Prefix()
+	recordPath := pluginstrust.PathFor(releasePath)
+	return func(uri, coordinate string) error {
+		if entry, held := record.Find(coordinate); held && entry.Signature != nil {
+			return nil
+		}
+		return unrecordedVerdictPluginRefusal(wsCfg, registry, verdictPluginRead{coordinate: coordinate, fromCache: true},
+			uri, recordPath, releasePath)
+	}
 }
 
 // ApplyGovernanceComposition composes, onto pipeline inputs, both halves of what
@@ -154,10 +205,11 @@ func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 //     attachments shape no output and are cache-not-pin, so they are read live and
 //     composed back on. With no lockfile there is nothing to reconstruct from and
 //     the live list stands as authored.
-//   - The recorded digests, which are supplied whether or not a lockfile loaded.
-//     The record is a committed file of its own beside the lockfile, so making its
-//     enforcement conditional on the lockfile would turn a failed lockfile read
-//     into a way to run the gates unchecked.
+//   - The record's contribution — the recorded digests, the recorded signatures'
+//     bundle digests and the signature hold — which is supplied whether or not a
+//     lockfile loaded. The record is a committed file of its own beside the
+//     lockfile, so making its enforcement conditional on the lockfile would turn a
+//     failed lockfile read into a way to run the gates unchecked.
 //
 // It mutates the inputs in place. The rewritten attachment list lands on a COPY
 // of the workspace configuration, which the inputs are then pointed at: the
@@ -172,10 +224,17 @@ func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 // compose onto, and the graph entry refuses such a run anyway, so reporting it
 // at the composition names the omission where it can still be fixed.
 func ApplyGovernanceComposition(in *pipeline.Inputs, view *catalog.LazyLookup, releasePath string) error {
+	return applyGovernanceComposition(in, view, releasePath, nil)
+}
+
+// applyGovernanceComposition is ApplyGovernanceComposition with the record of plugin
+// identities the caller composed and has not yet written, or nil, which reads the
+// record from disk; see verdictPluginTrust for the half it serves.
+func applyGovernanceComposition(in *pipeline.Inputs, view *catalog.LazyLookup, releasePath string, composedTrust *pluginstrust.Trust) error {
 	if in.WorkspaceConfig == nil {
 		return errors.New("governance composition: no workspace configuration was supplied on the pipeline inputs")
 	}
-	trusted, err := VerdictPluginTrust(view, *in.WorkspaceConfig, releasePath)
+	trusted, err := verdictPluginTrust(view, *in.WorkspaceConfig, releasePath, composedTrust)
 	if err != nil {
 		return err
 	}

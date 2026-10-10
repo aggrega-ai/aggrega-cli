@@ -145,9 +145,9 @@ func pullEventTier(resolutionPath string) string {
 }
 
 // entityKindForDetail derives the display kind for a resolved entity. The
-// closure's KindHint is authoritative when present, but it is empty for the
-// top-level aggregate (recorded with no hint), Components, and Features — so the
-// kind is otherwise mapped from the entity's reference-site role, which is
+// closure's KindHint is authoritative where this table names it, but the hints
+// it does not name — the Release's own aggregate's, and those of Components and
+// Features — leave the kind to the entity's reference-site role, which is
 // always present. Falls back to "Entity" when no rule matches.
 func entityKindForDetail(kindHint string, referencedFrom []string) string {
 	switch kindHint {

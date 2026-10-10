@@ -19,6 +19,25 @@ import (
 // kind switch routes it to its default no-op arm.
 const aggregateKindHint = "aggregate"
 
+// ReleaseAggregateKindHint marks the closure entity a Release's own spec.aggregate
+// names. It is distinct from the sub-aggregate hint on purpose: DescendSubAggregates
+// selects only that one, so the Aggregate the Release deploys is never loaded and
+// re-walked as though some Aggregate had imported it, and the walk resolves it
+// exactly as it resolves a reference carrying no hint.
+//
+// What it adds is the kind. An Aggregate named by identity and fetched from a
+// registry is a bare name, and a bare name carries no kind segment, so the one
+// binding of a reference to its registry location and trust policy
+// (catalog.SignatureSubjectOf) reads the kind from this hint. With it, the pull
+// verifies that Aggregate's signature and the build holds its row to the recorded
+// fact, as for every other reference a registry served; one named by path is read
+// from beside the Release, which neither of them holds.
+//
+// It is the weakest hint of all: any other hint recorded for the same URI replaces
+// it, so a reference collected elsewhere under a kind of its own keeps that kind.
+// It is not serialised to the lockfile.
+const ReleaseAggregateKindHint = "release_aggregate"
+
 // maxSubAggregateDepth bounds DescendSubAggregates' transitive recursion. It
 // shares the value of the topology flattener's inclusion-depth bound: the two
 // are independent constants over the same authoring graph (one bounds closure
