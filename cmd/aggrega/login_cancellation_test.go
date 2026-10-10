@@ -204,8 +204,8 @@ func TestStoppingALoginEndsTheCredentialCheckOnTheWire(t *testing.T) {
 
 	// Registered AFTER the servers so it runs BEFORE their Close: a server's Close
 	// waits for its outstanding requests, and those requests are parked until this
-	// channel closes. Releasing second would deadlock the teardown, which is a
-	// failure mode this test has actually produced.
+	// channel closes. Releasing second deadlocks the teardown — a real failure
+	// mode for this test, not a hypothetical one.
 	defer close(release)
 
 	controlHost := strings.TrimPrefix(controlSrv.URL, "http://")
