@@ -107,13 +107,14 @@ func discoverClosureDeprecations(
 // lockfile into lf, so a re-pull that reads a dependency from the content cache
 // rather than the registry records the same facts the pull that fetched it did.
 // Neither fact is discovered again for an entry the cache served that carries its
-// facts: the signature pass and the marker discovery read the registry, and a
-// cache hit does not touch it. Without the carry-forward a warm re-pull would
-// therefore drop both facts, and the lockfile it writes would differ from the one
-// the cold pull wrote over the same dependencies. It runs before the signature
-// pass because that pass reads what it carried: a cache-served entry whose row
-// still records no signature, where one is required, is the one the pass asks the
-// registry about (VerifyClosureSignatures).
+// facts and whose signature a build accepts: the signature pass and the marker
+// discovery read the registry, and such a cache hit does not touch it. Without the
+// carry-forward a warm re-pull would therefore drop both facts, and the lockfile it
+// writes would differ from the one the cold pull wrote over the same dependencies.
+// It runs before the signature pass because that pass reads what it carried: a
+// cache-served entry whose row still records no signature, where one is required,
+// or records one a build does not accept, is the one the pass asks the registry
+// about (VerifyClosureSignatures).
 //
 // A fact is carried only onto a row that records none of its own, so what this
 // run discovered at the registry always wins, and only across an unchanged pin:

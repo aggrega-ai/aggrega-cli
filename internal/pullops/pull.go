@@ -1281,9 +1281,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// facts is not verified or re-discovered below, because both passes read
 			// the registry and a cache hit does not touch it; the prior facts hold for a
 			// pin that is unchanged. An entry fetched from the registry is verified and
-			// re-discovered below, and so is a cache-served one whose row still records
-			// no signature where one is required; what that finds overwrites whatever
-			// was carried, on its own row and on every row pinning the same bytes.
+			// re-discovered below, and so is a cache-served one a build would refuse —
+			// its row still records no signature where one is required, or records one
+			// the build does not accept; what that finds overwrites whatever was
+			// carried, on its own row and on every row pinning the same bytes.
 			// Without this, a warm re-pull — or a build's honoring automatic fill —
 			// would silently drop a recorded signature and a recorded deprecation, the
 			// second of which masks a deprecated dependency.
@@ -1305,10 +1306,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// when the workspace is offline a registry-resolved entity's referrer
 			// fetch is refused loudly through the egress gate (a nil client) rather
 			// than silently passing as unverified — and so is a cache-served entry
-			// whose row records no signature a requirement asks for, which the pass
-			// asks its registry about rather than write a row a build would refuse.
-			// A closure with nothing to ask a registry about needs no fetch and is
-			// unaffected.
+			// whose row records no signature a requirement asks for, or records one a
+			// build does not accept, which the pass asks its registry about rather
+			// than write a row a build would refuse. A closure with nothing to ask a
+			// registry about needs no fetch and is unaffected.
 			verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
 			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, workspaceRoot, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)

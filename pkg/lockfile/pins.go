@@ -9,7 +9,10 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // the artifact resolver: the content digest each plugin's resolved bytes verify
 // against, the resolved version that addresses its versioned cache slot, and — for
 // a row carrying a verified signature fact — the recorded digest of its cached
-// signature-bundle blob.
+// signature-bundle blob. releasePath is the Release the record belongs to, as the
+// reader named it: the lockfile beside it (PathFor) is named as where those facts
+// are recorded and the Release as the one whose pull repairs them, so a refusal of
+// one names both. An empty releasePath names neither.
 //
 // The derivation lives here rather than at the surface that consumes it because
 // this package owns what a recorded closure says, and a surface reading those rows
@@ -21,7 +24,7 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // same fact as "this site has no record at all" — which this function cannot
 // express, because it is the calling site's to state rather than this one's to
 // infer. The two are told apart where the site writes its pin source, not here.
-func PluginPins(lf *Lockfile) pluginpath.PinMaps {
+func PluginPins(lf *Lockfile, releasePath string) pluginpath.PinMaps {
 	if lf == nil || len(lf.Plugins) == 0 {
 		return pluginpath.PinMaps{}
 	}
@@ -41,6 +44,10 @@ func PluginPins(lf *Lockfile) pluginpath.PinMaps {
 	// consulted about signature bundles and found none for every plugin.
 	if len(bundleDigests) > 0 {
 		out.BundleDigests = bundleDigests
+		if releasePath != "" {
+			out.RecordedIn = PathFor(releasePath)
+			out.Release = releasePath
+		}
 	}
 	return out
 }

@@ -103,9 +103,19 @@ type PinMaps struct {
 	PinVersions map[string]string
 
 	// BundleDigests maps a plugin URI to the recorded digest of its cached
-	// signature-bundle blob, re-hashed and compared before the resolved bytes
+	// signature-bundle blob, held to the recorded fact before the resolved bytes
 	// are returned. Meaningful under both pinned postures.
 	BundleDigests map[string]string
+
+	// RecordedIn is the file the pin source records those signature facts in — the
+	// lockfile, or the record of plugin identities beside it — named in a refusal
+	// of one. Empty names no file.
+	RecordedIn string
+
+	// Release is the Release that file belongs to, as the reader named it, whose
+	// pull the refusal of one of those facts names as its remedy. Empty names a
+	// placeholder in its place.
+	Release string
 }
 
 // PinSource is a construction site's written answer to where its plugin pins
@@ -195,6 +205,8 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		r.pins = pins.Pins
 		r.pinVersions = pins.PinVersions
 		r.bundleDigests = pins.BundleDigests
+		r.recordedIn = pins.RecordedIn
+		r.release = pins.Release
 		r.expectsRecordedIdentity = true
 	case PinPostureNone:
 		// Pin-free base: no pins participate, whatever the caller passed, and a

@@ -27,10 +27,11 @@ import (
 // The signature pass over a row the content cache served. Such a row was verified
 // by the pull that fetched its bytes and carries that pull's fact forward, so it is
 // normally not asked about. Where its row records no fact and a signature is
-// required for it — the row a build refuses — the pass asks the registry about it,
+// required for it — a row a build refuses — the pass asks the registry about it,
 // by the manifest digest its resolution reports, exactly as it asks about a fetched
-// one, and records the fact. Every other cache-served row is left as it is and costs
-// no registry request.
+// one, and records the fact. A row recording a fact the build refuses is the other
+// row a build refuses, held in verify_reask_damaged_fact_test.go. Every other
+// cache-served row is left as it is and costs no registry request.
 
 const reaskHost = "keyed.example.com"
 
@@ -186,12 +187,12 @@ func TestTheSignaturePassAsksTheRegistryAboutACacheServedRowARequirementCoversTh
 }
 
 // TestTheSignaturePassLeavesEveryOtherCacheServedRowAsItIs holds the rows the re-ask
-// must not reach: a row that records a fact, and a row whose missing fact nothing
-// halts on. Each differs from the repaired case in one input, and each costs no
-// registry request.
+// must not reach: a row that records a fact the build accepts — its bundle intact
+// in the cache and made for the row's own artifact — and a row whose missing fact
+// nothing halts on. Each differs from the repaired case in one input, and each
+// costs no registry request.
 func TestTheSignaturePassLeavesEveryOtherCacheServedRowAsItIs(t *testing.T) {
 	t.Parallel()
-	carried := lockfile.VerifiedSignature{Mode: "keyed", Identity: "carried-from-the-prior-lockfile", BundleDigest: "sha256:carried"}
 	rows := []struct {
 		name string
 		// cfg derives the case's configuration from the requiring one.
@@ -221,14 +222,21 @@ func TestTheSignaturePassLeavesEveryOtherCacheServedRowAsItIs(t *testing.T) {
 			t.Run(section.name+"/"+row.name, func(t *testing.T) {
 				t.Parallel()
 				store, manifestDg, contentDg, pubPEM := reaskStore(t, true)
+				root := t.TempDir()
+				// The carried fact names a bundle that is in the cache and was made for
+				// the row's own manifest, so the build accepts it: the row carries no
+				// fault but the one the case varies.
+				var carried lockfile.VerifiedSignature
 				var fact *lockfile.VerifiedSignature
 				if row.carried {
+					carried = lockfile.VerifiedSignature{Mode: "keyed", Identity: "carried-from-the-prior-lockfile",
+						BundleDigest: cacheBundleMadeFor(t, root, manifestDg)}
 					c := carried
 					fact = &c
 				}
 				cl, lf := section.fixture(manifestDg, contentDg, fact)
 				log := &askLog{}
-				if err := VerifyClosureSignatures(context.Background(), lf, cl, row.cfg(requiringConfig(pubPEM)), t.TempDir(), ".aggrega/cache",
+				if err := VerifyClosureSignatures(context.Background(), lf, cl, row.cfg(requiringConfig(pubPEM)), root, ".aggrega/cache",
 					io.Discard, countingTargetFor(pluginTargetFor(store, "1.0.0"), log)); err != nil {
 					t.Fatalf("VerifyClosureSignatures: %v", err)
 				}

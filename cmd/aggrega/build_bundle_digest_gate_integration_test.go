@@ -291,15 +291,51 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf(".wasm row recorded no signature bundle digest: %+v", row.Signature)
 		}
 		// Tamper the CACHED signature bundle blob (the .wasm content pin stays
-		// intact), so the halt is attributable to the bundle-digest gate alone.
+		// intact), so the halt is attributable to the bundle-digest gate alone. The
+		// build fills nothing: a fill is a pull, which asks the registry again about a
+		// row whose recorded fact the build refuses and rewrites the bundle — the arm
+		// after this one.
 		bundlePath := oci.SignatureBundlePath(ws, ".aggrega/cache", row.Signature.BundleDigest)
 		if werr := os.WriteFile(bundlePath, []byte("tampered-signature-bundle-bytes"), 0o644); werr != nil {
 			t.Fatalf("tamper cached bundle %s: %v", bundlePath, werr)
+		}
+		cfgPath := filepath.Join(ws, ".aggrega-config.yaml")
+		cfg, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			t.Fatalf("read the workspace config: %v", rerr)
+		}
+		if werr := os.WriteFile(cfgPath, []byte(strings.Replace(string(cfg), "auto_pull: true\n", "auto_pull: false\n", 1)), 0o644); werr != nil {
+			t.Fatalf("write the no-fill config: %v", werr)
 		}
 
 		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if !errors.Is(berr, oci.ErrSignatureBundleDigestMismatch()) {
 			t.Fatalf("a tampered cached bundle must halt with ErrSignatureBundleDigestMismatch before instantiation; got: %v", berr)
+		}
+		if !strings.Contains(berr.Error(), "remediation: run `aggrega pull --release ") {
+			t.Errorf("the refusal does not name the pull that repairs it: %v", berr)
+		}
+	})
+
+	t.Run("tampered_bundle_repaired_by_the_builds_fill", func(t *testing.T) {
+		lf, wasmURI, ws := pullSigned(t)
+		row := findLockfilePluginRow(t, lf, wasmURI)
+		if row.Signature == nil || row.Signature.BundleDigest == "" {
+			t.Fatalf(".wasm row recorded no signature bundle digest: %+v", row.Signature)
+		}
+		bundlePath := oci.SignatureBundlePath(ws, ".aggrega/cache", row.Signature.BundleDigest)
+		if werr := os.WriteFile(bundlePath, []byte("tampered-signature-bundle-bytes"), 0o644); werr != nil {
+			t.Fatalf("tamper cached bundle %s: %v", bundlePath, werr)
+		}
+
+		// The workspace fills its lockfile (auto_pull), so the fill asks the registry
+		// about the row whose bundle the build would refuse, rewrites the bundle, and
+		// the build goes ahead.
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+			t.Fatalf("the build's fill must repair the tampered bundle and the build go ahead; got: %v", berr)
+		}
+		if _, verr := oci.VerifyCachedSignatureBundle(ws, ".aggrega/cache", row.Signature.BundleDigest); verr != nil {
+			t.Errorf("after the build's fill the cached bundle is still one the build refuses: %v", verr)
 		}
 	})
 

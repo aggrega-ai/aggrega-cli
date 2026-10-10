@@ -29,8 +29,8 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // and the recorded digest name the same content for a `.wasm` — so the pinned slot
 // and the recorded one are the same slot. BundleDigests carries, for a record
 // whose Signature names a cached signature bundle, that bundle's digest, so the
-// resolution that loads the plugin re-hashes the bundle before returning its bytes
-// — the same re-hash the build's check of recorded signatures runs over the record
+// resolution that loads the plugin holds the fact before returning its bytes — the
+// same decision the build's check of recorded signatures makes over the record
 // before anything renders, on every surface that loads the plugin. A record
 // carrying no signature contributes no bundle digest.
 //

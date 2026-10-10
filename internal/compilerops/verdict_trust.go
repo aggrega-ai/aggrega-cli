@@ -41,12 +41,16 @@ func pluginCoordinateReader(view *catalog.LazyLookup) func(uri string) (string, 
 }
 
 // verdictPluginRead is what a build reads about the plugin one verdict
-// attachment names: the plugin's identity coordinate, and whether its entity is
+// attachment names: the plugin's identity coordinate, whether its entity is
 // served by the content cache a pull filled from a registry rather than by the
-// catalog view.
+// catalog view, and — for one the cache served — the digest of the manifest the
+// cache read held the entity to, which is the artifact a signature recorded for
+// the plugin had to be made for. A plugin the catalog view serves comes with no
+// manifest.
 type verdictPluginRead struct {
-	coordinate string
-	fromCache  bool
+	coordinate     string
+	fromCache      bool
+	manifestDigest string
 }
 
 // readVerdictPlugin reads the plugin a verdict attachment names, through the ONE
@@ -71,11 +75,11 @@ func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead,
 	if entity, found := view.PluginByURI(uri); found {
 		return verdictPluginRead{coordinate: entity.ArtifactReference()}, true
 	}
-	entity, _, found, err := view.PluginFromCacheByURI(uri)
+	cached, found, err := view.CachedPluginByURI(uri)
 	if err != nil || !found {
 		return verdictPluginRead{}, false
 	}
-	return verdictPluginRead{coordinate: entity.ArtifactReference(), fromCache: true}, true
+	return verdictPluginRead{coordinate: cached.Entity.ArtifactReference(), fromCache: true, manifestDigest: cached.ManifestDigest}, true
 }
 
 // VerdictPluginTrust reads the record of the plugin identities trusted for this
@@ -156,6 +160,8 @@ func verdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 	}
 	pins := trust.PinMaps()
 	pins.BundleDigests = signatures.PinMaps().BundleDigests
+	pins.RecordedIn = path
+	pins.Release = releasePath
 	return resolver.VerdictPluginTrust{
 		PinMaps:        pins,
 		HoldUnrecorded: verdictPluginSignatureHold(wsCfg, releasePath, signatures),

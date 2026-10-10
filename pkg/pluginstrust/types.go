@@ -97,9 +97,12 @@ type TrustedPlugin struct {
 	// recorded for the artifact Digest names, or nil when that pull verified no
 	// signature. It is the lockfile row's own fact type, so the two records cannot
 	// come to describe one verified signature in two shapes. A build reads it before
-	// the plugin runs: it re-hashes the cached bundle the fact names, and where the
-	// trust configuration requires a signature for a plugin the content cache
-	// serves, a record carrying none refuses the build. It is optional and omitted
+	// the plugin runs: it re-hashes the cached bundle the fact names, and, for a
+	// plugin the content cache serves, refuses a bundle made for another artifact
+	// than the one the cache read of the plugin's entity was held to — so a fact
+	// copied from another entry is refused — and where the trust configuration
+	// requires a signature for a plugin the content cache serves, a record carrying
+	// none refuses the build. It is optional and omitted
 	// from the written bytes when absent, so a record for an unsigned artifact is
 	// byte-identical to one written before this field existed.
 	Signature *lockfile.VerifiedSignature `yaml:"signature,omitempty"`

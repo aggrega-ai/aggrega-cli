@@ -128,12 +128,22 @@ type DeprecationRecord struct {
 // pinned-key fingerprint (keyed) that matched, and the content-addressed
 // digest of the signature bundle cached in the closure. Build does not
 // re-run verification. It checks this fact on every row it reads — an
-// entity of any kind, a library, a plugin — before anything renders: it
-// re-hashes the cached bundle against BundleDigest, and where the trust
+// entity of any kind, a library, a plugin — before anything renders, through
+// the one decision whether a recorded fact is accepted
+// (oci.HoldRecordedSignature): it re-hashes the cached bundle against
+// BundleDigest, and, for a row the content cache served, it reads from that
+// bundle which artifact the signature was made for and refuses a fact made for
+// another than the one whose manifest the build read for the row — so a fact
+// copied from one row onto another is refused whatever the signing
+// requirement says (oci.ErrSignatureForAnotherArtifact). Where the trust
 // configuration requires a signature for a row the content cache served, a
 // row recording no fact refuses the build (ErrSignatureNotRecorded). A
-// plugin's bundle is re-hashed again when its bytes are resolved, which is
-// what reaches the surfaces that load a plugin outside a build.
+// plugin's fact is held the same way again when its bytes are resolved, which
+// is what reaches the surfaces that load a plugin outside a build.
+//
+// No signature is verified at build: what a build cannot tell is a bundle
+// written into the cache by hand, made out for the row's own artifact, from one
+// a pull verified.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
@@ -151,7 +161,8 @@ type VerifiedSignature struct {
 	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
 	// bundle blob stored in the closure. It names the cache blob, and on
 	// every row a build reads it is what the build re-hashes that blob
-	// against.
+	// against before reading from it which artifact the signature was made
+	// for.
 	BundleDigest string `yaml:"bundle_digest" json:"bundleDigest"`
 	// Identity is the verified signer of the signature: the certificate
 	// subject for a keyless signature, or a stable fingerprint of the

@@ -1764,7 +1764,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 				}
 				return nil
 			}
-			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "", position)
+			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "", "", position)
 			return nil
 		})
 	}
@@ -1791,9 +1791,11 @@ func (l *LazyLookup) buildRecipeIndex() {
 //
 // slot is the cache slot a pinned entity was read from, and empty for a Tier-1
 // file; it says which of those two the entity arrived through, and this is the one
-// step that knows. For the winning entry of every kind it admits, the fold records
-// that fact once, in origins: the document a Tier-1 file was authored in, or the
-// slot a pinned entity was read from together with its label and, for a Recipe or
+// step that knows. manifestDigest is the digest of the manifest the verifying read
+// held a pinned slot's bytes to, and empty for a Tier-1 file. For the winning entry
+// of every kind it admits, the fold records those facts once, in origins: the
+// document a Tier-1 file was authored in, or the slot a pinned entity was read from
+// together with its label, the manifest its bytes were held to and, for a Recipe or
 // FeatureRecipe, the document its parse was anchored at in the slot's layout. A
 // Tier-1 file's src is a document on this machine, while a pinned slot's src is a
 // label naming the pin rather than a path anybody could open, so the bytes are
@@ -1824,7 +1826,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 // A Tier-1 file that fails to parse records the refusal the whole-catalog load
 // records for the same file (recordParseRefusal), so every surface reading this
 // backing reports the file in the words a build's own annotation reports it in.
-func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot string, dir int) {
+func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot, manifestDigest string, dir int) {
 	local := slot == ""
 	switch kind {
 	case "Recipe":
@@ -1849,7 +1851,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.recipes, "Recipe", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
-				l.origins[entityBytesKey("Recipe", key)] = foldedOrigin(src, slot, docPath)
+				l.origins[entityBytesKey("Recipe", key)] = foldedOrigin(src, slot, docPath, manifestDigest)
 				if local {
 					l.recordedPins.Record(src, pins)
 				}
@@ -1877,7 +1879,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.featureRecipes, "FeatureRecipe", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
-				l.origins[entityBytesKey("FeatureRecipe", key)] = foldedOrigin(src, slot, docPath)
+				l.origins[entityBytesKey("FeatureRecipe", key)] = foldedOrigin(src, slot, docPath, manifestDigest)
 				if local {
 					l.recordedPins.Record(src, pins)
 				}
@@ -1892,7 +1894,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
 		claimShellIdentity(l, l.aggregates, "Aggregate", key, e, src, parseData, dir,
 			func() {
-				l.origins[entityBytesKey("Aggregate", key)] = foldedOrigin(src, slot, "")
+				l.origins[entityBytesKey("Aggregate", key)] = foldedOrigin(src, slot, "", manifestDigest)
 				l.entityBytes[entityBytesKey("Aggregate", key)] = rawBytes
 			},
 			func() error { return fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name) })
@@ -1905,7 +1907,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.mappingLibraries, "MappingLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
-				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
+				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
 				return fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name)
@@ -1919,7 +1921,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.workloadLibraries, "WorkloadLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes
-				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
+				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
 				return fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name)
@@ -1933,7 +1935,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.artifactLibraries, "ArtifactLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = rawBytes
-				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
+				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
 				return fmt.Errorf("duplicate artifact library name %q; this file is shadowed", e.Metadata.Name)
@@ -1948,7 +1950,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.plugins, "Plugin", key, e, src, parseData, dir,
 			func() {
 				l.entityBytes[entityBytesKey("Plugin", key)] = rawBytes
-				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "")
+				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error { return fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key) })
 	}
@@ -2116,13 +2118,18 @@ func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool
 	// with a separate ResolvedVersion) addresses its versioned cache slot via
 	// versionedSlotURI — the same key the cache→catalog bridge reads.
 	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-	blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+	blob, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 	if err != nil {
 		if unwrapRefusal(err) {
 			l.recordRecipeSkip("lockfile-pinned:"+uri, err)
 		}
 		return
 	}
+	// The manifest the read just held the bytes to, recorded with the entity so a
+	// closure walk reports it as every other read of the content cache reports the
+	// manifest it held — derived from the bytes on disk rather than carried in from
+	// the pin.
+	manifestDigest := contentDigest(manifest)
 	// The verified read above succeeded through this same derivation, so the slot
 	// is there; an empty one would fold a pinned entity as a catalog-directory
 	// file, which is why the case is skipped rather than passed on.
@@ -2140,10 +2147,10 @@ func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool
 		return
 	}
 	if kind == "SchemaLibrary" {
-		l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot)
+		l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot, manifestDigest)
 		return
 	}
-	l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, noCatalogDirectory)
+	l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, manifestDigest, noCatalogDirectory)
 }
 
 // unwrapRefusal reports whether err is one of the refusals reading an entity out
@@ -2171,9 +2178,9 @@ func contentAnchor(workspaceRoot, cacheDir, src, slot string, rawBytes []byte) (
 // l.schemaLibraries, first-wins (a Tier-1 library of the same name already present
 // is kept). Mirrors the SchemaLibrary arm of buildSchemaLibraries' Tier-1 walk; the
 // raw bytes are retained for digest fidelity, and the library placed is recorded as
-// read from slot under the label src, so it is answered as cache-served rather than
-// as authored in a catalog directory.
-func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, slot string) {
+// read from slot under the label src, held to the manifest manifestDigest names, so
+// it is answered as cache-served rather than as authored in a catalog directory.
+func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, slot, manifestDigest string) {
 	lib, perr := parseSchemaLibraryEntity(parseData, src)
 	if perr != nil {
 		l.recipeSkips[src] = perr
@@ -2184,7 +2191,7 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, sl
 	}
 	l.schemaLibraries[lib.Metadata.Name] = lib
 	l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = rawBytes
-	l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = pinnedOrigin(src, slot, "")
+	l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 }
 
 // recordRecipeSkip emits the one-line tolerance warning and records the reason.
@@ -2482,22 +2489,45 @@ func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 // ok is false on a clean cache miss (an unset cache dir, an unversioned URI, or an
 // absent slot / manifest); a non-nil error is a manifest-verification or parse
 // failure that must halt rather than fall through.
+//
+// It is CachedPluginByURI with the manifest's digest dropped, for the callers that
+// take a read of this shape as a function value.
 func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, bool, error) {
+	read, ok, err := l.CachedPluginByURI(uri)
+	return read.Entity, read.WasmDigest, ok, err
+}
+
+// CachedPlugin is what one cache-not-pin read of a Plugin entity reports: the
+// parsed entity, the content digest of its .wasm layer, and the digest of the
+// manifest the read held the entity to — the manifest a signature on the plugin
+// was made for, since the entity and its .wasm are published under that one
+// manifest.
+type CachedPlugin struct {
+	Entity         types.Plugin
+	WasmDigest     string
+	ManifestDigest string
+}
+
+// CachedPluginByURI is the read PluginFromCacheByURI describes, reporting as well
+// the digest of the manifest it held the entity to. The digest is derived from the
+// manifest bytes the read held, never from a record, so it names the artifact the
+// read actually served.
+func (l *LazyLookup) CachedPluginByURI(uri string) (CachedPlugin, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.cacheDir == "" {
-		return types.Plugin{}, "", false, nil
+		return CachedPlugin{}, false, nil
 	}
 	_, version, hasV := resolver.SplitVersionedURI(uri)
 	if !hasV || version == "" {
-		return types.Plugin{}, "", false, nil
+		return CachedPlugin{}, false, nil
 	}
 	entityBytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, version)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound()) {
-			return types.Plugin{}, "", false, nil
+			return CachedPlugin{}, false, nil
 		}
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
+		return CachedPlugin{}, false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
 	}
 	manifestBytes, merr := persistedManifest(l.workspaceRoot, l.cacheDir, uri, version)
 	if merr != nil {
@@ -2506,24 +2536,24 @@ func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, boo
 		// caller surfaces the pull-first remediation rather than trusting a
 		// half-populated slot.
 		if errors.Is(merr, oci.ErrFetchNotFound()) {
-			return types.Plugin{}, "", false, nil
+			return CachedPlugin{}, false, nil
 		}
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, merr)
+		return CachedPlugin{}, false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, merr)
 	}
 	// Manifest root of trust: the cached entity (the manifest's CONFIG blob) is
 	// trusted only against the descriptor the manifest commits to.
 	if err := oci.VerifyConfigAgainstManifest(manifestBytes, entityBytes); err != nil {
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, err)
+		return CachedPlugin{}, false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, err)
 	}
 	entity, perr := parsePluginEntity(entityBytes, "cache:"+uri)
 	if perr != nil {
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: parse cached plugin entity %s: %w", uri, perr)
+		return CachedPlugin{}, false, fmt.Errorf("catalog: parse cached plugin entity %s: %w", uri, perr)
 	}
 	wasmDigest, werr := oci.PluginWasmLayerDigest(manifestBytes)
 	if werr != nil {
-		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin manifest %s: %w", uri, werr)
+		return CachedPlugin{}, false, fmt.Errorf("catalog: cached plugin manifest %s: %w", uri, werr)
 	}
-	return entity, wasmDigest, true, nil
+	return CachedPlugin{Entity: entity, WasmDigest: wasmDigest, ManifestDigest: contentDigest(manifestBytes)}, true, nil
 }
 
 // ProviderPluginByName resolves a provider binding (bare name or version-pinned

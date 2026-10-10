@@ -165,8 +165,11 @@ spec:
 			name     string
 			required bool
 			edit     func(*testing.T)
-			tamper   bool
-			want     error
+			// tamper rewrites the plugin's cached bundle and remove deletes it; repull
+			// then runs a pull before the surface, which must leave the bundle the
+			// record names intact again.
+			tamper, remove, repull bool
+			want                   error
 		}{
 			{name: "the record as the pull wrote it", required: true},
 			{name: "the plugin's signature removed from the record", required: true, edit: stripOne,
@@ -178,6 +181,8 @@ spec:
 			}, want: lockfile.ErrSignatureNotRecorded()},
 			{name: "the plugin's cached bundle tampered", required: true, tamper: true,
 				want: oci.ErrSignatureBundleDigestMismatch()},
+			{name: "the plugin's cached bundle tampered, then pulled again", required: true, tamper: true, repull: true},
+			{name: "the plugin's cached bundle removed, then pulled again", required: true, remove: true, repull: true},
 			{name: "the signature removed, no requirement", edit: stripOne},
 		}
 		for _, row := range rows {
@@ -190,15 +195,29 @@ spec:
 				if row.edit != nil {
 					row.edit(t)
 				}
-				if row.tamper {
+				if row.tamper || row.remove {
 					saved, err := os.ReadFile(bundlePath)
 					if err != nil {
 						t.Fatalf("read the cached bundle: %v", err)
 					}
-					if err := os.WriteFile(bundlePath, []byte("rewritten after the pull"), 0o644); err != nil {
+					if row.remove {
+						if err := os.Remove(bundlePath); err != nil {
+							t.Fatalf("remove the cached bundle: %v", err)
+						}
+					} else if err := os.WriteFile(bundlePath, []byte("rewritten after the pull"), 0o644); err != nil {
 						t.Fatalf("tamper the cached bundle: %v", err)
 					}
 					t.Cleanup(func() { _ = os.WriteFile(bundlePath, saved, 0o644) })
+				}
+				if row.repull {
+					var repullDiag bytes.Buffer
+					if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
+						ReleasePath: releasePath, Out: io.Discard, DiagOut: &repullDiag}); err != nil {
+						t.Fatalf("the pull over the damaged bundle must complete: %v\n%s", err, repullDiag.String())
+					}
+					if _, err := oci.VerifyCachedSignatureBundle(ws, ".aggrega/cache", facts[surface.coordinate].BundleDigest); err != nil {
+						t.Errorf("after the pull the plugin's cached bundle is still one its record's fact refuses: %v", err)
+					}
 				}
 				printed, err := surface.run(t)
 				if row.want == nil {

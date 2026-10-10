@@ -149,7 +149,12 @@ func TestTheFactsAPassVerifiesReachEveryRowPinningTheSameBytes(t *testing.T) {
 				{URI: sameBytesVersioned, KindHint: "component", Digest: contentDg, ManifestDigest: manifestDg, ResolutionPath: pathFor(sameBytesVersioned)},
 				{URI: sameBytesOther, KindHint: "component", Digest: otherContentDg, ManifestDigest: otherManifestDg, ResolutionPath: closure.ResolutionPathCache},
 			}}
-			otherSig := carried
+			// The row for the other bytes carries a fact a build accepts — its bundle in the
+			// cache, made for its own manifest — so nothing about it has the pass ask.
+			root := t.TempDir()
+			otherCarried := lockfile.VerifiedSignature{Mode: "keyed", Identity: "carried-from-the-prior-lockfile",
+				BundleDigest: cacheBundleMadeFor(t, root, otherManifestDg)}
+			otherSig := otherCarried
 			lf := &lockfile.Lockfile{Entities: []lockfile.Entity{
 				{URI: sameBytesBare, Digest: contentDg, ManifestDigest: manifestDg},
 				{URI: sameBytesVersioned, Digest: contentDg, ManifestDigest: manifestDg},
@@ -169,7 +174,7 @@ func TestTheFactsAPassVerifiesReachEveryRowPinningTheSameBytes(t *testing.T) {
 				row(tc.served).Signature = &servedSig
 			}
 
-			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), ".aggrega/cache", io.Discard, pluginTargetFor(store, "1.0.0")); err != nil {
+			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, root, ".aggrega/cache", io.Discard, pluginTargetFor(store, "1.0.0")); err != nil {
 				t.Fatalf("VerifyClosureSignatures: %v", err)
 			}
 
@@ -203,7 +208,7 @@ func TestTheFactsAPassVerifiesReachEveryRowPinningTheSameBytes(t *testing.T) {
 			}
 
 			other := row(sameBytesOther)
-			if other.Signature == nil || *other.Signature != carried {
+			if other.Signature == nil || *other.Signature != otherCarried {
 				t.Errorf("the row %s, whose bytes this run asked nothing about, lost what was carried onto it: %+v", sameBytesOther, other.Signature)
 			}
 			if other.Deprecation != nil {

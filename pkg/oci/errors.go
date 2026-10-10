@@ -247,10 +247,15 @@ var errCachedManifestIntegrity = cerrors.Register("cached-manifest-integrity", c
 // build re-hashes the cached blob against that digest for every row it reads
 // that records one — an entity of any kind, a library, a plugin — and a plugin's
 // bytes are held to it again when they are resolved. A drifted or absent blob
-// halts with this condition (see VerifyCachedSignatureBundle). The check is a
+// halts with this condition (see HoldRecordedSignature). The check is a
 // byte/hash comparison — never a cryptographic signature re-verification, and
 // never a network or trust-root touch — so it holds under the hermetic,
 // air-gapped build.
+//
+// The next pull repairs it: a pull verifies again the signature of an artifact
+// the content cache served whose recorded fact HoldRecordedSignature refuses, and
+// rewrites a cached bundle that no longer hashes to its digest, so the build's
+// occurrence and the load site's name that pull (WithPullRemedy).
 func ErrSignatureBundleDigestMismatch() error { return errSignatureBundleDigestMismatch }
 
 var errSignatureBundleDigestMismatch = cerrors.Register("signature-bundle-digest-mismatch", cerrors.Meta{
@@ -259,6 +264,42 @@ var errSignatureBundleDigestMismatch = cerrors.Register("signature-bundle-digest
 	RulePlace: cerrors.NotARule("A cached signature bundle a lockfile row records is missing, unreadable, or hashes to " +
 		"something other than the digest the row recorded. The blob is read and re-hashed when the " +
 		"comparison runs, so what it reports is an integrity comparison that did not hold."),
+})
+
+// ErrSignatureForAnotherArtifact reports that a recorded signature fact names a
+// cached signature bundle that is intact — it hashes to the digest the fact
+// records — but was made for a different artifact than the one read for the
+// reference that records it: the hash the bundle carries of what was signed is not
+// the hash of the digest of the manifest the reading side read and held the
+// reference's bytes to. A fact copied from one lockfile row onto another, or from
+// one entry of the record of plugin identities onto another, is the edit that
+// produces it.
+//
+// It is raised by HoldRecordedSignature, the one decision whether a recorded fact
+// is accepted, so a build's check of every recorded fact and the moment a
+// plugin's bytes are resolved report it alike, for either file that records a
+// fact. It does not depend on a signing requirement, as the cached-bundle mismatch
+// (ErrSignatureBundleDigestMismatch) does not: a recorded fact is held to what it
+// claims whether or not one is required.
+//
+// It is a byte and hash comparison over cached files — no signature is verified,
+// no network is reached and no trust material is read. What it therefore cannot
+// tell is a bundle placed in the cache by hand, made out for the artifact read,
+// from one a pull verified.
+//
+// The next pull repairs it, as it repairs the cached-bundle mismatch: it verifies
+// again the signature of an artifact whose recorded fact HoldRecordedSignature
+// refuses, and what that verification gives replaces the copied fact
+// (WithPullRemedy).
+func ErrSignatureForAnotherArtifact() error { return errSignatureForAnotherArtifact }
+
+var errSignatureForAnotherArtifact = cerrors.Register("signature-for-another-artifact", cerrors.Meta{
+	ShortCode: "E0332",
+	Message:   "signing: the recorded signature was made for a different artifact",
+	RulePlace: cerrors.NotARule("A recorded signature fact names a cached signature bundle that is intact but carries " +
+		"the hash of another artifact than the one read for the reference that records it. The bundle and the " +
+		"manifest are read when the comparison runs, so what it reports is a comparison over cached bytes that " +
+		"did not hold."),
 })
 
 // ErrImmutableTagConflict is returned by the publish path when the

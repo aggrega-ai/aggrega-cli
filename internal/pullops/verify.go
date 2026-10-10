@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
@@ -56,19 +57,38 @@ import (
 //
 // A Tier-2 item — one the content cache served — was verified by the pull that
 // fetched its bytes, and its row carries that pull's fact forward, so it is
-// normally not asked about. It is asked about exactly where its row records no
-// fact and the one decision a pull makes over a missing signature
-// (workspaceconfig.SignatureCheck.HaltsWithoutSignature) says one is required:
-// the row a build would refuse (lockfile.ErrSignatureNotRecorded). Such an item
-// joins the fetched ones and is verified by the same call, by the manifest digest
-// its resolution reports — the one its row records — so its fact is recorded and
-// its bundle cached exactly as a fetched item's are, and the remedy that refusal
-// names repairs the row. Asking means reaching the registry, so under the offline
-// posture the network-egress gate refuses it, and the pull halts with that
-// refusal rather than writing a row the build would refuse. A row that records a
-// fact, and a row nothing requires a signature for, are not asked about, so a
-// re-pull over a lockfile that records every required fact asks the registry
-// nothing.
+// normally not asked about. It is asked about exactly where a build would refuse
+// its row, in either of two ways:
+//
+//   - The row records no fact and the one decision a pull makes over a missing
+//     signature (workspaceconfig.SignatureCheck.HaltsWithoutSignature) says one is
+//     required (lockfile.ErrSignatureNotRecorded).
+//   - The row records a fact the one decision whether a recorded fact is accepted
+//     (oci.HoldRecordedSignature) refuses — its cached bundle removed, unreadable
+//     or altered, or a bundle made for another artifact, which is what a fact
+//     copied from another row names — whatever the signing requirement says,
+//     because a build refuses such a fact whatever it says. The decision is asked
+//     with the inputs the build gives it: the workspace root, the cache directory,
+//     the fact the row records and the manifest digest this item's own resolution
+//     reports, never a field of the row.
+//
+// Such an item joins the fetched ones and is verified by the same call, by the
+// manifest digest its resolution reports, so the answer replaces the row's fact —
+// and clears it where the call gives none — and its bundle is cached exactly as a
+// fetched item's is, so the remedy either refusal names repairs the row. Asking
+// means reaching the registry, so under the offline posture the network-egress
+// gate refuses it, and the pull halts with that refusal rather than writing a row
+// the build would refuse. A row that records a fact the build accepts, and a row
+// nothing requires a signature for, are not asked about, so a re-pull over a
+// lockfile whose every recorded fact the build accepts, and which records every
+// required one, asks the registry nothing.
+//
+// A cache-served row recording a fact the build refuses that binds to no registry
+// — a host-less identity where the workspace names no default registry — cannot be
+// asked about. The pass halts on it with the decision's own refusal, said to have
+// no registry to ask, before it asks any registry anything, so the pull writes no
+// lockfile: one that left the row as it is would be a lockfile the next build
+// refuses.
 //
 // Where an artifact carries several signatures that verify, the fact a row
 // records is the earliest of them (pullverify.EarlierSignature) — the signature
@@ -97,8 +117,9 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		total += len(axis.Refs)
 	}
 	// The facts the rows record after the carry-forward, read by the same key the
-	// build's check reads them by, so the rows asked about here are exactly the rows
-	// that check would refuse.
+	// build's check reads them by, so every row that check would refuse — for
+	// recording no fact, or for recording one it does not accept — is a row asked
+	// about here.
 	recorded := lf.RecordedSignatures()
 	verifiable := make([]pullverify.Entity, 0, total)
 	// The cache-served items to ask about are held apart and joined after the
@@ -112,12 +133,18 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 				continue
 			}
 			// An item fetched during this run is always asked about. One the
-			// content cache served is asked about only where its row records no
-			// fact — a row recording one carries the fact the fetching pull
-			// verified — and, below, only where a signature is required for it.
+			// content cache served whose row records a fact carries the fact the
+			// fetching pull verified, and is asked about only where the build
+			// refuses that fact, which the one decision whether a recorded fact is
+			// accepted says — asked here exactly as the build asks it, so the two
+			// cannot come to disagree about which rows a pull must repair.
 			fetched := isRegistryResolved(e.ResolutionPath)
-			if !fetched && recorded[lockfile.RowKey{Section: axis.Axis, URI: e.URI}] != nil {
-				continue
+			var refused error
+			if fact := recorded[lockfile.RowKey{Section: axis.Axis, URI: e.URI}]; !fetched && fact != nil {
+				refused = recordedFactRefusal(workspaceRoot, cacheDir, fact, e)
+				if refused == nil {
+					continue
+				}
 			}
 			// A catalog entity's or library's URI is a host-less bare identity; the
 			// registry host and path are bound at pull time from the workspace
@@ -127,16 +154,25 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			// artifact was fetched from and the host whose policy a build later holds
 			// the row to is the host verified here. A reference it binds to no
 			// registry — an unbindable library, a reference with no registry host —
-			// carries no registry signature and is skipped.
+			// carries no registry signature and is skipped. The one exception is a
+			// row recording a fact the build refuses: an earlier pull bound and
+			// verified it, and skipping it would write a lockfile the next build
+			// refuses, so the pass halts on it with the build's own refusal.
 			subject, ok := catalog.SignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), axis, e)
 			if !ok {
+				if refused != nil {
+					return fmt.Errorf("verify: %q records a signature a build does not accept, and no registry is "+
+						"configured to ask about it again: %w", e.URI, refused)
+				}
 				continue
 			}
-			// The cache-served row is asked about where its missing fact would halt:
-			// the decision Verify makes over a missing signature, read for the same
-			// host and kind, so a row the skips or an advisory registry admit is left
-			// as it is and costs no registry request.
-			if !fetched && !wsCfg.SignatureCheckFor(subject.Host, subject.Kind).HaltsWithoutSignature() {
+			// A cache-served row recording no fact is asked about where its missing
+			// fact would halt: the decision Verify makes over a missing signature,
+			// read for the same host and kind, so a row the skips or an advisory
+			// registry admit is left as it is and costs no registry request. A row
+			// recording a fact the build refuses is asked about whatever that
+			// decision says.
+			if !fetched && refused == nil && !wsCfg.SignatureCheckFor(subject.Host, subject.Kind).HaltsWithoutSignature() {
 				continue
 			}
 			// A registry-resolved item is verified against its OCI manifest digest,
@@ -237,6 +273,21 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		return err
 	}
 	return nil
+}
+
+// recordedFactRefusal is the build's answer for a cache-served row that records
+// fact: the refusal of the one decision whether a recorded fact is accepted
+// (oci.HoldRecordedSignature), asked with the inputs the build's check of the same
+// row gives it — the workspace root and the cache directory the build reads, the
+// bundle digest the fact records, and the manifest digest ref's own resolution
+// reports, which the build's check reads off the same closure reference rather
+// than off the row — or nil where the build accepts the fact. It names no file,
+// because this pass holds no lockfile path; the halt that reports it names the
+// row.
+func recordedFactRefusal(workspaceRoot, cacheDir string, fact *lockfile.VerifiedSignature, ref closure.VerifiableRef) error {
+	_, err := oci.HoldRecordedSignature(workspaceRoot, cacheDir, oci.RecordedBundle{Digest: fact.BundleDigest},
+		oci.MadeForManifest(ref.ManifestDigest))
+	return err
 }
 
 // verifiedJoin carries the answers one registry-touching pass got onto the lockfile
@@ -409,8 +460,14 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 // named by its digest under the workspace's cache, creating the `signatures/`
 // subtree as needed. The blob location is spelled once in
 // oci.SignatureBundlePath so the build path re-hashes the same slot this write
-// populated. The write is idempotent: a blob already present (a re-pull of the
-// same signature) is left untouched so the cache stays byte-stable.
+// populated.
+//
+// The slot is written where it is absent and where the bytes it holds do not hash
+// to its digest — a bundle removed or altered since the pull that cached it — and
+// a slot already holding the right bytes (a re-pull of the same signature) is left
+// untouched, so the cache stays byte-stable. The hash is the one the build's
+// re-hash compares (digest.ContentDigest), so a slot this leaves is one the build
+// accepts and a slot the build refuses is one this rewrites.
 //
 // The blob is held, before anything is created, to the root the cache directory
 // picks (writescope.RootForCache): the cache directory itself. A directory on the
@@ -428,7 +485,7 @@ func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(path); statErr == nil {
+	if held, readErr := os.ReadFile(path); readErr == nil && digest.ContentDigest(held) == bundleDigest {
 		return nil
 	}
 	return os.WriteFile(path, bundle, 0o644)
@@ -436,9 +493,10 @@ func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte
 
 // isRegistryResolved reports whether a closure entity resolved by fetching from
 // a registry during this run — the case where a signature is always verified at
-// pull time. A cache resolution is verified only where its row records no fact a
-// signature requirement asks for (VerifyClosureSignatures), and a local-catalog or
-// external resolution never is.
+// pull time. A cache resolution is verified only where a build would refuse its
+// row — it records no fact a signature requirement asks for, or one the build does
+// not accept (VerifyClosureSignatures) — and a local-catalog or external
+// resolution never is.
 //
 // It delegates to the shared predicate rather than testing the tag itself: a
 // string comparison here would keep compiling after the tag was respelled and

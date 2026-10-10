@@ -34,8 +34,9 @@
 // Trust at build is offline and free of any cryptographic re-verification: the
 // .wasm content-digest pin governs the bytes, and for a guest that carried a
 // verified signature fact when it was pulled, the cached signature bundle is
-// re-hashed against its recorded digest — a byte/hash integrity check over the
-// cached blob, the same one a build runs over every recorded fact it reads before
+// re-hashed against its recorded digest and held to having been made for the
+// artifact the bytes were read as — a byte and hash comparison over cached files,
+// the same decision a build makes over every recorded fact it reads before
 // anything renders, where it also refuses a reference a signing requirement covers
 // that records no signature at all. The recorded digest comes from the lockfile
 // row for a pinned plugin, and from the record of plugin identities beside the
@@ -401,13 +402,22 @@ type Resolver struct {
 	// bundleDigests maps a plugin URI to the recorded digest of its cached
 	// signature-bundle blob (a "sha256:..." string), present only for a guest
 	// that carried a verified signature fact when it was pulled. When a URI has
-	// an entry, the cached bundle blob under workspaceRoot and cacheDir is
-	// re-hashed and compared to it before the resolved bytes are returned — an
-	// offline byte/hash integrity check over the cached blob, never a signature
-	// re-verification and never a network touch. nil or a URI absent from the
-	// map disables the check for that URI: an unsigned guest (no signature fact
-	// was recorded), or the publish-time linter path where nothing is pinned yet.
+	// an entry, the recorded fact is held through the one decision whether a
+	// recorded fact is accepted (oci.HoldRecordedSignature) before the resolved
+	// bytes are returned — an offline byte and hash comparison over cached files,
+	// never a signature re-verification and never a network touch. nil or a URI
+	// absent from the map disables the check for that URI: an unsigned guest (no
+	// signature fact was recorded), or the publish-time linter path where nothing
+	// is pinned yet.
 	bundleDigests map[string]string
+
+	// recordedIn is the file the pin source records those facts in, named in a
+	// refusal of one; empty names no file.
+	recordedIn string
+
+	// release is the Release that file belongs to, whose pull a refusal of one of
+	// those facts names as its remedy; empty names a placeholder.
+	release string
 
 	// override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Returned as local-tier bytes.
@@ -601,12 +611,13 @@ func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
-// applies the offline signature-bundle integrity gate when the URI carries a
-// recorded bundle digest, and returns the ResolvedPlugin. A content-pin mismatch
-// halts with a wrapped oci.ErrFetchIntegrity naming the URI, the tier, the
-// computed digest, and the pin. A cached-bundle mismatch halts with a wrapped
-// oci.ErrSignatureBundleDigestMismatch. With no pin and no bundle digest (the
-// linter path) the bytes pass through unchecked.
+// holds the URI's recorded signature fact when it carries a recorded bundle
+// digest, and returns the ResolvedPlugin. A content-pin mismatch halts with a
+// wrapped oci.ErrFetchIntegrity naming the URI, the tier, the computed digest, and
+// the pin. A cached-bundle mismatch halts with a wrapped
+// oci.ErrSignatureBundleDigestMismatch, and a bundle made for another artifact
+// than the one read with a wrapped oci.ErrSignatureForAnotherArtifact. With no pin
+// and no bundle digest (the linter path) the bytes pass through unchecked.
 //
 // This is the single site that decides whether a plugin's bytes are held to a
 // recorded identity, and it is therefore where the rule lives: honour a recorded
@@ -629,7 +640,7 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 		r.noteUnrecordedIdentity(uri, tier)
 	}
 	if bundleDigest, ok := r.bundleDigests[uri]; ok && bundleDigest != "" {
-		if err := r.verifyCachedBundle(uri, tier, bundleDigest); err != nil {
+		if err := r.verifyCachedBundle(uri, tier, bundleDigest, b); err != nil {
 			return ResolvedPlugin{}, err
 		}
 	}
@@ -729,35 +740,87 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 		uri, tier.Source(), remedy)
 }
 
-// verifyCachedBundle holds a signed guest's cached signature-bundle blob to the
-// digest its recorded signature names — its lockfile row's, or its entry's in the
-// record of plugin identities beside the lockfile — before the guest loads,
-// through the one implementation of that check (oci.VerifyCachedSignatureBundle):
-// an offline byte/hash comparison — no signature re-verification, no network, no
-// trust root — so it holds under the hermetic build. A missing or unreadable
-// blob, or a hash that differs from the recorded digest, halts with a wrapped
-// oci.ErrSignatureBundleDigestMismatch naming the plugin and where its bytes came
-// from. The blob is read under the same workspace root the cached .wasm is read
-// under, so the slot checked here is the slot the pull path wrote whatever
+// verifyCachedBundle holds a signed guest's recorded signature fact — its lockfile
+// row's, or its entry's in the record of plugin identities beside the lockfile —
+// before the guest loads, through the one decision whether a recorded fact is
+// accepted (oci.HoldRecordedSignature): the cached bundle is re-hashed against the
+// digest the fact records, and the bundle must have been made for the artifact
+// these bytes were read as. That is an offline byte and hash comparison — no
+// signature re-verification, no network, no trust root — so it holds under the
+// hermetic build. A missing or unreadable blob, or a hash that differs from the
+// recorded digest, halts with a wrapped oci.ErrSignatureBundleDigestMismatch, and
+// a bundle made for another artifact with a wrapped
+// oci.ErrSignatureForAnotherArtifact, each naming the plugin and where its bytes
+// came from. The blob is read under the same workspace root the cached .wasm is
+// read under, so the slot checked here is the slot the pull path wrote whatever
 // directory either was run from.
 //
-// A build runs the same check over every recorded fact it reads before anything
-// renders, so a build reaches here only with a bundle that already matched.
-// This site is kept because it is where a plugin's bytes are resolved on every
-// surface — a validation, a preview, a lint, an extension command's registration
-// — and the surfaces that load a plugin outside a build pass no other.
+// Which artifact the bytes were read as is the manifest heldManifest reads beside
+// them, never a field of the record carrying the fact (see heldManifest).
+//
+// A build runs the same decision over every recorded fact it reads before anything
+// renders, so a build reaches here only with a fact it already accepted. This site
+// is kept because it is where a plugin's bytes are resolved on every surface — a
+// validation, a preview, a lint, an extension command's registration — and the
+// surfaces that load a plugin outside a build pass no other.
 //
 // A read-hold refusal — a cache directory, or the blob itself, leading through a
 // link out of the root the pull's write of it is held to — is returned as
 // itself, naming the link, rather than as a bundle that does not match.
-func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
-	if _, err := oci.VerifyCachedSignatureBundle(r.workspaceRoot, r.cacheDir, bundleDigest); err != nil {
-		if errors.Is(err, oci.ErrSignatureBundleDigestMismatch()) {
+//
+// For bytes read from the content cache, a refusal of either condition names the
+// pull of the Release the pin source belongs to as its remedy (oci.WithPullRemedy):
+// the next pull verifies again the signature of a cache-served plugin whose
+// recorded fact the decision refuses, and rewrites a cached bundle that no longer
+// matches its digest. Bytes read from any other tier are never asked about at a
+// registry, so a pull leaves a fact recorded for them as it is, and their refusal
+// names no pull.
+func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string, b []byte) error {
+	madeFor, err := r.heldManifest(uri, tier, b)
+	if err != nil {
+		return err
+	}
+	recorded := oci.RecordedBundle{Digest: bundleDigest, RecordedIn: r.recordedIn}
+	if _, err := oci.HoldRecordedSignature(r.workspaceRoot, r.cacheDir, recorded, madeFor); err != nil {
+		if errors.Is(err, oci.ErrSignatureBundleDigestMismatch()) || errors.Is(err, oci.ErrSignatureForAnotherArtifact()) {
+			if tier == TierCache {
+				err = oci.WithPullRemedy(err, r.release, r.recordedIn)
+			}
 			return fmt.Errorf("plugin %q resolved from %s: %w", uri, tier.Source(), err)
 		}
 		return err
 	}
 	return nil
+}
+
+// heldManifest reports the artifact a plugin's bytes were read as, for holding a
+// recorded signature fact to: the digest of the manifest persisted beside the
+// bytes in the content-cache slot they were read from, once the bytes are held to
+// it — the manifest the pull that wrote the slot fetched with them, and the one a
+// signature on the plugin was made for.
+//
+// Bytes read from the binary, from beside a Plugin entity or from an explicit path
+// come with no manifest, so a fact recorded for them is held to the re-hash alone.
+// So is a cache slot holding no manifest beside its bytes, which a pull never
+// leaves: it writes the two together. A manifest that is there and does not
+// describe the bytes is refused rather than used, because a manifest that is not
+// the bytes' own would say nothing about which artifact they are.
+func (r Resolver) heldManifest(uri string, tier Tier, b []byte) (oci.MadeFor, error) {
+	if tier != TierCache {
+		return oci.NoManifestRead(), nil
+	}
+	manifest, err := oci.ReadCachedManifest(r.workspaceRoot, r.cacheDir, uri, r.pinVersions[uri])
+	switch {
+	case err == nil && len(manifest) > 0:
+	case err == nil, errors.Is(err, oci.ErrFetchNotFound()):
+		return oci.NoManifestRead(), nil
+	default:
+		return oci.MadeFor{}, err
+	}
+	if err := oci.VerifyContentAgainstManifest(manifest, b); err != nil {
+		return oci.MadeFor{}, fmt.Errorf("plugin %q resolved from %s: the manifest beside its bytes: %w", uri, tier.Source(), err)
+	}
+	return oci.MadeForManifest(digest.ContentDigest(manifest)), nil
 }
 
 // readColocated reads the co-located artifact for uri — the .wasm beside its

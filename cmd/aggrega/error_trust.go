@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -68,6 +69,9 @@ func trustConditions() []error {
 		// A build reading a row a signing requirement covers that records no
 		// verified signature.
 		lockfile.ErrSignatureNotRecorded(),
+		// A recorded signature fact whose cached bundle was made for a different
+		// artifact than the one read for the row or entry that records it.
+		oci.ErrSignatureForAnotherArtifact(),
 		// A registry's advertised trust policy.
 		registrytrust.ErrNoTrustAdvertised(),
 		registrytrust.ErrMalformedTrust(),

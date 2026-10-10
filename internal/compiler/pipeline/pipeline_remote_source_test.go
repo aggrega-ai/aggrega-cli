@@ -175,7 +175,7 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 			AggregatePath:     remoteSrcAggregatePath,
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			Lockfile:          lf,
-			PluginPins:        pluginpath.RecordedPins(lockfile.PluginPins(lf)),
+			PluginPins:        pluginpath.RecordedPins(lockfile.PluginPins(lf, "")),
 			WorkspaceRoot:     root,
 			CompilerVersion:   fixtureCompilerVersion,
 		},
@@ -237,7 +237,7 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 			// Lockfile + WorkspaceRoot intentionally unset. The pin source is
 			// derived from that absent record exactly as the other half derives it
 			// from a present one, so this proof still varies one thing.
-			PluginPins: pluginpath.RecordedPins(lockfile.PluginPins(nil)),
+			PluginPins: pluginpath.RecordedPins(lockfile.PluginPins(nil, "")),
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),

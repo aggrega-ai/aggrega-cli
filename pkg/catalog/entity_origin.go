@@ -17,6 +17,9 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/closure"
 //   - what its content paths are anchored at (anchorDocument);
 //   - which tier served it (resolutionPath), which is what a pull-time pin decision
 //     keys on;
+//   - the manifest a pinned slot's bytes were held to when the fold read them
+//     (heldManifestDigest), which a closure walk reports as the manifest the
+//     reference was read under;
 //   - and the source a flattened node records for it (source).
 //
 // Recording the fact once is what keeps those answers from disagreeing about one
@@ -40,6 +43,12 @@ type entityOrigin struct {
 	// empty for every other kind, and for an authored entity, whose parse is anchored
 	// at its own document.
 	layoutDocument string
+	// manifestDigest is the digest of the manifest persisted beside a pinned slot's
+	// bytes, which the fold's verifying read held those bytes to before it placed
+	// the entity. It is derived from the manifest the read held, never carried in
+	// from the pin, so it is the manifest the reference was actually read under. It
+	// is empty for an authored entity, which comes with no manifest.
+	manifestDigest string
 }
 
 // authoredOrigin is the record of an entity read from a document in a catalog
@@ -57,12 +66,28 @@ func pinnedOrigin(label, slot, layoutDocument string) entityOrigin {
 
 // foldedOrigin is the record the fold writes for an entity it placed: authored at
 // src when it was handed no slot, and read from slot, under the label src, when it
-// was. layoutDocument is kept only for the second.
-func foldedOrigin(src, slot, layoutDocument string) entityOrigin {
+// was. layoutDocument and manifestDigest — the digest of the manifest the fold's
+// read held the slot's bytes to — are kept only for the second.
+func foldedOrigin(src, slot, layoutDocument, manifestDigest string) entityOrigin {
 	if slot == "" {
 		return authoredOrigin(src)
 	}
-	return pinnedOrigin(src, slot, layoutDocument)
+	origin := pinnedOrigin(src, slot, layoutDocument)
+	origin.manifestDigest = manifestDigest
+	return origin
+}
+
+// heldManifestDigest returns the digest of the manifest a pinned slot's bytes were
+// held to when the fold read them, and empty for an entity authored in a catalog
+// directory, which no manifest accompanies. A closure walk reports it as the
+// manifest the reference was read under, as every other read of the content cache
+// reports the manifest it held (cacheHitResolution), so the entry a fold placed is
+// described the way the cache tier would have described it.
+func (o entityOrigin) heldManifestDigest() string {
+	if !o.fromCacheSlot() {
+		return ""
+	}
+	return o.manifestDigest
 }
 
 // fromCacheSlot reports whether the entity was read from a lockfile-pinned cache

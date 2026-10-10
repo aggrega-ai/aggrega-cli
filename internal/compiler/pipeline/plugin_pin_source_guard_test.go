@@ -132,7 +132,7 @@ func TestEveryPipelineInputsConstructionNamesItsPinSource(t *testing.T) {
 		}
 		t.Errorf(""+
 			"every pipeline inputs construction must name where its plugin pins come from.%s\n"+
-			"A site with a recorded closure to read supplies pluginpath.RecordedPins(lockfile.PluginPins(lf)); "+
+			"A site with a recorded closure to read supplies pluginpath.RecordedPins(lockfile.PluginPins(lf, releasePath)); "+
 			"a site with nothing to pin against supplies pluginpath.NoPins(). "+
 			"Omitting the field is neither: it resolves plugins against an empty address.",
 			detail.String())

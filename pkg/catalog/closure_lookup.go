@@ -1070,12 +1070,31 @@ func (c *Catalog) catalogDirectoryCopies(uri string) []catalogDirectoryCopy {
 // from, never an assumption that an indexed entity was authored in a catalog
 // directory: an index can also hold an entity it received from a lockfile-pinned
 // cache slot, and a pull-time pin decision keys on the difference.
+//
+// An entry received from a cache slot is described with the manifest digest the
+// read that placed it held its bytes to, as every other cache-tier read describes
+// what it served (cacheHitResolution) — so the manifest a signature fact on the
+// entry's row is held to having been made for is the manifest the build actually
+// read, whichever tier answered. An entry authored in a catalog directory has none.
 func (l *catalogLookup) tier1Resolution(kind, indexKey, resolvedVersion, digest string) closure.Resolution {
 	return closure.Resolution{
 		ResolvedVersion: resolvedVersion,
 		Digest:          digest,
+		ManifestDigest:  l.catalog.indexedManifestDigest(kind, indexKey),
 		ResolutionPath:  l.catalog.indexedResolutionPath(kind, indexKey),
 	}
+}
+
+// indexedManifestDigest reports the digest of the manifest the entry this catalog
+// indexes under kind and indexKey was held to when it was read from a cache slot,
+// read from the same record indexedResolutionPath reads, and empty for an entry
+// authored in a catalog directory and for any entry of a catalog that holds no such
+// record.
+func (c *Catalog) indexedManifestDigest(kind, indexKey string) string {
+	if origin, ok := c.origins[entityBytesKey(kind, indexKey)]; ok {
+		return origin.heldManifestDigest()
+	}
+	return ""
 }
 
 // indexedResolutionPath reports where the entry this catalog indexes under kind
@@ -1383,7 +1402,7 @@ func errNotInContentCache(uri string) error {
 // manifest is an incomplete entry, and every reader in this package that serves a
 // slot's content reads the manifest through it: the Tier-2 read beneath the pull's
 // reuse check and the build's verifying read (tier2ReadSlotUnverified), the cached
-// plugin entity a verdict socket reads (LazyLookup.PluginFromCacheByURI), and a
+// plugin entity a verdict socket reads (LazyLookup.CachedPluginByURI), and a
 // plugin's content-addressed .wasm (catalogLookup.readCachedPluginArtifact).
 //
 // The rule holds because a registry fetch writes both files — the content, then

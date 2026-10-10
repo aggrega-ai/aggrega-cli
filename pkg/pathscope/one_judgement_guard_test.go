@@ -74,7 +74,7 @@ var decidersOfInside = map[string]string{
 	// here, and fails.
 	"pkg/oci:ReadCachedFile":                                 "every file a cache slot holds: a plugin's or an entity's bytes, its manifest, a library document",
 	"pkg/catalog:LazyLookup.unverifiedCachedSchemaLibraries": "the cached SchemaLibraries a failed resolution's remedy names",
-	"pkg/oci:VerifyCachedSignatureBundle":                    "the cached signature bundle a lockfile row's recorded signature is checked against",
+	"pkg/oci:readCachedSignatureBundle":                      "the cached signature bundle a recorded signature fact is checked against",
 	"pkg/sourcecache:LookupAndExtract":                       "a pinned source artifact's cached archive, metadata and manifest",
 	"pkg/externalinputs:Service.servePinned":                 "a pinned external input's stored blob",
 	"pkg/docscache:Cached":                                   "the presence of a cached documentation bundle",

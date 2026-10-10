@@ -97,7 +97,7 @@ var publishedByteReaders = map[string]string{
 	"internal/compilerops.ReadPublishedEntity":          "reads the entity a reference publishes for a person to see, read through oci.EntityYAML; caches and pins nothing",
 
 	// --- not entity documents: a plugin binary, its manifest, or another payload ---
-	"pkg/catalog.LazyLookup.PluginFromCacheByURI":              "a Plugin entity from the manifest's config blob; a Plugin publishes as a manifest, never through the bundler",
+	"pkg/catalog.LazyLookup.CachedPluginByURI":                 "a Plugin entity from the manifest's config blob; a Plugin publishes as a manifest, never through the bundler",
 	"pkg/catalog.catalogLookup.readCachedPluginArtifact":       "a plugin .wasm artifact verified against its manifest; never an entity document",
 	"pkg/catalog.catalogLookup.resolveVersionedPluginArtifact": "a plugin .wasm artifact addressed by content digest; never an entity document",
 	"pkg/pluginpath.Resolver.ResolveContext":                   "a plugin .wasm artifact from its cache slot; never an entity document",

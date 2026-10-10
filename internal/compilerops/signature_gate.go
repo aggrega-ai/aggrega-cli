@@ -27,10 +27,24 @@ import (
 // lockfile carries (pluginstrust.TrustedPlugin.Signature). Both stores are held by
 // the same two rules:
 //
-//   - Where the store records a verified signature, the cached signature bundle is
-//     re-hashed against the recorded digest, through the one implementation of
-//     that check (oci.VerifyCachedSignatureBundle). A missing, unreadable or
-//     drifted bundle refuses the reference.
+//   - Where the store records a verified signature, the fact is held through the
+//     one decision whether a recorded fact is accepted (oci.HoldRecordedSignature):
+//     the cached signature bundle is re-hashed against the recorded digest, and a
+//     missing, unreadable or drifted bundle refuses the reference; and the bundle
+//     must have been made for the artifact this resolution read — the hash it
+//     carries of what was signed must be the hash of the digest of the manifest
+//     the build's own read held the reference's bytes to — or the reference is
+//     refused as carrying a signature made for a different artifact, whatever the
+//     signing requirement says. That manifest is the resolution's, never a field
+//     of either store: for a lockfile row the closure reference's manifest digest,
+//     which every read of the content cache reports from the manifest it held; for
+//     a verdict plugin the manifest the cache read of its entity held that entity
+//     to (catalog.LazyLookup.CachedPluginByURI). A reference read from a catalog
+//     directory, from the copy inside the binary or from beside the Release comes
+//     with no manifest, and its fact is held to the re-hash alone. For a reference
+//     the content cache served, either refusal names the pull of this Release as its
+//     remedy, because a pull verifies again the signature of such an artifact whose
+//     recorded fact this decision refuses (holdFact).
 //   - Where the store records none, and the reference was served by the content
 //     cache a pull filled from a registry, the reference is held to the trust
 //     configuration through the one decision a pull makes over a missing
@@ -50,6 +64,11 @@ import (
 // the Release is never held to the requirement, because no registry signature
 // exists for bytes that did not come from one; where its store nonetheless records
 // a fact, the fact's bundle is still re-hashed.
+//
+// A copied fact is what the binding catches that the re-hash cannot: a `signature`
+// moved whole from one row, or one entry, onto another names a bundle that is in
+// the cache and hashes to its name, and is refused only because it was made for
+// the other artifact.
 //
 // It reads the lockfile, the record beside it, the resolved closure, the catalog
 // view, the workspace configuration and files already in the content cache, and
@@ -85,13 +104,25 @@ type signatureHold struct {
 	cacheDir string
 }
 
-// rehash holds a recorded fact's cached bundle to the digest the fact records,
-// naming the reference a mismatch belongs to.
-func (h signatureHold) rehash(name string, fact *lockfile.VerifiedSignature) error {
-	if fact.BundleDigest == "" {
-		return nil
-	}
-	if _, err := oci.VerifyCachedSignatureBundle(h.in.workspaceRoot, h.cacheDir, fact.BundleDigest); err != nil {
+// holdFact holds a recorded fact through the one decision whether a recorded fact
+// is accepted (oci.HoldRecordedSignature): its cached bundle to the digest the fact
+// records, and to the artifact madeFor names — the manifest this resolution read
+// for the reference — naming the reference a refusal belongs to and recordedIn, the
+// file that records the fact.
+//
+// fromCache reports that the content cache a pull filled from a registry served the
+// reference. A refusal of such a reference names the pull of this Release as its
+// remedy (oci.WithPullRemedy), because the next pull verifies again the signature
+// of exactly such an artifact whose fact the decision refuses. A reference read
+// from a catalog directory, the binary or beside the Release is never asked about
+// at a registry, so a pull leaves a fact recorded on it as it is, and its refusal
+// names no pull.
+func (h signatureHold) holdFact(name, recordedIn string, fact *lockfile.VerifiedSignature, madeFor oci.MadeFor, fromCache bool) error {
+	recorded := oci.RecordedBundle{Digest: fact.BundleDigest, RecordedIn: recordedIn}
+	if _, err := oci.HoldRecordedSignature(h.in.workspaceRoot, h.cacheDir, recorded, madeFor); err != nil {
+		if fromCache {
+			err = oci.WithPullRemedy(err, h.in.releasePath, recordedIn)
+		}
 		return fmt.Errorf("artifact %q: %w", name, err)
 	}
 	return nil
@@ -157,7 +188,10 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 	for _, axis := range cl.VerifiableAxes() {
 		for _, ref := range axis.Refs {
 			if fact := recorded[lockfile.RowKey{Section: axis.Axis, URI: ref.URI}]; fact != nil {
-				if err := h.rehash(ref.URI, fact); err != nil {
+				// The manifest the build's own read held the reference's bytes to, which
+				// the closure reference reports from the read rather than from the row.
+				if err := h.holdFact(ref.URI, lockfilePath, fact, oci.MadeForManifest(ref.ManifestDigest),
+					closure.AcquiredFromRegistry(ref.ResolutionPath)); err != nil {
 					refusals = append(refusals, err)
 				}
 				continue
@@ -223,7 +257,7 @@ func (h signatureHold) verdictPlugins() ([]error, error) {
 		}
 		walked[read.coordinate] = true
 		if entry, held := record.Find(read.coordinate); held && entry.Signature != nil {
-			if err := h.rehash(read.coordinate, entry.Signature); err != nil {
+			if err := h.holdFact(read.coordinate, recordPath, entry.Signature, oci.MadeForManifest(read.manifestDigest), read.fromCache); err != nil {
 				refusals = append(refusals, err)
 			}
 			continue

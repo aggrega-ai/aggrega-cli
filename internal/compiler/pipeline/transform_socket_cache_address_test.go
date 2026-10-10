@@ -107,7 +107,7 @@ func transformGuardInputs(t *testing.T, role plugintype.Role, lf *lockfile.Lockf
 	cfg.Plugins.Governance = []workspaceconfig.PluginRef{{URI: transformGuardCoordinate, Role: role}}
 	pins := pluginpath.NoPins()
 	if lf != nil {
-		pins = pluginpath.RecordedPins(lockfile.PluginPins(lf))
+		pins = pluginpath.RecordedPins(lockfile.PluginPins(lf, ""))
 	}
 	return Inputs{WorkspaceConfig: cfg, WorkspaceRoot: t.TempDir(), Lockfile: lf, PluginPins: pins}
 }

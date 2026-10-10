@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/filefailure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -135,16 +136,17 @@ func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 }
 
 // VerifyCachedSignatureBundle re-hashes the cached signature-bundle blob a
-// lockfile row records the digest of, and refuses one that is missing,
-// unreadable, or hashes to anything other than bundleDigest. It returns the
-// blob's path either way, so a caller naming the artifact the bundle belongs to
-// can name the file too.
+// recorded signature fact names, and refuses one that is missing, unreadable, or
+// hashes to anything other than bundleDigest. It returns the blob's path either
+// way, so a caller naming the artifact the bundle belongs to can name the file
+// too.
 //
-// It is the one implementation of that check. A build runs it over every row it
-// reads that records a bundle digest, entity rows of every kind and plugin rows
-// alike, before anything renders; and a plugin's bytes are held to it again at
-// the moment they are resolved, which reaches the surfaces that load a plugin
-// outside a build.
+// It answers whether the cached bundle is the one recorded, and only that. Whether
+// a build accepts a recorded fact is HoldRecordedSignature's question, which runs
+// this same re-hash first and then asks which artifact the bundle was made for;
+// no product code asks this one in its place, and a guard test holds that. It is
+// exported for a reader whose question is the cache's own — whether a bundle a
+// pull wrote is still the one its fact names.
 //
 // It is a byte comparison and nothing more: no signature is re-verified, no
 // network is reached and no trust material is read, so it holds in a build with
@@ -161,20 +163,209 @@ func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 // The refusals wrap ErrSignatureBundleDigestMismatch and name the file and both
 // digests; naming the artifact is the caller's, which holds it.
 func VerifyCachedSignatureBundle(workspaceRoot, cacheDir, bundleDigest string) (string, error) {
+	path, _, err := readCachedSignatureBundle(workspaceRoot, cacheDir, bundleDigest)
+	return path, err
+}
+
+// readCachedSignatureBundle reads the cached signature-bundle blob bundleDigest
+// names and returns it with its path, refusing one that is missing, unreadable or
+// hashes to anything else, under the read hold VerifyCachedSignatureBundle states.
+// It is the one read of a cached bundle, so the bytes HoldRecordedSignature reads
+// the signed artifact from are the bytes it just re-hashed, not a second read of
+// the same file that could find something else there.
+func readCachedSignatureBundle(workspaceRoot, cacheDir, bundleDigest string) (string, []byte, error) {
 	path := SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest)
 	if err := readscope.CheckCacheRead(writescope.RootForCache(workspaceRoot, cacheDir), path); err != nil {
-		return path, err
+		return path, nil, err
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return path, fmt.Errorf("cached signature bundle %s is unreadable: %w", path, ErrSignatureBundleDigestMismatch())
+		return path, nil, fmt.Errorf("cached signature bundle %s is unreadable: %w", path, ErrSignatureBundleDigestMismatch())
 	}
 	if got := digest.ContentDigest(b); got != bundleDigest {
-		return path, fmt.Errorf("cached signature bundle %s has digest %s, recorded digest is %s: %w",
+		return path, nil, fmt.Errorf("cached signature bundle %s has digest %s, recorded digest is %s: %w",
 			path, got, bundleDigest, ErrSignatureBundleDigestMismatch())
 	}
-	return path, nil
+	return path, b, nil
 }
+
+// RecordedBundle is a recorded signature fact as HoldRecordedSignature holds it:
+// the digest the fact records for its cached signature bundle, and the file that
+// records the fact — the lockfile, or the record of plugin identities beside it —
+// which a refusal names. An empty RecordedIn names no file.
+type RecordedBundle struct {
+	Digest     string
+	RecordedIn string
+}
+
+// MadeFor is the artifact a recorded signature is held to having been made for,
+// as the reading side of the reference established it: the digest of the manifest
+// the read held the bytes it serves to, or none where the read held them to no
+// manifest at all — bytes read from a catalog directory, from the copy inside the
+// compiler binary, or from beside the Release, none of which comes with one.
+//
+// It is never a field of the record that carries the fact. A record states what it
+// states, and the fact being checked is part of it; the manifest is what the build
+// read from the content cache and held the bytes to, which an edit to the record
+// does not move.
+type MadeFor struct {
+	manifestDigest string
+}
+
+// MadeForManifest is the artifact whose manifest digest is manifestDigest — the
+// digest of the manifest the reading side read and held the reference's bytes to.
+// An empty digest names no manifest, as NoManifestRead does.
+func MadeForManifest(manifestDigest string) MadeFor {
+	return MadeFor{manifestDigest: manifestDigest}
+}
+
+// NoManifestRead is a reference whose read held its bytes to no manifest, so
+// there is nothing to say which artifact its signature had to be made for.
+func NoManifestRead() MadeFor {
+	return MadeFor{}
+}
+
+// HoldRecordedSignature is the one decision whether a recorded signature fact is
+// accepted. Every reader that asks whether a build would accept a fact asks it
+// here: the build's check of every fact the lockfile and the record beside it
+// carry, before anything renders; the moment a plugin's bytes are resolved,
+// which is what reaches the surfaces that load a plugin outside a build; and a
+// pull's signature pass, which asks the registry again about exactly the
+// cache-served rows whose recorded fact this refuses, so whatever this comes to
+// refuse, the next pull repairs.
+//
+// A fact that records no bundle digest names no cached bundle, so there is
+// nothing to hold it to: it is accepted, with an empty path.
+//
+// It holds the fact to two things, in order:
+//
+//   - The cached bundle the fact names is the one recorded: re-hashed against the
+//     digest the fact records (VerifyCachedSignatureBundle's check, through the
+//     same read). A missing, unreadable or altered bundle is refused with
+//     ErrSignatureBundleDigestMismatch.
+//   - The bundle was made for the artifact read: where madeFor names a manifest,
+//     the hash the bundle carries of what was signed (SignedArtifactOf) is the
+//     hash of that manifest's digest — what a pull's verification compared when
+//     it accepted the bundle. A bundle made for another artifact is refused with
+//     ErrSignatureForAnotherArtifact, which names the file that records the fact,
+//     the cached bundle and the manifest the build read.
+//
+// Neither depends on a signing requirement: a recorded fact is held to what it
+// claims whether or not one is required.
+//
+// Two bounds, both deliberate. A reference whose read held its bytes to no
+// manifest (NoManifestRead) is held to the re-hash alone, because nothing it read
+// says which artifact its signature had to be made for. And a bundle in a form
+// SignedArtifactOf does not recognise — a form neither of the toolchain's signers
+// writes — is held to the re-hash alone too: a pull may have accepted it, and
+// refusing it here would refuse an artifact whose verification succeeded.
+//
+// It verifies no signature, reaches no network and reads no trust material: it
+// reads two cached files and compares hashes, so it holds in a build with no
+// network access at all. What it cannot therefore tell is a bundle written into
+// the cache by hand, made out for the artifact read, from one a pull verified.
+//
+// A refusal names the condition, the cached bundle and, for a bundle made for
+// another artifact, the file and the manifest; it names no remedy, because the
+// remedy names the Release, which the surface reporting the refusal holds:
+// WithPullRemedy adds it there.
+//
+// It returns the bundle's path either way.
+func HoldRecordedSignature(workspaceRoot, cacheDir string, fact RecordedBundle, madeFor MadeFor) (string, error) {
+	if fact.Digest == "" {
+		return "", nil
+	}
+	path, bundle, err := readCachedSignatureBundle(workspaceRoot, cacheDir, fact.Digest)
+	if err != nil {
+		return path, err
+	}
+	if madeFor.manifestDigest == "" {
+		return path, nil
+	}
+	signed, recognised := SignedArtifactOf(bundle)
+	if !recognised || signed.MadeFor(madeFor.manifestDigest) {
+		return path, nil
+	}
+	return path, signatureForAnotherArtifact(path, fact.RecordedIn, madeFor.manifestDigest)
+}
+
+// signatureForAnotherArtifact composes one occurrence of
+// ErrSignatureForAnotherArtifact: the file that records the fact, the cached
+// bundle it names and the manifest the build read. Naming the reference and the
+// remedy is the caller's, which holds both, as it is for the cached-bundle
+// mismatch.
+func signatureForAnotherArtifact(bundlePath, recordedIn, manifestDigest string) error {
+	var values []string
+	if recordedIn != "" {
+		values = append(values, recordedIn+" records it")
+	}
+	values = append(values, "cached signature bundle "+bundlePath, "the artifact read has manifest "+manifestDigest)
+	return &signatureForAnotherArtifactError{message: cerrors.ComposeMessage(errSignatureForAnotherArtifact, values, "")}
+}
+
+// signatureForAnotherArtifactError renders the composed refusal and unwraps to
+// the condition.
+type signatureForAnotherArtifactError struct {
+	message string
+}
+
+func (e *signatureForAnotherArtifactError) Error() string { return e.message }
+
+func (e *signatureForAnotherArtifactError) Unwrap() error { return errSignatureForAnotherArtifact }
+
+// WithPullRemedy returns refusal — a refusal HoldRecordedSignature returned —
+// with the remedy that repairs it after it: running the pull of release. A pull
+// holds every lockfile row the content cache served to HoldRecordedSignature, and
+// verifies the signature of an artifact whose recorded fact it refuses again,
+// through the verification every artifact it fetches gets — a plugin attached at
+// a verdict role is verified again on every pull whatever its entry records; it
+// records the fact that gives —
+// none, where the workspace's settings admit the artifact unsigned — in the file
+// the fact is recorded in, and caches the bundle the fact names, rewriting a
+// cached bundle that no longer matches its digest. So a removed or altered bundle
+// and a fact copied from another row are each repaired by it. It is the one
+// spelling of that remedy, so the build's check and the moment a plugin's bytes
+// are resolved name it alike.
+//
+// release is the Release as the reader named it; where the reporting surface holds
+// none it is empty, and the remedy names a placeholder in its place. recordedIn is
+// the file the fact is recorded in, and an empty one names no file.
+//
+// Only the two conditions HoldRecordedSignature decides —
+// ErrSignatureBundleDigestMismatch and ErrSignatureForAnotherArtifact — are given
+// the remedy. Any other refusal, such as the read hold's refusal of a link leading
+// out of the cache, is returned as it is: a pull writes the bundle through the
+// same hold and is refused there too. A nil refusal is returned as nil.
+//
+// The result unwraps to refusal, so errors.Is and the condition's codes reach it.
+func WithPullRemedy(refusal error, release, recordedIn string) error {
+	if refusal == nil {
+		return nil
+	}
+	if !errors.Is(refusal, ErrSignatureBundleDigestMismatch()) && !errors.Is(refusal, ErrSignatureForAnotherArtifact()) {
+		return refusal
+	}
+	if release == "" {
+		release = "<release>"
+	}
+	remedy := "remediation: run `aggrega pull --release " + release + "` to verify the artifact's signature at its registry again, record it"
+	if recordedIn != "" {
+		remedy += " in " + recordedIn
+	}
+	remedy += " and cache the bundle it names"
+	return &pullRemedyError{refusal: refusal, remedy: remedy}
+}
+
+// pullRemedyError renders a refusal with the remedy after it and unwraps to the
+// refusal.
+type pullRemedyError struct {
+	refusal error
+	remedy  string
+}
+
+func (e *pullRemedyError) Error() string { return e.refusal.Error() + ". " + e.remedy }
+
+func (e *pullRemedyError) Unwrap() error { return e.refusal }
 
 // ReadCached returns the bytes previously stored at the cache slot
 // for uri@version. Returns a wrapped ErrFetchNotFound when the slot

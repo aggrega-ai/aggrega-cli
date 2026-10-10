@@ -80,11 +80,16 @@ type VerdictPluginTrust struct {
 //
 // # The recorded signature, at the moment the plugin loads
 //
-// Where the record carries a verified signature for the plugin, the cached
-// signature bundle that signature names is re-hashed against the digest it
-// recorded, by the same resolver step that re-hashes a lockfile-pinned plugin's
-// bundle (pluginpath.Resolver), before the plugin's bytes are returned: a missing,
-// unreadable or altered bundle halts the load. Where the record carries none,
+// Where the record carries a verified signature for the plugin, that fact is held
+// by the same resolver step that holds a lockfile-pinned plugin's
+// (pluginpath.Resolver), before the plugin's bytes are returned: the cached bundle
+// it names is re-hashed against the digest it recorded, and must have been made for
+// the artifact the bytes were read as, so a missing, unreadable or altered bundle
+// halts the load, and so does a signature copied onto this plugin's entry from
+// another's. Where the bytes were read from the content cache, the refusal names
+// the pull of the Release the record belongs to (trusted.Release), which verifies
+// the plugin's signature again and rewrites its cached bundle. Where the record
+// carries none,
 // trusted.HoldUnrecorded decides, before any byte is read, whether the trust
 // configuration requires one; a required signature nothing records halts the load.
 // So every surface that runs the plugin holds it as a build does, whichever command
@@ -171,6 +176,8 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 	pins := pluginpath.PinMaps{
 		Pins:        map[string]string{artifactRef: pin},
 		PinVersions: map[string]string{artifactRef: pin},
+		RecordedIn:  trusted.RecordedIn,
+		Release:     trusted.Release,
 	}
 	if bundle := trusted.BundleDigests[artifactRef]; bundle != "" {
 		pins.BundleDigests = map[string]string{artifactRef: bundle}

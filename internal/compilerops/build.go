@@ -119,7 +119,7 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		// pins no plugin yet: the claim is that pins govern here, not that any
 		// exist, which is what keeps an unrecorded guest worth reporting on this
 		// path.
-		PluginPins:                       pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile)),
+		PluginPins:                       pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile, in.ReleasePath)),
 		WorkspaceRoot:                    in.WorkspaceRoot,
 		MappingLibraries:                 view.MappingLibraries(),
 		WorkloadLibraries:                view.WorkloadLibraries(),

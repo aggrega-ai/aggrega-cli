@@ -37,7 +37,6 @@ func TestVerifyClosureSignaturesAnswerReplacesACarriedSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	carried := &lockfile.VerifiedSignature{Mode: "keyed", Identity: "carried-from-the-prior-lockfile", BundleDigest: "sha256:carried"}
 	const uri = "open.example.com/plugin/linter/unsigned"
 
 	cases := []struct {
@@ -46,12 +45,17 @@ func TestVerifyClosureSignaturesAnswerReplacesACarriedSignature(t *testing.T) {
 		wantSignature bool
 	}{
 		{"fetched from the registry, which now attaches no signature: the carried signature is cleared", closure.ResolutionPathRegistry, false},
-		{"served from the content cache, which the pass does not ask about: the carried signature stays", closure.ResolutionPathCache, true},
+		{"served from the content cache, whose carried signature the build accepts and the pass does not ask about: it stays", closure.ResolutionPathCache, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			sig := *carried
+			root := t.TempDir()
+			// The carried signature names a bundle that is in the cache and was made for
+			// the row's own manifest, so a build accepts it: the cache-served row carries
+			// nothing that would have the pass ask about it.
+			sig := lockfile.VerifiedSignature{Mode: "keyed", Identity: "carried-from-the-prior-lockfile",
+				BundleDigest: cacheBundleMadeFor(t, root, manifestDg)}
 			cl := closure.Closure{
 				Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: manifestDg, ResolutionPath: tc.path}},
 			}
@@ -60,7 +64,7 @@ func TestVerifyClosureSignaturesAnswerReplacesACarriedSignature(t *testing.T) {
 			}
 			// No policy for the host: verify-if-present, so an absent signature is not
 			// a halt and the pass returns cleanly either way.
-			if err := VerifyClosureSignatures(ctx, lf, cl, workspaceconfig.Config{}, t.TempDir(), ".aggrega/cache", nil, pluginTargetFor(store, "1.0.0")); err != nil {
+			if err := VerifyClosureSignatures(ctx, lf, cl, workspaceconfig.Config{}, root, ".aggrega/cache", nil, pluginTargetFor(store, "1.0.0")); err != nil {
 				t.Fatalf("VerifyClosureSignatures: %v", err)
 			}
 			got := lf.Plugins[0].Signature

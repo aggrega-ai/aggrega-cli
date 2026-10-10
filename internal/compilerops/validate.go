@@ -336,7 +336,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		// govern what its plugins resolve to. Validating against a different pin
 		// model from the build would report on a composition the build never
 		// produces.
-		PluginPins:      pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile)),
+		PluginPins:      pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile, in.ReleasePath)),
 		CompilerVersion: in.CompilerVersion,
 	}
 	// The governance attachment list the pipeline dispatches and the digests
