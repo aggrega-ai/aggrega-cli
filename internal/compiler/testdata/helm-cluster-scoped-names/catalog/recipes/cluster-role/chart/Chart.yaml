@@ -1,0 +1,4 @@
+apiVersion: v2
+name: cluster-role
+version: 0.1.0
+description: A chart writing one ClusterRole under a fixed name, beside a ConfigMap named after the release.

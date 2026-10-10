@@ -1,0 +1,6 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  # A fixed name: every release of this chart writes this one ClusterRole.
+  name: shared-reader
+rules: []

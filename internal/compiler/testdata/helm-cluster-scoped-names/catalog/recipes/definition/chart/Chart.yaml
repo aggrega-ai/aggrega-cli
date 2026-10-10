@@ -1,0 +1,4 @@
+apiVersion: v2
+name: definition
+version: 0.1.0
+description: A chart whose crds/ directory carries one CustomResourceDefinition, beside a ConfigMap named after the release.

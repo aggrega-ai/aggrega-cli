@@ -1,0 +1,4 @@
+apiVersion: v2
+name: shared-objects
+version: 0.1.0
+description: A chart writing one ClusterRole under a fixed name and the one CustomResourceDefinition its crds/ directory carries, beside a Deployment named after the release.

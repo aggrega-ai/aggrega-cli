@@ -176,8 +176,9 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	}
 	// The names this node's emitted output addresses its resources by, declared per
 	// key space so the host can confirm no two contributors assembling into one
-	// output claim the same one. A resource name is unique within its kind and
-	// namespace, and the host writes the file bytes verbatim without reading them,
+	// output claim the same one. A resource name is unique within its kind and, for
+	// a kind the cluster keeps in a namespace, that namespace; the host writes the
+	// file bytes verbatim without reading them,
 	// so the declaration is how the guest asks for a check the host could not
 	// otherwise make.
 	//

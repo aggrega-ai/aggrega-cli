@@ -1,0 +1,8 @@
+apiVersion: monitoring.example.org/v1
+kind: Probe
+metadata:
+  # A custom kind no definition in this chart declares, so nothing says whether
+  # the cluster keeps it in a namespace.
+  name: shared-probe
+spec:
+  interval: 30s

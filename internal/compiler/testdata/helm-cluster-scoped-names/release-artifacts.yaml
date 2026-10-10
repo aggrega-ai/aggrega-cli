@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cluster-scoped-artifacts
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: cluster-scoped-artifacts
+  manifest: cluster-scoped-names-manifest
+  boundaries:
+    shop:
+      directory: ./dist/shop
+      annotations:
+        aggrega.ai/namespace: "shop"
+      components:
+        alpha: {}
+        beta:
+          annotations:
+            aggrega.ai/namespace: "other"

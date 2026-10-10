@@ -274,14 +274,18 @@ func RenderChart(
 		}
 	}
 
-	split := make([][]renderedDocument, 0, len(sources))
+	var roots []*yaml.Node
 	for _, s := range sources {
-		split = append(split, s.docs)
+		for i := range s.docs {
+			roots = append(roots, s.docs[i].root())
+		}
 	}
 	// The namespace placement writes is the declared one, which is also what the
 	// chart rendered against as its release namespace (see EffectiveNamespace); with
-	// none declared it places nothing, rather than writing the cluster default.
-	placement := newNamespacePlacement(rendercore.NamespaceFromAnnotations(nodeCtx.Annotations), split, nodeCtx.YAMLIndent)
+	// none declared it places nothing, rather than writing the cluster default. The
+	// kinds are classified from every split document before any is emitted, through
+	// the one classification the declared names are keyed by too ([kindScopes]).
+	placement := newNamespacePlacement(rendercore.NamespaceFromAnnotations(nodeCtx.Annotations), classifyKinds(roots), nodeCtx.YAMLIndent)
 
 	// emitDocuments places, labels, annotates, keys, and stores each split document
 	// from one source (a rendered template or a chart CRD file). sourcePath names the

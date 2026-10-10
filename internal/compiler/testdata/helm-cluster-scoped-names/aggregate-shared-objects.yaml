@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cluster-scoped-shared-objects
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: core/probe/shared-objects
+    edge:
+      type: core/probe/shared-objects

@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cluster-scoped-unclassified
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/probe/unclassified
+  source: ./chart

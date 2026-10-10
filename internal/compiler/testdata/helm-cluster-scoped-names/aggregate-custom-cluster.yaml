@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cluster-scoped-custom-cluster
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: core/probe/custom-cluster
+    edge:
+      type: core/probe/custom-cluster

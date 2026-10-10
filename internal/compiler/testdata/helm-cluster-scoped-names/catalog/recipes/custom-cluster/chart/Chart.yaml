@@ -1,0 +1,4 @@
+apiVersion: v2
+name: custom-cluster
+version: 0.1.0
+description: A chart defining the custom kind Gizmo as cluster-scoped and writing one Gizmo under a fixed name.

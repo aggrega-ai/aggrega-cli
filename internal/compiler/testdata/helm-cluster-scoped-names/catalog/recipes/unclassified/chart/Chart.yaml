@@ -1,0 +1,4 @@
+apiVersion: v2
+name: unclassified
+version: 0.1.0
+description: A chart writing one resource under a fixed name, of a custom kind nothing in the chart defines.

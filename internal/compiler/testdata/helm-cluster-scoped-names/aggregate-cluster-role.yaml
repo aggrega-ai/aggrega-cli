@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cluster-scoped-cluster-role
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: core/probe/cluster-role
+    edge:
+      type: core/probe/cluster-role

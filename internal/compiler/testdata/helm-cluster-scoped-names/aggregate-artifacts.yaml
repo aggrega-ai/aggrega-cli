@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cluster-scoped-artifacts
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/probe/host
+      features:
+        aux:
+          type: feature.id/cluster-reader
+    beta:
+      type: core/probe/host
+      features:
+        aux:
+          type: feature.id/cluster-reader

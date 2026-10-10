@@ -34,8 +34,9 @@ const (
 // read by both or by neither; neither reader parses a file of its own.
 //
 // fallbackNamespace is the names reader's alone, and the facts reader is not handed
-// it. A name is compared inside the namespace the resource will be applied into, so
-// a resource writing none is compared where it would land by default. A fact
+// it. A namespaced resource's name is compared inside the namespace the resource
+// will be applied into, so one writing none is compared where it would land by
+// default; a cluster-scoped resource's name is compared with no namespace. A fact
 // reports what the document says, and a resource writing no namespace lands wherever
 // the tool applying it decides, which nothing at build time knows: a fallback in its
 // entry would point a template at a namespace its pods may not be in, where an absent

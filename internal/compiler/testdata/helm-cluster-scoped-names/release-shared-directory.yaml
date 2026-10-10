@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cluster-scoped-shared-directory
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: cluster-scoped-cluster-role
+  manifest: cluster-scoped-names-manifest
+  # Two boundaries naming one directory assemble into one output, so their
+  # components are compared as two components of one boundary are.
+  boundaries:
+    shop:
+      directory: ./dist/shared
+      annotations:
+        aggrega.ai/namespace: "shop"
+      components:
+        store: {}
+    plain:
+      directory: ./dist/shared
+      annotations:
+        aggrega.ai/namespace: "other"
+      components:
+        edge: {}

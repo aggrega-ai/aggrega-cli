@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cluster-scoped-names-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/probe/shared-objects: cluster-scoped-shared-objects:1.0.0
+        core/probe/cluster-role: cluster-scoped-cluster-role:1.0.0
+        core/probe/definition: cluster-scoped-definition:1.0.0
+        core/probe/custom-cluster: cluster-scoped-custom-cluster:1.0.0
+        core/probe/custom-namespaced: cluster-scoped-custom-namespaced:1.0.0
+        core/probe/unclassified: cluster-scoped-unclassified:1.0.0
+        core/probe/settings: cluster-scoped-settings:1.0.0
+        core/probe/split-role: cluster-scoped-split-role:1.0.0
+        core/probe/host: cluster-scoped-host:1.0.0
+    features:
+      type:
+        feature.id/cluster-reader: cluster-reader-helm:1.0.0

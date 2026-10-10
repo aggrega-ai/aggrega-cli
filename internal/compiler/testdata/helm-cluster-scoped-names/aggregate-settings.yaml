@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cluster-scoped-settings
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: core/probe/settings
+    edge:
+      type: core/probe/settings

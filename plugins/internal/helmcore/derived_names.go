@@ -19,12 +19,13 @@ import (
 // it is talking about before reading the rest of it.
 //
 // It is a fixed literal and reserves nothing: it is constant across every space
-// assembled here, so it is no part of what tells two spaces apart — the kind and
-// the namespace following it are.
+// assembled here, so it is no part of what tells two spaces apart — the kind, and
+// the namespace where one follows it, are.
 const resourceNameSpacePrefix = "resource-names:"
 
-// resourceNameSpaceEncoding assembles the scope half of a key space from the two
-// coordinates that bound a Kubernetes resource name.
+// resourceNameSpaceEncoding assembles the scope half of a key space from the
+// coordinates that bound a Kubernetes resource name: the kind, and for a kind kept
+// in a namespace, the namespace.
 //
 // Its admitted alphabet is the ASCII letters and digits. That is stated here
 // rather than taken from the encoding because it is a property of what these two
@@ -47,8 +48,9 @@ func isResourceNameSpaceRune(r rune) bool {
 }
 
 // resourceNameSpace is the key space one emitted resource's name is declared
-// into: the fixed prefix, then the kind and the namespace the resource lands in,
-// assembled injectively.
+// into: the fixed prefix, then the resource's kind and — unless scope says the
+// cluster keeps the kind outside every namespace — the namespace the resource
+// lands in, assembled injectively.
 //
 // The scope belongs in the SPACE and the name in the key, rather than all three
 // being run together into one declared name. Two reasons, and the second is the
@@ -60,11 +62,27 @@ func isResourceNameSpaceRune(r rune) bool {
 // doubles as the term to search their own templates for — a composed name would
 // send them looking for a string that appears in none of their files.
 //
-// Both coordinates are needed and neither is optional. A Service and a Deployment
-// named alike is ordinary correct Kubernetes authoring, so a space that dropped
-// the kind would refuse it; two namespaces hold two resources of one name
-// independently, so a space that dropped the namespace would refuse that too.
-func resourceNameSpace(kind, namespace string) string {
+// A namespaced kind needs both coordinates. A Service and a Deployment named
+// alike is ordinary correct Kubernetes authoring, so a space that dropped the kind
+// would refuse it; two namespaces hold two resources of one name independently, so
+// a space that dropped the namespace would refuse that too. A kind nothing in the
+// render classifies keeps both as well: nothing says it is held outside a
+// namespace, and a space dropping the namespace would refuse one name in two
+// namespaces for a kind that may be namespaced.
+//
+// A cluster-scoped kind needs the kind alone, and carrying the namespace would be
+// wrong rather than merely redundant. The cluster holds one resource of that kind
+// per name whatever namespace a document writes, so two resources of it written
+// in two namespaces are one object written twice, and a space keyed by the
+// namespace would keep them apart while the second silently replaced the first.
+// Its space is the kind as a name of one segment, which the encoding keeps apart
+// from every space of two: the join between two segments is a sequence no encoded
+// segment contains, so a cluster-scoped space equals no namespaced space for any
+// namespace.
+func resourceNameSpace(kind string, scope resourceScope, namespace string) string {
+	if scope == scopeCluster {
+		return resourceNameSpacePrefix + resourceNameSpaceEncoding.Name(kind)
+	}
 	return resourceNameSpacePrefix + resourceNameSpaceEncoding.Name(kind, namespace)
 }
 
@@ -99,15 +117,29 @@ const defaultNamespace = "default"
 // verbatim. The host cannot see it, and reading it back would mean parsing
 // Kubernetes manifests in the host, which is the domain knowledge the plugin
 // boundary keeps out. So the guest declares what it emitted, and what crosses is
-// already the answer to every Kubernetes-specific question — which kind, which
-// namespace, which field is the name.
+// already the answer to every Kubernetes-specific question — which kind, whether
+// the cluster keeps that kind in a namespace at all and if so which one, which
+// field is the name.
 //
 // The same holds for a name an author wrote directly into an artifact body,
 // which reaches this reader on identical terms: it is a name inside an emitted
 // document, and this reads emitted documents. Whether the render derived a name
 // or carried it through as authored is not a distinction available here and not
-// one the comparison needs — two resources reaching one name in one kind and
-// namespace displace each other in the cluster either way.
+// one the comparison needs — two resources reaching one name in one key space
+// displace each other in the cluster either way.
+//
+// # The scope each name is declared in
+//
+// A resource's kind is classified by the one classification this provider holds
+// ([kindScopes]), read from the same emitted documents — a built-in kind by the
+// Kubernetes API's own scope, a custom kind by a CustomResourceDefinition among
+// them. A namespaced kind's name, and the name of a kind nothing classifies, is
+// declared in the space of its kind and the namespace it lands in; a
+// cluster-scoped kind's name in the space of its kind alone, whatever namespace
+// its document writes (see [resourceNameSpace]). So two contributors to one output
+// emitting one cluster-wide object — one ClusterRole, one CustomResourceDefinition
+// — claim one name in one space wherever each is placed, and one render writing
+// such an object under two namespaces carries its name twice in one space.
 //
 // # The declaration mirrors the emitted set, and moves none of it
 //
@@ -139,6 +171,15 @@ const defaultNamespace = "default"
 // recognise. So a green from the host's comparison means no two declared names
 // met; it does not mean every name the output will eventually carry was watched.
 //
+// The scope a name is compared in is only as wide as the classification can see.
+// A kind nothing in the render classifies — a custom kind whose
+// CustomResourceDefinition the render does not emit, a document naming no
+// apiVersion — is compared within its namespace, so two contributors writing one
+// such object in two namespaces do not meet even where the cluster keeps the kind
+// outside every namespace. And the comparison is the host's, over the contributors
+// to one output: two outputs are never compared with each other, because nothing
+// in a build says whether they are applied to one cluster.
+//
 // A render reports these names beside its render facts, and both are read from
 // one walk over the emitted files — see [ReportEmitted], which is what the guest
 // calls. This function is the names half of that read on its own.
@@ -151,8 +192,15 @@ func DeclaredResourceNames(
 
 // declaredNamesOf builds the name declaration from the resource documents one
 // walk over a render's emitted files read, in the order that walk met them.
+//
+// The kinds are classified from those same documents, so a CustomResourceDefinition
+// the render emitted classifies the custom kind it defines wherever in the render it
+// sits, and the declaration reads no document the walk did not. A resource of a
+// cluster-scoped kind is declared without a namespace; every other resource in the
+// namespace its document writes, or in fallbackNamespace where it writes none.
 func declaredNamesOf(resources []*yaml.Node, fallbackNamespace string) types.OrderedMap[[]string] {
 	declared := types.OrderedMap[[]string]{}
+	scopes := classifyKinds(resources)
 	// Walked in the order the render emits, so the declaration's space order and
 	// each space's name order are functions of the render's own output rather than
 	// of a map walk — which is what keeps the payload byte-identical across runs
@@ -164,11 +212,12 @@ func declaredNamesOf(resources []*yaml.Node, fallbackNamespace string) types.Ord
 		if kind == "" || name == "" {
 			continue
 		}
+		_, _, scope := scopes.scopeOf(root, kind)
 		namespace := scalarChildValue(metadata, "namespace")
 		if namespace == "" {
 			namespace = fallbackNamespace
 		}
-		space := resourceNameSpace(kind, namespace)
+		space := resourceNameSpace(kind, scope, namespace)
 		names, _ := declared.Get(space)
 		declared.Set(space, append(names, name))
 	}

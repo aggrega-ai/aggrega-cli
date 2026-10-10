@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: cluster-reader-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.id/cluster-reader
+  # The ClusterRole is named by a literal, so every host this attachment lands on
+  # writes the one ClusterRole, wherever that host is placed.
+  artifacts:
+    reader.yaml: |
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: aux-reader
+      rules: []
