@@ -232,8 +232,9 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 			}
 			plainOut, plainErr := helmcore.RenderLoadedChart(ctx, plainChart, decodeValues(t, tc.values), nodeCtx,
 				helmcore.NewHermeticValuesValidator(forbidFetch(t)))
-			gotOut, gotErr := helmcore.RenderChartWithholding(ctx, load, decodeValues(t, tc.values), nodeCtx,
+			gotRender, gotErr := helmcore.RenderChartWithholding(ctx, load, decodeValues(t, tc.values), nodeCtx,
 				helmcore.NewHermeticValuesValidator(forbidFetch(t)), tc.marked)
+			gotOut := gotRender.Files
 
 			if tc.renders {
 				if plainErr != nil || gotErr != nil {

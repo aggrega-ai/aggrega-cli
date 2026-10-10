@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: helm-chart-namespace-placement-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/probe/placed: helm-placement-chart:1.0.0

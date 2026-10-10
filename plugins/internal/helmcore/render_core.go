@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -38,39 +39,70 @@ import (
 // time.
 type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 
-// RenderLoadedChart renders an already-loaded Helm chart against the Phase B
-// values dictionary using the Helm Go SDK's template engine, returning flat
-// rendered YAML files. Each rendered template is split into its individual YAML
-// documents and every document is emitted as its own file keyed by
-// "<component-id>-<kind>[-<namespace>]-<name>.yaml" (kebab-normalized). Keying by
-// resource identity rather than template basename keeps every rendered resource
-// distinct: two templates in different subdirectories that share a basename no
-// longer collapse onto one output slot. A document that carries no resource
-// identity — a generateName resource, a List wrapper — is keyed instead by a
-// deterministic kebab of its rendered template path, so it still emits a stable,
-// distinct file. A chart's Helm-native crds/ directory is emitted alongside the
-// templated resources: Helm installs those CRD files verbatim rather than through
-// the template engine, so they are split, labeled, and keyed by resource identity
-// exactly like templated documents, in a deterministic order. It is the
-// filesystem-free render core: it receives the chart in memory and never reads
-// from disk, which is what lets the provider Wasm guest — which reconstructs the
-// chart from the payload's source projection — drive this one
-// byte-identical-critical render path. Do not re-implement this logic in a
-// caller: route through this function so a node's rendered bytes have a single
-// producer.
+// ChartRender is what one render of a chart produced: the flat files it emits,
+// keyed by output filename, and the advisories the render raised about what it
+// emitted, in the order the render met what each one is about. Advisories never
+// change a file.
+type ChartRender struct {
+	Files      map[string][]byte
+	Advisories []renderctx.Diagnostic
+}
+
+// RenderLoadedChart is [RenderChart] for a caller that reads the files alone: it
+// returns the files that render emits and not the advisories it raised.
+func RenderLoadedChart(
+	ctx context.Context,
+	ch *chart.Chart,
+	values map[string]any,
+	nodeCtx rendercore.NodeRenderContext,
+	validate ValuesValidator,
+) (map[string][]byte, error) {
+	rendered, err := RenderChart(ctx, ch, values, nodeCtx, validate)
+	if err != nil {
+		return nil, err
+	}
+	return rendered.Files, nil
+}
+
+// RenderChart renders an already-loaded Helm chart against the Phase B values
+// dictionary using the Helm Go SDK's template engine, returning flat rendered
+// YAML files and the advisories the render raised. Each rendered template is
+// split into its individual YAML documents and every document is emitted as its
+// own file keyed by "<component-id>-<kind>[-<namespace>]-<name>.yaml"
+// (kebab-normalized). Keying by resource identity rather than template basename
+// keeps every rendered resource distinct: two templates in different
+// subdirectories that share a basename no longer collapse onto one output slot. A
+// document that carries no resource identity — a generateName resource, a List
+// wrapper — is keyed instead by a deterministic kebab of its rendered template
+// path, so it still emits a stable, distinct file. A chart's Helm-native crds/
+// directory is emitted alongside the templated resources: Helm installs those CRD
+// files verbatim rather than through the template engine, so they are split,
+// labeled, and keyed by resource identity exactly like templated documents, in a
+// deterministic order. It is the filesystem-free render core: it receives the
+// chart in memory and never reads from disk, which is what lets the provider Wasm
+// guest — which reconstructs the chart from the payload's source projection —
+// drive this one byte-identical-critical render path. Do not re-implement this
+// logic in a caller: route through this function so a node's rendered bytes have
+// a single producer.
+//
+// Where the node's Release declares a namespace, every namespaced resource the
+// chart renders without one is written into it before its identity is derived, as
+// a Helm install with that release namespace places it — see [namespacePlacement]
+// for which resources that reaches and which it leaves, and for the one advisory
+// it raises.
 //
 // validate is the values-schema validation strategy the caller supplies; it
 // gates on the coalesced values table without altering it, so rendered output
 // is byte-identical for any accepted input. The provider Wasm guest passes the
 // hermetic validator (see NewHermeticValuesValidator), which skips the SDK's
 // live-fetching schema validation.
-func RenderLoadedChart(
+func RenderChart(
 	_ context.Context,
 	ch *chart.Chart,
 	values map[string]any,
 	nodeCtx rendercore.NodeRenderContext,
 	validate ValuesValidator,
-) (map[string][]byte, error) {
+) (ChartRender, error) {
 	// Prune condition:/tags:-disabled dependency subcharts before rendering,
 	// matching the Helm CLI: a dependency whose condition path resolves to
 	// false in the merged values is removed from the chart tree so its
@@ -84,13 +116,13 @@ func RenderLoadedChart(
 	// reconstructs it per node), so the mutation is not an aliasing or
 	// determinism hazard across nodes.
 	if err := chartutil.ProcessDependenciesWithMerge(ch, chartutil.Values(values)); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}
 
 	// Coalesce the Phase B dict with the chart's default values
 	cvals, err := chartutil.CoalesceValues(ch, chartutil.Values(values))
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: coalesce values", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: coalesce values", nodeCtx.NodeID))
 	}
 
 	// Build release options. We are not installing — just rendering templates.
@@ -120,13 +152,13 @@ func RenderLoadedChart(
 		}
 	}
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render values", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render values", nodeCtx.NodeID))
 	}
 
 	// Render
 	rendered, err := engine.Engine{}.Render(ch, renderVals)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
 	}
 
 	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
@@ -172,13 +204,101 @@ func RenderLoadedChart(
 	}
 	sort.Strings(keys)
 
-	// emitDocuments labels, annotates, keys, and stores each split document from
-	// one source (a rendered template or a chart CRD file). sourcePath names the
+	// Every source the chart emits is split into its documents before any document
+	// is emitted, because whether a custom kind is namespaced can be declared by a
+	// CustomResourceDefinition anywhere in the render — in a template that sorts
+	// after the resource, or in crds/, which is emitted last. A source that fails to
+	// split ends the splitting there, and its failure is returned when the emission
+	// below reaches it, so a render failing in two places reports the one it
+	// reported before the documents were read ahead.
+	type chartSource struct {
+		path string
+		docs []renderedDocument
+		err  error
+	}
+	var sources []chartSource
+	splitFailed := false
+	for _, path := range keys {
+		content := strings.TrimSpace(rendered[path])
+		if content == "" {
+			continue
+		}
+		base := filepath.Base(path)
+		// Drop partial-template files (Helm convention: underscore prefix)
+		if strings.HasPrefix(base, "_") {
+			continue
+		}
+		// Drop non-manifest rendered output: Helm renders NOTES.txt (plain-text
+		// usage notes) and may emit other non-YAML files alongside the manifests.
+		// Only YAML/JSON documents are Kubernetes objects to label and emit.
+		switch strings.ToLower(filepath.Ext(base)) {
+		case ".yaml", ".yml", ".json":
+		default:
+			continue
+		}
+
+		docs, err := splitRenderedDocuments([]byte(content), nodeCtx.YAMLIndent)
+		if err != nil {
+			sources = append(sources, chartSource{path: path, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))})
+			splitFailed = true
+			break
+		}
+		sources = append(sources, chartSource{path: path, docs: docs})
+	}
+
+	// The chart's Helm-native crds/ directory. CRDs shipped there — rather than
+	// under templates/ — are not rendered through the template engine; Helm
+	// installs them verbatim. They are split, labeled, and keyed by resource
+	// identity exactly like templated resources, after every template. CRDs are
+	// processed in Filename order so the output is deterministic run-to-run.
+	if !splitFailed {
+		crds := ch.CRDObjects()
+		crdOrder := make([]int, len(crds))
+		for i := range crds {
+			crdOrder[i] = i
+		}
+		sort.Slice(crdOrder, func(a, b int) bool {
+			return crds[crdOrder[a]].Filename < crds[crdOrder[b]].Filename
+		})
+		for _, idx := range crdOrder {
+			crd := crds[idx]
+			if crd.File == nil || len(crd.File.Data) == 0 {
+				continue
+			}
+			docs, err := splitRenderedDocuments(crd.File.Data, nodeCtx.YAMLIndent)
+			if err != nil {
+				sources = append(sources, chartSource{path: crd.Filename, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: crd %q: %s", nodeCtx.NodeID, crd.Filename, err.Error()))})
+				break
+			}
+			sources = append(sources, chartSource{path: crd.Filename, docs: docs})
+		}
+	}
+
+	split := make([][]renderedDocument, 0, len(sources))
+	for _, s := range sources {
+		split = append(split, s.docs)
+	}
+	// The namespace placement writes is the declared one, which is also what the
+	// chart rendered against as its release namespace (see EffectiveNamespace); with
+	// none declared it places nothing, rather than writing the cluster default.
+	placement := newNamespacePlacement(rendercore.NamespaceFromAnnotations(nodeCtx.Annotations), split, nodeCtx.YAMLIndent)
+
+	// emitDocuments places, labels, annotates, keys, and stores each split document
+	// from one source (a rendered template or a chart CRD file). sourcePath names the
 	// origin: it seeds the deterministic fallback filename for identity-less
 	// documents and names the source in a collision halt. Templates and CRD files
-	// share this one emission path so both surfaces derive filenames, inject
-	// provenance, and detect collisions identically.
+	// share this one emission path so both surfaces are placed, derive filenames,
+	// inject provenance, and detect collisions identically.
 	emitDocuments := func(docs []renderedDocument, sourcePath string) error {
+		// Placement comes first, because the namespace a document writes is part of
+		// the identity its filename is derived from: a placed resource is named
+		// exactly as one whose chart writes the namespace itself.
+		for i := range docs {
+			if err := placement.place(&docs[i]); err != nil {
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: place a resource of %q in namespace %q", nodeCtx.NodeID, sourcePath, placement.namespace))
+			}
+		}
+
 		// A single source may render the same identity more than once (e.g. a
 		// range emitting duplicate names). Count identities within this source so
 		// those occurrences take a stable document-index tiebreaker; unique
@@ -227,72 +347,36 @@ func RenderLoadedChart(
 		return nil
 	}
 
-	for _, path := range keys {
-		content := strings.TrimSpace(rendered[path])
-		if content == "" {
-			continue
+	for _, s := range sources {
+		if s.err != nil {
+			return ChartRender{}, s.err
 		}
-		base := filepath.Base(path)
-		// Drop partial-template files (Helm convention: underscore prefix)
-		if strings.HasPrefix(base, "_") {
-			continue
-		}
-		// Drop non-manifest rendered output: Helm renders NOTES.txt (plain-text
-		// usage notes) and may emit other non-YAML files alongside the manifests.
-		// Only YAML/JSON documents are Kubernetes objects to label and emit.
-		switch strings.ToLower(filepath.Ext(base)) {
-		case ".yaml", ".yml", ".json":
-		default:
-			continue
-		}
-
-		docs, err := splitRenderedDocuments([]byte(content), nodeCtx.YAMLIndent)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))
-		}
-		if err := emitDocuments(docs, path); err != nil {
-			return nil, err
+		if err := emitDocuments(s.docs, s.path); err != nil {
+			return ChartRender{}, err
 		}
 	}
 
-	// Emit the chart's Helm-native crds/ directory. CRDs shipped there — rather
-	// than under templates/ — are not rendered through the template engine; Helm
-	// installs them verbatim. They are split, labeled, and keyed by resource
-	// identity exactly like templated resources. CRDs are processed in Filename
-	// order so the output is deterministic run-to-run.
-	crds := ch.CRDObjects()
-	crdOrder := make([]int, len(crds))
-	for i := range crds {
-		crdOrder[i] = i
-	}
-	sort.Slice(crdOrder, func(a, b int) bool {
-		return crds[crdOrder[a]].Filename < crds[crdOrder[b]].Filename
-	})
-	for _, idx := range crdOrder {
-		crd := crds[idx]
-		if crd.File == nil || len(crd.File.Data) == 0 {
-			continue
-		}
-		docs, err := splitRenderedDocuments(crd.File.Data, nodeCtx.YAMLIndent)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: crd %q: %s", nodeCtx.NodeID, crd.Filename, err.Error()))
-		}
-		if err := emitDocuments(docs, crd.Filename); err != nil {
-			return nil, err
-		}
-	}
-
-	return out, nil
+	return ChartRender{Files: out, Advisories: placement.advisories}, nil
 }
 
 // renderedDocument is one YAML document split out of a rendered template: its
 // re-encoded bytes plus the resource identity (kind, namespace, name) used to
-// derive a stable output filename.
+// derive a stable output filename, and the parsed document those bytes encode,
+// which placing the document in a namespace edits and encodes again.
 type renderedDocument struct {
 	content   []byte
 	kind      string
 	namespace string
 	name      string
+	doc       *yaml.Node
+}
+
+// root is the document's root mapping.
+func (d renderedDocument) root() *yaml.Node {
+	if d.doc == nil || len(d.doc.Content) == 0 {
+		return nil
+	}
+	return d.doc.Content[0]
 }
 
 // splitRenderedDocuments splits a rendered template's YAML stream into its
@@ -349,15 +433,12 @@ func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument,
 		name := scalarChildValue(metadata, "name")
 		namespace := scalarChildValue(metadata, "namespace")
 
-		var buf bytes.Buffer
-		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(rendercore.ClampYAMLIndent(indent))
-		if err := enc.Encode(&doc); err != nil {
-			return nil, fmt.Errorf("encode rendered YAML: %w", err)
+		content, err := encodeRenderedDocument(&doc, indent)
+		if err != nil {
+			return nil, err
 		}
-		_ = enc.Close()
 
-		out = append(out, renderedDocument{content: buf.Bytes(), kind: kind, namespace: namespace, name: name})
+		out = append(out, renderedDocument{content: content, kind: kind, namespace: namespace, name: name, doc: &doc})
 	}
 	return out, nil
 }

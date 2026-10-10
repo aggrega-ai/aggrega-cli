@@ -1,0 +1,4 @@
+apiVersion: v2
+name: placement
+version: 0.1.0
+description: A chart whose templates write no namespace, beside one resource pinning its own, a cluster-scoped kind, a custom kind its crds/ directory declares namespaced, and a custom kind nothing in the chart declares.

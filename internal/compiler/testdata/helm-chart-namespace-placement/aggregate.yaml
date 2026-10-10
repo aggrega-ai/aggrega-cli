@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-chart-namespace-placement
+  version: "1.0.0"
+spec:
+  # Two instances of one component, rendered from one chart: the Release places one
+  # in a boundary declaring a namespace and the other in a boundary declaring none.
+  components:
+    store:
+      type: core/probe/placed
+    edge:
+      type: core/probe/placed

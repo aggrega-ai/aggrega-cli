@@ -347,9 +347,15 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
-	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered[path]})
+	// The render's advisories — a kind left without the declared namespace because
+	// nothing in the render says whether it is namespaced — cross as warn-severity
+	// diagnostics, which the host reports on the build without halting it.
+	out := rendercore.RenderNodeOutput{
+		Files:       make([]rendercore.RenderedFile, 0, len(rendered.Files)),
+		Diagnostics: rendered.Advisories,
+	}
+	for _, path := range sortedKeys(rendered.Files) {
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered.Files[path]})
 	}
 	return out, nil
 }

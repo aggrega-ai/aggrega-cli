@@ -20,7 +20,7 @@ import (
 // render of the same node needs a chart of its own.
 type ChartLoader func() (*chart.Chart, error)
 
-// RenderChartWithholding renders a chart exactly as [RenderLoadedChart] does, and
+// RenderChartWithholding renders a chart exactly as [RenderChart] does, and
 // keeps out of a failure's text every value the node's input marks sensitive.
 //
 // marked is the node's sensitivity marking over its values: the keys of values the
@@ -29,8 +29,8 @@ type ChartLoader func() (*chart.Chart, error)
 // template that produced them — a values mapping — reads such a datum, and since
 // no key of its output can be traced to the datum it came from, every value is
 // treated as marked. A render that succeeds, and a render whose values carry no
-// marked value, are RenderLoadedChart's own — one run, its output, its failure,
-// byte for byte.
+// marked value, are RenderChart's own — one run, its output and its advisories,
+// its failure, byte for byte.
 //
 // A render that fails while its values carry a marked value is run again on a
 // fresh chart, every marked value replaced by the placeholder — under the marking
@@ -55,12 +55,12 @@ func RenderChartWithholding(
 	nodeCtx rendercore.NodeRenderContext,
 	validate ValuesValidator,
 	marked map[string]string,
-) (map[string][]byte, error) {
+) (ChartRender, error) {
 	ch, err := load()
 	if err != nil {
-		return nil, err
+		return ChartRender{}, err
 	}
-	out, err := RenderLoadedChart(ctx, ch, values, nodeCtx, validate)
+	out, err := RenderChart(ctx, ch, values, nodeCtx, validate)
 	if err == nil {
 		return out, nil
 	}
@@ -70,16 +70,16 @@ func RenderChartWithholding(
 	}
 	substituted, ok := substitute()
 	if !ok {
-		return nil, err
+		return ChartRender{}, err
 	}
 	again, loadErr := load()
 	if loadErr != nil {
-		return nil, withheldChartFailure(err, nodeCtx.NodeID)
+		return ChartRender{}, withheldChartFailure(err, nodeCtx.NodeID)
 	}
-	if _, againErr := RenderLoadedChart(ctx, again, substituted, nodeCtx, validate); againErr != nil && sameChartFailure(err, againErr) {
-		return nil, againErr
+	if _, againErr := RenderChart(ctx, again, substituted, nodeCtx, validate); againErr != nil && sameChartFailure(err, againErr) {
+		return ChartRender{}, againErr
 	}
-	return nil, withheldChartFailure(err, nodeCtx.NodeID)
+	return ChartRender{}, withheldChartFailure(err, nodeCtx.NodeID)
 }
 
 // substituteMarked returns a copy of values with every marked key's value replaced

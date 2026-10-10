@@ -86,10 +86,11 @@ func factLines(prefix, controller, service, namespace string) []string {
 // The boundary declares the namespace "shop", and its components render three
 // ways. The gateway and api are synthesized Workloads, which write the boundary's
 // namespace on every resource, so their entries carry "shop". web is a chart whose
-// templates write no namespace, so its entries carry none — not "shop", which is
-// what this provider would fall back to when declaring names, and the one value a
-// guess could produce here. operator is a chart pinning its own namespace, so its
-// entries carry "operators-system" rather than the boundary's.
+// templates write no namespace: the provider places each of its namespaced
+// resources in the boundary's namespace, so the documents it emits write "shop" and
+// its entries carry it, read from the documents rather than supplied beside them.
+// operator is a chart pinning its own namespace, which placement leaves alone, so
+// its entries carry "operators-system" rather than the boundary's.
 //
 // Each case is read twice: as a host's own facts, by the Feature attached to that
 // component, and as a caller's, by the Feature attached to the gateway, which every
@@ -109,8 +110,8 @@ func TestHelmRenderFacts_ReportTheNamespaceEachResourceIsEmittedInto(t *testing.
 		{"Service", "gateway-web", "shop"},
 		{"Deployment", "api", "shop"},
 		{"Service", "api-web", "shop"},
-		{"Deployment", "web-server", ""},
-		{"Service", "web-server", ""},
+		{"Deployment", "web-server", "shop"},
+		{"Service", "web-server", "shop"},
 		{"Deployment", "operator-manager", "operators-system"},
 		{"Service", "operator-manager", "operators-system"},
 	} {
@@ -148,7 +149,7 @@ func TestHelmRenderFacts_ReportTheNamespaceEachResourceIsEmittedInto(t *testing.
 	}
 
 	shop := func(prefix, id string) []string { return factLines(prefix, id, id+"-web", "shop") }
-	unpinned := func(prefix string) []string { return factLines(prefix, "web-server", "web-server", "<absent>") }
+	unpinned := func(prefix string) []string { return factLines(prefix, "web-server", "web-server", "shop") }
 	pinned := func(prefix string) []string {
 		return factLines(prefix, "operator-manager", "operator-manager", "operators-system")
 	}

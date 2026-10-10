@@ -1,0 +1,6 @@
+apiVersion: monitoring.example.org/v1
+kind: Probe
+metadata:
+  name: {{ .Release.Name }}-probe
+spec:
+  interval: 30s
