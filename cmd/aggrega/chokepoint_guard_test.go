@@ -477,6 +477,12 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 		"github.com/sigstore/sigstore-go/pkg/sign": {
 			"pkg/egress":  true,
 			"pkg/signing": true,
+			// The signing package's own test-support package builds keyed
+			// envelope fixtures with an ephemeral key and no certificate
+			// provider, timestamp authority or transparency log, so the library
+			// signs in memory and reaches no network. It is a non-test file only
+			// because several packages' tests share it.
+			"pkg/signing/signingtest": true,
 		},
 		"github.com/sigstore/sigstore-go/pkg/tuf": {
 			"pkg/egress/livetrust": true,
