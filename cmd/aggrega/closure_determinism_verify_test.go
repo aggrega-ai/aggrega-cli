@@ -12,7 +12,7 @@ import (
 
 // TestClosureUnificationByteIdentical proves the shared closure resolver leaves
 // the compiler's deterministic-output contract intact: the same Release built
-// twice through the in-process build path (which now routes through
+// twice through the in-process build path (which routes through
 // compilerops.ResolveClosure) renders byte-identical artifacts. It reuses the
 // remote-pinned-aggregate fixture so both the top-level triad resolution and the
 // cache-bridged sub-aggregate exercise the shared resolver.

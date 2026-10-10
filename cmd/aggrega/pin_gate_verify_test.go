@@ -17,10 +17,10 @@ import (
 // closure resolver: a top-level Aggregate that the lockfile pins with a real
 // resolved version must NOT be seeded as an external entity, because the external
 // tier would shadow it with a version-less pin and drift against the lockfile.
-// The un-gated resolve (Lockfile: nil) is the pre-unification behavior every read
-// path had; the gated resolve (Lockfile: lf) is the correct superset the CLI
-// build always had. The test resolves both ways over one fixture and compares the
-// lockfile drift verdict.
+// The un-gated resolve (Lockfile: nil) consults no lockfile, so it seeds the pinned
+// Aggregate as an external entity; the gated resolve (Lockfile: lf) is the correct
+// superset the CLI build performs. The test resolves both ways over one fixture and
+// compares the lockfile drift verdict.
 func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
