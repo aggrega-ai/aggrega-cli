@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // place is where one finding of a refusal must point: a document and a key there.
@@ -54,6 +55,14 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 	other := written("release.yaml", ".spec.components.app.uses.models.other", "uses edge target does not exist (\"nowhere\")")
 	inAggregate := written("aggregate.yaml", ".spec.components.app", "connection alias is already used")
 	appKey := ".spec.components.app.uses.models.local"
+	// A finding a resolver rule raises over what one document wrote: its locator
+	// is a path inside the file its subject recorded, and the envelope it converts
+	// to carries that locator where a pointer names a logical identifier — so the
+	// recorded file is the only thing naming the document.
+	resolverFinding := func(file string) *resolver.ResolverError {
+		return &resolver.ResolverError{Entity: "Release r", Field: appKey, File: file,
+			Message: "values pillar does not conform", Err: resolver.ErrSchemaConformance()}
+	}
 
 	for _, tc := range []struct {
 		name     string
@@ -154,6 +163,27 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 			gate:     GateRender,
 			err:      stderrors.Join(dangling, cause),
 			want:     []place{{release, appKey}, {aggregate, ""}},
+			reported: true,
+		},
+		{
+			name:     "a resolver finding joined beneath a wrap points at the document its subject recorded",
+			gate:     GateRender,
+			err:      fmt.Errorf("graph construction: %w", stderrors.Join(resolverFinding("release.yaml"))),
+			want:     []place{{release, appKey}},
+			reported: true,
+		},
+		{
+			name:     "a resolver finding converted to its envelope still points at the document its subject recorded",
+			gate:     GateRender,
+			err:      resolverFinding("release.yaml").ToCompilerError(),
+			want:     []place{{release, appKey}},
+			reported: true,
+		},
+		{
+			name:     "a resolver finding whose subject recorded no document is placed on the Aggregate",
+			gate:     GateRender,
+			err:      stderrors.Join(resolverFinding("")),
+			want:     []place{{aggregate, ""}},
 			reported: true,
 		},
 		{

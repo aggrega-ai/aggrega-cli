@@ -10,6 +10,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // RenderRefusal is a refusal the pipeline run raised, reduced to what a surface
@@ -97,12 +98,16 @@ type RefusalFinding struct {
 //  1. The innermost location a raising site stated for the surfaces that place
 //     findings ([cerrors.LocatedAt]) — a site holding the document says which,
 //     and the key within it where it has one.
-//  2. Otherwise the innermost categorised frame whose pointer names a document:
-//     one that carries a key beside it (a pointer with a key names a document by
-//     the pointer's own contract), or one that is an absolute path. A pointer is
-//     otherwise as often a node, an entity's name or an output's name as a file —
-//     and a relative one cannot be told from a name at all, while no name is an
-//     absolute path — so nothing else is read as a document.
+//  2. Otherwise the innermost frame whose pointer names a document. A resolver
+//     finding names one wherever its subject recorded the document its locator
+//     is a path inside ([resolver.ResolverError] File), with that locator as the
+//     key: an attachment the Release wrote is a path inside the Release. A
+//     categorised frame names one where its pointer carries a key beside it (a
+//     pointer with a key names a document by the pointer's own contract), or is
+//     an absolute path. A pointer is otherwise as often a node, an entity's name
+//     or an output's name as a file — and a relative one cannot be told from a
+//     name at all, while no name is an absolute path — so nothing else is read as
+//     a document.
 //  3. Otherwise the Aggregate the run resolved, with no key.
 //
 // A candidate names a document only where it resolves to a regular file. One that
@@ -153,22 +158,53 @@ func refusalLocation(err error, workspaceRoot string) (document, keyPath string)
 			return doc, at.Locator
 		}
 	}
-	var frames []*cerrors.CompilerError
+	var pointers []framePointer
 	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
-		if ce, ok := cur.(*cerrors.CompilerError); ok && ce != nil {
-			frames = append(frames, ce)
+		if p, ok := pointerOf(cur); ok {
+			pointers = append(pointers, p)
 		}
 	}
-	for i := len(frames) - 1; i >= 0; i-- {
-		src := frames[i].Source()
-		if src.Locator == "" && !filepath.IsAbs(src.File) {
+	for i := len(pointers) - 1; i >= 0; i-- {
+		p := pointers[i]
+		if !p.namesDocument && p.at.Locator == "" && !filepath.IsAbs(p.at.File) {
 			continue
 		}
-		if doc, ok := regularFile(src.File, workspaceRoot); ok {
-			return doc, src.Locator
+		if doc, ok := regularFile(p.at.File, workspaceRoot); ok {
+			return doc, p.at.Locator
 		}
 	}
 	return "", ""
+}
+
+// framePointer is the pointer one frame of a refusal's chain states, and whether
+// its File names a document by the frame's own contract rather than by its shape.
+type framePointer struct {
+	at            cerrors.SourceLocation
+	namesDocument bool
+}
+
+// pointerOf returns the pointer frame states, and whether it states one.
+//
+// A resolver finding is read for the document its subject recorded and not for
+// the envelope it converts to: that envelope carries the finding's locator in
+// its File, the logical-identifier half of a pointer's dual meaning, so it names
+// no document even where the finding knows which one its locator is a path
+// inside. Reading the recorded document here is what places a finding about an
+// attachment the Release wrote in the Release, as the validation of that document
+// places it, rather than on the Aggregate a pointer naming no document falls back
+// to.
+func pointerOf(frame error) (framePointer, bool) {
+	switch f := frame.(type) {
+	case *cerrors.CompilerError:
+		if f != nil {
+			return framePointer{at: f.Source()}, true
+		}
+	case *resolver.ResolverError:
+		if f != nil && f.File != "" {
+			return framePointer{at: cerrors.SourceLocation{File: f.File, Locator: f.Field}, namesDocument: true}, true
+		}
+	}
+	return framePointer{}, false
 }
 
 // regularFile resolves path — absolute, or relative to the workspace root and

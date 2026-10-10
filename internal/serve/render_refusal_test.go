@@ -22,6 +22,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -357,6 +358,112 @@ func TestARefusalRaisedWhileBuildingIsAnsweredAndPublishedWhereItPoints(t *testi
 			answer, pushed = driveRefusalRequest(t, newFillCapableServer(t, ws), "aggrega/buildPreview",
 				buildPreviewParams{Release: releaseRel})
 			assertRefusalReported(t, fault, answer, pushed, document, key, token)
+		})
+	}
+}
+
+// TestAGraphRefusalOfAnAttachmentIsPublishedOnTheDocumentThatWroteIt drives the
+// graph request over one attachment whose configuration its Feature refuses —
+// a values pillar missing the property the Feature requires — written once in the
+// Release alone and once in the Aggregate, and holds the build layer's entry and
+// the answer to the document that wrote the attachment: there, on the attachment's
+// own key, and on the other document not at all.
+//
+// The refusal is a resolver-class finding raised while the graph is composed, the
+// shape whose envelope names no document, so what places it is the document its
+// subject recorded. The Release row is the case that names the Release's file; the
+// Aggregate row is the control, a finding about the developer's own block, which
+// stays on the Aggregate.
+func TestAGraphRefusalOfAnAttachmentIsPublishedOnTheDocumentThatWroteIt(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		// write puts the attachment into one document of the workspace and returns
+		// that document and the locator the refusal must name in it.
+		write func(t *testing.T, ws string) (document, locator string)
+	}{
+		{
+			name: "the Release alone attaches it",
+			write: func(t *testing.T, ws string) (string, string) {
+				release := filepath.Join(ws, "app-release.yaml")
+				rewriteFixture(t, release, "        app: {}\n",
+					"        app:\n          features:\n            check:\n              type: demo/check\n")
+				return release, ".spec.boundaries.app.components.app.features.check.values.schema"
+			},
+		},
+		{
+			name: "the Aggregate attaches it",
+			write: func(t *testing.T, ws string) (string, string) {
+				aggregate := filepath.Join(ws, "app-agg.yaml")
+				rewriteFixture(t, aggregate, "      type: \"demo/svc:1.0.0\"\n",
+					"      type: \"demo/svc:1.0.0\"\n      features:\n        check:\n          type: demo/check\n")
+				return aggregate, ".spec.components.app.features.check.values.schema"
+			},
+		},
+	} {
+		row := row
+		t.Run(row.name, func(t *testing.T) {
+			ws, releaseRel := renderDialWorkspace(t)
+			writeFixtureFile(t, filepath.Join(ws, "catalog", "features", "check.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: demo/check
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      schema: { type: string, required: true }
+`)
+			document, locator := row.write(t, ws)
+			other := filepath.Join(ws, "app-agg.yaml")
+			if filepath.Base(document) == "app-agg.yaml" {
+				other = filepath.Join(ws, "app-release.yaml")
+			}
+			var in, out bytes.Buffer
+			srv := newPinIsolationServer(t, ws, &in, &out, 1)
+
+			answer, pushed := driveRefusalRequest(t, srv, "aggrega/irGraph", irGraphParams{Release: releaseRel})
+			if answer.Error == nil {
+				t.Fatalf("the attachment did not refuse, so nothing below is about its refusal; result: %s", answer.Result)
+			}
+			code, _ := cerrors.CodeOf(resolver.ErrSchemaConformance())
+			content, err := os.ReadFile(document)
+			if err != nil {
+				t.Fatalf("read %s: %v", document, err)
+			}
+			wantLine, wantColumn := keyPosition(t, string(content), "check:")
+
+			if data := answer.Error.Data; data == nil || filepath.Clean(data.File) != filepath.Clean(document) {
+				t.Errorf("the answer names %+v; the attachment was written in %s", data, document)
+			} else if data.Line != wantLine || data.Column != wantColumn || data.Code != code {
+				t.Errorf("the answer places condition %q at %d:%d; want %q at the attachment's key, %d:%d",
+					data.Code, data.Line, data.Column, code, wantLine, wantColumn)
+			}
+
+			entries, published := lastPublicationFor(pushed, document)
+			if !published {
+				t.Fatalf("nothing was published on %s, where the attachment was written; published on: %v",
+					document, publishedFiles(pushed))
+			}
+			var found []Diagnostic
+			for _, d := range entries {
+				if d.Code == code {
+					found = append(found, d)
+				}
+			}
+			if len(found) != 1 {
+				t.Fatalf("%s carries %d entries naming %q; want the one refusal: %+v", document, len(found), code, entries)
+			}
+			if got := found[0]; got.Line != wantLine || got.Column != wantColumn || got.KeyPath != locator {
+				t.Errorf("the entry is at %d:%d naming %q; want the attachment's key at %d:%d naming %q",
+					got.Line, got.Column, got.KeyPath, wantLine, wantColumn, locator)
+			}
+			if stray, _ := lastPublicationFor(pushed, other); len(stray) != 0 {
+				for _, d := range stray {
+					if d.Code == code {
+						t.Errorf("%s carries the refusal of an attachment written in %s: %+v", other, document, d)
+					}
+				}
+			}
 		})
 	}
 }
