@@ -210,7 +210,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 	{
 		vehicle:     "ErrPluginOutputNameCollision",
 		vehicleKind: vehicleSentinel,
-		host:        "RenderLoadedChart",
+		host:        "RenderChart",
 		file:        "plugins/internal/helmcore/render_core.go",
 		disposition: dispositionProviderOwned,
 		reason: "A duplicate test with a byte-equality escape, whose predicate reads Helm rendered-document " +

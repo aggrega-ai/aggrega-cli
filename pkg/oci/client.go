@@ -617,7 +617,7 @@ func ListTags(ctx context.Context, target oras.ReadOnlyTarget) ([]string, error)
 	tags, err := registry.Tags(ctx, lister)
 	if err != nil {
 		if isNotFoundResponse(err) {
-			return nil, fmt.Errorf("oci: list tags: %v: %w", err, ErrFetchNotFound())
+			return nil, fmt.Errorf("list tags: %v: %w", err, ErrFetchNotFound())
 		}
 		return nil, fmt.Errorf("oci: list tags: %w", err)
 	}
