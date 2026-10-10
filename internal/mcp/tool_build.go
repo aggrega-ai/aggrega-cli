@@ -782,12 +782,12 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 		return "The build refused: this Release pins a deprecated artifact at or above the configured halt severity. " +
 			"Every recorded marker in this Release:\n  " + strings.Join(deprecationNotices, "\n  ")
 	case compilerops.GateRecordedSignatures:
-		return "The build refused: the lockfile records no verified signature for an artifact the workspace's trust " +
+		return "The build refused: no verified signature is recorded for an artifact the workspace's trust " +
 			"configuration requires one for, or a recorded signature's cached bundle no longer matches its digest. " +
-			"The diagnostic names each artifact and the settings that require its signature. Resolving the " +
-			"dependencies again verifies each artifact and records the fact; through this protocol that is the pull " +
-			"tool, called with this same 'release' path, and the command line the diagnostic names is that same " +
-			"operation at a terminal."
+			"The diagnostic names each artifact, the file that records no signature for it and the settings that " +
+			"require its signature. Resolving the dependencies again verifies each artifact and records the fact; " +
+			"through this protocol that is the pull tool, called with this same 'release' path, and the command line " +
+			"the diagnostic names is that same operation at a terminal."
 	case compilerops.GatePinnedIntegrity:
 		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it, " +
 			"and no catalog directory holds the pinned bytes. Re-pull the Release to refill the cache from the registry."

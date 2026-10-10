@@ -38,7 +38,8 @@ import (
 //     the host and kind the pull's own binding gives the reference
 //     (catalog.SignatureSubjectOf, and catalog.PluginSignatureSubjectOf for a
 //     plugin no closure axis holds). A reference that decision covers refuses,
-//     naming the reference and the settings that require the signature.
+//     naming the reference, the store's file that records nothing for it, and
+//     the settings that require the signature.
 //
 // Where a reference came from is read from this resolution — the content cache,
 // a catalog directory, the copy inside the compiler binary, the Release's own
@@ -151,6 +152,7 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 	// closure's axis — so a closure reference finds its own row and never the row of
 	// another section recording the same reference.
 	recorded := h.in.lockfile.RecordedSignatures()
+	lockfilePath := lockfile.PathFor(h.in.releasePath)
 	var refusals []error
 	for _, axis := range cl.VerifiableAxes() {
 		for _, ref := range axis.Refs {
@@ -168,7 +170,7 @@ func (h signatureHold) lockfileRows(cl closure.Closure) []error {
 				continue
 			}
 			if requiredBy, held := h.requiredBy(subject); held {
-				refusals = append(refusals, lockfile.SignatureNotRecorded(ref.URI, requiredBy, h.in.releasePath))
+				refusals = append(refusals, lockfile.SignatureNotRecorded(ref.URI, lockfilePath, requiredBy, h.in.releasePath))
 			}
 		}
 	}

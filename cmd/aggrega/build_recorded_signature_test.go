@@ -95,8 +95,9 @@ func buildRecordedSignature(t *testing.T, root, releasePath, catalogDir, cfg str
 }
 
 // TestTheBuildRefusesACacheServedRowRecordingNoSignatureTheHubRequires is the
-// refusal, named as a reader meets it: the condition, the row, the setting that
-// requires the signature and the command that records it, under the trust head.
+// refusal, named as a reader meets it: the condition, the row, the lockfile that
+// lacks its record, the setting that requires the signature and the command that
+// records it there, under the trust head.
 func TestTheBuildRefusesACacheServedRowRecordingNoSignatureTheHubRequires(t *testing.T) {
 	t.Parallel()
 	root, releasePath, catalogDir := cacheServedSubAggregate(t)
@@ -109,8 +110,10 @@ func TestTheBuildRefusesACacheServedRowRecordingNoSignatureTheHubRequires(t *tes
 	for _, want := range []string{
 		lockfile.ErrSignatureNotRecorded().Error(),
 		`"` + recordedSignatureSub + `"`,
+		lockfile.PathFor(releasePath) + " records no signature for it",
 		`the official hub's built-in signature requirement for "hub.aggrega.ai"`,
 		"aggrega pull --release " + releasePath,
+		"record it in " + lockfile.PathFor(releasePath),
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the refusal does not carry %q:\n%s", want, text)

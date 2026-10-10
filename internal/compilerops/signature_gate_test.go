@@ -275,6 +275,14 @@ func TestTheBuildRefusesARowARequirementCoversThatRecordsNoSignature(t *testing.
 			if !strings.Contains(text, "aggrega pull --release "+gateRelease) {
 				t.Errorf("the refusal does not name the command that records the fact:\n%s", text)
 			}
+			// The occurrence names the file that lacks the record, as the trust record's
+			// does, so a reader is never left to infer which file the pull writes.
+			lockfilePath := lockfile.PathFor(gateRelease)
+			for _, want := range []string{lockfilePath + " records no signature for it", "record it in " + lockfilePath} {
+				if !strings.Contains(text, want) {
+					t.Errorf("the refusal does not name the lockfile that lacks the record (%q):\n%s", want, text)
+				}
+			}
 			// Exactly the rows named, and no others: a row the check should have left
 			// alone and refused anyway is as much a defect as one it missed.
 			for _, other := range []string{gateEntityURI, gateLibraryURI, gatePluginURI} {
