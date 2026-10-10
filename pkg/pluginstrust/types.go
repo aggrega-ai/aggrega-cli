@@ -18,21 +18,25 @@
 // first sighting. Addressing by coordinate is what makes the two
 // distinguishable at all.
 //
-// Besides the identity, a record carries the withdrawal a publisher has attached
-// to the artifact that identity names, when one was discovered and verified. That
-// is a fact about the recorded artifact rather than a second identity, which is
-// what lets it be recorded without weakening the hold the identity fields place on
-// a resolution — see Deprecation.
+// Besides the identity, a record carries two facts about the artifact that
+// identity names, each recorded only when it was verified: the withdrawal a
+// publisher has attached to it, and the verified signature fact the pull that
+// cached the plugin recorded — the same lockfile.VerifiedSignature a lockfile row
+// carries, under the same key. Each is a fact about the recorded artifact rather
+// than a second identity, which is what lets it be recorded without weakening the
+// hold the identity fields place on a resolution — see Deprecation and Signature.
 //
 // What the file deliberately does not carry:
 //
 //   - Rule inputs. A governance verdict attachment's external rule files are
 //     recorded as content digests in the lockfile's verdict_inputs section; a
 //     linter attachment's rule inputs are recorded in neither file.
-//   - Signatures. Rotating a plugin is re-recording its identity here, not
-//     managing an overlapping key window. That extends to the signer of a
-//     withdrawal: only a signature-verified withdrawal is recorded at all, so
-//     recording who signed it would add provenance without adding trust.
+//   - A signature over the record itself, or a key. Rotating a plugin is
+//     re-recording its identity here, not managing an overlapping key window. The
+//     signature fact above records which signer a pull verified for the artifact;
+//     it signs nothing in this file. That extends to the signer of a withdrawal:
+//     only a signature-verified withdrawal is recorded at all, so recording who
+//     signed it would add provenance without adding trust.
 //   - Resolution provenance — no registry host, no resolution tier, and no
 //     path on the machine that wrote the file. Recording where an artifact
 //     came from would make the bytes machine-specific, which is the one thing
@@ -49,6 +53,8 @@
 // distinction and a lookup keyed by plugin identity alone would answer the
 // wrong question.
 package pluginstrust
+
+import "github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 
 // Trust is the typed Go representation of `plugins-trust.yaml`.
 //
@@ -87,6 +93,16 @@ type TrustedPlugin struct {
 	// ResolvedVersion is the concrete version selected for this plugin when the
 	// record was written.
 	ResolvedVersion string `yaml:"resolved_version"`
+	// Signature is the verified signature fact the pull that cached the plugin
+	// recorded for the artifact Digest names, or nil when that pull verified no
+	// signature. It is the lockfile row's own fact type, so the two records cannot
+	// come to describe one verified signature in two shapes. A build reads it before
+	// the plugin runs: it re-hashes the cached bundle the fact names, and where the
+	// trust configuration requires a signature for a plugin the content cache
+	// serves, a record carrying none refuses the build. It is optional and omitted
+	// from the written bytes when absent, so a record for an unsigned artifact is
+	// byte-identical to one written before this field existed.
+	Signature *lockfile.VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // Deprecation is a verified withdrawal a publisher attached to a trusted plugin's
@@ -116,18 +132,26 @@ type Deprecation struct {
 // gained a pointer field: `==` still compiles and still type-checks, but it compares
 // the POINTER rather than what it addresses, so two records carrying identical
 // withdrawals would be reported as differing. Every caller asking "has this record
-// moved" asks here, so that trap has one answer rather than one per call site.
+// moved" asks here, so that trap has one answer rather than one per call site. Each
+// pointer field is compared by what it addresses, and a field added later owes the
+// same arm here.
 func (p TrustedPlugin) Equal(q TrustedPlugin) bool {
 	if p.Plugin != q.Plugin || p.ResolvedVersion != q.ResolvedVersion || p.Digest != q.Digest {
 		return false
 	}
+	return sameAddressed(p.Deprecation, q.Deprecation) && sameAddressed(p.Signature, q.Signature)
+}
+
+// sameAddressed reports whether two optional facts record the same thing: both
+// absent, or both present and equal.
+func sameAddressed[T comparable](a, b *T) bool {
 	switch {
-	case p.Deprecation == nil && q.Deprecation == nil:
+	case a == nil && b == nil:
 		return true
-	case p.Deprecation == nil || q.Deprecation == nil:
+	case a == nil || b == nil:
 		return false
 	default:
-		return *p.Deprecation == *q.Deprecation
+		return *a == *b
 	}
 }
 
@@ -217,6 +241,48 @@ func (t *Trust) RecordDeprecation(coordinate, digest string, d *Deprecation) boo
 		}
 		recorded := *d
 		t.Plugins[i].Deprecation = &recorded
+		return true
+	}
+	return false
+}
+
+// RecordSignature records sig as the verified signature fact of the artifact
+// digest names, on the entry addressed by coordinate, and reports whether the
+// record changed.
+//
+// It follows ARTIFACT IDENTITY for the reason RecordDeprecation does, and holds to
+// the same digest match: a signature fact is about one artifact's bytes, so it is
+// recorded only on the entry already naming those bytes, and recording it adopts
+// nothing — the identity fields are untouched, which is what lets an ordinary pull
+// record it.
+//
+// Unlike a withdrawal, a nil sig CLEARS the recorded fact, and that is the
+// difference between how the two facts are discovered. A pull verifies the
+// signature of every verdict-role plugin it resolves, on every run, so its answer
+// — including finding no signature to record, or being told by the configuration
+// not to look — is the current answer for those bytes and replaces whatever the
+// entry held. Keeping an earlier answer instead would leave the entry naming a
+// bundle nothing re-caches, which the build then refuses as missing.
+//
+// A nil receiver, an empty coordinate and an unheld coordinate all record nothing
+// and report false, the same contract RecordDeprecation offers at its edges.
+func (t *Trust) RecordSignature(coordinate, digest string, sig *lockfile.VerifiedSignature) bool {
+	if t == nil || coordinate == "" {
+		return false
+	}
+	for i := range t.Plugins {
+		if t.Plugins[i].Plugin != coordinate || t.Plugins[i].Digest != digest {
+			continue
+		}
+		if sameAddressed(t.Plugins[i].Signature, sig) {
+			return false
+		}
+		if sig == nil {
+			t.Plugins[i].Signature = nil
+			return true
+		}
+		recorded := *sig
+		t.Plugins[i].Signature = &recorded
 		return true
 	}
 	return false

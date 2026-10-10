@@ -1360,7 +1360,17 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 	report.phase(PhaseExternalInputs)
-	pins, discoveryRender, discoveryErr := discoverExternalInputs(ctx, cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
+	// The record beside the lockfile, as this run will write it. The render below
+	// holds each verdict-role plugin to the signature fact this run verified, and the
+	// record is written only after the render, so the render is handed it as composed
+	// rather than reading the file it is about to replace — which on a first
+	// resolution does not exist yet. The write further down works the same outcome
+	// out from the same inputs.
+	composedTrust, err := verdictTrustAfterPull(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
+	if err != nil {
+		return Result{}, err
+	}
+	pins, discoveryRender, discoveryErr := discoverExternalInputs(ctx, cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled, composedTrust.Trust)
 	assembled.ExternalInputs = pins
 	// Ahead of BOTH the discovery diagnostic and the write, and the order matters.
 	// A withdrawal reaching the render arrives back here as a render failure, and
@@ -1740,10 +1750,12 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 // through the one fetch-verification home every tier shares
 // (pluginfetchverify.Verify). Because a verdict gate is cache-not-pin, the verified
 // fact is not recorded in the lockfile and never enters the reproducibility
-// closure; it is verified all the same, so a tampered or unsigned gate plugin
-// halts the run rather than running unverified at build. A registry gate carries
-// a manifest digest and is signature-verified; a local / embedded gate carries
-// none and skips signature, exactly as the pinned path skips a non-registry item.
+// closure; it travels on the resolution to the record beside the lockfile instead,
+// with its bundle cached, so a build holds the gate to it. A tampered or unsigned
+// gate plugin a signature is required for halts the run here. A registry gate
+// carries a manifest digest and is signature-verified; a local / embedded gate
+// carries none and skips signature, exactly as the pinned path skips a
+// non-registry item.
 //
 // A capability-only / empty-URI attachment carries nothing to fetch and nothing to
 // identify, so the verdict attachment set omits it; an attachment whose ENTITY does
@@ -1806,12 +1818,19 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 
 // verifyCachedVerdictSocketPlugin routes a freshly cached verdict-socket gate
 // plugin through the shared fetch-verification home. It binds the plugin's
-// host-less bare identity to its registry location for signature referrer
-// discovery (the same binding the pinned plugin-entity signature uses) and reads
-// the entity stamp + content-verified .wasm from the freshly populated cache (the
-// same cache-not-pin read the build resolves the gate through), then hands both
-// to pluginfetchverify.Verify. The verified fact is discarded: a verdict gate is
-// cache-not-pin and never enters the lockfile.
+// host-less bare identity to its registry location and kind for signature referrer
+// discovery through catalog.PluginSignatureSubjectOf — the one binding the build
+// reads the same plugin's host and kind through when it holds the plugin to the
+// fact recorded here — and reads the entity stamp + content-verified .wasm from the
+// freshly populated cache (the same cache-not-pin read the build resolves the gate
+// through), then hands both to pluginfetchverify.Verify.
+//
+// Where that verification verified a signature for a plugin it identified, the
+// signature bundle is cached at the slot the build re-hashes and the fact rides on
+// the returned resolution, for the record beside the lockfile: a verdict gate is
+// cache-not-pin and never enters the lockfile, and that record is where a build
+// reads its fact from. Where it verified none, the resolution carries no fact, and
+// that absence is recorded too.
 //
 // It also returns the identity that one cache read reports — the plugin's identity
 // coordinate, the version its entity declares, and the content digest of its .wasm
@@ -1827,15 +1846,17 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 		URI:            uri,
 		ManifestDigest: manifestDigest,
 		Kind:           catalog.EntityKindForHint("plugin"),
+		Host:           registryhost.Of(uri),
 	}
 	// A gate plugin's URI is a host-less bare identity; bind its registry host and
 	// path from the workspace registry and the Plugin kind so referrer discovery
-	// targets the location it was fetched from.
-	location, bound := catalog.BindEntityLocation(cfg.DefaultRegistryLocation().Prefix(), "plugin", uri)
-	fp.Host = registryhost.Of(uri)
-	if bound {
-		fp.Location = location
-		fp.Host = registryhost.Of(location)
+	// targets the location it was fetched from. A reference the binding finds no
+	// registry for keeps the host its own text names, which the fetch home reads as
+	// naming no registry, so it asks nothing about the signature.
+	if subject, ok := catalog.PluginSignatureSubjectOf(cfg.DefaultRegistryLocation().Prefix(), uri); ok {
+		fp.Host = subject.Host
+		fp.Location = subject.Location
+		fp.Kind = subject.Kind
 	}
 	// Read the entity stamp and its .wasm digest from the cache-not-pin slot the
 	// resolution just populated — the same read the build uses — so the
@@ -1865,8 +1886,18 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 			fp.WasmBytes = wasmBytes
 		}
 	}
-	if _, err = pluginfetchverify.Verify(ctx, fp, cfg, targetFor, diagOut); err != nil {
+	verified, err := pluginfetchverify.Verify(ctx, fp, cfg, targetFor, diagOut)
+	if err != nil {
 		return verdictPluginResolution{}, err
+	}
+	// The verified fact is recorded only where there is an identity to record it on,
+	// and its bundle is cached where the build re-hashes it — the slot the closure
+	// pass caches a lockfile row's bundle in, written by the same function.
+	if verified != nil && identity.Coordinate != "" {
+		if err := cacheBundleBlob(workspaceRoot, cacheDir, verified.BundleDigest, verified.Bundle); err != nil {
+			return verdictPluginResolution{}, fmt.Errorf("cache signature bundle for %s: %w", uri, err)
+		}
+		identity.Signature = pluginfetchverify.SignatureFact(*verified)
 	}
 	// Withdrawal discovery runs at this same registry-touching moment, over the same
 	// bound location the signature verification above just used. It runs only where

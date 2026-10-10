@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -37,10 +38,11 @@ import (
 // location-shaped reference they do not.
 //
 // Deprecation is the verified withdrawal discovered for that artifact during the
-// same pull, or nil when none was found. It is carried alongside the identity
-// rather than looked up later because it is a fact about the very bytes this
-// resolution identified: discovered anywhere else it could describe a different
-// artifact than the one recorded beside it.
+// same pull, or nil when none was found, and Signature the signature fact the same
+// pull verified for it, or nil when it verified none. Both are carried alongside
+// the identity rather than looked up later because each is a fact about the very
+// bytes this resolution identified: discovered anywhere else it could describe a
+// different artifact than the one recorded beside it.
 //
 // An empty Coordinate means the plugin was not in the content cache, so there was
 // nothing to identify.
@@ -50,6 +52,7 @@ type verdictPluginResolution struct {
 	Version     string
 	Digest      string
 	Deprecation *pluginstrust.Deprecation
+	Signature   *lockfile.VerifiedSignature
 }
 
 // ErrVerdictPluginIdentityChanged reports that a pull resolved an attachment
@@ -285,12 +288,12 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 // verdictTrustChangeKind names what a pull did to ONE entry of the record beside
 // the lockfile.
 //
-// The kinds are mutually exclusive and between them cover every way an entry can
-// move, which is what lets a reader be told which change happened rather than
-// only that the file was touched. That distinction is the whole reason the
-// classification exists: this record is the only place a swapped gate is written
-// down, so a reader who is merely told the file moved has nowhere else to find
-// out what moved in it.
+// The kinds between them cover every way an entry can move, and an entry whose
+// identity held moves once per fact that changed, so a reader is told which
+// change happened rather than only that the file was touched. That distinction is
+// the whole reason the classification exists: this record is the only place a
+// swapped gate is written down, so a reader who is merely told the file moved has
+// nowhere else to find out what moved in it.
 type verdictTrustChangeKind int
 
 const (
@@ -317,6 +320,16 @@ const (
 	// leaves only with the entry that carried it — either pruned, or replaced by
 	// the re-resolution that asked for it.
 	verdictTrustDeprecationCleared
+	// verdictTrustSignatureRecorded is a held entry whose identity did not move and
+	// which gained, or changed, the verified signature fact recorded against the
+	// artifact it already names.
+	verdictTrustSignatureRecorded
+	// verdictTrustSignatureCleared is a held entry whose identity did not move and
+	// whose recorded signature fact is gone, because this pull verified no
+	// signature for those bytes. Unlike a deprecation, a signature fact is the
+	// answer of the verification every pull runs, so an ordinary pull reaches this
+	// kind too.
+	verdictTrustSignatureCleared
 	// verdictTrustEntryDropped is an entry nothing accounts for any more, on a run
 	// that asked for it to go.
 	verdictTrustEntryDropped
@@ -382,8 +395,9 @@ func (o verdictTrustOutcome) Changed() bool { return len(o.Changes) > 0 }
 // is not. The same holds for a workspace whose only attachments resolve from the
 // binary, for the reason below.
 //
-// A record already present for a plugin is left exactly as it is, unless this pull
-// re-resolved that plugin — a full refresh, or a targeted upgrade naming it. Those
+// A record already present for a plugin keeps its identity — only the facts verified
+// about those bytes are recorded on it — unless this pull re-resolved that plugin:
+// a full refresh, or a targeted upgrade naming it. Those
 // are the two invocations where the user asked for fresh resolution, so replacing
 // the record is the answer to what they asked; every other pull holds the recorded
 // identity, because silently adopting whatever was resolved this time would make
@@ -527,6 +541,12 @@ func announceVerdictTrustChanges(diagOut io.Writer, path string, outcome verdict
 		case verdictTrustDeprecationCleared:
 			fmt.Fprintf(diagOut, "  plugin trust: %s: deprecation cleared, from the entry at version %s with digest %s, because re-resolving it found no marker on those bytes\n",
 				c.Plugin, c.Version, c.Digest)
+		case verdictTrustSignatureRecorded:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: signature recorded, against the artifact this entry already names at version %s with digest %s\n",
+				c.Plugin, c.Version, c.Digest)
+		case verdictTrustSignatureCleared:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: signature cleared, from the entry at version %s with digest %s, because this pull verified no signature for those bytes\n",
+				c.Plugin, c.Version, c.Digest)
 		case verdictTrustEntryDropped:
 			fmt.Fprintf(diagOut, "  plugin trust: %s: entry dropped, at version %s with digest %s, because nothing attaches it any more\n",
 				c.Plugin, c.Version, c.Digest)
@@ -587,24 +607,38 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 			ResolvedVersion: r.Version,
 			Digest:          r.Digest,
 			Deprecation:     r.Deprecation,
+			Signature:       r.Signature,
 		}
 		held, isHeld := trust.Find(r.Coordinate)
 		if isHeld && !reresolvedByThisPull(mode, r.BareURI) {
 			// The identity is held, which is this record's whole rule. A withdrawal
-			// is not an identity, so it is still recorded — onto the entry whose
-			// recorded digest is the one just resolved, which is what keeps a fact
-			// about one artifact from being written against another. Without this
-			// arm the field would be reachable only on a first sighting, and the
-			// ordinary case — a publisher withdrawing an artifact a workspace
-			// already trusts — would never reach it at all.
+			// and a signature fact are not identities, so each is still recorded —
+			// onto the entry whose recorded digest is the one just resolved, which is
+			// what keeps a fact about one artifact from being written against
+			// another. Without this arm the fields would be reachable only on a first
+			// sighting, and the ordinary cases — a publisher withdrawing an artifact a
+			// workspace already trusts, or a record that lost its signature fact —
+			// would never reach them at all.
 			//
 			// The entry's own recorded identity is what the announcement names, not
-			// the resolution's: the record accepts a marker only where the two
-			// digests already agree, so naming the entry's own states what the
-			// reader will find in the file rather than what was resolved.
+			// the resolution's: the record accepts a fact only where the two digests
+			// already agree, so naming the entry's own states what the reader will
+			// find in the file rather than what was resolved.
 			if trust.RecordDeprecation(r.Coordinate, r.Digest, r.Deprecation) {
 				changes = append(changes, verdictTrustChange{
 					Kind:    verdictTrustDeprecationRecorded,
+					Plugin:  r.Coordinate,
+					Version: held.ResolvedVersion,
+					Digest:  held.Digest,
+				})
+			}
+			if trust.RecordSignature(r.Coordinate, r.Digest, r.Signature) {
+				kind := verdictTrustSignatureRecorded
+				if r.Signature == nil {
+					kind = verdictTrustSignatureCleared
+				}
+				changes = append(changes, verdictTrustChange{
+					Kind:    kind,
 					Plugin:  r.Coordinate,
 					Version: held.ResolvedVersion,
 					Digest:  held.Digest,
@@ -619,7 +653,7 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 			continue
 		}
 		trust.Upsert(fresh)
-		changes = append(changes, classifyVerdictTrustUpsert(held, isHeld, fresh))
+		changes = append(changes, classifyVerdictTrustUpsert(held, isHeld, fresh)...)
 	}
 	accounted, complete := verdictAttachmentCoordinates(attachments, resolutions)
 	for _, coordinate := range trust.Unaccounted(accounted, complete) {
@@ -658,29 +692,48 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 // answer at the write would also be a second implementation of a question this
 // file answers once.
 //
-// The caller has already ruled out an entry that did not move at all, so the
-// four arms below are exhaustive rather than a default standing in for the cases
-// nobody enumerated.
-func classifyVerdictTrustUpsert(held pluginstrust.TrustedPlugin, isHeld bool, fresh pluginstrust.TrustedPlugin) verdictTrustChange {
+// The caller has already ruled out an entry that did not move at all. A new or
+// re-identified entry is one change. Where the identity did not move, what moved
+// is one or both of the two facts recorded about the artifact those fields already
+// name, and each fact that moved is a change of its own, deprecation first — so a
+// reader is told about each rather than about whichever one happened to be
+// compared first.
+func classifyVerdictTrustUpsert(held pluginstrust.TrustedPlugin, isHeld bool, fresh pluginstrust.TrustedPlugin) []verdictTrustChange {
 	change := verdictTrustChange{Plugin: fresh.Plugin, Version: fresh.ResolvedVersion, Digest: fresh.Digest}
 	switch {
 	case !isHeld:
 		change.Kind = verdictTrustRecorded
+		return []verdictTrustChange{change}
 	case held.ResolvedVersion != fresh.ResolvedVersion || held.Digest != fresh.Digest:
 		change.Kind = verdictTrustIdentityAdopted
 		change.PriorVersion, change.PriorDigest = held.ResolvedVersion, held.Digest
-	case fresh.Deprecation != nil:
-		// The identity is the one already recorded, so what moved is the fact
-		// recorded about the artifact those fields already name.
-		change.Kind = verdictTrustDeprecationRecorded
-	default:
-		// The identity did not move and the fresh resolution carries no marker, so
-		// what the entry loses is the deprecation it held. Reachable only from a
-		// run that asked for this plugin to be re-resolved: every other pull takes
-		// the arm above, which adds a marker and clears none.
-		change.Kind = verdictTrustDeprecationCleared
+		return []verdictTrustChange{change}
 	}
-	return change
+	// Each fact is compared through Equal over a record carrying that fact alone, so
+	// "has this pointer field moved" keeps its one answer — the record's own — rather
+	// than gaining a second comparison here.
+	var changes []verdictTrustChange
+	if !(pluginstrust.TrustedPlugin{Deprecation: held.Deprecation}).Equal(pluginstrust.TrustedPlugin{Deprecation: fresh.Deprecation}) {
+		deprecation := change
+		deprecation.Kind = verdictTrustDeprecationRecorded
+		if fresh.Deprecation == nil {
+			// The identity did not move and the fresh resolution carries no marker, so
+			// what the entry loses is the deprecation it held. Reachable only from a
+			// run that asked for this plugin to be re-resolved: every other pull adds a
+			// marker to the entry it holds and clears none.
+			deprecation.Kind = verdictTrustDeprecationCleared
+		}
+		changes = append(changes, deprecation)
+	}
+	if !(pluginstrust.TrustedPlugin{Signature: held.Signature}).Equal(pluginstrust.TrustedPlugin{Signature: fresh.Signature}) {
+		signature := change
+		signature.Kind = verdictTrustSignatureRecorded
+		if fresh.Signature == nil {
+			signature.Kind = verdictTrustSignatureCleared
+		}
+		changes = append(changes, signature)
+	}
+	return changes
 }
 
 // reresolvedByThisPull reports whether this pull re-resolves the attachment

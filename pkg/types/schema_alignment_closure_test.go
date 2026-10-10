@@ -99,6 +99,9 @@ func closureCases() []closureCase {
 				// shape here: a walk that stopped at the document root would find
 				// only `version` and report agreement.
 				"plugins[].resolved_version",
+				// Reached only by following the record's own reference into its
+				// declarations, which is where the signature fact's closed shape is.
+				"plugins[].signature.bundle_digest",
 			},
 		},
 		{

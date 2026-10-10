@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -1066,6 +1067,7 @@ func TestVerdictTrustAnnouncesEveryChangeAndOnlyAChange(t *testing.T) {
 	digestA := "sha256:" + strings.Repeat("a", 64)
 	digestB := "sha256:" + strings.Repeat("b", 64)
 	marker := &pluginstrust.Deprecation{Message: "superseded", Severity: "warning"}
+	signature := &lockfile.VerifiedSignature{Mode: "keyed", Identity: "keyed:sha256:probe", BundleDigest: digestB}
 
 	cases := []struct {
 		name        string
@@ -1151,6 +1153,54 @@ func TestVerdictTrustAnnouncesEveryChangeAndOnlyAChange(t *testing.T) {
 				subject + ": entry dropped, at version 1.0.0 with digest " + digestA + ", because nothing attaches it any more",
 			},
 			wantNotSaid: []string{"created", "identity adopted"},
+		},
+		{
+			// An ordinary pull verified a signature for the bytes a held entry
+			// already names: the fact is recorded and the identity left alone.
+			name:        "a_signature_recorded_on_a_held_entry_is_said",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA, Signature: signature}},
+			wantSaid: []string{
+				subject + ": signature recorded, against the artifact this entry already names at version 1.0.0 with digest " + digestA,
+			},
+			wantNotSaid: []string{"identity adopted", "deprecation", "cleared"},
+		},
+		{
+			// Unlike a withdrawal, the signature fact is the answer every pull gives
+			// afresh, so an ordinary pull that verified none clears the one held.
+			name:        "a_signature_cleared_on_a_held_entry_is_said",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA, Signature: signature}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA}},
+			wantSaid: []string{
+				subject + ": signature cleared, from the entry at version 1.0.0 with digest " + digestA +
+					", because this pull verified no signature for those bytes",
+			},
+			wantNotSaid: []string{"identity adopted", "deprecation", "recorded"},
+		},
+		{
+			// A re-resolution that found the same identity and both facts new moves
+			// the entry twice, and each move is said.
+			name:        "a_re_resolution_moving_both_facts_says_each",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA,
+				Deprecation: marker, Signature: signature}},
+			mode: catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{subject}},
+			wantSaid: []string{
+				subject + ": deprecation recorded, against the artifact this entry already names at version 1.0.0 with digest " + digestA,
+				subject + ": signature recorded, against the artifact this entry already names at version 1.0.0 with digest " + digestA,
+			},
+			wantNotSaid: []string{"identity adopted", "cleared"},
+		},
+		{
+			// The signature's own silence: a held fact verified again moves nothing.
+			name:        "a_held_signature_verified_again_says_nothing",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA, Signature: signature}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA, Signature: signature}},
+			wantSilent:  true,
 		},
 		{
 			// The control. Same record, same resolution, nothing moved — so nothing

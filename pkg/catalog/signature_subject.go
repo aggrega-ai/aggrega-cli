@@ -66,6 +66,19 @@ func SignatureSubjectOf(registry string, axis closure.VerifiableAxis, ref closur
 	return SignatureSubject{Kind: kind, Location: location, Host: host}, true
 }
 
+// PluginSignatureSubjectOf returns where the signature of the Plugin entity uri
+// names is asked about, and false where it names no registry — SignatureSubjectOf
+// for a reference on a mixed-kind axis carrying the Plugin kind hint.
+//
+// It serves a plugin no closure axis holds: one attached at a verdict role, which
+// shapes no rendered byte and so is recorded beside the lockfile rather than in
+// the closure. The pull that caches such a plugin verifies its signature through
+// this binding, and the build holds the fact that pull recorded through it, so the
+// two read one host and one kind for it exactly as they do for a closure reference.
+func PluginSignatureSubjectOf(registry, uri string) (SignatureSubject, bool) {
+	return SignatureSubjectOf(registry, closure.VerifiableAxis{}, closure.VerifiableRef{URI: uri, KindHint: pluginEntityKindHint})
+}
+
 // signatureBinding resolves one closure reference's catalog kind and the registry
 // location its signature referrers are attached at, reporting bound=false when no
 // location can be formed — the same posture the puller takes when it cannot bind

@@ -12,11 +12,14 @@ import (
 // ErrSignatureNotRecorded reports that a build reads an artifact the content
 // cache served — one a pull acquired from a registry — whose lockfile row records
 // no verified signature, while the workspace's trust configuration requires one
-// for it. A pull verifies such an artifact's signature when it fetches it and
-// records the verified fact on the row; a build reads the recorded fact rather
-// than verifying again, because a build reaches no registry. A row with nothing
-// recorded therefore leaves the build holding an artifact nothing says was ever
-// verified, and the build stops rather than render from it.
+// for it. A plugin attached at a verdict role has no lockfile row, and the same
+// condition reports one whose entry in the record of plugin identities beside the
+// lockfile records none, or which that record holds no entry for. A pull verifies
+// such an artifact's signature when it fetches it and records the verified fact; a
+// build reads the recorded fact rather than verifying again, because a build
+// reaches no registry. An artifact with nothing recorded therefore leaves the build
+// holding something nothing says was ever verified, and the build stops rather
+// than render from it.
 //
 // Whether a signature is required is the same decision a pull makes when it
 // fetches the artifact, so the settings that let a pull admit an artifact with no
@@ -31,9 +34,10 @@ func ErrSignatureNotRecorded() error { return errSignatureNotRecorded }
 var errSignatureNotRecorded = cerrors.Register("signature-not-recorded", cerrors.Meta{
 	ShortCode: "E0331",
 	Message:   "signing: the lockfile records no verified signature for an artifact that requires one",
-	RulePlace: cerrors.NotARule("A lockfile row for an artifact acquired from a registry records no verified " +
-		"signature while the trust configuration requires one for it. It reports a verification fact that is " +
-		"absent from the record the build reads rather than a rule over authored content."),
+	RulePlace: cerrors.NotARule("A lockfile row, or a verdict plugin's entry in the record beside the lockfile, for " +
+		"an artifact acquired from a registry records no verified signature while the trust configuration requires " +
+		"one for it. It reports a verification fact that is absent from the record the build reads rather than a " +
+		"rule over authored content."),
 })
 
 // SignatureNotRecorded returns the refusal for one row a build holds to a
@@ -53,6 +57,26 @@ func SignatureNotRecorded(uri, requiredBy, release string) error {
 	}
 	advice := fmt.Sprintf("remediation: run `aggrega pull --release %s` to verify the artifact's signature at its "+
 		"registry and record it in the lockfile", release)
+	return &signatureNotRecordedError{message: cerrors.ComposeMessage(errSignatureNotRecorded, values, advice)}
+}
+
+// PluginSignatureNotRecorded is SignatureNotRecorded for a plugin attached at a
+// verdict role, whose verified signature is recorded not on a lockfile row but in
+// the record of plugin identities kept beside the lockfile: coordinate is the
+// plugin's identity coordinate, record the path of that record, and requiredBy and
+// release as SignatureNotRecorded takes them.
+//
+// It is the same condition, because it is the same fact — a build about to run an
+// artifact a pull acquired from a registry, with nothing recorded to say its
+// signature was verified — and the same remedy; only where the fact is recorded
+// differs, so the occurrence names that record and the remedy records into it.
+func PluginSignatureNotRecorded(coordinate, record, requiredBy, release string) error {
+	values := []string{fmt.Sprintf("%q", coordinate), record + " records no signature for it"}
+	if requiredBy != "" {
+		values = append(values, "required by "+requiredBy)
+	}
+	advice := fmt.Sprintf("remediation: run `aggrega pull --release %s` to verify the plugin's signature at its "+
+		"registry and record it in %s", release, record)
 	return &signatureNotRecordedError{message: cerrors.ComposeMessage(errSignatureNotRecorded, values, advice)}
 }
 

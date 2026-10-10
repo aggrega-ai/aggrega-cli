@@ -169,7 +169,8 @@ func TestWrittenRecordCarriesTheGeneratedHeader(t *testing.T) {
 		"runs one of those plugins", // who reads it
 		"Commit this",               // why committing it matters
 		"verdict_inputs",            // where the rule-input record lives instead
-		"no signature",              // what it does not carry
+		"\"signature\" block",       // the verified fact it carries about each artifact
+		"carries no signer",         // what it does not carry
 		"lockfile",                  // where the reproducibility pins live
 	} {
 		if !strings.Contains(body, want) {
@@ -234,6 +235,22 @@ func TestLoadRefusesASchemaViolation(t *testing.T) {
 		{
 			name: "a document root that is not an object",
 			doc:  "- governance/baseline\n",
+		},
+		{
+			name: "a signature fact missing its mode",
+			doc:  "version: 1\nplugins:\n  - plugin: governance/baseline\n    resolved_version: 1.0.0\n    digest: " + testDigest + "\n    signature:\n      bundle_digest: " + testDigest + "\n",
+		},
+		{
+			name: "a signature fact naming a mode the schema does not admit",
+			doc:  "version: 1\nplugins:\n  - plugin: governance/baseline\n    resolved_version: 1.0.0\n    digest: " + testDigest + "\n    signature:\n      bundle_digest: " + testDigest + "\n      mode: detached\n",
+		},
+		{
+			name: "a signature fact whose bundle digest is not a sha256 digest",
+			doc:  "version: 1\nplugins:\n  - plugin: governance/baseline\n    resolved_version: 1.0.0\n    digest: " + testDigest + "\n    signature:\n      bundle_digest: ../escape\n      mode: keyed\n",
+		},
+		{
+			name: "an unknown key inside a signature fact",
+			doc:  "version: 1\nplugins:\n  - plugin: governance/baseline\n    resolved_version: 1.0.0\n    digest: " + testDigest + "\n    signature:\n      bundle_digest: " + testDigest + "\n      mode: keyed\n      bundle: inline\n",
 		},
 	}
 

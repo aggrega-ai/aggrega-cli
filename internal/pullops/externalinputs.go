@@ -13,11 +13,14 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // discoverExternalInputs renders the Release with acquisition on and returns the
-// external-input pins the lockfile should carry afterwards.
+// external-input pins the lockfile should carry afterwards. trust is the record of
+// verdict-role plugin identities as this run will write it, or nil where the
+// caller composed none.
 //
 // # Why this renders instead of reading the documents
 //
@@ -93,6 +96,7 @@ func discoverExternalInputs(
 	cacheDir string,
 	view *catalog.LazyLookup,
 	lf *lockfile.Lockfile,
+	trust *pluginstrust.Trust,
 ) ([]lockfile.ExternalInput, *compilerops.PreviewResult, error) {
 	// The pins this render verifies against are derived from the lockfile handed
 	// to this call, in this call, rather than left as whatever the resolution
@@ -139,6 +143,11 @@ func discoverExternalInputs(
 			// on. That check is what lets a build that filled its own lockfile
 			// through this operation skip the verify afterwards.
 			compilerops.WithComposedLockfile(lf),
+			// The record of verdict-role plugin identities goes in the same way, as
+			// this run composed it: the render holds each such plugin to the
+			// signature fact this run verified, and this run writes the record only
+			// after the render.
+			compilerops.WithComposedTrustRecord(trust),
 		),
 		cfg.RenderOptions,
 	)

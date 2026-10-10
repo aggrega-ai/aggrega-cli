@@ -138,6 +138,7 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 		cacheDir,
 		view,
 		lf,
+		nil,
 	)
 
 	if err := view.VerifyPinnedIntegrity(); err != nil {

@@ -776,9 +776,10 @@ func maximalEntityLock() recipepin.Lock {
 
 // maximalPluginsTrust populates every field of the trust record: the schema
 // version and one fully-populated record. The record's three identity fields are
-// required by the schema and its withdrawal is optional, so a single record
-// carrying all four covers the whole surface — the optional one included, which is
-// the field a maximal instance exists to reach.
+// required by the schema and its withdrawal and signature fact are optional, so a
+// single record carrying all five covers the whole surface — the optional ones
+// included, which are the fields a maximal instance exists to reach. The signature
+// fact is keyless so its issuer, the one field a keyed fact omits, is populated.
 func maximalPluginsTrust() pluginstrust.Trust {
 	return pluginstrust.Trust{
 		Version: pluginstrust.CurrentVersion,
@@ -789,6 +790,12 @@ func maximalPluginsTrust() pluginstrust.Trust {
 			Deprecation: &pluginstrust.Deprecation{
 				Message:  "withdrawn; migrate to governance/aggrega-security-baseline 2",
 				Severity: "retracted",
+			},
+			Signature: &lockfile.VerifiedSignature{
+				BundleDigest: pinDigest,
+				Identity:     "signer@example.com",
+				Issuer:       "https://issuer.example.com",
+				Mode:         "keyless",
 			},
 		}},
 	}

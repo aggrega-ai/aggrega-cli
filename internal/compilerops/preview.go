@@ -124,6 +124,11 @@ type PreviewInputs struct {
 	// is reported as that rather than as drift.
 	lockfileComposed bool
 
+	// composedTrust is the record of plugin identities beside the lockfile as the
+	// caller has composed it and has not yet written it, or nil, which reads the
+	// record from disk. Only the check of recorded signatures reads it.
+	composedTrust *pluginstrust.Trust
+
 	// catalogWarnings are advisories the caller's own catalog load produced.
 	// They are handed in rather than re-derived because only a caller that
 	// eagerly loaded a catalog has them, and emitting them here keeps the whole
@@ -173,6 +178,19 @@ func WithComposedLockfile(lf *lockfile.Lockfile) PreviewOption {
 		in.lockfilePreexisted = false
 		in.lockfileComposed = true
 	}
+}
+
+// WithComposedTrustRecord supplies the record of plugin identities kept beside
+// the lockfile as the caller has composed it and is about to write it, so the check
+// of recorded signatures holds each plugin attached at a verdict role to the fact
+// this run records rather than to the record on disk the run is about to replace.
+// The resolution that composes the record writes it only after its render, so a
+// render reading the file would read it as it stood before the run — and on a first
+// resolution, there is none. Nothing else in the preview reads it: the record's
+// identity hold and its withdrawal report read the file, as every other surface
+// does.
+func WithComposedTrustRecord(trust *pluginstrust.Trust) PreviewOption {
+	return func(in *PreviewInputs) { in.composedTrust = trust }
 }
 
 // WithCatalogWarnings supplies the advisories the caller's own catalog load

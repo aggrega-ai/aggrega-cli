@@ -138,12 +138,13 @@ type DeprecationRecord struct {
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
 //
-// It is the one signature-fact shape, and it is encoded into two documents
-// rather than one: the lockfile, as YAML in the snake_case that document uses
-// throughout, and the local registry index, as JSON in the lowerCamel that
-// document uses throughout. Both encodings are declared here, on the single
-// type, so the two cannot come to describe the same recorded fact under
-// different key names. Each field's optionality is decided once and expressed
+// It is the one signature-fact shape, and it is encoded in two conventions: as
+// YAML in the snake_case the lockfile uses throughout — on a lockfile row, and on
+// a verdict-role plugin's entry in the record of plugin identities beside the
+// lockfile, which holds the same fact under the same key — and as JSON in the
+// lowerCamel the local registry index uses throughout. Both encodings are declared
+// here, on the single type, so the documents cannot come to describe the same
+// recorded fact under different key names. Each field's optionality is decided once and expressed
 // identically in both: an empty identity or issuer — a keyed signature has no
 // issuer — is omitted from either encoding rather than written as an empty value.
 type VerifiedSignature struct {

@@ -515,8 +515,14 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 				writeRecordFor(t, releasePath, gate.Coordinate, "1.0.0", tc.recorded)
 			}
 
+			// The gate stands in a cache slot for a registry fetch with no signature
+			// behind it, under the default registry, whose baseline requires one. So
+			// the build declares the stance its fake registry needs — the hub's own
+			// skip — as every fixture standing a slot in for a fetch does; without it
+			// the build refuses the gate for recording no signature before either
+			// direction below is reached.
 			buildWorkspace := resolveWorkspaceWithConfig(t, root,
-				governanceAttachment(gate.URI, "ir-verdict", "policy.rego", ""))
+				governanceAttachment(gate.URI, "ir-verdict", "policy.rego", "")+fakeRegistryTrust)
 			err := dispatchBuildWithDiag(context.Background(), buildWorkspace, releasePath, []string{catalogDir}, false,
 				buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")},
 				os.Stderr, os.Stderr)

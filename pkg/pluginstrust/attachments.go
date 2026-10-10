@@ -76,7 +76,10 @@ var errVerdictAttachmentNotConfigured = cerrors.Register("verdict-attachment-not
 //     resolution that first has something to record, so a caller meets an absent
 //     record on every workspace that has not resolved a verdict-returning
 //     attachment yet. It holds no plugins, so it pins nothing and holds nothing
-//     to a comparison — silence, never a halt.
+//     to a comparison — silence, never a halt. A build's check of recorded
+//     signatures reads the same empty record as recording no signature for any
+//     plugin, which is the answer to a different question: not whether a record
+//     disagrees with a resolution, but whether a required fact was recorded.
 //   - Any other read failure — an unreadable file, or one that does not satisfy
 //     its schema — is returned. Treating a damaged record as an empty one would
 //     discard exactly the identities a later resolution is meant to be held to,

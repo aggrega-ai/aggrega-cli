@@ -41,6 +41,7 @@ func TestDiscoveryRenderIsConservedWhenItStops(t *testing.T) {
 		cacheDir,
 		view,
 		&lockfile.Lockfile{Version: 1},
+		nil,
 	)
 
 	if err == nil {

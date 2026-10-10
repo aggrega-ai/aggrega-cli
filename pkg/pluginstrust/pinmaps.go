@@ -27,8 +27,10 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // verified against. PinVersions addresses the cache slot, whose second segment
 // for a plugin artifact is that same content digest — the recorded version and
 // the recorded digest name the same content for a `.wasm` — so the pinned slot
-// and the recorded one are the same slot. BundleDigests is deliberately left
-// empty: a signature bundle is not something this record carries.
+// and the recorded one are the same slot. BundleDigests is left empty: the
+// signature bundle a record's Signature names is re-hashed by the build's check of
+// recorded signatures before anything renders, which reads the record itself, and
+// is not re-hashed again when the plugin's bytes are resolved.
 //
 // A record whose coordinate is empty addresses no plugin and is skipped, for the
 // same reason Upsert refuses to write one: every empty address would collide

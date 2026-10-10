@@ -63,18 +63,20 @@ type Fetched struct {
 // Signature verification is inherently a pull-online operation — it discovers the
 // signature referrers of the plugin's manifest at the registry — so the call
 // takes the ctx, the trust config, and the target factory; it is skipped for a
-// non-registry / host-less plugin (which carries no registry signature) and while
-// the workspace is offline. Host-function re-derivation reads the plugin's
-// already content-verified .wasm bytes; it is skipped when the caller supplies no
-// entity stamp or no bytes.
+// non-registry / host-less plugin (which carries no registry signature), and under
+// the offline posture the egress gate refuses it. Host-function re-derivation
+// reads the plugin's already content-verified .wasm bytes; it is skipped when the
+// caller supplies no entity stamp or no bytes.
 //
-// It returns the verified signature fact so a pinned caller could record it in
-// the lockfile; a cache-not-pin caller (verdict gate, CLI install) discards it —
-// the fact is not a reproducibility pin for a plugin that never enters the
-// lockfile. Recording the fact is thus the caller's choice, not a second
+// It returns the verified result — the fact SignatureFact turns into a record,
+// together with the bundle bytes that fact names — or nil where no signature was
+// verified. The verdict-socket cache records the fact in the trust record beside
+// the lockfile and caches the bundle, so a build can hold the plugin to it; the CLI
+// install discards it, because an installed extension command is held to no record.
+// What a caller does with the result is thus the caller's choice, not a second
 // function.
-func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targetFor pullverify.TargetFor, diagOut io.Writer) (*lockfile.VerifiedSignature, error) {
-	var fact *lockfile.VerifiedSignature
+func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targetFor pullverify.TargetFor, diagOut io.Writer) (*pullverify.Result, error) {
+	var verified *pullverify.Result
 	// An explicitly requested verify does not silently skip the network when the
 	// workspace is offline: the signature fetch runs and is refused loudly by the
 	// egress gate (through targetFor / the live-trust-root fetch) rather than
@@ -95,7 +97,8 @@ func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targe
 			return nil, err
 		}
 		if len(results) > 0 {
-			fact = SignatureFact(results[0])
+			result := results[0]
+			verified = &result
 		}
 	}
 	if in.Entity != nil && len(in.WasmBytes) > 0 {
@@ -103,7 +106,7 @@ func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targe
 			return nil, err
 		}
 	}
-	return fact, nil
+	return verified, nil
 }
 
 // VerifyHostFunctionStamp re-derives host functions from a plugin's

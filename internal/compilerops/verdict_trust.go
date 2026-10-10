@@ -22,13 +22,36 @@ import (
 // It is the single home of that question, and it is UNEXPORTED so it stays the
 // only home: every surface that holds a configuration to the record of the plugin
 // identities trusted for its verdict attachments reaches it through
-// VerdictPluginTrust, so no caller can assemble a second answer to "which plugin
-// does this attachment name". It answers through the ONE existing derivation — the Plugin
-// entity's own artifact reference — rather than by pattern-matching the authored
-// reference. That distinction is not cosmetic: an attachment authored under a
-// namespaced reference resolves to a coordinate that shares only its trailing
-// segments, so a textual comparison would report a gate as dropped whenever it
-// was merely authored in the longer form.
+// VerdictPluginTrust, and the build's check of recorded signatures reads the same
+// reading beneath it, readVerdictPlugin, so no caller can assemble a second answer
+// to "which plugin does this attachment name". It answers through the ONE existing
+// derivation — the Plugin entity's own artifact reference — rather than by
+// pattern-matching the authored reference. That distinction is not cosmetic: an
+// attachment authored under a namespaced reference resolves to a coordinate that
+// shares only its trailing segments, so a textual comparison would report a gate
+// as dropped whenever it was merely authored in the longer form.
+//
+// The answer is readVerdictPlugin's coordinate, so which plugin an attachment
+// names and which tier serves it are one reading.
+func pluginCoordinateReader(view *catalog.LazyLookup) func(uri string) (string, bool) {
+	return func(uri string) (string, bool) {
+		read, ok := readVerdictPlugin(view, uri)
+		return read.coordinate, ok
+	}
+}
+
+// verdictPluginRead is what a build reads about the plugin one verdict
+// attachment names: the plugin's identity coordinate, and whether its entity is
+// served by the content cache a pull filled from a registry rather than by the
+// catalog view.
+type verdictPluginRead struct {
+	coordinate string
+	fromCache  bool
+}
+
+// readVerdictPlugin reads the plugin a verdict attachment names, through the ONE
+// existing derivation — the Plugin entity's own artifact reference — and reports
+// which tier served the entity.
 //
 // Both tiers a verdict attachment can be served from are consulted, in the order
 // resolution consults them: the lazily-enumerated catalog set first, then the
@@ -36,20 +59,23 @@ import (
 // A cache read that fails is reported as undetermined rather than as an answer —
 // the failure is real and surfaces at resolution with its own diagnostic, and
 // guessing here would let a failed read masquerade as a missing gate.
-func pluginCoordinateReader(view *catalog.LazyLookup) func(uri string) (string, bool) {
-	return func(uri string) (string, bool) {
-		if view == nil || uri == "" {
-			return "", false
-		}
-		if entity, found := view.PluginByURI(uri); found {
-			return entity.ArtifactReference(), true
-		}
-		entity, _, found, err := view.PluginFromCacheByURI(uri)
-		if err != nil || !found {
-			return "", false
-		}
-		return entity.ArtifactReference(), true
+//
+// Which tier served the entity is reported because it is where the plugin came
+// from, which the record beside the lockfile deliberately does not say: the check
+// of recorded signatures holds a plugin to the signature requirement only where a
+// pull acquired it from a registry, and the cache tier is that acquisition.
+func readVerdictPlugin(view *catalog.LazyLookup, uri string) (verdictPluginRead, bool) {
+	if view == nil || uri == "" {
+		return verdictPluginRead{}, false
 	}
+	if entity, found := view.PluginByURI(uri); found {
+		return verdictPluginRead{coordinate: entity.ArtifactReference()}, true
+	}
+	entity, _, found, err := view.PluginFromCacheByURI(uri)
+	if err != nil || !found {
+		return verdictPluginRead{}, false
+	}
+	return verdictPluginRead{coordinate: entity.ArtifactReference(), fromCache: true}, true
 }
 
 // VerdictPluginTrust reads the record of the plugin identities trusted for this
