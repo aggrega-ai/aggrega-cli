@@ -345,7 +345,8 @@ const (
 	// PhaseValidate covers closure-scoped validation, axis reconstruction and
 	// the drift verify.
 	PhaseValidate
-	// PhaseInheritance covers extends resolution and the advisory gates.
+	// PhaseInheritance covers extends resolution, the gates over the facts the
+	// lockfile records, and the advisory gates.
 	PhaseInheritance
 	// PhaseRender covers the pipeline run through the provider render step.
 	PhaseRender
@@ -359,8 +360,8 @@ const (
 // THE TYPE AND ITS FIELDS ARE UNEXPORTED, AND SO ARE THE TWO POSTURES BELOW.
 // That is a deliberate constraint rather than a style. A posture is not a
 // preference a caller holds: it follows from what the operation IS, which is why
-// nine of these ten switches differ between the two postures — they are one idea
-// expressed ten times, not ten independent knobs. A caller handed a posture
+// all but one of these switches differ between the two postures — they are one
+// idea expressed many times, not independent knobs. A caller handed a posture
 // value could take a named one and change a switch on it, and the behaviour it
 // then ran would have no name and no record. Nothing outside this package can
 // name this type, so no such value can be built or altered there; each exported
@@ -400,7 +401,7 @@ type previewPolicy struct {
 	// leaves it off and reports drift through its own non-blocking channel,
 	// because inspection is not a deploy gate.
 	//
-	// It carries a PRECONDITION the other nine do not: the question "has the
+	// It carries a PRECONDITION the others do not: the question "has the
 	// closure drifted from the lockfile?" presupposes a lockfile to ask it of.
 	// The gate satisfies that itself rather than leaning on the operation — it
 	// reads the lockfile from the inputs and stands down when there is none — and
@@ -417,6 +418,16 @@ type previewPolicy struct {
 	// and Features so the pipeline sees fully-merged entities. Closure-scoped:
 	// an out-of-closure broken extends never fails under either setting.
 	resolveExtends bool
+
+	// enforceRecordedSignatures holds every reference the build reads to the
+	// signature fact its lockfile row records: a recorded fact's cached bundle is
+	// re-hashed, and a row the content cache served that records none halts where
+	// the trust configuration requires a signature for it (see
+	// enforceRecordedSignatures). A surface that produces an artifact sets it. An
+	// inspection leaves it off, and so does the operation that renders from
+	// whatever pins exist without holding the Release to a lockfile, because
+	// neither emits something a person will apply.
+	enforceRecordedSignatures bool
 
 	// enforceDeprecation reports every recorded deprecation marker — on pinned
 	// references and on plugins trusted for a verdict attachment — and halts
@@ -454,6 +465,7 @@ func artifactPolicy() previewPolicy {
 		reconstructClosureAxes:           true,
 		verifyLockfileDrift:              true,
 		resolveExtends:                   true,
+		enforceRecordedSignatures:        true,
 		enforceDeprecation:               true,
 		reportCatalogLint:                true,
 		verifyRecipeResolution:           true,
@@ -478,6 +490,7 @@ func inspectionPolicy() previewPolicy {
 		reconstructClosureAxes:           true,
 		verifyLockfileDrift:              false,
 		resolveExtends:                   false,
+		enforceRecordedSignatures:        false,
 		enforceDeprecation:               false,
 		reportCatalogLint:                false,
 		verifyRecipeResolution:           false,
@@ -510,6 +523,9 @@ const (
 	GateExtends
 	// GateDeprecation is the deprecation verdict over the two record stores.
 	GateDeprecation
+	// GateRecordedSignatures is the check of the signature facts the lockfile
+	// records for the references the build reads.
+	GateRecordedSignatures
 	// GateRender is the pipeline run itself.
 	GateRender
 )
@@ -623,9 +639,14 @@ func PreviewForArtifact(ctx context.Context, in PreviewInputs, opts pipeline.Opt
 // additionally accepts a STALE one, which is coherent only where the answer is
 // not a claim about what a build would emit — an operation that emits one
 // refuses it instead.
+//
+// The check of recorded signature facts stands down here for the same reason:
+// it holds the references a build reads to what the lockfile records about them,
+// and an operation that did not ask for a lockfile has made no claim about one.
 func PreviewForArtifactFromAvailablePins(ctx context.Context, in PreviewInputs, opts pipeline.Options) (*PreviewResult, error) {
 	pol := artifactPolicy()
 	pol.verifyLockfileDrift = false
+	pol.enforceRecordedSignatures = false
 	return runPreview(ctx, in, pol, opts)
 }
 
@@ -817,6 +838,19 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		if halt != nil {
 			out.FailedGate = GateDeprecation
 			return out, halt
+		}
+	}
+
+	// The recorded signature facts, for every reference the build reads — after
+	// the axes are reconstructed, so the plugin and workspace-socket references are
+	// among them, and after the deprecation gates, so their notices reach a reader
+	// whatever this gate decides. It reads the lockfile, the closure, the
+	// configuration and the cached bundles only: no registry access, the same
+	// ahead-of-time boundary the deprecation gates keep.
+	if pol.enforceRecordedSignatures {
+		if err := enforceRecordedSignatures(in, resolved.Closure); err != nil {
+			out.FailedGate = GateRecordedSignatures
+			return out, err
 		}
 	}
 

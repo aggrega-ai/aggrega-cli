@@ -117,7 +117,10 @@ spec:
           infra:
             replicas: 1
 `)
-	writeWorkspaceConfig(t, root, "offline: true\n")
+	// A case below lays the Component's cache slot as a hub fetch would and then
+	// removes the authored copy; that slot records no signature, which the official
+	// hub's built-in policy requires, so the stance stands verification down for it.
+	writeWorkspaceConfig(t, root, "offline: true\n"+fakeRegistryTrust)
 	releasePath := filepath.Join(root, "release.yaml")
 
 	var out, diag bytes.Buffer

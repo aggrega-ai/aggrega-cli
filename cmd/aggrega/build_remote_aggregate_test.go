@@ -157,7 +157,8 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	releasePath := remoteAggregateFixture(t, root)
-	writeWorkspaceConfig(t, root, "auto_pull: false\n")
+	// The relocated slot stands in for a hub fetch that recorded no signature.
+	writeWorkspaceConfig(t, root, "auto_pull: false\n"+fakeRegistryTrust)
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 

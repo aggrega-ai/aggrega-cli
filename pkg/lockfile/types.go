@@ -127,8 +127,13 @@ type DeprecationRecord struct {
 // trusted": the mode that verified it, the identity/issuer (keyless) or
 // pinned-key fingerprint (keyed) that matched, and the content-addressed
 // digest of the signature bundle cached in the closure. Build does not
-// re-run verification, and checks this fact only on a Plugins row: it
-// re-hashes the cached bundle against BundleDigest before the guest loads.
+// re-run verification. It checks this fact on every row it reads — an
+// entity of any kind, a library, a plugin — before anything renders: it
+// re-hashes the cached bundle against BundleDigest, and where the trust
+// configuration requires a signature for a row the content cache served, a
+// row recording no fact refuses the build (ErrSignatureNotRecorded). A
+// plugin's bundle is re-hashed again when its bytes are resolved, which is
+// what reaches the surfaces that load a plugin outside a build.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
@@ -143,8 +148,9 @@ type DeprecationRecord struct {
 // issuer — is omitted from either encoding rather than written as an empty value.
 type VerifiedSignature struct {
 	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
-	// bundle blob stored in the closure. It names the cache blob, and on a
-	// Plugins row it is what a build re-hashes that blob against.
+	// bundle blob stored in the closure. It names the cache blob, and on
+	// every row a build reads it is what the build re-hashes that blob
+	// against.
 	BundleDigest string `yaml:"bundle_digest" json:"bundleDigest"`
 	// Identity is the verified signer of the signature: the certificate
 	// subject for a keyless signature, or a stable fingerprint of the

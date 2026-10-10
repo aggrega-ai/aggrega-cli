@@ -340,8 +340,8 @@ type ResolvedRef struct {
 	// ManifestDigest is the OCI manifest digest the artifact's signature
 	// commits to — the verify subject at pull time. It differs from Digest,
 	// the portable content digest used for the cache pin and integrity check.
-	// Set only for a registry-resolved (Tier-3) ref; empty for a Tier-1 /
-	// Tier-2 / external ref, none of which carry a registry signature.
+	// A ref acquired from a registry carries it whether fetched this run or
+	// served from the content cache, which reports the manifest stored beside it.
 	ManifestDigest string
 	ResolutionPath string
 	ReferencedFrom []string
@@ -367,9 +367,9 @@ type ResolvedLibrary struct {
 	Digest          string
 	// ManifestDigest is the OCI manifest digest the library artifact's signature
 	// commits to — the verify subject at pull time. It differs from Digest, the
-	// portable content digest used for the cache pin and integrity check. Set only
-	// for a registry-resolved (Tier-3) library; empty for a Tier-1 / Tier-2 / local
-	// library, none of which carry a registry signature.
+	// portable content digest used for the cache pin and integrity check. A library
+	// acquired from a registry carries it whether fetched this run or served from the
+	// content cache, which reports the manifest stored beside it.
 	ManifestDigest string
 	ResolutionPath string
 	Consumers      []LibraryConsumer

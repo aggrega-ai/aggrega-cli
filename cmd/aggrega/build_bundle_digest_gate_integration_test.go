@@ -32,7 +32,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -299,8 +298,84 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 
 		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
-		if !errors.Is(berr, pluginpath.ErrPluginBundleDigestMismatch()) {
-			t.Fatalf("a tampered cached bundle must halt with ErrPluginBundleDigestMismatch before instantiation; got: %v", berr)
+		if !errors.Is(berr, oci.ErrSignatureBundleDigestMismatch()) {
+			t.Fatalf("a tampered cached bundle must halt with ErrSignatureBundleDigestMismatch before instantiation; got: %v", berr)
+		}
+	})
+
+	t.Run("stripped_plugin_row_refused_under_a_requirement", func(t *testing.T) {
+		lf, wasmURI, ws := pullSigned(t)
+		row := findLockfilePluginRow(t, lf, wasmURI)
+		if row.Signature == nil {
+			t.Fatalf(".wasm row recorded no signature, so removing it proves nothing: %+v", row)
+		}
+		// The plugin row's fact removed, the rest of the lockfile as the pull wrote
+		// it; the workspace then requires a signature at the top level and fills
+		// nothing, so the build reads exactly this lockfile.
+		row.Signature = nil
+		if werr := lockfile.WriteLockfile(lockfile.PathFor("release.yaml"), lf); werr != nil {
+			t.Fatalf("write the stripped lockfile: %v", werr)
+		}
+		cfgPath := filepath.Join(ws, ".aggrega-config.yaml")
+		cfg, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			t.Fatalf("read the workspace config: %v", rerr)
+		}
+		requiring := strings.Replace(string(cfg), "auto_pull: true\n", "auto_pull: false\n", 1) + "signing:\n  required: true\n"
+		if werr := os.WriteFile(cfgPath, []byte(requiring), 0o644); werr != nil {
+			t.Fatalf("write the requiring config: %v", werr)
+		}
+
+		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		if !errors.Is(berr, lockfile.ErrSignatureNotRecorded()) {
+			t.Fatalf("a plugin row recording no signature under a requirement must be refused before the guest loads; got: %v", berr)
+		}
+		if !strings.Contains(berr.Error(), `"`+wasmURI+`"`) {
+			t.Errorf("the refusal does not name the plugin row %q: %v", wasmURI, berr)
+		}
+	})
+
+	t.Run("stripped_plugin_row_recorded_again_by_a_re_pull_under_a_requirement", func(t *testing.T) {
+		lf, wasmURI, ws := pullSigned(t)
+		row := findLockfilePluginRow(t, lf, wasmURI)
+		if row.Signature == nil {
+			t.Fatalf(".wasm row recorded no signature, so removing it proves nothing: %+v", row)
+		}
+		want := *row.Signature
+		// The plugin row's fact removed and the workspace requiring a signature for
+		// plugins alone — the fixture's Component and Recipe are published unsigned —
+		// with no fill, so the re-pull below is the only run that can record it.
+		row.Signature = nil
+		if werr := lockfile.WriteLockfile(lockfile.PathFor("release.yaml"), lf); werr != nil {
+			t.Fatalf("write the stripped lockfile: %v", werr)
+		}
+		cfgPath := filepath.Join(ws, ".aggrega-config.yaml")
+		cfg, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			t.Fatalf("read the workspace config: %v", rerr)
+		}
+		requiring := strings.Replace(string(cfg), "auto_pull: true\n", "auto_pull: false\n", 1) +
+			"signing:\n  required: true\n  kinds: [Plugin]\n"
+		if werr := os.WriteFile(cfgPath, []byte(requiring), 0o644); werr != nil {
+			t.Fatalf("write the requiring config: %v", werr)
+		}
+
+		if perr := pullRun(context.Background(), pullConfig{
+			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
+			ReleasePath: "release.yaml", CatalogDirs: []string{std},
+		}); perr != nil {
+			t.Fatalf("the re-pull must ask the registry about the plugin row and record its signature: %v", perr)
+		}
+		repulled, _, lerr := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
+		if lerr != nil {
+			t.Fatalf("load the re-pulled lockfile: %v", lerr)
+		}
+		got := findLockfilePluginRow(t, repulled, wasmURI).Signature
+		if got == nil || *got != want {
+			t.Fatalf("the re-pull did not record the plugin row's verified signature again: want %+v, got %+v", want, got)
+		}
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+			t.Fatalf("the build over the re-pulled lockfile must go ahead: %v", berr)
 		}
 	})
 

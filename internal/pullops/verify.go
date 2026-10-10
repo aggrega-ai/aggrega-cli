@@ -18,8 +18,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -47,15 +45,30 @@ import (
 // host and path are bound at pull time from the workspace registry and the kind,
 // recovered here from the same binding the puller used — while a content-pinned
 // .wasm plugin already carries its host in the URI. All are verified against
-// the resolved registry's trust policy. A Tier-1 / Tier-2 / local / external
-// item is not asked about: it was already verified when its bytes were fetched,
-// or never carries a registry signature. Where those bytes were fetched by this
-// very pull, under another reference to the same artifact, the answer this pass
-// got for them is recorded on the item's row too (see verifiedJoin), so every
-// row pinning bytes this pull verified records that it did. A fatal
-// verification failure (a required signature that is missing, untrusted, or
-// invalid for a non-advisory registry) returns a non-nil error and halts the
-// pull.
+// the resolved registry's trust policy. A Tier-1 / local / external item is not
+// asked about: it never carries a registry signature. Where those bytes were
+// fetched by this very pull, under another reference to the same artifact, the
+// answer this pass got for them is recorded on the item's row too (see
+// verifiedJoin), so every row pinning bytes this pull verified records that it
+// did. A fatal verification failure (a required signature that is missing,
+// untrusted, or invalid for a non-advisory registry) returns a non-nil error and
+// halts the pull.
+//
+// A Tier-2 item — one the content cache served — was verified by the pull that
+// fetched its bytes, and its row carries that pull's fact forward, so it is
+// normally not asked about. It is asked about exactly where its row records no
+// fact and the one decision a pull makes over a missing signature
+// (workspaceconfig.SignatureCheck.HaltsWithoutSignature) says one is required:
+// the row a build would refuse (lockfile.ErrSignatureNotRecorded). Such an item
+// joins the fetched ones and is verified by the same call, by the manifest digest
+// its resolution reports — the one its row records — so its fact is recorded and
+// its bundle cached exactly as a fetched item's are, and the remedy that refusal
+// names repairs the row. Asking means reaching the registry, so under the offline
+// posture the network-egress gate refuses it, and the pull halts with that
+// refusal rather than writing a row the build would refuse. A row that records a
+// fact, and a row nothing requires a signature for, are not asked about, so a
+// re-pull over a lockfile that records every required fact asks the registry
+// nothing.
 //
 // Where an artifact carries several signatures that verify, the fact a row
 // records is the earliest of them (pullverify.EarlierSignature) — the signature
@@ -83,39 +96,47 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, axis := range axes {
 		total += len(axis.Refs)
 	}
+	// The facts the rows record after the carry-forward, read by the same key the
+	// build's check reads them by, so the rows asked about here are exactly the rows
+	// that check would refuse.
+	recorded := lf.RecordedSignatures()
 	verifiable := make([]pullverify.Entity, 0, total)
+	// The cache-served items to ask about are held apart and joined after the
+	// fetched ones, below.
+	var reasked []pullverify.Entity
 	for _, axis := range axes {
 		for _, e := range axis.Refs {
-			// Verify only items freshly resolved from a registry (Tier-3).
-			// A Tier-2 cache hit was verified on the pull that fetched its
-			// bytes — an earlier one, whose lockfile entry carries the fact
-			// forward, or this one, under another reference to the same
-			// artifact, whose answer the fold below records on it; a local /
-			// external item never carries a registry signature.
-			if !isRegistryResolved(e.ResolutionPath) {
+			// Only an item whose bytes were acquired from a registry carries a
+			// registry signature; a local or external item never does.
+			if !closure.AcquiredFromRegistry(e.ResolutionPath) {
+				continue
+			}
+			// An item fetched during this run is always asked about. One the
+			// content cache served is asked about only where its row records no
+			// fact — a row recording one carries the fact the fetching pull
+			// verified — and, below, only where a signature is required for it.
+			fetched := isRegistryResolved(e.ResolutionPath)
+			if !fetched && recorded[lockfile.RowKey{Section: axis.Axis, URI: e.URI}] != nil {
 				continue
 			}
 			// A catalog entity's or library's URI is a host-less bare identity; the
 			// registry host and path are bound at pull time from the workspace
-			// registry and the kind, not carried in the URI. Recover that binding
-			// from the SAME location rule the puller used so the verify target is the
-			// location the artifact was fetched from. A host-carrying artifact (a
-			// content-pinned .wasm plugin) does not bind — its URI already carries
-			// the reference — so fall back to the URI-derived host for it.
-			kind, location, bound := verifySubjectBinding(wsCfg.DefaultRegistryLocation().Prefix(), axis, e)
-			if axis.Kind != "" && !bound {
-				// A single-kind axis carries host-less identities only, so there is no
-				// URI to fall back to: the fall-through below exists for a host-carrying
-				// artifact reference, and reaching it with a bare library name would read
-				// the version suffix's colon as a host:port authority. Unbound means
-				// unverifiable, so skip rather than verify against an invented location.
+			// registry and the kind, not carried in the URI. The binding is the one
+			// the build's check of recorded signatures reads too, through the SAME
+			// location rule the puller used, so the verify target is the location the
+			// artifact was fetched from and the host whose policy a build later holds
+			// the row to is the host verified here. A reference it binds to no
+			// registry — an unbindable library, a reference with no registry host —
+			// carries no registry signature and is skipped.
+			subject, ok := catalog.SignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), axis, e)
+			if !ok {
 				continue
 			}
-			host := registryhost.Of(e.URI)
-			if bound {
-				host = registryhost.Of(location)
-			}
-			if !pluginfetchverify.IsRegistryHost(host) {
+			// The cache-served row is asked about where its missing fact would halt:
+			// the decision Verify makes over a missing signature, read for the same
+			// host and kind, so a row the skips or an advisory registry admit is left
+			// as it is and costs no registry request.
+			if !fetched && !wsCfg.SignatureCheckFor(subject.Host, subject.Kind).HaltsWithoutSignature() {
 				continue
 			}
 			// A registry-resolved item is verified against its OCI manifest digest,
@@ -128,14 +149,39 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			if e.ManifestDigest == "" {
 				return fmt.Errorf("verify: registry artifact %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
 			}
-			verifiable = append(verifiable, pullverify.Entity{
+			item := pullverify.Entity{
 				URI:            e.URI,
 				ManifestDigest: e.ManifestDigest,
-				Host:           host,
-				Location:       location,
-				Kind:           kind,
-			})
+				Host:           subject.Host,
+				Location:       subject.Location,
+				Kind:           subject.Kind,
+			}
+			if fetched {
+				verifiable = append(verifiable, item)
+			} else {
+				reasked = append(reasked, item)
+			}
 		}
+	}
+	// A cache-served item is asked about only where this pass does not already ask
+	// the same question under another reference — one this run fetched, or a second
+	// cache-served reference to the same artifact. The same question is one whose
+	// answer cannot differ: the same manifest, asked at the same location under the
+	// same host's policy for the same kind. Only the reference differs, and the fold
+	// below records an answer on every row pinning that manifest (verifiedJoin), so
+	// asking again would only repeat the registry request.
+	type question struct{ manifest, host, location, kind string }
+	asked := make(map[question]struct{}, len(verifiable)+len(reasked))
+	for _, e := range verifiable {
+		asked[question{e.ManifestDigest, e.Host, e.Location, e.Kind}] = struct{}{}
+	}
+	for _, e := range reasked {
+		q := question{e.ManifestDigest, e.Host, e.Location, e.Kind}
+		if _, held := asked[q]; held {
+			continue
+		}
+		asked[q] = struct{}{}
+		verifiable = append(verifiable, e)
 	}
 	if len(verifiable) == 0 {
 		return nil
@@ -164,7 +210,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	// from the prior lockfile is replaced, and cleared where this run found no
 	// signature to record. A row whose artifact this pass did not ask about — one the
 	// content cache or a local catalog served, pinned by no reference this run fetched
-	// — keeps whatever was carried onto it.
+	// or asked about — keeps whatever was carried onto it.
 	facts := joinVerified(verifiable, factByURI)
 	for _, row := range lf.VerifiedFactRows() {
 		if !facts.askedAbout(row) {
@@ -271,39 +317,6 @@ func (j verifiedJoin[T]) answer(row lockfile.VerifiedFactRow) (T, bool) {
 	}
 	var none T
 	return none, false
-}
-
-// verifySubjectBinding resolves one closure reference's catalog kind and the
-// registry location its signature referrers are discovered against. It reports
-// bound=false when no location can be formed, in which case the caller falls back
-// to the URI-derived host — the same posture the puller takes when it cannot bind a
-// bare identity.
-//
-// The two shapes differ only in where the kind comes from, and the axis says which:
-// a mixed-kind axis carries a collection-site hint per reference, and a
-// single-kind axis states the kind once. Both bind through catalog.RegistryReference,
-// which is the single home of the prefix-and-identity-to-location join that push
-// publishes at and every pull tier fetches from, so verify-location, pull-location
-// and push-location cannot diverge. registry is the default registry's location
-// prefix; the host a trust policy is looked up under is read out of the bound
-// location afterwards, so the prefix's path never reaches the lookup.
-//
-// A library identity is not scope-qualified — unlike a Recipe's provider/name or a
-// Plugin's pluginType/name — so its location is the kind path segment plus the bare
-// name, which is what the location rule produces for an empty scope.
-func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref closure.VerifiableRef) (kind, location string, bound bool) {
-	if axis.Kind == "" {
-		// Derive the canonical PascalCase kind from the closure kind hint through the
-		// single normalization primitive so the verify pass can consult the org
-		// signing policy's kind scope without re-spelling the kind vocabulary.
-		location, bound = catalog.BindEntityLocation(registry, ref.KindHint, ref.URI)
-		return catalog.EntityKindForHint(ref.KindHint), location, bound
-	}
-	if registry == "" {
-		return axis.Kind, "", false
-	}
-	identity, _, _ := resolver.SplitVersionedURI(ref.URI)
-	return axis.Kind, catalog.RegistryReference(registry, axis.Kind, "", identity), true
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions
@@ -422,9 +435,10 @@ func cacheBundleBlob(workspaceRoot, cacheDir, bundleDigest string, bundle []byte
 }
 
 // isRegistryResolved reports whether a closure entity resolved by fetching from
-// a registry during this run — the only case where a signature is verified at
-// pull time. A local-catalog, cache or external resolution is not re-verified
-// here.
+// a registry during this run — the case where a signature is always verified at
+// pull time. A cache resolution is verified only where its row records no fact a
+// signature requirement asks for (VerifyClosureSignatures), and a local-catalog or
+// external resolution never is.
 //
 // It delegates to the shared predicate rather than testing the tag itself: a
 // string comparison here would keep compiling after the tag was respelled and

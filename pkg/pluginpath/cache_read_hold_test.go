@@ -119,7 +119,7 @@ func TestTheCacheTierReadsAPluginOnlyFromWhereThePullWroteIt(t *testing.T) {
 			if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
 				t.Fatalf("want the read hold's refusal, got %v", err)
 			}
-			if errors.Is(err, ErrPluginArtifactNotFound()) || errors.Is(err, oci.ErrFetchNotFound()) || errors.Is(err, ErrPluginBundleDigestMismatch()) {
+			if errors.Is(err, ErrPluginArtifactNotFound()) || errors.Is(err, oci.ErrFetchNotFound()) || errors.Is(err, oci.ErrSignatureBundleDigestMismatch()) {
 				t.Errorf("the refusal must be returned as itself, not as a miss or a mismatch: %v", err)
 			}
 			if got.Bytes != nil {

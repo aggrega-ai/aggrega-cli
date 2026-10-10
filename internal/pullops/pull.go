@@ -1277,15 +1277,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, pinnedEntityDigests)
 			// Carry forward each unchanged pin's recorded facts — its verified
 			// signature and its deprecation marker — from the prior lockfile before
-			// verification runs. An entry the content cache served is not verified or
-			// re-discovered below, because both passes read the registry and a cache
-			// hit does not touch it; the prior facts hold for a pin that is unchanged.
-			// An entry fetched from the registry is verified and re-discovered below,
-			// and what that finds overwrites whatever was carried, on its own row and
-			// on every row pinning the same bytes. Without this, a
-			// warm re-pull — or a build's honoring automatic fill — would silently drop
-			// a recorded signature and a recorded deprecation, the second of which
-			// masks a deprecated dependency.
+			// verification runs. An entry the content cache served that carries its
+			// facts is not verified or re-discovered below, because both passes read
+			// the registry and a cache hit does not touch it; the prior facts hold for a
+			// pin that is unchanged. An entry fetched from the registry is verified and
+			// re-discovered below, and so is a cache-served one whose row still records
+			// no signature where one is required; what that finds overwrites whatever
+			// was carried, on its own row and on every row pinning the same bytes.
+			// Without this, a warm re-pull — or a build's honoring automatic fill —
+			// would silently drop a recorded signature and a recorded deprecation, the
+			// second of which masks a deprecated dependency.
 			carryForwardVerifiedFacts(lf, pinReuse.Prior)
 			// Carry forward the prior lockfile's external-input pins. These are
 			// render-time external-input pins, not part of the catalog closure
@@ -1303,8 +1304,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// re-verifies (the AOT boundary). The verify is explicitly requested, so
 			// when the workspace is offline a registry-resolved entity's referrer
 			// fetch is refused loudly through the egress gate (a nil client) rather
-			// than silently passing as unverified; a closure with nothing registry-
-			// resolved needs no fetch and is unaffected.
+			// than silently passing as unverified — and so is a cache-served entry
+			// whose row records no signature a requirement asks for, which the pass
+			// asks its registry about rather than write a row a build would refuse.
+			// A closure with nothing to ask a registry about needs no fetch and is
+			// unaffected.
 			verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
 			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, workspaceRoot, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)

@@ -264,6 +264,7 @@ func TestBuildFailureSummariesAreDistinctPerGate(t *testing.T) {
 		compilerops.GateClosurePillars,
 		compilerops.GateExtends,
 		compilerops.GateAxisReconstruction,
+		compilerops.GateRecordedSignatures,
 		compilerops.GateRender,
 	}
 	seen := make(map[string]compilerops.PreviewGate, len(gates))

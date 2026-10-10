@@ -248,7 +248,7 @@ func TestTheBuildReadsTheSignatureBundleThePullCachedFromAnyDirectory(t *testing
 			got, err := resolver.Resolve(uri)
 
 			if row.tamper {
-				if !errors.Is(err, pluginpath.ErrPluginBundleDigestMismatch()) {
+				if !errors.Is(err, oci.ErrSignatureBundleDigestMismatch()) {
 					t.Fatalf("want the bundle-digest halt, got %v", err)
 				}
 				if !strings.Contains(err.Error(), digest.ContentDigest(tampered)) {

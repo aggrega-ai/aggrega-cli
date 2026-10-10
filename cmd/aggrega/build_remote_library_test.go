@@ -36,6 +36,14 @@ import (
 // meaningful. Library signature verification and marker discovery are proven
 // against in-memory stores that DO serve referrers, so scoping it off here costs no
 // coverage.
+//
+// A fixture that stands a cache slot in for a registry fetch — moving an entity it
+// authored into the content cache, as the build-side bridge tests do — declares it
+// for the same reason one step later. A build holds every row the content cache
+// served to the signing requirement of the host the row binds to, and the official
+// hub's built-in policy requires a signature that no fixture slot ever carried, so
+// without this stance the build refuses the row as one recording no verified
+// signature before reaching what the fixture is about.
 const fakeRegistryTrust = "registries:\n  - host: hub.aggrega.ai\n    skip_signature_verification: true\n"
 
 // ociManifestArtifact round-trips body through an in-memory CAS to obtain the OCI
@@ -364,7 +372,8 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "auto_pull: false\n")
+	// The relocated slot stands in for a hub fetch that recorded no signature.
+	writeWorkspaceConfig(t, root, "auto_pull: false\n"+fakeRegistryTrust)
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 

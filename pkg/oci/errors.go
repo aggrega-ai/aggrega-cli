@@ -240,6 +240,27 @@ var errCachedManifestIntegrity = cerrors.Register("cached-manifest-integrity", c
 		"integrity comparison over cached bytes that did not hold."),
 })
 
+// ErrSignatureBundleDigestMismatch reports that the cached signature bundle a
+// lockfile row records the digest of is missing, unreadable, or hashes to
+// something other than that digest. A pull that verifies an artifact's
+// signature caches the bundle and records its digest on the artifact's row; a
+// build re-hashes the cached blob against that digest for every row it reads
+// that records one — an entity of any kind, a library, a plugin — and a plugin's
+// bytes are held to it again when they are resolved. A drifted or absent blob
+// halts with this condition (see VerifyCachedSignatureBundle). The check is a
+// byte/hash comparison — never a cryptographic signature re-verification, and
+// never a network or trust-root touch — so it holds under the hermetic,
+// air-gapped build.
+func ErrSignatureBundleDigestMismatch() error { return errSignatureBundleDigestMismatch }
+
+var errSignatureBundleDigestMismatch = cerrors.Register("signature-bundle-digest-mismatch", cerrors.Meta{
+	ShortCode: "E0144",
+	Message:   "cached signature bundle does not match its recorded digest",
+	RulePlace: cerrors.NotARule("A cached signature bundle a lockfile row records is missing, unreadable, or hashes to " +
+		"something other than the digest the row recorded. The blob is read and re-hashed when the " +
+		"comparison runs, so what it reports is an integrity comparison that did not hold."),
+})
+
 // ErrImmutableTagConflict is returned by the publish path when the
 // target tag already exists in the registry pointing at a different
 // manifest digest than the content being pushed. Published bytes are

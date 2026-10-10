@@ -120,13 +120,20 @@ type Options struct {
 // unanswerable lookup halts, because neither leaves anything to verify.
 // Advisory registries downgrade failures to warnings; the global skip and
 // per-registry skip disable verification loudly.
+//
+// What the configuration asks of each entity's signature is read through
+// workspaceconfig.Config.SignatureCheckFor, and whether a missing signature
+// halts is that check's HaltsWithoutSignature — the same decision a build makes
+// over a lockfile row that records no signature, so a setting that admits an
+// artifact here admits it there and one that requires a signature requires it at
+// both.
 func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, error) {
 	warn := opts.Warn
 	if warn == nil {
 		warn = func(string) {}
 	}
 
-	if opts.Config.SkipSignatureVerification {
+	if opts.Config.SignatureVerificationDisabled() {
 		warn("signature verification is GLOBALLY DISABLED (skip_signature_verification: true) — " +
 			"no artifact's signature is being checked, including the hub baseline")
 		return nil, nil
@@ -138,73 +145,43 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 		if host == "" {
 			host = registryhost.Of(e.URI)
 		}
-		policy, configured := opts.Config.RegistryTrustPolicy(host)
+		check := opts.Config.SignatureCheckFor(host, e.Kind)
 
-		// A signature is required when EITHER the top-level (all-registries)
-		// policy requires it for this entity's kind OR this host's own signing
-		// block requires it. The two are the one trust stance read at two scopes;
-		// the top-level layer forces a signature on an in-scope kind even from a
-		// host whose own block requires none.
-		orgRequired := opts.Config.SigningRequiredForKind(e.Kind)
-		// Fail-safe: an active top-level policy must not silently exempt an
-		// unclassifiable artifact. When the policy is on but the kind could not
-		// be determined, require a signature rather than tolerate a missing one.
-		if opts.Config.Signing.Required && e.Kind == "" {
-			orgRequired = true
-		}
-		registryRequired := configured && policy.SigningRequiredForKind(e.Kind)
-		if configured && policy.Signing.Required && e.Kind == "" {
-			registryRequired = true
-		}
-
-		// Default-for-unknown: a host with no explicit policy, no baseline, and
-		// no required stance verifies only if a signature is present, and never
-		// halts on a missing one. "Missing" covers both ways a signature can
-		// fail to turn up — the registry answered and nothing is attached, and
-		// the registry could not be asked — because neither leaves a signature
-		// to verify. The two part company only once a signature is required.
-		requireSignature := registryRequired || orgRequired
-
-		// A per-host break-glass skip disables verification for this host — but
-		// it does NOT defeat the top-level required policy. An org-required
-		// in-scope artifact is still verified here; only the global
-		// skip_signature_verification switch (handled above) can disable that.
-		// A per-host required stance is not immune to the per-host skip: setting
-		// both on one host is the allowed-but-perverse push-required + pull-skip
-		// combination, and the skip wins on the verify side.
-		if policy.SkipSignatureVerification && !orgRequired {
+		if check.Skip == workspaceconfig.SignatureSkipRegistry {
 			warn(fmt.Sprintf("signature verification skipped for registry %q (skip_signature_verification: true)", host))
 			continue
 		}
 
-		res, verr := verifyEntity(ctx, opts.Config, e, policy, configured, opts.Target)
+		res, verr := verifyEntity(ctx, opts.Config, e, check.Policy, check.Configured, opts.Target)
 		if verr != nil {
-			if !requireSignature {
-				// Two outcomes leave nothing to verify, and neither is evidence
-				// against the artifact. They are admitted separately because
-				// they are different facts about the registry.
-				if errors.Is(verr, signing.ErrNoSignatureFound()) {
-					// The registry answered and nothing is attached:
-					// verify-if-present means nothing to verify. Not a failure.
-					continue
-				}
-				if errors.Is(verr, oci.ErrReferrerDiscoveryUnavailable()) {
-					// The registry could not be asked, so nothing was
-					// established either way. Treating that as a failed
-					// verification would refuse an artifact on the strength of
-					// a question nobody managed to put — but it is said out
-					// loud, because a check that did not run is not a check
-					// that passed, and silence would read as a clean unsigned
-					// pull. Where a signature IS required this case is
-					// deliberately not admitted here: it falls through to the
-					// halt below, because a required check that could not run
-					// has not passed.
+			// Two outcomes leave no signature to verify — the registry answered
+			// and nothing is attached, and the registry could not be asked — and
+			// whether either stops the pull is the check's one halt decision.
+			absent := errors.Is(verr, signing.ErrNoSignatureFound()) ||
+				errors.Is(verr, oci.ErrReferrerDiscoveryUnavailable())
+			if absent && !check.HaltsWithoutSignature() {
+				switch {
+				case check.Required():
+					// Required, and the host is advisory: the failure is
+					// reported and the pull goes on.
+					warn(fmt.Sprintf("signature verification failed for %s (advisory; continuing): %v", e.URI, verr))
+				case errors.Is(verr, oci.ErrReferrerDiscoveryUnavailable()):
+					// The registry could not be asked, so nothing was established
+					// either way. Treating that as a failed verification would
+					// refuse an artifact on the strength of a question nobody
+					// managed to put — but it is said out loud, because a check
+					// that did not run is not a check that passed, and silence
+					// would read as a clean unsigned pull. Where a signature IS
+					// required this case is not admitted: a required check that
+					// could not run has not passed.
 					warn(fmt.Sprintf("signature verification could not run for %s "+
 						"(the registry could not answer the signature lookup and no signature is required; continuing): %v", e.URI, verr))
-					continue
 				}
+				// The registry answered and nothing is attached, and nothing
+				// requires a signature: verify-if-present means nothing to verify.
+				continue
 			}
-			if policy.Advisory {
+			if check.Advisory {
 				warn(fmt.Sprintf("signature verification failed for %s (advisory; continuing): %v", e.URI, verr))
 				continue
 			}

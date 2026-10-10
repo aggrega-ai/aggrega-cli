@@ -33,9 +33,9 @@ const ResolutionPathCatalog = "tier-1-catalog"
 const ResolutionPathCache = "tier-2-cache"
 
 // ResolutionPathRegistry is the ResolutionPath a Lookup reports for an entity
-// fetched from a registry during this run. It is the only source whose signature
-// is verified at pull time, which is why ResolvedFromRegistry exists rather than
-// callers testing the value themselves.
+// fetched from a registry during this run. It is the source whose signature a pull
+// always verifies, which is why ResolvedFromRegistry exists rather than callers
+// testing the value themselves.
 const ResolutionPathRegistry = "tier-3-pull"
 
 // ResolutionPathExternal is the ResolutionPath a Lookup reports for the Release's
@@ -129,10 +129,26 @@ func ReportedResolutionSource(resolutionPath string) string {
 }
 
 // ResolvedFromRegistry reports whether a resolution fetched from a registry
-// during this run — the only source whose signature is verified at pull time.
-// Callers match through this predicate rather than against the tag string,
+// during this run — the source whose signature a pull always verifies; a cache
+// resolution is verified by a pull only where nothing records its fact. Callers
+// match through this predicate rather than against the tag string,
 // because a string comparison keeps compiling after the tag is respelled and
 // then silently stops matching, with nothing failing and nothing logged.
 func ResolvedFromRegistry(resolutionPath string) bool {
 	return resolutionPath == ResolutionPathRegistry
+}
+
+// AcquiredFromRegistry reports whether the bytes a resolution served were
+// acquired from a registry — fetched during this run, or read from the content
+// cache an earlier fetch filled. Those are the resolutions a pull verified the
+// signature of when it fetched the bytes, and so the ones a recorded signature can
+// speak for. A catalog directory, the copy inside the compiler binary, and the
+// Release's own documents are none of them: nothing ever verifies a registry
+// signature for bytes that did not come from one.
+//
+// Like ResolvedFromRegistry it exists so a caller matches through a predicate
+// rather than against the tags, which keep compiling after a respelling and then
+// silently stop matching.
+func AcquiredFromRegistry(resolutionPath string) bool {
+	return resolutionPath == ResolutionPathRegistry || resolutionPath == ResolutionPathCache
 }

@@ -153,17 +153,19 @@ func SignatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 // pass.
 //
 // It is the verification question asked of the one reading of a registry host,
-// and it forms no reading of its own: host is read through registryhost.Normalize
-// and judged by registryhost.IsHost — the predicate the configuration load holds
-// every configured host to. So a host a configuration may name is never one this
-// filter skips: "localhost" is verified, and a host written in capitals or with
-// its default port is verified under the policy configured for it.
+// and it forms no reading of its own: it is registryhost.NamesHost, which reads
+// host through registryhost.Normalize and judges it by registryhost.IsHost — the
+// predicate the configuration load holds every configured host to. So a host a
+// configuration may name is never one this filter skips: "localhost" is verified,
+// and a host written in capitals or with its default port is verified under the
+// policy configured for it.
 //
-// It lives here because every one of its uses asks the same verification
-// question — on the shared fetch home, on the closure signature pass, and on the
-// install path that skips both for a local reference.
+// It is kept under this name because the shared fetch home and the install path
+// that skips it for a local reference both ask it here; the closure signature
+// pass asks the same predicate through catalog.SignatureSubjectOf, which the
+// build's recorded-signature check shares with it.
 func IsRegistryHost(host string) bool {
-	return registryhost.IsHost(registryhost.Normalize(host))
+	return registryhost.NamesHost(host)
 }
 
 // stampedHostFunctions returns the entity's machine-owned host-function stamp, or

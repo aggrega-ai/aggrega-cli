@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/filefailure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
@@ -131,6 +132,48 @@ func IndexRepoPath(workspaceRoot, cacheDir, host, repo string) string {
 func SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest string) string {
 	name := pathsegment.Encode(bundleDigest) + ".bundle"
 	return filepath.Join(workspaceRoot, cacheDir, "signatures", name)
+}
+
+// VerifyCachedSignatureBundle re-hashes the cached signature-bundle blob a
+// lockfile row records the digest of, and refuses one that is missing,
+// unreadable, or hashes to anything other than bundleDigest. It returns the
+// blob's path either way, so a caller naming the artifact the bundle belongs to
+// can name the file too.
+//
+// It is the one implementation of that check. A build runs it over every row it
+// reads that records a bundle digest, entity rows of every kind and plugin rows
+// alike, before anything renders; and a plugin's bytes are held to it again at
+// the moment they are resolved, which reaches the surfaces that load a plugin
+// outside a build.
+//
+// It is a byte comparison and nothing more: no signature is re-verified, no
+// network is reached and no trust material is read, so it holds in a build with
+// no network access at all. The blob location is the one SignatureBundlePath
+// spells, the slot the pull's write populated whatever directory either was run
+// from, and the hash is digest.ContentDigest, the spelling the pull recorded.
+//
+// The blob is held, before it is opened, to the root the pull's write of it is
+// held to (readscope.CheckCacheRead over writescope.RootForCache): a cache
+// directory, or the blob itself, that leads through a link out of that root is
+// not read, and the read hold's refusal is returned as itself, naming the link,
+// rather than as a bundle that does not match.
+//
+// The refusals wrap ErrSignatureBundleDigestMismatch and name the file and both
+// digests; naming the artifact is the caller's, which holds it.
+func VerifyCachedSignatureBundle(workspaceRoot, cacheDir, bundleDigest string) (string, error) {
+	path := SignatureBundlePath(workspaceRoot, cacheDir, bundleDigest)
+	if err := readscope.CheckCacheRead(writescope.RootForCache(workspaceRoot, cacheDir), path); err != nil {
+		return path, err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return path, fmt.Errorf("cached signature bundle %s is unreadable: %w", path, ErrSignatureBundleDigestMismatch())
+	}
+	if got := digest.ContentDigest(b); got != bundleDigest {
+		return path, fmt.Errorf("cached signature bundle %s has digest %s, recorded digest is %s: %w",
+			path, got, bundleDigest, ErrSignatureBundleDigestMismatch())
+	}
+	return path, nil
 }
 
 // ReadCached returns the bytes previously stored at the cache slot

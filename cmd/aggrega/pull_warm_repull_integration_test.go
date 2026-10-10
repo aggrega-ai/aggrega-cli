@@ -219,9 +219,9 @@ func TestIntegration_WarmRePullWritesTheColdPullsLockfile(t *testing.T) {
 // registry that requires signatures, with the plugin and the catalog published
 // signed under a keyed signer the workspace pins. The cold pull verifies every
 // registry-resolved reference and records the verified fact on its row; a warm
-// re-pull verifies nothing, because a cache hit does not touch the registry, so
-// the facts survive only if they are carried forward from the lockfile the cold
-// pull wrote. The registry-stopped re-pull is the sharp case: a signature that is
+// re-pull over rows that each record their fact verifies nothing, because a cache
+// hit does not touch the registry, so the facts survive only if they are carried
+// forward from the lockfile the cold pull wrote. The registry-stopped re-pull is the sharp case: a signature that is
 // required and cannot be looked up halts a pull, so a re-pull that still sent the
 // cached .wasm to the signature pass would fail outright.
 func TestIntegration_WarmRePullKeepsTheSignatureFact(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -64,6 +65,9 @@ func trustConditions() []error {
 		signing.ErrTrustRootLoad(),
 		signing.ErrUnsignedPushRefused(),
 		signing.ErrSigningPolicyRequiresSignature(),
+		// A build reading a row a signing requirement covers that records no
+		// verified signature.
+		lockfile.ErrSignatureNotRecorded(),
 		// A registry's advertised trust policy.
 		registrytrust.ErrNoTrustAdvertised(),
 		registrytrust.ErrMalformedTrust(),

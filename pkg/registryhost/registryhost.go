@@ -20,6 +20,9 @@
 //     trust lookup is keyed.
 //   - Normalize produces that keyed spelling from a reference or an authority,
 //     and Same compares two of them through it.
+//   - NamesHost decides whether a reference names a registry host at all — the
+//     two readings above composed — which is what a signature check asks before
+//     looking a trust policy up.
 //   - IsRepositoryPath decides whether a string is a repository path, and
 //     LocationOf splits a registry location — a host, optionally followed by a
 //     repository path — into the two.
@@ -331,6 +334,22 @@ const hostForms = "a lowercase host name containing a dot (registry.example.com)
 // path the same way.
 const pathShape = `one or more segments joined by "/", each of lowercase letters and digits, which may be ` +
 	`separated inside a segment by ".", "_", "__" or dashes, with no tag, digest or trailing "/"`
+
+// NamesHost reports whether ref names a registry host — whether the authority it
+// carries, in the spelling a trust lookup is keyed on, is one IsHost accepts — so
+// that a registry signature exists to check for it, rather than ref being the
+// first segment of a host-less catalog identity or of a relative-path artifact.
+//
+// It is the question a signature check asks of a reference before looking a
+// trust policy up for it, composed from the two readings above and forming none
+// of its own: ref is read through Normalize and judged by IsHost, the predicate
+// the configuration load holds every configured host to. So a host a
+// configuration may name is never one this skips: "localhost" names a host, and
+// a host written in capitals or with its default port names the host its policy
+// is kept under.
+func NamesHost(ref string) bool {
+	return IsHost(Normalize(ref))
+}
 
 // Same reports whether a and b name the same registry host under the one
 // reading: their Normalize spellings are equal. Every lookup that matches a

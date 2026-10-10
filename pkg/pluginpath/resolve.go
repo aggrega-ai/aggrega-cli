@@ -35,9 +35,12 @@
 // .wasm content-digest pin governs the bytes, and for a guest that carried a
 // verified signature fact when it was pulled, the cached signature bundle is
 // re-hashed against its recorded digest — a byte/hash integrity check over the
-// cached blob. Signature verification itself — the network-touching, trust-root
-// operation — is a pull/lock-time step recorded as a lockfile fact and is never
-// re-run at build; this package performs no signature verification.
+// cached blob, the same one a build runs over every lockfile row it reads before
+// anything renders, where it also refuses a row a signing requirement covers that
+// records no signature at all. Signature verification itself — the
+// network-touching, trust-root operation — is a pull/lock-time step recorded as a
+// lockfile fact and is never re-run at build; this package performs no signature
+// verification.
 package pluginpath
 
 import (
@@ -58,7 +61,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // Tier names the source a plugin's bytes came from. It is a provenance tag: the
@@ -316,24 +318,6 @@ type PluginExportClaim struct {
 	Operates string
 	Scope    string
 }
-
-// ErrPluginBundleDigestMismatch reports that a signed guest's cached signature
-// bundle is missing, unreadable, or its bytes hash to a value other than the
-// digest the lockfile recorded for it. Before a guest that carried a verified
-// signature fact loads, the build re-hashes its cached signature-bundle blob and
-// compares the hash to the recorded digest; a drifted or absent blob halts the
-// load with this sentinel. The check is a byte/hash comparison — never a
-// cryptographic signature re-verification, and never a network or trust-root
-// touch — so it holds under the hermetic, air-gapped build.
-func ErrPluginBundleDigestMismatch() error { return errPluginBundleDigestMismatch }
-
-var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-mismatch", cerrors.Meta{
-	ShortCode: "E0144",
-	Message:   "cached signature bundle does not match its recorded digest",
-	RulePlace: cerrors.NotARule("A signed guest's cached signature bundle is missing, unreadable, or hashes to something " +
-		"other than the digest the lockfile recorded. The blob is read and re-hashed when the " +
-		"comparison runs, so what it reports is an integrity comparison that did not hold."),
-})
 
 // ErrPluginArtifactNotFound reports that a plugin's .wasm artifact resolved through
 // none of the sources the cascade consults: it is not compiled into the binary, not
@@ -619,8 +603,8 @@ func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure
 // recorded bundle digest, and returns the ResolvedPlugin. A content-pin mismatch
 // halts with a wrapped oci.ErrFetchIntegrity naming the URI, the tier, the
 // computed digest, and the pin. A cached-bundle mismatch halts with a wrapped
-// ErrPluginBundleDigestMismatch. With no pin and no bundle digest (the linter
-// path) the bytes pass through unchecked.
+// oci.ErrSignatureBundleDigestMismatch. With no pin and no bundle digest (the
+// linter path) the bytes pass through unchecked.
 //
 // This is the single site that decides whether a plugin's bytes are held to a
 // recorded identity, and it is therefore where the rule lives: honour a recorded
@@ -743,38 +727,32 @@ func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 		uri, tier.Source(), remedy)
 }
 
-// verifyCachedBundle re-hashes the cached signature-bundle blob recorded for a
-// signed guest and compares it to the recorded digest, before the guest loads.
-// It is an offline byte/hash integrity gate over the cached blob — no signature
-// re-verification, no network, no trust-root — so it holds under the hermetic
-// build. A missing or unreadable blob, or a hash that differs from the recorded
-// digest, halts with a wrapped ErrPluginBundleDigestMismatch naming the plugin.
-// The blob location is spelled once in oci.SignatureBundlePath, and it is read
-// under the same workspace root the cached .wasm is read under, so the slot
-// checked here is the slot the pull path wrote whatever directory either was
-// run from; the re-hash uses the single content-address spelling in
-// digest.ContentDigest, so an intact bundle matches.
+// verifyCachedBundle holds a signed guest's cached signature-bundle blob to the
+// digest its lockfile row recorded, before the guest loads, through the one
+// implementation of that check (oci.VerifyCachedSignatureBundle): an offline
+// byte/hash comparison — no signature re-verification, no network, no trust root
+// — so it holds under the hermetic build. A missing or unreadable blob, or a hash
+// that differs from the recorded digest, halts with a wrapped
+// oci.ErrSignatureBundleDigestMismatch naming the plugin and where its bytes came
+// from. The blob is read under the same workspace root the cached .wasm is read
+// under, so the slot checked here is the slot the pull path wrote whatever
+// directory either was run from.
 //
-// The blob is held, before it is opened, to the root the pull's write of it is held
-// to (readscope.CheckCacheRead over writescope.RootForCache): a cache directory, or
-// the blob itself, that leads through a link out of that root is not read, and the
-// read hold's refusal is returned as itself, naming the link, rather than as a
-// bundle that does not match.
+// A build runs the same check over every row it reads before anything renders,
+// so a build reaches here only with a bundle that already matched. This site is
+// kept because it is where a plugin's bytes are resolved on every surface — a
+// validation, a preview, a lint, an extension command's registration — and the
+// surfaces that load a plugin outside a build pass no other.
+//
+// A read-hold refusal — a cache directory, or the blob itself, leading through a
+// link out of the root the pull's write of it is held to — is returned as
+// itself, naming the link, rather than as a bundle that does not match.
 func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
-	path := oci.SignatureBundlePath(r.workspaceRoot, r.cacheDir, bundleDigest)
-	if err := readscope.CheckCacheRead(writescope.RootForCache(r.workspaceRoot, r.cacheDir), path); err != nil {
+	if _, err := oci.VerifyCachedSignatureBundle(r.workspaceRoot, r.cacheDir, bundleDigest); err != nil {
+		if errors.Is(err, oci.ErrSignatureBundleDigestMismatch()) {
+			return fmt.Errorf("plugin %q resolved from %s: %w", uri, tier.Source(), err)
+		}
 		return err
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf(
-			"plugin %q resolved from %s: cached signature bundle %s is unreadable: %w",
-			uri, tier.Source(), path, ErrPluginBundleDigestMismatch())
-	}
-	if got := digest.ContentDigest(b); got != bundleDigest {
-		return fmt.Errorf(
-			"plugin %q resolved from %s: cached signature bundle %s has digest %s, recorded digest is %s: %w",
-			uri, tier.Source(), path, got, bundleDigest, ErrPluginBundleDigestMismatch())
 	}
 	return nil
 }

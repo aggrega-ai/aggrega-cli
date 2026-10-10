@@ -252,22 +252,26 @@ func TestLibraryVerifyLocationEqualsPushLocation(t *testing.T) {
 		// location is version-independent, and a version left in the path would name
 		// a repository that does not exist.
 		for _, uri := range []string{libTestName, libTestURI} {
-			gotKind, gotLocation, bound := verifySubjectBinding(reg, axis, closure.VerifiableRef{URI: uri})
+			subject, bound := catalog.SignatureSubjectOf(reg, axis, closure.VerifiableRef{URI: uri})
 			if !bound {
 				t.Errorf("%s %q: no location bound, so the reference would be verified against its "+
 					"host-less identity and skipped", kind, uri)
 				continue
 			}
-			if gotKind != kind {
-				t.Errorf("%s %q: kind = %q, want %q — the org signing policy scopes on this", kind, uri, gotKind, kind)
+			if subject.Kind != kind {
+				t.Errorf("%s %q: kind = %q, want %q — the org signing policy scopes on this", kind, uri, subject.Kind, kind)
 			}
 			// The push side spells this as registry + "/" + the location rule; the
 			// rule itself is what both sides must agree on, so the comparison is
 			// against the rule rather than against the command's one-line wrapper
 			// around it.
-			if want := reg + "/" + catalog.OCILocation(kind, "", libTestName); gotLocation != want {
+			if want := reg + "/" + catalog.OCILocation(kind, "", libTestName); subject.Location != want {
 				t.Errorf("%s %q: verify location %q != push location %q (verify and push split the "+
-					"single location rule)", kind, uri, gotLocation, want)
+					"single location rule)", kind, uri, subject.Location, want)
+			}
+			if subject.Host != reg {
+				t.Errorf("%s %q: host = %q, want %q — the trust policy is looked up under the bound "+
+					"location's host", kind, uri, subject.Host, reg)
 			}
 		}
 	}
@@ -281,12 +285,9 @@ func TestLibraryVerifyLocationEqualsPushLocation(t *testing.T) {
 func TestLibraryVerifyBindingRefusesWithoutARegistry(t *testing.T) {
 	t.Parallel()
 	axis := closure.VerifiableAxis{Axis: "SchemaLibraries", Kind: "SchemaLibrary"}
-	kind, location, bound := verifySubjectBinding("", axis, closure.VerifiableRef{URI: libTestURI})
-	if bound || location != "" {
-		t.Errorf("with no default registry the binding must refuse; got location %q bound=%v", location, bound)
-	}
-	if kind != "SchemaLibrary" {
-		t.Errorf("the kind is known from the axis even when no location binds; got %q", kind)
+	subject, bound := catalog.SignatureSubjectOf("", axis, closure.VerifiableRef{URI: libTestURI})
+	if bound || subject.Location != "" || subject.Host != "" {
+		t.Errorf("with no default registry the binding must refuse; got %+v bound=%v", subject, bound)
 	}
 }
 
