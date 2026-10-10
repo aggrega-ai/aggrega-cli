@@ -289,6 +289,9 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		if refusal != "" {
 			return &pathRefusal{text: refusal}
 		}
+		if tw, err = s.subjectWorkspace(tw, req.release); err != nil {
+			return &pathRefusal{text: explainToolError("Could not resolve the workspace to lint in.", err, "")}
+		}
 		return lintops.RunRelease(ctx, tw.rw, releasePath, nil, nil, stdout, stderr, req.collect)
 	}
 	pluginPath := req.plugin
@@ -302,6 +305,9 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 	entityPath, refusal := tw.workspacePath("lint", "entity", req.entity)
 	if refusal != "" {
 		return &pathRefusal{text: refusal}
+	}
+	if tw, err = s.subjectWorkspace(tw, req.entity); err != nil {
+		return &pathRefusal{text: explainToolError("Could not resolve the workspace to lint in.", err, "")}
 	}
 	return lintops.RunEntity(ctx, lintops.Config{
 		EntityPath:     entityPath,

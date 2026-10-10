@@ -152,6 +152,10 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 	if pathRefused != "" {
 		return errorResult(pathRefused)
 	}
+	if tw, err = s.subjectWorkspace(tw, a.Release); err != nil {
+		return errorResult(explainToolError(
+			"Could not resolve the workspace to report where an attachment belongs.", err, ""))
+	}
 	lf, lockRefused := tw.loadReleaseLockfile(releasePath)
 	if lockRefused != "" {
 		return errorResult(lockRefused)

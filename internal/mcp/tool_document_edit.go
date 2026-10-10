@@ -210,6 +210,9 @@ func editDocumentInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if tw, err = s.subjectWorkspace(tw, a.File); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace to apply the edit in.", err, ""))
+	}
 
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
 	res, err := editops.Apply(ctx, tw.root, editops.Options{

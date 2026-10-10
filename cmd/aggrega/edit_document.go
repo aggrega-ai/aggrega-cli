@@ -86,7 +86,7 @@ func newEditDocumentCmd() *cobra.Command {
 			"what aggrega validate answers.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rw, err := workspaceFromContext(cmd.Context())
+			rw, err := workspaceForSubject(cmd.Context(), args[1])
 			if err != nil {
 				return err
 			}

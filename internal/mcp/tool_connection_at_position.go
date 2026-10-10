@@ -181,6 +181,12 @@ func connectionAtPositionInvoke(s *server, ctx context.Context, args json.RawMes
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	// Both arguments name a path, and the call is about the Release: the document
+	// is read in that Release's graph.
+	if tw, err = s.subjectWorkspace(tw, a.Release); err != nil {
+		return errorResult(explainToolError(
+			"Could not resolve the workspace to report the connection at a position in.", err, ""))
+	}
 	lf, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)

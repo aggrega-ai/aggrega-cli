@@ -263,6 +263,10 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	tw, err := s.subjectWorkspace(tw, a.Release)
+	if err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace to report attach candidates.", err, "feature"))
+	}
 	lf, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)

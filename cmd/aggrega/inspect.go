@@ -153,7 +153,13 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 				}
 				return inspectRawPlugin(cmd.Context(), out, pluginFlag)
 			}
-			rw, err := workspaceFromContext(cmd.Context())
+			// A name looked up in a Release's terms is about that Release; anything
+			// else is about the identifier itself, which names a file when it is one.
+			subject := releaseFlag
+			if subject == "" {
+				subject = args[0]
+			}
+			rw, err := workspaceForSubject(cmd.Context(), subject)
 			if err != nil {
 				return err
 			}

@@ -144,7 +144,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 			return err
 		}
 	}
-	rw, err := workspaceFromContext(cmd.Context())
+	rw, err := workspaceForSubject(cmd.Context(), opts.releasePath)
 	if err != nil {
 		return err
 	}

@@ -149,7 +149,13 @@ func newValidateCmd() *cobra.Command {
 				}
 				return validatePluginBinary(cmd.Context(), pluginPath, pluginType, path, cmd.OutOrStdout())
 			}
-			rw, err := workspaceFromContext(cmd.Context())
+			// The run is about the Release where one is named — an entity beside it
+			// is checked in its terms — and about the entity otherwise.
+			subject := releasePath
+			if subject == "" {
+				subject = path
+			}
+			rw, err := workspaceForSubject(cmd.Context(), subject)
 			if err != nil {
 				return err
 			}

@@ -350,6 +350,9 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		if refusal != "" {
 			return tw.answer(errorResult(refusal))
 		}
+		if tw, err = s.subjectWorkspace(tw, strings.TrimSpace(*a.Release)); err != nil {
+			return errorResult(explainToolError("Could not resolve the workspace to list its entities.", err, "component"))
+		}
 		reach, refusal = tw.releaseReach("list-entities", releasePath)
 		if refusal != "" {
 			return tw.answer(errorResult(refusal))

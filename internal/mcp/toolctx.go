@@ -336,8 +336,9 @@ func schemaWithoutProperties(schema string, names []string) string {
 // toolWorkspace is the per-call resolved workspace context the closure-driven
 // tools build their compiler-operations inputs from. Every field is derived
 // once per tool call from the call's workspace_root and catalog_dirs arguments
-// (or the process working directory when absent); the server holds no cached
-// workspace, so two concurrent calls never share resolution state.
+// (or the process working directory when absent), and from the file the call is
+// about where that moves the workspace (subjectWorkspace); the server holds no
+// cached workspace, so two concurrent calls never share resolution state.
 type toolWorkspace struct {
 	rw       *workspaceconfig.ResolvedWorkspace
 	root     string
@@ -424,6 +425,38 @@ func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogD
 		flagDirs:  catalogDirs,
 		transport: s.transport,
 	}
+}
+
+// subjectWorkspace returns the workspace a call runs in once its subject is
+// known: tw itself, except where the shared resolution finds the workspace again
+// from the folder of the file the call is about
+// (workspaceconfig.ResolvedWorkspace.ForSubject), in which case it is that
+// workspace, built as every call's is. subject is the Release or document
+// argument as the caller sent it, the same value handed to workspacePath, and
+// the resolution alone decides whether it moves anything.
+//
+// A call resolves every path it names through tw, the workspace it resolved
+// first, and asks this before that workspace is used for anything else. Where it
+// moves the workspace, tw's root was the folder resolution started from, so a
+// relative path among them is read there, as the command line reads a relative
+// path in the folder it runs in; what the workspace decides — its root, its
+// configuration, its catalog directories and its cache — is then the subject's.
+//
+// A held view carries no resolution to ask, and is returned as it is: the one
+// operation answered over one refuses a call naming a Release before it gets
+// here.
+func (s *server) subjectWorkspace(tw *toolWorkspace, subject string) (*toolWorkspace, error) {
+	if tw.rw == nil {
+		return tw, nil
+	}
+	rw, err := tw.rw.ForSubject(subject)
+	if err != nil {
+		return nil, toolWorkspaceRefusal(err)
+	}
+	if rw == tw.rw {
+		return tw, nil
+	}
+	return s.toolWorkspaceOf(rw, tw.flagDirs), nil
 }
 
 // toolWorkspaceRefusal frames a failure to resolve a call's workspace, so a call

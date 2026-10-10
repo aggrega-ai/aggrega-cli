@@ -151,6 +151,11 @@ type ResolvedWorkspace struct {
 	flagRoot string
 	lookup   func(string) string
 
+	// withoutGlobal records that the resolution left the global file layer out
+	// (ResolveWithoutGlobal), so a resolution taken again from its inputs for
+	// another start (ForSubject) leaves it out too.
+	withoutGlobal bool
+
 	// platform is the platform whose conventions place the files that belong to
 	// the machine rather than to the workspace — the global configuration file
 	// read beneath the cascade and written by a global write, and the root the
@@ -226,6 +231,9 @@ func (r *ResolvedWorkspace) Warnings() []string {
 // `.aggrega-config.yaml` (no `workspace:` block) does NOT anchor a root — it
 // still contributes to the cascade, but cannot hijack the root (the failure
 // mode where a home/global settings file marks every directory as a root).
+// Where that last fallback was taken from the working directory with nothing
+// named, a run about a Release or document named by an absolute path asks
+// [ResolvedWorkspace.ForSubject] for the workspace that file's folder resolves.
 //
 // Cascade: every `.aggrega-config.yaml` from the root down to start
 // contributes; nearer-to-start overrides farther via the existing
@@ -296,6 +304,7 @@ func ResolveWithoutGlobalOn(platform machinedirs.Platform, start, flagRoot strin
 	rw.start = start
 	rw.flagRoot = flagRoot
 	rw.lookup = lookup
+	rw.withoutGlobal = true
 	return rw, nil
 }
 

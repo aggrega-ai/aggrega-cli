@@ -151,7 +151,7 @@ published; --pin-sources=false skips it for one run.`,
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
-			rw, err := workspaceFromContext(cmd.Context())
+			rw, err := workspaceForSubject(cmd.Context(), path)
 			if err != nil {
 				return err
 			}

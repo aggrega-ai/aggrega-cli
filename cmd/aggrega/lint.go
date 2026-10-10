@@ -117,7 +117,11 @@ status is the same under either format.`,
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
-			rw, err := workspaceFromContext(cmd.Context())
+			subject := opts.releasePath
+			if subject == "" {
+				subject = path
+			}
+			rw, err := workspaceForSubject(cmd.Context(), subject)
 			if err != nil {
 				return err
 			}

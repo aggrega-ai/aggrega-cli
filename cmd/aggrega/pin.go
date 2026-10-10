@@ -66,7 +66,7 @@ aggrega pull --pin-sources and aggrega push --pin-sources run this same step on 
 write the same bytes.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rw, err := workspaceFromContext(cmd.Context())
+			rw, err := workspaceForSubject(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}

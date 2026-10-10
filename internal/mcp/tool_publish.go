@@ -423,7 +423,15 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 	if err != nil {
 		return publishops.PushConfig{}, explainToolError("Could not resolve the workspace to publish from.", err, "")
 	}
-	if refusal := missingDestination(publishEntityToolName, a.Registry, tw); refusal != "" {
+	// The workspace the publication runs in is the entity's, where the entity names
+	// that one; the paths this call names are still resolved through tw below. It
+	// is asked first because the destination is read from its configuration before
+	// any path is.
+	from, err := s.subjectWorkspace(tw, strings.TrimSpace(a.Entity))
+	if err != nil {
+		return publishops.PushConfig{}, explainToolError("Could not resolve the workspace to publish from.", err, "")
+	}
+	if refusal := missingDestination(publishEntityToolName, a.Registry, from); refusal != "" {
 		return publishops.PushConfig{}, refusal
 	}
 	pluginPath := ""
@@ -453,7 +461,7 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		PinSources:                a.PinSources,
 		EnvLookup:                 credentials.envLookup,
 		ConfiguredKeyNotConsulted: credentials.configuredKeyNotConsulted,
-		Workspace:                 tw.rw,
+		Workspace:                 from.rw,
 		IdentitySupply:            credentials.supply,
 		DestinationSupply:         toolDestinationSupply,
 		PinSourcesSupply:          toolPinSourcesSupply,

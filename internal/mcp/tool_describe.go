@@ -300,6 +300,9 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 		if refusal != "" {
 			return tw.answer(errorResult(refusal))
 		}
+		if tw, err = s.subjectWorkspace(tw, release); err != nil {
+			return errorResult(explainToolError("Could not resolve the workspace for the catalog lookup.", err, "component"))
+		}
 		if _, refusal = tw.releaseReach("describe", releasePath); refusal != "" {
 			return tw.answer(errorResult(refusal))
 		}
@@ -493,6 +496,9 @@ func (s *server) describeRelease(
 	releasePath, refusal := tw.workspacePath("describe", "release", release)
 	if refusal != "" {
 		return errorResult(refusal)
+	}
+	if tw, err = s.subjectWorkspace(tw, release); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
 	}
 	lf, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {

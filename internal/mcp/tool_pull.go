@@ -273,6 +273,10 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if tw, err = s.subjectWorkspace(tw, release); err != nil {
+		return errorResult(explainToolError(
+			"Could not resolve the workspace for the dependency resolution.", err, "release"))
+	}
 
 	// The render the resolution conserved is dropped here, and the drop is the
 	// answer rather than an omission: this tool reports what was pinned, and a

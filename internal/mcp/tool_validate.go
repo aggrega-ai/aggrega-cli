@@ -307,6 +307,9 @@ func validateReleaseScope(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if tw, err = s.subjectWorkspace(tw, release); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "release"))
+	}
 	lf, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)
@@ -393,12 +396,23 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	dirs, named := tw.dirs, tw.named
 	releasePath := ""
 	if release != "" {
 		if releasePath, refusal = tw.workspacePath("validate", "release", release); refusal != "" {
 			return errorResult(refusal)
 		}
+	}
+	// The call is about the Release where it names one, and about the entity
+	// otherwise: the Release's terms are what the entity is checked in.
+	subject := release
+	if subject == "" {
+		subject = entity
+	}
+	if tw, err = s.subjectWorkspace(tw, subject); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "component"))
+	}
+	dirs, named := tw.dirs, tw.named
+	if release != "" {
 		// Asking for the Release's reach is what refuses a value naming no
 		// Release file; the reach itself is set aside, since the check reads no
 		// workspace document beyond the entity and the stack it is handed.

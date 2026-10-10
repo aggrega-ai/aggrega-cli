@@ -178,7 +178,11 @@ it when the flag is absent. With neither, a server on standard input and
 output resolves the workspace from the directory it was started in, while
 a listener is refused before it binds unless a workspace resolves there:
 one reached over HTTP serves a workspace an operator chose rather than
-whichever directory it happened to be started in.
+whichever directory it happened to be started in. Where that directory
+anchors no workspace, a call naming no workspace of its own that names
+its Release or document by an absolute path is answered in the workspace
+that file's folder resolves, as the same command typed at a terminal in
+that directory would be.
 
 For the same reason a call arriving over HTTP cannot name a workspace of
 its own. Sending workspace_root or catalog_dirs is refused, naming the

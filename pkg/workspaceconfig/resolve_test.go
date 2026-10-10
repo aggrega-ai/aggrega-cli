@@ -26,7 +26,7 @@ func write(t *testing.T, path, content string) {
 
 // TestResolveWorkspaceKeyAnchorsRoot: a config carrying a `workspace:` block
 // anchors the root; a bare config nearer the start does NOT anchor and is
-// climbed past (item 5 narrowing).
+// climbed past.
 func TestResolveWorkspaceKeyAnchorsRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

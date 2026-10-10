@@ -154,6 +154,9 @@ func pinInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolR
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if tw, err = s.subjectWorkspace(tw, entity); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace to pin in.", err, ""))
+	}
 	res, err := entitypin.Pin(ctx, entitypin.Options{Workspace: tw.rw, EntityPath: entityPath, DryRun: a.DryRun})
 	if err != nil {
 		return errorResult(explainToolError("The pin step did not complete, so the lock beside the entity is unchanged.", err, ""))
@@ -181,6 +184,9 @@ func publishReach(s *server, args json.RawMessage) opsurface.Reach {
 	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
 	if err != nil {
+		return opsurface.ReachRegistry
+	}
+	if tw, err = s.subjectWorkspace(tw, strings.TrimSpace(a.Entity)); err != nil {
 		return opsurface.ReachRegistry
 	}
 	if tw.cfg.PushPinsSources(a.PinSources) {

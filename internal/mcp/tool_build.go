@@ -423,6 +423,9 @@ func buildReach(s *server, args json.RawMessage) opsurface.Reach {
 	if err != nil {
 		return opsurface.ReachNone
 	}
+	if tw, err = s.subjectWorkspace(tw, a.Release); err != nil {
+		return opsurface.ReachNone
+	}
 	if tw.cfg.FillsLockfile(a.AutoPull) {
 		return opsurface.ReachWorkspace
 	}
@@ -456,6 +459,9 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	releasePath, refusal := tw.workspacePath("build", "release", a.Release)
 	if refusal != "" {
 		return errorResult(refusal)
+	}
+	if tw, err = s.subjectWorkspace(tw, a.Release); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for the build.", err, "release"))
 	}
 
 	// The catalog directories this Release reads, before the fill and the render.

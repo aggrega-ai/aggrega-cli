@@ -54,6 +54,19 @@ type lazyWorkspace struct {
 	// which would otherwise be told to run what it is already running.
 	withholdFirstRun bool
 
+	// mu guards subject and resolved, which a command sets and the resolution
+	// reads.
+	mu sync.Mutex
+	// subject is the Release or document the running command is about, as the
+	// reader typed it, or empty for a command about neither. The resolution asks
+	// the shared rule whether the workspace is found again from that file's
+	// folder (workspaceconfig.ResolvedWorkspace.ForSubject), so it is named before
+	// the workspace is first read (workspaceForSubject).
+	subject string
+	// resolved records that the resolution has run, after which the workspace
+	// every reader of this invocation sees is settled.
+	resolved bool
+
 	once sync.Once
 	ws   *workspaceconfig.ResolvedWorkspace
 	err  error
@@ -72,12 +85,22 @@ func (l *lazyWorkspace) advisoryWriter() io.Writer {
 
 func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 	l.once.Do(func() {
+		l.mu.Lock()
+		subject := l.subject
+		l.resolved = true
+		l.mu.Unlock()
 		l.ws, l.err = workspaceconfig.ResolveOn(l.platform, "", l.flagRoot, l.lookup)
 		if l.err == nil {
 			// The flag layer is composed here, on the one resolution every
 			// command reads, which is what makes it the ladder's top layer
 			// rather than a knob each command would have to remember to honour.
 			l.ws = l.ws.WithFlags(l.flags)
+			// The command's subject is applied before anything is written, so the
+			// advisories below are the ones of the workspace the command uses, and
+			// a resolution set aside for the subject's says nothing.
+			l.ws, l.err = l.ws.ForSubject(subject)
+		}
+		if l.err == nil {
 			out := l.advisoryWriter()
 			for _, w := range l.ws.Warnings() {
 				fmt.Fprintf(out, "warning: %s\n", w)
@@ -259,6 +282,37 @@ func workspaceFromContext(ctx context.Context) (*workspaceconfig.ResolvedWorkspa
 	l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace)
 	if !ok {
 		return nil, fmt.Errorf("internal: workspace resolver not attached to command context")
+	}
+	return l.get()
+}
+
+// workspaceForSubject is workspaceFromContext for a command about one Release or
+// one document: subject is that argument as the reader typed it, empty where the
+// invocation names none. Where nothing named a root, the folder the command runs
+// in is no workspace and subject is an absolute path, the workspace is the one
+// that file's folder resolves; otherwise it is the one workspaceFromContext
+// returns. Which of the two is decided by the shared rule
+// (workspaceconfig.ResolvedWorkspace.ForSubject), not here.
+//
+// A command calls it in place of workspaceFromContext, before anything reads the
+// workspace, and every later read in the same invocation — through either
+// function, from any code path — returns the same workspace. Naming a subject
+// after the workspace has been read is a wiring error, since a part of the run
+// would already have used a workspace other than the subject's, so it is
+// reported rather than ignored.
+func workspaceForSubject(ctx context.Context, subject string) (*workspaceconfig.ResolvedWorkspace, error) {
+	l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace)
+	if !ok {
+		return nil, fmt.Errorf("internal: workspace resolver not attached to command context")
+	}
+	l.mu.Lock()
+	late := l.resolved && l.subject != subject
+	if !l.resolved {
+		l.subject = subject
+	}
+	l.mu.Unlock()
+	if late {
+		return nil, fmt.Errorf("internal: the workspace was read before the command named the file it is about")
 	}
 	return l.get()
 }

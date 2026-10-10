@@ -135,6 +135,9 @@ func insertionPointInvoke(s *server, ctx context.Context, args json.RawMessage) 
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	if tw, err = s.subjectWorkspace(tw, a.File); err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace to locate an insertion point in.", err, ""))
+	}
 
 	result, err := serve.InsertionPoint(tw.root, file, a.Container, enc)
 	if err != nil {

@@ -132,7 +132,7 @@ carries on: the entity's files are the ones its recorded rules kept.`,
 					return err
 				}
 			}
-			rw, err := workspaceFromContext(cmd.Context())
+			rw, err := workspaceForSubject(cmd.Context(), opts.releasePath)
 			if err != nil {
 				return err
 			}

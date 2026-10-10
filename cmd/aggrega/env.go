@@ -47,8 +47,15 @@ const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepend
 // carries no working directory and the path is relative to the workspace root
 // instead — so a reader moving between the two meets one spelling resolving to
 // two files unless each surface says which it means.
+//
+// It states the other direction too, where the Release decides the workspace
+// rather than the workspace the Release: the rule is the shared resolution's
+// (workspaceconfig.ResolvedWorkspace.ForSubject), and this is the sentence a
+// reader typing the flag meets it in.
 const helpReleasePath = "Path to Release YAML file (required). A relative path resolves against " +
-	"the directory you run the command in, not against the workspace root"
+	"the directory you run the command in, not against the workspace root. Where that directory is " +
+	"in no workspace and no root is named, an absolute path finds the workspace from the Release's " +
+	"own folder"
 
 // helpOffline is the offline flag's help text, held beside the composition that
 // reads the flag so the promise a reader is given and the layer that keeps it
