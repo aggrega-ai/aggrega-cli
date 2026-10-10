@@ -31,9 +31,10 @@ import (
 //     one decision whether a recorded fact is accepted (oci.HoldRecordedSignature):
 //     the cached signature bundle is re-hashed against the recorded digest, and a
 //     missing, unreadable or drifted bundle refuses the reference; and the bundle
-//     must have been made for the artifact this resolution read — the hash it
-//     carries of what was signed must be the hash of the digest of the manifest
-//     the build's own read held the reference's bytes to — or the reference is
+//     must have been made for the artifact this resolution read — one of the
+//     hashes it names for what the signature was made for, in either form a pull
+//     accepts, must be the hash of the digest of the manifest the build's own
+//     read held the reference's bytes to — or the reference is
 //     refused as carrying a signature made for a different artifact, whatever the
 //     signing requirement says. That manifest is the resolution's, never a field
 //     of either store: for a lockfile row the closure reference's manifest digest,

@@ -269,11 +269,11 @@ var errSignatureBundleDigestMismatch = cerrors.Register("signature-bundle-digest
 // ErrSignatureForAnotherArtifact reports that a recorded signature fact names a
 // cached signature bundle that is intact — it hashes to the digest the fact
 // records — but was made for a different artifact than the one read for the
-// reference that records it: the hash the bundle carries of what was signed is not
-// the hash of the digest of the manifest the reading side read and held the
-// reference's bytes to. A fact copied from one lockfile row onto another, or from
-// one entry of the record of plugin identities onto another, is the edit that
-// produces it.
+// reference that records it: no hash the bundle names for what the signature was
+// made for (SignedArtifactOf) is the hash of the digest of the manifest the
+// reading side read and held the reference's bytes to. A fact copied from one
+// lockfile row onto another, or from one entry of the record of plugin identities
+// onto another, is the edit that produces it.
 //
 // It is raised by HoldRecordedSignature, the one decision whether a recorded fact
 // is accepted, so a build's check of every recorded fact and the moment a
@@ -296,8 +296,8 @@ func ErrSignatureForAnotherArtifact() error { return errSignatureForAnotherArtif
 var errSignatureForAnotherArtifact = cerrors.Register("signature-for-another-artifact", cerrors.Meta{
 	ShortCode: "E0332",
 	Message:   "signing: the recorded signature was made for a different artifact",
-	RulePlace: cerrors.NotARule("A recorded signature fact names a cached signature bundle that is intact but carries " +
-		"the hash of another artifact than the one read for the reference that records it. The bundle and the " +
+	RulePlace: cerrors.NotARule("A recorded signature fact names a cached signature bundle that is intact but names " +
+		"another artifact than the one read for the reference that records it. The bundle and the " +
 		"manifest are read when the comparison runs, so what it reports is a comparison over cached bytes that " +
 		"did not hold."),
 })

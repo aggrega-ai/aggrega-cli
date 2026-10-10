@@ -8,9 +8,10 @@ package main
 // sub-aggregate pulled from a catalog directory and then moved into the content
 // cache with the manifest a registry serves for it, so the build reads it through
 // the pinned view's cache slot. The row is given a fact whose bundle — intact, in
-// the cache, made by the toolchain's own keyed signer — was made either for the
-// manifest the build reads or for another one, which is what a fact copied from
-// another row is.
+// the cache, in either of the two forms a pull accepts: a message signature made
+// by the toolchain's own keyed signer, or a signed envelope whose statement names
+// the artifact — was made either for the manifest the build reads or for another
+// one, which is what a fact copied from another row is.
 
 import (
 	"context"
@@ -24,12 +25,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 )
 
-// recordSubAggregateFactMadeFor records on the sub-aggregate's row a fact whose
-// cached bundle the keyed signer made over madeFor.
-func recordSubAggregateFactMadeFor(t *testing.T, root, releasePath, madeFor string) {
+// signatureMadeFor is a bundle made over madeFor: a message signature from the
+// keyed signer, or, where envelope is set, a signed envelope naming madeFor.
+func signatureMadeFor(t *testing.T, madeFor string, envelope bool) []byte {
 	t.Helper()
+	if envelope {
+		bundle, _, err := signingtest.KeyedEnvelope(signingtest.Statement(madeFor))
+		if err != nil {
+			t.Fatalf("sign an envelope over %s: %v", madeFor, err)
+		}
+		return bundle
+	}
 	priv, _, err := signing.GenerateKeyedPEM()
 	if err != nil {
 		t.Fatalf("GenerateKeyedPEM: %v", err)
@@ -42,6 +51,14 @@ func recordSubAggregateFactMadeFor(t *testing.T, root, releasePath, madeFor stri
 	if err != nil {
 		t.Fatalf("sign %s: %v", madeFor, err)
 	}
+	return bundle
+}
+
+// recordSubAggregateFactMadeFor records on the sub-aggregate's row a fact whose
+// cached bundle was made over madeFor, in the form envelope picks.
+func recordSubAggregateFactMadeFor(t *testing.T, root, releasePath, madeFor string, envelope bool) {
+	t.Helper()
+	bundle := signatureMadeFor(t, madeFor, envelope)
 	bundleDigest := digest.ContentDigest(bundle)
 	path := oci.SignatureBundlePath(root, ".aggrega/cache", bundleDigest)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -84,18 +101,25 @@ func subAggregateManifestDigest(t *testing.T, root string) string {
 // TestTheCommandLineHoldsARecordedSignatureToTheArtifactItWasMadeFor is the
 // command line's table: the row's own signature builds, and a signature made for
 // another artifact is refused under the hub's built-in requirement and under the
-// hub's own skip alike, named as a reader meets it.
+// hub's own skip alike, named as a reader meets it — in each of the two forms a
+// pull accepts.
 func TestTheCommandLineHoldsARecordedSignatureToTheArtifactItWasMadeFor(t *testing.T) {
 	t.Parallel()
 	rows := []struct {
-		name    string
-		cfg     string
-		another bool
+		name     string
+		cfg      string
+		another  bool
+		envelope bool
 	}{
 		{name: "the row's own signature, under the hub's requirement: builds", cfg: "auto_pull: false\n"},
 		{name: "a signature made for another artifact, under the hub's requirement: refused", cfg: "auto_pull: false\n", another: true},
 		{name: "a signature made for another artifact, under the hub's own skip: still refused",
 			cfg: "auto_pull: false\n" + fakeRegistryTrust, another: true},
+		{name: "the row's own signed envelope, under the hub's requirement: builds", cfg: "auto_pull: false\n", envelope: true},
+		{name: "a signed envelope made for another artifact, under the hub's requirement: refused",
+			cfg: "auto_pull: false\n", another: true, envelope: true},
+		{name: "a signed envelope made for another artifact, under the hub's own skip: still refused",
+			cfg: "auto_pull: false\n" + fakeRegistryTrust, another: true, envelope: true},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -106,7 +130,7 @@ func TestTheCommandLineHoldsARecordedSignatureToTheArtifactItWasMadeFor(t *testi
 			if row.another {
 				madeFor = digest.ContentDigest([]byte("the manifest of another artifact"))
 			}
-			recordSubAggregateFactMadeFor(t, root, releasePath, madeFor)
+			recordSubAggregateFactMadeFor(t, root, releasePath, madeFor, row.envelope)
 
 			err := buildRecordedSignature(t, root, releasePath, catalogDir, row.cfg)
 			if !row.another {

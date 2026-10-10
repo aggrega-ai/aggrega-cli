@@ -244,9 +244,11 @@ func NoManifestRead() MadeFor {
 //     same read). A missing, unreadable or altered bundle is refused with
 //     ErrSignatureBundleDigestMismatch.
 //   - The bundle was made for the artifact read: where madeFor names a manifest,
-//     the hash the bundle carries of what was signed (SignedArtifactOf) is the
-//     hash of that manifest's digest — what a pull's verification compared when
-//     it accepted the bundle. A bundle made for another artifact is refused with
+//     one of the hashes the bundle names for what the signature was made for
+//     (SignedArtifactOf) is the hash of that manifest's digest — what a pull's
+//     verification compared when it accepted the bundle, whether the bundle is a
+//     message signature or a signed envelope whose statement names the artifact.
+//     A bundle made for another artifact is refused with
 //     ErrSignatureForAnotherArtifact, which names the file that records the fact,
 //     the cached bundle and the manifest the build read.
 //
@@ -256,12 +258,14 @@ func NoManifestRead() MadeFor {
 // Two bounds, both deliberate. A reference whose read held its bytes to no
 // manifest (NoManifestRead) is held to the re-hash alone, because nothing it read
 // says which artifact its signature had to be made for. And a bundle in a form
-// SignedArtifactOf does not recognise — a form neither of the toolchain's signers
-// writes — is held to the re-hash alone too: a pull may have accepted it, and
-// refusing it here would refuse an artifact whose verification succeeded.
+// SignedArtifactOf does not recognise is held to the re-hash alone too. Such a
+// bundle is in neither of the forms a pull's verification accepts, and a pull
+// refuses one that verifies in a form this reading does not recognise, so no pull
+// records it: it reaches the cache only by an edit to the cache, which is the
+// bound stated below.
 //
 // It verifies no signature, reaches no network and reads no trust material: it
-// reads two cached files and compares hashes, so it holds in a build with no
+// reads the cached bundle and compares hashes, so it holds in a build with no
 // network access at all. What it cannot therefore tell is a bundle written into
 // the cache by hand, made out for the artifact read, from one a pull verified.
 //

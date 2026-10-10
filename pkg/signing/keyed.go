@@ -97,7 +97,7 @@ func (k *KeyedSigner) SignPayload(payload []byte) ([]byte, error) {
 //
 // This verifies a DETACHED raw ECDSA signature over a payload — a
 // different operation from VerifyKeyedBundle, which verifies a full
-// Sigstore bundle's message signature and binds it to an artifact digest.
+// Sigstore bundle's signature and binds it to an artifact digest.
 // They consume different inputs (a raw sig vs a bundle) and serve different
 // surfaces; do not merge them into one.
 func VerifyKeyed(pubPEM, payload, sig []byte) error {

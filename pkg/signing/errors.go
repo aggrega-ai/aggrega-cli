@@ -56,13 +56,22 @@ var errKeylessLive = cerrors.Register("keyless-signing-requires-network", cerror
 // against the pinned public key. It is the catch-all negative outcome of
 // bundle verification, distinct from ErrUntrustedIdentity (a structurally
 // valid signature whose signer is not trusted).
+//
+// The artifact binding is checked twice, and either failing is an
+// artifact-digest mismatch reported here: once by the verification library,
+// and once, after the library accepts the bundle, by the toolchain's own reading
+// of which artifact the signature was made for — the reading a build holds a
+// recorded fact to. A bundle the library verifies that the reading does not find
+// made for the artifact, or whose form it cannot read the artifact from, is
+// refused with this condition, and the occurrence says which.
 func ErrSignatureVerificationFailed() error { return errSignatureVerificationFailed }
 
 var errSignatureVerificationFailed = cerrors.Register("signature-verification-failed", cerrors.Meta{
 	ShortCode: "E0180",
 	Message:   "signing: signature bundle does not verify",
 	RulePlace: cerrors.NotARule("A signature bundle does not verify against the trust anchor and policy at pull time. It " +
-		"reports a cryptographic verification that did not hold."),
+		"reports a verification that did not hold: a cryptographic check, or the binding of the signature to the " +
+		"artifact it was verified for."),
 })
 
 // ErrUntrustedIdentity is returned when a signature bundle verifies

@@ -4,12 +4,14 @@
 package compilerops
 
 // The build's check of recorded signature facts, held to which artifact each fact's
-// bundle was made for. The check has three inputs that decide the outcome — which
-// store records the fact, whether the fact is the row's own or one copied from
-// another, and whether a signing requirement covers the reference — so the cells
-// are enumerated rather than left to two margins: two stores, two facts, a
-// requirement on or off, every cell asserted. The requirement axis is in the grid
-// because the refusal must not be wired behind it.
+// bundle was made for. The check has four inputs that decide the outcome — which
+// store records the fact, which of the two forms a pull accepts its bundle is in,
+// whether the fact is the row's own or one copied from another, and whether a
+// signing requirement covers the reference — so the cells are enumerated rather
+// than left to margins: two stores, two forms, two facts, a requirement on or off,
+// every cell asserted. The requirement axis is in the grid because the refusal
+// must not be wired behind it, and the form axis because the reading of which
+// artifact a signature was made for is a different decoding for each form.
 //
 // Beside the grid stand the bounds the check states, each as a row of its own: a
 // reference read from a catalog directory, and a bundle in a form the reading does
@@ -29,29 +31,59 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // bindingCell is one cell of the grid.
 type bindingCell struct {
+	envelope bool
 	copied   bool
 	required bool
 }
 
 func (c bindingCell) String() string {
-	fact := "the row's own signature"
+	form := "a message signature"
+	if c.envelope {
+		form = "a signed envelope"
+	}
+	fact := "the row's own"
 	if c.copied {
-		fact = "a signature copied from another row"
+		fact = "copied from another row"
 	}
 	req := "no requirement"
 	if c.required {
 		req = "a requirement"
 	}
-	return fact + " under " + req
+	return form + ", " + fact + ", under " + req
 }
 
 func bindingCells() []bindingCell {
-	return []bindingCell{{false, false}, {false, true}, {true, false}, {true, true}}
+	var cells []bindingCell
+	for _, envelope := range []bool{false, true} {
+		for _, copied := range []bool{false, true} {
+			for _, required := range []bool{false, true} {
+				cells = append(cells, bindingCell{envelope: envelope, copied: copied, required: required})
+			}
+		}
+	}
+	return cells
+}
+
+// factFor makes, in the cell's form, a signature over madeFor — a manifest digest —
+// caches its bundle where a pull caches a verified one, and returns the fact a pull
+// records for it.
+func (c bindingCell) factFor(t *testing.T, root, cacheDir string, signer *signing.KeyedSigner, madeFor string) *lockfile.VerifiedSignature {
+	t.Helper()
+	if !c.envelope {
+		return signedFactFor(t, root, cacheDir, signer, madeFor)
+	}
+	bundle, _, err := signingtest.KeyedEnvelope(signingtest.Statement(madeFor))
+	if err != nil {
+		t.Fatalf("sign an envelope over %s: %v", madeFor, err)
+	}
+	return gateFact(t, root, cacheDir, bundle)
 }
 
 // bindingConfig is the configuration a cell runs under.
@@ -105,8 +137,8 @@ func TestTheLockfileStoreHoldsAFactToTheArtifactItWasMadeFor(t *testing.T) {
 			manifestA := digest.ContentDigest([]byte("manifest of test/a"))
 			manifestB := digest.ContentDigest([]byte("manifest of test/b"))
 			signer := copiedFactSigner(t)
-			factA := signedFactFor(t, root, cacheDir, signer, manifestA)
-			factB := signedFactFor(t, root, cacheDir, signer, manifestB)
+			factA := c.factFor(t, root, cacheDir, signer, manifestA)
+			factB := c.factFor(t, root, cacheDir, signer, manifestB)
 			if c.copied {
 				copied := *factA
 				factB = &copied
@@ -142,8 +174,8 @@ func TestTheTrustRecordStoreHoldsAFactToTheArtifactItWasMadeFor(t *testing.T) {
 			cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
 			releasePath := filepath.Join(root, "release.yaml")
 			signer := copiedFactSigner(t)
-			factA := signedFactFor(t, root, cacheDir, signer, a.ManifestDigest)
-			factB := signedFactFor(t, root, cacheDir, signer, b.ManifestDigest)
+			factA := c.factFor(t, root, cacheDir, signer, a.ManifestDigest)
+			factB := c.factFor(t, root, cacheDir, signer, b.ManifestDigest)
 			if c.copied {
 				copied := *factA
 				factB = &copied

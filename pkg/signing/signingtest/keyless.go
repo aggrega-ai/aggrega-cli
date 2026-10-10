@@ -11,6 +11,7 @@ import (
 
 	protobundle "github.com/sigstore/protobuf-specs/gen/pb-go/bundle/v1"
 	protocommon "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
+	protodsse "github.com/sigstore/protobuf-specs/gen/pb-go/dsse"
 	protorekor "github.com/sigstore/protobuf-specs/gen/pb-go/rekor/v1"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -50,10 +51,13 @@ type KeylessSignature struct {
 const bundleMediaTypeV01 = "application/vnd.dev.sigstore.bundle+json;version=0.1"
 
 // hashedRekordKind and hashedRekordVersion name the log entry type the
-// in-memory log records a message signature as.
+// in-memory log records a message signature as, and dsseKind and dsseVersion
+// the one it records a signed envelope as.
 const (
 	hashedRekordKind    = "hashedrekord"
 	hashedRekordVersion = "0.0.1"
+	dsseKind            = "dsse"
+	dsseVersion         = "0.0.1"
 )
 
 // NewKeylessAuthority creates the in-memory authorities.
@@ -105,15 +109,101 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 		return KeylessSignature{}, err
 	}
 
-	logID, err := a.vs.RekorLogID()
+	content := &protobundle.Bundle_MessageSignature{
+		MessageSignature: &protocommon.MessageSignature{
+			MessageDigest: &protocommon.HashOutput{
+				Algorithm: protocommon.HashAlgorithm(algorithm),
+				Digest:    msg.Digest(),
+			},
+			Signature: msg.Signature(),
+		},
+	}
+	bundleJSON, err := a.serialize(leaf.Raw, entries, timestamps, hashedRekordKind, hashedRekordVersion, content)
 	if err != nil {
 		return KeylessSignature{}, err
 	}
+	return KeylessSignature{Bundle: bundleJSON, LoggedAt: loggedAt, SignedAt: signedAt}, nil
+}
+
+// Attest signs statement — an in-toto statement, see Statement — as identity,
+// vouched for by issuer, in the other form a signature can take: a signed
+// envelope whose statement names the artifacts it was made for as its subjects,
+// rather than a signature over the artifact itself. The in-memory log records it
+// at loggedAt, truncated to the second, which must lie within ten minutes after
+// the call.
+//
+// A keyless verification of the bundle against artifactDigest succeeds where the
+// statement names, as a subject, the hash of artifactDigest's string — which is
+// what Statement writes.
+func (a *KeylessAuthority) Attest(identity, issuer string, statement []byte, loggedAt time.Time) (KeylessSignature, error) {
+	signedAt := time.Now().UTC()
+	loggedAt = loggedAt.UTC().Truncate(time.Second)
+	entity, err := a.vs.AttestAtTime(identity, issuer, statement, loggedAt, false)
+	if err != nil {
+		return KeylessSignature{}, fmt.Errorf("attest: %w", err)
+	}
+
+	vc, err := entity.VerificationContent()
+	if err != nil {
+		return KeylessSignature{}, err
+	}
+	leaf := vc.Certificate()
+	if leaf == nil {
+		return KeylessSignature{}, fmt.Errorf("the in-memory attestation carries no certificate")
+	}
+	sc, err := entity.SignatureContent()
+	if err != nil {
+		return KeylessSignature{}, err
+	}
+	env := sc.EnvelopeContent()
+	if env == nil || env.RawEnvelope() == nil {
+		return KeylessSignature{}, fmt.Errorf("the in-memory attestation is not a signed envelope")
+	}
+	raw := env.RawEnvelope()
+	payload, err := base64.StdEncoding.DecodeString(raw.Payload)
+	if err != nil {
+		return KeylessSignature{}, fmt.Errorf("decode the envelope's payload: %w", err)
+	}
+	signatures := make([]*protodsse.Signature, 0, len(raw.Signatures))
+	for _, s := range raw.Signatures {
+		sig, err := base64.StdEncoding.DecodeString(s.Sig)
+		if err != nil {
+			return KeylessSignature{}, fmt.Errorf("decode the envelope's signature: %w", err)
+		}
+		signatures = append(signatures, &protodsse.Signature{Sig: sig, Keyid: s.KeyID})
+	}
+	timestamps, err := entity.Timestamps()
+	if err != nil {
+		return KeylessSignature{}, err
+	}
+	entries, err := entity.TlogEntries()
+	if err != nil {
+		return KeylessSignature{}, err
+	}
+
+	content := &protobundle.Bundle_DsseEnvelope{
+		DsseEnvelope: &protodsse.Envelope{Payload: payload, PayloadType: raw.PayloadType, Signatures: signatures},
+	}
+	bundleJSON, err := a.serialize(leaf.Raw, entries, timestamps, dsseKind, dsseVersion, content)
+	if err != nil {
+		return KeylessSignature{}, err
+	}
+	return KeylessSignature{Bundle: bundleJSON, LoggedAt: loggedAt, SignedAt: signedAt}, nil
+}
+
+// serialize assembles and marshals one bundle: the leaf certificate, the log's
+// entries recorded as the given kind and version with the signed promise each
+// carries, the timestamps, and the signature content.
+func (a *KeylessAuthority) serialize(leaf []byte, entries []*tlog.Entry, timestamps [][]byte, kind, version string, content any) ([]byte, error) {
+	logID, err := a.vs.RekorLogID()
+	if err != nil {
+		return nil, err
+	}
 	var tlogEntries []*protorekor.TransparencyLogEntry
 	for _, entry := range entries {
-		tle, err := a.entryWithPromise(entry, logID)
+		tle, err := a.entryWithPromise(entry, logID, kind, version)
 		if err != nil {
-			return KeylessSignature{}, err
+			return nil, err
 		}
 		tlogEntries = append(tlogEntries, tle)
 	}
@@ -127,31 +217,30 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 		VerificationMaterial: &protobundle.VerificationMaterial{
 			Content: &protobundle.VerificationMaterial_X509CertificateChain{
 				X509CertificateChain: &protocommon.X509CertificateChain{
-					Certificates: []*protocommon.X509Certificate{{RawBytes: leaf.Raw}},
+					Certificates: []*protocommon.X509Certificate{{RawBytes: leaf}},
 				},
 			},
 			TlogEntries:               tlogEntries,
 			TimestampVerificationData: &protobundle.TimestampVerificationData{Rfc3161Timestamps: signed},
 		},
-		Content: &protobundle.Bundle_MessageSignature{
-			MessageSignature: &protocommon.MessageSignature{
-				MessageDigest: &protocommon.HashOutput{
-					Algorithm: protocommon.HashAlgorithm(algorithm),
-					Digest:    msg.Digest(),
-				},
-				Signature: msg.Signature(),
-			},
-		},
+	}
+	switch c := content.(type) {
+	case *protobundle.Bundle_MessageSignature:
+		pb.Content = c
+	case *protobundle.Bundle_DsseEnvelope:
+		pb.Content = c
+	default:
+		return nil, fmt.Errorf("signature content %T is neither a message signature nor a signed envelope", content)
 	}
 	b, err := bundle.NewBundle(pb)
 	if err != nil {
-		return KeylessSignature{}, fmt.Errorf("assemble bundle: %w", err)
+		return nil, fmt.Errorf("assemble bundle: %w", err)
 	}
 	bundleJSON, err := b.MarshalJSON()
 	if err != nil {
-		return KeylessSignature{}, fmt.Errorf("marshal bundle: %w", err)
+		return nil, fmt.Errorf("marshal bundle: %w", err)
 	}
-	return KeylessSignature{Bundle: bundleJSON, LoggedAt: loggedAt, SignedAt: signedAt}, nil
+	return bundleJSON, nil
 }
 
 // entryWithPromise returns the protobuf form of one in-memory log entry with the
@@ -159,7 +248,7 @@ func (a *KeylessAuthority) Sign(identity, issuer, artifactDigest string, loggedA
 // The in-memory log keeps its promise to itself, so it is signed again here over
 // the same payload the log signs: the entry's body, integrated time, index and
 // log.
-func (a *KeylessAuthority) entryWithPromise(entry *tlog.Entry, logID string) (*protorekor.TransparencyLogEntry, error) {
+func (a *KeylessAuthority) entryWithPromise(entry *tlog.Entry, logID, kind, version string) (*protorekor.TransparencyLogEntry, error) {
 	tle := entry.TransparencyLogEntry()
 	if tle == nil {
 		return nil, fmt.Errorf("the in-memory log entry has no protobuf form")
@@ -176,7 +265,7 @@ func (a *KeylessAuthority) entryWithPromise(entry *tlog.Entry, logID string) (*p
 	return &protorekor.TransparencyLogEntry{
 		LogIndex:          tle.LogIndex,
 		LogId:             tle.LogId,
-		KindVersion:       &protorekor.KindVersion{Kind: hashedRekordKind, Version: hashedRekordVersion},
+		KindVersion:       &protorekor.KindVersion{Kind: kind, Version: version},
 		IntegratedTime:    tle.IntegratedTime,
 		InclusionPromise:  &protorekor.InclusionPromise{SignedEntryTimestamp: set},
 		CanonicalizedBody: tle.CanonicalizedBody,

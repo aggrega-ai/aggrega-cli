@@ -16,6 +16,8 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/verify"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // TrustedIdentity is one acceptable keyless signing identity: a
@@ -40,23 +42,43 @@ type TrustedIdentity struct {
 
 // VerifyKeyedBundle verifies a Sigstore bundle (as attached to an OCI
 // referrer) against a pinned public key, fully offline. The bundle's
-// message signature must verify against pubPEM, and the signed artifact
-// must equal artifactDigest — the immutable manifest digest the publisher
+// signature must verify against pubPEM, and the artifact it was made for
+// must be artifactDigest — the immutable manifest digest the publisher
 // committed to. No identity provider, transparency log, or timestamp
 // authority is contacted: a keyed bundle carries no certificate, so the
 // trust anchor is the pinned key alone.
 //
 // This is the bundle-level counterpart to VerifyKeyed. VerifyKeyed checks
 // a detached ECDSA signature over a raw payload; VerifyKeyedBundle checks
-// a full Sigstore bundle's message signature against the pinned key and
+// a full Sigstore bundle's signature against the pinned key and
 // binds it to the artifact digest. They are deliberately distinct
 // operations over distinct inputs — do not merge them.
 //
+// The bundle may be a message signature, the form the toolchain's signers
+// write, or a signed envelope whose statement names the artifact as a subject;
+// the verification library accepts both. Once it has, the bundle is held to the
+// artifact a second time, by the toolchain's own reading of which artifact a
+// signature was made for (see holdToTheArtifactVerified), so a bundle is
+// accepted here only where that reading agrees — the same reading a build holds
+// the recorded fact to.
+//
 // Returns nil on success; a wrapped ErrSignatureVerificationFailed when
-// the bundle does not verify against the key or the artifact binding
-// fails; ErrUntrustedIdentity is never returned here (keyed mode has no
+// the bundle does not verify against the key, the artifact binding
+// fails, or the toolchain's reading does not agree with it;
+// ErrUntrustedIdentity is never returned here (keyed mode has no
 // identity).
 func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error {
+	if err := verifyKeyedWithLibrary(bundleBytes, pubPEM, artifactDigest); err != nil {
+		return err
+	}
+	return holdToTheArtifactVerified(bundleBytes, artifactDigest)
+}
+
+// verifyKeyedWithLibrary is the verification library's half of
+// VerifyKeyedBundle: the bundle verified against the pinned key and bound to
+// the artifact digest by the library alone, before the toolchain's own reading
+// is asked anything.
+func verifyKeyedWithLibrary(bundleBytes, pubPEM []byte, artifactDigest string) error {
 	b, err := LoadBundle(bundleBytes)
 	if err != nil {
 		return err
@@ -146,13 +168,64 @@ const logTimestampType = "Tlog"
 // when identities is empty; a wrapped ErrUntrustedIdentity when the
 // certificate matches no identity; a wrapped ErrSignatureVerificationFailed
 // for any other verification failure (broken chain, missing tlog entry,
-// artifact-digest mismatch, tampered bundle).
+// artifact-digest mismatch, tampered bundle), and where the toolchain's own
+// reading of which artifact the signature was made for does not agree with the
+// library's verification (see holdToTheArtifactVerified). The bundle may be a
+// message signature or a signed envelope whose statement names the artifact as
+// a subject, as for VerifyKeyedBundle.
 func VerifyKeylessBundle(bundleBytes []byte, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
+	matched, err := verifyKeylessWithLibrary(bundleBytes, trustedMaterial, identities, artifactDigest)
+	if err != nil {
+		return KeylessIdentity{}, err
+	}
+	if err := holdToTheArtifactVerified(bundleBytes, artifactDigest); err != nil {
+		return KeylessIdentity{}, err
+	}
+	return matched, nil
+}
+
+// verifyKeylessWithLibrary is the verification library's half of
+// VerifyKeylessBundle: the serialized bundle parsed and verified by the library
+// alone, before the toolchain's own reading is asked anything.
+func verifyKeylessWithLibrary(bundleBytes []byte, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
 	b, err := LoadBundle(bundleBytes)
 	if err != nil {
 		return KeylessIdentity{}, err
 	}
 	return verifyKeylessEntity(b, trustedMaterial, identities, artifactDigest)
+}
+
+// holdToTheArtifactVerified holds a bundle the verification library has just
+// verified for artifactDigest to the toolchain's own reading of which artifact
+// it was made for (oci.SignedArtifactOf), and refuses it where the two do not
+// agree: where the reading recognises the bundle's form and does not find it made
+// for artifactDigest, and where it does not recognise the form at all.
+//
+// It is the pull's half of one agreement. A build cannot verify a signature, so
+// it holds a recorded fact to its artifact through that same reading of the
+// cached bundle the fact names; a bundle a pull verified and the reading disagreed
+// about would be one the build could not hold to its artifact, or would hold to
+// another. Refusing it here keeps every recorded fact one the build's reading
+// agrees with, and turns any divergence between the two readers into a refusal at
+// the pull that met it rather than a mistake at some later build. The reading
+// mirrors the library's own binding, and a parity test holds the two together, so
+// over a bundle the library verifies neither refusal is expected; each is a
+// guard, not a policy.
+//
+// Both refusals wrap ErrSignatureVerificationFailed — the artifact binding did not
+// hold as the toolchain reads it — and say which case it is. No signature is
+// verified here; the bundle's bytes are decoded and hashes compared.
+func holdToTheArtifactVerified(bundleBytes []byte, artifactDigest string) error {
+	signed, recognised := oci.SignedArtifactOf(bundleBytes)
+	if !recognised {
+		return fmt.Errorf("signing: %w: its cryptographic check holds, but it is in a form from which the artifact it "+
+			"was made for cannot be read", ErrSignatureVerificationFailed())
+	}
+	if !signed.MadeFor(artifactDigest) {
+		return fmt.Errorf("signing: %w: its cryptographic check holds, but it does not name %s as the artifact it "+
+			"was made for", ErrSignatureVerificationFailed(), artifactDigest)
+	}
+	return nil
 }
 
 // verifyKeylessEntity runs the keyless verification policy against an
