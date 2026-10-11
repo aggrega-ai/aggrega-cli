@@ -368,6 +368,30 @@ func nestSegmentOf(engine Provider) string {
 	return ""
 }
 
+// OmitsReporter is the optional interface an engine implements to report whether
+// its provider honours the omit entries a source render carries: that it leaves
+// out every rendered document an entry matches, and returns one count per entry it
+// was handed. A provider routed to a Wasm guest reports the claim from the guest's
+// live describe() self-report, so whether a provider leaves documents out is the
+// provider's own statement rather than anything the host decides about it.
+type OmitsReporter interface {
+	HonoursOmits() bool
+}
+
+// honoursOmits reports whether engine declares that it honours omit entries. It is
+// the single seam the claim is read through — the described presentation's facts
+// read it, and the rules refusing a document whose provider does not honour its
+// entries read those facts — so the claim resolves from the engine's own report
+// independently of its concrete type. An engine that does not implement the
+// interface makes no such claim, which is the safe answer: a document declaring
+// omits is then refused rather than rendered with nothing left out.
+func honoursOmits(engine Provider) bool {
+	if r, ok := engine.(OmitsReporter); ok {
+		return r.HonoursOmits()
+	}
+	return false
+}
+
 // AssemblyNameAnnotationReporter is the optional interface an engine implements
 // to report a boundary annotation whose resolved value names the assembled
 // artifact of a dispatch group. A provider that folds a dispatch group's

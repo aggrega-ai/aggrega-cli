@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.omits/marked
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      # Names the unit the first omits entry leaves out. Declared sensitive, so the
+      # entry built from it reaches the provider marked.
+      secret_name: { type: string, sensitive: true }
+      # Names the unit the second omits entry leaves out. Not declared sensitive, so
+      # the entry built from it carries no mark.
+      plain_name: { type: string }

@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.omits/sidecar
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      # Which of the sidecar chart's two objects to leave out; unset leaves neither.
+      leave_out: { type: string }

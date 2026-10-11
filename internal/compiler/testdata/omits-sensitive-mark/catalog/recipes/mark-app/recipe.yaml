@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: omits-mark-app
+  version: "1.0.0"
+spec:
+  capability: omits-example
+  implements: core/omits/mark-app
+  # The provider renders a fixed set of units whatever its source holds; the
+  # directory is here because a source render needs one.
+  source: ./src

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: omits-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/omits/app: omits-app:1.0.0
+    features:
+      type:
+        feature.omits/fact-reader: omits-fact-reader:1.0.0
+        feature.omits/sidecar: omits-sidecar:1.0.0
+        feature.omits/guard: omits-guard:1.0.0

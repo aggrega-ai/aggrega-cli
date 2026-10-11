@@ -79,6 +79,12 @@ type PhaseBState struct {
 	// leaves, which are marked per key instead.
 	SensitiveValues bool
 
+	// Omits are the omit entries the Recipe's source render hands its provider, as
+	// B.1 resolved them against the context the values mapping is evaluated against
+	// (see EvaluateOmits). Empty for a Recipe declaring none, or whose every entry its
+	// when dropped. Populated at B.1; nil before then.
+	Omits []ResolvedOmit
+
 	// SensitiveWorkload reports that the workload template that produced
 	// ParsedWorkload reads a value Withheld names. It is the same answer that
 	// decides how the checks of that workload word their findings, recorded once

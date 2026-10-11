@@ -87,7 +87,10 @@ type (
 	LinkResolveInput           = rendercore.LinkResolveInput
 	LinkResolveOutput          = rendercore.LinkResolveOutput
 	NodeProvenance             = rendercore.NodeProvenance
+	OmitEntry                  = rendercore.OmitEntry
+	OmitFieldsWithheld         = rendercore.OmitFieldsWithheld
 	ReassembleInput            = rendercore.ReassembleInput
+	ResolvedOmit               = rendercore.ResolvedOmit
 	ReassembleOutput           = rendercore.ReassembleOutput
 	RenderEdge                 = rendercore.RenderEdge
 	RenderNodeInput            = rendercore.RenderNodeInput
@@ -133,6 +136,7 @@ const (
 
 // Pure placement, provenance, value-flattening, and codec constructors.
 var (
+	OmitEntriesOf            = rendercore.OmitEntriesOf
 	OrderedMapToPlain        = rendercore.OrderedMapToPlain
 	PlainValue               = rendercore.PlainValue
 	ClampYAMLIndent          = rendercore.ClampYAMLIndent

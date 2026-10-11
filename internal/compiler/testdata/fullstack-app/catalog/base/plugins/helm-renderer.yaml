@@ -55,6 +55,7 @@ spec:
         artifactsStandalone: true
       boundaryAssembly: none
       reusableInstance: true
+      omits: true
   exports:
     - name: render_node
   runtime:

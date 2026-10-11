@@ -43,9 +43,14 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 // keyed by output filename, and the advisories the render raised about what it
 // emitted, in the order the render met what each one is about. Advisories never
 // change a file.
+//
+// Omitted holds one count per omit entry the render was handed, in the order they
+// arrived: how many rendered documents each entry matched and left out of Files.
+// It is nil for a render handed none.
 type ChartRender struct {
 	Files      map[string][]byte
 	Advisories []renderctx.Diagnostic
+	Omitted    []int
 }
 
 // RenderLoadedChart is [RenderChart] for a caller that reads the files alone: it
@@ -287,12 +292,19 @@ func RenderChart(
 	// the one classification the declared names are keyed by too ([kindScopes]).
 	placement := newNamespacePlacement(rendercore.NamespaceFromAnnotations(nodeCtx.Annotations), classifyKinds(roots), nodeCtx.YAMLIndent)
 
+	// The omit entries the node's render was handed, matched against every document
+	// as the emission below reaches it. The kinds above are classified over every
+	// rendered document, those left out included, so leaving a document out changes
+	// nothing about how the documents kept are placed.
+	omits := newOmitSelection(nodeCtx.Omits)
+
 	// emitDocuments places, labels, annotates, keys, and stores each split document
 	// from one source (a rendered template or a chart CRD file). sourcePath names the
 	// origin: it seeds the deterministic fallback filename for identity-less
 	// documents and names the source in a collision halt. Templates and CRD files
 	// share this one emission path so both surfaces are placed, derive filenames,
-	// inject provenance, and detect collisions identically.
+	// inject provenance, detect collisions, and are matched against the omit entries
+	// identically.
 	emitDocuments := func(docs []renderedDocument, sourcePath string) error {
 		// Placement comes first, because the namespace a document writes is part of
 		// the identity its filename is derived from: a placed resource is named
@@ -325,6 +337,16 @@ func RenderChart(
 		}
 
 		for i := range docs {
+			// A document an omit entry matches is left out here, after every
+			// document's identity is settled and before anything is written into
+			// it. The identities and their tiebreakers above are counted over the
+			// documents as rendered, so leaving one out moves no other file's name;
+			// and a document left out is in none of the files returned, which is
+			// what the names this render declares and the facts it reports are read
+			// from.
+			if omits.leaveOut(docs[i]) {
+				continue
+			}
 			id := ids[i]
 			if idCount[id] > 1 {
 				id = id + "-" + strconv.Itoa(i)
@@ -360,7 +382,7 @@ func RenderChart(
 		}
 	}
 
-	return ChartRender{Files: out, Advisories: placement.advisories}, nil
+	return ChartRender{Files: out, Advisories: placement.advisories, Omitted: omits.omitted()}, nil
 }
 
 // renderedDocument is one YAML document split out of a rendered template: its

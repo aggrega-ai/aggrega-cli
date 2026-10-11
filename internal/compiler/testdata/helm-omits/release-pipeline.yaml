@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: omits-pipeline
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: omits-one
+  manifest: omits-pipeline-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        app: {}

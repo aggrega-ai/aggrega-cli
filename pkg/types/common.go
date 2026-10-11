@@ -520,3 +520,22 @@ type PipelineStep struct {
 	// When and Optional are orthogonal: a step may declare both.
 	When string `json:"when,omitempty" yaml:"when,omitempty"`
 }
+
+// OmitEntry is one entry of a Recipe's or FeatureRecipe's omits list: a document
+// the entity's source renders that is to be left out of the output, named by the
+// document's own kind, its name and, where the entry gives one, its namespace.
+// Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/omits/items,
+// and identically in the FeatureRecipe schema.
+//
+// Every field is a template, evaluated against the context the entity's values
+// mapping is evaluated against. When is evaluated before the others: a falsy When
+// drops the entry, so its other fields are never evaluated, and an empty When keeps
+// it. What the resolved Kind, Name and Namespace select is the rendering
+// provider's own contract; the compiler hands the resolved strings over and reads
+// back how many documents each entry matched.
+type OmitEntry struct {
+	Kind      string `json:"kind" yaml:"kind"`
+	Name      string `json:"name" yaml:"name"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	When      string `json:"when,omitempty" yaml:"when,omitempty"`
+}

@@ -17,11 +17,19 @@
 // reports one count per entry, in the order the entries arrived, and reports none
 // when it was handed none.
 //
+// A render handed entries also writes one more file, received-omits.txt, saying for
+// each entry, in the order it arrived, whether the input marked it sensitive. That
+// is what lets a build read the mark as this guest received it, rather than as the
+// host meant to send it. The file names no field of any entry: a marked entry's
+// fields are kept out of every text the guest returns, this one included.
+//
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o omits-provider.wasm ./
 package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	pdk "github.com/extism/go-pdk"
 )
@@ -57,7 +65,12 @@ type omitEntry struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+	Sensitive bool   `json:"sensitive,omitempty"`
 }
+
+// receivedOmitsPath is the file a render handed entries writes its account of
+// their marks to.
+const receivedOmitsPath = "received-omits.txt"
 
 // renderNodeInput is the sliver of the render input this guest reads.
 type renderNodeInput struct {
@@ -115,6 +128,13 @@ func render_node() int32 {
 		if !left {
 			out.Files = append(out.Files, renderedFile{Path: u.path, Content: []byte(u.body)})
 		}
+	}
+	if len(in.Omits) > 0 {
+		var received strings.Builder
+		for i, e := range in.Omits {
+			fmt.Fprintf(&received, "omits[%d] sensitive=%t\n", i, e.Sensitive)
+		}
+		out.Files = append(out.Files, renderedFile{Path: receivedOmitsPath, Content: []byte(received.String())})
 	}
 
 	raw, err := json.Marshal(out)

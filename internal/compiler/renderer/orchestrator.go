@@ -1038,6 +1038,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rules over a Recipe or FeatureRecipe that declares omit entries whose
+		// provider does not declare it honours them, asked against the same
+		// presentation and the same enumeration.
+		//
+		// They are asked here, ahead of every render dispatch, because what they read
+		// is settled once the documents are bound and each provider has described
+		// itself — and a provider that leaves nothing out would otherwise render the
+		// very documents the author asked to leave out. They come after the other
+		// refusals above, so a build carrying one of those faults reports it first.
+		if err := runOmitsProviderRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The advisory over the two providers a connection's ends render through,
 		// invoked against the same presentation and the same enumeration. It is
 		// asked here because both providers and both capability claims are settled
@@ -1928,6 +1941,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// recorded it. It travels beside the declarations rather than inside them
 		// because it is read from a template, which a declaration set never is.
 		nodeCtx.SensitiveValues = state.SensitiveValues
+		// The omit entries the values pass resolved, which only this node's source
+		// render reads.
+		nodeCtx.Omits = state.Omits
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
 		// drains into result.Warnings at the end of the per-node sequence. Set once

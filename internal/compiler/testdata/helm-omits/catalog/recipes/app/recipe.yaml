@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: omits-app
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/omits/app
+  source: ./chart
+  # Each entry is active only where the Release asks for it, so one Recipe serves
+  # every cell: nothing left out, one controller left out, the settings object
+  # left out, and an entry naming a controller the chart does not render.
+  omits:
+    - when: '{{ ne (optional .infra "leave_out" "") "" }}'
+      kind: Deployment
+      name: '{{ .context.rendered_name }}-{{ .infra.leave_out }}'
+    - when: '{{ .infra.leave_out_settings }}'
+      kind: ConfigMap
+      name: shared-settings

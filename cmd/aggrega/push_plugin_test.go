@@ -541,6 +541,7 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
         artifactsStandalone: true
       boundaryAssembly: none
       reusableInstance: true
+      omits: true
   runtime:
     maxMemoryPages: 4096
 `)
@@ -584,6 +585,7 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
         artifactsStandalone: true
       boundaryAssembly: none
       reusableInstance: false
+      omits: true
   runtime:
     maxMemoryPages: 4096
 `)

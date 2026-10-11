@@ -222,6 +222,108 @@ type NodeRenderContext struct {
 	// files the guest returned, whether or not facts accompany them. Host-only: not
 	// part of any wire projection sent to a guest.
 	RenderFactSink func([]RenderFact)
+	// Omits are the omit entries this node's source render hands its provider: the
+	// entries of the rendering document's omits list whose when kept them, in the
+	// order that document declares them, each resolved to plain strings. Empty for a
+	// document declaring none, and then the render's input carries none either.
+	//
+	// They reach the source render and no other crossing: a workload synthesis and an
+	// artifacts placement read nothing here, so what those emit is never filtered.
+	// A Feature attachment's render carries a copy of this context and replaces the
+	// entries with its own FeatureRecipe's, because entries an author wrote for the
+	// host's source name nothing the attachment renders.
+	Omits []ResolvedOmit
+}
+
+// ResolvedOmit is one active omit entry as a source render carries it: the entry the
+// provider is handed, and what the host needs to report on the count the provider
+// returns for it.
+//
+// The provider matches by Entry's fields and is told, through the entry's mark, whether
+// Withheld names any of them; Position describes the entry to whoever reads a report
+// about it and never reaches a guest.
+type ResolvedOmit struct {
+	// Entry is the entry's kind, name and namespace as its templates resolved them. A
+	// namespace that resolved to the empty string is absent, which places it exactly
+	// where an entry naming none is placed.
+	//
+	// Its Sensitive is never set on this side. Whether the entry is marked is Withheld's
+	// to say, and [OmitEntriesOf] derives the mark from it when the wire list is built,
+	// so the mark has one home here rather than two that could disagree.
+	Entry OmitEntry
+	// Position is the entry's index in the list its document declares, counting the
+	// entries a falsy when dropped, so a report names the entry the author wrote
+	// wherever it sits in that list.
+	Position int
+	// Withheld names the fields whose templates read a value an author declared
+	// sensitive. A report about the entry quotes none of them. The provider is handed
+	// them unchanged, because matching needs the resolved strings, and is told the
+	// entry is marked when any of them is named here.
+	Withheld OmitFieldsWithheld
+}
+
+// OmitFieldsWithheld names which of an omit entry's three resolved fields were
+// produced by a template reading a value an author declared sensitive. It is read
+// from each field's template over the declarations, never from what the template
+// produced.
+type OmitFieldsWithheld struct {
+	Kind      bool
+	Name      bool
+	Namespace bool
+}
+
+// Any reports whether any of the three fields is withheld, which is what marks the
+// whole entry sensitive on a render's input: the wire mark covers the entry rather
+// than naming a field.
+func (w OmitFieldsWithheld) Any() bool {
+	return w.Kind || w.Name || w.Namespace
+}
+
+// omitFieldsWithheldByMark is what a marked entry says about its fields to the side
+// that only receives the mark: every field may have been produced from a value
+// declared sensitive, because the mark does not name which one was.
+func omitFieldsWithheldByMark(marked bool) OmitFieldsWithheld {
+	return OmitFieldsWithheld{Kind: marked, Name: marked, Namespace: marked}
+}
+
+// OmitEntriesOf returns the omits list a render input carries for a set of resolved
+// entries, in the order they were resolved, each marked sensitive where Withheld
+// names any of its fields. It is nil for none, so an input built for a document
+// declaring no entries carries no list at all and its payload is the one it would be
+// without the key; an entry no declared value produced carries no mark, so its bytes
+// are the ones it would have without the mark.
+//
+// It and [ResolvedOmitsOf] are the two directions of one correspondence — the host
+// building the wire list from what it resolved, a guest rebuilding the entries it
+// was handed — so each direction has one home.
+func OmitEntriesOf(resolved []ResolvedOmit) []OmitEntry {
+	if len(resolved) == 0 {
+		return nil
+	}
+	out := make([]OmitEntry, len(resolved))
+	for i, r := range resolved {
+		out[i] = r.Entry
+		out[i].Sensitive = r.Withheld.Any()
+	}
+	return out
+}
+
+// ResolvedOmitsOf rebuilds the entries a render input carries into the shape a
+// render core reads them in, each positioned at its place in the list it arrived in.
+// A marked entry has every field withheld, because the mark covers the entry without
+// naming the field a declared value produced, so a render core reporting on the entry
+// quotes none of them. It is nil for an input carrying none.
+func ResolvedOmitsOf(entries []OmitEntry) []ResolvedOmit {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]ResolvedOmit, len(entries))
+	for i, e := range entries {
+		withheld := omitFieldsWithheldByMark(e.Sensitive)
+		e.Sensitive = false
+		out[i] = ResolvedOmit{Entry: e, Position: i, Withheld: withheld}
+	}
+	return out
 }
 
 // SourceIgnore is the recorded ignore rule list a render applies to an entity's

@@ -4,6 +4,8 @@
 package renderer
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -24,6 +26,14 @@ const (
 	recipeFieldPipeline      = "pipeline"
 	recipeFieldPipelineWith  = "with"
 	recipeFieldPipelineWhen  = "when"
+	recipeFieldOmits         = "omits"
+
+	// The four fields of one omits entry, in the order the entry is evaluated in:
+	// its gate first, then the three it resolves to.
+	omitFieldWhen      = "when"
+	omitFieldKind      = "kind"
+	omitFieldName      = "name"
+	omitFieldNamespace = "namespace"
 
 	// recipeFieldSource is the spec-root key a Recipe's source entry is written
 	// under. It joins the constants above because two surfaces spell it — the
@@ -48,6 +58,44 @@ const artifactsLabelPrefix = recipeFieldArtifacts + "["
 // writes ahead of whatever the author typed, so a step id or an artifact key
 // spelling the same characters changes what follows a prefix and never the prefix.
 const pipelineLabelPrefix = recipeFieldPipeline + "["
+
+// omitFieldLabel names one field of one omits entry the way an author reads it back:
+// the block, the entry's position in the list, and the field. It is the label the
+// enumeration below presents the field under and the name the field's template is
+// evaluated under, so a finding about the field and a failure evaluating it name it
+// the same way.
+//
+// An omits entry is keyed by its position because the list carries no key of its
+// own. The position counts every entry the author wrote, so an entry a when drops at
+// evaluation is still counted and the label stays the one the document's own order
+// gives it.
+func omitFieldLabel(position int, field string) string {
+	return fmt.Sprintf("%s[%d].%s", recipeFieldOmits, position, field)
+}
+
+// omitTemplateFields presents the template fields one omits list writes, each
+// entry's when first and then its kind, name and namespace — the order the entry is
+// evaluated in — under the labels [omitFieldLabel] spells and the authored keys that
+// locate each field inside the document's spec.
+//
+// It is one body because two enumerations carry the list: the one a node's Recipe
+// and a component-scope attachment's FeatureRecipe share, and the one a
+// boundary-scope FeatureRecipe is read through. Each field of an entry is a template
+// evaluated against the context the document's values mapping is evaluated against,
+// so every rule invoked over those enumerations reads them as it reads that mapping.
+func omitTemplateFields(entries []types.OmitEntry, add func(label, text string, keys ...string)) {
+	for i, entry := range entries {
+		position := strconv.Itoa(i)
+		for _, field := range []struct{ name, text string }{
+			{omitFieldWhen, entry.When},
+			{omitFieldKind, entry.Kind},
+			{omitFieldName, entry.Name},
+			{omitFieldNamespace, entry.Namespace},
+		} {
+			add(omitFieldLabel(i, field.name), field.text, recipeFieldOmits, position, field.name)
+		}
+	}
+}
 
 // RecipeTemplateField is one inline template field a Recipe declares: the label
 // an author reads it back by, the text as written, and the authored keys beneath
@@ -92,8 +140,9 @@ type RecipeTemplateField struct {
 // # What it covers, and what it deliberately leaves to another axis
 //
 // The set is the fields evaluated against the whole render context: the values
-// mapping, the workload body, each artifacts entry, and each pipeline step's
-// input and its gate. A Recipe's provides and locals entries are NOT here, and
+// mapping, the workload body, each artifacts entry, each field of each omits entry,
+// and each pipeline step's input and its gate. A Recipe's provides and locals
+// entries are NOT here, and
 // their absence is a decision rather than an omission: each already has its own
 // axis and its own rules at this stage, so enumerating them again would report
 // one authoring fault against two subjects and give a reader two positions for
@@ -115,7 +164,7 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 		return nil
 	}
 	return inlineTemplateFieldsOf(
-		recipe.Spec.ValuesMapping, recipe.Spec.Workload, recipe.Spec.Artifacts, recipe.Spec.Pipeline,
+		recipe.Spec.ValuesMapping, recipe.Spec.Workload, recipe.Spec.Artifacts, recipe.Spec.Omits, recipe.Spec.Pipeline,
 	)
 }
 
@@ -135,8 +184,9 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 // # What it covers, and what it deliberately leaves to another surface
 //
 // The set is the fields evaluated against the attachment's own render context: the
-// values mapping, the workload body, each artifacts entry, and each pipeline step's
-// input and its gate. The FeatureRecipe's provides and locals entries are NOT here,
+// values mapping, the workload body, each artifacts entry, each field of each omits
+// entry, and each pipeline step's input and its gate. The FeatureRecipe's provides
+// and locals entries are NOT here,
 // for the reason a Recipe's are not on the node's own enumeration: each already has
 // its own refusal at this stage — the scope those two surfaces are evaluated against
 // narrows the reference directly — so enumerating them again would report one
@@ -159,15 +209,15 @@ func AttachmentTemplateFields(fr *types.FeatureRecipe) []RecipeTemplateField {
 		return nil
 	}
 	return inlineTemplateFieldsOf(
-		fr.Spec.ValuesMapping, fr.Spec.Workload, fr.Spec.Artifacts, fr.Spec.Pipeline,
+		fr.Spec.ValuesMapping, fr.Spec.Workload, fr.Spec.Artifacts, fr.Spec.Omits, fr.Spec.Pipeline,
 	)
 }
 
-// inlineTemplateFieldsOf builds the enumeration for one document's four
+// inlineTemplateFieldsOf builds the enumeration for one document's
 // template-bearing blocks, in the fixed order every caller presents them in.
 //
-// It is one body because a Recipe and a FeatureRecipe declare these four blocks
-// identically — the same field types, the same three authoring modes, the same
+// It is one body because a Recipe and a FeatureRecipe declare these blocks
+// identically — the same field types, the same authoring shapes, the same
 // key-to-output rule — so what counts as an inline field, how its label is spelled
 // and which authored keys locate it is one question with one answer. Two spellings
 // of that would agree on the day they were written and drift afterwards, and the
@@ -175,7 +225,7 @@ func AttachmentTemplateFields(fr *types.FeatureRecipe) []RecipeTemplateField {
 // enumerating would be a surface no rule was invoked over, which reports exactly
 // what a rule that ran and approved reports.
 //
-// It takes the four blocks rather than a document so that neither document type
+// It takes the blocks rather than a document so that neither document type
 // appears here. A signature naming one of them would make the other's call an
 // adaptation of somebody else's reading; naming both through an interface would put
 // a declaration in the way of a set whose whole point is that it is enumerated.
@@ -183,6 +233,7 @@ func inlineTemplateFieldsOf(
 	valuesMapping types.ValuesMapping,
 	workload types.WorkloadTemplate,
 	artifacts types.OrderedMap[types.ArtifactEntry],
+	omits []types.OmitEntry,
 	pipeline []types.PipelineStep,
 ) []RecipeTemplateField {
 	var out []RecipeTemplateField
@@ -197,6 +248,7 @@ func inlineTemplateFieldsOf(
 	for k, v := range artifacts.All() {
 		add(artifactsLabelPrefix+k+"]", v.Inline, recipeFieldArtifacts, k)
 	}
+	omitTemplateFields(omits, add)
 	for _, step := range pipeline {
 		add(pipelineLabelPrefix+step.ID+"]."+recipeFieldPipelineWith,
 			step.With, recipeFieldPipeline, step.ID, recipeFieldPipelineWith)

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: omits-two
+  version: "1.0.0"
+spec:
+  components:
+    store:
+      type: core/omits/app
+    edge:
+      type: core/omits/app

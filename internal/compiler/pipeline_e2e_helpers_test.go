@@ -27,6 +27,20 @@ import (
 // toolchain is absent, the underlying fixture build skips the calling test.
 func stageColocatedCatalog(t *testing.T, catalogPaths []string, artifactToFixture map[string]string) []string {
 	t.Helper()
+	guests := make(map[string]func() []byte, len(artifactToFixture))
+	for artifactRef, fixtureName := range artifactToFixture {
+		guests[artifactRef] = func() []byte { return wasmtest.EnsureFixtureBytes(t, fixtureName) }
+	}
+	return stageColocatedGuests(t, catalogPaths, guests)
+}
+
+// stageColocatedGuests is stageColocatedCatalog for guests whose bytes come from
+// anywhere — a guest built from source inside this module as well as a plugin-kit
+// fixture. The map keys are the artifact references, as there; each value yields
+// the bytes to lay down beside that reference's Plugin entity, and is called only
+// once the reference is known to name an indexed entity.
+func stageColocatedGuests(t *testing.T, catalogPaths []string, guests map[string]func() []byte) []string {
+	t.Helper()
 	root := t.TempDir()
 
 	staged := make([]string, len(catalogPaths))
@@ -46,15 +60,15 @@ func stageColocatedCatalog(t *testing.T, catalogPaths []string, artifactToFixtur
 	}
 	dirs := cat.PluginColocatedDirs()
 
-	for artifactRef, fixtureName := range artifactToFixture {
+	for artifactRef, guest := range guests {
 		dir, ok := dirs[artifactRef]
 		if !ok {
 			t.Fatalf("stageColocatedCatalog: no indexed Plugin entity for artifact reference %q (have %v)", artifactRef, dirs)
 		}
-		bytes := wasmtest.EnsureFixtureBytes(t, fixtureName)
+		bytes := guest()
 		leaf := pluginpath.PluginLeaf(artifactRef)
 		if err := os.WriteFile(filepath.Join(dir.Dir, leaf), bytes, 0o644); err != nil {
-			t.Fatalf("stageColocatedCatalog: stage %q as %q beside its entity: %v", fixtureName, leaf, err)
+			t.Fatalf("stageColocatedCatalog: stage the guest for %q as %q beside its entity: %v", artifactRef, leaf, err)
 		}
 	}
 	return staged

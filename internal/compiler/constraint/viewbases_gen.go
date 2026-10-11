@@ -2671,6 +2671,46 @@ func (HydratedViewBase) BoundaryAttachmentProviderArtifactTemplateDelimiters(bou
 	panic("this view does not carry boundary-attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
 }
 
+// ProviderHonoursOmits panics. This view does not carry
+// provider-honours-omits, which is read from wasm.ProviderContract.Omits.
+func (HydratedViewBase) ProviderHonoursOmits(node string) (bool, bool) {
+	panic("this view does not carry provider-honours-omits, which is read from wasm.ProviderContract.Omits")
+}
+
+// AttachmentProviderHonoursOmits panics. This view does not carry
+// attachment-provider-honours-omits, which is read from
+// wasm.ProviderContract.Omits.
+func (HydratedViewBase) AttachmentProviderHonoursOmits(node string, attachment string) (bool, bool) {
+	panic("this view does not carry attachment-provider-honours-omits, which is read from wasm.ProviderContract.Omits")
+}
+
+// BoundaryAttachmentProviderHonoursOmits panics. This view does not carry
+// boundary-attachment-provider-honours-omits, which is read from
+// wasm.ProviderContract.Omits.
+func (HydratedViewBase) BoundaryAttachmentProviderHonoursOmits(boundary string, attachment string) (bool, bool) {
+	panic("this view does not carry boundary-attachment-provider-honours-omits, which is read from wasm.ProviderContract.Omits")
+}
+
+// NodeDeclaresOmits panics. This view does not carry node-declares-omits,
+// which is read from types.RecipeSpec.Omits.
+func (HydratedViewBase) NodeDeclaresOmits(node string) bool {
+	panic("this view does not carry node-declares-omits, which is read from types.RecipeSpec.Omits")
+}
+
+// AttachmentDeclaresOmits panics. This view does not carry
+// attachment-declares-omits, which is read from
+// types.FeatureRecipeSpec.Omits.
+func (HydratedViewBase) AttachmentDeclaresOmits(node string, attachment string) bool {
+	panic("this view does not carry attachment-declares-omits, which is read from types.FeatureRecipeSpec.Omits")
+}
+
+// BoundaryAttachmentDeclaresOmits panics. This view does not carry
+// boundary-attachment-declares-omits, which is read from
+// types.FeatureRecipeSpec.Omits.
+func (HydratedViewBase) BoundaryAttachmentDeclaresOmits(boundary string, attachment string) bool {
+	panic("this view does not carry boundary-attachment-declares-omits, which is read from types.FeatureRecipeSpec.Omits")
+}
+
 // ArtifactsEntryImportReference panics. This view does not carry
 // artifacts-entry-import-reference, which is read from
 // types.RecipeSpec.Artifacts.
@@ -3371,6 +3411,12 @@ type DescribedStageFacts interface {
 	ProviderArtifactTemplateDelimiters(node string) ArtifactTemplateDelimiters
 	AttachmentProviderArtifactTemplateDelimiters(node string, attachment string) ArtifactTemplateDelimiters
 	BoundaryAttachmentProviderArtifactTemplateDelimiters(boundary string, attachment string) ArtifactTemplateDelimiters
+	ProviderHonoursOmits(node string) (bool, bool)
+	AttachmentProviderHonoursOmits(node string, attachment string) (bool, bool)
+	BoundaryAttachmentProviderHonoursOmits(boundary string, attachment string) (bool, bool)
+	NodeDeclaresOmits(node string) bool
+	AttachmentDeclaresOmits(node string, attachment string) bool
+	BoundaryAttachmentDeclaresOmits(boundary string, attachment string) bool
 	ArtifactsEntryImportReference(node string, entry string) string
 	ArtifactsEntryLibraryDeclared(node string, entry string) bool
 	ArtifactsEntryBundleDeclared(node string, entry string) bool

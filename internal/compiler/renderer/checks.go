@@ -4252,3 +4252,153 @@ var BoundaryAttachmentPipelineStepScopeHasADocumentSet = constraint.Check[
 		)}
 	},
 }
+
+// unsupportedOmitsAdvice is what a reader of the omits refusal can do about it,
+// whichever document declared the entries. It is the raise's advice rather than
+// the condition's sentence because the sentence states the condition, and the
+// three rules below raising it share the remedy.
+const unsupportedOmitsAdvice = "this provider's contract does not declare that it leaves rendered documents out; " +
+	"remove the omits key, or render the source through a provider whose contract declares it"
+
+// OmitsProviderHonoursTheEntries reports a node whose Recipe declares omit entries
+// while the provider rendering it does not declare that it honours them.
+//
+// Leaving a rendered document out is something only the provider can do: it alone
+// knows what its source renders and in which terms a document is named, so the
+// entries are handed to it and it does the leaving out. A provider that does not
+// would render every document the author asked to leave out and report success, so
+// the pairing is refused here, before anything renders. Which providers honour the
+// entries is each provider's own declared claim, read as a fact; nothing here holds
+// a list of providers, so a provider that comes to honour them stops being refused
+// by declaring so.
+//
+// # What it reads, and in which order
+//
+// Whether the Recipe declares entries comes first, and the claim is read only for a
+// Recipe that does — a node declaring none never has its provider asked. Any entry
+// counts, whatever its gate would evaluate to: whether the provider can honour the
+// list does not depend on which entries one build keeps.
+//
+// The claim's second result is read before its first. A binding that resolves to no
+// provider has no claim at all, and that failure is reported where the render
+// reaches for the provider, naming the binding; refusing it here would report a
+// provider declining the key in place of a provider that could not be found.
+//
+// Its detail leads with the provider, which the registered wording is about, and
+// names the node, captioned.
+var OmitsProviderHonoursTheEntries = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeSubject,
+]{
+	Sentinel: ErrUnsupportedOmits(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeSubject,
+	) []constraint.Objection {
+		if !v.NodeDeclaresOmits(s.NodeID()) {
+			return nil
+		}
+		honours, resolved := v.ProviderHonoursOmits(s.NodeID())
+		if !resolved || honours {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrUnsupportedOmits(), unsupportedOmitsAdvice,
+			constraint.Uncaptioned(v.NodeRenderingProvider(s.NodeID())),
+			constraint.Captioned("node", s.NodeID()),
+		)}
+	},
+}
+
+// AttachmentOmitsProviderHonoursTheEntries reports an attachment on a node whose
+// FeatureRecipe declares omit entries while the provider rendering that
+// FeatureRecipe does not declare that it honours them.
+//
+// It is the node rule's question asked of the attachment's own document: the
+// FeatureRecipe declares its own capability and renders its own source, so its
+// entries name documents only its own provider renders, and that provider's claim
+// is the one that decides. It reads in the order the node rule does, for the same
+// reasons.
+//
+// # The attachments this rule is not about
+//
+// An attachment whose FeatureRecipe generates once for a boundary renders at the
+// boundary that declares it, not once per component carrying it, so the rule over
+// a boundary's attachments asks this question of it there — once, where it renders.
+// Asking it here as well would report one authored list once per component the
+// boundary holds and again at the boundary. Every other attachment renders once per
+// component carrying it, which is exactly the set this rule is invoked over.
+//
+// Its detail leads with the provider and names the node and the attachment,
+// captioned.
+var AttachmentOmitsProviderHonoursTheEntries = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrUnsupportedOmits(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		if !v.AttachmentDeclaresOmits(s.NodeID(), s.AttachmentName()) {
+			return nil
+		}
+		honours, resolved := v.AttachmentProviderHonoursOmits(s.NodeID(), s.AttachmentName())
+		if !resolved || honours {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrUnsupportedOmits(), unsupportedOmitsAdvice,
+			constraint.Uncaptioned(v.AttachmentRenderingProvider(s.NodeID(), s.AttachmentName())),
+			constraint.Captioned("node", s.NodeID()),
+			constraint.Captioned("attachment", s.AttachmentName()),
+		)}
+	},
+}
+
+// BoundaryAttachmentOmitsProviderHonoursTheEntries reports an attachment declared
+// on a boundary whose FeatureRecipe generates once for that boundary and declares
+// omit entries, while the provider rendering it does not declare that it honours
+// them.
+//
+// It is the node rule's question asked of the document that renders once for the
+// boundary, read in the same order and for the same reasons. An attachment written
+// at a boundary whose FeatureRecipe generates per component is not asked here: it
+// renders once for each component the boundary holds, and the rule over a node's
+// attachments asks it there.
+//
+// Its detail leads with the provider and names the boundary and the attachment,
+// captioned. It names no node, because such an attachment renders against none.
+var BoundaryAttachmentOmitsProviderHonoursTheEntries = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentSubject,
+]{
+	Sentinel: ErrUnsupportedOmits(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentSubject,
+	) []constraint.Objection {
+		if v.BoundaryAttachmentExecutionScope(s.BoundaryPath(), s.AttachmentName()) != executionScopeBoundary {
+			return nil
+		}
+		if !v.BoundaryAttachmentDeclaresOmits(s.BoundaryPath(), s.AttachmentName()) {
+			return nil
+		}
+		honours, resolved := v.BoundaryAttachmentProviderHonoursOmits(s.BoundaryPath(), s.AttachmentName())
+		if !resolved || honours {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrUnsupportedOmits(), unsupportedOmitsAdvice,
+			constraint.Uncaptioned(v.BoundaryAttachmentRenderingProvider(s.BoundaryPath(), s.AttachmentName())),
+			constraint.Captioned("boundary", s.BoundaryPath()),
+			constraint.Captioned("attachment", s.AttachmentName()),
+		)}
+	},
+}

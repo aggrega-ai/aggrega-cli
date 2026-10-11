@@ -367,6 +367,7 @@ func BoundaryScopeFRTemplateFields(fr *types.FeatureRecipe) []BoundaryScopeFRTem
 	for k, v := range fr.Spec.Artifacts.All() {
 		add("artifacts["+k+"]", v.Inline, "artifacts", k)
 	}
+	omitTemplateFields(fr.Spec.Omits, add)
 	for k, v := range fr.Spec.Provides.All() {
 		add("provides["+k+"]", v, "provides", k)
 	}
@@ -684,6 +685,10 @@ func dispatchBoundaryScopeFR(
 	// it described whichever component dispatched this FR, and this render carries
 	// the values this FR's own mapping produced.
 	frNodeCtx.SensitiveValues = frValues.Sensitive
+	// The copied omit entries are replaced on that reading too: they belonged to the
+	// component that dispatched this FR, and this render's source is handed the
+	// entries this FR declares, or none.
+	frNodeCtx.Omits = frValues.Omits
 
 	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
 	// use — the central gate, then sourced engine.Render / synthesized workload

@@ -258,21 +258,38 @@ type FeatureValues struct {
 	// value the evaluation's withheld set names — the reading the base Recipe's
 	// own values pass records for the same fact. False where no mapping ran.
 	Sensitive bool
+
+	// Omits are the FeatureRecipe's omit entries as the same evaluation resolved
+	// them, against the same context: the entries this attachment's source render
+	// hands its provider, in place of whatever the context it renders with carried
+	// for the component hosting it. Empty for a FeatureRecipe declaring none.
+	Omits []ResolvedOmit
 }
 
-// ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and
-// returns the values dictionary for the provider engine, with the one fact
-// about those keys that the evaluation settles. Mirrors
+// ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and its omit
+// entries and returns the values dictionary for the provider engine, with the one
+// fact about those keys that the evaluation settles. Mirrors
 // ExecutePhaseB for base Recipes but takes a *types.FeatureRecipe. The
 // valuesMapping field carries one of three content-shape-dispatched
 // modes (inline / file $import: / library $import:); this function
 // resolves the mode and returns the templated values output.
 //
+// It is the one values evaluation both attachment scopes reach — a component-scope
+// attachment and a boundary-scope one — so the omit entries are evaluated here too,
+// against the context the mapping is, and each scope hands its source render the
+// entries its own FeatureRecipe declares.
+//
 // withheld names what of ctx an author declared sensitive, so a failure to
-// evaluate the mapping, or to read what it produced, reports without such a value.
+// evaluate the mapping or an omit entry, or to read what the mapping produced,
+// reports without such a value.
 func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary, withheld redact.Keys) (FeatureValues, error) {
 	if fr == nil {
 		return FeatureValues{Resolved: map[string]any{}}, nil
+	}
+
+	omits, err := EvaluateOmits(fr.Spec.Omits, ctx, withheld)
+	if err != nil {
+		return FeatureValues{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q omits", fr.Metadata.Name))
 	}
 
 	tmplText, err := resolveValuesMappingText(fr.Spec.ValuesMapping, fr.Metadata.Name, "FeatureRecipe", mappingLibs)
@@ -290,7 +307,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		// paths, so it is the only one that can record the fact — the same
 		// reading, at the same position, that the base Recipe's own values pass
 		// makes about its own branch.
-		return FeatureValues{Resolved: out, KeysAreDeclaredLeaves: true}, nil
+		return FeatureValues{Resolved: out, KeysAreDeclaredLeaves: true, Omits: omits}, nil
 	}
 
 	var values map[string]any
@@ -308,7 +325,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld)}, nil
+	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld), Omits: omits}, nil
 }
 
 // featureRecipeDeclaredSensitivity assembles the sensitivity declarations one

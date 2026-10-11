@@ -84,6 +84,10 @@ func descriptor() aggrega.PluginDescriptor {
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly: "none",
 			ReusableInstance: true,
+			// A chart render leaves out every rendered document an omit entry names
+			// by its kind, its metadata.name and, where the entry gives one, its
+			// namespace, and reports how many documents each entry matched.
+			Omits: true,
 			// What the chart ecosystem never ships beside a chart, the chart's own
 			// .helmignore among it. The host records these rules when an entity is
 			// pinned and applies them to every publication and render of its chart,
@@ -278,9 +282,15 @@ func renderedName() int32 {
 // input produces byte-identical output. The markings over the values and over
 // the workload as a whole are rebuilt too: the render core reads them to keep a
 // value the input marks out of a failure's text, and they change no output byte.
+// The omit entries the input carries are rebuilt as well, so a chart render leaves
+// out what they name; only a source render's input carries any. A marked entry is
+// rebuilt with every field withheld, and the render core only compares an entry's
+// fields and counts its matches, so no field of any entry reaches a text this guest
+// returns.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:            in.Node.ID,
+		Omits:             rendercore.ResolvedOmitsOf(in.Omits),
 		SensitiveValues:   in.Node.SensitiveValues,
 		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
 		Annotations:       mergeAnnotations(in.Context.Annotations),
@@ -350,10 +360,13 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 
 	// The render's advisories — a kind left without the declared namespace because
 	// nothing in the render says whether it is namespaced — cross as warn-severity
-	// diagnostics, which the host reports on the build without halting it.
+	// diagnostics, which the host reports on the build without halting it. The
+	// counts are one per omit entry the input carried, and absent when it carried
+	// none.
 	out := rendercore.RenderNodeOutput{
 		Files:       make([]rendercore.RenderedFile, 0, len(rendered.Files)),
 		Diagnostics: rendered.Advisories,
+		Omitted:     rendered.Omitted,
 	}
 	for _, path := range sortedKeys(rendered.Files) {
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered.Files[path]})

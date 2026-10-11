@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: omits-sidecar
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.omits/sidecar
+  source: ./chart
+  omits:
+    - when: '{{ ne (optional .infra "leave_out" "") "" }}'
+      kind: ConfigMap
+      name: 'sidecar-{{ .infra.leave_out }}'

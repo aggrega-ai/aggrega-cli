@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: omits-example
+  version: 1.0.0
+  pluginType: provider
+  description: Provider plugin that renders two fixed units and leaves out the ones its omit entries name.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - omits-example
+    # The contract the provider declares about itself, compared with the one it
+    # reports when it loads.
+    contract:
+      inputKinds:
+        sourced: true
+      boundaryAssembly: none
+      reusableInstance: true
+      omits: true
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation.
+    timeoutMs: 300000

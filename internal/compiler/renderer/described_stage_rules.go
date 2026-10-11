@@ -1264,6 +1264,86 @@ func runAuthoredPathTemplateRule(
 	return objectionsAsHalt(raised, "path templates that reach outside the context they are evaluated against")
 }
 
+// omitsProviderAxes is the axis set the rules over a document declaring omit
+// entries are invoked once per: the node set, the attachments each node carries,
+// the boundary set, and the attachments each boundary declares.
+//
+// It names all four together, and that grouping is what makes each owner
+// structurally un-skippable: a value supplying the node axes and not the boundary
+// ones does not compile here, so a caller cannot leave one owner's rule invoked
+// zero times — which reports exactly what a rule that ran and approved reports.
+type omitsProviderAxes interface {
+	constraint.NodeEnumerator
+	constraint.AttachmentEnumerator
+	constraint.BoundaryEnumerator
+	constraint.BoundaryAttachmentEnumerator
+}
+
+// runOmitsProviderRule invokes the rules declared over a document that declares
+// omit entries rendered by a provider that does not declare it honours them, and
+// returns what they raised as the render's halt.
+//
+// # Before anything renders
+//
+// It runs here because every fact the rules read is complete here: the documents
+// are bound, and each provider's claim is part of its self-description. Asked
+// later, the refusal would arrive after earlier nodes had rendered, and an
+// attachment's would arrive after its host had; asked here, no source is rendered
+// and no guest is handed an entry it would ignore. It is asked after every other
+// refusal this stage makes, so a build carrying one of those faults as well reports
+// that one first.
+//
+// # Three owners, because the list has three
+//
+// An omits list is authored on a node's Recipe, on the FeatureRecipe an attachment
+// binds on a node, and on the FeatureRecipe an attachment declared on a boundary
+// binds, and each renders through its own provider. Each is reached by its own
+// coordinate, so there is one declared rule per owner, each named at its own call:
+// the derivation that reports which declared rules a build invokes reads the check
+// named at a traversal call, and a loop variable would hide all three from it.
+//
+// It carries no plugin-resolution guard. The claim is read through the render's
+// own engine resolution, as the cross-boundary reading below reads its claim, and a
+// binding that resolves to nothing leaves the rules silent rather than refusing,
+// so a render with nothing to resolve owes nothing here.
+//
+// Every offending document is reported rather than the first, because each rule is
+// invoked once per instance of its owner. The cancellation signal is the caller's
+// own.
+func runOmitsProviderRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates omitsProviderAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodes(
+		ctx.Err, coordinates, view, OmitsProviderHonoursTheEntries,
+	)
+	if err != nil {
+		return err
+	}
+
+	objections, err := constraint.RunOnNodeAttachments(
+		ctx.Err, coordinates, coordinates, view, AttachmentOmitsProviderHonoursTheEntries,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnBoundaryAttachments(
+		ctx.Err, coordinates, coordinates, view, BoundaryAttachmentOmitsProviderHonoursTheEntries,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "documents declaring omits whose provider does not honour them")
+}
+
 // crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
 // providers is invoked once per: the connection set the finalised graph carries.
 //

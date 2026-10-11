@@ -87,3 +87,4 @@ spec:
         artifactsStandalone: true
       boundaryAssembly: none
       reusableInstance: true
+      omits: true

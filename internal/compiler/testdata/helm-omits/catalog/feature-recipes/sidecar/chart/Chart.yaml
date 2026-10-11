@@ -1,0 +1,4 @@
+apiVersion: v2
+name: sidecar
+version: 0.1.0
+description: Two objects under fixed names.

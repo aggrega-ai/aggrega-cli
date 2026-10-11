@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: omits-marked
+  version: "1.0.0"
+spec:
+  capability: omits-example
+  implements: feature.omits/marked
+  executionScope: boundary
+  source: ./src
+  omits:
+    - kind: Secret
+      name: '{{ .infra.secret_name }}'
+    - kind: ConfigMap
+      name: '{{ .infra.plain_name }}'

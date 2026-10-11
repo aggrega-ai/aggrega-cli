@@ -123,6 +123,7 @@ var (
 	_ renderer.NameBounder                    = (*Engine)(nil)
 	_ renderer.RenderedNameReporter           = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
+	_ renderer.OmitsReporter                  = (*Engine)(nil)
 	_ renderer.AssemblyNameAnnotationReporter = (*Engine)(nil)
 	_ renderer.CodecProvider                  = (*Engine)(nil)
 )
@@ -198,6 +199,21 @@ func (e *Engine) AssemblyNameAnnotation() (annotation string, requireUnique bool
 	}
 	a := desc.Contract.AssemblyNameAnnotation
 	return a.Annotation, a.RequireUnique
+}
+
+// HonoursOmits reports whether the provider guest declares that it honours omit
+// entries, read from its live describe() self-report (contract.omits). The
+// descriptor is loaded and cached on first use; false is returned when the guest
+// declares nothing or cannot be loaded or described, so a document declaring omits
+// is refused rather than handed to a guest that would leave nothing out. It
+// satisfies renderer.OmitsReporter, so the rules refusing a document whose provider
+// does not honour its entries read the guest's own claim.
+func (e *Engine) HonoursOmits() bool {
+	desc, err := e.describe()
+	if err != nil || desc.Contract == nil {
+		return false
+	}
+	return desc.Contract.Omits
 }
 
 // NestSegment reports the directory the provider guest's target places each
@@ -337,6 +353,13 @@ func (e *Engine) Close(ctx context.Context) error {
 // bug rather than authoring drift. A
 // duplicate output path from the guest is a loud error rather than a silent
 // last-writer-wins overwrite.
+//
+// This is the one crossing that hands a guest omit entries: the node context's
+// resolved entries ride the input's omits list, and the counts the guest returns
+// for them are read through renderer.RequireOmitCounts as soon as the guest's own
+// halting diagnostics have been reported, before anything the crossing returned is
+// forwarded. A node with no entries sends none, so its payload is the one it would
+// be without the key.
 func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
 	src, ok := nodeCtx.Source.(string)
 	if !ok {
@@ -355,12 +378,16 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		Node:          e.nodeProjection(nodeCtx, valuesToOrdered(values), nil),
 		Context:       e.renderContext(nodeCtx),
 		SourceListing: listing,
+		Omits:         renderer.OmitEntriesOf(nodeCtx.Omits),
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, source)
 	if err != nil {
 		return nil, err
 	}
 	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
+		return nil, err
+	}
+	if err := renderer.RequireOmitCounts(nodeCtx.Omits, out.Omitted, nodeCtx.RecipeName, nodeCtx.NodeID, e.pluginURI); err != nil {
 		return nil, err
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)

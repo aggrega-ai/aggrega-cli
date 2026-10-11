@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: omits-guard
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.omits/guard
+  executionScope: boundary
+  source: ./chart
+  omits:
+    - when: '{{ ne (optional .infra "leave_out" "") "" }}'
+      kind: ConfigMap
+      name: 'guard-{{ .infra.leave_out }}'

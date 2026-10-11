@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/omits/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    infra:
+      # Which of the chart's two controllers to leave out, by the word its name
+      # ends in; unset leaves neither out. The Release writes it and the Recipe's
+      # omits entry reads it, which is how a Release reaches an entry.
+      leave_out: { type: string }
+      # Leaves the chart's fixed-name settings object out when true.
+      leave_out_settings: { type: boolean, default: false }

@@ -123,6 +123,7 @@ func maximalRecipe() types.Recipe {
 			Provides:   om[string]("host", "{{ .context.instance_id }}"),
 			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
 			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}", Optional: true}},
+			Omits:      []types.OmitEntry{{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", Namespace: "apps", When: "{{ true }}"}},
 			Assertions: om[string]("rule", "{{ true }}"),
 		},
 	}
@@ -136,10 +137,12 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 		Spec: types.FeatureRecipeSpec{
 			Capability:     "compose",
 			Implements:     "core/secret-value",
+			Source:         "oci://example/chart:1.0.0",
 			Locals:         om[string]("k", "v"),
 			Provides:       om[string]("ref", "x"),
 			InjectMapping:  "env:\n  {{ .values.key }}: \"{{ .values.origin }}\"",
 			ExecutionScope: "component",
+			Omits:          []types.OmitEntry{{Kind: "Secret", Name: "token", Namespace: "apps", When: "{{ true }}"}},
 			Assertions:     om[string]("rule", "{{ true }}"),
 		},
 	}

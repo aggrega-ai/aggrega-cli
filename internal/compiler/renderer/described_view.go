@@ -346,6 +346,78 @@ func (v *describedView) ProviderCrossBoundaryLinking(node string) bool {
 	return linksCrossBoundary(engine)
 }
 
+// ProviderHonoursOmits reports whether the provider rendering a node's own
+// documents declares that it honours omit entries, and whether a provider resolved
+// behind the node's binding at all.
+//
+// It reads the claim through the one seam that claim has, [honoursOmits], so the
+// presented value is the one the provider stated about itself.
+func (v *describedView) ProviderHonoursOmits(node string) (bool, bool) {
+	return omitsClaimOf(v.nodeEngine(node))
+}
+
+// AttachmentProviderHonoursOmits reports whether the provider rendering one
+// attachment's own documents on a node declares that it honours omit entries, and
+// whether a provider resolved behind that attachment's binding at all.
+func (v *describedView) AttachmentProviderHonoursOmits(node string, attachment string) (bool, bool) {
+	return omitsClaimOf(v.attachmentEngine(node, attachment))
+}
+
+// BoundaryAttachmentProviderHonoursOmits reports whether the provider rendering
+// one boundary-scope attachment's documents declares that it honours omit entries,
+// and whether a provider resolved behind that attachment's binding at all.
+func (v *describedView) BoundaryAttachmentProviderHonoursOmits(boundary string, attachment string) (bool, bool) {
+	return omitsClaimOf(v.boundaryAttachmentEngine(boundary, attachment))
+}
+
+// omitsClaimOf is the claim one resolved engine makes about omit entries, and
+// the one place every form of that fact reads it from. It takes the outcome of an
+// engine resolution rather than resolving one, for the reason
+// [declaredArtifactDelimiters] does: the three forms resolve their engine from
+// three different bindings, and the reading of the resolved engine is the same for
+// all of them.
+//
+// An unresolved engine answers false in both results. No provider stands behind
+// the binding, so there is no claim to report, and the second result is what keeps
+// that from reading as a provider that declined.
+func omitsClaimOf(engine Provider, resolved bool) (bool, bool) {
+	if !resolved {
+		return false, false
+	}
+	return honoursOmits(engine), true
+}
+
+// NodeDeclaresOmits reports whether a node's own Recipe declares omit entries, as
+// written. A node with no bound Recipe declares none.
+func (v *describedView) NodeDeclaresOmits(node string) bool {
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return false
+	}
+	return declaresOmits(recipe.Spec.Omits)
+}
+
+// AttachmentDeclaresOmits reports whether the FeatureRecipe one attachment binds
+// on a node declares omit entries, as written. An attachment with no bound
+// FeatureRecipe declares none.
+func (v *describedView) AttachmentDeclaresOmits(node string, attachment string) bool {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return false
+	}
+	return declaresOmits(fr.Spec.Omits)
+}
+
+// BoundaryAttachmentDeclaresOmits reports whether the FeatureRecipe one attachment
+// declared on a boundary binds declares omit entries, as written.
+func (v *describedView) BoundaryAttachmentDeclaresOmits(boundary string, attachment string) bool {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return false
+	}
+	return declaresOmits(fr.Spec.Omits)
+}
+
 // NodeRenderingProvider returns the provider that renders a node's own
 // documents, as the engine kind its Recipe's declared capability projects to.
 //

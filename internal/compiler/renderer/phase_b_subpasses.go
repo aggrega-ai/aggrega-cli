@@ -125,6 +125,16 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		state.PhaseReached = 1
 		return nil
 	}
+	// The omit entries are evaluated here, against the context and the withheld set
+	// the values mapping below is evaluated against, so an entry reads exactly what
+	// the mapping reads — the name the target gives the node's resources among it,
+	// which is what a chart names its own resources after.
+	omits, err := EvaluateOmits(state.Recipe.Spec.Omits, ctx, state.Withheld)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q omits", state.Recipe.Metadata.Name))
+	}
+	state.Omits = omits
+
 	tmplText, vmErr := resolveValuesMappingText(state.Recipe.Spec.ValuesMapping, state.Recipe.Metadata.Name, "Recipe", state.MappingLibraries)
 	if vmErr != nil {
 		return vmErr
@@ -868,6 +878,10 @@ func (p *attachmentPass) render(
 	// it describes the host Recipe's mapping, and this render carries the values
 	// this attachment's own mapping produced.
 	frNodeCtx.SensitiveValues = frValues.Sensitive
+	// The host's omit entries are overwritten for the same reason again: they name
+	// documents the host's source renders, and this attachment's source render is
+	// handed the entries its own FeatureRecipe declares, or none.
+	frNodeCtx.Omits = frValues.Omits
 	// This attachment is a contributor of its own, so the names its render
 	// derives are declared under its own label rather than the host node's.
 	// The sink is rewired for the same reason the boundary-scope render

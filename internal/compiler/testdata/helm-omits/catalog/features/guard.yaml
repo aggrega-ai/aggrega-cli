@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.omits/guard
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      # Which of the guard chart's two objects to leave out; unset leaves neither.
+      # Declared sensitive, so a report quoting a name built from it shows the
+      # placeholder rather than the value.
+      leave_out: { type: string, sensitive: true }

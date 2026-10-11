@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: omits-mark
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: omits-mark
+  manifest: omits-mark-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      features:
+        marked:
+          type: feature.omits/marked
+          infra:
+            # Declared sensitive by the Feature: the entry whose name reads it is
+            # marked on the render input.
+            secret_name: token
+            # Declared plainly: the entry whose name reads it carries no mark.
+            plain_name: settings
+      components:
+        app: {}

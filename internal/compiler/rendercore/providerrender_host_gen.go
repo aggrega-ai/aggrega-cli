@@ -137,7 +137,7 @@ type RenderFact struct {
 	Value json.RawMessage `json:"value" yaml:"value" cbor:"value"`
 }
 
-// OmitEntry One entry naming rendered units a Provider guest leaves out of a node's output, its fields already resolved to plain strings. The socket attaches no meaning to them: each provider documents what kind, name and namespace select in its own format, and matches them itself.
+// OmitEntry One entry naming rendered units a Provider guest leaves out of a node's output, its fields already resolved to plain strings and marked where any of them was produced from a value declared sensitive. The socket attaches no meaning to them: each provider documents what kind, name and namespace select in its own format, and matches them itself.
 type OmitEntry struct {
 	// Kind The kind of rendered unit the entry names, in the provider's own vocabulary.
 	Kind string `json:"kind" yaml:"kind" cbor:"kind"`
@@ -145,6 +145,8 @@ type OmitEntry struct {
 	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Namespace The namespace the named unit sits in, for a provider whose format places units in one. Absent when the author wrote none; what an entry with no namespace matches is the provider's own contract.
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty" cbor:"namespace,omitempty"`
+	// Sensitive True when the template that produced any of the entry's kind, name or namespace reads a value an author declared sensitive, or a value traced to one. It is read from each field's template against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from the resolved strings. The mark covers the whole entry rather than naming the field, so a guest treats a marked entry as it treats every other marked value on its input: it still matches and counts the entry by its fields, which is what the entry is for, and keeps every field of it out of any text a person reads — a refusal, a warning or a log line. Absent when no field's template reads such a value; absence never states that no field is sensitive.
+	Sensitive bool `json:"sensitive,omitempty" yaml:"sensitive,omitempty" cbor:"sensitive,omitempty"`
 }
 
 // SourceFile One file of a pre-packaged source projection: its chart-root-relative path and its raw bytes, exactly as the host read them from the local source at compile time.
@@ -1770,6 +1772,18 @@ func (t OmitEntry) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"namespace\":")
 		writeJSONString(&buf, t.Namespace)
 	}
+	if t.Sensitive != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sensitive\":")
+		if t.Sensitive {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1806,6 +1820,12 @@ func (t *OmitEntry) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Namespace = s
 			}
+		case "sensitive":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Sensitive = v
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1825,7 +1845,7 @@ func (t *OmitEntry) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *OmitEntry) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "kind", "name", "namespace"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "kind", "name", "namespace", "sensitive"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7220,6 +7240,9 @@ func (t OmitEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Namespace != "" {
 		n++
 	}
+	if t.Sensitive != false {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "kind")
 	dst = appendCBORTextString(dst, t.Kind)
@@ -7228,6 +7251,10 @@ func (t OmitEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Namespace != "" {
 		dst = appendCBORTextString(dst, "namespace")
 		dst = appendCBORTextString(dst, t.Namespace)
+	}
+	if t.Sensitive != false {
+		dst = appendCBORTextString(dst, "sensitive")
+		dst = appendCBORBool(dst, t.Sensitive)
 	}
 	return dst, nil
 }
@@ -7268,6 +7295,12 @@ func (t *OmitEntry) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Namespace = s
 			}
+		case "sensitive":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Sensitive = v
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -7284,7 +7317,7 @@ func (t *OmitEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *OmitEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "kind", "name", "namespace"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "kind", "name", "namespace", "sensitive"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

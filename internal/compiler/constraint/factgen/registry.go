@@ -5096,6 +5096,137 @@ var facts = []factDecl{
 			"with, and no node-rooted key can name it.",
 	},
 
+	// The six facts below are the two halves of one question asked of each
+	// document that can declare omit entries — a node's Recipe, the FeatureRecipe
+	// an attachment binds on a node, and the FeatureRecipe an attachment declared
+	// on a boundary binds: does the document declare entries, and does the
+	// provider rendering it claim to honour them. They are separate facts because
+	// they are read from separate sources — one from the authored document, one
+	// from the provider's own self-description — and a rule composes the two.
+	{
+		Name:        "provider-honours-omits",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.Omits",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "(bool, bool)",
+		Doc: "ProviderHonoursOmits reports whether the rendering provider a node " +
+			"resolves to declares that it honours omit entries — that it leaves " +
+			"out every document its source renders that an entry matches, and " +
+			"returns one count per entry it was handed — and, second, whether a " +
+			"provider resolved behind the node's binding at all.\n\nThe claim is " +
+			"the provider's own statement about itself, so whether a document's " +
+			"entries can be honoured is read here rather than decided from a list " +
+			"of providers. A provider stating no claim answers false in the first " +
+			"result, which is the same answer one denying it gives: neither leaves " +
+			"anything out.\n\nThe second result separates an absence the first " +
+			"cannot. A node with no bound Recipe, and a binding the build could not " +
+			"resolve to a provider, answer false in both results: there is no " +
+			"provider whose claim could be read. A rule refusing on the claim reads " +
+			"the second result to stay silent there, because a binding resolving to " +
+			"nothing is reported where the render reaches for the provider, and a " +
+			"refusal naming the claim would report a different fault first.",
+	},
+	{
+		Name:        "attachment-provider-honours-omits",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.Omits",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(bool, bool)",
+		Doc: "AttachmentProviderHonoursOmits reports whether the rendering provider " +
+			"the FeatureRecipe one attachment binds on a node resolves to declares " +
+			"that it honours omit entries, and, second, whether a provider resolved " +
+			"behind that binding at all.\n\nIt is a separate fact from the " +
+			"node-scoped form rather than the same claim reached through another " +
+			"coordinate. An attachment binds its own FeatureRecipe, which declares " +
+			"its own capability, so the provider leaving the attachment's documents " +
+			"out is independently authored from the one rendering the node's.\n\nIt " +
+			"is keyed by the node as well as the attachment because the attachment " +
+			"set a node carries is the merged one, and the coordinate naming one " +
+			"appearance is the node together with the attachment. An attachment " +
+			"with no bound FeatureRecipe, and a binding the build could not resolve, " +
+			"answer false in both results, on the reading the node-scoped form " +
+			"carries.",
+	},
+	{
+		Name:        "boundary-attachment-provider-honours-omits",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.Omits",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(bool, bool)",
+		Doc: "BoundaryAttachmentProviderHonoursOmits reports whether the rendering " +
+			"provider of the FeatureRecipe one attachment declared on a boundary " +
+			"binds declares that it honours omit entries, and, second, whether a " +
+			"provider resolved behind that binding at all.\n\nIt is rooted at a " +
+			"boundary rather than at a node because that is where the attachment is " +
+			"declared: such an attachment reaches every component the boundary " +
+			"holds, so keying it by a component would present one authored " +
+			"attachment many times over and would have no answer at all for a " +
+			"boundary holding no components. Its absences read as they do for every " +
+			"form of this fact.",
+	},
+	{
+		Name:        "node-declares-omits",
+		Stage:       "described",
+		SourceField: "types.RecipeSpec.Omits",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "bool",
+		Doc: "NodeDeclaresOmits reports whether a node's Recipe declares omit " +
+			"entries, taking the list the Recipe wrote rather than anything an entry " +
+			"evaluates to.\n\nThe authored reading is the one that decides whether " +
+			"the Recipe needs a provider honouring the entries. An entry whose gate " +
+			"evaluates false leaves nothing out on one build and something out on " +
+			"another, so whether the provider can honour the list does not depend on " +
+			"which entries one build keeps. It is also the reading available before " +
+			"anything is evaluated, which is where a rule over it runs.\n\nFalse is a " +
+			"real answer and covers a node with no bound Recipe as well as one whose " +
+			"Recipe declares no entries.",
+	},
+	{
+		Name:        "attachment-declares-omits",
+		Stage:       "described",
+		SourceField: "types.FeatureRecipeSpec.Omits",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "AttachmentDeclaresOmits reports whether the FeatureRecipe one " +
+			"attachment binds on a node declares omit entries, taking the list it " +
+			"wrote.\n\nIt is the attachment's own list and nothing else. The node's " +
+			"Recipe and the attachment's FeatureRecipe are separate documents " +
+			"rendering separate sources, and an entry names a document only its own " +
+			"source renders. It reads the authored list for the reason the " +
+			"node-scoped form does. False covers an attachment with no bound " +
+			"FeatureRecipe as well as one declaring no entries.",
+	},
+	{
+		Name:        "boundary-attachment-declares-omits",
+		Stage:       "described",
+		SourceField: "types.FeatureRecipeSpec.Omits",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "BoundaryAttachmentDeclaresOmits reports whether the FeatureRecipe one " +
+			"attachment declared on a boundary binds declares omit entries, taking " +
+			"the list it wrote.\n\nIt is rooted at the boundary for the reason every " +
+			"boundary-rooted fact is, and reads the authored list for the reason the " +
+			"node-scoped form does.",
+	},
+
 	// The five facts below are keyed by an AUTHORED artifacts entry rather than
 	// by an artifact, and the distinction is the whole reason the coordinate
 	// exists. An artifact is named by the output an entry resolved to, which for

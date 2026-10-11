@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: omits-fact-reader
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.omits/fact-reader
+  # One line per controller the host's render reported, under two of the facts
+  # a FeatureRecipe reads.
+  artifacts:
+    facts.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-facts
+      data:
+        read: |
+          host {{ .context.instance_id }}
+          {{- range .context.render_facts.pod_template_labels }}
+          pod_template_labels {{ .kind }}/{{ .name }}
+          {{- end }}
+          {{- range .context.render_facts.controller_selectors }}
+          controller_selectors {{ .kind }}/{{ .name }}
+          {{- end }}

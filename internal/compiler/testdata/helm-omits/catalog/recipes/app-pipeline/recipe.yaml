@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: omits-app-pipeline
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/omits/app
+  source: ./chart
+  omits:
+    - when: '{{ ne (optional .infra "leave_out" "") "" }}'
+      kind: Deployment
+      name: '{{ .context.rendered_name }}-{{ .infra.leave_out }}'
+  # The step annotates every Deployment it is handed and removes nothing, so a
+  # controller that reaches the output unannotated, or not at all, says what the
+  # step was handed.
+  pipeline:
+    - id: annotate
+      plugin: pipeline-step/patch:1.0.0
+      function: step
+      with: |
+        marker: omits

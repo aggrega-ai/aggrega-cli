@@ -1,0 +1,4 @@
+apiVersion: v2
+name: app
+version: 0.1.0
+description: Two controllers named after the release, and one settings object under a fixed name.

@@ -1203,6 +1203,97 @@ var errUnsupportedInputKind = cerrors.Register("unsupported-input-kind", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrUnsupportedOmits is the Loud Guardrail halt raised when a Recipe or a
+// FeatureRecipe declares omits and the provider rendering it does not declare that
+// it honours them.
+//
+// Leaving a rendered document out is something only the provider can do, because
+// only the provider knows what its source renders and in which terms a document is
+// named. So the entries are handed to the provider and the provider does the
+// leaving out — and a provider that does not do it would render every document the
+// author asked to leave out and report success. The host reads the provider's own
+// declared claim and refuses before anything is dispatched, so an author is told at
+// once that the key has no effect on this provider rather than discovering the
+// document in the output. The refusal is the declared rules'
+// [OmitsProviderHonoursTheEntries], [AttachmentOmitsProviderHonoursTheEntries] and
+// [BoundaryAttachmentOmitsProviderHonoursTheEntries], one per document that can
+// carry the list, asked before the first node renders and positioned where the
+// component or the attachment was written.
+//
+// The claim is the provider's own self-description, never a table of provider names
+// held here: a provider that starts honouring omits declares it, and this refusal
+// stops applying to it with no change to the compiler. Any entry declared counts,
+// whatever its when renders, because whether the provider honours the key does not
+// depend on which entries a build keeps. One identity covers a Recipe and a
+// FeatureRecipe, for the reason the input-kind refusal beside it gives.
+//
+// Category: CATALOG_ERROR — the pairing at fault is between an authored catalog
+// document and the provider that document binds. Match with
+// errors.Is(err, ErrUnsupportedOmits()).
+func ErrUnsupportedOmits() error { return errUnsupportedOmits }
+
+var errUnsupportedOmits = cerrors.Register("unsupported-omits", cerrors.Meta{
+	ShortCode: "E0335",
+	Message:   "provider does not support omits",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrOmitMatchedNothing is the Loud Guardrail halt raised when an omit entry a
+// render kept left out nothing the source rendered: the provider reported that the
+// entry matched no document.
+//
+// An entry that matches nothing is a statement the author made about the source
+// that is no longer true — most often a chart upgrade that renamed the document, or
+// a typo in the name — and the document the author meant to leave out may now be in
+// the output under its new name. Passing over it would ship exactly what the entry
+// was written to keep out, so the build halts and names the entry: its position in
+// the list the author wrote, and the kind, name and namespace it resolved to, with
+// any of those its template produced from a value declared sensitive withheld. The
+// first such entry in the order the author wrote them is the one named, so the same
+// entry is named on every run.
+//
+// An entry whose when dropped it is never handed over and never checked: it is the
+// author's statement that the entry does not apply to this build.
+//
+// Category: CATALOG_ERROR — the entry is in an authored catalog document. Match with
+// errors.Is(err, ErrOmitMatchedNothing()).
+func ErrOmitMatchedNothing() error { return errOmitMatchedNothing }
+
+var errOmitMatchedNothing = cerrors.Register("omit-matched-nothing", cerrors.Meta{
+	ShortCode: "E0334",
+	Message:   "an omits entry left out nothing the source rendered",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the source decides whether an omit entry " +
+		"matches a document, comparing it in its own format's terms against what it rendered, and returns how many " +
+		"documents each entry matched; the host halts on a count of zero. Which documents a source renders is known " +
+		"only inside that guest, so no view of a compilation carries the fact this turns on."),
+})
+
+// ErrOmitReportMismatch is the Loud Guardrail halt raised when a provider that
+// declares it honours omits returns anything but one count per entry it was handed:
+// no counts, too few, too many, or a count below zero.
+//
+// The counts are the provider's whole account of what it left out — the documents
+// themselves are simply absent from what it returned — so a report that does not
+// line up with the entries leaves the host unable to tell whether an entry left
+// anything out at all, and an entry left unaccounted for is exactly the case the
+// zero-count refusal exists to catch. Which count was meant for which entry is a
+// question only the provider can answer, so the build halts and names how many
+// entries were handed over and how many counts came back.
+//
+// It is raised against what a guest RETURNED, so the reader holding it is someone
+// debugging a provider they wrote; the wording is the plugin contract's. Category:
+// CATALOG_ERROR. Match with errors.Is(err, ErrOmitReportMismatch()).
+func ErrOmitReportMismatch() error { return errOmitReportMismatch }
+
+var errOmitReportMismatch = cerrors.Register("omit-report-mismatch", cerrors.Meta{
+	ShortCode: "E0336",
+	Message:   "a provider's omitted counts do not match the omits entries it was handed",
+	RulePlace: cerrors.NotARule("A provider guest that declares it honours omit entries returned a count list that " +
+		"does not hold one non-negative count per entry it was handed. Which count it meant for which entry is a " +
+		"question only that guest can answer, so it reports a guest whose returned output does not conform to the " +
+		"contract rather than anything an author wrote."),
+})
+
 // The four conditions below share an audience and a reason for carrying an
 // identity, so the reason is stated once here rather than four times.
 //
