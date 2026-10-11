@@ -86,7 +86,7 @@ func newRootCmd() *cobra.Command {
 			// (withMachine), and the resolver picks the platform up from the same
 			// context.
 			_, env := machineFromContext(cmd.Context())
-			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, env)
+			root, _ := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, env)
 			ctx := withWorkspaceResolver(cmd.Context(), root,
 				globalConfigLookup(configPathFlag, env),
 				flagOverlayFromCobra(cmd, offlineFlag, configPathFlag))
@@ -98,7 +98,7 @@ func newRootCmd() *cobra.Command {
 			return nil
 		},
 	}
-	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
+	root.PersistentFlags().StringVar(&workspaceRootFlag, workspaceRootFlagName, "",
 		"absolute path to use as the workspace root (skips discovery)")
 	root.PersistentFlags().StringVar(&configPathFlag, workspaceconfig.ConfigFlagName, "",
 		"path to the global config file, overriding the AGGREGA_CONFIG environment variable and the default location. Workspace-tree config files still layer on top")

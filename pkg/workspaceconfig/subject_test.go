@@ -100,7 +100,7 @@ func TestForSubjectResolvesFromTheSubjectsFolderOnlyWhenNothingAnchored(t *testi
 			wantRoot: named, wantMarker: workspaceconfig.MarkerNone,
 		},
 		{
-			name:  "where resolution starts is named, as a server's launch root is",
+			name:  "where resolution starts is named",
 			runIn: empty, start: named, subject: release,
 			wantRoot: named, wantMarker: workspaceconfig.MarkerCWD,
 		},

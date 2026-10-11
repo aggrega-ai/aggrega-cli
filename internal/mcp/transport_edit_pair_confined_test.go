@@ -35,7 +35,7 @@ func TestTheEditPairStaysConfinedWhereANamedPathIsHonoured(t *testing.T) {
 	if err := os.Symlink(outside, linked); err != nil {
 		t.Skipf("symbolic links are not available here: %v", err)
 	}
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: served, transport: transportStdio}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: served, transport: transportStdio}
 
 	var got validateResultPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "validate", map[string]any{"entity": outside}), &got)

@@ -61,7 +61,7 @@ and it exits cleanly, and a second ends the process at once.`,
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	flagRoot, _ := cmd.Flags().GetString("workspace-root")
+	flagRoot, _ := cmd.Flags().GetString(workspaceRootFlagName)
 	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
 	if err != nil {
 		return err
@@ -105,24 +105,33 @@ func runServe(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// validateWorkspaceRootFlag enforces the contract on --workspace-root.
-// Empty string is treated as unset (the daemon falls through to
-// discovery). A non-empty value resolves to an absolute path, must
-// exist on disk, and must be a directory.
-func validateWorkspaceRootFlag(raw string) (string, error) {
+// validateWorkspaceRootFlag enforces the contract on the workspace root a
+// server's launch names, by --workspace-root or by AGGREGA_WORKSPACE_ROOT.
+// Empty string is treated as unset (the server falls through to discovery). A
+// non-empty value resolves to an absolute path, must exist on disk, and must be
+// a directory.
+//
+// A refusal names source — the flag or the variable, whichever supplied the
+// value, as workspaceRootFromFlagOrEnv reports it — and quotes raw exactly as it
+// was given, between plain quotes and with nothing escaped, so a Windows path
+// reads as its owner typed it and a stray space at either end stays visible. A
+// launch is often composed by a client rather than typed, so the value can be one
+// its reader never saw: the refusal reports what arrived, whatever it looks like,
+// and recognises no spelling of its own.
+func validateWorkspaceRootFlag(raw, source string) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
 	abs, err := filepath.Abs(raw)
 	if err != nil {
-		return "", fmt.Errorf("--workspace-root: %w", err)
+		return "", fmt.Errorf(`%s names the workspace root "%s", which cannot be used: %w`, source, raw, err)
 	}
 	st, err := os.Stat(abs)
 	if err != nil {
-		return "", fmt.Errorf("--workspace-root: %w", err)
+		return "", fmt.Errorf(`%s names the workspace root "%s", which cannot be used: %w`, source, raw, err)
 	}
 	if !st.IsDir() {
-		return "", fmt.Errorf("--workspace-root: %s is not a directory", abs)
+		return "", fmt.Errorf(`%s names the workspace root "%s", which is not a directory: %s`, source, raw, abs)
 	}
 	return abs, nil
 }

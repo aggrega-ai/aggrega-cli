@@ -134,7 +134,7 @@ func placeOf(t *testing.T, content, linePrefix, text string) map[string]any {
 // for the same rows.
 func TestTheConnectionAtPositionToolAnswersAsTheDaemonDoes(t *testing.T) {
 	root, release := connectionAtPositionWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	for _, tc := range []struct {
 		name       string
@@ -169,7 +169,7 @@ func TestTheConnectionAtPositionToolAnswersAsTheDaemonDoes(t *testing.T) {
 // one a building Release reaches on this surface too.
 func TestTheConnectionAtPositionToolAnswersTheReasonsOnAReleaseThatBuilds(t *testing.T) {
 	root, release := connectionAtPositionReasonsWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 	reason := func(r serve.NoConnectionReason) serve.ConnectionAtPositionResult {
 		return serve.ConnectionAtPositionResult{NoConnectionReason: r}
 	}
@@ -202,7 +202,7 @@ func TestTheConnectionAtPositionToolAnswersTheReasonsOnAReleaseThatBuilds(t *tes
 // an answerable call first as the positive control.
 func TestTheConnectionAtPositionToolRefusesWhatItCannotRead(t *testing.T) {
 	root, release := connectionAtPositionWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 	at := map[string]any{"line": 0, "character": 0}
 	if err := os.WriteFile(filepath.Join(root, "broken.yaml"), []byte("spec: [unclosed\n"), 0o644); err != nil {
 		t.Fatalf("write the unparseable document: %v", err)

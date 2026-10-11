@@ -178,7 +178,7 @@ func TestTheReleaseListingNamesEachLinkedFileOutsideTheWorkspace(t *testing.T) {
 			}
 			row.lay(t, root, outside)
 
-			s := &server{out: io.Discard, logw: io.Discard, startDir: root, transport: row.transport}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: root, transport: row.transport}
 			res := callToolOn(t, s, listenerRequest(), "list-releases", row.args)
 			if res.IsError {
 				t.Fatalf("list-releases refused: %s", res.Content[0].Text)

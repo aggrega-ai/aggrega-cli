@@ -55,7 +55,7 @@ func listenerOverWorkspace(t *testing.T, root string) *scopeGridFixture {
 	t.Helper()
 	issuer := newAuthorizationServerDouble(t)
 	s := newCommandToolServer(t, nil)
-	s.startDir = root
+	s.launchRoot = root
 	h, err := newHTTPHandler(context.Background(), s, transportFor(issuer.authorizationConfig(), issuer.egress()))
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)
@@ -102,7 +102,7 @@ func readOverTheListener(t *testing.T, f *scopeGridFixture) configShowResult {
 func readOverTheProcessStreams(t *testing.T, root string) configShowResult {
 	t.Helper()
 	s := newTestServer(t)
-	s.startDir = root
+	s.launchRoot = root
 	s.transport = transportStdio
 
 	res, rpcErr := configShowInvoke(s, context.Background(), nil)

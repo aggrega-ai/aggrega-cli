@@ -754,7 +754,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 // rejecting empty as invalid.
 func TestValidateWorkspaceRootFlagEmptyTreatedAsUnset(t *testing.T) {
 	t.Parallel()
-	got, err := validateWorkspaceRootFlag("")
+	got, err := validateWorkspaceRootFlag("", "")
 	if err != nil {
 		t.Fatalf("unexpected error for empty value: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestValidateWorkspaceRootFlagRelativePathResolves(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	relative := filepath.Base(dir)
-	got, err := validateWorkspaceRootFlag(relative)
+	got, err := validateWorkspaceRootFlag(relative, "--workspace-root")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -799,7 +799,7 @@ func TestValidateWorkspaceRootFlagRelativePathResolves(t *testing.T) {
 func TestValidateWorkspaceRootFlagMissingPathErrors(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "no-such-subdir")
-	_, err := validateWorkspaceRootFlag(missing)
+	_, err := validateWorkspaceRootFlag(missing, "--workspace-root")
 	if err == nil {
 		t.Fatalf("expected error for missing path; got nil")
 	}
@@ -817,7 +817,7 @@ func TestValidateWorkspaceRootFlagNonDirectoryErrors(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	_, err := validateWorkspaceRootFlag(file)
+	_, err := validateWorkspaceRootFlag(file, "--workspace-root")
 	if err == nil {
 		t.Fatalf("expected error for non-directory path; got nil")
 	}

@@ -174,10 +174,16 @@ network is never a way to probe it.
 
 The workspace this process serves is fixed when it starts, on either
 transport: --workspace-root names it, and AGGREGA_WORKSPACE_ROOT supplies
-it when the flag is absent. With neither, a server on standard input and
-output resolves the workspace from the directory it was started in, while
-a listener is refused before it binds unless a workspace resolves there:
-one reached over HTTP serves a workspace an operator chose rather than
+it when the flag is absent. The folder named is the workspace root
+itself, as it is for every command: a call naming no workspace of its
+own is answered there, and nothing above it is searched for a workspace,
+so name the folder that holds the workspace's .aggrega-config.yaml. A
+named folder that does not exist is refused before the server starts,
+naming the flag or the variable that supplied it and the value as it
+was given. With neither, a server on standard input and output resolves
+the workspace from the directory it was started in, while a listener is
+refused before it binds unless a workspace resolves there: one reached
+over HTTP serves a workspace an operator chose rather than
 whichever directory it happened to be started in. Where that directory
 anchors no workspace, a call naming no workspace of its own that names
 its Release or document by an absolute path is answered in the workspace
@@ -217,7 +223,7 @@ process exits. A second request ends the process at once.`,
 // this invocation speaks, and where a listener binds, is resolveMCPLaunch's to
 // decide, before either server starts.
 func runMCP(cmd *cobra.Command, args []string) error {
-	flagRoot, _ := cmd.Flags().GetString("workspace-root")
+	flagRoot, _ := cmd.Flags().GetString(workspaceRootFlagName)
 	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
 	if err != nil {
 		return err

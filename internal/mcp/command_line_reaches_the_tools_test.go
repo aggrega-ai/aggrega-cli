@@ -241,7 +241,7 @@ func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 			s := &server{
 				out:          io.Discard,
 				logw:         io.Discard,
-				startDir:     tc.served,
+				launchRoot:   tc.served,
 				flags:        tc.server,
 				runCommand:   run,
 				commandTools: deriveCommandTools(projectCommandSurface(globalFlagTree(&parsedGlobals{}))),
@@ -337,7 +337,7 @@ func TestEveryCallReadsTheGlobalFileTheCommandLineNamed(t *testing.T) {
 				flags.ConfigPath = named
 			}
 			file := map[string]string{"named": named, "exported": exported}
-			s := &server{out: io.Discard, logw: io.Discard, startDir: served, flags: flags}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: served, flags: flags}
 
 			for _, w := range []struct{ which, rootArg string }{
 				{"the workspace the process was started over", ""},

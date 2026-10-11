@@ -85,15 +85,15 @@ func callTool(t *testing.T, s *server, name string, args any) *callToolResult {
 // newTestServer builds a server with a discard log sink for direct tool
 // invocation.
 //
-// Its start directory is an empty temporary directory, which is where a tool
-// call that supplies no workspace root resolves from. Left unset, that
-// resolution would begin at the process working directory and walk upward until
+// Its launch root is an empty temporary directory, which is the workspace root
+// of a tool call that supplies none. Left unset, that call's resolution would
+// begin at the process working directory and walk upward until
 // it found a configured workspace — reaching the checkout the suite happens to
 // run inside, and adopting its catalog stack and artifact cache. A case that
 // needs a populated workspace constructs one and passes its root.
 func newTestServer(t *testing.T) *server {
 	t.Helper()
-	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: t.TempDir()}
+	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: t.TempDir()}
 }
 
 func TestGetSchemaTool(t *testing.T) {

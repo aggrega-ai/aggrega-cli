@@ -12,17 +12,31 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// workspaceRootFromFlagOrEnv resolves the workspace-root override: the
-// --workspace-root flag wins when the operator changed it (even to empty),
-// otherwise AGGREGA_WORKSPACE_ROOT fills in, otherwise the empty string lets
-// discovery proceed. Reading Changed distinguishes an explicit empty flag from
-// an unset one. Both the root command and serve resolve the override through
-// this one helper, so the environment fallback is single-sourced.
-func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(string) string) string {
-	if cmd.Flags().Changed("workspace-root") {
-		return flagValue
+// workspaceRootFlagName is the global flag naming the workspace root, spelled
+// once for every site that registers or reads it.
+const workspaceRootFlagName = "workspace-root"
+
+// workspaceRootFromFlagOrEnv resolves the workspace-root override and names
+// where it came from: the --workspace-root flag wins when the operator changed
+// it (even to empty), otherwise AGGREGA_WORKSPACE_ROOT fills in, otherwise the
+// empty string lets discovery proceed. Reading Changed distinguishes an
+// explicit empty flag from an unset one. The root command, serve and mcp all
+// resolve the override through this one helper, so the environment fallback is
+// single-sourced.
+//
+// source is the flag as a reader types it, or the variable's name, whichever
+// supplied root, and empty where neither did. It is what a refusal of the value
+// names (validateWorkspaceRootFlag), so a value the reader never typed — one a
+// client's configuration put in the variable — is reported against the
+// variable that carried it rather than against a flag nobody passed.
+func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(string) string) (root, source string) {
+	if cmd.Flags().Changed(workspaceRootFlagName) {
+		return flagValue, "--" + workspaceRootFlagName
 	}
-	return envLookupOrGetenv(look)(envWorkspaceRoot)
+	if v := envLookupOrGetenv(look)(envWorkspaceRoot); v != "" {
+		return v, envWorkspaceRoot
+	}
+	return "", ""
 }
 
 // helpCatalogDir is the --catalog flag's help text, held once because four

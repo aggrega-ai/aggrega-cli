@@ -152,7 +152,7 @@ func targetNames(targets []serve.WorkspaceEntityRef) []string {
 // set would fail even though its provenance field was right.
 func TestAttachCandidatesAnswersEachOfItsThreeAddressingShapes(t *testing.T) {
 	root := newCandidacyWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	t.Run("a workspace document by name reports the labels it declares", func(t *testing.T) {
 		var got attachCandidatesPayload
@@ -217,7 +217,7 @@ func TestAttachCandidatesAnswersEachOfItsThreeAddressingShapes(t *testing.T) {
 
 	t.Run("a node on a compiled graph reports the finalised labels as resolved", func(t *testing.T) {
 		fsRoot, catalogDir, releasePath := fullstackWorkspace(t)
-		gs := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: fsRoot}
+		gs := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: fsRoot}
 
 		var got attachCandidatesPayload
 		decodeStructured(t, callDiscoveryTool(t, gs, "attach-candidates", map[string]any{
@@ -273,7 +273,7 @@ func TestAttachCandidatesAnswersEachOfItsThreeAddressingShapes(t *testing.T) {
 // applies.
 func TestAttachCandidatesReportsANodeWithNoCandidates(t *testing.T) {
 	root := newCandidacyWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	res := callDiscoveryTool(t, s, "attach-candidates", map[string]any{
 		"workspace_root": root,
@@ -305,7 +305,7 @@ func TestAttachCandidatesReportsANodeWithNoCandidates(t *testing.T) {
 // tools and a test over one would pass while the other answered empty.
 func TestCandidacyToolsRefuseAnUnknownSubjectRatherThanAnsweringEmpty(t *testing.T) {
 	root := newCandidacyWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	for _, tool := range []string{"attach-candidates", "connection-candidates"} {
 		t.Run(tool, func(t *testing.T) {
@@ -336,7 +336,7 @@ func TestCandidacyToolsRefuseAnUnknownSubjectRatherThanAnsweringEmpty(t *testing
 
 	t.Run("an unknown graph node names the graph, not the workspace", func(t *testing.T) {
 		fsRoot, catalogDir, releasePath := fullstackWorkspace(t)
-		gs := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: fsRoot}
+		gs := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: fsRoot}
 		res := callDiscoveryTool(t, gs, "attach-candidates", map[string]any{
 			"workspace_root": fsRoot,
 			"catalog_dirs":   []string{catalogDir},
@@ -365,7 +365,7 @@ func TestCandidacyToolsRefuseAnUnknownSubjectRatherThanAnsweringEmpty(t *testing
 // declared one, would teach an author that their freedom is narrower than it is.
 func TestConnectionCandidatesKeepsTheTwoHalvesDistinguishable(t *testing.T) {
 	root := newCandidacyWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	t.Run("a socket the entity declares carries its constraint and its complete targets", func(t *testing.T) {
 		var got connectionCandidatesPayload

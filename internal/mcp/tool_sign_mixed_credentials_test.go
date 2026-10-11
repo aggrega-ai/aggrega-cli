@@ -48,7 +48,7 @@ func TestTheSigningToolsRefuseAMixedCredentialBatch(t *testing.T) {
 		for _, ref := range refs {
 			batch.WriteString("- reference: " + ref + "\n  severity: warning\n  reason: superseded\n")
 		}
-		if err := os.WriteFile(filepath.Join(s.startDir, "batch.yaml"), []byte(batch.String()), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.launchRoot, "batch.yaml"), []byte(batch.String()), 0o644); err != nil {
 			t.Fatalf("write the batch file: %v", err)
 		}
 		return s

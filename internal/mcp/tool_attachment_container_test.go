@@ -221,7 +221,7 @@ func TestTheAttachmentContainerToolNamesTheSiteForEveryAuthoringShape(t *testing
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 			var got attachmentContainerPayload
 			decodeStructured(t, callDiscoveryTool(t, s, "attachment-container", map[string]any{
@@ -272,7 +272,7 @@ func TestTheAttachmentContainerAndInsertionPointToolsCompose(t *testing.T) {
 			if tc.useNested {
 				release = nested
 			}
-			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 			var where attachmentContainerPayload
 			decodeStructured(t, callDiscoveryTool(t, s, "attachment-container", map[string]any{
@@ -376,7 +376,7 @@ func componentsWithAttachment(t *testing.T, content, instance string) []string {
 // with an answerable call first as the positive control.
 func TestTheAttachmentContainerToolRefusesWhatItCannotName(t *testing.T) {
 	root, catalogDir, nested, _ := attachmentContainerWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	for _, tc := range []struct {
 		name    string
@@ -489,7 +489,7 @@ func TestTheAttachmentContainerToolIsReachableFromTheCapabilityListing(t *testin
 // exists to remove. The segments are the answer; nothing here may collapse them.
 func TestTheAttachmentContainerToolReportsSegmentsRatherThanAJoinedPath(t *testing.T) {
 	root, catalogDir, nested, _ := attachmentContainerWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	res := callDiscoveryTool(t, s, "attachment-container", map[string]any{
 		"workspace_root": root,
@@ -524,7 +524,7 @@ func TestTheAttachmentContainerToolReportsSegmentsRatherThanAJoinedPath(t *testi
 // vocabulary fails here rather than at whichever client hit it first.
 func TestTheAttachmentContainerToolIsInsertionPointReady(t *testing.T) {
 	root, catalogDir, nested, _ := attachmentContainerWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	var where attachmentContainerPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "attachment-container", map[string]any{

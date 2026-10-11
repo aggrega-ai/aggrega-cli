@@ -100,7 +100,7 @@ func pinnedDocsServer(t *testing.T, ws, root string) *server {
 		out:               io.Discard,
 		logw:              io.Discard,
 		serverVersion:     docsTestVersion,
-		startDir:          ws,
+		launchRoot:        ws,
 		docsRoot:          root,
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,

@@ -39,7 +39,7 @@ func coldDocsWorkspace(t *testing.T) (*server, string) {
 		out:               io.Discard,
 		logw:              io.Discard,
 		serverVersion:     docsTestVersion,
-		startDir:          ws,
+		launchRoot:        ws,
 		docsRoot:          t.TempDir(),
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,

@@ -74,7 +74,7 @@ func TestServeCatalogEntity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(catalogDir, "component.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write component: %v", err)
 	}
-	s := &server{out: io.Discard, logw: io.Discard, startDir: ws}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: ws}
 
 	rr, rerr := readResource(t, s, "catalog://component/core/compute/api-server")
 	if rerr != nil {

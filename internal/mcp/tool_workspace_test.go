@@ -143,7 +143,7 @@ func decodeStructured(t *testing.T, res *callToolResult, into any) {
 // put in one. A discovery tool reachable only through a discovery call would
 // leave that caller exactly where it started.
 func TestBothDiscoveryToolsAreInTheDefaultListing(t *testing.T) {
-	s := &server{out: io.Discard, logw: io.Discard, startDir: t.TempDir()}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: t.TempDir()}
 	listed, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list: %s", rpcErr.Message)
@@ -176,7 +176,7 @@ func TestBothDiscoveryToolsAreInTheDefaultListing(t *testing.T) {
 // called it a Release.
 func TestTheEntityIndexReportsWhatTheDocumentDeclaresNotWhatItIsCalled(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var got listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
@@ -279,7 +279,7 @@ metadata:
 // listing that hid it would leave its author with no way to find out it is there.
 func TestTheEntityListingOffersOnlyNamesTheOtherToolsCanTake(t *testing.T) {
 	root := newMixedProjectWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var got listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
@@ -341,7 +341,7 @@ func TestTheEntityListingOffersOnlyNamesTheOtherToolsCanTake(t *testing.T) {
 // implementation that matched on the filename fails both.
 func TestTheReleaseListingIsDecidedByContentNotFilename(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var got listReleasesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{
@@ -388,7 +388,7 @@ func TestTheReleaseListingIsDecidedByContentNotFilename(t *testing.T) {
 // therefore why enumeration had to be on this surface at all.
 func TestEnumerationProducesANameTheAddressingToolsAccept(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var index listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
@@ -447,7 +447,7 @@ func TestEnumerationProducesANameTheAddressingToolsAccept(t *testing.T) {
 // the answer says records remain to be asked for.
 func TestTheDiscoveryToolsAnswerWithTheSummaryWhenNoShapeIsNamed(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	t.Run("entities", func(t *testing.T) {
 		var got listEntitiesResult
@@ -528,7 +528,7 @@ spec:
 // written beside the code could have supplied.
 func TestTheSummaryGrowsWithTheWorkspaceRatherThanBeingDeclared(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	read := func() listEntitiesResult {
 		t.Helper()
@@ -591,7 +591,7 @@ func TestTheSummaryGrowsWithTheWorkspaceRatherThanBeingDeclared(t *testing.T) {
 // only in the case where it does nothing.
 func TestADetailedListingIsBoundedAndContinues(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var whole listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
@@ -674,7 +674,7 @@ func TestADetailedListingWithNoLimitIsStillBounded(t *testing.T) {
 			t.Fatalf("write fixture %d: %v", i, err)
 		}
 	}
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var got listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
@@ -724,7 +724,7 @@ func TestACatalogResolvedEntityReportsNoFileAndSaysWhy(t *testing.T) {
 		t.Fatalf("write feature: %v", err)
 	}
 
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 	var got listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
 		"workspace_root":  root,
@@ -762,7 +762,7 @@ func TestACatalogResolvedEntityReportsNoFileAndSaysWhy(t *testing.T) {
 // strings instead of reconstructing a path from one shape into the other.
 func TestTheTwoListingsAgreeOnTheCoordinateAClientJoinsOn(t *testing.T) {
 	root := newDiscoveryWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	var index listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{

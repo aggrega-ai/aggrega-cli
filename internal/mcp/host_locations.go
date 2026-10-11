@@ -313,9 +313,9 @@ func (tw *toolWorkspace) answer(res *callToolResult, rpcErr *rpcError) (*callToo
 // the workspace returned carries the transport alone. Over a listener it is the
 // served workspace, resolved exactly as every tool resolves it, since a caller
 // there cannot name another. A workspace that does not resolve falls back as
-// [server.resolveServedWorkspace] states, to the directory the server was started
-// over, or to its working directory where it was given none. That directory is
-// held only where it is absolute, as every held location is, so a start directory
+// [server.resolveServedWorkspace] states, to the root the server was launched
+// with, or to its working directory where it was given none. That directory is
+// held only where it is absolute, as every held location is, so a launch root
 // spelled relative holds nothing to match in prose.
 //
 // Nothing is kept between calls: each answer resolves its own, so two concurrent

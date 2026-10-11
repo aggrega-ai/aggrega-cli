@@ -219,9 +219,15 @@ func splitPathList(raw string) []string {
 
 // EnvWorkspaceRoot is the variable an operator sets to supply the workspace
 // root without the --workspace-root flag. It pairs with that flag (the flag
-// wins when set); the resolver consults it when no flag is given. It is not a
-// Config field — it feeds root discovery — so it is applied at the command's
-// root-flag fallback, not through the config overlay.
+// wins when set); the resolver consults it when no flag is given, and takes the
+// folder it names as the root, skipping discovery, exactly as it takes the
+// flag. It is not a Config field — it decides the root rather than a setting —
+// so it is applied at the command's root-flag fallback, not through the config
+// overlay.
+//
+// The installable desktop bundle (extensions/mcpb/manifest.json) passes the
+// folder its user chose through this variable; that manifest is JSON and cannot
+// name this constant, so a test holds its spelling there to this one.
 const EnvWorkspaceRoot = "AGGREGA_WORKSPACE_ROOT"
 
 // ConfigBackedEnvVars returns the environment variables of the config-overlay

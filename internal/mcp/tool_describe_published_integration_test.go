@@ -148,7 +148,7 @@ func TestIntegration_DescribeReadsAPublishedEntityOverStandardInputAndOutput(t *
 	component, recipe := publishDescribeFixtures(t, reg.host)
 
 	ws := writeDescribeWorkspace(t, "workspace: {}\noffline: false\ndefault_registry: \""+reg.host+"\"\n")
-	s := &server{out: io.Discard, logw: io.Discard, startDir: ws, transport: transportStdio, docsBundleVersion: "0.0.0-fixture"}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: ws, transport: transportStdio, docsBundleVersion: "0.0.0-fixture"}
 	line := func(id int, reference string) string {
 		return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"describe","arguments":{"name":%q}}}`,
 			id, reference)
@@ -178,7 +178,7 @@ func TestIntegration_DescribeOverAListenerReadsAConfiguredRegistryOnly(t *testin
 	unlistedComponent, _ := publishDescribeFixtures(t, unlisted.host)
 
 	ws := writeDescribeWorkspace(t, "workspace: {}\noffline: false\ndefault_registry: \""+configured.host+"\"\n")
-	s := &server{out: io.Discard, logw: io.Discard, startDir: ws}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: ws}
 	h, err := newHTTPHandler(context.Background(), s, defaultTransportConfig())
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)

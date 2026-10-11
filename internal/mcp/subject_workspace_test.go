@@ -18,7 +18,7 @@ import (
 // one: no root, so a call naming none resolves from the process working
 // directory. root, where given, is the root the launch named instead.
 func unlaunchedServer(root string) *server {
-	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root, transport: transportStdio}
+	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root, transport: transportStdio}
 }
 
 // assertNothingCreatedIn fails where dir holds anything: the folder a server was

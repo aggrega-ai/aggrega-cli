@@ -307,12 +307,14 @@ const unusedSigningKeyDetail = "signing.key_path names a key this server holds, 
 // workspace question that decides that — so a configuration this cannot read costs
 // the operator a line rather than the launch.
 func noteAnUnusedSigningKey(lifecycle lifecycleLog, root string, flags workspaceconfig.FlagOverlay, address string) {
-	// The same resolution a call answered over this listener makes: it begins
-	// where the process was pointed, names no root of its own, because a caller
-	// reaching a listener cannot name one, and reads the command line the process
-	// was started with. So the configuration read here is the configuration those
-	// calls will read — a key named in the global file --config names included.
-	rw, err := workspaceconfig.ResolveWithFlags(root, "", flags)
+	// The same resolution a call answered over this listener makes: it names no
+	// root of its own, because a caller reaching a listener cannot name one, so it
+	// takes the root the process was launched with as the call does
+	// (resolutionInputs), and reads the command line the process was started
+	// with. So the configuration read here is the configuration those calls will
+	// read — a key named in the global file --config names included.
+	start, pinned := resolutionInputs(root, "")
+	rw, err := workspaceconfig.ResolveWithFlags(start, pinned, flags)
 	if err != nil || !namesASigningKey(rw.Config()) {
 		return
 	}

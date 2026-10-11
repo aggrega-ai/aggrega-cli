@@ -191,7 +191,7 @@ type progressFixture struct {
 func newProgressFixture(t *testing.T, keepAlive time.Duration, resolve dependencyResolver) *progressFixture {
 	t.Helper()
 	s, root, _, _ := pullWorkspace(t)
-	s.startDir = root
+	s.launchRoot = root
 	log := &lockedBuffer{}
 	s.logw = log
 	s.resolveDependencies = resolve

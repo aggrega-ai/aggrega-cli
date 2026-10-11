@@ -486,7 +486,7 @@ func (fx *hostLocationFixture) generateCatalog(ctx context.Context, opts gencata
 // equip gives a session the seams the command layer composes it with, and the
 // fixture's own machine-wide caches in place of this process's.
 func (fx *hostLocationFixture) equip(s *server) {
-	s.startDir = fx.root
+	s.launchRoot = fx.root
 	s.listPlugins = staticLister(fx.pluginListing())
 	s.resolveImportPlugin = importToolResolver
 	s.runGenCatalog = fx.generateCatalog

@@ -67,7 +67,7 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 		out:               io.Discard,
 		logw:              &logged,
 		serverVersion:     version,
-		startDir:          ws,
+		launchRoot:        ws,
 		docsRoot:          t.TempDir(),
 		docsBundleVersion: version,
 	}
@@ -115,7 +115,7 @@ func TestDocsAcquisitionRefusedWhenTheWorkspaceIsOffline(t *testing.T) {
 	}
 
 	var logged strings.Builder
-	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", startDir: ws, docsRoot: t.TempDir()}
+	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", launchRoot: ws, docsRoot: t.TempDir()}
 	runServer(t, s)
 	if !strings.Contains(logged.String(), "offline") {
 		t.Errorf("an offline workspace must report the egress refusal; log was: %s", logged.String())

@@ -39,7 +39,7 @@ func TestTheReleaseListingNamesEachReturnedReleasesLockfile(t *testing.T) {
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
-	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: root}
 
 	rows := []struct {
 		name         string

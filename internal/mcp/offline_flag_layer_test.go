@@ -120,7 +120,7 @@ func TestEveryCallResolvesTheCommandLineOfflineLayer(t *testing.T) {
 			pinOfflineEnvironment(t, tc.env)
 			served := offlineLayerWorkspace(t, tc.config)
 			named := offlineLayerWorkspace(t, tc.config)
-			s := &server{out: io.Discard, logw: io.Discard, startDir: served, flags: tc.flags}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: served, flags: tc.flags}
 
 			for _, w := range []struct{ which, rootArg string }{
 				{"the workspace the process was started over", ""},

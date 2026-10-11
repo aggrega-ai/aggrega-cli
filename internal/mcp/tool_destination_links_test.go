@@ -161,7 +161,7 @@ func TestAToolWritingThroughALinkLeadingOutIsRefused(t *testing.T) {
 			linkLinkedDirs(t, filepath.Join(outside, "outside-entity.yaml"), filepath.Join(root, "linked-entity.yaml"))
 			writeLinkedDirsFile(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\noffline: true\n")
 
-			s := &server{out: io.Discard, logw: io.Discard, startDir: root, transport: row.transport}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: root, transport: row.transport}
 			pointedAt := ""
 			s.runGenCatalog = func(_ context.Context, opts gencatalog.Options, _ io.Writer) error {
 				pointedAt = opts.OutputDir

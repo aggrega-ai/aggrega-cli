@@ -44,7 +44,7 @@ func TestTheListingsOfAWorkspaceReachedThroughALinkListItsContent(t *testing.T) 
 	linkLinkedDirs(t, realDir, via)
 
 	for _, row := range []struct {
-		name, startDir, rootArg, spelled string
+		name, launchRoot, rootArg, spelled string
 	}{
 		{"control: the workspace named as itself", realDir, realDir, realDir},
 		{"workspace_root a link to the workspace", realDir, via, via},
@@ -52,7 +52,7 @@ func TestTheListingsOfAWorkspaceReachedThroughALinkListItsContent(t *testing.T) 
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
-			s := heldConfigurationServer(t, row.startDir)
+			s := heldConfigurationServer(t, row.launchRoot)
 			args := map[string]any{"response_format": "detailed"}
 			if row.rootArg != "" {
 				args["workspace_root"] = row.rootArg

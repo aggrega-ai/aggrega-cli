@@ -77,7 +77,7 @@ func attachVariantToolWorkspace(t *testing.T) string {
 func TestAttachCandidatesForAGraphNodeOffersWhatItsReleaseReaches(t *testing.T) {
 	t.Parallel()
 	root := attachVariantToolWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	cases := []struct {
 		name          string

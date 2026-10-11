@@ -109,7 +109,7 @@ func newCommandToolServer(t *testing.T, run commandRunner) *server {
 	return &server{
 		out:          io.Discard,
 		logw:         io.Discard,
-		startDir:     t.TempDir(),
+		launchRoot:   t.TempDir(),
 		runCommand:   run,
 		commandTools: deriveCommandTools(fixtureCommandSurface()),
 	}
@@ -395,7 +395,7 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	// The flags are emitted in the derived order, so one set of arguments always
 	// produces one argument vector. The fixture server serves a workspace of its
 	// own, so every command it runs leads with that root.
-	served := "--workspace-root=" + s.startDir
+	served := "--workspace-root=" + s.launchRoot
 	want := []string{served, "work", "--catalog=a", "--catalog=b", "--depth=7", "--dry-run=true", "--output-dir=/tmp/out"}
 	if strings.Join(gotArgs, " ") != strings.Join(want, " ") {
 		t.Errorf("argv = %v, want %v", gotArgs, want)

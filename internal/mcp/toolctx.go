@@ -336,7 +336,8 @@ func schemaWithoutProperties(schema string, names []string) string {
 // toolWorkspace is the per-call resolved workspace context the closure-driven
 // tools build their compiler-operations inputs from. Every field is derived
 // once per tool call from the call's workspace_root and catalog_dirs arguments
-// (or the process working directory when absent), and from the file the call is
+// (or, absent a root, the one the process was launched with, else the process
+// working directory — resolutionInputs), and from the file the call is
 // about where that moves the workspace (subjectWorkspace); the server holds no
 // cached workspace, so two concurrent calls never share resolution state.
 type toolWorkspace struct {
@@ -375,10 +376,37 @@ type toolWorkspace struct {
 	held *workspaceconfig.HeldWorkspace
 }
 
-// resolveToolWorkspace resolves the workspace a tool call operates in. An
-// explicit rootArg pins the workspace root; otherwise resolution starts from
-// the server's configured start directory, which is the process working
-// directory in production. catalogDirs are the call's catalog search
+// resolutionInputs reports what a call's workspace resolution is handed — where
+// it begins, and the root it pins — from the root the call names for itself
+// (rootArg) and the root this process was launched with (launchRoot).
+//
+// A root, from either, is the workspace root itself. It is handed as both, so
+// the resolution takes it as given: nothing above it is searched for an
+// enclosing workspace, and the cascade reads that root's own configuration file
+// alone. That is what --workspace-root and AGGREGA_WORKSPACE_ROOT mean on every
+// command, and it is the root a generated command tool's command is handed for a
+// call naming none (servedRootFlag), so a server's own tools and its command
+// tools answer such a call in one workspace. The call's own root wins over the
+// launch's. With neither, both are empty and the resolution discovers the
+// workspace from the process working directory.
+//
+// It is the one place that is decided. Every resolution made over the workspace
+// this process serves — a call's, a listing's, and the listener's own reading
+// of that workspace as it starts — takes its inputs from here, so none of them
+// can come to treat a launch root as a folder to search upward from while the
+// others take it as the root.
+func resolutionInputs(launchRoot, rootArg string) (start, root string) {
+	root = rootArg
+	if root == "" {
+		root = launchRoot
+	}
+	return root, root
+}
+
+// resolveToolWorkspace resolves the workspace a tool call operates in: the root
+// rootArg names, else the root this process was launched with, taken as the
+// workspace root, else the workspace discovered from the process working
+// directory (resolutionInputs). catalogDirs are the call's catalog search
 // directories, prepended (absolute) to the workspace's configured stack, which
 // in turn is followed by the conventional `catalog` directory at the workspace
 // root when that directory exists. A workspace that declares an empty
@@ -397,12 +425,8 @@ type toolWorkspace struct {
 // as much as over the one the process was started in, because a flag is a
 // property of the invocation rather than of a workspace.
 func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*toolWorkspace, error) {
-	start := rootArg
-	flagRoot := rootArg
-	if start == "" {
-		start = s.startDir
-	}
-	rw, err := workspaceconfig.ResolveWithFlags(start, flagRoot, s.flags)
+	start, root := resolutionInputs(s.launchRoot, rootArg)
+	rw, err := workspaceconfig.ResolveWithFlags(start, root, s.flags)
 	if err != nil {
 		return nil, toolWorkspaceRefusal(err)
 	}
@@ -482,12 +506,8 @@ func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs 
 	if !opsurface.AnswersOverHeldConfiguration(operation) {
 		return s.resolveToolWorkspace(rootArg, catalogDirs)
 	}
-	start := rootArg
-	flagRoot := rootArg
-	if start == "" {
-		start = s.startDir
-	}
-	rw, held, err := workspaceconfig.ResolveOrHold(start, flagRoot, s.flags)
+	start, root := resolutionInputs(s.launchRoot, rootArg)
+	rw, held, err := workspaceconfig.ResolveOrHold(start, root, s.flags)
 	if err != nil {
 		return nil, toolWorkspaceRefusal(err)
 	}

@@ -80,7 +80,7 @@ func publishFixture(t *testing.T, workspaceYAML string) (*server, string) {
 		t.Fatalf("write the artifact file: %v", err)
 	}
 
-	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}, root
+	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}, root
 }
 
 // defaultRegistryWorkspace is the ordinary configuration: one destination, no

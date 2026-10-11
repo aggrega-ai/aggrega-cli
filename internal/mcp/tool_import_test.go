@@ -144,7 +144,7 @@ func importToolServer(t *testing.T, root string) *server {
 	t.Helper()
 	return &server{
 		out: io.Discard, logw: io.Discard, serverVersion: "test",
-		startDir:            root,
+		launchRoot:          root,
 		resolveImportPlugin: importToolResolver,
 	}
 }

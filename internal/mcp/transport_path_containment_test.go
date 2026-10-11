@@ -213,7 +213,7 @@ func TestAnAbsolutePathOutsideTheRootIsAcceptedOverStdio(t *testing.T) {
 	served := rootedWorkspace(t)
 	outside := filepath.Join(rootedWorkspace(t), theLaunchedWorkspacesRelease)
 
-	s := &server{out: io.Discard, logw: io.Discard, startDir: served, transport: transportStdio}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: served, transport: transportStdio}
 
 	var got validateResultPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "validate", map[string]any{"entity": outside}), &got)
@@ -238,7 +238,7 @@ func TestTheSamePathIsRefusedOverHTTPAndAcceptedOverStdio(t *testing.T) {
 			overHTTP.Content[0].Text)
 	}
 
-	s := &server{out: io.Discard, logw: io.Discard, startDir: served, transport: transportStdio}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: served, transport: transportStdio}
 	var got validateResultPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "validate", arguments), &got)
 	if told(got.Target) != outside {

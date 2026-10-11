@@ -99,7 +99,7 @@ func docsSession(ws, root string, target docsTargetFor, logw *bytes.Buffer) *ser
 		out:               bytes.NewBuffer(nil),
 		logw:              logw,
 		serverVersion:     docsTestVersion,
-		startDir:          ws,
+		launchRoot:        ws,
 		docsRoot:          root,
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,
@@ -139,7 +139,7 @@ func TestALaunchWhereNoWorkspaceCacheCanBeCreatedServesTheDocumentation(t *testi
 	t.Parallel()
 	ws := t.TempDir()
 	if err := os.Chmod(ws, 0o555); err != nil {
-		t.Fatalf("make the start folder read-only: %v", err)
+		t.Fatalf("make the workspace folder read-only: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(ws, 0o755) })
 	// The precondition, without which the case below would pass over a folder a

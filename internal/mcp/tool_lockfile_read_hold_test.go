@@ -61,7 +61,7 @@ func TestEveryReleaseToolRefusesALockfileThatLeadsOut(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root,
+			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root,
 				transport: transportStdio}
 
 			if err := os.Symlink(inside, lock); err != nil {

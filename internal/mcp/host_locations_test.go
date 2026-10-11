@@ -154,7 +154,7 @@ func aWorkspaceHoldingLocationsOutsideItsRoot(t *testing.T, transport transportM
 		t.Fatalf("write the workspace's own configuration: %v", err)
 	}
 
-	s := &server{startDir: root, transport: transport}
+	s := &server{launchRoot: root, transport: transport}
 	resolved, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
 		t.Fatalf("resolve the workspace: %v", err)
@@ -324,17 +324,16 @@ func TestTheOnePointEveryResultLeavesThroughRewritesTextAndNotThePayload(t *test
 // TestAServedWorkspaceIsResolvedOnlyForAListener pins that the answer a tool
 // carried no workspace for is read against nothing resolved over the process's
 // own streams, and against the served workspace over a listener — and, where that
-// workspace has stopped resolving, against the directory its resolution begins
-// in.
+// workspace has stopped resolving, against the root it was launched with.
 func TestAServedWorkspaceIsResolvedOnlyForAListener(t *testing.T) {
 	root := listenerRootNaming(t, "")
 
-	streams := (&server{startDir: root, transport: transportStdio}).servedWorkspace()
+	streams := (&server{launchRoot: root, transport: transportStdio}).servedWorkspace()
 	if streams.root != "" || streams.rw != nil {
 		t.Errorf("over the process's own streams a workspace was resolved: root %q", streams.root)
 	}
 
-	listener := (&server{startDir: root, transport: transportHTTP}).servedWorkspace()
+	listener := (&server{launchRoot: root, transport: transportHTTP}).servedWorkspace()
 	if listener.rw == nil || listener.root == "" {
 		t.Fatalf("over a listener no workspace was resolved for the answer")
 	}
@@ -359,10 +358,10 @@ func TestAServedWorkspaceIsResolvedOnlyForAListener(t *testing.T) {
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			stopped := aWorkspaceThatStoppedResolving(t)
-			s := &server{startDir: stopped, transport: transportHTTP}
+			s := &server{launchRoot: stopped, transport: transportHTTP}
 			if tc.givenNoDirectory {
 				t.Chdir(stopped)
-				s.startDir = ""
+				s.launchRoot = ""
 				if wd, err := os.Getwd(); err != nil || wd != stopped {
 					t.Fatalf("precondition: the working directory reads %q (%v), and this row runs in %q", wd, err, stopped)
 				}

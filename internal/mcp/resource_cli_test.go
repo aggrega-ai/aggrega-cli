@@ -63,7 +63,7 @@ func TestReadingCliHelpRunsNoCommand(t *testing.T) {
 	}
 	// The fixture server serves a workspace of its own, which the command is
 	// handed ahead of its path.
-	if want := "--workspace-root=" + s.startDir + " work"; strings.Join(ran[0], " ") != want {
+	if want := "--workspace-root=" + s.launchRoot + " work"; strings.Join(ran[0], " ") != want {
 		t.Errorf("the command tool ran %v, want [%s]", ran[0], want)
 	}
 }

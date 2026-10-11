@@ -563,7 +563,7 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 	}
 	var serverFlags []string
 	if !ct.forwardsFlags {
-		serverFlags = append(ct.servedRootFlag(s.startDir, supplied), s.flags.Args()...)
+		serverFlags = append(ct.servedRootFlag(s.launchRoot, supplied), s.flags.Args()...)
 	}
 	argv, refusal := ct.argv(serverFlags, supplied)
 	if refusal != "" {
@@ -610,14 +610,13 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 // the same flag — rather than finding one from the directory this server was
 // started in.
 //
-// root is where this server starts each call's resolution — the root it was
-// launched with — read as it is held rather than resolved again here. Empty
-// means it was launched with none and resolves from its working directory, as
-// the command does by itself, so nothing is handed and the command line is the
-// one the call alone builds. The command takes the root as given, which is what
-// the flag does at a terminal, while the tools here start their own resolution
-// from it; the two name one workspace whenever that root is a workspace's own
-// root rather than a directory inside one.
+// root is the root this server was launched with, read as it is held rather
+// than resolved again here. Empty means it was launched with none and resolves
+// from its working directory, as the command does by itself, so nothing is
+// handed and the command line is the one the call alone builds. The command
+// takes the root as given, which is what the flag does at a terminal, and so do
+// the tools here (resolutionInputs): a call naming no workspace is answered in
+// that one root by both, even where it is a folder inside some other workspace.
 //
 // A call that sends the property names its workspace, whatever value it sends,
 // and that value is the one the command reads: the call's own flag is the only

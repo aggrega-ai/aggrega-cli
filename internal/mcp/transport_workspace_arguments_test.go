@@ -227,7 +227,7 @@ func TestANamedWorkspaceIsHonouredOverStdio(t *testing.T) {
 	served := rootedWorkspace(t)
 	named := rootedWorkspace(t)
 
-	s := &server{out: io.Discard, logw: io.Discard, startDir: served, transport: transportStdio}
+	s := &server{out: io.Discard, logw: io.Discard, launchRoot: served, transport: transportStdio}
 
 	var got listReleasesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{"workspace_root": named}), &got)

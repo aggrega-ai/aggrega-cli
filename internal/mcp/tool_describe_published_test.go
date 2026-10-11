@@ -73,8 +73,8 @@ func writeDescribeWorkspace(t *testing.T, config string) string {
 // and must NOT carry the egress one: a refusal placed after the read, or a
 // predicate that admitted everything, would show the egress refusal instead.
 //
-// The workspace is the one the server was started over, named by the server's
-// start directory rather than by the call, which is how a listener serves it —
+// The workspace is the one the server was started over, named by the root the
+// server was launched with rather than by the call, which is how a listener serves it —
 // a call on a listener cannot name another.
 func TestDescribeOverAListenerReadsOnlyAConfiguredRegistry(t *testing.T) {
 	pinDescribeEnvironment(t)
@@ -107,7 +107,7 @@ func TestDescribeOverAListenerReadsOnlyAConfiguredRegistry(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &server{transport: transportHTTP, startDir: writeDescribeWorkspace(t, tc.config)}
+			s := &server{transport: transportHTTP, launchRoot: writeDescribeWorkspace(t, tc.config)}
 			args, _ := json.Marshal(map[string]any{"name": tc.reference})
 			res, rpcErr := describeInvoke(s, context.Background(), args)
 			text := describePublishedFailureText(t, res, rpcErr)
@@ -168,7 +168,7 @@ func TestDescribeOverAListenerContactsNothingItRefuses(t *testing.T) {
 	root := writeDescribeWorkspace(t, "workspace: {}\noffline: false\n"+
 		"default_registry: registry.example.com\n"+
 		"registries:\n  - host: \""+listedHost+"\"\n")
-	s := &server{transport: transportHTTP, startDir: root}
+	s := &server{transport: transportHTTP, launchRoot: root}
 	describe := func(reference string) string {
 		args, _ := json.Marshal(map[string]any{"name": reference})
 		res, rpcErr := describeInvoke(s, context.Background(), args)
@@ -197,7 +197,7 @@ func TestDescribeOverAListenerContactsNothingItRefuses(t *testing.T) {
 // contacted.
 func TestDescribeOverAListenerRefusesAReferenceWithNoHostToAdmit(t *testing.T) {
 	pinDescribeEnvironment(t)
-	s := &server{transport: transportHTTP, startDir: writeDescribeWorkspace(t, "workspace: {}\noffline: true\n")}
+	s := &server{transport: transportHTTP, launchRoot: writeDescribeWorkspace(t, "workspace: {}\noffline: true\n")}
 	args, _ := json.Marshal(map[string]any{"name": "oci://hub.aggrega.ai/component/core/api"})
 	res, rpcErr := describeInvoke(s, context.Background(), args)
 	text := describePublishedFailureText(t, res, rpcErr)

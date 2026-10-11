@@ -117,7 +117,7 @@ func editToolWorkspace(t *testing.T, rel, content string) (root, relPath, absPat
 // the process's own streams.
 func editToolServer(t *testing.T, root string) *server {
 	t.Helper()
-	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 }
 
 // readEditedDocument reads the document back off disk, which is what a caller

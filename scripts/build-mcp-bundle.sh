@@ -36,6 +36,13 @@
 # the manifest alone, so any other entry is refused by name rather than silently
 # left out of the built file.
 #
+# EVERY ${user_config.KEY} THE MANIFEST WRITES MUST NAME A SETTING IT DECLARES
+# under user_config. A client fills each such placeholder from the setting of
+# that name when it launches the server, so one naming no setting has nothing
+# to be filled from. The packer pinned below accepts such a manifest, at
+# validation and at pack, so this script checks it itself, before the packer
+# runs, and refuses naming each undeclared key and where the manifest writes it.
+#
 # Usage:
 #   scripts/build-mcp-bundle.sh --output-dir <dir> [options]
 #
@@ -52,9 +59,10 @@
 # On success the script prints exactly one line on standard output, the path of
 # the written bundle, so a caller can capture it; the packer's own report goes
 # to standard error. It exits 1 when the manifest fails validation (the
-# validator's message is shown), when the stamped version differs from
-# --expect-version, when the source directory holds anything but the manifest,
-# or when packing fails; and 2 on a usage error.
+# validator's message is shown), when it writes a ${user_config.KEY} naming a
+# setting it does not declare (the key is named), when the stamped version
+# differs from --expect-version, when the source directory holds anything but
+# the manifest, or when packing fails; and 2 on a usage error.
 #
 # Exit non-zero on the first failing step.
 set -euo pipefail
@@ -146,6 +154,36 @@ node -e '
   manifest.version = version;
   fs.writeFileSync(dst, JSON.stringify(manifest, null, 2) + "\n");
 ' "$SOURCE_DIR/manifest.json" "$_ver" "$STAGE/bundle/manifest.json" || exit 1
+
+# Refuse a ${user_config.KEY} naming a setting the manifest does not declare.
+# Every string the manifest holds is read, wherever it sits, because a client
+# fills a placeholder wherever the server's launch carries one; each undeclared
+# key is named with the place it is written, in the manifest's own key path.
+node -e '
+  const fs = require("fs");
+  const [src, staged] = process.argv.slice(1);
+  const manifest = JSON.parse(fs.readFileSync(staged, "utf8"));
+  const declared = manifest.user_config && typeof manifest.user_config === "object" ? manifest.user_config : {};
+  const undeclared = [];
+  const walk = (value, where) => {
+    if (typeof value === "string") {
+      for (const m of value.matchAll(/\$\{user_config\.([^}]*)\}/g)) {
+        if (!Object.prototype.hasOwnProperty.call(declared, m[1])) undeclared.push([m[1], where]);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach((v, i) => walk(v, where + "[" + i + "]"));
+    } else if (value !== null && typeof value === "object") {
+      for (const k of Object.keys(value)) walk(value[k], where === "" ? k : where + "." + k);
+    }
+  };
+  walk(manifest, "");
+  for (const [key, where] of undeclared) {
+    process.stderr.write("build-mcp-bundle: " + src + " writes ${user_config." + key + "} at " + where +
+      ", and its user_config declares no setting with the key " + key +
+      ": declare that setting, or name one the manifest declares\n");
+  }
+  process.exit(undeclared.length === 0 ? 0 : 1);
+' "$SOURCE_DIR/manifest.json" "$STAGE/bundle/manifest.json" || exit 1
 
 # The packer runs from the staging directory, never from inside the working
 # tree, and reports on standard error so standard output carries only the path.

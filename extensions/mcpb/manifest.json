@@ -21,7 +21,10 @@
       "command": "${user_config.binary_path}",
       "args": [
         "mcp"
-      ]
+      ],
+      "env": {
+        "AGGREGA_WORKSPACE_ROOT": "${user_config.workspace_root}"
+      }
     }
   },
   "tools_generated": true,
@@ -38,6 +41,12 @@
       "type": "file",
       "title": "Path to the aggrega executable",
       "description": "Select the aggrega executable already installed on this machine — the same program that runs when you type aggrega version at a terminal. This package launches that program rather than carrying one of its own, so the server does not start until this path is set.",
+      "required": true
+    },
+    "workspace_root": {
+      "type": "directory",
+      "title": "Workspace folder",
+      "description": "Select the folder of the Aggrega workspace the assistant works in — the folder that holds your project's .aggrega-config.yaml. Every request that names no folder of its own is answered in this workspace, so the server does not start until this folder is set.",
       "required": true
     }
   }

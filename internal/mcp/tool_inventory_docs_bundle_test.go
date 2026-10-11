@@ -36,9 +36,9 @@ func TestTheCacheInventoryListsTheDocsBundleClassAsMachineWide(t *testing.T) {
 	}
 	machine := t.TempDir()
 	s := &server{
-		out:      io.Discard,
-		logw:     io.Discard,
-		startDir: t.TempDir(),
+		out:        io.Discard,
+		logw:       io.Discard,
+		launchRoot: t.TempDir(),
 		cacheLocations: func(workspaceRoot, cacheDir string) cacheops.Locations {
 			return cacheops.Locations{
 				WorkspaceRoot:  workspaceRoot,

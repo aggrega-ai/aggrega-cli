@@ -205,7 +205,7 @@ func TestTheEntityListingNamesEachLinkLeadingOutOfTheWorkspace(t *testing.T) {
 			writeLinkedDirsFile(t, filepath.Join(outside, "shared", "shared-component.yaml"), linksTestComponent("shared-only-component"))
 			row.lay(t, root, outside)
 
-			s := &server{out: io.Discard, logw: io.Discard, startDir: root, transport: row.transport}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: root, transport: row.transport}
 			res := callToolOn(t, s, listenerRequest(), "list-entities", row.args)
 			if res.IsError {
 				t.Fatalf("list-entities refused: %s", res.Content[0].Text)
@@ -395,7 +395,7 @@ func TestAPathArgumentLeadingOutThroughALinkIsRefusedOverAListener(t *testing.T)
 			linkLinkedDirs(t, filepath.Join(outside, "outside-component.yaml"), filepath.Join(root, "linked-component.yaml"))
 			writeLinkedDirsFile(t, filepath.Join(root, workspaceconfig.ConfigFilename), config)
 
-			s := &server{out: io.Discard, logw: io.Discard, startDir: root, transport: row.transport}
+			s := &server{out: io.Discard, logw: io.Discard, launchRoot: root, transport: row.transport}
 			res := callToolOn(t, s, listenerRequest(), row.tool, row.args)
 			text := res.Content[0].Text
 			if row.refusal == "" {

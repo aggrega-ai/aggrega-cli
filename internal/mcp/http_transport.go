@@ -228,13 +228,13 @@ type httpHandler struct {
 	// workspaceRoot is the workspace this process serves, recorded on every
 	// request answered here.
 	//
-	// It is resolved once, at construction, rather than read from the start
-	// directory: a listener may have been started inside the workspace it serves
-	// instead of being pointed at it, and the directory it was launched in is not
-	// the root a reader of the record needs. Resolving it per request would
-	// answer the same question repeatedly about a workspace fixed when the
-	// process started, and would let two requests to one process report two
-	// different roots.
+	// It is resolved once, at construction, rather than read from the root the
+	// process was launched with: a listener may have been started inside the
+	// workspace it serves instead of being pointed at it, and the directory it was
+	// launched in is not the root a reader of the record needs. Resolving it per
+	// request would answer the same question repeatedly about a workspace fixed
+	// when the process started, and would let two requests to one process report
+	// two different roots.
 	workspaceRoot string
 }
 
@@ -284,7 +284,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// constructor built.
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
-		startDir:       cfg.WorkspaceRoot,
+		launchRoot:     cfg.WorkspaceRoot,
 		// Handed to this transport exactly as to the other: what the operator
 		// typed when starting the process is in force for every call it answers,
 		// whoever is calling.
@@ -401,12 +401,12 @@ func servedWorkspaceRoot(s *server) string {
 // resolveServedWorkspace resolves the workspace this process serves, exactly as
 // a tool call naming no workspace resolves it.
 //
-// A resolution that fails falls back to where resolution would have begun, which
-// is the honest answer rather than an empty one: the launch already refuses a
-// listener with no workspace to serve, so a failure here is a workspace that has
-// stopped resolving since, and the directory it was pointed at is what a reader
-// can act on. The workspace returned then holds that directory as its root, as
-// the process was given it, and nothing else.
+// A resolution that fails falls back to the root the process was launched with,
+// which is the honest answer rather than an empty one: the launch already
+// refuses a listener with no workspace to serve, so a failure here is a
+// workspace that has stopped resolving since, and the directory it was pointed
+// at is what a reader can act on. The workspace returned then holds that
+// directory as its root, as the process was given it, and nothing else.
 //
 // A process given no directory began its resolution in its working directory,
 // so that directory is the one held. Left empty, the fallback would hold nothing,
@@ -416,7 +416,7 @@ func (s *server) resolveServedWorkspace() *toolWorkspace {
 	if tw, err := s.resolveToolWorkspace("", nil); err == nil {
 		return tw
 	}
-	root := s.startDir
+	root := s.launchRoot
 	if root == "" {
 		if wd, err := os.Getwd(); err == nil {
 			root = wd

@@ -10,6 +10,18 @@ standard input and output — the same server `aggrega mcp` runs with no listen 
 manifest names no executable of any platform, the same bundle applies to every platform it declares:
 macOS, Windows and Linux.
 
+**It asks for two settings, and the server does not start until both are set.** **Path to the aggrega
+executable** is the program it launches. **Workspace folder** is the workspace the server serves: the
+folder that holds the project's `.aggrega-config.yaml`, handed to the server as
+`AGGREGA_WORKSPACE_ROOT` in its environment rather than as an argument, so the folder does not pass
+through the quoting of the command line the client composes. A client starts a local server in a folder
+of its own choosing,
+often a system folder, so without this setting every request naming no workspace would be answered
+there. The folder is taken as the workspace root itself, as `--workspace-root` is on every command, and
+a folder that does not exist is refused at startup with a message naming `AGGREGA_WORKSPACE_ROOT` and
+the value it was given. A Go test in this repository holds the variable's spelling in the manifest to
+the one the program reads.
+
 ## Building the bundle
 
 One script builds it. From the repository root:
@@ -19,7 +31,9 @@ scripts/build-mcp-bundle.sh --output-dir <dir>
 ```
 
 It checks the manifest against the format's schema with the format's own packer, `@anthropic-ai/mcpb`,
-run through `npx` at the exact version the script pins, then writes the installable file
+run through `npx` at the exact version the script pins — after refusing, itself, any
+`${user_config.KEY}` the manifest writes that names a setting it does not declare, which the packer
+accepts — then writes the installable file
 `aggrega-<version>.mcpb` into `<dir>` and prints its path. The directory must lie outside the
 repository — the built file is a build output and does not belong in it. Node.js and `npx` must be
 installed. The release workflow runs the same script and attaches the file to each release beside the

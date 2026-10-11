@@ -120,12 +120,15 @@ type Config struct {
 	// AGGREGA_WORKSPACE_ROOT. Empty resolves from the process working directory,
 	// which is what a client launching this server inside a project gets.
 	//
-	// It is where resolution begins for a call that names no workspace of its
-	// own; a call that does name one is answered in the workspace it named. A
-	// generated command tool's command is handed it as its --workspace-root for
-	// such a call, so the command takes it as its root, as it would typed with
-	// that flag. It binds on every transport, because which workspace a process
-	// serves is a property of the process rather than of how a client reached it.
+	// It is the workspace root of every call that names no workspace of its own,
+	// taken as given: nothing above it is searched for an enclosing workspace,
+	// exactly as the flag and the variable are taken on every other command. A
+	// call that does name one is answered in the workspace it named. A generated
+	// command tool's command is handed it as its --workspace-root for such a call,
+	// so the command takes it as its root too, and the server's own tools and its
+	// command tools answer that call in one workspace. It binds on every
+	// transport, because which workspace a process serves is a property of the
+	// process rather than of how a client reached it.
 	WorkspaceRoot string
 
 	// Flags is what the invocation that launched this process said about
@@ -188,9 +191,9 @@ const (
 //
 // The tool-execution seams carry no session state — each tool call
 // resolves its own workspace and builds its own request-scoped inputs — so
-// they hold only the substitution points a test injects: where workspace
-// resolution starts and how the catalog-generation helper runs. A nil seam
-// selects the production default.
+// they hold only the substitution points a test injects: the workspace a call
+// naming none is answered in, and how the catalog-generation helper runs. A nil
+// seam selects the production default.
 type server struct {
 	out           io.Writer
 	logw          io.Writer
@@ -201,12 +204,12 @@ type server struct {
 	// that does not assert on the stamp leaves it unset.
 	toolchain *lockfile.ToolchainStamp
 
-	// startDir is where workspace resolution begins for a tool call that
-	// supplies no explicit workspace_root, and the root a generated command
-	// tool's command is handed for such a call. Empty resolves from the process
-	// working directory and hands nothing. A test points it at a fixture
-	// workspace.
-	startDir string
+	// launchRoot is the root this process was launched with: the workspace root
+	// of a tool call that supplies no explicit workspace_root, taken as given
+	// (resolutionInputs), and the root a generated command tool's command is
+	// handed for such a call. Empty resolves from the process working directory
+	// and hands nothing. A test points it at a fixture workspace's root.
+	launchRoot string
 
 	// flags is the command line the process was launched with, as it bears on
 	// configuration: every workspace resolveToolWorkspace resolves is resolved
@@ -442,7 +445,7 @@ func Run(ctx context.Context, cfg Config) error {
 		commandTools:   commandTools,
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
-		startDir:       cfg.WorkspaceRoot,
+		launchRoot:     cfg.WorkspaceRoot,
 		flags:          cfg.Flags,
 		transport:      transportStdio,
 
@@ -835,7 +838,7 @@ func (s *server) logLifecycle(line lifecycleAudit, prose string, args ...any) {
 	line.Time = auditNow()
 	line.Transport = transportName(s.transport)
 	if line.WorkspaceRoot == "" {
-		line.WorkspaceRoot = s.startDir
+		line.WorkspaceRoot = s.launchRoot
 	}
 	s.logRecord(line)
 }

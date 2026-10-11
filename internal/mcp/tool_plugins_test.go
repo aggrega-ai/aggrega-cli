@@ -242,7 +242,7 @@ func pluginsOverTheProcessStreams(t *testing.T, root string, listing pluginops.P
 
 	t.Helper()
 	s := newTestServer(t)
-	s.startDir = root
+	s.launchRoot = root
 	s.transport = transportStdio
 	s.listPlugins = staticLister(listing)
 
@@ -709,7 +709,7 @@ func TestAKeptBackReferenceReadsAsKeptBackRatherThanAsNotThere(t *testing.T) {
 	// The readable rendering makes the same distinction, because a person reading
 	// it is making the same one a program reading the payload is.
 	s := newTestServer(t)
-	s.startDir = root
+	s.launchRoot = root
 	s.transport = transportHTTP
 	s.listPlugins = staticLister(aListingBindingALocalPath())
 	res, rpcErr := pluginListInvoke(s, context.Background(), []byte(`{"response_format":"detailed"}`))
@@ -798,7 +798,7 @@ func TestThePluginReadingRefusesWithoutTheEnumeration(t *testing.T) {
 	t.Parallel()
 
 	s := newTestServer(t)
-	s.startDir = t.TempDir()
+	s.launchRoot = t.TempDir()
 	s.transport = transportStdio
 
 	res, rpcErr := pluginListInvoke(s, context.Background(), nil)

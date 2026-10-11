@@ -67,7 +67,7 @@ func lintStructuredWorkspace(t *testing.T, rel, content string) string {
 func lintReportFromTool(t *testing.T, root, entity string) (*callToolResult, lintops.Report) {
 	t.Helper()
 	s := newTestServer(t)
-	s.startDir = root
+	s.launchRoot = root
 	res := callTool(t, s, "lint", lintArgs{Entity: entity})
 	var report lintops.Report
 	if len(res.StructuredContent) > 0 {
@@ -292,7 +292,7 @@ func TestLintToolCollectorLeavesTheOutputStreamsAlone(t *testing.T) {
 	run := func(collect *lintops.FindingCollector) (string, string) {
 		t.Helper()
 		s := newTestServer(t)
-		s.startDir = root
+		s.launchRoot = root
 		var out, diag bytes.Buffer
 		if err := s.lintInProcess(context.Background(),
 			lintRequest{entity: entity, collect: collect}, &out, &diag); err != nil {

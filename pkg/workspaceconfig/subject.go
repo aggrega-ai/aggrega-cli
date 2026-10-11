@@ -18,8 +18,8 @@ import (
 //   - nothing named a root for r: no --workspace-root, no AGGREGA_WORKSPACE_ROOT
 //     and no root a call named, which reach a resolution as its explicit root;
 //   - nothing named where r began either: it started from the process working
-//     directory rather than from a directory somebody gave it, such as the root
-//     a server was launched with;
+//     directory rather than from a directory a caller handed the resolution as
+//     its start;
 //   - r anchored on nothing and fell back to that start folder (MarkerCWD);
 //   - subject is an absolute path; and
 //   - the folder it names is there. A folder that is not cannot hold a workspace,

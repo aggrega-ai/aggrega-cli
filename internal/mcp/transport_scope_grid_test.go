@@ -108,7 +108,7 @@ func newScopeGridFixtureWith(t *testing.T, fills bool, deny []string, announce m
 
 	issuer := newAuthorizationServerDouble(t)
 	s := newCommandToolServer(t, nil)
-	s.startDir = root
+	s.launchRoot = root
 	s.announcedTools = announce
 	transport := transportFor(issuer.authorizationConfig(), issuer.egress())
 	transport.DenyReach = deny

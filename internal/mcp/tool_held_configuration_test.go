@@ -70,7 +70,7 @@ func heldConfigurationServer(t *testing.T, root string) *server {
 	t.Helper()
 	global := filepath.Join(t.TempDir(), "machine-wide.yaml")
 	writeLinkedDirsFile(t, global, "registries: []\n")
-	return &server{out: io.Discard, logw: io.Discard, startDir: root, transport: transportStdio,
+	return &server{out: io.Discard, logw: io.Discard, launchRoot: root, transport: transportStdio,
 		flags: workspaceconfig.FlagOverlay{ConfigPath: global},
 		cacheLocations: func(workspaceRoot, cacheDir string) cacheops.Locations {
 			return cacheops.Locations{WorkspaceRoot: workspaceRoot, CacheDir: cacheDir}

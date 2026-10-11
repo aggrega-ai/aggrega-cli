@@ -109,7 +109,7 @@ func candidateNameList(cands []serve.AttachCandidate) []string {
 // the daemon answers them — and that a reason is never sent where a slot exists.
 func TestTheAttachCandidatesToolAnswersForAConnection(t *testing.T) {
 	root, release := connectionSiteWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 	all := []string{"feature.conn/audit", "feature.conn/peering", "feature.conn/token"}
 
 	for _, tc := range []struct {
@@ -182,7 +182,7 @@ func TestTheAttachCandidatesToolAnswersForAConnection(t *testing.T) {
 // the registered tools, with an answerable call of each tool first.
 func TestTheConnectionToolsRefuseWhatTheyCannotAnswer(t *testing.T) {
 	root, release := connectionSiteWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 	gpt := map[string]any{"socket": "models", "alias": "gpt"}
 
 	for _, tc := range []struct {
@@ -245,7 +245,7 @@ func TestTheAttachmentContainerToolNamesAConnectionsEntryInEachDocument(t *testi
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, release := connectionSiteWorkspace(t)
-			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+			s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 			var where attachmentContainerPayload
 			decodeStructured(t, callDiscoveryTool(t, s, "attachment-container", connectionArgs(root, release,
@@ -306,7 +306,7 @@ func TestTheAttachmentContainerToolNamesAConnectionsEntryInEachDocument(t *testi
 // Each socket's slot declarations arrive beside it.
 func TestTheDescribeToolShowsEachSchemaAsItsAuthorWroteIt(t *testing.T) {
 	root, _ := connectionSiteWorkspace(t)
-	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: root}
+	s := &server{out: io.Discard, logw: io.Discard, serverVersion: "test", launchRoot: root}
 
 	var got describeEntityPayload
 	decodeStructured(t, callDiscoveryTool(t, s, "describe", map[string]any{
