@@ -53,8 +53,11 @@
 // A verification the user explicitly requested refuses rather than skips, and
 // that covers the closure-signature verify performed during a pull, the
 // fetched-plugin verify, and the keyless branch that resolves a live trust root.
-// The one verification that still succeeds offline is the one anchored on a
-// trust root pinned on disk, which reads local material and never fetches.
+// The verifications that still succeed offline are the ones anchored on material
+// held locally, and none of them fetches: a pinned key, a trust root pinned on
+// disk, and — for a read of the documentation bundle alone, under a keyless check
+// pinning no trust root — the trust root an earlier online fetch left in the TUF
+// client's cache, which the live trust-root package names.
 // Skipping verification while offline is otherwise an explicit choice the workspace
 // makes by setting skip_signature_verification; the one exception is a verifying
 // pull, which names on a line of its own each signature it did not check.

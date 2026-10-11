@@ -60,7 +60,7 @@ func resolveCacheLocations(ctx context.Context) cacheops.Locations {
 		root = ws.Root()
 		cacheDir = ws.Config().ResolvedArtifactCacheDir()
 	}
-	return cacheops.ResolveLocations(root, cacheDir)
+	return cacheops.ResolveLocations(ctx, root, cacheDir)
 }
 
 func newCacheStatusCmd() *cobra.Command {

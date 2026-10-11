@@ -192,8 +192,9 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 // resource-not-found error, an integrity or read failure as an internal error.
 //
 // The check runs silently here: what it has to report about the copy was said on
-// the log stream when the session acquired it.
-func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
+// the log stream when the session acquired it. It runs under ctx, the request's
+// own, with what the run stated about the bundle stated on it again.
+func (s *server) readDocsResource(ctx context.Context, uri string) (readResourceResult, *rpcError) {
 	page, ok := bundlePageForURI(uri)
 	if !ok {
 		return readResourceResult{}, resourceNotFound(uri)
@@ -207,7 +208,8 @@ func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
 	if err != nil {
 		return readResourceResult{}, resourceNotFound(uri)
 	}
-	data, mimeType, rerr := docscache.ReadPage(cacheRoot, ref, version, page, docsbundle.Admission(tw.cfg, ref, nil))
+	data, mimeType, rerr := docscache.ReadPage(cacheRoot, ref, version, page,
+		docsbundle.Admission(s.docsDecl.Onto(ctx), tw.cfg, ref, nil))
 	if rerr != nil {
 		if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, docscache.ErrPageNotFound()) {
 			return readResourceResult{}, resourceNotFound(uri)

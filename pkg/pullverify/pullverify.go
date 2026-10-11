@@ -178,11 +178,13 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 // The registry is never asked, so the question "could the registry be asked" does
 // not arise. Whether the verification itself reaches anything is [VerifyBundle]'s
 // own answer for the policy: a pinned key and a pinned trust root verify from what
-// is held locally, and a keyless policy with neither obtains the live trust root.
+// is held locally, and a keyless policy with neither obtains the live trust root —
+// unless held names a trust root to verify such a policy against instead
+// ([HeldRoot]). A nil held is the live root, as at a pull.
 //
 // It returns the verified fact, nil where the artifact is admitted without one, and
 // the refusal Verify would have halted the pull with otherwise.
-func VerifyStored(cfg workspaceconfig.Config, e Entity, bundles [][]byte, warn func(string)) (*Result, error) {
+func VerifyStored(cfg workspaceconfig.Config, e Entity, bundles [][]byte, held HeldRoot, warn func(string)) (*Result, error) {
 	if warn == nil {
 		warn = func(string) {}
 	}
@@ -199,8 +201,51 @@ func VerifyStored(cfg workspaceconfig.Config, e Entity, bundles [][]byte, warn f
 	for _, b := range bundles {
 		candidates = append(candidates, candidate{bundle: b})
 	}
-	res, verr := earliestVerified(cfg, e, candidates, check.Policy)
+	res, verr := earliestVerified(cfg, e, candidates, check.Policy, held.anchor())
 	return judge(check, e, res, verr, warn)
+}
+
+// HeldRoot names a trust-root file a keyless policy that pins no trust root of its
+// own is verified against in place of the live public root, for a read of kept
+// signature bundles ([VerifyStored]).
+//
+// It answers "" where the live root is to be obtained as usual, and an error where
+// neither can be used — which then refuses such a policy's verification, and only
+// that: it is asked only when a keyless signature is verified under a policy
+// pinning no root, so a skip, a pinned key, a pinned trust root and an artifact
+// keeping no signature decide exactly as they would without it.
+//
+// The file it names is used the way a pinned trust_root is: through the same
+// loader, and keyed by its bytes in [StoredVerdictKey].
+type HeldRoot func() (path string, err error)
+
+// anchor returns the keyless trust anchor a read of kept bundles builds under held:
+// keylessAnchor's own, with the held file standing in for the live root where held
+// names one.
+func (held HeldRoot) anchor() anchorFor {
+	if held == nil {
+		return keylessAnchor
+	}
+	return func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
+		if policy.TrustedRoot == "" {
+			path, err := held()
+			if err != nil {
+				return nil, err
+			}
+			policy.TrustedRoot = path
+		}
+		return keylessAnchor(cfg, policy)
+	}
+}
+
+// heldTrustedRoot returns the trust-root file the keyless anchor held builds reads
+// for policy — the pinned one, or else the one held names — and "" where it reads
+// none and would obtain the live root. Its error is held's.
+func (held HeldRoot) heldTrustedRoot(policy workspaceconfig.RegistryConfig) (string, error) {
+	if policy.PublicKey != "" || policy.TrustedRoot != "" || held == nil {
+		return policy.TrustedRoot, nil
+	}
+	return held()
 }
 
 // StoredVerdictKey returns a key naming everything [VerifyStored]'s verdict for e
@@ -212,21 +257,25 @@ func VerifyStored(cfg workspaceconfig.Config, e Entity, bundles [][]byte, warn f
 // e's signature, which carries both skips, the trusted identities, a pinned key,
 // the pinned trust root's path and the advisory and requirement stance. The offline
 // posture, which decides whether a keyless check with no pinned trust root can
-// obtain the live one at all. The bytes of a pinned trust root, which are read when
-// the verification runs rather than when the configuration is, so an edit to that
-// file changes the key. The entity. And each bundle, by content digest, in the
-// order given. A read added to [VerifyBundle], or to the keyless trust anchor it
-// builds, belongs here too.
+// obtain the live one at all. The bytes of the trust-root file a keyless check
+// verifies against — a pinned one, or the one held names for a check pinning none —
+// which are read when the verification runs rather than when the configuration is,
+// so an edit to that file changes the key. The entity. And each bundle, by content
+// digest, in the order given. A read added to [VerifyBundle], or to the keyless
+// trust anchor it builds, belongs here too.
 //
-// ok is false where the key cannot be taken — a pinned trust root that cannot be
-// read — and a verdict is then not to be remembered; the verification itself
-// reports why that root is unusable.
+// held is the one [VerifyStored] is given for the same read, and it is asked only
+// where the check is keyless and pins no trust root.
+//
+// ok is false where the key cannot be taken — a trust-root file that cannot be
+// read, or a held root that cannot be named — and a verdict is then not to be
+// remembered; the verification itself reports why that root is unusable.
 //
 // The key is compared only within one process and never written anywhere, so its
 // encoding owes nothing to any other version of the binary. It may tell apart two
 // questions that would be decided alike — two identity lists in different orders —
 // which costs a caller one more verification and never a different verdict.
-func StoredVerdictKey(cfg workspaceconfig.Config, e Entity, bundles [][]byte) (key string, ok bool) {
+func StoredVerdictKey(cfg workspaceconfig.Config, e Entity, bundles [][]byte, held HeldRoot) (key string, ok bool) {
 	inputs := struct {
 		Check       workspaceconfig.SignatureCheck
 		Offline     bool
@@ -238,7 +287,11 @@ func StoredVerdictKey(cfg workspaceconfig.Config, e Entity, bundles [][]byte) (k
 		Offline: cfg.Offline,
 		Entity:  e,
 	}
-	if path := inputs.Check.Policy.TrustedRoot; path != "" {
+	path, err := held.heldTrustedRoot(inputs.Check.Policy)
+	if err != nil {
+		return "", false
+	}
+	if path != "" {
 		material, err := os.ReadFile(path)
 		if err != nil {
 			return "", false
@@ -358,7 +411,7 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 		bundleBytes, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		candidates = append(candidates, candidate{bundle: bundleBytes, err: ferr})
 	}
-	return earliestVerified(cfg, e, candidates, policy)
+	return earliestVerified(cfg, e, candidates, policy, keylessAnchor)
 }
 
 // candidate is one signature an artifact carries, as it was obtained: its bundle
@@ -376,8 +429,9 @@ type candidate struct {
 // recorded.
 //
 // It is the one walk over an artifact's signatures, whether they were just fetched
-// from the registry or kept from an earlier fetch.
-func earliestVerified(cfg workspaceconfig.Config, e Entity, candidates []candidate, policy workspaceconfig.RegistryConfig) (*Result, error) {
+// from the registry or kept from an earlier fetch; anchor is the keyless trust
+// anchor each verification builds.
+func earliestVerified(cfg workspaceconfig.Config, e Entity, candidates []candidate, policy workspaceconfig.RegistryConfig, anchor anchorFor) (*Result, error) {
 	if len(candidates) == 0 {
 		return nil, signing.ErrNoSignatureFound()
 	}
@@ -393,7 +447,7 @@ func earliestVerified(cfg workspaceconfig.Config, e Entity, candidates []candida
 			lastErr = c.err
 			continue
 		}
-		res, verr := VerifyBundle(cfg, c.bundle, e.ManifestDigest, policy)
+		res, verr := verifyBundle(cfg, c.bundle, e.ManifestDigest, policy, anchor)
 		if verr != nil {
 			lastErr = verr
 			continue
@@ -433,6 +487,13 @@ func earliestVerified(cfg workspaceconfig.Config, e Entity, candidates []candida
 // (passing a policy whose trusted set is the deprecation-signer set), so every
 // such surface shares one crypto path and none can drift.
 func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
+	return verifyBundle(cfg, bundleBytes, artifactDigest, policy, keylessAnchor)
+}
+
+// verifyBundle is [VerifyBundle] building its keyless trust anchor with anchor: a
+// read of kept bundles passes the one its [HeldRoot] builds, and every other
+// verification passes keylessAnchor.
+func verifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig, anchor anchorFor) (*Result, error) {
 	digest := blobDigest(bundleBytes)
 	if policy.PublicKey != "" {
 		if err := signing.VerifyKeyedBundle(bundleBytes, []byte(policy.PublicKey), artifactDigest); err != nil {
@@ -455,11 +516,11 @@ func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest
 		})
 	}
 
-	anchor, err := keylessAnchor(cfg, policy)
+	material, err := anchor(cfg, policy)
 	if err != nil {
 		return nil, err
 	}
-	matched, err := signing.VerifyKeylessBundle(bundleBytes, anchor, ids, artifactDigest)
+	matched, err := signing.VerifyKeylessBundle(bundleBytes, material, ids, artifactDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -515,6 +576,10 @@ func keyedSignerIdentity(publicKeyPEM string) string {
 	sum := sha256.Sum256([]byte(publicKeyPEM))
 	return fmt.Sprintf("keyed:sha256:%x", sum)
 }
+
+// anchorFor builds the keyless trust anchor a verification under policy checks a
+// signature against.
+type anchorFor func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error)
 
 // keylessAnchor builds the keyless trust anchor for the policy: a pinned
 // trust root (air-gapped, offline) when policy.TrustedRoot is set,

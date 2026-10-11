@@ -150,7 +150,7 @@ func keyedAdmission(pubPEM []byte) docscache.AdmitAtRead {
 	return func(manifestDigest string, signatures [][]byte) error {
 		_, err := pullverify.VerifyStored(cfg, pullverify.Entity{
 			URI: testRef, ManifestDigest: manifestDigest, Host: "reg.example.com",
-		}, signatures, nil)
+		}, signatures, nil, nil)
 		return err
 	}
 }

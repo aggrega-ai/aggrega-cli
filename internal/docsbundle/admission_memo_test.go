@@ -118,7 +118,7 @@ func acquireUnder(t *testing.T, store *memory.Store, root string, cfg workspacec
 // readUnder reads the page out of the copy in root as a workspace configured as
 // cfg reads it.
 func readUnder(root string, cfg workspaceconfig.Config, warn func(string)) error {
-	_, _, err := docscache.ReadPage(root, testRef, testVersion, testPage, Admission(cfg, testRef, warn))
+	_, _, err := docscache.ReadPage(root, testRef, testVersion, testPage, Admission(context.Background(), cfg, testRef, warn))
 	return err
 }
 

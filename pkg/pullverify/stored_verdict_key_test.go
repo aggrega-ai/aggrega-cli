@@ -48,7 +48,7 @@ func TestTheStoredVerdictKeyMovesWithWhatTheVerdictReads(t *testing.T) {
 
 	key := func(cfg workspaceconfig.Config, e pullverify.Entity, bundles [][]byte) string {
 		t.Helper()
-		k, ok := pullverify.StoredVerdictKey(cfg, e, bundles)
+		k, ok := pullverify.StoredVerdictKey(cfg, e, bundles, nil)
 		if !ok {
 			t.Fatal("no key was taken over a trust root that can be read")
 		}
@@ -106,7 +106,7 @@ func TestTheStoredVerdictKeyMovesWithWhatTheVerdictReads(t *testing.T) {
 	if err := os.Remove(rootPath); err != nil {
 		t.Fatalf("remove the trust root: %v", err)
 	}
-	if k, ok := pullverify.StoredVerdictKey(config(), entity, kept); ok {
+	if k, ok := pullverify.StoredVerdictKey(config(), entity, kept, nil); ok {
 		t.Errorf("a trust root that cannot be read yielded the key %s, so a verdict over it could be remembered", k)
 	}
 }

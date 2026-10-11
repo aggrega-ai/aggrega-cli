@@ -271,13 +271,17 @@ type conditionExpansion struct {
 // the published reference alone — which is every condition a provider declares for
 // itself, since those are registered inside the guest that raises them — is not
 // that case and is answered in full.
-func (s *server) explainCondition(message string) (*conditionExpansion, *rpcError) {
+//
+// ctx is the tool call's own; the published pages are read under it.
+func (s *server) explainCondition(ctx context.Context, message string) (*conditionExpansion, *rpcError) {
 	code, ok := haltref.ShortCodeIn(message)
 	if !ok {
 		return nil, nil
 	}
 
-	explanation, cerr := explainops.Compose(code, s.explainPages)
+	explanation, cerr := explainops.Compose(code, func() (explainops.Pages, error) {
+		return s.explainPages(ctx)
+	})
 
 	// The same test the shared writer applies for "renders nothing", evaluated once
 	// and read from here on, so this surface and that one cannot come to disagree
@@ -342,8 +346,9 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 // that bundle and out of the same copy its documentation resources serve.
 // Resolving the workspace is this surface's act for the reason every
 // documentation read here resolves it — the documentation a session serves is a
-// property of the session, not of one call.
-func (s *server) explainPages() (explainops.Pages, error) {
+// property of the session, not of one call. The signature check runs under ctx,
+// the call's own, with what the run stated about the bundle stated on it again.
+func (s *server) explainPages(ctx context.Context) (explainops.Pages, error) {
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
 		return explainops.Pages{}, fmt.Errorf("the published documentation is not available: %w", err)
@@ -353,7 +358,7 @@ func (s *server) explainPages() (explainops.Pages, error) {
 	if err != nil {
 		return explainops.Pages{}, explainops.Unavailable(ref, version, err)
 	}
-	return explainops.ReadPages(cacheRoot, ref, version, docsbundle.Admission(tw.cfg, ref, nil))
+	return explainops.ReadPages(cacheRoot, ref, version, docsbundle.Admission(s.docsDecl.Onto(ctx), tw.cfg, ref, nil))
 }
 
 var explainErrorToolSpec = toolSpec{
@@ -386,7 +391,7 @@ var explainErrorToolSpec = toolSpec{
   },
   "required": ["message"]
 }`,
-	invoke: func(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+	invoke: func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 		var a explainErrorArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
@@ -398,7 +403,7 @@ var explainErrorToolSpec = toolSpec{
 			return errorResult("explain-error requires a non-empty 'message' argument")
 		}
 
-		expansion, rerr := s.explainCondition(message)
+		expansion, rerr := s.explainCondition(ctx, message)
 		if rerr != nil {
 			return nil, rerr
 		}

@@ -311,6 +311,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		transport: transportHTTP,
 	}
 	s.docsRoot, s.docsRootErr = docsbundle.CacheRoot(ctx)
+	s.docsDecl = docsbundle.DeclarationsOf(ctx)
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)
 }

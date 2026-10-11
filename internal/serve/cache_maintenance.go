@@ -200,7 +200,11 @@ var testCacheLocations func() cacheops.Locations
 // other surface gets. A session with no resolved workspace still addresses the
 // machine-wide caches, which is the honest answer rather than a refusal: those
 // caches exist and their contents are reportable.
-func (s *Server) cacheLocations() cacheops.Locations {
+//
+// ctx is the request's own, with what the launch stated about the documentation
+// bundle stated on it again (session.docs), as an explanation's read states it, so
+// the inventory names the copy this session's explanations read.
+func (s *Server) cacheLocations(ctx context.Context) cacheops.Locations {
 	if testCacheLocations != nil {
 		return testCacheLocations()
 	}
@@ -209,7 +213,7 @@ func (s *Server) cacheLocations() cacheops.Locations {
 		root = s.resolvedWorkspace.Root()
 		cacheDir = s.resolvedWorkspace.Config().ResolvedArtifactCacheDir()
 	}
-	return cacheops.ResolveLocations(root, cacheDir)
+	return cacheops.ResolveLocations(s.docs.Onto(ctx), root, cacheDir)
 }
 
 // cacheScopeOf assembles the scope statement from the classes an operation
@@ -242,7 +246,7 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 	if err := ctx.Err(); err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "", err)
 	}
-	loc := s.cacheLocations()
+	loc := s.cacheLocations(ctx)
 	report, err := cacheops.Status(ctx, loc)
 	if ctx.Err() != nil {
 		return nil
@@ -305,7 +309,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
-	loc := s.cacheLocations()
+	loc := s.cacheLocations(ctx)
 	res, err := cacheops.Prune(ctx, loc)
 	if ctx.Err() != nil {
 		return nil
@@ -353,7 +357,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "cache evict: maxSize must be greater than zero")
 	}
 
-	res, evictErr := cacheops.Evict(ctx, s.cacheLocations(), capBytes)
+	res, evictErr := cacheops.Evict(ctx, s.cacheLocations(ctx), capBytes)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -393,7 +397,7 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
 
-	res, err := cacheops.Clear(ctx, s.cacheLocations())
+	res, err := cacheops.Clear(ctx, s.cacheLocations(ctx))
 	if ctx.Err() != nil {
 		return nil
 	}

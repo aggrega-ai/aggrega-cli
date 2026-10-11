@@ -69,41 +69,57 @@ func refEntries(t *testing.T, root string) []string {
 	return names
 }
 
-// TestConcurrentAcquisitionsLeaveOneWholeSlot drives several writes of one bundle
-// into one slot at once. Every write reports success, the slot that stands serves
-// the page, and nothing a write staged or set aside is left beside it.
+// TestConcurrentAcquisitionsLeaveOneWholeSlot drives many writes of one bundle
+// into one slot at once, over several rounds. In every round every write reports
+// success, the slot that stands serves the page, and nothing a write staged or set
+// aside is left beside it.
+//
+// The writers of a round are released together so that their moves into place
+// contend. That is what the case is for: a write whose move meets another writer's
+// slot takes that slot for its result, and before it has re-checked it, a third
+// writer replacing that slot can have moved it aside. Releasing many writers at
+// once, round after round, is what makes that interleaving likely to be met
+// rather than met now and then; run the case repeatedly to search for it harder.
 func TestConcurrentAcquisitionsLeaveOneWholeSlot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	root := t.TempDir()
 	store := memory.New()
 	if _, err := oci.Push(ctx, store, testVersion, oci.MediaTypeDocs,
 		buildBundle(t, map[string]string{componentPage: componentBody}), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
-	const writers = 8
-	errs := make([]error, writers)
-	var wg sync.WaitGroup
-	for i := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil)
-		}()
-	}
-	wg.Wait()
-	for i, err := range errs {
-		if err != nil {
-			t.Errorf("writer %d failed: %v", i, err)
+	const (
+		rounds  = 20
+		writers = 16
+	)
+	for round := range rounds {
+		root := t.TempDir()
+		release := make(chan struct{})
+		errs := make([]error, writers)
+		var wg sync.WaitGroup
+		for i := range writers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-release
+				_, errs[i] = docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil)
+			}()
 		}
-	}
+		close(release)
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("round %d: writer %d failed: %v", round, i, err)
+			}
+		}
 
-	if data, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll); err != nil || string(data) != componentBody {
-		t.Fatalf("the slot left standing does not serve the page: %q (%v)", data, err)
-	}
-	if got := refEntries(t, root); len(got) != 1 || got[0] != pathsegment.Encode(testVersion) {
-		t.Errorf("the reference directory holds %v, want only the slot %q", got, pathsegment.Encode(testVersion))
+		if data, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll); err != nil || string(data) != componentBody {
+			t.Fatalf("round %d: the slot left standing does not serve the page: %q (%v)", round, data, err)
+		}
+		if got := refEntries(t, root); len(got) != 1 || got[0] != pathsegment.Encode(testVersion) {
+			t.Errorf("round %d: the reference directory holds %v, want only the slot %q", round, got, pathsegment.Encode(testVersion))
+		}
 	}
 }
 

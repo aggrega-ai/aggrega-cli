@@ -241,6 +241,13 @@ type server struct {
 	docsRoot    string
 	docsRootErr error
 
+	// docsDecl is what the run's context stated about the documentation bundle
+	// (docsbundle.DeclarationsOf), settled beside docsRoot, so a read the session
+	// answers outside that context — a resource read, an explanation — is still
+	// held to what the run was started under. Production states nothing; a test
+	// states the cache the offline signature check takes its trust root from.
+	docsDecl docsbundle.Declarations
+
 	// docsTarget resolves the OCI target the documentation bundle is pulled
 	// from at the start of the run. Nil reaches the target the run's context
 	// states (docsbundle.WithTarget), or else the registry through the
@@ -453,6 +460,7 @@ func Run(ctx context.Context, cfg Config) error {
 		listPlugins:         cfg.ListPlugins,
 	}
 	s.docsRoot, s.docsRootErr = docsbundle.CacheRoot(ctx)
+	s.docsDecl = docsbundle.DeclarationsOf(ctx)
 	return s.run(ctx, stdin)
 }
 

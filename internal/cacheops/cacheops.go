@@ -176,9 +176,10 @@ type Locations struct {
 // caller that has no workspace.
 //
 // The documentation-bundle subtree is filled from where the bundle's own
-// acquisition keeps it (docsbundle.CacheRoot), so the inventory lists and removes
-// the copy every surface reads rather than a location of its own.
-func ResolveLocations(workspaceRoot, cacheDir string) Locations {
+// acquisition keeps it (docsbundle.CacheRoot), read from the caller's ctx as the
+// acquisition reads it, so the inventory lists and removes the copy every
+// surface reads rather than a location of its own.
+func ResolveLocations(ctx context.Context, workspaceRoot, cacheDir string) Locations {
 	loc := Locations{WorkspaceRoot: workspaceRoot, CacheDir: cacheDir}
 	if dir, ok := wasm.CompileCacheDir(); ok {
 		loc.CompileDir = dir
@@ -186,7 +187,7 @@ func ResolveLocations(workspaceRoot, cacheDir string) Locations {
 	if dir, ok := wasm.PluginDescribeCacheDir(); ok {
 		loc.DescribeDir = dir
 	}
-	if root, err := docsbundle.CacheRoot(context.Background()); err == nil {
+	if root, err := docsbundle.CacheRoot(ctx); err == nil {
 		loc.DocsBundlesDir = docscache.DocsBundlesRoot(root)
 	}
 	if p, ok := provindex.DefaultIndexPath(); ok {

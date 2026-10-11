@@ -141,7 +141,7 @@ func TestAKeptSignatureIsAdmittedExactlyWhereAPullWouldAdmitIt(t *testing.T) {
 			pulled, perr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
 				Config: c.cfg, Target: targetForStore(c.store, "1.0.0"),
 			})
-			read, rerr := pullverify.VerifyStored(c.cfg, ent, c.kept, nil)
+			read, rerr := pullverify.VerifyStored(c.cfg, ent, c.kept, nil, nil)
 			if (perr == nil) != (rerr == nil) {
 				t.Fatalf("the pull admitted = %v (%v), the read of the kept signatures admitted = %v (%v)",
 					perr == nil, perr, rerr == nil, rerr)
@@ -156,7 +156,7 @@ func TestAKeptSignatureIsAdmittedExactlyWhereAPullWouldAdmitIt(t *testing.T) {
 				t.Errorf("the pull recorded %+v and the read recorded %+v", pulled[0], read)
 			}
 		})
-		if _, err := pullverify.VerifyStored(c.cfg, pullverify.Entity{URI: host + "/component/x", ManifestDigest: dg, Host: host}, c.kept, nil); err == nil {
+		if _, err := pullverify.VerifyStored(c.cfg, pullverify.Entity{URI: host + "/component/x", ManifestDigest: dg, Host: host}, c.kept, nil, nil); err == nil {
 			admitted++
 		} else {
 			refused++

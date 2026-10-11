@@ -161,7 +161,7 @@ func TestACopyTheWorkspaceRefusesIsFetchedAgainUnderItsCheck(t *testing.T) {
 	if _, err := EnsureCached(context.Background(), skipping(), root, testRef, testVersion, target, nil); err != nil {
 		t.Fatalf("the skipping workspace's acquisition: %v", err)
 	}
-	if err := docscache.Admitted(root, testRef, testVersion, Admission(requiring(key), testRef, nil)); err == nil {
+	if err := docscache.Admitted(root, testRef, testVersion, Admission(context.Background(), requiring(key), testRef, nil)); err == nil {
 		t.Fatal("the requiring workspace admits a copy that keeps no signature, so the case below proves nothing")
 	}
 
@@ -183,7 +183,7 @@ func TestACopyTheWorkspaceRefusesIsFetchedAgainUnderItsCheck(t *testing.T) {
 	if acquired, err := EnsureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || !acquired {
 		t.Fatalf("the requiring workspace's second fetch answered (%v, %v), want an acquired bundle", acquired, err)
 	}
-	if _, _, err := docscache.ReadPage(root, testRef, testVersion, testPage, Admission(requiring(key), testRef, nil)); err != nil {
+	if _, _, err := docscache.ReadPage(root, testRef, testVersion, testPage, Admission(context.Background(), requiring(key), testRef, nil)); err != nil {
 		t.Errorf("the copy fetched under the requiring workspace's check is refused by it: %v", err)
 	}
 	if reaches != 2 {

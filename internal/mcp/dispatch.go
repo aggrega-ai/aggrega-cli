@@ -243,11 +243,13 @@ func negotiateProtocolVersion(requested string) string {
 // hint is chosen here, beside the branch that resolves the family, rather than
 // by the method.
 //
-// It takes the run's context so every routed method carries the same shape, and
-// consults it nowhere: no family's read reaches work that a context could end.
-// Each of them answers from bytes this process already holds — a cached page, a
-// compiled-in schema, a file in the resolved workspace, or the command tree.
-func (s *server) handleResourcesRead(_ context.Context, era protocolEra, params json.RawMessage) (any, *rpcError) {
+// It takes the run's context so every routed method carries the same shape. No
+// family's read reaches work that a context could end — each of them answers from
+// bytes this process already holds: a cached page, a compiled-in schema, a file in
+// the resolved workspace, or the command tree — and only the documentation
+// families consult it, for what the run stated about the documentation bundle,
+// which the signature check a cached page is held to reads.
+func (s *server) handleResourcesRead(ctx context.Context, era protocolEra, params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidRequestParams("resources/read", err)
@@ -269,7 +271,7 @@ func (s *server) handleResourcesRead(_ context.Context, era protocolEra, params 
 		// The bundle is pinned at the start of the run and never re-acquired
 		// while it lasts, so a page served from it is as fixed as one the
 		// binary carries.
-		res, rerr = s.readDocsResource(p.URI)
+		res, rerr = s.readDocsResource(ctx, p.URI)
 		hint = compiledInCacheHint()
 	case schemeSchema:
 		res, rerr = readSchemaResource(p.URI)

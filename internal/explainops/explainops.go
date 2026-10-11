@@ -237,7 +237,7 @@ func LoadPages(
 	}
 	// The acquisition above already reported what the check had to say about the
 	// copy it left in place, so the read asks it again without repeating that.
-	return ReadPages(cacheRoot, ref, version, docsbundle.Admission(cfg, ref, nil))
+	return ReadPages(cacheRoot, ref, version, docsbundle.Admission(ctx, cfg, ref, nil))
 }
 
 // ReadPages returns the published pages the cache under cacheRoot holds for a

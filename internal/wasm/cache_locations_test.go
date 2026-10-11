@@ -130,7 +130,7 @@ func everyCacheLocation(t *testing.T) []cacheLocation {
 		path:     docscache.DocsBundlesRoot(docsRoot),
 		resolved: docsErr == nil,
 	})
-	inventory := cacheops.ResolveLocations("", "").DocsBundlesDir
+	inventory := cacheops.ResolveLocations(context.Background(), "", "").DocsBundlesDir
 	locs = append(locs, cacheLocation{
 		name:     "cacheops.ResolveLocations (documentation-bundle subtree)",
 		path:     inventory,

@@ -31,6 +31,14 @@
 // remembered for the reads after it. A copy that check refuses is answered as no
 // bundle, and the next acquisition fetches it again under that check.
 //
+// That verification reads only what is on this machine, with one exception: online,
+// a keyless check that pins no trust root obtains the public Sigstore trust root
+// over the network. Offline it verifies instead against the trust root an earlier
+// online fetch left on this machine (livetrust.LastFetchedRootFile), so the
+// documentation stays readable offline under the check the workspace asks for; a
+// machine that never fetched one has nothing to verify against, and the read is
+// refused.
+//
 // The read half is deliberately not here. Reading a page out of the cache is
 // pkg/docscache's job and takes no target, so a surface that only reads never
 // links the acquisition path at all.
@@ -49,6 +57,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -156,9 +165,34 @@ func WithTarget(ctx context.Context, target TargetFor) context.Context {
 	return context.WithValue(ctx, targetKey{}, target)
 }
 
+// trustRootCacheKey is the private context key under which a caller states the
+// directory the TUF client's cache is read from, in place of the one this
+// machine's client keeps.
+type trustRootCacheKey struct{}
+
+// WithTrustRootCache returns ctx carrying dir as the TUF client cache directory a
+// read of the documentation bundle takes the last fetched public trust root from
+// while offline (livetrust.LastFetchedRootFile), in place of the one this
+// machine's client keeps. An empty dir states nothing.
+//
+// No production path sets it: every surface then reads the client's own cache. A
+// test sets it on the context it drives a surface with, so it can stand in for an
+// earlier online fetch — or for a machine that never made one — without reading or
+// writing the developer's own cache.
+func WithTrustRootCache(ctx context.Context, dir string) context.Context {
+	return context.WithValue(ctx, trustRootCacheKey{}, dir)
+}
+
+// trustRootCache returns the TUF client cache directory ctx states, or "" for the
+// one this machine's client keeps.
+func trustRootCache(ctx context.Context) string {
+	dir, _ := ctx.Value(trustRootCacheKey{}).(string)
+	return dir
+}
+
 // Declarations is what a context states about the documentation bundle — a
-// cache root ([WithCacheRoot]) and a target ([WithTarget]) — taken off one
-// context so it can be stated on another.
+// cache root ([WithCacheRoot]), a target ([WithTarget]) and a trust-root cache
+// ([WithTrustRootCache]) — taken off one context so it can be stated on another.
 //
 // It exists for a surface whose per-request contexts do not descend from the
 // context it was started with — the language server derives each request's
@@ -166,8 +200,9 @@ func WithTarget(ctx context.Context, target TargetFor) context.Context {
 // than aborts — and which must still answer under what its launch stated. The
 // zero value states nothing, which is every production launch.
 type Declarations struct {
-	root   *declaredRoot
-	target TargetFor
+	root           *declaredRoot
+	target         TargetFor
+	trustRootCache string
 }
 
 // DeclarationsOf returns what ctx states about the documentation bundle.
@@ -177,6 +212,7 @@ func DeclarationsOf(ctx context.Context) Declarations {
 		d.root = &root
 	}
 	d.target, _ = ctx.Value(targetKey{}).(TargetFor)
+	d.trustRootCache = trustRootCache(ctx)
 	return d
 }
 
@@ -187,6 +223,9 @@ func (d Declarations) Onto(ctx context.Context) context.Context {
 	}
 	if d.target != nil {
 		ctx = context.WithValue(ctx, targetKey{}, d.target)
+	}
+	if d.trustRootCache != "" {
+		ctx = WithTrustRootCache(ctx, d.trustRootCache)
 	}
 	return ctx
 }
@@ -255,6 +294,14 @@ func Verifier(cfg workspaceconfig.Config, ref, version string, repo oras.ReadOnl
 // the bundle's registry, run over the signature bundles the cache slot keeps and
 // against the digest of the manifest it stores, through pullverify.VerifyStored.
 //
+// One thing about it differs from the fetch, and only offline: a keyless check
+// that pins no trust root verifies against the public trust root this machine
+// last fetched, where the fetch would obtain the live one and cannot offline
+// (livetrust.LastFetchedRootFile, from the TUF client cache ctx states with
+// [WithTrustRootCache], or else the machine's own). A machine that never fetched
+// one is refused, and says the check could not run offline. Online the check is
+// the fetch's in every respect.
+//
 // It asks the configuration exactly what the fetch asks it ([Verifier]), so a
 // setting that admits the bundle at a fetch admits the kept copy at a read and one
 // that refuses it there refuses it here: a skip admits; a kept signature that
@@ -266,25 +313,29 @@ func Verifier(cfg workspaceconfig.Config, ref, version string, repo oras.ReadOnl
 // remembered under everything the verdict is decided by
 // (pullverify.StoredVerdictKey) — the copy, by its manifest digest and the exact
 // set of signatures it keeps, and the check, together with the offline posture and
-// a pinned trust root's bytes — so a later read of the same copy under the same
-// check is admitted without verifying again, and reports what the check reported
-// when it ran. A copy fetched since, a different check, or the same check read
-// offline is verified afresh. A refusal is never remembered: a fetch can write
-// back the very copy a read refused — the same manifest, the same signatures — when
-// the refusal came of a trust root that could not be obtained at that moment, and a
-// remembered refusal would go on refusing what that fetch admitted.
-func Admission(cfg workspaceconfig.Config, ref string, warn func(string)) docscache.AdmitAtRead {
+// the bytes of the trust-root file a keyless check verifies against — so a later
+// read of the same copy under the same check is admitted without verifying again,
+// and reports what the check reported when it ran. A copy fetched since, a
+// different check, the same check read offline, or an offline read finding a
+// different trust root held is verified afresh. A refusal is never remembered: a
+// fetch can write back the very copy a read refused — the same manifest, the same
+// signatures — when the refusal came of a trust root that could not be obtained at
+// that moment, and a remembered refusal would go on refusing what that fetch
+// admitted.
+func Admission(ctx context.Context, cfg workspaceconfig.Config, ref string, warn func(string)) docscache.AdmitAtRead {
 	if warn == nil {
 		warn = func(string) {}
 	}
+	cache := trustRootCache(ctx)
+	held := func() (string, error) { return livetrust.LastFetchedRootFile(cfg, cache) }
 	return func(manifestDigest string, signatures [][]byte) error {
 		e := bundleEntity(ref, manifestDigest)
 		verify := func(warn func(string)) error {
 			admissionRuns.Add(1)
-			_, err := pullverify.VerifyStored(cfg, e, signatures, warn)
+			_, err := pullverify.VerifyStored(cfg, e, signatures, held, warn)
 			return err
 		}
-		key, ok := pullverify.StoredVerdictKey(cfg, e, signatures)
+		key, ok := pullverify.StoredVerdictKey(cfg, e, signatures, held)
 		if !ok {
 			return verify(warn)
 		}
@@ -392,7 +443,7 @@ func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, re
 	if warn == nil {
 		warn = func(string) {}
 	}
-	held := docscache.Admitted(cacheRoot, ref, version, Admission(cfg, ref, warn))
+	held := docscache.Admitted(cacheRoot, ref, version, Admission(ctx, cfg, ref, warn))
 	if held == nil {
 		return false, nil
 	}

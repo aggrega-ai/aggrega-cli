@@ -263,11 +263,13 @@ func refDir(cacheRoot, ref string) string {
 // beside the blob so a later offline read can re-derive the manifest digest from
 // stored bytes rather than trusting an unchecked recorded value.
 //
-// The slot is staged beside its place and moved into it whole, replacing any slot
-// already there. A slot being replaced that holds the same manifest hands on the
-// signatures it kept, so a fetch under one reader's check does not take away the
-// signature another reader's check admitted. Where another writer places the slot
-// first, that slot stands and this write's staging is discarded: both are whole.
+// The slot is staged beside its place and moved into it whole, replacing the slot
+// that stood there when the write was ready to stage, if any. A slot being
+// replaced that holds the same manifest hands on the signatures it kept, so a
+// fetch under one reader's check does not take away the signature another
+// reader's check admitted. Where another writer places a slot after that moment,
+// that slot stands as this write's result, re-checked as a reader re-checks it,
+// and this write's staging is discarded: both are whole.
 func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, version, cacheRoot string, verify VerifyAtPull) (string, error) {
 	slot, err := slotPath(cacheRoot, ref, version)
 	if err != nil {
@@ -288,6 +290,13 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 			return "", fmt.Errorf("docscache: verify %s@%s: %w", ref, version, err)
 		}
 	}
+	// What stands in the slot's place now is the slot this write replaces: its
+	// signatures are read before it can be replaced, and it alone is moved aside
+	// when the staged slot is placed.
+	replacing, err := slotIdentity(slot)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("docscache: cache inspect for %s@%s: %w", ref, version, err)
+	}
 	signatures = append(signatures, keptSignatures(slot, pr.Digest)...)
 
 	parent := filepath.Dir(slot)
@@ -302,7 +311,7 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	if err := writeSlot(staging, pr.Bytes, pr.ManifestBytes, signatures); err != nil {
 		return "", fmt.Errorf("docscache: cache write for %s@%s: %w", ref, version, err)
 	}
-	if err := placeSlot(staging, slot); err != nil {
+	if err := placeSlot(staging, slot, ref, version, replacing); err != nil {
 		return "", fmt.Errorf("docscache: cache place for %s@%s: %w", ref, version, err)
 	}
 	return slot, nil
@@ -333,29 +342,101 @@ func writeSlot(dir string, blob, manifest []byte, signatures [][]byte) error {
 	return nil
 }
 
-// placeSlot moves the staged slot into place, moving a slot already there aside
-// first and removing it afterwards. Between the two moves a reader finds no slot,
+// maxPlacements bounds how many times a write tries to move its staged slot into
+// place. A write tries again only when the slot it lost to was moved aside before
+// it could re-check it — by a writer replacing that slot, which each writer does at
+// most once — so the attempts one placement needs are at most one more than the
+// writers acquiring the same bundle at once. The bound ends only a move that keeps
+// failing for a reason no other writer's slot explains.
+const maxPlacements = 64
+
+// placeSlot moves the staged slot into place and removes the slot it replaces.
+//
+// replacing is the slot that stood in place when this write was ready to stage,
+// or nil where none did, and it is the only slot this write moves aside: a slot
+// another writer placed since is that writer's result, never this one's to remove.
+// Between moving it aside and moving the staged slot in, a reader finds no slot,
 // which reads as a cache miss rather than as a partial bundle.
 //
-// A move into place that fails because another writer placed a slot in the
-// meantime leaves that slot standing: it is whole, and it is what this write
-// would have written.
-func placeSlot(staging, slot string) error {
-	aside, err := os.MkdirTemp(filepath.Dir(slot), transientPrefix+"replaced-*")
+// A move into place that fails because another writer's slot stands there has lost
+// the race, and that slot is this write's result: it is re-checked as a read
+// re-checks it ([openSlot]), and the caller discards the staging. Where the slot it
+// lost to was moved aside before that re-check — by a writer replacing it — the
+// place is empty again and the move is tried again, so a write never reports a
+// failure for a race a whole slot settled.
+func placeSlot(staging, slot, ref, version string, replacing os.FileInfo) error {
+	if replacing != nil {
+		aside, err := os.MkdirTemp(filepath.Dir(slot), transientPrefix+"replaced-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(aside)
+		if err := setAside(slot, filepath.Join(aside, "slot"), replacing); err != nil {
+			return err
+		}
+	}
+	var moveErr error
+	for range maxPlacements {
+		if moveErr = os.Rename(staging, slot); moveErr == nil {
+			return nil
+		}
+		_, _, err := openSlot(slot, ref, version)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, ErrFetchNotFound()) {
+			return err
+		}
+	}
+	return moveErr
+}
+
+// setAside moves the slot this write replaces out of its place, into moved, and
+// leaves any other slot standing.
+//
+// It looks before it moves, and looks again at what it moved: another writer may
+// have replaced the slot in between, and what was moved is then that writer's
+// whole slot, which is put back. Where yet another writer has placed a slot in
+// that instant the place is taken and the put-back fails; the slot standing is
+// whole, and the one moved is removed with the aside directory.
+func setAside(slot, moved string, replacing os.FileInfo) error {
+	current, err := slotIdentity(slot)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Another writer replacing the same slot has moved it aside already.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(aside)
-	if err := os.Rename(slot, filepath.Join(aside, "slot")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	if !os.SameFile(current, replacing) {
+		return nil
 	}
-	if err := os.Rename(staging, slot); err != nil {
-		if _, statErr := os.Stat(filepath.Join(slot, blobFile)); statErr == nil {
+	if err := os.Rename(slot, moved); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
+	if took, err := slotIdentity(moved); err == nil && !os.SameFile(took, replacing) {
+		// Whether or not it can go back, a whole slot stands or the place is free
+		// for the staged one, so the outcome of the put-back changes nothing here.
+		_ = os.Rename(moved, slot)
+	}
 	return nil
+}
+
+// slotIdentity returns the identity of the directory at path as it stands now, for
+// os.SameFile to compare with what stands there later. On Windows a FileInfo from
+// os.Stat looks the file's identity up only when it is first compared, from
+// whatever the path names at that moment, so it is compared with itself here to
+// settle it on the directory the path names now.
+func slotIdentity(path string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	os.SameFile(info, info)
+	return info, nil
 }
 
 // keptSignatures returns the signatures the slot already keeps, when the slot
@@ -466,24 +547,38 @@ func Open(cacheRoot, ref, version string, admit AdmitAtRead) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	blob, err := os.ReadFile(filepath.Join(slot, blobFile))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
-		}
-		return nil, fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, pathless(err))
-	}
-	manifest, err := readManifest(slot, ref, version)
+	blob, manifest, err := openSlot(slot, ref, version)
 	if err != nil {
 		return nil, err
-	}
-	if err := oci.VerifyContentAgainstManifest(manifest, blob); err != nil {
-		return nil, fmt.Errorf("docscache: cached bundle %s@%s: %w", ref, version, err)
 	}
 	if err := admitSlot(slot, ref, version, manifest, admit); err != nil {
 		return nil, err
 	}
 	return &Bundle{ref: ref, version: version, blob: blob}, nil
+}
+
+// openSlot reads a slot's content and the manifest beside it and re-checks the
+// content against the manifest: what every read checks before it asks the reader's
+// admission, and what a write that lost the race to place a slot checks of the
+// slot it takes for its result. A slot that is not there — or not all there —
+// answers as a cache miss, and content the manifest does not describe halts with
+// ErrFetchIntegrity.
+func openSlot(slot, ref, version string) (blob, manifest []byte, err error) {
+	blob, err = os.ReadFile(filepath.Join(slot, blobFile))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
+		}
+		return nil, nil, fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, pathless(err))
+	}
+	manifest, err = readManifest(slot, ref, version)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := oci.VerifyContentAgainstManifest(manifest, blob); err != nil {
+		return nil, nil, fmt.Errorf("docscache: cached bundle %s@%s: %w", ref, version, err)
+	}
+	return blob, manifest, nil
 }
 
 // Page returns the bytes and MIME type of one page inside the bundle. page is
