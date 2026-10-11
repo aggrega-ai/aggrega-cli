@@ -64,8 +64,14 @@ func (s *Server) irGraphPreviewInputs(
 // the inspection attaches is reachable from a test: the shared computation
 // cannot be handed no seam at all, but it can be handed the wrong one, and this
 // is what a test compares against.
+//
+// The seam is handed this workspace's refusal of a cache write, so a refill in
+// the workspace this process was launched over, where that is a folder nobody
+// marked and nothing named, declines as every other surface's does. A Server
+// holding no resolution refuses nothing here.
 func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
-	return compilerops.PinnedExternalInputs(s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(), s.wsConfig, lf)
+	return compilerops.PinnedExternalInputs(s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(), s.wsConfig, lf,
+		s.resolvedWorkspace.CacheWriteRefusal())
 }
 
 // externalInputDivergenceDiagnostics renders the advisory an inspection owes

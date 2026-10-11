@@ -57,7 +57,7 @@ func connectedBuildWorkspace() workspaceconfig.Config {
 // so the surface can name it.
 func TestBuildFetchSeamRefusesUnpinned(t *testing.T) {
 	t.Parallel()
-	seam := compilerops.PinnedExternalInputs(t.TempDir(), testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{})
+	seam := compilerops.PinnedExternalInputs(t.TempDir(), testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{}, nil)
 
 	_, err := seam.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
@@ -88,7 +88,7 @@ func TestBuildFetchSeamNeverAcquires(t *testing.T) {
 	defer srv.Close()
 
 	wsRoot := t.TempDir()
-	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{})
+	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{}, nil)
 
 	if _, err := seam.Fetch(context.Background(), srv.URL+"/a", "unit-test"); err == nil {
 		t.Fatal("a build's render must refuse an unpinned reference even when the endpoint is reachable")
@@ -133,7 +133,7 @@ func TestBuildFetchSeamSeedsLockfilePins(t *testing.T) {
 	// workspace is connected, so the seam holds a transport and simply has no need
 	// of it — which is the hermeticity claim stated at its real strength. A pinned
 	// blob already in the store is served without a dial even being attempted.
-	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), lf)
+	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), lf, nil)
 	got, err := seam.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
 		t.Fatalf("pinned URL must be served from the store without network: %v", err)

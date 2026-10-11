@@ -169,7 +169,7 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
 		ctx,
 		compilerops.NewPreviewInputs(
-			compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf),
+			compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf, tw.rw.CacheWriteRefusal()),
 			view,
 			releasePath,
 			tw.root,

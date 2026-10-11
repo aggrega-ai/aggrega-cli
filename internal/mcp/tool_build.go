@@ -611,7 +611,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// describe the closure the Release resolves to, which the operation below
 		// verifies: reading pinned bytes out of the store says nothing about whether
 		// they were the right bytes to read.
-		fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf)
+		fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf, tw.rw.CacheWriteRefusal())
 
 		// This tool renders from the pins the workspace carries by the time it gets
 		// here — the ones already on disk, or the ones a fill above wrote before its

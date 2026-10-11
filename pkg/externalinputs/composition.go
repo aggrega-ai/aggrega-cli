@@ -35,9 +35,20 @@ import (
 // The store is located from the workspace root and the workspace's configured
 // artifact cache directory together, which is what makes it the same store for
 // one workspace whatever directory the caller is standing in.
-func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
+//
+// writeRefusal is the reason no blob may be written into that store on this run,
+// or nil where writes are allowed. The caller decides it from the resolution it
+// renders in — the refusal of a cache write in a folder that is no workspace
+// (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal) — and this package
+// returns it as it was handed, never asking why. Where it is set, a refill
+// declines before anything is fetched, with that refusal as its reason, through
+// the same path an offline refusal takes; a pinned blob already in the store is
+// served as ever, so no read is refused by it.
+func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile, writeRefusal error) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return inWorkspace(workspaceRoot, cacheDir, NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf)))
+	s := inWorkspace(workspaceRoot, cacheDir, NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf)))
+	s.writeRefusal = writeRefusal
+	return s
 }
 
 // NewFrozen constructs the transport-free variant of the consumption posture: a

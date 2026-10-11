@@ -31,11 +31,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
@@ -146,7 +148,7 @@ func TestPinnedSeamServesAPinnedReference(t *testing.T) {
 	body := []byte("replicaCount: 3\nimage: demo:1.0.0\n")
 	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, url, body)
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf, nil)
 	got, err := seam.Fetch(context.Background(), url, "test-node")
 	if err != nil {
 		t.Fatalf("a pinned reference must be served from the store: %v", err)
@@ -182,7 +184,7 @@ func TestPinnedSeamDeclinesAnUnpinnedReferenceWithATransportInHand(t *testing.T)
 	const unpinned = "https://example.com/not-pinned.yaml"
 	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, pinned, []byte("pinned: true\n"))
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf, nil)
 	_, err := seam.Fetch(context.Background(), unpinned, "test-node")
 	if err == nil {
 		t.Fatal("an unpinned reference must refuse loudly under the pinned posture")
@@ -237,7 +239,7 @@ func TestPinnedSeamRefillsAMissingPinnedBlob(t *testing.T) {
 		t.Fatalf("precondition: the store must hold no blob for the pinned input; got %v", entries)
 	}
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf, nil)
 	got, err := seam.Fetch(context.Background(), url, "test-node")
 	if err != nil {
 		t.Fatalf("a pinned reference whose blob is missing must be refilled: %v", err)
@@ -278,7 +280,7 @@ func TestPinnedSeamRefusesARefillWhoseBytesMissThePin(t *testing.T) {
 	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, url, pinnedBody)
 	removeStoredBlob(t, wsRoot, cacheDir, pinnedBody)
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf, nil)
 	_, err := seam.Fetch(context.Background(), url, "test-node")
 	if err == nil {
 		t.Fatal("a refill whose bytes miss the pinned digest must refuse")
@@ -307,7 +309,7 @@ func TestPinnedSeamUnderOfflineRefusesTheRefillNamingOffline(t *testing.T) {
 	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, url, body)
 	removeStoredBlob(t, wsRoot, cacheDir, body)
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, offlineWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, offlineWorkspace(), lf, nil)
 	_, err := seam.Fetch(context.Background(), url, "test-node")
 	if err == nil {
 		t.Fatal("an offline workspace cannot refill, so the missing blob must refuse")
@@ -341,7 +343,7 @@ func TestPinnedSeamWritesNothingWhenEveryPinnedBlobIsPresent(t *testing.T) {
 		t.Fatalf("precondition: the store must hold exactly the seeded blob; got %v", before)
 	}
 
-	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf)
+	seam := PinnedExternalInputs(wsRoot, cacheDir, connectedWorkspace(), lf, nil)
 	if _, err := seam.Fetch(context.Background(), pinned, "n"); err != nil {
 		t.Fatalf("serve a pinned reference: %v", err)
 	}
@@ -369,7 +371,7 @@ func TestPinnedSeamWithNoLockfileDeclinesEverything(t *testing.T) {
 	t.Parallel()
 	const url = "https://example.com/anything.yaml"
 
-	seam := PinnedExternalInputs(t.TempDir(), ".aggrega/cache", connectedWorkspace(), nil)
+	seam := PinnedExternalInputs(t.TempDir(), ".aggrega/cache", connectedWorkspace(), nil, nil)
 	if seam == nil {
 		t.Fatal("a nil lockfile must still yield a seam")
 	}
@@ -382,5 +384,122 @@ func TestPinnedSeamWithNoLockfileDeclinesEverything(t *testing.T) {
 	}
 	if declined := seam.Declined(); len(declined) != 1 || declined[0] != url {
 		t.Fatalf("Declined() = %v; want exactly %q", declined, url)
+	}
+}
+
+// TestPinnedSeamInAFolderNoWorkspaceResolvesFromDeclinesTheRefillBeforeFetching
+// hands the seam the refusal each rendering surface hands it — the resolution's
+// own CacheWriteRefusal — over three real resolutions, against an endpoint that
+// counts what it serves.
+//
+// In a folder nobody marked, with nothing naming a root, a pinned reference whose
+// blob is missing is declined with that refusal before anything is fetched: the
+// endpoint serves nothing and no .aggrega appears in the folder. Marked as a
+// workspace, the same state is repaired — fetched once and written under the
+// folder — which is what makes the first row's empty cache the refusal's doing. A
+// blob already in the store of a folder nobody marked is served with the refusal
+// in hand, because the refusal is of a write and a read writes nothing.
+//
+// 🔴 PLANTED DEFECT: delete the writeRefusal block at the top of the store's
+// refill, and the first row fails — the endpoint serves the bytes and the folder
+// gains an .aggrega directory.
+func TestPinnedSeamInAFolderNoWorkspaceResolvesFromDeclinesTheRefillBeforeFetching(t *testing.T) {
+	t.Parallel()
+	body := []byte("replicaCount: 7\n")
+	noEnv := func(string) string { return "" }
+
+	for _, tc := range []struct {
+		name string
+		// config is the folder's configuration file, or empty for none.
+		config string
+		// present seeds the pinned blob into the folder's store first.
+		present  bool
+		refused  bool
+		wantHits int
+	}{
+		{name: "a folder nobody marked and nothing named, the blob missing", refused: true},
+		{name: "the same folder marked as a workspace, the blob missing", config: "workspace: {}\n", wantHits: 1},
+		{name: "a folder nobody marked, the blob already in its store", config: "artifact_cache_dir: pinned-inputs\n", present: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var hits atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				_, _ = w.Write(body)
+			}))
+			defer srv.Close()
+			url := srv.URL + "/values.yaml"
+
+			folder := t.TempDir()
+			if tc.config != "" {
+				if err := os.WriteFile(filepath.Join(folder, workspaceconfig.ConfigFilename), []byte(tc.config), 0o644); err != nil {
+					t.Fatalf("write the folder's configuration: %v", err)
+				}
+			}
+			rw, err := workspaceconfig.Resolve(folder, "", noEnv)
+			if err != nil {
+				t.Fatalf("resolve %s: %v", folder, err)
+			}
+			marked := strings.Contains(tc.config, "workspace:")
+			if rw.FoundNoWorkspace() == marked {
+				t.Fatalf("precondition: %s resolves as found-nothing=%v (marker %v at %s), the row needs %v",
+					folder, rw.FoundNoWorkspace(), rw.Marker(), rw.Root(), !marked)
+			}
+			cfg := rw.Config()
+			cacheDir := cfg.ResolvedArtifactCacheDir()
+			if tc.present {
+				if strings.HasPrefix(filepath.ToSlash(cacheDir), ".aggrega") {
+					t.Fatalf("precondition: the configured cache directory %q was not read, so seeding it would mark the folder", cacheDir)
+				}
+				blobDir := filepath.Join(externalinputs.StoreRoot(rw.Root(), cacheDir), "sha256")
+				if err := os.MkdirAll(blobDir, 0o755); err != nil {
+					t.Fatalf("mkdir store: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(blobDir, hexSHA256(body)), body, 0o644); err != nil {
+					t.Fatalf("seed store blob: %v", err)
+				}
+			}
+			lf := &lockfile.Lockfile{Version: 1, ExternalInputs: []lockfile.ExternalInput{{
+				URL: url, Sha256: hexSHA256(body), Size: int64(len(body)), RequiredBy: []string{"test"},
+			}}}
+
+			seam := PinnedExternalInputs(rw.Root(), cacheDir, cfg, lf, rw.CacheWriteRefusal())
+			got, err := seam.Fetch(context.Background(), url, "test-node")
+
+			if got := hits.Load(); got != int64(tc.wantHits) {
+				t.Errorf("the endpoint served %d request(s), want %d", got, tc.wantHits)
+			}
+			if tc.refused {
+				var refusal *workspaceconfig.CacheWriteRefusedError
+				if !errors.As(err, &refusal) {
+					t.Fatalf("Fetch returned %v (%q), want the refusal of a cache written in a folder that is no workspace", err, got)
+				}
+				if refusal.Root() != folder {
+					t.Errorf("the refusal names %s, want %s", refusal.Root(), folder)
+				}
+				if !strings.Contains(err.Error(), url) {
+					t.Errorf("the decline does not name the reference it declined:\n%v", err)
+				}
+				if _, serr := os.Stat(filepath.Join(folder, ".aggrega")); !errors.Is(serr, fs.ErrNotExist) {
+					t.Errorf("%s/.aggrega exists after the declined refill (stat: %v)", folder, serr)
+				}
+				// The decline is not the frozen-closure one: a pull in the same folder is
+				// refused for the same reason, so no divergence is reported.
+				if declined := seam.Declined(); len(declined) != 0 {
+					t.Errorf("a refill declined for the cache was recorded as unpinned: %v", declined)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the pinned reference was not served: %v", err)
+			}
+			if !bytes.Equal(got, body) {
+				t.Errorf("served %q, want the pinned bytes %q", got, body)
+			}
+			if entries := storeEntries(t, rw.Root(), cacheDir); strings.Join(entries, ",") != hexSHA256(body) {
+				t.Errorf("the store under %s holds %v, want the pinned blob", folder, entries)
+			}
+		})
 	}
 }

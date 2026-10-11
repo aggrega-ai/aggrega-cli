@@ -578,7 +578,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// missing, which cannot change what the render sees) and an unpinned one is
 		// refused loudly, naming it. Acquisition belongs to the pull step, so there is
 		// nothing for a build to merge back afterwards and no posture for it to choose.
-		fetchSeam := compilerops.PinnedExternalInputs(wsRoot, cacheDir, wsCfg, lf)
+		// A refill writes the cache, so in a folder that is no workspace it declines
+		// with the resolution's own refusal instead.
+		fetchSeam := compilerops.PinnedExternalInputs(wsRoot, cacheDir, wsCfg, lf, rw.CacheWriteRefusal())
 
 		// The build's determinism-wired lazy lookup: EVERY catalog consumer this run
 		// has — guards, triad aggregate resolution, manifest-implements gate,

@@ -125,7 +125,11 @@ func Pin(ctx context.Context, opts Options) (Result, error) {
 // operation that holds a lock raises.
 //
 // An entity of a kind that reads nothing a lock records has nothing to hold, and
-// Hold returns nil for it without resolving anything.
+// Hold returns nil for it without resolving anything. For any other entity, in a
+// folder that is no workspace where nothing named one, Hold returns the refusal
+// of a cache write (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal) before
+// it resolves anything, as the step does: its resolution fills the artifact
+// cache exactly as the step's does.
 //
 // Hold writes nothing, so it claims no lock file and does not itself hold the
 // entity to a directory of its own; the publication that calls it has already
@@ -182,12 +186,12 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 
 	// The step's resolution fetches each input's source into the workspace's
 	// artifact cache, and a workspace found nowhere and named by nobody gets no
-	// cache: the step that writes is refused here, before anything is resolved,
-	// with the folder and the way out in the refusal.
-	if forWriting {
-		if err := rw.CacheWriteRefusal(); err != nil {
-			return Result{}, Plan{}, err
-		}
+	// cache. That resolution is the same whether the plan is then written,
+	// reported or only checked — a publication's hold acquires what the step would
+	// acquire — so the step and the hold alike are refused here, before anything is
+	// resolved, with the folder and the way out in the refusal.
+	if err := rw.CacheWriteRefusal(); err != nil {
+		return Result{}, Plan{}, err
 	}
 
 	wsCfg := rw.Config()

@@ -50,9 +50,20 @@ var _ wasm.FetchService = (*externalinputs.DeclineRecorder)(nil)
 // for every surface that renders under it, rather than restated at each place a
 // service is built.
 //
+// cacheWriteRefusal is the refusal of a write into that artifact cache, or nil
+// where writes are allowed, as the resolution the surface renders in answers it
+// (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal): a folder that is no
+// workspace, where nothing named one, gets no cache. A refill is a write, so under
+// it a pinned reference whose blob is missing declines with that refusal before
+// anything is fetched, and the render reports it as it reports an offline
+// refusal; every pinned blob already on disk is served as ever. It is a required
+// parameter rather than read from the configuration because the configuration
+// cannot tell a root somebody named from a folder nobody marked — only the
+// resolution can — and because each surface holds the resolution it renders in.
+//
 // Returning the recorder rather than the service is deliberate — the caller
 // needs to know which references were declined in order to say so, and the
 // service does not keep that list.
-func PinnedExternalInputs(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
-	return externalinputs.NewDeclineRecorder(externalinputs.NewRefilling(workspaceRoot, cacheDir, wsCfg, lf))
+func PinnedExternalInputs(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile, cacheWriteRefusal error) *externalinputs.DeclineRecorder {
+	return externalinputs.NewDeclineRecorder(externalinputs.NewRefilling(workspaceRoot, cacheDir, wsCfg, lf, cacheWriteRefusal))
 }

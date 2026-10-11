@@ -71,6 +71,11 @@ type Service struct {
 	// It is empty for a service constructed over a bare store root, which holds no
 	// write or read to any workspace.
 	heldTo string
+	// writeRefusal is the reason a missing blob is not refilled into the store on
+	// this run, or nil where it may be. It is the caller's decision, returned as
+	// handed and before anything is fetched; it is never set on a service that
+	// acquires, whose caller refuses the whole operation up front instead.
+	writeRefusal error
 
 	mu sync.Mutex
 	// records holds every known pin keyed by URL: the pinned view passed at
@@ -148,8 +153,8 @@ func NewService(root string, acquire bool, client *http.Client, pinned []lockfil
 //     store-corruption error. A missing blob is refilled from the network
 //     wherever this service holds a transport — the refill is verified against
 //     the recorded digest before anything is written or returned, so it cannot
-//     change output — and refuses where it holds none. A pinned entry never
-//     re-pins.
+//     change output — and refuses where it holds none, or where it was handed a
+//     reason no blob may be written. A pinned entry never re-pins.
 //   - An unpinned URL with acquisition enabled is fetched, pinned into the
 //     store under its digest, and recorded.
 //   - An unpinned URL with acquisition disabled is an error naming the URL
@@ -271,7 +276,17 @@ func verifyStoredBlob(kind inputKind, rawURL string, rec lockfile.ExternalInput,
 // digest gates the result before anything is written or returned, so a refill
 // can never change output — which is why it runs in any mode, including a
 // frozen closure. Callers hold s.mu.
+//
+// A refill exists to write the blob back, so where the service was handed a
+// reason no blob may be written (writeRefusal) it declines first, before any
+// transport is consulted: nothing is fetched for a write that cannot land, and
+// the reader is told that reason rather than a missing blob or an offline posture
+// that would only stand in the way second.
 func (s *Service) refill(ctx context.Context, kind inputKind, rawURL string, rec lockfile.ExternalInput) ([]byte, error) {
+	if s.writeRefusal != nil {
+		return nil, fmt.Errorf("externalinputs: %q is pinned by the lockfile but missing from the artifact cache, and is not fetched again: %w",
+			rawURL, s.writeRefusal)
+	}
 	switch kind {
 	case kindOCI:
 		repoRef, _, err := parseOCIReference(rawURL)
