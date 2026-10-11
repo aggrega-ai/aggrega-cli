@@ -61,37 +61,49 @@ func countingChartArchiveServer(t *testing.T) (*httptest.Server, *atomic.Int64) 
 }
 
 // TestThePinToolIsRefusedInAFolderNoWorkspaceResolvesFrom calls the pin tool on a
-// server started, with no launch root, in a folder that holds a Recipe whose
-// remote source the counting chart server serves — once where nobody marked the
-// folder and the call names no root, and once in the same layout marked as a
-// workspace.
+// server started, with no launch root, in a folder that holds one Recipe — where
+// nobody marked the folder and the call names no root, and in the same layout
+// marked as a workspace.
 //
-// Marked, the step fetches the source, caches it under the folder and writes the
-// lock. Unmarked, the call is refused before anything is resolved, with the
-// refusal the command line gives naming the folder: the server answers nothing,
-// no lock is written and no .aggrega appears.
+// A Recipe whose remote source the counting chart server serves is the one the
+// refusal is for. Marked, the step fetches the source, caches it under the folder
+// and writes the lock. Unmarked, the call is refused before the source is fetched,
+// with the refusal the command line gives naming the folder: the server answers
+// nothing, no lock is written and no .aggrega appears. A Recipe that reads no
+// source, so whose pin fetches nothing, is pinned in the unmarked folder as it is
+// in a workspace, and still no .aggrega appears.
 //
-// 🔴 PLANTED DEFECT: delete the CacheWriteRefusal block in the pin step's
-// planNamed, and the unmarked row fails — the call completes, fetches the source
-// and creates the folder's .aggrega directory.
+// 🔴 PLANTED DEFECTS: in the pin step's planNamed, hand Compute
+// SourceResolver(ctx, wsCfg) without refusingCacheWrites around it, and the row
+// "a source to fetch, in a folder nobody marked and nothing named" fails — the call
+// completes, fetches the source and creates the folder's .aggrega directory. Ask
+// rw.CacheWriteRefusal() in planNamed before Compute again, returning it, and the
+// row "no source, in a folder nobody marked and nothing named" fails — the call is
+// refused for a cache it would never write.
 //
 // Not parallel: the server resolves from the process working directory, and the
 // rows set the offline posture's variable so the marked row may reach the server.
 func TestThePinToolIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		marked bool
+		name     string
+		noSource bool
+		marked   bool
 	}{
-		{name: "a folder nobody marked and nothing named"},
-		{name: "the same layout marked as a workspace", marked: true},
+		{name: "a source to fetch, in a folder nobody marked and nothing named"},
+		{name: "a source to fetch, in the same layout marked as a workspace", marked: true},
+		{name: "no source, in a folder nobody marked and nothing named", noSource: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, hits := countingChartArchiveServer(t)
 			folder := aDirectoryNoWorkspaceResolvesFrom(t)
 			entity := filepath.Join("catalog", "recipe", "helm", "server", "1.0.0", "recipe.yaml")
+			reads := "  source:\n    kind: helm-https-chart\n    url: " + srv.URL + "/pinchart.tgz\n    version: \"1.0.0\"\n"
+			if tc.noSource {
+				reads = "  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n" +
+					"        image: demo:1\n"
+			}
 			writeNoticeFixture(t, filepath.Join(folder, entity), "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\n"+
-				"metadata:\n  name: server\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: server\n"+
-				"  source:\n    kind: helm-https-chart\n    url: "+srv.URL+"/pinchart.tgz\n    version: \"1.0.0\"\n")
+				"metadata:\n  name: server\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: server\n"+reads)
 			if tc.marked {
 				writeNoticeFixture(t, filepath.Join(folder, workspaceconfig.ConfigFilename), "workspace: {}\n")
 			}
@@ -108,6 +120,18 @@ func TestThePinToolIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 
 			res := callTool(t, unlaunchedServer(""), "pin", pinArgs{Entity: entity})
 
+			if tc.noSource {
+				if res.IsError {
+					t.Fatalf("the pin tool over a Recipe that reads no source was refused in a folder that is no workspace: %s", res.Content[0].Text)
+				}
+				if n := hits.Load(); n != 0 {
+					t.Errorf("the call fetched %d time(s) for a Recipe that reads no source", n)
+				}
+				if _, serr := os.Stat(filepath.Join(folder, ".aggrega")); !errors.Is(serr, fs.ErrNotExist) {
+					t.Errorf("%s/.aggrega exists after the call (stat: %v)", folder, serr)
+				}
+				return
+			}
 			if tc.marked {
 				if res.IsError {
 					t.Fatalf("the pin tool in a workspace was refused, so the refused row proves nothing: %s", res.Content[0].Text)

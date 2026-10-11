@@ -127,9 +127,11 @@ func Pin(ctx context.Context, opts Options) (Result, error) {
 // An entity of a kind that reads nothing a lock records has nothing to hold, and
 // Hold returns nil for it without resolving anything. For any other entity, in a
 // folder that is no workspace where nothing named one, Hold returns the refusal
-// of a cache write (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal) before
-// it resolves anything, as the step does: its resolution fills the artifact
-// cache exactly as the step's does.
+// of a cache write (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal) where
+// its comparison would fetch a source, before it fetches it, as the step does:
+// its resolution fills the artifact cache exactly as the step's does. An entity
+// whose resolution fetches nothing — no source, a local one, or one whose
+// identity each Release fills in — is held to its lock there as anywhere else.
 //
 // Hold writes nothing, so it claims no lock file and does not itself hold the
 // entity to a directory of its own; the publication that calls it has already
@@ -184,16 +186,6 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	}
 	res.Pinnable = true
 
-	// The step's resolution fetches each input's source into the workspace's
-	// artifact cache, and a workspace found nowhere and named by nobody gets no
-	// cache. That resolution is the same whether the plan is then written,
-	// reported or only checked — a publication's hold acquires what the step would
-	// acquire — so the step and the hold alike are refused here, before anything is
-	// resolved, with the folder and the way out in the refusal.
-	if err := rw.CacheWriteRefusal(); err != nil {
-		return Result{}, Plan{}, err
-	}
-
 	wsCfg := rw.Config()
 	root := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
@@ -212,10 +204,16 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	if err := ctx.Err(); err != nil {
 		return Result{}, Plan{}, fmt.Errorf("stopped before anything was resolved: %w", err)
 	}
+	// Each source the step resolves is fetched into the workspace's artifact cache,
+	// and a workspace found nowhere and named by nobody gets no cache. The resolver
+	// is asked only for a source that has to be fetched, so it is where the refusal
+	// is answered: before the fetch, and never for an entity whose resolution
+	// fetches nothing. That holds whether the plan is then written, reported or
+	// only checked — a publication's hold fetches what the step would fetch.
 	plan, err := Compute(PlanInputs{
 		View:            view,
 		URIs:            []string{uri},
-		Resolver:        SourceResolver(ctx, wsCfg),
+		Resolver:        refusingCacheWrites(SourceResolver(ctx, wsCfg), rw.CacheWriteRefusal()),
 		WorkspaceRoot:   root,
 		CacheDir:        cacheDir,
 		ForWriting:      forWriting,

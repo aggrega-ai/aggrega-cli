@@ -319,7 +319,7 @@ func looseRegistryRelease(t *testing.T, folder string) string {
 func assertNoCacheAndStillNoWorkspace(t *testing.T, folder string) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(folder, ".aggrega")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("%s/.aggrega exists after the refused run (stat: %v)", folder, err)
+		t.Errorf("%s/.aggrega exists after the run (stat: %v)", folder, err)
 	}
 	sub := filepath.Join(folder, "sub")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -330,7 +330,7 @@ func assertNoCacheAndStillNoWorkspace(t *testing.T, folder string) {
 		t.Fatalf("resolve from %s: %v", sub, err)
 	}
 	if !rw.FoundNoWorkspace() {
-		t.Errorf("a resolution from %s anchors at %s (marker %v) after the refused run, where before it anchored nothing",
+		t.Errorf("a resolution from %s anchors at %s (marker %v) after the run, where before it anchored nothing",
 			sub, rw.Root(), rw.Marker())
 	}
 }

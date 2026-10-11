@@ -5,6 +5,7 @@ package entitypin
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
@@ -33,6 +34,37 @@ import (
 // and never outlives the run whose context it holds.
 func SourceResolver(ctx context.Context, wsCfg workspaceconfig.Config) closure.SourceResolver {
 	return sourceResolverShim{ctx: ctx, wsCfg: wsCfg}
+}
+
+// refusingCacheWrites returns next where refusal is nil, and otherwise a resolver
+// that answers every source it is asked for with refusal, naming the source, and
+// asks next for none.
+//
+// It is where the pin step's refusal of a cache write is placed, and the place is
+// what makes the refusal exact. The descent asks a resolver only for a source it
+// has to fetch — an entity with no source, a local source, and a source whose
+// identity each Release fills in are passed over before any resolver is asked
+// (closure.DescendAuthoredSources) — and a resolution fetches before it writes the
+// cache, with no cache lookup ahead of the fetch. So a refusal answered here comes
+// before every fetch the step would make, and an entity whose resolution fetches
+// nothing is never refused.
+//
+// refusal is the resolution's own (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal):
+// the predicate and its sentence stay there, and this only decides where it is
+// asked.
+func refusingCacheWrites(next closure.SourceResolver, refusal error) closure.SourceResolver {
+	if refusal == nil {
+		return next
+	}
+	return cacheWriteRefusal{refusal: refusal}
+}
+
+// cacheWriteRefusal is the resolver refusingCacheWrites hands the descent where a
+// write into the artifact cache is refused.
+type cacheWriteRefusal struct{ refusal error }
+
+func (r cacheWriteRefusal) Resolve(spec closure.SourceSpec) (*closure.ResolvedSource, error) {
+	return nil, fmt.Errorf("the %s source %q is not fetched: %w", spec.Kind, spec.URL, r.refusal)
 }
 
 // sourceResolverShim adapts the closure-package SourceResolver interface to the

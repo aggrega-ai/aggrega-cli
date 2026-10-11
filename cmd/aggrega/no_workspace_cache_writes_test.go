@@ -69,6 +69,42 @@ func concreteChartSource(chartURL string) string {
 	return "  source:\n    kind: helm-https-chart\n    url: " + chartURL + "\n    version: \"1.0.0\"\n"
 }
 
+// templatedChartSource is a Recipe source block served at chartURL whose version
+// is still template text, so which artifact it names is decided by each Release
+// that uses the Recipe: the pin step and a publication's hold resolve nothing for
+// it, and fetch nothing.
+func templatedChartSource(chartURL string) string {
+	return "  source:\n    kind: helm-https-chart\n    url: " + chartURL + "\n    version: \"{{ .infra.chart_version }}\"\n"
+}
+
+// noChartSource is the empty source block: a Recipe that builds a workload and
+// reads no source, for which the pin step and a publication's hold fetch nothing.
+func noChartSource(string) string { return "" }
+
+// cacheWriteRow is one row of the two tables below: the Recipe's source block,
+// built over the counting server's chart URL, whether the folder is marked as a
+// workspace, and whether the act is refused there.
+//
+// The rows a refusal must leave alone are the ones whose resolution fetches
+// nothing — no source, or a source each Release fills in — in a folder nobody
+// marked with nothing naming a root: each runs as it does in a workspace and
+// still leaves no .aggrega behind, so the refusal is shown to answer a fetch
+// rather than the folder.
+type cacheWriteRow struct {
+	name    string
+	source  func(chartURL string) string
+	marked  bool
+	refused bool
+}
+
+// cacheWriteRows are the rows both tables run, under the names their plants cite.
+var cacheWriteRows = []cacheWriteRow{
+	{name: "a source to fetch, in a folder nobody marked and nothing named", source: concreteChartSource, refused: true},
+	{name: "a source to fetch, in the same layout marked as a workspace", source: concreteChartSource, marked: true},
+	{name: "no source, in a folder nobody marked and nothing named", source: noChartSource},
+	{name: "a source each Release fills in, in a folder nobody marked and nothing named", source: templatedChartSource},
+}
+
 // assertArtifactCacheUnder fails where folder holds no artifact cache: the marked
 // control of each row below, which is what makes the other row's missing cache
 // the refusal's doing rather than an act that never writes one.
@@ -80,32 +116,32 @@ func assertArtifactCacheUnder(t *testing.T, folder, act string) {
 }
 
 // TestThePinStepIsRefusedInAFolderNoWorkspaceResolvesFrom runs the author's own
-// pin step — the run of `aggrega pin` — over a Recipe whose remote source the
-// counting chart server serves, once in a folder nobody marked with nothing
-// naming a root and once in the same layout marked as a workspace.
+// pin step — the run of `aggrega pin` — over a Recipe, in a folder nobody marked
+// with nothing naming a root and in the same layout marked as a workspace.
 //
-// Marked, the step fetches the source, caches it under the folder and writes the
-// lock. Unmarked, it is refused before anything is resolved, naming the folder:
-// the server answers nothing, no lock is written, no .aggrega appears, and a
-// resolution started beneath the folder still anchors nothing.
+// A Recipe whose remote source the counting chart server serves is the one the
+// refusal is for. Marked, the step fetches the source, caches it under the folder
+// and writes the lock. Unmarked, it is refused before the source is fetched,
+// naming the folder: the server answers nothing, no lock is written, no .aggrega
+// appears, and a resolution started beneath the folder still anchors nothing. A
+// Recipe whose pin fetches nothing is not refused in the unmarked folder (see
+// cacheWriteRow).
 //
-// 🔴 PLANTED DEFECT: delete the CacheWriteRefusal block in the pin step's
-// planNamed, and the unmarked row fails — the step fetches the source, creates the
-// folder's .aggrega directory and writes the lock.
+// 🔴 PLANTED DEFECTS: in the pin step's planNamed, hand Compute
+// SourceResolver(ctx, wsCfg) without refusingCacheWrites around it, and the row
+// "a source to fetch, in a folder nobody marked and nothing named" fails — the step
+// fetches the source, creates the folder's .aggrega directory and writes the lock.
+// Ask rw.CacheWriteRefusal() in planNamed before Compute again, returning it, and
+// the two rows whose pin fetches nothing fail — the step is refused for a cache it
+// would never write.
 func TestThePinStepIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name   string
-		marked bool
-	}{
-		{name: "a folder nobody marked and nothing named"},
-		{name: "the same layout marked as a workspace", marked: true},
-	} {
+	for _, tc := range cacheWriteRows {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			srv, hits := countingChartServer(t)
 			folder := folderNoWorkspaceResolvesFrom(t)
-			recipe := holdFixtureRecipe(t, folder, "server", concreteChartSource(srv.URL+"/pinchart.tgz"))
+			recipe := holdFixtureRecipe(t, folder, "server", tc.source(srv.URL+"/pinchart.tgz"))
 			if tc.marked {
 				writeWorkspaceConfig(t, folder, "workspace: {}\n")
 			}
@@ -113,6 +149,16 @@ func TestThePinStepIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 
 			err := pinRun(context.Background(), io.Discard, rw, recipe, false)
 
+			if !tc.marked && !tc.refused {
+				if err != nil {
+					t.Fatalf("the pin step over a Recipe whose pin fetches nothing was refused in a folder that is no workspace: %v", err)
+				}
+				if n := hits.Load(); n != 0 {
+					t.Errorf("the pin step fetched %d time(s) for a Recipe whose pin fetches nothing", n)
+				}
+				assertNoCacheAndStillNoWorkspace(t, folder)
+				return
+			}
 			if tc.marked {
 				if err != nil {
 					t.Fatalf("the pin step in a workspace failed, so the refused row proves nothing: %v", err)
@@ -143,34 +189,33 @@ func TestThePinStepIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 
 // TestAPublicationsHoldIsRefusedInAFolderNoWorkspaceResolvesFrom runs a
 // publication — the run of `aggrega push`, not asked to pin — of a Recipe whose
-// remote source the counting chart server serves and whose lock records no pin,
-// once in a folder nobody marked with nothing naming a root and once in the same
-// layout marked as a workspace.
+// lock records no pin, in a folder nobody marked with nothing naming a root and in
+// the same layout marked as a workspace.
 //
-// Marked, the publication reaches the hold, which resolves the source into the
-// folder's artifact cache to compare against the lock and then refuses the
-// unpinned entity. Unmarked, the hold is refused before it resolves anything,
-// naming the folder: the server answers nothing, no .aggrega appears, and a
-// resolution started beneath the folder still anchors nothing.
+// A Recipe whose remote source the counting chart server serves is the one the
+// refusal is for. Marked, the publication reaches the hold, which resolves the
+// source into the folder's artifact cache to compare against the lock and then
+// refuses the unpinned entity. Unmarked, the hold is refused before the source is
+// fetched, naming the folder: the server answers nothing, no .aggrega appears, and
+// a resolution started beneath the folder still anchors nothing. A Recipe whose
+// hold fetches nothing publishes in the unmarked folder as it does in a workspace
+// (see cacheWriteRow).
 //
-// 🔴 PLANTED DEFECT: in the pin step's planNamed, ask CacheWriteRefusal only where
-// the plan is computed for writing, and the unmarked row fails — the hold fetches
-// the source, creates the folder's .aggrega directory and refuses the unpinned
-// entity instead.
+// 🔴 PLANTED DEFECTS: in the pin step's planNamed, hand Compute
+// SourceResolver(ctx, wsCfg) without refusingCacheWrites around it, and the row
+// "a source to fetch, in a folder nobody marked and nothing named" fails — the hold
+// fetches the source, creates the folder's .aggrega directory and refuses the
+// unpinned entity instead. Ask rw.CacheWriteRefusal() in planNamed before Compute
+// again, returning it, and the two rows whose hold fetches nothing fail — the
+// publication is refused for a cache it would never write.
 func TestAPublicationsHoldIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name   string
-		marked bool
-	}{
-		{name: "a folder nobody marked and nothing named"},
-		{name: "the same layout marked as a workspace", marked: true},
-	} {
+	for _, tc := range cacheWriteRows {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			srv, hits := countingChartServer(t)
 			folder := folderNoWorkspaceResolvesFrom(t)
-			recipe := holdFixtureRecipe(t, folder, "server", concreteChartSource(srv.URL+"/pinchart.tgz"))
+			recipe := holdFixtureRecipe(t, folder, "server", tc.source(srv.URL+"/pinchart.tgz"))
 			if tc.marked {
 				writeWorkspaceConfig(t, folder, "workspace: {}\n")
 			}
@@ -180,6 +225,16 @@ func TestAPublicationsHoldIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T
 				Workspace: rw, EntityPath: recipe, Registry: "example.com", PushTarget: memory.New(), Out: io.Discard,
 			})
 
+			if !tc.marked && !tc.refused {
+				if err != nil {
+					t.Fatalf("the publication of a Recipe whose hold fetches nothing was refused in a folder that is no workspace: %v", err)
+				}
+				if n := hits.Load(); n != 0 {
+					t.Errorf("the publication fetched %d time(s) for a Recipe whose hold fetches nothing", n)
+				}
+				assertNoCacheAndStillNoWorkspace(t, folder)
+				return
+			}
 			if tc.marked {
 				if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
 					t.Fatalf("the publication in a workspace returned %v, want the hold's unpinned-entity refusal, so the refused row proves nothing", err)
