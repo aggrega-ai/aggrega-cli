@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -22,8 +23,9 @@ import (
 // command so two invocations in one process cannot observe each other's flag
 // values.
 type importFlags struct {
-	format string
-	dryRun bool
+	format    string
+	dryRun    bool
+	outputDir string
 }
 
 // newImportCmd turns a foreign source description into draft Aggrega authoring
@@ -39,9 +41,18 @@ func newImportCmd() *cobra.Command {
 		Long: `Turn a foreign source description into draft Aggrega authoring files.
 
 The importer reads the source file, drafts Aggrega entities from it, and writes
-the drafted files into the current directory (creating parent directories as
-needed). The importer attached at the workspace's import socket does the
-translation; import selects it, runs it, and writes what it produces.
+the drafted files beneath the root of the workspace the run resolved, from
+whichever folder the command is run in (creating parent directories as needed).
+The importer attached at the workspace's import socket does the translation;
+import selects it, runs it, and writes what it produces.
+
+Pass --output-dir to write the drafts beneath another directory instead. A
+relative path resolves against the directory you run the command in, as every
+path you type does. A directory you name outside the workspace is used where you
+named it, and what is written beneath it is held to it. Wherever the drafts go,
+a link on the way to one that leads out of the workspace — or, beneath a
+directory you named outside it, out of that directory — is refused, and nothing
+is written.
 
 The source format selects how the importer reads the file. Pass --format to
 name it explicitly. When --format is omitted, import inspects the file's
@@ -87,6 +98,22 @@ source the write would refuse is refused here too.`,
 				return err
 			}
 
+			// A destination named on the command line is a path typed here, so it
+			// is resolved against the folder the command runs in, as every typed
+			// path is, and handed on whole so the first line names where the drafts
+			// are. With none named, none is handed: the operation's own default — the
+			// root of the workspace the run resolved — is the command's, so the
+			// command line and every other surface naming no destination land their
+			// drafts in one place.
+			outputDir := ""
+			if opts.outputDir != "" {
+				outputDir, err = filepath.Abs(opts.outputDir)
+				if err != nil {
+					return fmt.Errorf("resolve --output-dir %q against the directory the command runs in: %w",
+						opts.outputDir, err)
+				}
+			}
+
 			// The flag is turned into a delivery once, here, and every branch
 			// below reads that value through its own predicate rather than
 			// re-reading the flag. The flag and the delivery carry the same
@@ -98,7 +125,7 @@ source the write would refuse is refused here too.`,
 				Source:        content,
 				SourceName:    path,
 				Format:        format,
-				OutputDir:     ".",
+				OutputDir:     outputDir,
 				Delivery:      delivery,
 				ResolvePlugin: importPluginBytes,
 				Sources:       sources,
@@ -132,6 +159,7 @@ source the write would refuse is refused here too.`,
 	}
 	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
+	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in. Without it the drafts are written beneath the root of the workspace the run resolved.")
 	return c
 }
 
@@ -198,11 +226,17 @@ func reportImportedFiles(w io.Writer, files []abi.ScaffoldFile) error {
 // a line announcing a directory the run never touched would be worse than no
 // line at all.
 //
+// The root is a full path — the workspace root where the run named no
+// destination, and the --output-dir it named otherwise — and it is printed as
+// the command line prints every location it reports, as written rather than
+// quoted, so a Windows path reads with its own separators rather than each one
+// doubled.
+//
 // Both are read from the result rather than from the values passed to the call,
 // so the line names what the import actually ran with and the two cannot come
 // to disagree.
 func reportImportPreamble(w io.Writer, res importops.Result) {
-	fmt.Fprintf(w, "read as the %s format, with drafted paths relative to %q\n", res.Format, res.OutputDir)
+	fmt.Fprintf(w, "read as the %s format, with drafted paths relative to %s\n", res.Format, res.OutputDir)
 }
 
 // reportImportDiagnostics writes each importer diagnostic to w as a

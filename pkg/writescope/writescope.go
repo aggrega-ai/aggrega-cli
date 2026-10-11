@@ -26,13 +26,12 @@
 // # Which root holds a write
 //
 // Every path the product composes, it composes beneath some directory: the
-// directory a command was run in, an output directory the owner typed, the
-// directory of the Release a lockfile sits beside, the catalog directory an
-// entity was found in. [RootFor] is the one answer to which root that directory
-// holds its writes to. Where it lies inside the workspace, the root is the
-// workspace root. Where it is a directory the owner typed on the command line, or
-// one the workspace configuration names, and it lies outside the workspace, it is
-// a root of its own: it is honoured where it was named — followed, if it is a
+// workspace root, an output directory the owner typed, the directory of the
+// Release a lockfile sits beside, the catalog directory an entity was found in.
+// [RootFor] is the one answer to which root that directory holds its writes to.
+// Where it lies inside the workspace, the root is the workspace root. Where it is
+// a directory the owner typed on the command line, or one the workspace
+// configuration names, and it lies outside the workspace, it is a root of its own: it is honoured where it was named — followed, if it is a
 // link — and every file composed beneath it is held to it, so a link beneath it
 // leading out of it is refused as a link inside the workspace is. Deciding which
 // directory a write is composed beneath is the writer's, because only the writer
@@ -107,10 +106,10 @@ func remedyFor(root string) string {
 // the workspace, and workspaceRoot where it lies inside it.
 //
 // anchor is the directory the writer composes beneath, and it is the writer's to
-// name: a directory the owner typed or the configuration named, the directory
-// such a file sits in, or the directory a command was run in. Which side of the
-// workspace it lies on is the one judgement of where a path leads on disk
-// ([pathscope.ResolvesInside]), not its spelling, so an anchor that is a link
+// name: a directory the owner typed or the configuration named, or the directory
+// such a file sits in. Which side of the workspace it lies on is the one
+// judgement of where a path leads on disk ([pathscope.ResolvesInside]), not its
+// spelling, so an anchor that is a link
 // leading out of the workspace is outside it and is honoured where it was named.
 // A directory nobody named — one the product found inside the workspace — is not
 // an anchor; a writer composing beneath one passes the workspace root, or an

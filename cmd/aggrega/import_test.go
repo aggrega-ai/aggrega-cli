@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -123,17 +122,26 @@ func TestReportedImportedFilesReportTheEmptySetForAnEmptyImport(t *testing.T) {
 // a literal, and the rows vary BOTH fields independently. One row would pass on
 // a renderer that printed constants and read neither field; rows varying one
 // field would pass on a renderer that had stopped reading the other.
+//
+// The root is printed as written, the way the command line prints every
+// location it reports. The third row is a Windows path: quoting it would double
+// each separator, so a renderer that quoted fails there as well as on the
+// others.
+//
+// 🔴 PLANTED DEFECT: print the root with %q in reportImportPreamble
+// (cmd/aggrega/import.go) and every row reddens.
 func TestReportImportPreambleNamesBothFactsFromTheResult(t *testing.T) {
 	t.Parallel()
 
 	for _, res := range []importops.Result{
-		{Format: "demo", OutputDir: "."},
-		{Format: "langflow", OutputDir: "drafts/generated"},
+		{Format: "demo", OutputDir: "/srv/workspace"},
+		{Format: "langflow", OutputDir: "/srv/workspace/drafts/generated"},
+		{Format: "flowise", OutputDir: `C:\Users\author\workspace`},
 	} {
 		var errOut bytes.Buffer
 		reportImportPreamble(&errOut, res)
 		want := "read as the " + res.Format + " format, with drafted paths relative to " +
-			strconv.Quote(res.OutputDir) + "\n"
+			res.OutputDir + "\n"
 		if errOut.String() != want {
 			t.Fatalf("reportImportPreamble(%+v) = %q; want %q", res, errOut.String(), want)
 		}

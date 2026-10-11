@@ -37,8 +37,11 @@ const importToolName = "import"
 // and its absence is a design choice rather than a bound this surface could not
 // lift. The workspace a call resolves is already settled before the importer
 // runs, a path reaching outside it is already refused, and a second way to say
-// where files go would only add a way to get the destination wrong. A caller
-// that wants to choose a destination has the command's own form for it.
+// where files go would only add a way to get the destination wrong. The drafts
+// land beneath that workspace's root, which is where the command writes them too
+// when it is given no destination. A caller that wants another destination names
+// one to the command with its --output-dir, which the command's generated tool
+// carries as an argument over the process's own streams.
 type importArgs struct {
 	Source string `json:"source"`
 
@@ -95,12 +98,13 @@ type importDiagnostic struct {
 // OutputDir is the directory the drafted paths are relative to, exactly as the
 // layer reports it, under both deliveries — a dry run writes nothing, but each
 // path it hands back is still relative to it. On this tool it is always the
-// root of the workspace the call resolved, because that root is the destination
-// this surface hands the layer, so it names nothing WorkspaceRoot does not
-// already name, on either transport. It is carried all the same because it is
-// the one fact the layer reports about where an import went and every other
-// surface calling the layer hands it on: a caller reading it learns where the
-// drafts are, and no argument here lets it choose.
+// root of the workspace the call resolved, because this surface hands the layer
+// no destination and the layer writes beneath the workspace root when none is
+// named, so it names nothing WorkspaceRoot does not already name, on either
+// transport. It is carried all the same because it is the one fact the layer
+// reports about where an import went and every other surface calling the layer
+// hands it on: a caller reading it learns where the drafts are, and no argument
+// here lets it choose.
 //
 // Both are the workspace root, a directory on this host, so both are told the
 // way every location here is: for a caller reaching a listener each is absent and
@@ -252,14 +256,15 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	}
 
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
+	// No destination is handed, and that is the whole of what this surface
+	// decides about one: the layer writes beneath the root of the workspace it is
+	// handed when none is named — the workspace this call resolved — which is
+	// also where the command writes when it is given none. So the two land the
+	// same drafts in one place, and no argument here names another.
 	res, err := importops.Import(ctx, tw.rw, importops.Options{
-		Source:     content,
-		SourceName: source,
-		Format:     format,
-		// The destination, and the whole of what this surface decides about it.
-		// It is the workspace the call resolved rather than a directory anything
-		// sent, which is why no argument names one.
-		OutputDir:     tw.root,
+		Source:        content,
+		SourceName:    source,
+		Format:        format,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 		Sources:       sources,

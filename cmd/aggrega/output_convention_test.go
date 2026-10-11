@@ -101,6 +101,7 @@ func TestOutputFlagConventionCoversTheConvergedFlags(t *testing.T) {
 		{"aggrega version", "output", "o"},
 		{"aggrega plugin list", "output", "o"},
 		{"aggrega plugin gen-catalog", "output-dir", ""},
+		{"aggrega import", "output-dir", ""},
 	} {
 		d, ok := byPath[want.path]
 		if !ok {

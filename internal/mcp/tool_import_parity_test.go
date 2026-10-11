@@ -5,18 +5,21 @@ package mcp
 
 // Foreign-description import single-source parity, tool-protocol leg. The import
 // tool runs the shared import layer and adds only its own argument binding, its
-// path resolution, the destination it chooses and its result shaping. What these
+// path resolution and its result shaping; it names no destination. What these
 // prove is that the adapter drives that layer faithfully — the same drafted file
 // set, the same bytes, the same refusal — for the same request.
 //
 // The oracle is the shared operation run over a second, identically seeded
-// workspace, and it is run with the destination THE COMMAND supplies: the
-// directory the process is sitting in. So the two halves differ in exactly the
-// one way this item settles they should, and everything else about the answer is
-// required to be identical. Its result IS the expectation, which is what keeps
-// the halves independent: an expectation drawn from the tool's own answer would
-// move with the tool, so a surface that stopped drafting would keep passing
-// while the assertion followed it down.
+// workspace, and it is run as THE COMMAND runs it when given no destination:
+// handed none, so the operation's own default decides. The process is sitting in
+// a folder outside both workspaces, so a default read from that folder rather
+// than from the workspace lands somewhere the comparison can see. Both halves are
+// then required to have written beneath their own workspace's root — one
+// destination rule — and everything else about the answer to be identical. Its
+// result IS the expectation, which is what keeps the halves independent: an
+// expectation drawn from the tool's own answer would move with the tool, so a
+// surface that stopped drafting would keep passing while the assertion followed
+// it down.
 //
 // 🔴 The command line is held to THAT SAME ORACLE, in its own package, over the
 // same guest — its drafted file and its reported document are both derived from
@@ -42,16 +45,27 @@ import (
 //
 // Two workspaces are seeded per run from one helper, so the two halves see the
 // same source without either half having seen the other's output. The shared
-// half runs first, into the directory the process is sitting in — which is the
-// destination the command supplies — and the files it left there are the
-// expectation; the tool then imports into its own workspace and the files IT
-// left are read back against them.
+// half runs first, handed no destination as the command hands none, and the
+// files it left beneath its workspace root are the expectation; the tool then
+// imports into its own workspace and the files IT left are read back against
+// them.
+//
+// 🔴 PLANTED DEFECTS:
+//   - have the import tool hand the layer a destination of its own that differs
+//     from the layer's default (internal/mcp/tool_import.go, add
+//     OutputDir: tw.root + string(os.PathSeparator) + "drafts" to the
+//     importops.Options literal): the tool's files are not at its root and its
+//     output_dir is not its workspace root, so this reddens.
+//   - have outputDirFor (internal/importops/import.go) return "." for an empty
+//     name: both halves write into the folder the process is sitting in, which
+//     the last assertion reads, so this reddens.
 func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 	pointImportSeamAtTheDemoGuest(t)
 	source := readImportFixture(t, langflowFixture)
 
-	// The command's destination, reproduced exactly: a run directory the process
-	// is sitting in, with the output root spelled as the command spells it.
+	// A folder outside both workspaces for the process to sit in, so a default
+	// read from the process's folder is told apart from one read from the
+	// workspace.
 	runDir := t.TempDir()
 	t.Chdir(runDir)
 
@@ -63,7 +77,6 @@ func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 	shared, err := importops.Import(context.Background(), rw, importops.Options{
 		Source:        source,
 		SourceName:    "flow.json",
-		OutputDir:     ".",
 		ResolvePlugin: importToolResolver,
 	})
 	if err != nil {
@@ -86,13 +99,13 @@ func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 		t.Fatalf("the tool drafted %v and the shared operation drafted %v", p.Written, shared.Written)
 	}
 	for _, name := range shared.Written {
-		want, rerr := os.ReadFile(filepath.Join(runDir, filepath.FromSlash(name)))
+		want, rerr := os.ReadFile(filepath.Join(oracleRoot, filepath.FromSlash(name)))
 		if rerr != nil {
-			t.Fatalf("read the shared operation's %s: %v", name, rerr)
+			t.Fatalf("read the shared operation's %s beneath its workspace root: %v", name, rerr)
 		}
 		got, rerr := os.ReadFile(filepath.Join(toolRoot, filepath.FromSlash(name)))
 		if rerr != nil {
-			t.Fatalf("read the tool's %s: %v", name, rerr)
+			t.Fatalf("read the tool's %s beneath its workspace root: %v", name, rerr)
 		}
 		if string(got) != string(want) {
 			t.Errorf("the tool's %s is not the shared operation's.\n--- tool ---\n%s\n--- shared ---\n%s",
@@ -100,18 +113,24 @@ func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 		}
 	}
 
-	// The one intended divergence, named rather than left implicit: the shared
-	// half was told where to write and the tool was not, so the two destinations
-	// differ while everything compared above does not. Asserting they differ is
-	// what keeps the comparison honest — two halves that happened to write into
-	// one directory would agree trivially.
+	// ONE destination, asserted on both halves: each wrote beneath the root of
+	// its own workspace and names that root as the directory its paths are
+	// relative to. The command naming no destination and the tool, which names
+	// none, are the same rule.
 	if told(p.WorkspaceRoot) != toolRoot {
-		t.Errorf("the tool drafted relative to %q rather than to the workspace it resolved, %q",
+		t.Errorf("the tool resolved the workspace %q rather than the one it was launched over, %q",
 			told(p.WorkspaceRoot), toolRoot)
 	}
-	if told(p.WorkspaceRoot) == shared.OutputDir {
-		t.Errorf("both halves named %q as their destination, so the comparison above did not span the "+
-			"divergence it was written for", told(p.WorkspaceRoot))
+	if told(p.OutputDir) != toolRoot {
+		t.Errorf("the tool drafted relative to %q rather than to the root of the workspace it resolved, %q",
+			told(p.OutputDir), toolRoot)
+	}
+	if shared.OutputDir != rw.Root() {
+		t.Errorf("the shared operation, handed no destination, drafted relative to %q rather than to the root "+
+			"of its workspace, %q", shared.OutputDir, rw.Root())
+	}
+	if entries := treeUnder(t, runDir); len(entries) != 0 {
+		t.Errorf("an import wrote into the folder the process is sitting in, which neither half names: %v", entries)
 	}
 }
 
@@ -131,7 +150,7 @@ func TestAnImportBothSurfacesRefuseLeavesBothWorkspacesUntouched(t *testing.T) {
 	t.Chdir(runDir)
 
 	sharedRoot, _ := importSourceWorkspace(t, "mystery.json", mystery)
-	sharedBefore := treeUnder(t, runDir)
+	sharedBefore := treeUnder(t, sharedRoot)
 	rw, err := workspaceconfig.Resolve(sharedRoot, sharedRoot)
 	if err != nil {
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
@@ -139,15 +158,17 @@ func TestAnImportBothSurfacesRefuseLeavesBothWorkspacesUntouched(t *testing.T) {
 	if _, err := importops.Import(context.Background(), rw, importops.Options{
 		Source:        mystery,
 		SourceName:    "mystery.json",
-		OutputDir:     ".",
 		ResolvePlugin: importToolResolver,
 	}); err == nil {
 		t.Fatal("the shared operation converted a source whose shape it recognises none of, so there is no " +
 			"refusal to compare")
 	}
-	if after := treeUnder(t, runDir); !slices.Equal(after, sharedBefore) {
-		t.Errorf("the shared operation wrote into the destination it refused\n--- before ---\n%v\n--- after ---\n%v",
+	if after := treeUnder(t, sharedRoot); !slices.Equal(after, sharedBefore) {
+		t.Errorf("the shared operation wrote into the workspace it refused\n--- before ---\n%v\n--- after ---\n%v",
 			sharedBefore, after)
+	}
+	if entries := treeUnder(t, runDir); len(entries) != 0 {
+		t.Errorf("the shared operation wrote into the folder the process is sitting in: %v", entries)
 	}
 
 	toolRoot, rel := importSourceWorkspace(t, "mystery.json", mystery)

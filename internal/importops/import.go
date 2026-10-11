@@ -57,10 +57,17 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // used only to name the file in a detection refusal. Format names the source
 // format explicitly; an empty Format means the format is detected from Source.
 //
-// OutputDir is where drafted files are written under a writing delivery. The
-// caller names it — this package neither chooses one nor refuses for the lack of
-// one — and it is ignored entirely under a reporting delivery, which writes
-// nothing.
+// OutputDir is the directory drafted files are written under by a writing
+// delivery, and the directory every drafted path is relative to under either
+// delivery. An empty OutputDir is the root of the workspace the operation is
+// handed: an import that names no destination writes beneath the root of the
+// workspace its run resolved, wherever the caller happens to be standing. That
+// default is decided here and nowhere else, so a surface that names no
+// destination hands none rather than stating the default of its own. A non-empty
+// OutputDir is the caller's — a directory a person typed, or one a request named
+// — and is used as given, a relative one against the process's working
+// directory. A reporting delivery writes nothing, and the reported paths are
+// still relative to it.
 //
 // Sources and Settings are the consumer-scoped with-config of the importer
 // attachment serving this format, as [AttachmentInputs] resolves them. Both are
@@ -78,6 +85,11 @@ type Options struct {
 }
 
 // Result is what one import produced.
+//
+// OutputDir is the directory the drafted paths are relative to: Options.OutputDir
+// as the caller handed it, or the workspace root where it named none. It is read
+// from here rather than from what the caller passed, so a surface reporting where
+// the drafts went reports the directory the import actually used.
 //
 // Files is every drafted file the importer returned, in the importer's own
 // order, carrying content whether or not it was written — so a reporting
@@ -119,9 +131,9 @@ func (r Result) Halted() bool {
 // Import turns a foreign source description into draft Aggrega authoring files.
 //
 // It selects the source format, resolves the importer the catalog advertises for
-// that format, runs it, and either writes the drafted files under
-// Options.OutputDir or returns them for the caller to place, according to
-// Options.Delivery.
+// that format, runs it, and either writes the drafted files under the output
+// directory — Options.OutputDir, or the root of the workspace rw where it names
+// none — or returns them for the caller to place, according to Options.Delivery.
 //
 // 🔴 The write is CONTAINED, and the containment is the reused predicate rather
 // than a check written here. A scaffold path comes from the importer plugin, so
@@ -173,22 +185,23 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
+	outputDir := outputDirFor(rw, opts.OutputDir)
 	res := Result{
 		Format:      format,
-		OutputDir:   opts.OutputDir,
+		OutputDir:   outputDir,
 		Files:       imported.Files,
 		Diagnostics: imported.Diagnostics,
 	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.
-	if err := checkFiles(rw.Root(), opts.OutputDir, imported.Files); err != nil {
+	if err := checkFiles(rw.Root(), outputDir, imported.Files); err != nil {
 		return Result{}, err
 	}
 	if opts.Delivery.Reports() {
 		return res, nil
 	}
 
-	written, err := writeFiles(opts.OutputDir, imported.Files)
+	written, err := writeFiles(outputDir, imported.Files)
 	if err != nil {
 		return Result{}, err
 	}
@@ -196,14 +209,28 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	return res, nil
 }
 
+// outputDirFor returns the directory an import's drafts are written under and
+// relative to: the one the caller named, or, where it named none, the root of the
+// workspace rw. It is the one statement of that default, so the command line, the
+// assistant's import tool and any other caller naming no destination all land
+// their drafts at the same root rather than wherever their process happens to be
+// sitting.
+func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) string {
+	if named != "" {
+		return named
+	}
+	return rw.Root()
+}
+
 // checkFiles judges every drafted file before any is written: the place it would
 // be written at must not lead, through a link, out of the root the output
 // directory picks against the workspace at workspaceRoot — the workspace root
 // where the output directory lies inside the workspace, and the output directory
-// itself, the directory a command was run in, say, where it lies outside it. The
-// drafts are files the product writes on the caller's behalf, so a link standing
-// in the output directory, or in a directory on the way to a draft, would
-// otherwise turn an import into writing files elsewhere on the machine.
+// itself, a directory a person typed outside the workspace, say, where it lies
+// outside it. The drafts are files the product writes on the caller's behalf, so
+// a link standing in the output directory, or in a directory on the way to a
+// draft, would otherwise turn an import into writing files elsewhere on the
+// machine.
 func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error {
 	root := writescope.RootFor(workspaceRoot, outputDir)
 	for _, f := range files {

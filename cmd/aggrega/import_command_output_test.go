@@ -18,7 +18,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,7 +77,8 @@ func noImportPluginBytes(*workspaceconfig.ResolvedWorkspace, string) (pluginpath
 }
 
 // TestImportCommandCarriesTheSharedResultOnItsCommentaryStream drives the
-// assembled command under both deliveries and pins what each stream carries.
+// assembled command under both deliveries and pins what each stream carries, and
+// where the drafts land.
 //
 // 🔴 Both expectations are derived from the shared operation's own result rather
 // than from the command's rendering of it. An expectation computed the way the
@@ -91,82 +92,91 @@ func noImportPluginBytes(*workspaceconfig.ResolvedWorkspace, string) (pluginpath
 // the load-bearing half under --dry-run: there the stream must hold one parseable
 // document and nothing else, so a commentary line leaking into it would corrupt
 // what a caller parses, and only an exact expectation can see that.
+//
+// Each run is made from a sub-folder of its workspace, so the folder the command
+// runs in and the root its drafts belong beneath are two different places, and
+// the filesystem claim is read over the whole workspace.
 func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) {
 	pointImportSeamAtDemoGuest(t)
 
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	source := filepath.Join(t.TempDir(), "demo-source.txt")
 	if err := os.WriteFile(source, []byte(demoSourceBody), 0o644); err != nil {
 		t.Fatalf("write the import source: %v", err)
 	}
 
-	// The shared result is obtained under a reporting delivery, which writes
-	// nothing, so deriving the expectation leaves no drafted file behind for the
-	// runs below to find already there. Its output root is the same constant the
-	// command supplies, so both fields of the expectation come from the result.
-	shared, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        []byte(demoSourceBody),
-		SourceName:    source,
-		Format:        "demo",
-		OutputDir:     ".",
-		Delivery:      authoredcontent.DeliveryFor(true),
-		ResolvePlugin: noImportPluginBytes,
-	})
-	if err != nil {
-		t.Fatalf("run the shared import to derive the expectation: %v", err)
-	}
-	wantCommentary := "read as the " + shared.Format + " format, with drafted paths relative to " +
-		strconv.Quote(shared.OutputDir) + "\n"
-
-	// The reported expectation is the shared result's drafted files put through
-	// the reported form's own writer. Composing it here rather than transcribing
-	// bytes is what keeps this an assertion about the command routing through that
-	// writer, instead of a golden over the encoder's formatting choices.
-	reportDocs := make([]authoredcontent.Document, 0, len(shared.Files))
-	for _, f := range shared.Files {
-		reportDocs = append(reportDocs, authoredcontent.Document{Path: f.Path, Content: f.Content})
-	}
-	var wantReported bytes.Buffer
-	if err := authoredcontent.Report(&wantReported, reportDocs); err != nil {
-		t.Fatalf("compose the reported expectation: %v", err)
-	}
-
 	for _, tc := range []struct {
 		name string
 		args []string
-		// wantOut is the whole of what standard output must carry.
-		wantOut string
+		// reported says the standard output stream must carry the drafted files in
+		// the reported form; otherwise it carries the one wrote line below.
+		reported bool
 		// writes says whether the delivery is expected to put the drafted file on
-		// disk. It is asserted in BOTH directions against the run directory's own
+		// disk. It is asserted in BOTH directions against the workspace's own
 		// content digests, because the two claims are different and each is the
 		// control for the other: a reporting delivery that quietly wrote would pass
 		// a stream assertion, and a writing delivery that quietly stopped writing
 		// would pass an assertion that only looked for an untouched tree.
 		writes bool
-		// wantFile is the drafted file's path relative to the run directory.
+		// wantFile is the drafted file's path relative to the workspace root.
 		wantFile string
 	}{
 		{
 			name:     "writing the drafts to disk",
 			args:     []string{source, "--format", "demo"},
-			wantOut:  "wrote demo.yaml\n",
 			writes:   true,
 			wantFile: "demo.yaml",
 		},
 		{
 			name:     "reporting the drafts on standard output",
 			args:     []string{source, "--format", "demo", "--dry-run"},
-			wantOut:  wantReported.String(),
-			writes:   false,
+			reported: true,
 			wantFile: "demo.yaml",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The command writes into the directory it was run in, so the run is
-			// anchored at a fresh one per case rather than at the package's.
-			runDir := t.TempDir()
+			rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
+			runDir := filepath.Join(rw.Root(), "sub")
+			if err := os.MkdirAll(runDir, 0o755); err != nil {
+				t.Fatalf("create the folder the command runs in: %v", err)
+			}
+
+			// The shared result is obtained under a reporting delivery, which writes
+			// nothing, so deriving the expectation leaves no drafted file behind for
+			// the run below to find already there. It is handed no destination, as
+			// the command hands none, so both fields of the expectation come from the
+			// result.
+			shared, err := importops.Import(context.Background(), rw, importops.Options{
+				Source:        []byte(demoSourceBody),
+				SourceName:    source,
+				Format:        "demo",
+				Delivery:      authoredcontent.DeliveryFor(true),
+				ResolvePlugin: noImportPluginBytes,
+			})
+			if err != nil {
+				t.Fatalf("run the shared import to derive the expectation: %v", err)
+			}
+			wantCommentary := "read as the " + shared.Format + " format, with drafted paths relative to " +
+				shared.OutputDir + "\n"
+			wantOut := "wrote " + tc.wantFile + "\n"
+			if tc.reported {
+				// The reported expectation is the shared result's drafted files put
+				// through the reported form's own writer. Composing it here rather than
+				// transcribing bytes is what keeps this an assertion about the command
+				// routing through that writer, instead of a golden over the encoder's
+				// formatting choices.
+				reportDocs := make([]authoredcontent.Document, 0, len(shared.Files))
+				for _, f := range shared.Files {
+					reportDocs = append(reportDocs, authoredcontent.Document{Path: f.Path, Content: f.Content})
+				}
+				var wantReported bytes.Buffer
+				if err := authoredcontent.Report(&wantReported, reportDocs); err != nil {
+					t.Fatalf("compose the reported expectation: %v", err)
+				}
+				wantOut = wantReported.String()
+			}
+
 			t.Chdir(runDir)
-			before := treeFingerprint(t, runDir)
+			before := treeFingerprint(t, rw.Root())
 
 			cmd := newImportCmd()
 			var out, errOut bytes.Buffer
@@ -181,17 +191,17 @@ func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) 
 			if errOut.String() != wantCommentary {
 				t.Fatalf("the commentary stream carried %q; want %q", errOut.String(), wantCommentary)
 			}
-			if out.String() != tc.wantOut {
-				t.Fatalf("the standard output stream carried %q; want %q", out.String(), tc.wantOut)
+			if out.String() != wantOut {
+				t.Fatalf("the standard output stream carried %q; want %q", out.String(), wantOut)
 			}
 
 			// The filesystem claim, read off content digests rather than off the
 			// command's own account of what it did.
-			diffs := fingerprintDifferences(before, treeFingerprint(t, runDir))
-			draft := filepath.Join(runDir, tc.wantFile)
+			diffs := fingerprintDifferences(before, treeFingerprint(t, rw.Root()))
+			draft := filepath.Join(rw.Root(), tc.wantFile)
 			if tc.writes {
-				if len(diffs) == 0 {
-					t.Fatal("the writing delivery left the run directory untouched; it puts the drafted files on disk")
+				if want := []string{tc.wantFile + " was created"}; !slices.Equal(diffs, want) {
+					t.Fatalf("the writing delivery changed the workspace as %v; want exactly %v", diffs, want)
 				}
 				body, rerr := os.ReadFile(draft)
 				if rerr != nil {

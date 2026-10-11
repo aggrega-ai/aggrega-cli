@@ -242,6 +242,73 @@ func TestImportUnderAReportingDeliveryWritesNothing(t *testing.T) {
 	}
 }
 
+// TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot holds the one home of
+// the default destination: an import handed no output directory writes beneath
+// the root of the workspace it is handed, and reports that root as the directory
+// its drafted paths are relative to, under both deliveries — never the directory
+// the process happens to be sitting in.
+//
+// The process is moved to a folder outside the workspace first, so a default
+// read from the process's folder and one read from the workspace are two
+// different places and the assertions below can tell them apart.
+//
+// 🔴 PLANTED DEFECT: have outputDirFor (internal/importops/import.go) return "."
+// rather than rw.Root() for an empty name, and both rows redden — the written row
+// finds demo.yaml in the process's folder instead of at the root, and both name
+// "." as the root their paths are relative to.
+//
+// Not parallel: it moves the process working directory and points the shared
+// import seam.
+func TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot(t *testing.T) {
+	pointSeamAtDemoGuest(t)
+
+	for _, row := range []struct {
+		name   string
+		dryRun bool
+	}{
+		{name: "writing the drafts"},
+		{name: "reporting the drafts", dryRun: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			rw := aWorkspace(t)
+			elsewhere := t.TempDir()
+			t.Chdir(elsewhere)
+
+			res, err := Import(context.Background(), rw, Options{
+				Source:        []byte("demo source"),
+				SourceName:    "demo-source.txt",
+				Format:        "demo",
+				Delivery:      authoredcontent.DeliveryFor(row.dryRun),
+				ResolvePlugin: noopResolver,
+			})
+			if err != nil {
+				t.Fatalf("Import: %v", err)
+			}
+			if res.OutputDir != rw.Root() {
+				t.Errorf("the drafted paths are reported relative to %q; want the workspace root %q",
+					res.OutputDir, rw.Root())
+			}
+			if entries, rerr := os.ReadDir(elsewhere); rerr != nil || len(entries) != 0 {
+				t.Errorf("the import touched the folder the process runs in (%v): %v", rerr, entries)
+			}
+			_, statErr := os.Stat(filepath.Join(rw.Root(), "demo.yaml"))
+			if row.dryRun {
+				if !os.IsNotExist(statErr) {
+					t.Errorf("a reporting delivery wrote demo.yaml at the workspace root (stat: %v)", statErr)
+				}
+				return
+			}
+			body, rerr := os.ReadFile(filepath.Join(rw.Root(), "demo.yaml"))
+			if rerr != nil {
+				t.Fatalf("the draft is not at the workspace root: %v", rerr)
+			}
+			if string(body) != demoEchoBody {
+				t.Errorf("the draft at the workspace root holds %q; want %q", body, demoEchoBody)
+			}
+		})
+	}
+}
+
 // 🔴 TestImportRefusesAnImporterPathEscapingTheOutputRoot is the containment
 // proof, and it is driven through the REAL guest rather than a fabricated file
 // list: the demo importer names its scaffold file from a setting, so a setting
