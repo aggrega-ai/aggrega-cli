@@ -76,7 +76,12 @@ var proseOnlyFailureReturns = map[string]int{
 	// The fourth refuses a response format the tool does not declare. It is read
 	// from the arguments alone, ahead of the dependency fill, so at that return
 	// nothing has resolved and there is no render in hand to carry.
-	"tool_build.go": 4,
+	//
+	// The fifth refuses the workspace found again from the folder of the Release
+	// the call names, where it could not be resolved. It is asked once the Release
+	// path is resolved and ahead of the dependency fill and the render, so the
+	// compiler has not run.
+	"tool_build.go": 5,
 	// The lint tool's argument refusals, and the refusal of a path this session
 	// may not name or of a workspace that could not be resolved — raised before
 	// the run lints anything and carried back out as an error so it can be
@@ -86,24 +91,28 @@ var proseOnlyFailureReturns = map[string]int{
 	"tool_lint.go": 3,
 	// The dependency-resolution tool's pre-flight refusals — a missing release
 	// argument, an empty or blank upgrade target, the refused argument combination,
-	// a workspace that could not be resolved, and a Release path this session may
-	// not name. None of them ran the resolution, so none has findings. Its post-run
-	// refusal carries the resolution the run had computed, which is what makes a
-	// drift verdict readable field by field.
-	"tool_pull.go": 6,
-	// The entity author's pin step. Three of these are decided before the step is
+	// a workspace that could not be resolved, a Release path this session may not
+	// name, and the workspace found again from that Release's folder where it
+	// could not be resolved, asked once the path is. None of them ran the
+	// resolution, so none has findings. Its post-run refusal carries the resolution
+	// the run had computed, which is what makes a drift verdict readable field by
+	// field.
+	"tool_pull.go": 7,
+	// The entity author's pin step. Four of these are decided before the step is
 	// entered: the refusal of a request naming no entity, a workspace that could
-	// not be resolved, and an entity path this session may not name. At each of
-	// them nothing has been read or resolved, so there is nothing in hand to carry.
+	// not be resolved, an entity path this session may not name, and the workspace
+	// found again from that entity's folder where it could not be resolved. At each
+	// of them nothing has been read or resolved, so there is nothing in hand to
+	// carry.
 	//
-	// The fourth is the only post-run one, and that it loses nothing is established
+	// The fifth is the only post-run one, and that it loses nothing is established
 	// rather than assumed: every failing return of the pin step's entry point hands
 	// back the zero result. The step runs over the one entity the call names, so a
 	// write that failed has no other entity's outcome to report, and a refusal of
 	// an entity sharing its directory names every entity in the way in its own
 	// words. What stopped the step reaches the caller as the prose, and the lock
 	// beside the entity is unchanged.
-	"tool_pin.go": 4,
+	"tool_pin.go": 5,
 	// The generated command-tool surface. Its post-run failure path holds both
 	// captured streams and concatenates them into prose, so the bytes survive
 	// and the separation between output and diagnostics does not.
@@ -126,6 +135,10 @@ var proseOnlyFailureReturns = map[string]int{
 	// preview, to build the view the preview resolves through, so no preview has
 	// run and there is no graph in hand.
 	//
+	// One entry each refuses the workspace found again from the folder of that
+	// Release where it could not be resolved. It is asked once the Release path is
+	// resolved and ahead of the lockfile and the preview, so no graph is in hand.
+	//
 	// The connection a call may name adds refusals of the same two kinds. Its
 	// coordinates are refused ahead of the preview — a connection sent beside an
 	// entity name or labels rather than a graph node, and a coordinate missing or
@@ -135,21 +148,22 @@ var proseOnlyFailureReturns = map[string]int{
 	// before any slot or container is drawn; the graph is in hand, but the answer
 	// reports nothing of it but the coordinates the call already sent and the
 	// reason, which the prose carries.
-	"tool_candidates.go":           18,
-	"tool_attachment_container.go": 10,
+	"tool_candidates.go":           19,
+	"tool_attachment_container.go": 11,
 	// The connection at a position, which answers in the terms those two tools take
-	// and refuses as they do. Eight are decided before anything is read: a call
+	// and refuses as they do. Nine are decided before anything is read: a call
 	// naming no document, no position or one missing a half, no Release, an encoding
 	// this surface does not read, a withdrawal the caller signalled, a workspace that
-	// could not be resolved, and a document or a Release path this session may not
-	// name. The ninth refuses the lockfile beside that Release where it is a link
-	// leading out of the root its write is held to; it is read ahead of the preview,
-	// to build the view the preview resolves through, so no graph is in hand. The
-	// tenth is the preview's own refusal, which hands back no graph to report a
-	// connection from. The eleventh is the shared answer's refusal after the
-	// preview: the graph is in hand, but no connection was drawn from it, and the
-	// reason is carried in the prose.
-	"tool_connection_at_position.go": 11,
+	// could not be resolved, a document or a Release path this session may not
+	// name, and the workspace found again from that Release's folder where it could
+	// not be resolved, asked once both paths are. The tenth refuses the lockfile
+	// beside that Release where it is a link leading out of the root its write is
+	// held to; it is read ahead of the preview, to build the view the preview
+	// resolves through, so no graph is in hand. The eleventh is the preview's own
+	// refusal, which hands back no graph to report a connection from. The twelfth is
+	// the shared answer's refusal after the preview: the graph is in hand, but no
+	// connection was drawn from it, and the reason is carried in the prose.
+	"tool_connection_at_position.go": 12,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
 	// promise a validity field a consumer reads across scopes.
@@ -192,8 +206,15 @@ var proseOnlyFailureReturns = map[string]int{
 	// where it is a link leading out of the root its write is held to. It is read
 	// to build the view the closure is resolved through, ahead of the resolution,
 	// so nothing has been resolved, validated or described at that return.
-	"tool_validate.go": 20,
-	"tool_describe.go": 16,
+	//
+	// Each refuses two more where the workspace found again from the folder of the
+	// file the call is about could not be resolved: description in its Release
+	// scope and in its lookup by name in a Release's terms, validation in its
+	// Release scope and its entity scope. Each is asked once the call's paths are
+	// resolved and before the lookup, the resolution or the check runs, so nothing
+	// has been looked up, resolved or validated at that return.
+	"tool_validate.go": 22,
+	"tool_describe.go": 18,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
@@ -252,20 +273,22 @@ var proseOnlyFailureReturns = map[string]int{
 	// here for the same reason: all four are decided before generation starts,
 	// against an empty output buffer, so none of them drops anything.
 	"tool_gencatalog.go": 9,
-	// The document edit. Five of these are decided from the arguments alone,
+	// The document edit. Six of these are decided from the arguments alone,
 	// ahead of anything the edit reads or composes: the refusal of a request
 	// naming no document, the refusal of one naming no edit, the withdrawal a
 	// caller signals before any resolution, a workspace that could not be
-	// resolved, and the refusal of a document path this session may not name.
+	// resolved, the refusal of a document path this session may not name, and
+	// the workspace found again from that document's folder where it could not be
+	// resolved, asked once the path is.
 	//
-	// The sixth is the only post-run one, and that it loses nothing is
+	// The seventh is the only post-run one, and that it loses nothing is
 	// established rather than assumed: every failing return of the shared edit
 	// layer's entry point hands back the zero result, so no partially-populated
 	// result exists for this return to carry. What the layer refused on reaches
 	// the caller in the refusal's own words — opened by the registered short
 	// code where the condition carries one, and carrying the validator's own
 	// sentence where the refusal is the schema's.
-	"tool_document_edit.go": 6,
+	"tool_document_edit.go": 7,
 	// The foreign-description import. Nine of these are decided before the
 	// importer is reached at all: the refusal of a request naming no source, the
 	// refusal of one naming a blank format, the withdrawal a caller signals
@@ -287,8 +310,9 @@ var proseOnlyFailureReturns = map[string]int{
 	"tool_import.go": 10,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals. Position
-	// lookup carries one more, refusing a document path this session may not name
-	// before the lookup reads anything.
+	// lookup carries two more, refusing a document path this session may not name
+	// and the workspace found again from that document's folder where it could not
+	// be resolved, both before the lookup reads anything.
 	//
 	// The second and third entries against the dispatch surface are the refusals of
 	// a call that names a workspace the session does not let it name, and of a call
@@ -329,8 +353,13 @@ var proseOnlyFailureReturns = map[string]int{
 	// stack the held configuration decides. That is the hold's refusal every other
 	// tool answers the same workspace with, decided from the arguments and the
 	// resolution alone, so no listing exists to carry.
-	"tool_insertion_point.go": 7,
-	"tool_workspace.go":       10,
+	//
+	// And one more before the walk: the workspace found again from the folder of
+	// the Release the listing is asked to answer in the terms of, where it could
+	// not be resolved. It is asked once the Release path is resolved, so no listing
+	// exists to carry.
+	"tool_insertion_point.go": 8,
+	"tool_workspace.go":       11,
 	"progressive.go":          3,
 	"tools.go":                3,
 }
