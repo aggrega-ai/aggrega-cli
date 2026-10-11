@@ -67,7 +67,7 @@ func newBuildCmd() *cobra.Command {
 	opts := &buildFlags{}
 	c := &cobra.Command{
 		Use:   "build",
-		Short: "Compile an Aggregate and Release into provider-native artifacts",
+		Short: "Compile an Aggregate and Release into provider-native artifacts under dist/ at the workspace root",
 		Long: `Compile an Aggregate and Release pair into provider-native artifacts under each
 boundary's output directory.
 

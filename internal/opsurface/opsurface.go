@@ -122,6 +122,11 @@ var operations = []Operation{
 	{"auth-token", ReachNone, "Acquire an identity token interactively and print it."},
 	// A build renders in memory and the artifacts are its answer, which is why
 	// the class is none rather than the class of whichever surface saves them.
+	// A surface that saves them reaches further than the operation does, and
+	// says so for itself: the build command writes them beneath the workspace
+	// root, so the command line declares the workspace class for that command
+	// beside its own availability record, and a tool that runs the command reads
+	// that class rather than this one.
 	// The one thing a build does leave behind is a dependency fill, and whether
 	// it fills is decided by the composition of the call's own request and the
 	// workspace's setting — so that widening is read from the same composition

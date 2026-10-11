@@ -40,12 +40,16 @@ import (
 // tools by a spelling would tie the pairing to names that are chosen
 // independently on each side and exist precisely so they can differ.
 //
-// reach is how far that operation's own effects travel, read from the operation
-// set where the operation is, so a spec carries the class rather than sending
-// every listing back to the set for it. It is set from the same lookup the
-// operation is and never authored on a definition below: a class written beside
-// a tool would be a second declaration of a fact the operation set owns, and the
-// two would agree until one of them was edited.
+// reach is how far a call to the tool travels, so a spec carries the class
+// rather than sending every listing back to its source for it. For a tool that
+// runs its operation inside this server it is the operation's own class, read
+// from the operation set where the operation is. For a generated tool it is the
+// class of the command it runs: the class the command line declares for that
+// command where the command saves what its operation only renders, and the
+// operation's class otherwise. It is set from those records and never authored
+// on a definition below: a class written beside a tool would be a second
+// declaration of a fact another record owns, and the two would agree until one
+// of them was edited.
 //
 // commandPath is the invocation path of the command a generated tool runs,
 // empty for a tool that runs its operation inside this server.
@@ -142,7 +146,8 @@ type toolSpec struct {
 // writes reports whether a call to this tool can leave something behind, for
 // the index a caller reads before it chooses a tool.
 //
-// It is derived from the reach class the operation set declares and from the
+// It is derived from the reach class the spec carries — the operation's, or for
+// a generated tool its command's, as the reach field records — and from the
 // widening a tool's own arguments can perform, and it is deliberately not a
 // second field beside them. A boolean authored on a spec would agree with the
 // class on the day it was written and would then be free to disagree with it,

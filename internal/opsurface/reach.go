@@ -30,6 +30,12 @@ import (
 // content would take the class of whichever surface happened to save it, and the
 // class would stop being a property of the operation at all.
 //
+// What a surface that saves the answer reaches is a property of that surface, and
+// it is declared there. A tool that runs a command does whatever the command
+// does, so where a command writes what its operation only answers with, the
+// command line states the class the command reaches beside its own record for
+// the operation, and the tool reads that one; the operation keeps this one.
+//
 // # Exactly one class, and the narrowing that needs no second one
 //
 // An entry declares one class: the one the operation reaches when nothing in the

@@ -4,6 +4,9 @@
 package clisurface
 
 import (
+	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -11,6 +14,92 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
+
+// checkCommandReach reports every row of the declared command classes that does
+// not belong there: one naming something that is not an operation, one naming an
+// operation no command carries, one whose class the vocabulary does not hold, and
+// one restating the class its operation already declares — a second declaration
+// of a fact the operation set owns, which would agree with it until one of the
+// two was edited.
+//
+// The rows and the availability table are handed in rather than read, so each
+// way a row can be wrong is driven against rows built for it below.
+func checkCommandReach(rows map[string]opsurface.Reach, table map[string]opsurface.OperationAvailability) []string {
+	ids := make([]string, 0, len(rows))
+	for id := range rows {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var findings []string
+	for _, id := range ids {
+		class := rows[id]
+		op, known := opsurface.Lookup(id)
+		switch {
+		case !known:
+			findings = append(findings, fmt.Sprintf("the command class for %q names something that is not an operation", id))
+		case !table[id].IsExposed():
+			findings = append(findings, fmt.Sprintf("the command class for %q names an operation no command carries", id))
+		case !slices.Contains(opsurface.Classes(), class):
+			findings = append(findings, fmt.Sprintf("the command class for %q is %q, which is not a class", id, class))
+		case class == op.Reach:
+			findings = append(findings, fmt.Sprintf("the command class for %q restates the class its operation "+
+				"declares, %q", id, class))
+		}
+	}
+	return findings
+}
+
+// TestEveryDeclaredCommandClassBelongsBesideTheTable holds the command line's
+// declared command classes to the records they sit beside: each names an
+// operation a command carries, with a class the vocabulary holds and other than
+// the operation's own.
+//
+// The real rows are checked here; which generated tool each one makes writing is
+// checked where the real command tree is, against what each command does.
+func TestEveryDeclaredCommandClassBelongsBesideTheTable(t *testing.T) {
+	if len(commandReach) == 0 {
+		t.Fatal("no command declares a class of its own, so the check below reads nothing")
+	}
+	if findings := checkCommandReach(commandReach, OperationAvailability()); len(findings) != 0 {
+		t.Fatalf("%d declared command class(es) do not belong:\n  %s", len(findings), strings.Join(findings, "\n  "))
+	}
+}
+
+// TestTheCommandClassCheckRefusesEachRowThatDoesNotBelong drives the check above
+// with one malformed row per way a row can be wrong, beside a well-formed one, so
+// its green over the real rows is a check that could have failed.
+func TestTheCommandClassCheckRefusesEachRowThatDoesNotBelong(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		id      string
+		class   opsurface.Reach
+		refuses string
+	}{
+		{name: "a command that saves what its operation only renders", id: "build",
+			class: opsurface.ReachWorkspace, refuses: ""},
+		{name: "an identifier that is not an operation", id: "not-an-operation",
+			class: opsurface.ReachWorkspace, refuses: "is not an operation"},
+		{name: "an operation no command carries", id: "hover-at-position",
+			class: opsurface.ReachWorkspace, refuses: "no command carries"},
+		{name: "a value the vocabulary does not hold", id: "build",
+			class: opsurface.Reach("everywhere"), refuses: "is not a class"},
+		{name: "the class the operation already declares", id: "validate",
+			class: opsurface.ReachNone, refuses: "restates the class"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := checkCommandReach(map[string]opsurface.Reach{tc.id: tc.class}, OperationAvailability())
+			switch {
+			case tc.refuses == "" && len(findings) != 0:
+				t.Fatalf("a row that belongs was refused: %v", findings)
+			case tc.refuses != "" && len(findings) != 1:
+				t.Fatalf("want one finding naming %q, got %v", tc.refuses, findings)
+			case tc.refuses != "" && !strings.Contains(findings[0], tc.refuses):
+				t.Fatalf("the finding does not name what was wrong: want %q in %q", tc.refuses, findings[0])
+			}
+		})
+	}
+}
 
 // TestEveryOperationIsDeclaredOnTheCommandLine is the command line's half of
 // the operation-completeness guard: every operation the compiler exposes is

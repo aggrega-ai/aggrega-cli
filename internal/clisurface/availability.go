@@ -167,3 +167,40 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"active-release-set":          opsurface.Unavailable(unavailabilityReasonNoCommandReadsTheMarker),
 	"describe-capabilities":       opsurface.Unavailable(unavailabilityReasonProtocolLocalMeta),
 }
+
+// CommandReach returns the reach class the command carrying an operation
+// declares for itself, and false where it declares none — in which case the
+// command reaches exactly what its operation declares.
+//
+// The class is the command line's to state because the difference is a property
+// of the command rather than of the capability. An operation that answers with
+// content reaches nothing by delivering it, which is why the operation set
+// classes a render as none; a command that saves that content to disk writes
+// it, and a surface running the command — a tool that runs it in a separate
+// process — reaches whatever the command does. Stating the command's class here,
+// once, leaves the operation set describing the capability on every surface
+// while such a surface reads what the command actually reaches, with no second
+// record of it kept beside any tool.
+func CommandReach(operation string) (opsurface.Reach, bool) {
+	class, declared := commandReach[operation]
+	return class, declared
+}
+
+// commandReach is the class each command reaches where it reaches more than the
+// operation it carries, keyed by that operation.
+//
+// A row is written only where a command saves what its operation only answers
+// with, or writes as the stated effect of a flag it declares. A command that
+// writes as its operation does needs none, because the operation's own class
+// already says so. A store a command fills as a side effect that no operation's
+// class counts — the compiled-module cache every guest load fills, say — is not
+// a reason for a row either: the class reports what a call leaves behind as its
+// result, not the caches that make the next call faster.
+var commandReach = map[string]opsurface.Reach{
+	// The build command writes the rendered artifacts beneath the workspace root,
+	// under dist/, and a traced build's files under .trace/ beside it. With
+	// --auto-pull or --upgrade it also writes the Release's lockfile and plugin
+	// trust record and fills the workspace's cache, which is the class a
+	// dependency resolution declares.
+	"build": opsurface.ReachWorkspace,
+}

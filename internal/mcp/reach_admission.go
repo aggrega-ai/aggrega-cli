@@ -20,8 +20,9 @@ import (
 // It is a fixed mapping from a class to a scope rather than from a scope to a
 // list of tools. A list of tool names beside the tool registry would be a second
 // copy of what the operation set already declares, and it would drift the first
-// time a tool was renamed or added; a class is declared once per operation and
-// every surface reads it from there.
+// time a tool was renamed or added; a class is declared once per operation —
+// and, where a command saves what its operation only renders, once per command
+// in the command line's own records — and every surface reads it from there.
 //
 // Machine reach appears here as the class no scope admits. That is not an
 // omission to be filled in later: a caller reaching this server over HTTP does
@@ -334,11 +335,12 @@ func (a reachAdmission) boundsAnything() bool {
 // request: they read disjoint registries and one predicate, rather than two
 // predicates that agree today.
 //
-// A listing reads the class each tool's operation DECLARES and never a widening
-// the tool's own arguments would produce, because a listing is composed before
-// any arguments exist. So a tool that widens is listed under the class it
-// declares, and a call whose widening the credential does not admit is refused
-// naming the scope that admits the widening.
+// A listing reads the class each tool DECLARES — its operation's, or for a
+// generated tool its command's — and never a widening the tool's own arguments
+// would produce, because a listing is composed before any arguments exist. So a
+// tool that widens is listed under the class it declares, and a call whose
+// widening the credential does not admit is refused naming the scope that admits
+// the widening.
 func (a reachAdmission) listed(specs []toolSpec) []toolSpec {
 	out := make([]toolSpec, 0, len(specs))
 	for i := range specs {
@@ -380,8 +382,8 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 // listing asks: a tool listed to a caller whose credential does not admit it is
 // refused here, naming the one scope that would.
 //
-// The class is read twice and in one order: the class the operation declares,
-// then the widening the tool's own arguments produce where that tool has one.
+// The class is read twice and in one order: the class the tool declares, then
+// the widening the tool's own arguments produce where that tool has one.
 // Reading the declared class first is what keeps the refusal specific — a call
 // refused for its declared class is told the scope that admits the tool at all,
 // rather than the scope that admits the widening it also happened to ask for.

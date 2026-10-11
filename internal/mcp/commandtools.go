@@ -273,12 +273,14 @@ func deriveCommandTools(surface []CommandSurface) []toolSpec {
 
 // deriveCommandTool builds one generated tool from a command descriptor: its
 // name from the invocation path, its description from the command's own one-line
-// help, and its arguments from the flags the command declares and inherits.
+// help, its arguments from the flags the command declares and inherits, and its
+// reach class from what the command line declares the command reaches.
 // forwardsFlags is the command tree's answer to whether the command passes its
 // arguments on verbatim; see CommandSurface.ForwardsFlags.
 //
 // Nothing about the command is restated here. Every field is read from the
-// descriptor, so a renamed flag or a reworded help line reaches the tool surface
+// descriptor or from the command line's own records, so a renamed flag, a
+// reworded help line or a command that comes to write reaches the tool surface
 // without a second place to edit.
 func deriveCommandTool(d clisurface.Descriptor, forwardsFlags bool) toolSpec {
 	ct := commandTool{
@@ -289,13 +291,22 @@ func deriveCommandTool(d clisurface.Descriptor, forwardsFlags bool) toolSpec {
 		forwardsFlags: forwardsFlags,
 	}
 	operation := commandOperation(d.Path)
-	// The class the operation declares, read here for the same reason a curated
-	// tool reads it where it is registered: a spec carries the class rather than
-	// sending every listing back to the operation set for it. A command the
-	// availability records account for no operation at leaves it unset, which is
-	// not a class — and the one reader of it says what an unset class is taken to
-	// reach, rather than letting the empty value mean whatever happens to sort
-	// first.
+	// The class the tool reaches is its COMMAND's: the class the command line
+	// declares for the command where it saves what its operation only renders,
+	// and otherwise the class the operation declares. A tool that runs the
+	// command does whatever the command does, so a build tool whose command
+	// writes the rendered artifacts to disk writes, although the build operation
+	// itself answers in memory and reaches nothing. The command line states that
+	// difference once (clisurface.CommandReach), so nothing here is keyed on a
+	// command or a tool by name, and the in-process tool answering the same
+	// operation keeps the operation's own class.
+	//
+	// It is read here for the same reason a curated tool reads its class where it
+	// is registered: a spec carries the class rather than sending every listing
+	// back to the operation set for it. A command the availability records
+	// account for no operation at leaves it unset, which is not a class — and the
+	// one reader of it says what an unset class is taken to reach, rather than
+	// letting the empty value mean whatever happens to sort first.
 	//
 	// projection-omits internal/opsurface.Operation.Summary: the command the tool
 	// is generated from carries its own one-line help, which is what the tool's
@@ -303,10 +314,14 @@ func deriveCommandTool(d clisurface.Descriptor, forwardsFlags bool) toolSpec {
 	// what it does. Restating the operation's summary beside it would put two
 	// descriptions of one capability in a single advertised definition.
 	op, _ := opsurface.Lookup(operation)
+	reach := op.Reach
+	if class, declared := clisurface.CommandReach(operation); declared {
+		reach = class
+	}
 	return toolSpec{
 		name:        ct.name,
 		operation:   operation,
-		reach:       op.Reach,
+		reach:       reach,
 		commandPath: d.Path,
 		summary:     commandToolSummary(d),
 		description: commandToolDescription(d, ct, operation),

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1,"result":{"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"aggrega","version":"0.8.4-21-g4300e802"}},"resultType":"complete","content":[{"type":"text","text":"no tool here is named \"pull\". Call describe-capabilities with no arguments for the index of what this server offers you, and name the tools you want from it."}],"isError":true}}
