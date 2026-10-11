@@ -188,36 +188,34 @@ func sortedMapKeys(m map[string]any) []string {
 	return out
 }
 
-// The assertion bodies shipped in the catalog today, verbatim. They are exercised
+// The assertion bodies shipped in the catalog today, verbatim — each is authored as
+// a folded scalar, so its source lines arrive joined by one space. They are exercised
 // here rather than inferred from the context type: an assertion surface whose
 // authored references stop resolving is a build that fails on content nobody
 // touched.
 func shippedCatalogAssertions() map[string]string {
 	return map[string]string{
-		"kafka_operator_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
+		"kafka_operator_prerequisite": "{{- if not .infra.control_plane_present -}} " +
 			`{{- fail "the Strimzi Cluster Operator must be installed in the target cluster before this realization emits its Kafka custom resource; once the operator is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
-			"\n{{- end -}}",
-		"gateway_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
-			`{{- fail "the Envoy AI Gateway control plane must be installed in the target cluster before this realization emits its custom resources; once the gateway is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
-			"\n{{- end -}}",
-		"kserve_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
+			" {{- end -}}",
+		"kserve_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}} " +
 			`{{- fail "the KServe control plane must be installed in the target cluster before this realization emits its InferenceService; once KServe is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
-			"\n{{- end -}}",
-		"kubeai_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
+			" {{- end -}}",
+		"kubeai_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}} " +
 			`{{- fail "the KubeAI control plane must be installed in the target cluster before this realization emits its Model custom resource; once KubeAI is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
-			"\n{{- end -}}",
+			" {{- end -}}",
 	}
 }
 
 func TestEvaluateAssertion_ShippedCatalogBodiesEvaluate(t *testing.T) {
 	t.Parallel()
-	names := make([]string, 0, 4)
+	names := make([]string, 0, 3)
 	for name := range shippedCatalogAssertions() {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	if len(names) != 4 {
-		t.Fatalf("expected 4 shipped bodies, have %d", len(names))
+	if len(names) != 3 {
+		t.Fatalf("expected 3 shipped bodies, have %d", len(names))
 	}
 	for _, name := range names {
 		body := shippedCatalogAssertions()[name]

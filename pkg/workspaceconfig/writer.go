@@ -611,7 +611,7 @@ func uriMatchesQuery(uri, query string) bool {
 // pluginNameFromURI derives a plugin's short name from a reference URI: the final
 // path segment with any :version suffix removed. For
 // oci://hub.aggrega.ai/plugin/cli/greet:1.2.0 it is "greet"; for the bare entity
-// identity mutator/tag-injector:1.2.0 it is "tag-injector". This is the same
+// identity governance/tag-injector:1.2.0 it is "tag-injector". This is the same
 // short name `plugin add <type> <query>` resolves against, so remove is symmetric
 // with add.
 func pluginNameFromURI(uri string) string {
@@ -643,10 +643,10 @@ func writeOrDeleteRefs[T any](pluginsNode *yaml.Node, key string, refs []T) erro
 // (workspace.catalog_dirs).
 // The socket set follows the byte-determining axis: by default only the sockets
 // whose plugin shapes the rendered output — the provider bindings
-// (plugins.providers) and the mutator (plugins.mutator) — are frozen, since only
-// those must travel with the project for byte-reproducible output; allPlugins
-// widens the set to every plugin socket, adding the policy and linter verdict
-// gates and the importer. Machine-wide tooling settings — the registries trust
+// (plugins.providers) and the governance transform attachments — are frozen, since
+// only those must travel with the project for byte-reproducible output; allPlugins
+// widens the set to every plugin socket, adding the governance verdict
+// attachments, the linter and the importer. Machine-wide tooling settings — the registries trust
 // policy above all — are deliberately excluded: they stay in the global config
 // by their nature and are not part of a project's build.
 //

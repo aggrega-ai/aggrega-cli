@@ -50,11 +50,11 @@ const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepend
 	"Release's; the stack ends with the `catalog` directory at the workspace root when there is " +
 	"one. A catalog_dirs list written empty reads no local catalog at all."
 
-// helpReleasePath is the --release flag's help text for the two commands that
-// take a Release as the whole subject of the run, held once for the reason
-// helpCatalogDir above is: both resolve the value the same way, and a reader
-// comparing the two must not be told two different things about where a relative
-// path is looked for.
+// helpReleaseResolution is the part of a --release flag's help text that says
+// where the named file is looked for, held once for the reason helpCatalogDir
+// above is: every command whose --release names the Release the run is about
+// resolves the value the same way, and a reader comparing two of them must not be
+// told two different things about where a relative path is looked for.
 //
 // It states the anchoring because that is the half a reader cannot infer. The
 // same Release is nameable over the language-server surface too, where a request
@@ -66,10 +66,13 @@ const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepend
 // rather than the workspace the Release: the rule is the shared resolution's
 // (workspaceconfig.ResolvedWorkspace.ForSubject), and this is the sentence a
 // reader typing the flag meets it in.
-const helpReleasePath = "Path to Release YAML file (required). A relative path resolves against " +
-	"the directory you run the command in, not against the workspace root. Where that directory is " +
-	"in no workspace and no root is named, an absolute path finds the workspace from the Release's " +
-	"own folder"
+const helpReleaseResolution = "A relative path resolves against the directory you run the command " +
+	"in, not against the workspace root. Where that directory is in no workspace and no root is " +
+	"named, an absolute path finds the workspace from the Release's own folder"
+
+// helpReleasePath is the --release flag's help text for the two commands that
+// take a Release as the whole subject of the run and require it.
+const helpReleasePath = "Path to Release YAML file (required). " + helpReleaseResolution
 
 // helpOffline is the offline flag's help text, held beside the composition that
 // reads the flag so the promise a reader is given and the layer that keeps it

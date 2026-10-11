@@ -175,7 +175,7 @@ func newValidateCmd() *cobra.Command {
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
 		helpCatalogDir)
-	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML. Alone, validate over its resolved dependency closure; with an entity argument, check that entity in the Release's terms, its references resolved through the catalog directories the workspace configuration gives that Release")
+	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML. Alone, validate over its resolved dependency closure; with an entity argument, check that entity in the Release's terms, its references resolved through the catalog directories the workspace configuration gives that Release. "+helpReleaseResolution)
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
 	// No back-quoted token in the usage text: pflag reads the first one as the

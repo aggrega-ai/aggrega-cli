@@ -192,7 +192,7 @@ status is the same under either format.`,
 	}
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil,
 		helpCatalogDir+" Used by the whole-catalog and --release conventions passes.")
-	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument)")
+	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument). "+helpReleaseResolution)
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&opts.prePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
 	c.Flags().StringVar(&opts.baseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")

@@ -14,7 +14,7 @@ import (
 
 // newPluginRemoveCmd builds the `plugin remove` command: the inverse of
 // `plugin add`. It removes a plugin from a config file so it no longer
-// participates — a `plugins.<type>` list entry (mutator / policy / linter /
+// participates — a `plugins.<type>` list entry (governance / linter /
 // importer), a `plugins.providers` capability binding (provider), or a
 // `plugins.cli` command (cli). No registry search is involved: remove operates
 // on the config text alone.
