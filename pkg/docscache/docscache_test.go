@@ -32,6 +32,11 @@ const (
 	authoringBody = "# Getting started\n\nDeclare an Aggregate.\n"
 )
 
+// admitAll is the admission of a reader whose check admits whatever the slot
+// holds. It is what the cases that are not about admission read with, so each of
+// them still passes through the read's admission step rather than around it.
+func admitAll(string, [][]byte) error { return nil }
+
 // buildBundle packs a deterministic gzipped tar of the given page->body entries.
 func buildBundle(t *testing.T, pages map[string]string) []byte {
 	t.Helper()
@@ -102,17 +107,24 @@ func signedBundleStore(t *testing.T, bundle []byte) (*memory.Store, []byte) {
 	return store, signer.PublicKeyPEM()
 }
 
-// keyedVerifier returns a VerifyAtPull that runs the SAME pull-time signature
-// verification a catalog entity or plugin uses (pullverify.Verify), against a
-// registry policy that requires signatures and pins the bundle's key.
-func keyedVerifier(store oras.ReadOnlyTarget, pubPEM []byte) docscache.VerifyAtPull {
-	cfg := workspaceconfig.Config{
+// keyedPolicy is a configuration requiring a signature from the test registry and
+// pinning pubPEM as the one key it trusts.
+func keyedPolicy(pubPEM []byte) workspaceconfig.Config {
+	return workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "reg.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
-	return func(ctx context.Context, manifestDigest string) error {
-		_, err := pullverify.Verify(ctx, []pullverify.Entity{
+}
+
+// keyedVerifier returns a VerifyAtPull that runs the SAME pull-time signature
+// verification a catalog entity or plugin uses (pullverify.Verify), against a
+// registry policy that requires signatures and pins the bundle's key, and hands
+// back the bundles it verified.
+func keyedVerifier(store oras.ReadOnlyTarget, pubPEM []byte) docscache.VerifyAtPull {
+	cfg := keyedPolicy(pubPEM)
+	return func(ctx context.Context, manifestDigest string) ([][]byte, error) {
+		results, err := pullverify.Verify(ctx, []pullverify.Entity{
 			{URI: testRef, ManifestDigest: manifestDigest, Host: "reg.example.com"},
 		}, pullverify.Options{
 			Config: cfg,
@@ -120,18 +132,37 @@ func keyedVerifier(store oras.ReadOnlyTarget, pubPEM []byte) docscache.VerifyAtP
 				return store, testVersion, nil
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
+		var verified [][]byte
+		for _, r := range results {
+			verified = append(verified, r.Bundle)
+		}
+		return verified, nil
+	}
+}
+
+// keyedAdmission returns the read-time admission of a reader whose check pins
+// pubPEM for the test registry, through the same offline decision a pull makes.
+func keyedAdmission(pubPEM []byte) docscache.AdmitAtRead {
+	cfg := keyedPolicy(pubPEM)
+	return func(manifestDigest string, signatures [][]byte) error {
+		_, err := pullverify.VerifyStored(cfg, pullverify.Entity{
+			URI: testRef, ManifestDigest: manifestDigest, Host: "reg.example.com",
+		}, signatures, nil)
 		return err
 	}
 }
 
 // TestResolveCacheAndServeOffline proves a signed documentation bundle resolves
-// and caches locally on first use, and serves pages offline thereafter — the
-// warm read takes no target and can never network.
+// and caches under the cache root it is given on first use, keeping the
+// signature its pull verified, and serves pages thereafter from that copy — the
+// read takes no target and can never reach a registry.
 func TestResolveCacheAndServeOffline(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 
 	bundle := buildBundle(t, map[string]string{
 		componentPage: componentBody,
@@ -140,19 +171,27 @@ func TestResolveCacheAndServeOffline(t *testing.T) {
 	store, pubPEM := signedBundleStore(t, bundle)
 
 	// First use: resolve through the OCI transport, verify-at-pull, cache locally.
-	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, keyedVerifier(store, pubPEM))
+	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, keyedVerifier(store, pubPEM))
 	if err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	if want := docscache.DocsBundlesRoot(root); filepath.Dir(filepath.Dir(slot)) != want {
+		t.Errorf("the slot %s is not two levels beneath %s", slot, want)
 	}
 	for _, name := range []string{"blob", "manifest"} {
 		if _, statErr := os.Stat(filepath.Join(slot, name)); statErr != nil {
 			t.Fatalf("cache slot missing %s: %v", name, statErr)
 		}
 	}
+	kept, err := os.ReadDir(filepath.Join(slot, "signatures"))
+	if err != nil || len(kept) != 1 {
+		t.Fatalf("the slot keeps %d signature(s) (%v), want the one the pull verified", len(kept), err)
+	}
 
 	// Offline thereafter: ReadPage takes no puller/target — structurally cannot
-	// reach the network — yet serves the page from the warm cache.
-	data, mimeType, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	// reach the network — yet serves the page from the warm cache, admitted by a
+	// reader whose own check verifies the kept signature.
+	data, mimeType, err := docscache.ReadPage(root, testRef, testVersion, componentPage, keyedAdmission(pubPEM))
 	if err != nil {
 		t.Fatalf("ReadPage: %v", err)
 	}
@@ -164,7 +203,7 @@ func TestResolveCacheAndServeOffline(t *testing.T) {
 	}
 
 	// A second page also serves from the same warm slot.
-	authData, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, authoringPage)
+	authData, _, err := docscache.ReadPage(root, testRef, testVersion, authoringPage, keyedAdmission(pubPEM))
 	if err != nil {
 		t.Fatalf("ReadPage authoring: %v", err)
 	}
@@ -173,13 +212,89 @@ func TestResolveCacheAndServeOffline(t *testing.T) {
 	}
 }
 
+// TestAReadIsServedOnlyWhatTheReadersCheckAdmits is the read-side admission at
+// this layer: one cached copy, read by a reader whose check verifies the kept
+// signature and by one whose check pins a different key. The first is served; the
+// second is told the copy is not admitted, and that answer reads as no bundle.
+func TestAReadIsServedOnlyWhatTheReadersCheckAdmits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	store, pubPEM := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	_, otherPub := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, keyedVerifier(store, pubPEM)); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+
+	if _, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, keyedAdmission(pubPEM)); err != nil {
+		t.Fatalf("the reader whose check verifies the kept signature was refused: %v", err)
+	}
+
+	data, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, keyedAdmission(otherPub))
+	var refused *docscache.NotAdmittedError
+	if !errors.As(err, &refused) {
+		t.Fatalf("a reader whose check pins another key was answered %q (%v), want a refusal", data, err)
+	}
+	if !errors.Is(err, docscache.ErrFetchNotFound()) {
+		t.Errorf("a refused copy must answer as no bundle: %v", err)
+	}
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
+		t.Errorf("the refusal must carry the check's own reason: %v", err)
+	}
+	if data != nil {
+		t.Errorf("a refused copy served %q", data)
+	}
+
+	// The acquisition's question gets the same two answers.
+	if err := docscache.Admitted(root, testRef, testVersion, keyedAdmission(pubPEM)); err != nil {
+		t.Errorf("Admitted refused what the read serves: %v", err)
+	}
+	if err := docscache.Admitted(root, testRef, testVersion, keyedAdmission(otherPub)); !errors.As(err, &refused) {
+		t.Errorf("Admitted admitted what the read refuses: %v", err)
+	}
+}
+
+// TestAReadWithNoCheckIsRefused pins the fail-closed half: a read handed no
+// admission check serves nothing, rather than serving bytes no check admitted.
+func TestAReadWithNoCheckIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	data, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, nil)
+	var refused *docscache.NotAdmittedError
+	if !errors.As(err, &refused) || data != nil {
+		t.Fatalf("a read with no check answered %q (%v), want a refusal", data, err)
+	}
+}
+
 // TestReadPageCacheMissIsLoud proves an unresolved bundle reads as a loud cache
 // miss (ErrFetchNotFound), never a fetch — the read path is offline-only.
 func TestReadPageCacheMissIsLoud(t *testing.T) {
 	t.Parallel()
-	_, _, err := docscache.ReadPage(t.TempDir(), ".aggrega/cache", testRef, testVersion, componentPage)
+	_, _, err := docscache.ReadPage(t.TempDir(), testRef, testVersion, componentPage, admitAll)
 	if !errors.Is(err, docscache.ErrFetchNotFound()) {
 		t.Fatalf("want ErrFetchNotFound, got %v", err)
+	}
+}
+
+// TestARelativeCacheRootIsRefused pins that a cache root is never resolved against
+// wherever the process happens to stand: a write and a read under a relative root
+// are refused and nothing is written.
+func TestARelativeCacheRootIsRefused(t *testing.T) {
+	t.Parallel()
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	if _, err := docscache.ResolveAndCache(context.Background(), store, testRef, testVersion, "relative-root", nil); err == nil {
+		t.Error("a write under a relative cache root was accepted")
+	}
+	if _, err := os.Stat("relative-root"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a refused write left something behind: %v", err)
+	}
+	if _, _, err := docscache.ReadPage("relative-root", testRef, testVersion, componentPage, admitAll); err == nil {
+		t.Error("a read under a relative cache root was answered")
 	}
 }
 
@@ -188,13 +303,12 @@ func TestReadPageCacheMissIsLoud(t *testing.T) {
 func TestReadMissingPage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
-	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil); err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
-	_, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, "language-reference/entities/missing.md")
+	_, _, err := docscache.ReadPage(root, testRef, testVersion, "language-reference/entities/missing.md", admitAll)
 	if !errors.Is(err, docscache.ErrPageNotFound()) {
 		t.Fatalf("want ErrPageNotFound, got %v", err)
 	}
@@ -205,18 +319,17 @@ func TestReadMissingPage(t *testing.T) {
 func TestVerifyAtPullRejectsWrongKey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 
 	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
 	_, otherPub := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
 
-	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, keyedVerifier(store, otherPub))
+	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, keyedVerifier(store, otherPub))
 	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 	// The cache slot must not have been populated by a failed verify.
-	if _, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); !errors.Is(rerr, docscache.ErrFetchNotFound()) {
+	if _, _, rerr := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll); !errors.Is(rerr, docscache.ErrFetchNotFound()) {
 		t.Fatalf("failed verify should leave the cache empty, got %v", rerr)
 	}
 }
@@ -230,7 +343,7 @@ func TestResolveRejectsNonDocsMediaType(t *testing.T) {
 	if _, err := oci.Push(ctx, store, testVersion, oci.MediaTypeComponent, []byte("kind: Component\n"), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, t.TempDir(), ".aggrega/cache", nil)
+	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, t.TempDir(), nil)
 	if !errors.Is(err, docscache.ErrNotDocsBundle()) {
 		t.Fatalf("want ErrNotDocsBundle, got %v", err)
 	}
@@ -241,17 +354,16 @@ func TestResolveRejectsNonDocsMediaType(t *testing.T) {
 func TestReadPageDetectsTamper(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
-	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil)
+	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil)
 	if err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("forged"), 0o644); err != nil {
 		t.Fatalf("tamper blob: %v", err)
 	}
-	_, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	_, _, rerr := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll)
 	if !errors.Is(rerr, oci.ErrFetchIntegrity()) {
 		t.Fatalf("want ErrFetchIntegrity, got %v", rerr)
 	}
@@ -271,8 +383,7 @@ func TestReadPageDetectsTamper(t *testing.T) {
 func TestReadPageAcceptsLeadingDoubleDotEntry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 
 	const oddPage = "..shared/notes.md"
 	const oddBody = "# Shared notes\n"
@@ -280,11 +391,11 @@ func TestReadPageAcceptsLeadingDoubleDotEntry(t *testing.T) {
 		componentPage: componentBody,
 		oddPage:       oddBody,
 	}))
-	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil); err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
 
-	data, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, oddPage)
+	data, _, err := docscache.ReadPage(root, testRef, testVersion, oddPage, admitAll)
 	if err != nil {
 		t.Fatalf("ReadPage(%q): %v — a name beginning with two dots is an ordinary name, not a traversal", oddPage, err)
 	}
@@ -294,7 +405,7 @@ func TestReadPageAcceptsLeadingDoubleDotEntry(t *testing.T) {
 
 	// A neighbouring page in the same bundle still serves, so the case above is
 	// not passing because the whole scan was skipped.
-	if _, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); err != nil {
+	if _, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll); err != nil {
 		t.Fatalf("ReadPage(%q): %v", componentPage, err)
 	}
 }
@@ -305,16 +416,15 @@ func TestReadPageAcceptsLeadingDoubleDotEntry(t *testing.T) {
 func TestReadPageRejectsEscapingEntry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ws := t.TempDir()
-	cacheDir := ".aggrega/cache"
+	root := t.TempDir()
 
 	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{
 		"../../etc/passwd": "root:x:0:0\n",
 	}))
-	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, root, nil); err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
-	_, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	_, _, err := docscache.ReadPage(root, testRef, testVersion, componentPage, admitAll)
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Fatalf("an escaping bundle entry must halt with ErrFetchIntegrity; got %v", err)
 	}

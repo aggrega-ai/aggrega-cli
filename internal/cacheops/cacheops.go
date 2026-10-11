@@ -17,7 +17,7 @@
 //
 // # Reach is carried, never inferred
 //
-// The caches this package addresses are not all scoped to one workspace. Two of
+// The caches this package addresses are not all scoped to one workspace. Some of
 // them are shared across every project on the machine, so removing an element of
 // one reaches workspaces the caller never named and whose owners did not ask.
 // Every class therefore declares its Reach, and every result names the classes it
@@ -36,6 +36,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -156,8 +157,9 @@ type Locations struct {
 	WorkspaceRoot string
 	CacheDir      string
 
-	CompileDir  string
-	DescribeDir string
+	CompileDir     string
+	DescribeDir    string
+	DocsBundlesDir string
 
 	ProvIndexPath   string
 	AttribIndexPath string
@@ -172,6 +174,10 @@ type Locations struct {
 // same wherever it is asked from. Passing an empty workspace root yields a value
 // addressing only the machine-wide caches, which is the honest shape for a
 // caller that has no workspace.
+//
+// The documentation-bundle subtree is filled from where the bundle's own
+// acquisition keeps it (docsbundle.CacheRoot), so the inventory lists and removes
+// the copy every surface reads rather than a location of its own.
 func ResolveLocations(workspaceRoot, cacheDir string) Locations {
 	loc := Locations{WorkspaceRoot: workspaceRoot, CacheDir: cacheDir}
 	if dir, ok := wasm.CompileCacheDir(); ok {
@@ -179,6 +185,9 @@ func ResolveLocations(workspaceRoot, cacheDir string) Locations {
 	}
 	if dir, ok := wasm.PluginDescribeCacheDir(); ok {
 		loc.DescribeDir = dir
+	}
+	if root, err := docsbundle.CacheRoot(context.Background()); err == nil {
+		loc.DocsBundlesDir = docscache.DocsBundlesRoot(root)
 	}
 	if p, ok := provindex.DefaultIndexPath(); ok {
 		loc.ProvIndexPath = p
@@ -216,15 +225,6 @@ func (l Locations) inputsRoot() string {
 	return externalinputs.StoreRoot(l.WorkspaceRoot, l.CacheDir)
 }
 
-// docsBundlesRoot returns the workspace documentation-bundle-cache subtree root,
-// or "" when no workspace resolved.
-func (l Locations) docsBundlesRoot() string {
-	if l.WorkspaceRoot == "" {
-		return ""
-	}
-	return docscache.DocsBundlesRoot(l.WorkspaceRoot, l.CacheDir)
-}
-
 // workspaceClass is one of the workspace's cache classes before it is enumerated:
 // what every result names it by, and the enumeration that lists its elements.
 type workspaceClass struct {
@@ -237,8 +237,8 @@ type workspaceClass struct {
 // the enumeration returns its refusal rather than reading on.
 type enumeration func(ctx context.Context, root string, hold func(path string) error) ([]Element, error)
 
-// workspaceClasses returns the workspace's four cache classes in the fixed order
-// every enumeration lists them, or none when no workspace resolved.
+// workspaceClasses returns the workspace's cache classes in the fixed order every
+// enumeration lists them, or none when no workspace resolved.
 //
 // It is the one place their names, roots, reach and prunability are written, so
 // the removal hold a prune or a clear makes before it enumerates anything and the
@@ -251,9 +251,13 @@ func (l Locations) workspaceClasses() []workspaceClass {
 		{Class{Name: "workspace entity cache", Root: l.entitiesRoot(), Reach: ReachWorkspace, Prunable: true}, enumEntities},
 		{Class{Name: "workspace source-artifact cache", Root: l.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true}, enumSourceArtifacts},
 		{Class{Name: "workspace external-input store", Root: l.inputsRoot(), Reach: ReachWorkspace, Prunable: true}, enumInputs},
-		{Class{Name: "workspace docs-bundle cache", Root: l.docsBundlesRoot(), Reach: ReachWorkspace, Prunable: false}, enumDocsBundles},
 	}
 }
+
+// DocsBundleClassName is the display name of the documentation-bundle cache
+// class. It is the single spelling the class assembly and every surface that
+// names the class share.
+const DocsBundleClassName = "docs-bundle cache"
 
 // holdRead holds a read beneath the workspace's artifact cache — a class root, or
 // a file an enumeration opens or stats — to the root the cache's writes are held
@@ -294,9 +298,9 @@ func stopped(ctx context.Context) error {
 	return nil
 }
 
-// Collect enumerates every applicable cache class in a fixed order: the four
-// workspace subtrees, present only when a workspace resolved, then the two
-// machine-wide caches.
+// Collect enumerates every applicable cache class in a fixed order: the
+// workspace subtrees, present only when a workspace resolved, then the
+// machine-wide caches, each present only when its directory resolved.
 //
 // The fixed order and per-class element sort make the whole enumeration
 // deterministic across runs over identical cache state. This is the single
@@ -346,6 +350,13 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 			return classes, err
 		}
 		classes = append(classes, Class{Name: "plugin-describe cache", Root: loc.DescribeDir, Reach: ReachMachine, Prunable: true, Elements: describe})
+	}
+	if loc.DocsBundlesDir != "" {
+		bundles, err := enumDocsBundles(ctx, loc.DocsBundlesDir)
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: DocsBundleClassName, Root: loc.DocsBundlesDir, Reach: ReachMachine, Prunable: false, Elements: bundles})
 	}
 	return classes, nil
 }
@@ -507,17 +518,20 @@ func enumInputs(ctx context.Context, root string, hold func(path string) error) 
 }
 
 // enumDocsBundles enumerates the documentation-bundle-cache slots. A slot is an
-// <encoded-ref>/<version> directory holding a content blob and its manifest. A
-// documentation bundle is a standalone data artifact, not a catalog entity, so
-// no lockfile references it; the class carries no element digest and is never
-// prune-eligible — only a clear reclaims it. Enumeration reports each slot's
-// decoded reference and version for a stable, deterministic listing.
+// <encoded-ref>/<version> directory holding a content blob, its manifest and the
+// signatures its fetches verified. A documentation bundle is a standalone data
+// artifact, not a catalog entity, so no lockfile references it; the class carries
+// no element digest and is never prune-eligible — only a clear reclaims it.
+// Enumeration reports each slot's decoded reference and version for a stable,
+// deterministic listing.
 //
-// It opens no file: its root is held before it is listed, a reference or version
-// directory that is a link is not a directory to the listing and is passed over
-// unlisted, and sizing a slot follows no link beneath it — so hold has nothing
-// further to judge here.
-func enumDocsBundles(ctx context.Context, root string, _ func(path string) error) ([]Element, error) {
+// The class is machine-wide, like the compiled-module and plugin-describe
+// caches, and is the machine's own store rather than one held to a workspace. A
+// directory a write is still staging, or one it is replacing, is not a slot
+// (docscache.IsSlotName) and is not listed. It opens no file: a reference or
+// version directory that is a link is not a directory to the listing and is
+// passed over unlisted, and sizing a slot follows no link beneath it.
+func enumDocsBundles(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
 	refDirs, err := os.ReadDir(root)
 	if err != nil {
@@ -539,7 +553,7 @@ func enumDocsBundles(ctx context.Context, root string, _ func(path string) error
 			continue
 		}
 		for _, vd := range versDirs {
-			if !vd.IsDir() {
+			if !vd.IsDir() || !docscache.IsSlotName(vd.Name()) {
 				continue
 			}
 			slot := filepath.Join(root, encoded, vd.Name())

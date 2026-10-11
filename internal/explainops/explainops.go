@@ -13,7 +13,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -205,14 +204,14 @@ func note(notes io.Writer, reason error) error {
 	return err
 }
 
-// LoadPages returns the published pages for a workspace, acquiring the
-// documentation bundle when the workspace has no copy.
+// LoadPages returns the published pages for a workspace configured as cfg,
+// acquiring the documentation bundle when the cache root ctx resolves
+// (docsbundle.CacheRoot) holds no copy that workspace's signature check admits.
 //
 // Acquisition happens here rather than at process start because explaining a code
 // is the only thing that needs the bundle: a fetch wired earlier would put a
 // registry round-trip in front of every other operation. The reads that follow it
-// are offline by construction — they take no target — so a warm cache reaches for
-// nothing.
+// take no target, so a warm cache reaches for no registry.
 //
 // It is for a caller whose acquisition of the bundle is this call: a surface that
 // acquires on its own schedule reads through [ReadPages] instead, which is the
@@ -225,20 +224,24 @@ func note(notes io.Writer, reason error) error {
 func LoadPages(
 	ctx context.Context,
 	cfg workspaceconfig.Config,
-	root, version string,
+	version string,
 	warn func(string),
 ) (Pages, error) {
-	cacheDir := cfg.ResolvedArtifactCacheDir()
 	ref := docsbundle.Ref(cfg.DefaultRegistryLocation().Prefix())
-
-	if _, aerr := docsbundle.EnsureCached(ctx, cfg, root, cacheDir, ref, version, nil, warn); aerr != nil {
-		return Pages{}, uncachedBundle(ref, version, aerr)
+	cacheRoot, err := docsbundle.CacheRoot(ctx)
+	if err != nil {
+		return Pages{}, Unavailable(ref, version, err)
 	}
-	return ReadPages(root, cacheDir, ref, version)
+	if _, aerr := docsbundle.EnsureCached(ctx, cfg, cacheRoot, ref, version, nil, warn); aerr != nil {
+		return Pages{}, Unavailable(ref, version, aerr)
+	}
+	// The acquisition above already reported what the check had to say about the
+	// copy it left in place, so the read asks it again without repeating that.
+	return ReadPages(cacheRoot, ref, version, docsbundle.Admission(cfg, ref, nil))
 }
 
-// ReadPages returns the published pages a workspace has cached, reaching for
-// nothing.
+// ReadPages returns the published pages the cache under cacheRoot holds for a
+// reader whose signature check is admit, reaching for no registry.
 //
 // It takes the bundle's coordinates already resolved, because which bundle a
 // caller serves is the caller's own decision — a session pinned to one reads that
@@ -250,8 +253,21 @@ func LoadPages(
 // It takes no target and cannot reach a registry. Acquiring the bundle is the
 // caller's act, performed before this or not at all, so a surface that only reads
 // never links the acquisition path — which is what lets a caller whose fetch
-// happens on its own schedule share this read rather than reimplement it.
-func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
+// happens on its own schedule share this read rather than reimplement it. Both
+// pages come from one opened bundle, admitted once.
+func ReadPages(cacheRoot, ref, version string, admit docscache.AdmitAtRead) (Pages, error) {
+	bundle, err := docscache.Open(cacheRoot, ref, version, admit)
+	if err != nil {
+		// A bundle this workspace may not read — none cached, or one its check
+		// refuses — is a different fact from a bundle that is here and cannot be
+		// read as one, and a reader repairs them differently: one is documentation
+		// to obtain, the other a bundle that is not the one this reads.
+		if errors.Is(err, docscache.ErrFetchNotFound()) {
+			return Pages{}, Unavailable(ref, version, err)
+		}
+		return Pages{}, fmt.Errorf("the published documentation is not available: the "+
+			"documentation bundle %s@%s cannot be read (%v)", ref, version, err)
+	}
 	var pages Pages
 	for _, p := range []struct {
 		path string
@@ -260,15 +276,8 @@ func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
 		{haltref.ReferencePagePath, &pages.Reference},
 		{haltref.PagePath, &pages.Halts},
 	} {
-		data, _, rerr := docscache.ReadPage(root, cacheDir, ref, version, p.path)
+		data, _, rerr := bundle.Page(p.path)
 		if rerr != nil {
-			// A bundle this workspace has no copy of is a different fact from a
-			// bundle that is here and does not carry the page, and a reader repairs
-			// them differently: one is documentation to obtain, the other a bundle
-			// that is not the one this reads.
-			if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, readscope.ErrReadLeadsOutOfWorkspace()) {
-				return Pages{}, uncachedBundle(ref, version, rerr)
-			}
 			return Pages{}, fmt.Errorf("the published documentation is not available: the "+
 				"documentation bundle %s@%s carries no readable %s (%v)", ref, version, p.path, rerr)
 		}
@@ -277,26 +286,31 @@ func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
 	return pages, nil
 }
 
-// uncachedBundle renders the reason a workspace with no cached documentation
-// cannot be given the walk-through.
+// Unavailable renders the reason a workspace that cannot read the documentation
+// bundle for (ref, version) cannot be given the walk-through, cause being what
+// stood in the way: no cache root to keep the bundle under, a failed
+// acquisition, an absent copy, or a copy the workspace's check refused.
 //
-// It has one home because two callers state it — the acquiring read and the
-// read-only one — and it is the sentence a reader sees most often, since a fresh
-// workspace and an offline one both arrive here. A second copy would agree on the
-// day it was written and diverge the first time either was edited, leaving two
-// answers to what "the documentation is not available" means.
+// It has one home because every surface states it — the acquiring read, the
+// read-only one, and a session whose cache root did not resolve — and it is the
+// sentence a reader sees most often, since a fresh machine and an offline
+// workspace both arrive here. A second copy would agree on the day it was written
+// and diverge the first time either was edited, leaving two answers to what "the
+// documentation is not available" means.
 //
 // It names the artifact and the version rather than reporting that something was
 // not found, and it carries both published addresses, so the answer stands on its
 // own for a reader who has to go and read the pages instead.
 //
-// A bundle the artifact cache's read hold refused is said to be unread rather than
-// absent: it may well be cached, behind a link the cache is not read through, and
-// the cause names that link, which is what the reader removes.
-func uncachedBundle(ref, version string, cause error) error {
-	state := "is not cached for this workspace and could not be acquired"
-	if errors.Is(cause, readscope.ErrReadLeadsOutOfWorkspace()) {
-		state = "is not read: the artifact cache would be reached through a link it is not read through"
+// A copy cached on this machine that the workspace's signature check refused is
+// said to be refused rather than absent: the reader's repair is to the trust
+// configuration or the registry's signatures, not to a missing download, and the
+// cause says which check refused it and why.
+func Unavailable(ref, version string, cause error) error {
+	state := "is not cached on this machine and could not be acquired"
+	var refused *docscache.NotAdmittedError
+	if errors.As(cause, &refused) {
+		state = "is cached on this machine, and this workspace's signature check does not admit that copy"
 	}
 	return fmt.Errorf("the published documentation is not available: the documentation "+
 		"bundle %s@%s %s (%v). The conditions "+

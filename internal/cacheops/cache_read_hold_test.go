@@ -24,9 +24,9 @@ type cacheReadLayout func(t *testing.T, ws, cache, elsewhere string) string
 // cacheReadLayouts are the cache shapes the inventory's reads are driven over: a
 // plain cache inside the workspace; a cache directory that is a link leading out; a
 // slot's blob, a source slot's metadata or an external-input blob that is a link
-// leading out; a class root that is a link leading out where the enumeration beneath
-// it opens no file; and a cache directory the configuration names outside the
-// workspace, plainly and with a blob linking out of it.
+// leading out; a class root that is a link leading out where nothing beneath it is
+// a file the enumeration opens; and a cache directory the configuration names
+// outside the workspace, plainly and with a blob linking out of it.
 func cacheReadLayouts() []struct {
 	name     string
 	cacheDir string
@@ -78,12 +78,15 @@ func cacheReadLayouts() []struct {
 			}
 			return keepOut(t, elsewhere, filepath.Join(store, strings.Repeat("0", 64)), "an input")
 		}},
-		{"a docs-bundle class root that is a link leading out", ".aggrega/cache", func(t *testing.T, _, cache, elsewhere string) string {
-			if err := os.MkdirAll(filepath.Join(elsewhere, pathsegment.Encode("hub.example/docs"), "1.0.0"), 0o755); err != nil {
+		{"an entity class root that is a link leading out", ".aggrega/cache", func(t *testing.T, _, cache, elsewhere string) string {
+			// The place the link leads holds a slot directory and nothing the
+			// enumeration would open, so only the hold on the class root itself can
+			// refuse this layout.
+			if err := os.MkdirAll(filepath.Join(elsewhere, pathsegment.Encode("hub.example/component"), "1.0.0"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			linkInto(t, elsewhere, filepath.Join(cache, "docs-bundles"))
-			return filepath.Join(cache, "docs-bundles")
+			linkInto(t, elsewhere, filepath.Join(cache, "entities"))
+			return filepath.Join(cache, "entities")
 		}},
 		{"control: a cache directory the configuration names outside the workspace", "../shared-cache", func(t *testing.T, _, cache, _ string) string {
 			seedSlot(t, filepath.Dir(entityBlob(cache)))
@@ -153,9 +156,7 @@ func TestAClearOrAPruneEnumeratesOnlyWhatItMayRead(t *testing.T) {
 		{"prune", func(t *testing.T, loc Locations) error { _, err := Prune(t.Context(), loc); return err }},
 	} {
 		for _, row := range cacheReadLayouts() {
-			if strings.HasPrefix(row.name, "control:") || strings.Contains(row.name, "docs-bundle") && op.name == "prune" {
-				// A prune neither removes from nor needs to read a class it cannot reclaim
-				// beyond listing it, which the inventory test above holds already.
+			if strings.HasPrefix(row.name, "control:") {
 				continue
 			}
 			t.Run(op.name+"/"+row.name, func(t *testing.T) {
@@ -176,7 +177,7 @@ func TestAClearOrAPruneEnumeratesOnlyWhatItMayRead(t *testing.T) {
 				err := op.run(t, Locations{WorkspaceRoot: ws, CacheDir: row.cacheDir})
 				// A linked cache directory, and a linked class root the operation removes,
 				// are refused as the removal they would be, before anything is listed.
-				if want == cache || strings.HasSuffix(want, "docs-bundles") {
+				if want == cache || want == filepath.Join(cache, "entities") {
 					if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
 						t.Fatalf("a linked root the %s removes must be refused as the removal it would be; got %v", op.name, err)
 					}

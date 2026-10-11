@@ -104,6 +104,7 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	wsRoot := t.TempDir()
 	compileDir := t.TempDir()
 	describeDir := t.TempDir()
+	docsBundlesDir := docscache.DocsBundlesRoot(t.TempDir())
 
 	// Entity slots: one referenced, one not.
 	refBlob := []byte("referenced-entity-artifact-bytes")
@@ -180,7 +181,7 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	return cacheFixture{
 		loc: cacheops.Locations{
 			WorkspaceRoot: wsRoot, CacheDir: cacheTestCacheDir,
-			CompileDir: compileDir, DescribeDir: describeDir,
+			CompileDir: compileDir, DescribeDir: describeDir, DocsBundlesDir: docsBundlesDir,
 		},
 		refEntitySlot: refEntitySlot, unrefEntitySlot: unrefEntitySlot,
 		refSourceSlot: refSourceSlot, unrefSourceSlot: unrefSourceSlot,
@@ -196,12 +197,13 @@ func exists(p string) bool {
 }
 
 // writeDocsBundleSlot writes a documentation-bundle cache slot (a blob +
-// manifest under docs-bundles/<encoded-reference>/<encoded-version>/) and
-// returns the slot dir. The enumeration only walks the slot directory tree, so
-// the file contents are placeholders.
-func writeDocsBundleSlot(t *testing.T, wsRoot, ref, version string) string {
+// manifest under docs-bundles/<encoded-reference>/<encoded-version>/ of the
+// machine-wide cache the fixture stands in) and returns the slot dir. The
+// enumeration only walks the slot directory tree, so the file contents are
+// placeholders.
+func writeDocsBundleSlot(t *testing.T, docsBundlesDir, ref, version string) string {
 	t.Helper()
-	slot := filepath.Join(docscache.DocsBundlesRoot(wsRoot, cacheTestCacheDir), pathsegment.Encode(ref), pathsegment.Encode(version))
+	slot := filepath.Join(docsBundlesDir, pathsegment.Encode(ref), pathsegment.Encode(version))
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir docs slot: %v", err)
 	}
@@ -215,11 +217,18 @@ func writeDocsBundleSlot(t *testing.T, wsRoot, ref, version string) string {
 }
 
 // TestCacheStatusListsDocsBundleClass proves the documentation-bundle cache is
-// enumerated as its own class in status, with the slot's decoded reference and
-// version as a deterministic label.
+// enumerated as its own class in status, under machine reach, with the slot's
+// decoded reference and version as a deterministic label, and that the
+// machine-wide summary line names it.
+//
+// A write staged beside the slot and never finished is planted too, and is not
+// listed: it is not a slot.
 func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 	fx := newCacheFixture(t)
-	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+	slot := writeDocsBundleSlot(t, fx.loc.DocsBundlesDir, "reg.example.com/docs/aggrega-docs", "1.0.0")
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(slot), "~staging-1", "signatures"), 0o755); err != nil {
+		t.Fatalf("plant a write that never finished: %v", err)
+	}
 
 	var a, b bytes.Buffer
 	if err := runCacheStatus(t.Context(), &a, fx.loc); err != nil {
@@ -235,12 +244,24 @@ func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 	// the shared layer's own reach value rather than spelled here: a class
 	// reclassified in the assembly moves this assertion with it instead of
 	// leaving it asserting a reach the class no longer has.
-	wantHeader := "workspace docs-bundle cache [" + string(cacheops.ReachWorkspace) + "]:"
+	wantHeader := cacheops.DocsBundleClassName + " [" + string(cacheops.ReachMachine) + "]:"
 	if !bytes.Contains(a.Bytes(), []byte(wantHeader)) {
 		t.Fatalf("status missing docs-bundle class header %q:\n%s", wantHeader, a.String())
 	}
 	if !bytes.Contains(a.Bytes(), []byte("reg.example.com/docs/aggrega-docs@1.0.0")) {
 		t.Fatalf("status missing docs-bundle element label:\n%s", a.String())
+	}
+	if bytes.Contains(a.Bytes(), []byte("staging")) {
+		t.Fatalf("status listed a write that never finished:\n%s", a.String())
+	}
+	var machineWide string
+	for _, line := range strings.Split(a.String(), "\n") {
+		if strings.HasPrefix(line, "machine-wide: ") {
+			machineWide = line
+		}
+	}
+	if !strings.Contains(machineWide, cacheops.DocsBundleClassName) {
+		t.Fatalf("the machine-wide line does not name the docs-bundle cache: %q", machineWide)
 	}
 	if !exists(slot) {
 		t.Fatalf("docs-bundle slot vanished")
@@ -253,7 +274,7 @@ func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 // not-prune-eligible rather than reclaimed — while clear removes it.
 func TestCachePruneRetainsDocsBundle(t *testing.T) {
 	fx := newCacheFixture(t)
-	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+	slot := writeDocsBundleSlot(t, fx.loc.DocsBundlesDir, "reg.example.com/docs/aggrega-docs", "1.0.0")
 
 	var out bytes.Buffer
 	if err := runCachePrune(t.Context(), &out, fx.loc); err != nil {
@@ -262,14 +283,19 @@ func TestCachePruneRetainsDocsBundle(t *testing.T) {
 	if !exists(slot) {
 		t.Fatalf("prune removed a docs-bundle slot it cannot map to a lockfile:\n%s", out.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("workspace docs-bundle cache element(s) not prune-eligible")) {
+	if !bytes.Contains(out.Bytes(), []byte(cacheops.DocsBundleClassName+" element(s) not prune-eligible")) {
 		t.Fatalf("prune did not report the docs-bundle class as out-of-scope:\n%s", out.String())
 	}
-	if err := runCacheClear(t.Context(), &bytes.Buffer{}, fx.loc); err != nil {
+	var cleared bytes.Buffer
+	if err := runCacheClear(t.Context(), &cleared, fx.loc); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if exists(slot) {
 		t.Fatalf("clear did not reclaim the docs-bundle slot")
+	}
+	wantCleared := "cleared " + cacheops.DocsBundleClassName
+	if !strings.Contains(cleared.String(), wantCleared) || !strings.Contains(cleared.String(), "["+string(cacheops.ReachMachine)+"]") {
+		t.Fatalf("clear does not report the docs-bundle cache as a machine-wide class it cleared:\n%s", cleared.String())
 	}
 }
 

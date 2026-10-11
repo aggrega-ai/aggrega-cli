@@ -285,6 +285,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
@@ -858,6 +859,15 @@ type session struct {
 	// built as a struct literal, and nil in any process that did not wire it; the
 	// handler refuses rather than reporting a conversion that did not happen.
 	resolveImportPlugin importops.PluginBytesResolver
+
+	// docs is what the context the process was launched with states about the
+	// documentation bundle — the cache root it is kept under, the target an
+	// acquisition reaches — stated again on each request's context before an
+	// explanation reads the bundle. A request's context derives from serverCtx
+	// rather than from the launch context, so without this a launch's statement
+	// would reach no request. No production launch states anything, and the zero
+	// value, which a session built as a struct literal carries, states nothing.
+	docs docsbundle.Declarations
 
 	// shuttingDown is set at the dispatch loop's acceptance of the first
 	// aggrega/shutdown message — on the single-threaded main loop, so
@@ -1955,6 +1965,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		flags:               cfg.Flags,
 		installCLIPlugin:    cfg.InstallCLIPlugin,
 		resolveImportPlugin: cfg.ResolveImportPlugin,
+		docs:                docsbundle.DeclarationsOf(ctx),
 		workspaces:          newWorkspaceRegistry(),
 		in:                  bufio.NewReader(cfg.Stdin),
 		out:                 cfg.Stdout,

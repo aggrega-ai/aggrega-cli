@@ -14,22 +14,29 @@ package main
 // that spelled the same quantity its own way. Here the comparison is between
 // the answers two callers actually receive about one cache.
 //
-// Both processes are pinned to a temp cache root, so the machine-wide classes
-// are empty and every reported byte comes from the workspace this test seeded.
+// Both processes are pinned to a temp cache root, so every reported byte comes
+// from what this test seeded: the workspace's inputs, and in the size-spelling
+// case one documentation bundle in that root.
 // That is what makes the comparison deterministic under a parallel battery,
 // where an unrelated test compiling a guest would otherwise move the
 // machine-wide total between the two invocations. It is also what keeps the
 // test off the developer's own caches.
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"oras.land/oras-go/v2/content/memory"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
+	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -138,6 +145,38 @@ func cacheResultViaDaemon(t *testing.T, bin, ws, method string, params map[strin
 	return result
 }
 
+// seedPinnedDocsBundle caches one documentation bundle in the machine-wide cache
+// root a child process given env resolves, and returns the bundle's label.
+//
+// Where that root is follows from the per-user cache directory the environment
+// names, read here through the same rule the binary reads it by, so the bundle
+// lands where the child's cache listing looks.
+func seedPinnedDocsBundle(t *testing.T, env []string) string {
+	t.Helper()
+	lookup := func(key string) string {
+		var value string
+		for _, entry := range env {
+			if k, v, ok := strings.Cut(entry, "="); ok && k == key {
+				value = v
+			}
+		}
+		return value
+	}
+	root, err := machinedirs.CacheRoot(machinedirs.Host(), lookup)
+	if err != nil {
+		t.Fatalf("no machine-wide cache root resolves under the pinned environment: %v", err)
+	}
+	const ref, version = "reg.example.com/docs/aggrega-docs", "1.0.0"
+	store := memory.New()
+	if _, err := oci.Push(context.Background(), store, version, oci.MediaTypeDocs, make([]byte, 2560), nil); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if _, err := docscache.ResolveAndCache(context.Background(), store, ref, version, root, nil); err != nil {
+		t.Fatalf("seed the documentation bundle: %v", err)
+	}
+	return ref + "@" + version
+}
+
 // TestBothReportingSurfacesSpellACacheSizeTheSameWay is the parity proof: every
 // size the daemon rendered appears verbatim in what the command line printed
 // about the same cache, and each one parses back to the number beside it.
@@ -148,11 +187,16 @@ func cacheResultViaDaemon(t *testing.T, bin, ws, method string, params map[strin
 // surface could satisfy either alone — two surfaces agreeing on an unparseable
 // spelling, or a parseable spelling only one of them uses — and neither would be
 // the property this exists to hold.
+//
+// The machine-wide cache root holds one documentation bundle, so the comparison
+// covers a machine-wide class's element too, and both surfaces are held to
+// listing that class under machine reach.
 func TestBothReportingSurfacesSpellACacheSizeTheSameWay(t *testing.T) {
 	t.Parallel()
 	bin := buildServeBinary(t)
 	ws := cacheParityWorkspace(t)
 	env := pinnedCacheEnv(t)
+	docsLabel := seedPinnedDocsBundle(t, env)
 
 	printed := cacheStatusViaCommandLine(t, bin, ws, env)
 	result := cacheResultViaDaemon(t, bin, ws, "aggrega/cacheStatus", map[string]any{}, env)
@@ -160,11 +204,18 @@ func TestBothReportingSurfacesSpellACacheSizeTheSameWay(t *testing.T) {
 	// The listing must be non-empty, or every comparison below would hold
 	// vacuously over nothing. This is the control: it fails if the fixture
 	// stopped landing where the enumerator looks.
+	seeded := len(seededInputSizes) + 1
 	total, ok := result["totalCount"].(float64)
-	if !ok || int(total) != len(seededInputSizes) {
+	if !ok || int(total) != seeded {
 		t.Fatalf("the daemon reported %v elements for a cache seeded with %d; "+
 			"the fixture is not where the enumeration looks: %+v",
-			result["totalCount"], len(seededInputSizes), result)
+			result["totalCount"], seeded, result)
+	}
+
+	// The documentation bundle is listed under machine reach by both surfaces.
+	wantHeader := cacheops.DocsBundleClassName + " [" + string(cacheops.ReachMachine) + "]:"
+	if !strings.Contains(printed, wantHeader) || !strings.Contains(printed, docsLabel) {
+		t.Errorf("the command line does not list %s under %q:\n%s", docsLabel, wantHeader, printed)
 	}
 
 	// Every rendered element size agrees with the command line and round-trips.
@@ -178,20 +229,27 @@ func TestBothReportingSurfacesSpellACacheSizeTheSameWay(t *testing.T) {
 		if !ok {
 			t.Fatalf("a class is not an object: %+v", rawClass)
 		}
+		if class["name"] == cacheops.DocsBundleClassName && class["reach"] != string(cacheops.ReachMachine) {
+			t.Errorf("the daemon lists the docs-bundle cache with reach %v, want %q", class["reach"], cacheops.ReachMachine)
+		}
 		elements, _ := class["elements"].([]any)
 		for _, rawElement := range elements {
 			element, ok := rawElement.(map[string]any)
 			if !ok {
 				t.Fatalf("an element is not an object: %+v", rawElement)
 			}
-			// Every seeded element size is an exact multiple or half-multiple of
-			// its unit, so exact recovery is required of each one.
-			assertRenderedSizeAgrees(t, element, "size", "sizeText", printed, true)
+			// Every seeded input size is an exact multiple or half-multiple of its
+			// unit, so exact recovery is required of each one. A documentation
+			// bundle's slot also holds the manifest the pull wrote, whose size this
+			// test does not choose, so only the agreement and the round trip are
+			// required of it.
+			exact := class["name"] != cacheops.DocsBundleClassName
+			assertRenderedSizeAgrees(t, element, "size", "sizeText", printed, exact)
 			seen++
 		}
 	}
-	if seen != len(seededInputSizes) {
-		t.Errorf("walked %d elements, want %d", seen, len(seededInputSizes))
+	if seen != seeded {
+		t.Errorf("walked %d elements, want %d", seen, seeded)
 	}
 
 	// And so does the total. Exact recovery is NOT required of it: the total is

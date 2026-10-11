@@ -68,25 +68,51 @@ func docsResourceTemplates() []resourceTemplate {
 // takes the narrower seam, and the two are bridged where ensureDocsBundle drives
 // it.
 //
-// Nil selects the production resolution below.
+// Nil selects the shared resolution: the target the run's context states, or
+// else the registry through the workspace's egress gate.
 type docsTargetFor func(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error)
+
+// errNoDocsRoot is what a session answers the documentation with when it was
+// built with no cache root at all, which only a server assembled outside Run and
+// NewHTTPHandler can be: both settle one, or the reason none resolves.
+var errNoDocsRoot = errors.New("no cache root was settled for this session's documentation bundle")
+
+// docsCacheRoot returns the cache root this session keeps the documentation
+// bundle under, or why there is none. It is the one place the session's
+// acquisition and every read of the bundle take the root from, so the copy the
+// acquisition fills is the copy the reads read.
+func (s *server) docsCacheRoot() (string, error) {
+	switch {
+	case s.docsRoot != "":
+		return s.docsRoot, nil
+	case s.docsRootErr != nil:
+		return "", s.docsRootErr
+	default:
+		return "", errNoDocsRoot
+	}
+}
 
 // ensureDocsBundle runs the acquisition of the documentation bundle: once per
 // serving process, before the first message is answered, and never on a resource
 // read.
 //
 // Siting it ahead of the message loop rather than on the read is the whole of
-// the offline contract. ReadPage takes no target and cannot reach the network;
+// the offline contract. A read takes no target and cannot reach a registry;
 // folding a fetch into the read would put a registry round-trip behind every
 // documentation request and make a served page's availability depend on
 // connectivity at the moment it is asked for. Acquiring once, ahead of any read,
-// keeps the read offline and the answer warm.
+// keeps the read off the registry and the answer warm.
+//
+// The bundle is kept in the machine-wide cache, so a copy another surface or
+// another session already acquired is used as it is when this workspace's own
+// signature check admits it, and nothing is downloaded. One the check refuses is
+// fetched again under that check.
 //
 // It never fails the run. An offline workspace, a registry that does not serve
-// the bundle, and a signature that does not verify each leave the cache exactly
-// as it was; the reason goes to the log stream and the documentation resources
-// answer resource-not-found, which is a poorer answer than a page and a far
-// better one than a refused session.
+// the bundle, a signature that does not verify, and a machine with no cache root
+// each leave the cache exactly as it was; the reason goes to the log stream and
+// the documentation resources answer resource-not-found, which is a poorer answer
+// than a page and a far better one than a refused session.
 //
 // ctx is the run's own, carried into the acquisition — a registry round trip —
 // so ending the run ends the fetch instead of leaving the server waiting on a
@@ -105,9 +131,17 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 			return
 		}
 		ref, version := s.docsBundleCoords(tw)
-		targetFor := s.docsTarget
-		if targetFor == nil {
-			targetFor = docsRegistryTarget
+		cacheRoot, err := s.docsCacheRoot()
+		if err != nil {
+			s.logLifecycle(
+				lifecycleAudit{
+					Event:     eventDocsBundle,
+					Reference: ref + "@" + version,
+					Outcome:   bundleNotAcquired,
+					Detail:    err.Error(),
+				},
+				"mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
+			return
 		}
 		warn := func(notice string) {
 			s.logLifecycle(
@@ -119,10 +153,13 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 				},
 				"mcp: %s", notice)
 		}
-		acquired, err := docsbundle.EnsureCached(ctx, tw.cfg, tw.root, tw.cacheDir, ref, version,
-			func(_ workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
-				return targetFor(tw, ref, version, warn)
-			}, warn)
+		var target docsbundle.TargetFor
+		if s.docsTarget != nil {
+			target = func(_ workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
+				return s.docsTarget(tw, ref, version, warn)
+			}
+		}
+		acquired, err := docsbundle.EnsureCached(ctx, tw.cfg, cacheRoot, ref, version, target, warn)
 		if err != nil {
 			s.logLifecycle(
 				lifecycleAudit{
@@ -146,22 +183,16 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 	})
 }
 
-// docsRegistryTarget is this surface's production resolution: the shared one,
-// given the configuration the session's workspace resolved.
-//
-// It stays as a named function rather than being inlined so that the seam above
-// has a default to point at and a reader can see which resolution a session gets
-// without following the acquisition out of this package.
-func docsRegistryTarget(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
-	return docsbundle.RegistryTarget(tw.cfg, ref, version, warn)
-}
-
 // readDocsResource serves a documentation resource URI as inline content read
-// from the local documentation-bundle cache. It maps the URI scheme to the
+// from the machine-wide documentation-bundle cache. It maps the URI scheme to the
 // bundle-internal page path, resolves the workspace and the bundle coordinates,
-// and reads the page offline — a cache miss or an absent page is reported as a
-// well-formed resource-not-found error, an integrity or read failure as an
-// internal error. The read never reaches the network.
+// and reads the page without reaching a registry, held to the workspace's own
+// signature check — a cache miss, a copy that check refuses, an absent page and a
+// machine with no cache root are each reported as a well-formed
+// resource-not-found error, an integrity or read failure as an internal error.
+//
+// The check runs silently here: what it has to report about the copy was said on
+// the log stream when the session acquired it.
 func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
 	page, ok := bundlePageForURI(uri)
 	if !ok {
@@ -172,7 +203,11 @@ func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
 		return readResourceResult{}, &rpcError{Code: codeInternalError, Message: err.Error()}
 	}
 	ref, version := s.docsBundleCoords(tw)
-	data, mimeType, rerr := docscache.ReadPage(tw.root, tw.cacheDir, ref, version, page)
+	cacheRoot, err := s.docsCacheRoot()
+	if err != nil {
+		return readResourceResult{}, resourceNotFound(uri)
+	}
+	data, mimeType, rerr := docscache.ReadPage(cacheRoot, ref, version, page, docsbundle.Admission(tw.cfg, ref, nil))
 	if rerr != nil {
 		if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, docscache.ErrPageNotFound()) {
 			return readResourceResult{}, resourceNotFound(uri)

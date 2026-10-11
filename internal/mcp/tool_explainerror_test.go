@@ -26,7 +26,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // haltFixtureHeading is the heading the fixture halting-conditions page documents
@@ -87,42 +86,43 @@ func haltFixturePages(short, code, sentence string) []docsFixturePage {
 	}
 }
 
-// pinnedDocsServer returns a server over an empty workspace, pinned to the
-// fixture bundle coordinates.
+// pinnedDocsServer returns a server over a workspace, pinned to the fixture
+// bundle coordinates and reading the bundle from the cache root given.
 //
 // The pin is what makes an assertion about the coordinates possible: unpinned,
 // the reference is derived from the workspace's registry and the version from the
 // binary's own build identity, so a case asserting which bundle was looked for
 // would be asserting values the implementation chose rather than values it was
 // given.
-func pinnedDocsServer(t *testing.T, ws string) *server {
+func pinnedDocsServer(t *testing.T, ws, root string) *server {
 	t.Helper()
 	return &server{
 		out:               io.Discard,
 		logw:              io.Discard,
 		serverVersion:     docsTestVersion,
 		startDir:          ws,
+		docsRoot:          root,
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,
 	}
 }
 
-// seedHaltDocsWorkspace caches a bundle carrying the halting-conditions pages for
-// a fresh workspace and returns a server pinned to it.
+// seedHaltDocsWorkspace caches a bundle carrying the halting-conditions pages in
+// a cache root of this test's own and returns a server over a fresh workspace,
+// pinned to it.
 func seedHaltDocsWorkspace(t *testing.T, pages []docsFixturePage) *server {
 	t.Helper()
-	ws := t.TempDir()
-	cacheDir := workspaceconfig.Default().ResolvedArtifactCacheDir()
+	root := t.TempDir()
 
 	store := memory.New()
 	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, docsBundleTar(t, pages), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, ws, cacheDir, nil); err != nil {
+	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, root, nil); err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
 
-	return pinnedDocsServer(t, ws)
+	return pinnedDocsServer(t, t.TempDir(), root)
 }
 
 // explainErrorPayload calls the tool and returns its decoded structured payload
@@ -206,9 +206,10 @@ func TestExplainErrorCarriesThePublishedWalkThrough(t *testing.T) {
 func TestExplainErrorSaysWhyTheWalkThroughIsMissing(t *testing.T) {
 	t.Parallel()
 	short, code, sentence := haltProbe(t)
-	// An empty workspace: no bundle cached, and this surface acquires at the
-	// start of the run rather than here, so nothing is fetched.
-	s := pinnedDocsServer(t, t.TempDir())
+	// An empty workspace and an empty cache root: no bundle cached, and this
+	// surface acquires at the start of the run rather than here, so nothing is
+	// fetched.
+	s := pinnedDocsServer(t, t.TempDir(), t.TempDir())
 
 	payload, text := explainErrorPayload(t, s, explainErrorArgs{Message: haltDiagnostic(short, sentence)})
 
@@ -222,7 +223,7 @@ func TestExplainErrorSaysWhyTheWalkThroughIsMissing(t *testing.T) {
 			payload.Condition.ShortCode, payload.Condition.Code, payload.Condition.Message, short, code, sentence)
 	}
 	if len(payload.Entries) != 0 {
-		t.Errorf("a workspace with no cached documentation produced %d published entries: %+v",
+		t.Errorf("a session with no documentation to read produced %d published entries: %+v",
 			len(payload.Entries), payload.Entries)
 	}
 	if payload.Note == "" {
@@ -310,7 +311,7 @@ func TestExplainErrorDiscriminatesASpentNumberFromAnUnrecognisedOne(t *testing.T
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			s := pinnedDocsServer(t, t.TempDir())
+			s := pinnedDocsServer(t, t.TempDir(), t.TempDir())
 			if tc.seeded {
 				s = seedHaltDocsWorkspace(t, haltFixturePages(short, code, sentence))
 			}

@@ -113,8 +113,8 @@ const builtBinaryCacheHomeName = "built-binary"
 // them.
 //
 // Where the directory sits is safe from this process's own cache maintenance: a
-// clear, a prune or a size cap acts on the compiled-module and plugin-describe
-// directories beneath the root it resolved, never on another entry beside them.
+// clear, a prune or a size cap acts on the machine-wide cache directories beneath
+// the root it resolved, never on another entry beside them.
 // Several subprocesses using it at once is the case the caches are built for,
 // since every test process shares its own root the same way.
 func builtBinaryEnv(t *testing.T, extra ...string) []string {

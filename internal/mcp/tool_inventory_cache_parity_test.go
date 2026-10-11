@@ -7,8 +7,8 @@ package mcp
 // was projected from.
 //
 // The expectation is a cacheops.Report this file supplies, not an answer read
-// off the machine. Two of the six cache classes are shared by every process on
-// the machine, so a reading that had to enumerate them in order to know what to
+// off the machine. Some of the cache classes are shared by every process on the
+// machine, so a reading that had to enumerate them in order to know what to
 // expect would be comparing two answers taken at two moments; handed the report,
 // the projection is checkable exactly, and every field it carries is covered
 // rather than whichever ones the machine happened to hold.

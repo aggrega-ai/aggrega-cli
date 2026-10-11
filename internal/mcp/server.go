@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
@@ -227,8 +228,19 @@ type server struct {
 	docsBundleRef     string
 	docsBundleVersion string
 
+	// docsRoot is the cache root the documentation bundle is kept under, and
+	// docsRootErr why none resolved. Both are settled where the server is built,
+	// from the root every machine-wide cache of this process derives from
+	// (docsbundle.CacheRoot), so the session acquires into and reads from the copy
+	// every other surface on the machine reads. A test sets docsRoot to a directory
+	// of its own; a server built with neither keeps the bundle nowhere, and its
+	// documentation answers as though none were cached.
+	docsRoot    string
+	docsRootErr error
+
 	// docsTarget resolves the OCI target the documentation bundle is pulled
-	// from at the start of the run. Nil reaches the registry through the
+	// from at the start of the run. Nil reaches the target the run's context
+	// states (docsbundle.WithTarget), or else the registry through the
 	// workspace's egress gate. A test injects one to drive the acquisition
 	// without a registry; everything after the target — the pull, the
 	// media-type check, the cache write and the read — stays production.
@@ -437,6 +449,7 @@ func Run(ctx context.Context, cfg Config) error {
 		resolveImportPlugin: cfg.ResolveImportPlugin,
 		listPlugins:         cfg.ListPlugins,
 	}
+	s.docsRoot, s.docsRootErr = docsbundle.CacheRoot(ctx)
 	return s.run(ctx, stdin)
 }
 

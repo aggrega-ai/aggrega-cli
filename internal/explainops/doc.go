@@ -22,13 +22,15 @@
 // it opens with — is declared inside the binary, so that much is always available
 // and needs no network and no cache. The walk-through, which is what the
 // condition means and what to change, is prose written for a reader, so it is
-// served from the documentation bundle a workspace caches.
+// served from the documentation bundle kept in the machine-wide cache, read under
+// the workspace's own signature check.
 //
 // A code that resolves therefore always produces an answer, and the two ways the
 // prose can be missing are reported as themselves: a condition the published page
-// does not document yet, and a bundle this workspace has no copy of. Both leave
-// the condition standing, which is why they travel as a note beside the answer
-// rather than as a refusal of it.
+// does not document yet, and a bundle this workspace cannot read — none on the
+// machine, or a copy its check does not admit. Both leave the condition standing,
+// which is why they travel as a note beside the answer rather than as a refusal of
+// it.
 //
 // # The pages travel together, in one read
 //

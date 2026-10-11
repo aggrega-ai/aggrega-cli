@@ -53,9 +53,9 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 		t.Fatalf("publish documentation bundle: %v", err)
 	}
 
-	// A workspace whose configured registry is the one just published to, and
-	// whose cache is empty. Nothing pins the bundle reference on the server, so
-	// docsBundleCoords derives it from this configuration.
+	// A workspace whose configured registry is the one just published to, and a
+	// cache root that is empty. Nothing pins the bundle reference on the server,
+	// so docsBundleCoords derives it from this configuration.
 	ws := t.TempDir()
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"),
 		[]byte("default_registry: "+host+"\nworkspace: {}\n"), 0o644); err != nil {
@@ -68,6 +68,7 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 		logw:              &logged,
 		serverVersion:     version,
 		startDir:          ws,
+		docsRoot:          t.TempDir(),
 		docsBundleVersion: version,
 	}
 
@@ -114,7 +115,7 @@ func TestDocsAcquisitionRefusedWhenTheWorkspaceIsOffline(t *testing.T) {
 	}
 
 	var logged strings.Builder
-	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", startDir: ws}
+	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", startDir: ws, docsRoot: t.TempDir()}
 	runServer(t, s)
 	if !strings.Contains(logged.String(), "offline") {
 		t.Errorf("an offline workspace must report the egress refusal; log was: %s", logged.String())

@@ -616,8 +616,9 @@ var operationAvailability = map[string]serveAvailability{
 	// who has usually already read them. Asking once is the shape that matches how
 	// often the question is actually asked.
 	//
-	// It reaches the documentation bundle and acquires it when the workspace has no
-	// copy, and it is admitted on the rule every reaching method here runs under: a
+	// It reaches the documentation bundle and acquires it when the machine-wide
+	// cache holds no copy the workspace's own signature check admits, and it is
+	// admitted on the rule every reaching method here runs under: a
 	// caller that sent it has asked for the expansion. It is unreachable from a
 	// validation by construction — no diagnostic path expands anything — so the
 	// posture that keeps a registry out of an edit is untouched. Nothing is written

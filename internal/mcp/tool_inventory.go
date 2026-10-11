@@ -132,8 +132,8 @@ var cacheStatusToolSpec = toolSpec{
 		"parsing a table. Every size is reported twice: `size` as the byte count to calculate with, and `size_text` as " +
 		"the same quantity written in binary units to display, which is also the vocabulary the size-taking operations " +
 		"accept, so a quantity read here can be sent back unrewritten. Each class carries a `reach`: `workspace` for " +
-		"the artifact cache under this workspace's own cache directory, `machine` for the compiled-module and " +
-		"plugin-describe stores, which every project on this machine shares. Read `reach` before proposing any " +
+		"the artifact cache under this workspace's own cache directory, `machine` for the compiled-module, " +
+		"plugin-describe and documentation-bundle stores, which every project on this machine shares. Read `reach` before proposing any " +
 		"reclamation: removing a machine-wide element affects workspaces nobody in this conversation has named. " +
 		"`machine_wide_classes` names those classes directly. `provenance` names the plugin identities each recorded " +
 		"guest digest resolved for, marking a digest more than one identity shares — it is what gives a compiled " +

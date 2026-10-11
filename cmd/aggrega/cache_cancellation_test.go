@@ -22,9 +22,9 @@ import (
 //
 // Every fixture root is a temporary directory assembled by newCacheFixture, and
 // no test here calls cacheops.ResolveLocations. That is load-bearing rather than
-// incidental: ResolveLocations fills the machine-wide compiled-module and
-// plugin-describe roots shared by every project on the machine, so a prune or a
-// clear driven through it would reclaim another workspace's cache. The
+// incidental: ResolveLocations fills the machine-wide roots shared by every
+// project on the machine, so a prune or a clear driven through it would reclaim
+// another workspace's cache. The
 // hand-built Locations value confines all four operations to this test's own
 // temporary tree.
 //

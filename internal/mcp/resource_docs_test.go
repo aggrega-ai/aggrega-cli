@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 
@@ -16,7 +17,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 const (
@@ -82,18 +82,23 @@ func docsFixtureBundle(t *testing.T) []byte {
 }
 
 // seedDocsWorkspace builds a fixture documentation bundle, resolves it into a
-// fresh workspace's local cache, and returns a server pointed at that workspace
-// and bundle. The server's resource reads then serve from the warm cache.
+// cache root of this test's own — standing in for the machine-wide cache — and
+// returns a server over a fresh workspace pointed at that root and bundle. The
+// server's resource reads then serve from the warm cache.
+//
+// The fixture registry is one the workspace configures nothing for, so its check
+// requires no signature and admits the unsigned fixture; the cases about which
+// check admits what are elsewhere.
 func seedDocsWorkspace(t *testing.T) *server {
 	t.Helper()
 	ws := t.TempDir()
-	cacheDir := workspaceconfig.Default().ResolvedArtifactCacheDir()
+	root := t.TempDir()
 
 	store := memory.New()
 	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, docsFixtureBundle(t), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, ws, cacheDir, nil); err != nil {
+	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, root, nil); err != nil {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
 
@@ -102,6 +107,7 @@ func seedDocsWorkspace(t *testing.T) *server {
 		logw:              io.Discard,
 		serverVersion:     docsTestVersion,
 		startDir:          ws,
+		docsRoot:          root,
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,
 	}
@@ -205,22 +211,36 @@ func TestServeMissingURIIsInvalidParams(t *testing.T) {
 	}
 }
 
-// TestServeColdCacheIsResourceNotFound proves a langref read against a
-// workspace with no cached bundle reports resource-not-found (a loud cache
-// miss) rather than reaching out to fetch it — the read path is offline-only.
+// TestServeColdCacheIsResourceNotFound proves a langref read against a cache
+// holding no bundle reports resource-not-found (a loud cache miss) rather than
+// reaching out to fetch it — the read path reaches no registry — and so does a
+// session on a machine where no cache root resolves at all.
 func TestServeColdCacheIsResourceNotFound(t *testing.T) {
 	t.Parallel()
-	s := &server{
-		out:               io.Discard,
-		logw:              io.Discard,
-		serverVersion:     docsTestVersion,
-		startDir:          t.TempDir(),
-		docsBundleRef:     docsTestRef,
-		docsBundleVersion: docsTestVersion,
-	}
-	_, rerr := readResource(t, s, "langref://entities/component")
-	if rerr == nil || rerr.Code != codeResourceNotFound {
-		t.Fatalf("cold-cache read error = %+v, want code %d", rerr, codeResourceNotFound)
+	for _, tc := range []struct {
+		name    string
+		root    string
+		rootErr error
+	}{
+		{name: "a cache holding no bundle", root: t.TempDir()},
+		{name: "no cache root on this machine", rootErr: errors.New("HOME is not set")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &server{
+				out:               io.Discard,
+				logw:              io.Discard,
+				serverVersion:     docsTestVersion,
+				startDir:          t.TempDir(),
+				docsRoot:          tc.root,
+				docsRootErr:       tc.rootErr,
+				docsBundleRef:     docsTestRef,
+				docsBundleVersion: docsTestVersion,
+			}
+			_, rerr := readResource(t, s, "langref://entities/component")
+			if rerr == nil || rerr.Code != codeResourceNotFound {
+				t.Fatalf("cold-cache read error = %+v, want code %d", rerr, codeResourceNotFound)
+			}
+		})
 	}
 }
 

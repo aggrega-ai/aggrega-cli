@@ -427,6 +427,14 @@ func AggregaCacheRoot() (string, bool) {
 	return cacheRoot()
 }
 
+// AggregaCacheRootError returns why no cache root resolved for this process —
+// what the platform's rule found missing — or nil when one did. It is the reason
+// behind a false [AggregaCacheRoot], for a caller that has to tell a reader why a
+// machine-wide cache is unavailable rather than only that it is.
+func AggregaCacheRootError() error {
+	return cacheRootAtStartErr
+}
+
 // CompileCacheDir returns the directory of the persistent wazero compiled-module
 // cache and whether one could be resolved. The provider guests are identical
 // bytes across every project, so the cache is rooted at the cache root rather

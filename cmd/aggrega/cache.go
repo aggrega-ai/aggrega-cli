@@ -16,7 +16,7 @@ import (
 )
 
 // newCacheCmd builds the `aggrega cache` command family: inspect, reclaim, and
-// wipe the on-disk caches the compiler populates. Three caches exist:
+// wipe the on-disk caches the compiler populates:
 //
 //   - the workspace artifact cache under the configured cache directory
 //     (default `.aggrega/cache`), holding pulled catalog entities, resolved
@@ -24,7 +24,9 @@ import (
 //   - the compiled-module cache, holding provider guests compiled once and
 //     reused across every project on the machine;
 //   - the plugin-describe cache, holding each guest's static self-report keyed
-//     by the guest's content digest.
+//     by the guest's content digest;
+//   - the docs-bundle cache, holding the documentation bundle keyed by registry
+//     and version, shared by every project on the machine.
 //
 // The commands here render; what they render is enumerated and removed by the
 // shared cache-operations layer, which every other caller-facing surface reaches
@@ -364,9 +366,11 @@ func newCacheClearCmd() *cobra.Command {
 		Use:   "clear",
 		Short: "Wipe every cache, including compiled modules",
 		Long: `Wipe every cache: the workspace artifact cache (entities, source artifacts,
-external inputs) and the two global caches (compiled modules and plugin
-descriptors). This is the total-wipe verb; unlike prune it reclaims the
-compiled-module cache as well. Cleared caches repopulate on the next build.
+external inputs) and the caches every project on the machine shares (compiled
+modules, plugin descriptors and documentation bundles). This is the total-wipe
+verb; unlike prune it reclaims the compiled-module cache and the documentation
+bundles as well. Cleared caches repopulate on the next build, and the
+documentation bundle on the next read of the documentation.
 
 Because the wipe is irreversible, clear asks for confirmation before removing
 anything. Pass --yes to skip the prompt for non-interactive use; without --yes

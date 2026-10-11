@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,10 +19,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// coldDocsWorkspace returns a server pointed at an EMPTY workspace — no bundle
-// cached — whose bundle target is a store holding the fixture bundle. It is the
-// state a real installation starts in, which the warm-cache fixture beside it
-// deliberately is not.
+// coldDocsWorkspace returns a server pointed at an EMPTY workspace and an empty
+// cache root of this test's own — no bundle cached — whose bundle target is a
+// store holding the fixture bundle. It is the state a real installation starts
+// in, which the warm-cache fixture beside it deliberately is not.
 //
 // Only the target is substituted. The cache-presence probe, the pull, the
 // media-type check, the cache write and the read are the production path.
@@ -39,6 +40,7 @@ func coldDocsWorkspace(t *testing.T) (*server, string) {
 		logw:              io.Discard,
 		serverVersion:     docsTestVersion,
 		startDir:          ws,
+		docsRoot:          t.TempDir(),
 		docsBundleRef:     docsTestRef,
 		docsBundleVersion: docsTestVersion,
 		docsTarget: func(*toolWorkspace, string, string, func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
@@ -130,13 +132,13 @@ func TestDocsBundleAcquiredAtTheStartOfTheRunAndServedAfterwards(t *testing.T) {
 		t.Fatalf("a run carrying no messages answered %d of them", len(resps))
 	}
 
-	// The cache the run filled is the one the read reads.
-	tw, err := s.resolveToolWorkspace("", nil)
-	if err != nil {
-		t.Fatalf("resolve workspace: %v", err)
+	// The cache the run filled is the one the read reads: the session's cache
+	// root, not the workspace it was started over.
+	if cached, cerr := docscache.Cached(s.docsRoot, docsTestRef, docsTestVersion); cerr != nil || !cached {
+		t.Fatalf("the run did not populate the bundle cache under %s (%v)", s.docsRoot, cerr)
 	}
-	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
-		t.Fatalf("the run did not populate the bundle cache under %s (%v)", ws, cerr)
+	if entries, err := os.ReadDir(ws); err != nil || len(entries) != 0 {
+		t.Errorf("the run wrote into the workspace it was started over: %v (%v)", entries, err)
 	}
 
 	rr, rerr := readResource(t, s, "langref://entities/component")
@@ -207,11 +209,7 @@ func TestDocsBundleAcquiredBeforeAMessageThatIsNotInitialize(t *testing.T) {
 		t.Fatalf("ping returned an error envelope: %+v", resps[0].Error)
 	}
 
-	tw, err := s.resolveToolWorkspace("", nil)
-	if err != nil {
-		t.Fatalf("resolve workspace: %v", err)
-	}
-	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
+	if cached, cerr := docscache.Cached(s.docsRoot, docsTestRef, docsTestVersion); cerr != nil || !cached {
 		t.Errorf("the bundle cache is empty after a run that attempted the acquisition (%v)", cerr)
 	}
 }
@@ -262,11 +260,7 @@ func TestDocsBundleAcquiredBeforeAFirstMessageInThePerRequestRevision(t *testing
 		t.Fatalf("tools/list returned an error envelope: %+v", resps[0].Error)
 	}
 
-	tw, err := s.resolveToolWorkspace("", nil)
-	if err != nil {
-		t.Fatalf("resolve workspace: %v", err)
-	}
-	if cached, cerr := docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion); cerr != nil || !cached {
+	if cached, cerr := docscache.Cached(s.docsRoot, docsTestRef, docsTestVersion); cerr != nil || !cached {
 		t.Errorf("the bundle cache is empty after a run that attempted the acquisition (%v)", cerr)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/explainops"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
@@ -326,27 +327,33 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 	return exp, nil
 }
 
-// explainPages reads the published pages the session's workspace has cached.
+// explainPages reads the published pages from the copy of the bundle this
+// session reads, held to its workspace's own signature check.
 //
-// It reaches for nothing. The bundle is acquired once at the start of the run,
-// ahead of anything that reads it, so an expansion here reads a cache somebody
-// else filled rather than putting a registry round-trip behind a question — and
-// a workspace that never obtained the bundle is answered with the condition and
-// the reason the walk-through is absent, which is an answer rather than a
-// failure.
+// It reaches for no registry. The bundle is acquired once at the start of the
+// run, ahead of anything that reads it, so an expansion here reads a cache
+// somebody else filled rather than putting a registry round-trip behind a
+// question — and a session that never obtained the bundle is answered with the
+// condition and the reason the walk-through is absent, which is an answer rather
+// than a failure.
 //
-// The coordinates are this session's own, not derived a second time: a session
-// pinned to a particular bundle explains a code out of that bundle and out of the
-// same one its documentation resources serve. Resolving the workspace is this
-// surface's act for the reason every documentation read here resolves it — the
-// documentation a session serves is a property of the session, not of one call.
+// The coordinates and the cache root are this session's own, not derived a
+// second time: a session pinned to a particular bundle explains a code out of
+// that bundle and out of the same copy its documentation resources serve.
+// Resolving the workspace is this surface's act for the reason every
+// documentation read here resolves it — the documentation a session serves is a
+// property of the session, not of one call.
 func (s *server) explainPages() (explainops.Pages, error) {
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
 		return explainops.Pages{}, fmt.Errorf("the published documentation is not available: %w", err)
 	}
 	ref, version := s.docsBundleCoords(tw)
-	return explainops.ReadPages(tw.root, tw.cacheDir, ref, version)
+	cacheRoot, err := s.docsCacheRoot()
+	if err != nil {
+		return explainops.Pages{}, explainops.Unavailable(ref, version, err)
+	}
+	return explainops.ReadPages(cacheRoot, ref, version, docsbundle.Admission(tw.cfg, ref, nil))
 }
 
 var explainErrorToolSpec = toolSpec{

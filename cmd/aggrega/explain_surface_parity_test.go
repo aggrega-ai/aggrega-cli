@@ -66,13 +66,21 @@ type explainErrorReply struct {
 // handler nothing can reach.
 func explainOverTheDaemonWire(t *testing.T, workspaceRoot, code string) explainErrorReply {
 	t.Helper()
+	return explainOverTheDaemonWireWith(t, explainContext(t), workspaceRoot, code)
+}
+
+// explainOverTheDaemonWireWith is explainOverTheDaemonWire with the daemon run
+// under a context the caller states.
+func explainOverTheDaemonWireWith(t *testing.T, ctx context.Context, workspaceRoot, code string) explainErrorReply {
+	t.Helper()
 
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "aggrega/explainError",
 		// Every request that acts on a workspace names it, and expanding a code
-		// reads the workspace to locate its documentation bundle.
+		// reads the workspace to name its documentation bundle and the check a
+		// copy of it is admitted by.
 		"params": map[string]string{"code": code, "workspaceRoot": workspaceRoot},
 	})
 	if err != nil {
@@ -86,7 +94,9 @@ func explainOverTheDaemonWire(t *testing.T, workspaceRoot, code string) explainE
 	var stdout, stderr bytes.Buffer
 	// Stdin is fully written before the daemon starts and is never appended to, so
 	// the loop reads one request and then reaches EOF, which is the clean exit.
-	if rerr := serve.Run(context.Background(), serve.RunConfig{
+	// It runs under the context the case states, which carries the cache root the
+	// case seeded the documentation every surface here reads in.
+	if rerr := serve.Run(ctx, serve.RunConfig{
 		Stdin:           &stdin,
 		Stdout:          &stdout,
 		Stderr:          &stderr,
@@ -191,6 +201,13 @@ type assistantExplainReply struct {
 // explicitly and are unaffected.
 func explainOverTheAssistantWire(t *testing.T, workspaceRoot, diagnostic, kind string) (assistantExplainReply, string) {
 	t.Helper()
+	return explainOverTheAssistantWireWith(t, explainContext(t), workspaceRoot, diagnostic, kind)
+}
+
+// explainOverTheAssistantWireWith is explainOverTheAssistantWire with the session
+// run under a context the caller states.
+func explainOverTheAssistantWireWith(t *testing.T, ctx context.Context, workspaceRoot, diagnostic, kind string) (assistantExplainReply, string) {
+	t.Helper()
 	t.Chdir(workspaceRoot)
 
 	body, err := json.Marshal(map[string]any{
@@ -213,7 +230,7 @@ func explainOverTheAssistantWire(t *testing.T, workspaceRoot, diagnostic, kind s
 	var stdout, stderr bytes.Buffer
 	// Stdin is fully written before the session starts and is never appended to, so
 	// the loop reads one message and then reaches EOF, which is the clean exit.
-	if rerr := mcp.Run(context.Background(), mcp.Config{
+	if rerr := mcp.Run(ctx, mcp.Config{
 		Stdin:         &stdin,
 		Stdout:        &stdout,
 		Stderr:        &stderr,
@@ -706,7 +723,8 @@ func explainRefusalOverTheDaemonWire(t *testing.T, workspaceRoot, code string) s
 		"id":      1,
 		"method":  "aggrega/explainError",
 		// Every request that acts on a workspace names it, and expanding a code
-		// reads the workspace to locate its documentation bundle.
+		// reads the workspace to name its documentation bundle and the check a
+		// copy of it is admitted by.
 		"params": map[string]string{"code": code, "workspaceRoot": workspaceRoot},
 	})
 	if err != nil {
@@ -717,7 +735,7 @@ func explainRefusalOverTheDaemonWire(t *testing.T, workspaceRoot, code string) s
 	stdin.Write(body)
 
 	var stdout, stderr bytes.Buffer
-	if rerr := serve.Run(context.Background(), serve.RunConfig{
+	if rerr := serve.Run(explainContext(t), serve.RunConfig{
 		Stdin:           &stdin,
 		Stdout:          &stdout,
 		Stderr:          &stderr,

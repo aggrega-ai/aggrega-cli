@@ -15,7 +15,7 @@ import (
 //
 // Every cache response carries one. A caller that asked a session opened over a
 // workspace has every reason to read an answer as being about that workspace,
-// and for two of the six classes that reading is wrong — so the response says
+// and for the machine-wide classes that reading is wrong — so the response says
 // which, rather than leaving the caller to recognise a class name. The field is
 // always present and always an array, so "no machine-wide class was touched" is
 // an empty list a client can act on rather than an absent key it has to guess at.
@@ -379,7 +379,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 // dispatchCacheClear wipes every cache this session addresses.
 //
 // It is the widest of these operations and the response is explicit about it:
-// the wipe reaches the workspace's own artifact cache and the two machine-wide
+// the wipe reaches the workspace's own artifact cache and the machine-wide
 // stores, and the scope names the machine-wide ones it actually removed. The
 // command line fronts this with a confirmation because a person is watching it;
 // here nobody is, so there is nothing to prompt and no prompt is invented — a

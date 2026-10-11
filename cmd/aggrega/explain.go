@@ -22,11 +22,12 @@ import (
 // with are declared inside the binary, so that much is always available and needs
 // no network and no cache. The walk-through — what the condition means and what
 // to change — is prose written for a reader, so it is served from the
-// documentation bundle this workspace caches.
+// documentation bundle kept in the machine-wide cache, read under this
+// workspace's own signature check.
 //
 // A code that resolves therefore always produces an answer, and the two ways the
 // prose can be missing are reported as themselves: a condition the published page
-// does not document yet, and a bundle this workspace has no copy of.
+// does not document yet, and a bundle this workspace cannot read.
 //
 // The composition itself is not here. It is shared with every other surface that
 // answers this question, so this command supplies the workspace and the streams
@@ -51,7 +52,8 @@ func newExplainCmd() *cobra.Command {
 			"sentence are reported without a network or a cache. The published reference " +
 			"supplies the walk-through of the authoring fix for every condition, and nothing " +
 			"else is resolved against it. It is read from the " +
-			"documentation bundle cached for this workspace, acquired on first use when it is absent. " +
+			"documentation bundle kept in the cache every project on this machine shares, acquired on " +
+			"first use when that cache holds no copy this workspace's signature check admits. " +
 			"Where it cannot be acquired, the condition is still reported and the " +
 			"reason the walk-through is missing is stated.\n\n" +
 			"A number that named a condition and no longer does is reported as retired, with what it " +
@@ -92,5 +94,5 @@ func explainPages(ctx context.Context, notes io.Writer) (explainops.Pages, error
 		return explainops.Pages{}, fmt.Errorf("the published documentation is not available: %w", err)
 	}
 	warn := func(notice string) { fmt.Fprintf(notes, "warning: %s\n", notice) }
-	return explainops.LoadPages(ctx, ws.Config(), ws.Root(), provenanceCompilerVersion(), warn)
+	return explainops.LoadPages(ctx, ws.Config(), provenanceCompilerVersion(), warn)
 }

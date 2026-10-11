@@ -8,21 +8,24 @@ package main
 // A code resolves to what the compiler declares and to the published prose; a
 // code that names nothing is refused; a number that named something once is
 // answered with what it named; and a condition whose prose is missing — because
-// the page documents no entry for it, or because this workspace has no copy of
-// the documentation — still yields the condition, with the reason the prose is
+// the page documents no entry for it, or because this workspace can read no copy
+// of the documentation — still yields the condition, with the reason the prose is
 // absent stated rather than swallowed.
 //
-// Every case seeds a real documentation bundle into a real workspace cache and
-// lets the command read it through the same offline path a session uses, so what
-// is proved is the whole read rather than a parser over a string.
+// Every case seeds a real documentation bundle into a real cache — a cache root
+// the case declares for itself, standing in for the one every project on the
+// machine shares — and lets the command read it through the same path a session
+// uses, so what is proved is the whole read rather than a parser over a string.
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"oras.land/oras-go/v2/content/memory"
@@ -34,6 +37,53 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// explainFixtureRegistry is the registry the seeded workspaces name as their
+// default, so the documentation bundle's reference is one only these cases use.
+// The workspaces configure nothing for it, so their signature check requires
+// none and admits the unsigned fixture bundle; which check admits what is
+// asserted where that is the subject.
+const explainFixtureRegistry = "docs.example.invalid"
+
+// explainCacheRoots holds the cache root each running case declared, by test
+// name, so a case's seed and every surface it drives read one root.
+var explainCacheRoots sync.Map
+
+// explainCacheRoot returns the cache root the running case declares for the
+// documentation bundle — the same one on every call within the case, and one no
+// other case shares. Declaring it is what keeps two cases seeding different
+// fixture bundles under one reference and version from reading each other's: the
+// process's own machine-wide root is shared by every test process on the machine.
+//
+// A subtest is within its case, so it reads the root the case around it declared
+// rather than declaring an empty one of its own. Without that, a case that seeds
+// the bundle and then drives a surface from a subtest would hand the surface a
+// root holding nothing, and the read would report the bundle missing.
+func explainCacheRoot(t *testing.T) string {
+	t.Helper()
+	for name := t.Name(); ; {
+		if root, ok := explainCacheRoots.Load(name); ok {
+			return root.(string)
+		}
+		i := strings.LastIndex(name, "/")
+		if i < 0 {
+			break
+		}
+		name = name[:i]
+	}
+	root, loaded := explainCacheRoots.LoadOrStore(t.Name(), t.TempDir())
+	if !loaded {
+		t.Cleanup(func() { explainCacheRoots.Delete(t.Name()) })
+	}
+	return root.(string)
+}
+
+// explainContext returns the context every surface a case drives runs under:
+// the case's own declared cache root.
+func explainContext(t *testing.T) context.Context {
+	t.Helper()
+	return docsbundle.WithCacheRoot(context.Background(), explainCacheRoot(t))
+}
 
 // explainProbeEntry is the heading and prose the fixture page documents the probe
 // condition under.
@@ -135,19 +185,40 @@ func explainFixtureReference(shortCode, code, sentence string) string {
 }
 
 // seedExplainWorkspace builds a documentation bundle carrying the fixture pages,
-// caches it for a fresh workspace at exactly the coordinates the command derives,
-// and returns that workspace's root.
+// caches it in the case's declared cache root at exactly the coordinates the
+// command derives for a fresh workspace naming the fixture registry, and returns
+// that workspace's root.
 //
 // The coordinates are derived here the same way the command derives them rather
 // than pinned, so a case cannot pass by seeding a slot the command never reads.
 func seedExplainWorkspace(t *testing.T, pages map[string]string) string {
 	t.Helper()
-	ws := t.TempDir()
-	cfg := workspaceconfig.Default()
-	cacheDir := cfg.ResolvedArtifactCacheDir()
-	ref := docsbundle.Ref(cfg.DefaultRegistry)
-	version := provenanceCompilerVersion()
+	ws := explainFixtureWorkspace(t)
+	store := explainBundleStore(t, pages)
+	ref := docsbundle.Ref(explainFixtureRegistry)
+	if _, err := docscache.ResolveAndCache(context.Background(), store, ref, provenanceCompilerVersion(), explainCacheRoot(t), nil); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	return ws
+}
 
+// explainFixtureWorkspace returns a fresh workspace whose default registry is the
+// fixture registry, holding nothing else.
+func explainFixtureWorkspace(t *testing.T) string {
+	t.Helper()
+	ws := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ws, workspaceconfig.ConfigFilename),
+		[]byte("default_registry: "+explainFixtureRegistry+"\nworkspace: {}\n"), 0o644); err != nil {
+		t.Fatalf("write the workspace configuration: %v", err)
+	}
+	return ws
+}
+
+// explainBundleStore publishes a documentation bundle carrying the fixture pages
+// to an in-memory store, tagged at this binary's own version, and returns the
+// store.
+func explainBundleStore(t *testing.T, pages map[string]string) *memory.Store {
+	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -173,13 +244,10 @@ func seedExplainWorkspace(t *testing.T, pages map[string]string) string {
 	}
 
 	store := memory.New()
-	if _, err := oci.Push(context.Background(), store, version, oci.MediaTypeDocs, buf.Bytes(), nil); err != nil {
+	if _, err := oci.Push(context.Background(), store, provenanceCompilerVersion(), oci.MediaTypeDocs, buf.Bytes(), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if _, err := docscache.ResolveAndCache(context.Background(), store, ref, version, ws, cacheDir, nil); err != nil {
-		t.Fatalf("ResolveAndCache: %v", err)
-	}
-	return ws
+	return store
 }
 
 // seededPages is the fixture bundle's content for a probe condition: the
@@ -191,16 +259,24 @@ func seededPages(short, code, sentence string, documented bool) map[string]strin
 	}
 }
 
-// runExplainCommand drives the real command tree and returns what the command
-// wrote to each stream and the error it reported.
+// runExplainCommand drives the real command tree under the case's declared cache
+// root and returns what the command wrote to each stream and the error it
+// reported.
 func runExplainCommand(t *testing.T, args ...string) (out, notes string, err error) {
+	t.Helper()
+	return runExplainCommandWith(t, explainContext(t), args...)
+}
+
+// runExplainCommandWith is runExplainCommand under a context the caller states,
+// for a case that drives the command with a target or a cache root of its own.
+func runExplainCommandWith(t *testing.T, ctx context.Context, args ...string) (out, notes string, err error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	root := newRootCmd()
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
 	root.SetArgs(args)
-	err = root.Execute()
+	err = root.ExecuteContext(ctx)
 	return stdout.String(), stderr.String(), err
 }
 
@@ -237,7 +313,7 @@ func TestExplainAnswersARealConditionWithItsPublishedProse(t *testing.T) {
 //
 // A fixture page is written by whoever writes the test, so it agrees with the
 // reader by construction and proves only that the command drives its own parser.
-// This bundles the real pages, caches them the way a workspace caches them, and
+// This bundles the real pages, caches them the way an acquisition caches them, and
 // asks the real command for a real condition — which is what says the capability
 // works against what is actually published.
 //
@@ -522,10 +598,10 @@ func TestExplainReportsACodeThePageDoesNotDocument(t *testing.T) {
 // TestExplainReportsAWorkspaceWithNoCachedBundle is the fourth: the condition
 // resolves and the documentation cannot be reached at all. The reason names the
 // artifact and the version, because "not found" is not an answer when the cause
-// is a bundle this workspace has no copy of.
+// is a bundle the machine holds no copy of.
 //
 // The workspace is pinned offline, so the acquisition refuses at construction and
-// this case reaches no network.
+// this case reaches no network; the case's declared cache root holds nothing.
 func TestExplainReportsAWorkspaceWithNoCachedBundle(t *testing.T) {
 	isolateCLIEnvironment(t)
 	t.Setenv("AGGREGA_OFFLINE", "1")

@@ -51,8 +51,9 @@ type explainErrorEntry struct {
 //
 // Note is the reason the entries are absent, and it is an ordinary part of an
 // answer rather than a failure: the condition resolved, and what is missing is the
-// walk-through. A workspace with no cached documentation and a condition the page
-// does not document yet are the two cases, and each says which it is. Entries and
+// walk-through. A workspace that can read no copy of the documentation and a
+// condition the page does not document yet are the two cases, and each says which
+// it is. Entries and
 // Note are never both present.
 type explainErrorResult struct {
 	ShortCode string              `json:"shortCode"`
@@ -81,11 +82,12 @@ type explainErrorResult struct {
 // agree today. Nothing about which condition a code names, which entries document
 // it, or how a refusal is worded is decided in this file.
 //
-// It reaches the documentation bundle, acquiring it when the workspace has no
-// copy, and it is admitted on the rule every reaching method here runs under: a
-// caller that sent it has asked for the expansion. Nothing is written to the
-// workspace, and nothing is prompted for — a bundle that cannot be acquired
-// leaves the condition answered and states why the prose is missing.
+// It reaches the documentation bundle in the machine-wide cache every surface on
+// the machine reads, acquiring it when that cache holds no copy the workspace's
+// own signature check admits, and it is admitted on the rule every reaching method
+// here runs under: a caller that sent it has asked for the expansion. Nothing is
+// written to the workspace, and nothing is prompted for — a bundle that cannot be
+// acquired leaves the condition answered and states why the prose is missing.
 //
 // A code nothing resolves is refused as an invalid-params envelope, because what
 // needs correcting is the request rather than the workspace: the code a caller
@@ -111,8 +113,12 @@ func (s *Server) dispatchExplainError(ctx context.Context, req *jsonRPCRequest) 
 	// put them; the reason the prose is MISSING is a different thing and travels on
 	// the answer as a note.
 	warn := func(notice string) { fmt.Fprintf(s.stderr, "  explainError: %s\n", notice) }
+	// The request's context does not descend from the one the process was
+	// launched with, so what the launch stated about the documentation bundle is
+	// stated on it again here (session.docs).
+	docsCtx := s.docs.Onto(ctx)
 	explanation, err := explainops.Compose(code, func() (explainops.Pages, error) {
-		return explainops.LoadPages(ctx, s.wsConfig, s.workspaceRoot, s.compilerVersion, warn)
+		return explainops.LoadPages(docsCtx, s.wsConfig, s.compilerVersion, warn)
 	})
 	if err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "", err)

@@ -139,8 +139,9 @@ func assertDescribedAsPublished(t *testing.T, what string, raw json.RawMessage, 
 // a launching client speaks — for a document-shaped coordinate and an
 // archive-shaped one, and holds each answer to what was published.
 //
-// The workspace's default registry is the in-process one, so the documentation
-// acquisition the run makes at start reaches loopback and nothing else.
+// The workspace's default registry is the in-process one, so nothing the run
+// reaches lies past loopback; a server built here settles no cache root for the
+// documentation bundle, so the run acquires none.
 func TestIntegration_DescribeReadsAPublishedEntityOverStandardInputAndOutput(t *testing.T) {
 	pinDescribeEnvironment(t)
 	reg := startCountingRegistry(t)

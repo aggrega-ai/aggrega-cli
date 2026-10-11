@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
 
@@ -309,6 +310,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// handler is mounted on, however it was built.
 		transport: transportHTTP,
 	}
+	s.docsRoot, s.docsRootErr = docsbundle.CacheRoot(ctx)
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)
 }

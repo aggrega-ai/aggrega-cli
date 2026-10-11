@@ -14,8 +14,8 @@ package main
 // internal/cacheops, which no edit to this package can change.
 //
 // The fixtures address only temp directories — a temp workspace and temp
-// compiled-module and plugin-describe roots — so nothing here reads or removes a
-// cache anyone else on the machine depends on.
+// compiled-module, plugin-describe and documentation-bundle roots — so nothing
+// here reads or removes a cache anyone else on the machine depends on.
 
 import (
 	"bytes"

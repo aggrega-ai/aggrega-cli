@@ -4,15 +4,19 @@
 package wasm_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 )
 
@@ -117,6 +121,21 @@ func everyCacheLocation(t *testing.T) []cacheLocation {
 			resolved: true,
 		})
 	}
+	// The documentation bundle has two spellings of its subtree as well: the one
+	// its acquisition and every read keep it under, and the one the cache
+	// inventory lists and clears.
+	docsRoot, docsErr := docsbundle.CacheRoot(context.Background())
+	locs = append(locs, cacheLocation{
+		name:     "docsbundle.CacheRoot (documentation-bundle subtree)",
+		path:     docscache.DocsBundlesRoot(docsRoot),
+		resolved: docsErr == nil,
+	})
+	inventory := cacheops.ResolveLocations("", "").DocsBundlesDir
+	locs = append(locs, cacheLocation{
+		name:     "cacheops.ResolveLocations (documentation-bundle subtree)",
+		path:     inventory,
+		resolved: inventory != "",
+	})
 	return locs
 }
 

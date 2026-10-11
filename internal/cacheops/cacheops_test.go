@@ -110,19 +110,24 @@ func TestCacheClassReachIsDeclared(t *testing.T) {
 		t.Fatalf("WriteCached: %v", err)
 	}
 	loc := Locations{
-		WorkspaceRoot: wsRoot,
-		CacheDir:      testCacheDir,
-		CompileDir:    t.TempDir(),
-		DescribeDir:   t.TempDir(),
+		WorkspaceRoot:  wsRoot,
+		CacheDir:       testCacheDir,
+		CompileDir:     t.TempDir(),
+		DescribeDir:    t.TempDir(),
+		DocsBundlesDir: t.TempDir(),
 	}
 
+	// The documentation bundle's bytes depend only on its registry and version,
+	// so it is kept once per machine and its class is machine-wide: a clear of it
+	// is felt by every project on the machine, and every surface's report of a
+	// clear says so because of this value.
 	want := map[string]Reach{
 		"workspace entity cache":          ReachWorkspace,
 		"workspace source-artifact cache": ReachWorkspace,
 		"workspace external-input store":  ReachWorkspace,
-		"workspace docs-bundle cache":     ReachWorkspace,
 		CompiledModuleClassName:           ReachMachine,
 		"plugin-describe cache":           ReachMachine,
+		DocsBundleClassName:               ReachMachine,
 	}
 
 	classes, err := Collect(t.Context(), loc)
@@ -149,13 +154,17 @@ func TestCacheClassReachIsDeclared(t *testing.T) {
 		}
 	}
 
-	machine := MachineWideClasses(classes)
-	if len(machine) != 2 {
-		t.Fatalf("MachineWideClasses = %v, want the two machine-wide classes", machine)
-	}
-	for _, name := range machine {
+	// Named rather than counted, for the reason the class set above is.
+	machine := map[string]bool{}
+	for _, name := range MachineWideClasses(classes) {
+		machine[name] = true
 		if want[name] != ReachMachine {
 			t.Errorf("MachineWideClasses reported %q, which is not machine-wide", name)
+		}
+	}
+	for name, reach := range want {
+		if reach == ReachMachine && !machine[name] {
+			t.Errorf("MachineWideClasses omits %q, which is machine-wide", name)
 		}
 	}
 }

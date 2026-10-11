@@ -1,15 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package docsbundle names the documentation bundle and acquires it into a
-// workspace's cache.
+// Package docsbundle names the documentation bundle, acquires it into the
+// machine-wide cache every surface on the machine reads it from, and holds each
+// read of it to the reading workspace's own signature check.
 //
-// It is the one home for three things every surface that serves documentation
-// needs and none of them should decide for itself: where the bundle is published,
-// how it is fetched and verified, and how long one attempt may take. A surface
-// that resolved its own reference would be a second spelling of the artifact's
-// address, and two surfaces reading two addresses would disagree about what
-// "the documentation" is on the same machine.
+// It is the one home for what every surface that serves documentation needs and
+// none of them should decide for itself: where the bundle is published, where it
+// is kept, how it is fetched and verified, which check a read of it answers to,
+// and how long one attempt may take. A surface that resolved its own reference
+// would be a second spelling of the artifact's address, and two surfaces reading
+// two addresses would disagree about what "the documentation" is on the same
+// machine; a surface that kept its own copy would download what another already
+// holds.
+//
+// # Where the bundle is kept, and why every reader checks it again
+//
+// The bundle's bytes depend only on the registry it is published to and the
+// version it is published at — never on a workspace — so it is kept once per
+// machine, under the root every machine-wide cache derives from, keyed by
+// reference and version. Which bundle a workspace reads is still that workspace's
+// decision: its default registry names the reference, and its egress settings
+// decide whether a fetch may happen at all.
+//
+// Workspaces on one machine need not trust the same signers, so a copy one
+// workspace fetched is not thereby admitted for another. The slot keeps the
+// signature bundles its fetches verified, and no page is served until they have
+// been verified under the reading workspace's own check for the bundle's registry
+// ([Admission]) — once per process for each copy and each check, the admission
+// remembered for the reads after it. A copy that check refuses is answered as no
+// bundle, and the next acquisition fetches it again under that check.
 //
 // The read half is deliberately not here. Reading a page out of the cache is
 // pkg/docscache's job and takes no target, so a surface that only reads never
@@ -18,11 +38,15 @@ package docsbundle
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -58,6 +82,54 @@ func Ref(prefix string) string {
 	return prefix + "/" + Namespace + "/" + Name
 }
 
+// cacheRootKey is the private context key under which a caller states the cache
+// root the documentation bundle is kept under, in place of the process's own.
+type cacheRootKey struct{}
+
+// declaredRoot is a stated cache root; an empty one states that none resolves.
+type declaredRoot struct{ root string }
+
+// WithCacheRoot returns ctx carrying root as the cache root the documentation
+// bundle is kept under, in place of the one this process keeps every
+// machine-wide cache under. An empty root states that no cache root resolves.
+//
+// No production path sets it: every surface then keeps the bundle under the
+// process's own root. A test sets it on the context it drives a surface with, so
+// that tests serving different fixture bundles under one reference and version
+// never share a slot — the process's own root is shared by every test process on
+// the machine — and so that a test of a machine with no cache root can state one.
+func WithCacheRoot(ctx context.Context, root string) context.Context {
+	return context.WithValue(ctx, cacheRootKey{}, declaredRoot{root: root})
+}
+
+// CacheRoot returns the cache root the documentation bundle is kept under: the
+// one ctx states ([WithCacheRoot]), or else the root every machine-wide cache this
+// process keeps derives from. It is never derived a second way, so the bundle,
+// the compiled-module cache and the plugin-describe cache always sit beside each
+// other.
+//
+// When no root resolves the error says what was missing, in words a reader can
+// act on, and nothing is acquired or read: there is nowhere to keep the bundle.
+func CacheRoot(ctx context.Context) (string, error) {
+	if d, ok := ctx.Value(cacheRootKey{}).(declaredRoot); ok {
+		if d.root == "" {
+			return "", noCacheRoot(errors.New("none was stated for this run"))
+		}
+		return d.root, nil
+	}
+	if root, ok := wasm.AggregaCacheRoot(); ok {
+		return root, nil
+	}
+	return "", noCacheRoot(wasm.AggregaCacheRootError())
+}
+
+// noCacheRoot states why the documentation bundle can be neither acquired nor
+// read: it is kept in the per-user cache directory, and none resolves.
+func noCacheRoot(reason error) error {
+	return fmt.Errorf("the documentation bundle is kept in the per-user cache directory shared by every "+
+		"project on this machine, and none resolves here (%v)", reason)
+}
+
 // TargetFor resolves the OCI target the documentation bundle is pulled from and
 // the pull-time signature check to run against it.
 //
@@ -66,8 +138,58 @@ func Ref(prefix string) string {
 // verification, the cache write and the read — is the production path, so a test
 // substituting a target still exercises all of it. A seam one level higher, over
 // the whole acquisition, would take the cache write out of the tested path and
-// leave the trigger proven against nothing.
+// leave the trigger proven against nothing. A test that wants the production
+// verification over its own target builds the check with [Verifier].
 type TargetFor func(cfg workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error)
+
+// targetKey is the private context key under which a caller states the target an
+// acquisition reaches, in place of the registry.
+type targetKey struct{}
+
+// WithTarget returns ctx carrying target as the resolution an acquisition that
+// names none uses, in place of [RegistryTarget].
+//
+// No production path sets it. A test sets it on the context it drives a surface
+// with, so a surface whose acquisition names no target of its own — the command
+// line, the language server — reaches a registry the test controls and counts.
+func WithTarget(ctx context.Context, target TargetFor) context.Context {
+	return context.WithValue(ctx, targetKey{}, target)
+}
+
+// Declarations is what a context states about the documentation bundle — a
+// cache root ([WithCacheRoot]) and a target ([WithTarget]) — taken off one
+// context so it can be stated on another.
+//
+// It exists for a surface whose per-request contexts do not descend from the
+// context it was started with — the language server derives each request's
+// context from one of its own, so that withdrawing the launch drains rather
+// than aborts — and which must still answer under what its launch stated. The
+// zero value states nothing, which is every production launch.
+type Declarations struct {
+	root   *declaredRoot
+	target TargetFor
+}
+
+// DeclarationsOf returns what ctx states about the documentation bundle.
+func DeclarationsOf(ctx context.Context) Declarations {
+	var d Declarations
+	if root, ok := ctx.Value(cacheRootKey{}).(declaredRoot); ok {
+		d.root = &root
+	}
+	d.target, _ = ctx.Value(targetKey{}).(TargetFor)
+	return d
+}
+
+// Onto returns ctx stating what d states, and ctx itself where d states nothing.
+func (d Declarations) Onto(ctx context.Context) context.Context {
+	if d.root != nil {
+		ctx = context.WithValue(ctx, cacheRootKey{}, *d.root)
+	}
+	if d.target != nil {
+		ctx = context.WithValue(ctx, targetKey{}, d.target)
+	}
+	return ctx
+}
 
 // RegistryTarget is the production resolution. The workspace's egress gate
 // supplies the transport and refuses outright when the workspace is offline; the
@@ -76,9 +198,9 @@ type TargetFor func(cfg workspaceconfig.Config, ref, version string, warn func(s
 // them.
 //
 // The verifier it returns is the same pull-time signature check a catalog entity
-// or a plugin gets, run against the workspace's own per-registry trust policy
-// through pullverify. Returning none would have been simpler and would have made
-// a documentation bundle the one artifact class that bypasses that policy.
+// or a plugin gets ([Verifier]). Returning none would have been simpler and would
+// have made a documentation bundle the one artifact class that bypasses that
+// policy.
 func RegistryTarget(cfg workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
 	httpClient, err := egress.HTTPClient(cfg)
 	if err != nil {
@@ -88,67 +210,221 @@ func RegistryTarget(cfg workspaceconfig.Config, ref, version string, warn func(s
 	if err != nil {
 		return nil, nil, err
 	}
-	verify := func(ctx context.Context, manifestDigest string) error {
-		_, verr := pullverify.Verify(ctx, []pullverify.Entity{{
-			URI:            ref,
-			ManifestDigest: manifestDigest,
-			Host:           registryhost.Of(ref),
-		}}, pullverify.Options{
+	return repo, Verifier(cfg, ref, version, repo, warn), nil
+}
+
+// bundleEntity is the documentation bundle as a signature check sees it: its
+// reference, the manifest digest a signature commits to, and the registry host
+// its trust policy is looked up under. It carries no catalog kind — the bundle
+// publishes under none — and the fetch and every read build it here, so the two
+// ask the configuration the same question.
+func bundleEntity(ref, manifestDigest string) pullverify.Entity {
+	return pullverify.Entity{
+		URI:            ref,
+		ManifestDigest: manifestDigest,
+		Host:           registryhost.Of(ref),
+	}
+}
+
+// Verifier returns the pull-time signature check for the documentation bundle at
+// (ref, version) on repo, run against cfg's own per-registry trust policy through
+// pullverify — the check a catalog entity or a plugin gets — and handing back the
+// signature bundle it verified, which the cache slot keeps for later readers.
+func Verifier(cfg workspaceconfig.Config, ref, version string, repo oras.ReadOnlyTarget, warn func(string)) docscache.VerifyAtPull {
+	return func(ctx context.Context, manifestDigest string) ([][]byte, error) {
+		results, err := pullverify.Verify(ctx, []pullverify.Entity{bundleEntity(ref, manifestDigest)}, pullverify.Options{
 			Config: cfg,
 			Target: func(pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
 				return repo, version, nil
 			},
 			Warn: warn,
 		})
-		return verr
+		if err != nil {
+			return nil, err
+		}
+		var verified [][]byte
+		for _, r := range results {
+			verified = append(verified, r.Bundle)
+		}
+		return verified, nil
 	}
-	return repo, verify, nil
+}
+
+// Admission returns the check a read of the documentation bundle at ref is held
+// to for a workspace configured as cfg: that workspace's own signature check for
+// the bundle's registry, run over the signature bundles the cache slot keeps and
+// against the digest of the manifest it stores, through pullverify.VerifyStored.
+//
+// It asks the configuration exactly what the fetch asks it ([Verifier]), so a
+// setting that admits the bundle at a fetch admits the kept copy at a read and one
+// that refuses it there refuses it here: a skip admits; a kept signature that
+// verifies admits; a copy keeping none is admitted exactly when the check does not
+// halt without a signature; and an advisory registry's failure is reported on warn
+// and admitted. A copy the check refuses is answered as no bundle.
+//
+// The check runs once per process for each copy and each check: an admission is
+// remembered under everything the verdict is decided by
+// (pullverify.StoredVerdictKey) — the copy, by its manifest digest and the exact
+// set of signatures it keeps, and the check, together with the offline posture and
+// a pinned trust root's bytes — so a later read of the same copy under the same
+// check is admitted without verifying again, and reports what the check reported
+// when it ran. A copy fetched since, a different check, or the same check read
+// offline is verified afresh. A refusal is never remembered: a fetch can write
+// back the very copy a read refused — the same manifest, the same signatures — when
+// the refusal came of a trust root that could not be obtained at that moment, and a
+// remembered refusal would go on refusing what that fetch admitted.
+func Admission(cfg workspaceconfig.Config, ref string, warn func(string)) docscache.AdmitAtRead {
+	if warn == nil {
+		warn = func(string) {}
+	}
+	return func(manifestDigest string, signatures [][]byte) error {
+		e := bundleEntity(ref, manifestDigest)
+		verify := func(warn func(string)) error {
+			admissionRuns.Add(1)
+			_, err := pullverify.VerifyStored(cfg, e, signatures, warn)
+			return err
+		}
+		key, ok := pullverify.StoredVerdictKey(cfg, e, signatures)
+		if !ok {
+			return verify(warn)
+		}
+		return admissions.admit(key, verify, warn)
+	}
+}
+
+// admissionRuns counts the read-time checks Admission actually ran, rather than
+// answered from what it remembered. It is test instrumentation and nothing reads it
+// in production: it lets a test assert how many verifications a sequence of reads
+// cost without timing anything.
+var admissionRuns atomic.Int64
+
+// admissions is what this process remembers of the read-time checks that admitted
+// a copy of the documentation bundle. One holds for every surface the process
+// serves, because every surface reads the bundle through Admission.
+var admissions = &admissionMemo{verdicts: map[string]*admissionVerdict{}}
+
+// admissionMemo remembers admissions by the key of everything they were decided by.
+// It is safe for concurrent use: the assistant server answers requests on
+// goroutines of their own.
+type admissionMemo struct {
+	mu       sync.Mutex
+	verdicts map[string]*admissionVerdict
+}
+
+// admissionVerdict is one check's outcome, shared by every read that arrives while
+// it runs and kept afterwards when it admitted. done is closed once err and
+// notices are final.
+type admissionVerdict struct {
+	done    chan struct{}
+	err     error
+	notices []string
+}
+
+// errVerdictNotReached is the refusal a read meets when the check it waited on
+// stopped without deciding.
+var errVerdictNotReached = errors.New("the signature check stopped before it decided")
+
+// admit answers a read under key: from the verdict remembered or being reached for
+// it, or else by running verify once and sharing its outcome with every read that
+// arrived meanwhile. The notices the check reported reach warn on every read, the
+// remembered ones included. A refusal is answered and then forgotten, so the next
+// read under key runs the check again.
+func (m *admissionMemo) admit(key string, verify func(warn func(string)) error, warn func(string)) error {
+	m.mu.Lock()
+	v, reached := m.verdicts[key]
+	if !reached {
+		v = &admissionVerdict{done: make(chan struct{})}
+		m.verdicts[key] = v
+	}
+	m.mu.Unlock()
+
+	if reached {
+		<-v.done
+	} else {
+		m.decide(key, v, verify)
+	}
+	for _, notice := range v.notices {
+		warn(notice)
+	}
+	return v.err
+}
+
+// decide runs verify for v, and forgets v unless it admitted — including when
+// verify stops without returning, so a check that never decided is never taken
+// for one that admitted.
+func (m *admissionMemo) decide(key string, v *admissionVerdict, verify func(warn func(string)) error) {
+	v.err = errVerdictNotReached
+	defer func() {
+		if v.err != nil {
+			m.mu.Lock()
+			delete(m.verdicts, key)
+			m.mu.Unlock()
+		}
+		close(v.done)
+	}()
+	v.err = verify(func(notice string) { v.notices = append(v.notices, notice) })
 }
 
 // EnsureCached acquires the documentation bundle for (ref, version) into the
-// workspace's cache when it is not already there, and reports whether it
-// acquired one.
+// cache under cacheRoot unless that cache already holds a copy the workspace
+// configured as cfg admits, and reports whether it acquired one.
 //
-// A bundle already cached is left exactly as it is and reported as not acquired,
-// so a caller can distinguish a warm cache from a fetch without probing again.
-// The presence check runs before the target is resolved, so a warm cache reaches
-// for no registry at all.
+// A copy already cached that the workspace's check admits is left exactly as it
+// is and reported as not acquired, so a caller can distinguish a warm cache from a
+// fetch without probing again; the check runs before the target is resolved, so a
+// warm cache reaches for no registry at all. A copy the check refuses is fetched
+// again under that same check, and the fetched copy replaces it.
 //
-// A nil target selects [RegistryTarget]. The attempt is bounded by
-// [AcquireTimeout], and a failure leaves the cache exactly as it was — the pull
-// verifies content and signature before anything is written, so a bundle that
-// cannot be verified never populates a slot.
+// A nil target selects the one ctx states ([WithTarget]), or else
+// [RegistryTarget]. The attempt is bounded by [AcquireTimeout], and a failure
+// leaves the cache exactly as it was — the pull verifies content and signature
+// before anything is written, so a bundle that cannot be verified never populates
+// a slot. Where the failed fetch was a second attempt at a copy the check refused,
+// the error says both: why the copy here was refused, and why fetching it again
+// failed.
 //
 // The error is returned rather than swallowed, and what to do with it is the
 // caller's decision: a session that serves documentation as one capability among
 // many logs it and carries on, while a command whose whole answer is a page has
-// to say so. A presence check the read hold refuses — the cache, or the bundle's
-// slot, leading through a link out of the root the cache is held to — is such an
-// error, returned before any registry is reached, rather than an absent bundle to
-// fetch into the same place.
-func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, workspaceRoot, cacheDir, ref, version string,
+// to say so.
+func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, version string,
 	target TargetFor, warn func(string)) (bool, error) {
-	cached, err := docscache.Cached(workspaceRoot, cacheDir, ref, version)
-	if err != nil {
-		return false, err
+	if warn == nil {
+		warn = func(string) {}
 	}
-	if cached {
+	held := docscache.Admitted(cacheRoot, ref, version, Admission(cfg, ref, warn))
+	if held == nil {
 		return false, nil
+	}
+	var refused *docscache.NotAdmittedError
+	if !errors.As(held, &refused) && !errors.Is(held, docscache.ErrFetchNotFound()) {
+		return false, held
+	}
+	if target == nil {
+		target, _ = ctx.Value(targetKey{}).(TargetFor)
 	}
 	if target == nil {
 		target = RegistryTarget
 	}
-	if warn == nil {
-		warn = func(string) {}
-	}
 	repo, verify, err := target(cfg, ref, version, warn)
 	if err != nil {
-		return false, err
+		return false, alsoRefused(refused, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, AcquireTimeout)
 	defer cancel()
-	if _, err := docscache.ResolveAndCache(ctx, repo, ref, version, workspaceRoot, cacheDir, verify); err != nil {
-		return false, fmt.Errorf("acquire documentation bundle %s@%s: %w", ref, version, err)
+	if _, err := docscache.ResolveAndCache(ctx, repo, ref, version, cacheRoot, verify); err != nil {
+		return false, alsoRefused(refused, fmt.Errorf("acquire documentation bundle %s@%s: %w", ref, version, err))
 	}
 	return true, nil
+}
+
+// alsoRefused reports a failed fetch, together with the refusal of the cached copy
+// that sent the acquisition to fetch, where there was one. Both stay matchable:
+// the refusal answers as no bundle, and the fetch's own failure keeps its
+// identity.
+func alsoRefused(refused *docscache.NotAdmittedError, fetchErr error) error {
+	if refused == nil {
+		return fetchErr
+	}
+	return fmt.Errorf("%w; fetching it again under this workspace's own signature check failed: %w", refused, fetchErr)
 }
