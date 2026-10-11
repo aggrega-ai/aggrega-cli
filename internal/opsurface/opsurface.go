@@ -127,11 +127,13 @@ var operations = []Operation{
 	// root, so the command line declares the workspace class for that command
 	// beside its own availability record, and a tool that runs the command reads
 	// that class rather than this one.
-	// The one thing a build does leave behind is a dependency fill, and whether
-	// it fills is decided by the composition of the call's own request and the
-	// workspace's setting — so that widening is read from the same composition
-	// the build reads, at the point a caller is admitted, and is not a second
-	// class here.
+	// Two things a build may leave behind are decided per call rather than per
+	// operation. One is a dependency fill, and whether it fills is decided by the
+	// composition of the call's own request and the workspace's setting; the
+	// other is the artifacts themselves, which the assistant's in-process build
+	// tool saves beneath the workspace root only where the call asks it to. Each
+	// widening is read at the point a caller is admitted from the same reading the
+	// build acts on, and neither is a second class here.
 	{"build", ReachNone, "Compile an Aggregate and Release into provider-native artifacts."},
 	{"cache-clear", ReachMachine, "Wipe every on-disk cache, compiled modules included."},
 	{"cache-evict", ReachMachine, "Trim the compiled-module cache to a size cap, oldest first."},

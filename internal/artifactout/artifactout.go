@@ -65,11 +65,12 @@ const DefaultOutputDir = "dist"
 //
 // It is the one composition of that directory. The build operation every
 // command-line build and every command an assistant's command tool runs goes
-// through asks it with the workspace root that build resolved, and the language
+// through asks it with the workspace root that build resolved; the language
 // server asks it with the workspace root its session opened — or with the folder a
-// request names as the output directory's parent — so the surfaces write the same
-// directory for the same workspace because they compose it in one place, not
-// because two joins happen to agree.
+// request names as the output directory's parent — and the assistant's in-process
+// build tool, asked to write its artifacts, asks it with the workspace root its
+// call resolved. So the surfaces write the same directory for the same workspace
+// because they compose it in one place, not because three joins happen to agree.
 //
 // An empty root yields the bare relative name, which is all a caller holding no
 // root has to offer. A root a workspace resolution produced is absolute, so the

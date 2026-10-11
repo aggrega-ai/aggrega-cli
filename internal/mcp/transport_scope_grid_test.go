@@ -105,7 +105,16 @@ func newScopeGridFixtureWith(t *testing.T, fills bool, deny []string, announce m
 		t.Fatalf("precondition: the fixture's resolved auto_pull is %v, want %v; the setting reached a key "+
 			"the loader does not read, so no cell below would measure what it claims", got, fills)
 	}
+	return scopeGridListenerOver(t, root, deny, announce)
+}
 
+// scopeGridListenerOver starts one real listener over the workspace at root, with
+// a real authorization server behind it and the two bounds that sit above a
+// credential: the kinds of reach withdrawn, and the tools announced. It is the one
+// construction every listener fixture in this package composes, so a grant minted
+// against one is a grant minted against any other.
+func scopeGridListenerOver(t *testing.T, root string, deny []string, announce map[string]bool) *scopeGridFixture {
+	t.Helper()
 	issuer := newAuthorizationServerDouble(t)
 	s := newCommandToolServer(t, nil)
 	s.launchRoot = root
@@ -247,7 +256,8 @@ type gridColumn struct {
 	class opsurface.Reach
 }
 
-// gridColumns is one tool per reach class a scope admits, and the build twice.
+// gridColumns is one tool per reach class a scope admits, and the build asking
+// for nothing, asking to fill, and asking to write.
 //
 // The arguments name subjects the fixture workspace does not hold, deliberately:
 // what each cell separates is a call that was REFUSED from one that RAN, and a
@@ -288,6 +298,15 @@ func gridColumns() []gridColumn {
 			scenario: "a build that asks to fill, which widens to the workspace",
 			tool:     "build",
 			args:     map[string]any{"release": "release.yaml", "auto_pull": true},
+			class:    opsurface.ReachWorkspace,
+		},
+		{
+			// The interior again, through the other argument that moves the
+			// class: a build asking for its artifacts to be written beneath the
+			// workspace root.
+			scenario: "a build that asks to write, which widens to the workspace",
+			tool:     "build",
+			args:     map[string]any{"release": "release.yaml", "write": true},
 			class:    opsurface.ReachWorkspace,
 		},
 	}
@@ -359,7 +378,10 @@ func scopeARefusalNames(grant []string, declared, reached opsurface.Reach) strin
 // Planted defects, demonstrated: drop ReachNone from scopeImplications's
 // workspace-write entry and the describe cell under that credential reddens;
 // make buildReach return ReachWorkspace unconditionally, or delete its entry from
-// the spec, and the interaction cell reddens.
+// the spec, and the interaction cell reddens. Delete buildReach's read of
+// writesArtifacts and the write column reddens under every credential that admits
+// a read and not the workspace — the read scope alone and the registry-write
+// scope alone — because the call runs instead of being refused.
 //
 // Planted defect, routing the listings back through the call check: in
 // reachAdmission.listed, replace the condition `a.lists(specs[i])` with
@@ -408,6 +430,12 @@ func TestWhatEachCredentialIsOfferedAndMayCall(t *testing.T) {
 					}
 
 					got := f.callTool(t, credential, column.tool, column.args)
+					// No column names a Release the served workspace holds, so no
+					// cell renders anything and none may leave an output directory —
+					// a refused write least of all.
+					if _, err := os.Lstat(filepath.Join(f.root, "dist")); err == nil {
+						t.Errorf("%s left a dist directory in the served workspace", column.scenario)
+					}
 					if admittedByGrant(row.grant, declared) && admittedByGrant(row.grant, column.class) {
 						wantTheCallRan(t, column.tool, got)
 						return

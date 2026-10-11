@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -53,16 +52,7 @@ const theSecondLocationYAML = "build:\n  authoring_release: " + theConfiguredRel
 // grant minted here and a grant minted there the same thing.
 func listenerOverWorkspace(t *testing.T, root string) *scopeGridFixture {
 	t.Helper()
-	issuer := newAuthorizationServerDouble(t)
-	s := newCommandToolServer(t, nil)
-	s.launchRoot = root
-	h, err := newHTTPHandler(context.Background(), s, transportFor(issuer.authorizationConfig(), issuer.egress()))
-	if err != nil {
-		t.Fatalf("newHTTPHandler: %v", err)
-	}
-	ts := httptest.NewServer(h)
-	t.Cleanup(ts.Close)
-	return &scopeGridFixture{httpFixture: &httpFixture{ts: ts, h: h}, issuer: issuer, root: root, srv: s}
+	return scopeGridListenerOver(t, root, nil, nil)
 }
 
 // readOverTheListener calls the configuration reading over a real listener with

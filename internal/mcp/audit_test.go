@@ -450,6 +450,18 @@ func TestTheDeclaredAndEscalatedReachBothReachTheLine(t *testing.T) {
 		}
 	})
 
+	t.Run("a call sent write escalated", func(t *testing.T) {
+		from := f.log.mark()
+		f.callTool(t, readOnly, "build", map[string]any{"release": "a.yaml", "write": true})
+		line := oneAuditLine(t, f.log.since(from))
+		if got := auditString(t, line, "reach"); got != string(opsurface.ReachNone) {
+			t.Errorf("reach = %q, want %q", got, opsurface.ReachNone)
+		}
+		if got := auditString(t, line, "reach_escalated_to"); got != string(opsurface.ReachWorkspace) {
+			t.Errorf("reach_escalated_to = %q, want %q", got, opsurface.ReachWorkspace)
+		}
+	})
+
 	t.Run("a call that did not escalate carries no escalation", func(t *testing.T) {
 		from := f.log.mark()
 		f.callTool(t, readOnly, describeCapabilitiesName, nil)

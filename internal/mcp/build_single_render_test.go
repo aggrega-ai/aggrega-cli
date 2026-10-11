@@ -21,9 +21,9 @@ package mcp
 // this fixture. Without it, a count of one on the filling leg could as easily
 // mean the fixture stopped warning at all.
 //
-// 🔴 This surface writes no artifact, so it has no output tree to check the
-// render against. What stands in for that is the returned file set, which is
-// populated only from a finished render.
+// 🔴 The calls here are not sent write, so this surface writes no artifact and
+// leaves no output tree to check the render against. What stands in for that is
+// the returned file set, which is populated only from a finished render.
 
 import (
 	"io"
@@ -285,9 +285,9 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 			"marker: %s\nstderr:\n%s", got, marker, fillStderr)
 	}
 	// The count says nothing unless the call actually rendered: one that halted
-	// before the render would also report one warning, or none. This surface
-	// writes nothing, so the returned set is what stands in for an output tree —
-	// and it is populated only from a finished render.
+	// before the render would also report one warning, or none. A call not sent
+	// write writes nothing, so the returned set is what stands in for an output
+	// tree — and it is populated only from a finished render.
 	payload := unmarshalBuildPayload(t, fillRes)
 	if len(payload.Files) == 0 {
 		t.Fatal("the filling build returned no rendered files, so its warning count says nothing about rendering")

@@ -1173,6 +1173,7 @@ func hostLocationEveryTool() []hostLocationTool {
 			{scenario: "a Release", args: map[string]any{"release": release, "response_format": "concise"}},
 			{scenario: "a Release in detail", args: map[string]any{"release": release, "response_format": "detailed"}},
 			{scenario: "a Release resolving its dependencies first", args: map[string]any{"release": release, "response_format": "concise", "auto_pull": true}},
+			{scenario: "a Release, its artifacts written beneath the workspace root", args: map[string]any{"release": release, "response_format": "concise", "write": true}},
 			{scenario: "a Release whose mapping dangles", args: map[string]any{"release": dangling}},
 			{scenario: "a missing Release is refused", args: map[string]any{"release": missing}},
 			{scenario: "no Release is refused", args: map[string]any{}},

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -15,12 +16,14 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -61,6 +64,43 @@ type buildArgs struct {
 	// is a render of this Release under the posture a build renders in, so the
 	// build is answered from it rather than performing a second one.
 	AutoPull bool `json:"auto_pull"`
+
+	// Write saves the finished render's artifacts where `aggrega build` saves them:
+	// the default output directory beneath the root of the workspace this call
+	// resolved, composed by artifactout.DefaultOutputDirIn and written through
+	// artifactout.WriteBuildOutput, the composition and the write every surface
+	// performing a build goes through. So the command line, the language server and
+	// this tool write one tree for one Release in one workspace because they reach
+	// one function for each half, not because three joins happen to agree.
+	//
+	// Absent or false, the render writes nothing and the artifacts are the answer,
+	// which is what a caller admitted to read alone can still ask for. Sent, the
+	// call writes inside its workspace, so its reach widens to the workspace for that
+	// call (buildReach) and a listener admits it only to a credential that admits
+	// that reach.
+	//
+	// It names no directory, and nothing else here does either: the destination is
+	// decided by the workspace the call resolved, so a caller chooses whether the
+	// artifacts are written and never where. And it asks for no trace, so a build
+	// written from here leaves no trace directory beside its output.
+	//
+	// It is read through writesArtifacts, never directly, so the reach a call is
+	// admitted under and the write the call then performs answer from one reading.
+	Write bool `json:"write"`
+}
+
+// writesArtifacts reports whether this call writes the rendered artifacts into its
+// workspace.
+//
+// It is the one reading of that decision: the reach a listener admits a call under
+// (buildReach) and the write the build performs (buildInvoke) both ask it, as both
+// ask the workspace configuration whether the call fills its lockfile. Two
+// spellings of the argument would agree on the day they were written and stop
+// agreeing the first time one of them learned about an input the other did not —
+// and the disagreement that matters is a call admitted as reaching nothing that
+// then writes.
+func (a buildArgs) writesArtifacts() bool {
+	return a.Write
 }
 
 // buildFile is one rendered artifact in the build result: its output-relative
@@ -71,8 +111,8 @@ type buildFile struct {
 }
 
 // buildResultPayload is the build tool's structured payload. The render happens
-// entirely in memory: Files are the artifacts the pipeline produced, and no
-// artifact is written to disk.
+// in memory: Files are the artifacts the pipeline produced, and a call that was
+// not sent write writes none of them to disk.
 //
 // The render is the whole of what writes nothing. A build asked to resolve its
 // dependencies first performs that resolution before rendering, and that step
@@ -81,6 +121,11 @@ type buildFile struct {
 // choosing between, and never a claim that the call as a whole left the
 // workspace untouched. DependencyResolution below is present exactly when it
 // did.
+//
+// A call sent write saves the finished render's artifacts once the render has
+// finished, and OutputDir names the directory it wrote them to. Files then lists
+// the files written, each relative to that directory, with each file's content
+// under the detailed response format as on any other call.
 //
 // # It is returned on a refusal too
 //
@@ -111,16 +156,26 @@ type buildFile struct {
 // outcome, and an empty list therefore cannot distinguish a build that refused
 // from one that ran and emitted nothing. What distinguishes them is the failure
 // flag on the envelope, which is the protocol's own discriminator and not
-// something this shape restates. Read this field for what was written, and read
+// something this shape restates. Read this field for what was rendered, and read
 // the flag for whether anything was going to be.
 //
 // Release is the Release's location on this host, spelled as the caller may be
 // told it; one the caller is not told is absent and marked by ReleaseWithheld,
 // which is omitted where nothing was kept back.
+//
+// OutputDir is the directory a call sent write wrote its artifacts to — or, on a
+// write that failed, the directory it was writing to — told the way every location
+// here is: in full over the process's own streams, and relative to the workspace
+// root over a listener, where it reads "dist". It is absent from every call that
+// did not reach the write: one not sent write, and one refused before the render
+// finished. So its absence says nothing was written. OutputDirWithheld marks one
+// kept back rather than unset, and is omitted where nothing was.
 type buildResultPayload struct {
-	Release         *string     `json:"release"`
-	ReleaseWithheld bool        `json:"release_withheld,omitempty"`
-	Files           []buildFile `json:"files"`
+	Release           *string     `json:"release"`
+	ReleaseWithheld   bool        `json:"release_withheld,omitempty"`
+	OutputDir         *string     `json:"output_dir,omitempty"`
+	OutputDirWithheld bool        `json:"output_dir_withheld,omitempty"`
+	Files             []buildFile `json:"files"`
 	// Deprecations names each pinned reference carrying a recorded deprecation
 	// marker, from the shared report every surface reads. It is present whatever
 	// the outcome, for the same reason the command line prints the notices on a
@@ -350,13 +405,17 @@ func previewAdvisories(preview *compilerops.PreviewResult) []buildAdvisory {
 
 var buildToolSpec = toolSpec{
 	kinds:   []string{"release"},
-	summary: "Renders a Release into its deployment artifacts, in memory.",
-	description: "Compile a Release into its rendered deployment artifacts entirely in memory and return them — the " +
-		"render writes no artifact to disk. Pass the Release path as `release` (absolute, or relative to the " +
+	summary: "Renders a Release into its artifacts, in memory, or to dist/ at the workspace root when sent write.",
+	description: "Compile a Release into its rendered artifacts — returned in memory by default, and also " +
+		"written to `dist/` at the workspace root, where `aggrega build` writes them, when sent `write`. Without " +
+		"`write` the render writes no artifact to disk. Pass the Release path as `release` (absolute, or relative to the " +
 		"workspace). The tool runs the full compiler pipeline through the provider render step and returns the produced " +
-		"files by output-relative path. Use it to see exactly what a Release would emit before committing to a real build, " +
-		"or to inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
-		"content is included; the concise format returns just the file paths. A render failure comes back as actionable " +
+		"files by output-relative path. Use it to see exactly what a Release would emit before writing it, or to " +
+		"inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
+		"content is included; the concise format returns just the file paths. Sent `write`, the finished render is " +
+		"written through the same write `aggrega build` performs, and the answer names that directory as " +
+		"`output_dir` and lists the files written relative to it; that writes inside the workspace, so over HTTP " +
+		"it needs aggrega:workspace-write. A render failure comes back as actionable " +
 		"guidance rather than a partial write (route it through explain-error if needed): a refusal the compiler raises " +
 		"while compiling the Release reads in the compiler's words with every cause, and travels as a structured " +
 		"`refusal` entry naming the document it points at, the key there and that key's position, with each finding " +
@@ -387,7 +446,11 @@ var buildToolSpec = toolSpec{
     },
     "auto_pull": {
       "type": "boolean",
-      "description": "Resolve the Release's dependencies into the lockfile before rendering. Reaches a registry and writes the lockfile; the render still writes no artifact. Defaults to false. The workspace auto_pull setting turns the same step on for every build, and this adds to it rather than overriding it."
+      "description": "Resolve the Release's dependencies into the lockfile before rendering. Reaches a registry and writes the lockfile. Defaults to false. The workspace auto_pull setting turns the same step on for every build, and this adds to it rather than overriding it."
+    },
+    "write": {
+      "type": "boolean",
+      "description": "Write the rendered artifacts to dist/ at the workspace root, where aggrega build writes them, and name that directory and the files written in the answer. This writes inside the workspace, so over HTTP it needs aggrega:workspace-write. Default false: the artifacts are returned in memory and nothing is written."
     }
   },
   "required": ["release"]
@@ -397,8 +460,16 @@ var buildToolSpec = toolSpec{
 }
 
 // buildReach reports how far a build would reach: nothing, which is what the
-// operation declares, or the workspace where this call would fill the lockfile
-// first.
+// operation declares, or the workspace where this call writes there — where it
+// is sent write and so saves its artifacts beneath the workspace root, or where
+// it would fill the lockfile first.
+//
+// Whether it writes its artifacts is read from the arguments alone, through
+// writesArtifacts, the reading the build's own write asks, and it is read before
+// the workspace is resolved because nothing about a workspace turns it on or off.
+// A call sent write therefore reaches the workspace whether or not its workspace
+// later resolves, and that costs a caller nothing it could have used: a call whose
+// workspace does not resolve is refused before anything is written.
 //
 // It reads the fill decision from the one composition every surface carrying a
 // build reads — the call's own argument and the workspace's own auto_pull
@@ -418,6 +489,9 @@ func buildReach(s *server, args json.RawMessage) opsurface.Reach {
 	var a buildArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return opsurface.ReachNone
+	}
+	if a.writesArtifacts() {
+		return opsurface.ReachWorkspace
 	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
@@ -742,8 +816,52 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			payload))
 	}
 	payload.Files = renderedFiles(completed, format == responseFormatDetailed)
+	// The write, last: after the fill and the render, as the command line's build
+	// writes once its render has returned. Every refusal above returned before
+	// this point, so a call refused anywhere earlier wrote no artifact, and the
+	// "nothing was written to disk" its answer carries stays true.
+	if a.writesArtifacts() {
+		outDir, werr := tw.writeRenderedArtifacts(completed, &payload)
+		if werr != nil {
+			// The rendered set is dropped, as the language server drops it on a
+			// failed write: what the write stopped at may be on disk, and listing the
+			// rendered files as written would claim more than happened.
+			payload.Files = []buildFile{}
+			return tw.answer(structuredErrorResult(fmt.Sprintf(
+				"The build rendered this Release and could not write its artifacts to %s, so no file is reported "+
+					"as written: %v", outDir, werr), payload))
+		}
+	}
 	text := renderBuildText(payload)
 	return tw.answer(textResult(text, payload))
+}
+
+// writeRenderedArtifacts saves a finished render's artifacts where `aggrega
+// build` saves them for the workspace this call resolved, and records the
+// directory on payload as the caller may be told it. It returns that directory as
+// this host holds it, for a failure to name.
+//
+// Neither half is this tool's own. The directory is the default output directory
+// artifactout.DefaultOutputDirIn composes beneath the workspace root, which is the
+// composition the command line's build and the language server's build compose
+// theirs with, and the write is artifactout.WriteBuildOutput, which every surface
+// performing a build writes through: it clears the boundaries subtree a previous
+// build left, holds every name to the output directory and every path to the
+// workspace before anything moves, and refuses an output directory that is a link
+// leading out of the workspace with nothing removed. A join or a write of its own
+// here would agree with those today and drift from them the first time either
+// moved.
+//
+// The root the write is held to is the one writescope.RootFor picks for the
+// directory the output is composed in, the question the command line and the
+// language server ask of their own; for the default that is the workspace root.
+//
+// The directory is recorded before the write, so a write that fails still names
+// it: a caller is told which directory the failure concerns.
+func (tw *toolWorkspace) writeRenderedArtifacts(completed *pipeline.Result, payload *buildResultPayload) (string, error) {
+	outDir := artifactout.DefaultOutputDirIn(tw.root)
+	payload.OutputDir, payload.OutputDirWithheld = tw.reportedLocationField(outDir)
+	return outDir, artifactout.WriteBuildOutput(writescope.RootFor(tw.root, filepath.Dir(outDir)), outDir, completed.Artifacts)
 }
 
 // previewWarningTexts returns the text of each of a preview's warnings of one
@@ -882,6 +1000,13 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 // each rendered path, one per line, followed by any external reference the
 // render had to decline.
 //
+// The opening line says where the files went. A call that wrote them names the
+// directory it wrote them to, as the command line's closing line names it, and
+// each path below it is relative to that directory; a call that did not says they
+// were rendered in memory and that no artifact was written. The payload's output
+// directory decides which, so the sentence and the structured answer cannot
+// disagree about whether anything was written.
+//
 // The declined references are spelled out rather than counted, and each carries
 // the remedy, because the caller has to know WHICH reference is missing to
 // supply it. Their absence prints nothing, so a fully-pinned render reads exactly
@@ -910,7 +1035,11 @@ func renderBuildText(p buildResultPayload) string {
 		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (no artifact written to disk):\n", release, len(p.Files))
+	if p.OutputDir != nil || p.OutputDirWithheld {
+		fmt.Fprintf(&b, "Build of %s wrote %d file(s) to %s:\n", release, len(p.Files), reportedLocationWords(p.OutputDir))
+	} else {
+		fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (no artifact written to disk):\n", release, len(p.Files))
+	}
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "  %s\n", f.Path)
 	}
