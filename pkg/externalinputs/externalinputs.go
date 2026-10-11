@@ -284,7 +284,7 @@ func verifyStoredBlob(kind inputKind, rawURL string, rec lockfile.ExternalInput,
 // that would only stand in the way second.
 func (s *Service) refill(ctx context.Context, kind inputKind, rawURL string, rec lockfile.ExternalInput) ([]byte, error) {
 	if s.writeRefusal != nil {
-		return nil, fmt.Errorf("externalinputs: %q is pinned by the lockfile but missing from the artifact cache, and is not fetched again: %w",
+		return nil, fmt.Errorf("%q is pinned by the lockfile but missing from the artifact cache, and is not fetched again: %w",
 			rawURL, s.writeRefusal)
 	}
 	switch kind {

@@ -114,7 +114,7 @@ type NotAdmittedError struct {
 
 // Error states that the copy cached on this machine was not admitted, and why.
 func (e *NotAdmittedError) Error() string {
-	return fmt.Sprintf("docscache: the copy of %s@%s cached on this machine is not admitted: %v", e.Ref, e.Version, e.Reason)
+	return fmt.Sprintf("the copy of %s@%s cached on this machine is not admitted: %v", e.Ref, e.Version, e.Reason)
 }
 
 // Unwrap returns the refusal, and the cache miss a refused slot answers as.
@@ -211,9 +211,9 @@ func Admitted(cacheRoot, ref, version string, admit AdmitAtRead) error {
 	}
 	if _, err := os.Stat(filepath.Join(slot, blobFile)); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
+			return fmt.Errorf("no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
 		}
-		return fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, pathless(err))
+		return fmt.Errorf("read cached bundle %s@%s: %w", ref, version, pathless(err))
 	}
 	manifest, err := readManifest(slot, ref, version)
 	if err != nil {
@@ -238,7 +238,7 @@ func Admitted(cacheRoot, ref, version string, admit AdmitAtRead) error {
 // the process happens to stand.
 func slotPath(cacheRoot, ref, version string) (string, error) {
 	if !filepath.IsAbs(cacheRoot) {
-		return "", fmt.Errorf("docscache: the cache root %q is not an absolute path", cacheRoot)
+		return "", fmt.Errorf("the cache root %q is not an absolute path", cacheRoot)
 	}
 	return filepath.Join(refDir(cacheRoot, ref), pathsegment.Encode(version)), nil
 }
@@ -295,24 +295,24 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	// when the staged slot is placed.
 	replacing, err := slotIdentity(slot)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("docscache: cache inspect for %s@%s: %w", ref, version, err)
+		return "", fmt.Errorf("cache inspect for %s@%s: %w", ref, version, err)
 	}
 	signatures = append(signatures, keptSignatures(slot, pr.Digest)...)
 
 	parent := filepath.Dir(slot)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return "", fmt.Errorf("docscache: cache mkdir %s: %w", parent, err)
+		return "", fmt.Errorf("cache mkdir %s: %w", parent, err)
 	}
 	staging, err := os.MkdirTemp(parent, transientPrefix+"staging-*")
 	if err != nil {
-		return "", fmt.Errorf("docscache: stage %s@%s: %w", ref, version, err)
+		return "", fmt.Errorf("stage %s@%s: %w", ref, version, err)
 	}
 	defer os.RemoveAll(staging)
 	if err := writeSlot(staging, pr.Bytes, pr.ManifestBytes, signatures); err != nil {
-		return "", fmt.Errorf("docscache: cache write for %s@%s: %w", ref, version, err)
+		return "", fmt.Errorf("cache write for %s@%s: %w", ref, version, err)
 	}
 	if err := placeSlot(staging, slot, ref, version, replacing); err != nil {
-		return "", fmt.Errorf("docscache: cache place for %s@%s: %w", ref, version, err)
+		return "", fmt.Errorf("cache place for %s@%s: %w", ref, version, err)
 	}
 	return slot, nil
 }
@@ -501,9 +501,9 @@ func readManifest(slot, ref, version string) ([]byte, error) {
 	manifest, err := os.ReadFile(filepath.Join(slot, manifestFile))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("docscache: cached bundle %s@%s missing its manifest: %w", ref, version, ErrFetchNotFound())
+			return nil, fmt.Errorf("cached bundle %s@%s missing its manifest: %w", ref, version, ErrFetchNotFound())
 		}
-		return nil, fmt.Errorf("docscache: read cached manifest %s@%s: %w", ref, version, pathless(err))
+		return nil, fmt.Errorf("read cached manifest %s@%s: %w", ref, version, pathless(err))
 	}
 	return manifest, nil
 }
@@ -517,7 +517,7 @@ func admitSlot(slot, ref, version string, manifest []byte, admit AdmitAtRead) er
 	}
 	signatures, err := readSignatures(slot)
 	if err != nil {
-		return fmt.Errorf("docscache: read the signatures kept for %s@%s: %w", ref, version, err)
+		return fmt.Errorf("read the signatures kept for %s@%s: %w", ref, version, err)
 	}
 	if err := admit(digest.ContentDigest(manifest), signatures); err != nil {
 		return &NotAdmittedError{Ref: ref, Version: version, Reason: err}
@@ -567,16 +567,16 @@ func openSlot(slot, ref, version string) (blob, manifest []byte, err error) {
 	blob, err = os.ReadFile(filepath.Join(slot, blobFile))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
+			return nil, nil, fmt.Errorf("no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
 		}
-		return nil, nil, fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, pathless(err))
+		return nil, nil, fmt.Errorf("read cached bundle %s@%s: %w", ref, version, pathless(err))
 	}
 	manifest, err = readManifest(slot, ref, version)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := oci.VerifyContentAgainstManifest(manifest, blob); err != nil {
-		return nil, nil, fmt.Errorf("docscache: cached bundle %s@%s: %w", ref, version, err)
+		return nil, nil, fmt.Errorf("cached bundle %s@%s: %w", ref, version, err)
 	}
 	return blob, manifest, nil
 }
@@ -588,10 +588,10 @@ func openSlot(slot, ref, version string) (blob, manifest []byte, err error) {
 func (b *Bundle) Page(page string) ([]byte, string, error) {
 	data, ok, err := readTarEntry(b.blob, page)
 	if err != nil {
-		return nil, "", fmt.Errorf("docscache: read page %q from %s@%s: %w", page, b.ref, b.version, err)
+		return nil, "", fmt.Errorf("read page %q from %s@%s: %w", page, b.ref, b.version, err)
 	}
 	if !ok {
-		return nil, "", fmt.Errorf("docscache: page %q in %s@%s: %w", page, b.ref, b.version, ErrPageNotFound())
+		return nil, "", fmt.Errorf("page %q in %s@%s: %w", page, b.ref, b.version, ErrPageNotFound())
 	}
 	return data, mimeForPage(page), nil
 }
