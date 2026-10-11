@@ -281,7 +281,7 @@ func TestAToolPlantedOnAListenerIsNamedByTheWalk(t *testing.T) {
 // recordingCommandRunner records the argument vector a generated tool built and
 // reports success, so a proof reads what would have been run without running it.
 func recordingCommandRunner(argv *[]string) commandRunner {
-	return func(_ context.Context, args []string, stdout, _ io.Writer) error {
+	return func(_ context.Context, _ string, args []string, stdout, _ io.Writer) error {
 		*argv = append([]string(nil), args...)
 		_, _ = io.WriteString(stdout, "done")
 		return nil
@@ -290,7 +290,7 @@ func recordingCommandRunner(argv *[]string) commandRunner {
 
 // runnerThatMustNotRun fails the test if a command is run at all.
 func runnerThatMustNotRun(t *testing.T) commandRunner {
-	return func(_ context.Context, args []string, _, _ io.Writer) error {
+	return func(_ context.Context, _ string, args []string, _, _ io.Writer) error {
 		t.Errorf("a command ran for a call that reached this server over HTTP: %v", args)
 		return nil
 	}

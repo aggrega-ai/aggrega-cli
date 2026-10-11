@@ -8,11 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // CommandSurface is one command the server may expose as a generated tool: the
@@ -547,7 +549,10 @@ func jsonQuote(s string) string {
 //
 // It is handed the workspace root this server was launched with the same way,
 // ahead of those, for a call that names no workspace of its own; see
-// servedRootFlag.
+// servedRootFlag. And it starts in the workspace root the call or the launch
+// names, so a relative path it reads — a Release, a catalog directory — is read
+// there rather than in the folder this server was started in; see
+// commandFolder.
 //
 // Every failure this tool can produce is one the caller corrects by changing the
 // arguments — a property the command does not accept, a value of the wrong
@@ -561,6 +566,7 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 			return invalidToolArguments(ct.name, err)
 		}
 	}
+	dir, supplied := commandFolder(s.launchRoot, supplied)
 	var serverFlags []string
 	if !ct.forwardsFlags {
 		serverFlags = append(ct.servedRootFlag(s.launchRoot, supplied), s.flags.Args()...)
@@ -575,7 +581,7 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 		run = selfExecCommand
 	}
 	var stdout, stderr bytes.Buffer
-	runErr := run(ctx, argv, &stdout, &stderr)
+	runErr := run(ctx, dir, argv, &stdout, &stderr)
 
 	out := strings.TrimRight(stdout.String(), "\n")
 	diag := strings.TrimSpace(stderr.String())
@@ -620,7 +626,10 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 //
 // A call that sends the property names its workspace, whatever value it sends,
 // and that value is the one the command reads: the call's own flag is the only
-// one on its command line. The flag is the one the command declares under the
+// one on its command line. The root handed here, and a root the call names that
+// is an existing folder, is also the folder the command starts in
+// (commandFolder), so the workspace the command takes and the folder it reads a
+// relative path in are one. The flag is the one the command declares under the
 // property a call names its workspace with, read from the command's own
 // arguments rather than spelled here; a command declaring none is handed
 // nothing.
@@ -637,6 +646,57 @@ func (ct commandTool) servedRootFlag(root string, supplied map[string]json.RawMe
 		}
 	}
 	return nil
+}
+
+// commandFolder returns the folder a call's command starts in, and the arguments
+// the call is answered with.
+//
+// The folder is the workspace root the call or this server's launch names, so a
+// relative path the command reads — a Release, a catalog directory, the lockfile
+// beside a Release — is read inside that workspace, as it would be at a terminal
+// opened there:
+//
+//   - A call sending a non-empty workspace_root that names an existing folder
+//     starts its command there. The value is made absolute exactly as this
+//     server's own tools make it (workspaceconfig.NamedRootDir, against this
+//     server's working folder), and the command is handed that absolute form in
+//     place of the one sent, so it never resolves a relative value a second time
+//     from the folder it now starts in.
+//   - A call sending none starts its command in the root this server was launched
+//     with — the root servedRootFlag hands it — which was made absolute and
+//     judged when the server started. A command that passes its arguments on
+//     verbatim starts there too, though it is handed no flag.
+//
+// Where nothing names a root — no launch root, and no workspace_root or an empty
+// one — the folder is empty and the command starts in this server's own working
+// folder, finding its workspace from there as it would at a terminal in that
+// folder; the second pass from an absolute Release's own folder needs that start.
+// A workspace_root that is not an existing folder leaves the folder empty and the
+// value as sent, so the command answers it with its own refusal, quoting what was
+// sent: the folder is never set to one that does not exist.
+func commandFolder(launchRoot string, supplied map[string]json.RawMessage) (string, map[string]json.RawMessage) {
+	raw, named := supplied[argumentWorkspaceRoot]
+	if !named {
+		return launchRoot, supplied
+	}
+	var given string
+	if err := json.Unmarshal(raw, &given); err != nil || given == "" {
+		return "", supplied
+	}
+	abs, err := workspaceconfig.NamedRootDir(given)
+	if err != nil {
+		return "", supplied
+	}
+	if abs == given {
+		return abs, supplied
+	}
+	encoded, err := json.Marshal(abs)
+	if err != nil {
+		return "", supplied
+	}
+	rewritten := maps.Clone(supplied)
+	rewritten[argumentWorkspaceRoot] = encoded
+	return abs, rewritten
 }
 
 // commandToolResultPayload is a generated tool's structured payload: the

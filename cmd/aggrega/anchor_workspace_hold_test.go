@@ -16,12 +16,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks drives whole builds whose
-// output and trace directories are composed in a directory of their own — the
-// directory the command was run in, spelled here as the absolute output and trace
-// directories so no test has to move its working directory — over the shapes
-// that directory takes against the workspace. One fault per row, beside a control
-// building from a plain directory outside the workspace.
+// TestABuildIsHeldToTheRootItsNamedOutputDirectoryPicks drives whole builds
+// handed an output and a trace directory composed in a directory of their own —
+// the build operation's OutDir and TraceDir, set here to absolute directories
+// beneath that directory — over the shapes that directory takes against the
+// workspace. One fault per row, beside a control writing into a plain directory
+// outside the workspace. (A build handed neither writes beneath the workspace
+// root; that default is TestTheCommandLineAndTheLanguageServerWriteTheDefaultOutputBeneathTheWorkspaceRoot's.)
 //
 // A directory outside the workspace is a root of its own: an output or trace
 // directory beneath it that is a link leading out of it halts the build, and the
@@ -29,7 +30,7 @@ import (
 // leading out of the workspace is followed where it was named. A directory inside
 // the workspace holds the build's writes to the workspace root, so an output
 // directory linked elsewhere inside the workspace is followed.
-func TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks(t *testing.T) {
+func TestABuildIsHeldToTheRootItsNamedOutputDirectoryPicks(t *testing.T) {
 	root := t.TempDir()
 	releasePath, catalogDir := dryRunFixture(t, root, "")
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
@@ -37,21 +38,22 @@ func TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks(t *testing.T) {
 
 	rows := []struct {
 		name string
-		// arrange returns the directory the build runs in, whether it traces, the
-		// place a link leads to that must stay as it was ("" for none), and where
-		// the output must land when the row is not refused.
+		// arrange returns the directory the output and trace directories are
+		// composed in, whether it traces, the place a link leads to that must stay
+		// as it was ("" for none), and where the output must land when the row is
+		// not refused.
 		arrange func(t *testing.T) (runIn string, trace bool, leadsTo, landsIn string)
 		refused bool
 	}{
 		{
-			name: "control: a build run in a directory outside the workspace writes its output there",
+			name: "control: a build handed a directory outside the workspace writes its output there",
 			arrange: func(t *testing.T) (string, bool, string, string) {
 				run := t.TempDir()
 				return run, false, "", filepath.Join(run, "dist")
 			},
 		},
 		{
-			name: "an output directory that is a link leading out of the directory run in halts the build",
+			name: "an output directory that is a link leading out of the directory it is composed in halts the build",
 			arrange: func(t *testing.T) (string, bool, string, string) {
 				run, elsewhere := t.TempDir(), t.TempDir()
 				writeFixture(t, filepath.Join(elsewhere, "boundaries", "old", "sentinel.txt"), "old\n")
@@ -61,7 +63,7 @@ func TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks(t *testing.T) {
 			refused: true,
 		},
 		{
-			name: "a trace directory that is a link leading out of the directory run in halts the build",
+			name: "a trace directory that is a link leading out of the directory it is composed in halts the build",
 			arrange: func(t *testing.T) (string, bool, string, string) {
 				run, elsewhere := t.TempDir(), t.TempDir()
 				writeFixture(t, filepath.Join(elsewhere, "sentinel.txt"), "kept\n")
@@ -71,7 +73,7 @@ func TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks(t *testing.T) {
 			refused: true,
 		},
 		{
-			name: "a directory run in that is reached through a link leading out of the workspace is followed",
+			name: "a directory reached through a link leading out of the workspace is followed",
 			arrange: func(t *testing.T) (string, bool, string, string) {
 				target := t.TempDir()
 				linked := filepath.Join(root, "run-here")
@@ -81,7 +83,7 @@ func TestABuildIsHeldToTheRootTheDirectoryItIsRunInPicks(t *testing.T) {
 			},
 		},
 		{
-			name: "beneath a directory run in inside the workspace an output linked elsewhere inside it is followed",
+			name: "beneath a directory inside the workspace an output linked elsewhere inside it is followed",
 			arrange: func(t *testing.T) (string, bool, string, string) {
 				run := filepath.Join(root, "run-inside")
 				kept := filepath.Join(root, "kept")

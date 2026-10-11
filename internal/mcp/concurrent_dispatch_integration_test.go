@@ -52,7 +52,7 @@ func newParkedTool() *parkedTool {
 	return &parkedTool{entered: make(chan struct{}), released: make(chan struct{})}
 }
 
-func (p *parkedTool) run(ctx context.Context, _ []string, _, _ io.Writer) error {
+func (p *parkedTool) run(ctx context.Context, _ string, _ []string, _, _ io.Writer) error {
 	close(p.entered)
 	<-ctx.Done()
 	p.mu.Lock()
@@ -73,7 +73,7 @@ func (p *parkedTool) recordedCause() error {
 // unusedCommand is the runner for a loop no test drives a command through. It
 // fails rather than parking, so a test that reaches it by accident says so
 // instead of hanging until the liveness ceiling.
-func unusedCommand(context.Context, []string, io.Writer, io.Writer) error {
+func unusedCommand(context.Context, string, []string, io.Writer, io.Writer) error {
 	return errors.New("this server was not built to run a command")
 }
 

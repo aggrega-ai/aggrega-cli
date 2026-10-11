@@ -21,12 +21,18 @@ const (
 	cliMimeType = "text/plain"
 )
 
-// commandRunner runs an aggrega command by argument vector, writing its output
-// to stdout and stderr. It is the seam the generated command tools reach when
-// they ask a command to do its work: the production value re-invokes the
-// running binary, so a command's behavior keeps its single home in the command
-// layer, and a test injects a fake that records the arguments.
-type commandRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+// commandRunner runs an aggrega command by argument vector in the working folder
+// dir, writing its output to stdout and stderr. It is the seam the generated
+// command tools reach when they ask a command to do its work: the production
+// value re-invokes the running binary, so a command's behavior keeps its single
+// home in the command layer, and a test injects a fake that records the
+// arguments and the folder.
+//
+// dir is the folder the command starts in, chosen per call by the tool
+// (commandTool.commandFolder): the workspace root the call or this server's
+// launch names, so a relative path the command reads is read there. Empty starts
+// the command in this server's own working folder.
+type commandRunner func(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) error
 
 // HelpRenderer renders one command's help text from the live command tree.
 //
@@ -149,12 +155,16 @@ func isCommandToken(s string) bool {
 // process stdout directly — several do, rather than to the writer their command
 // object carries — cannot reach the parent's stdout, where the protocol stream
 // lives.
-func selfExecCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+//
+// The child starts in dir, which is how the folder a call's command runs in
+// reaches it; an empty dir leaves the child in this server's own working folder.
+func selfExecCommand(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate running binary to run a command: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, self, args...)
+	cmd.Dir = dir
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()

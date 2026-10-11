@@ -77,6 +77,10 @@ provider emits is the provider's own shape — Helm manifests, a redistributable
 Helm chart, docker-compose YAML — so the output directory holds whatever the
 providers this Release routes to produce.
 
+The output directory is dist/ beneath the workspace root, whichever folder the
+command is run from, and the closing line names it in full. A run that finds no
+workspace uses the folder it was run from as the root, and writes dist/ there.
+
 Build is read-only by default and needs a lockfile. Run "aggrega pull" first to
 create one, or pass --auto-pull to fill it in-process for this build.
 
@@ -100,7 +104,7 @@ the rendered tree reviewable as a diff.`,
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", helpReleasePath)
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
-	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
+	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ beneath the workspace root, beside dist/, for post-mortem inspection")
 	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When the pull step runs — because --auto-pull was passed or the workspace enables auto_pull — build fills the lockfile in-process whether or not one is already present, and this flag prints per resolved entity what that fill did: fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external (the Release's own Aggregate or Manifest, read from the file or entry the Release names). When no pull step runs, it prints one line saying so instead of the per-entity rows. Stdout only; not persisted")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")

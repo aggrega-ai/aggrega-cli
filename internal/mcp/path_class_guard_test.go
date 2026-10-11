@@ -68,6 +68,12 @@ var workspacePathArguments = map[string]string{
 	// beside it: the entity.lock lands in the directory the named document sits in,
 	// so this one path decides both what is read and where that write lands.
 	"pin: entity": "the Recipe or FeatureRecipe document pinned, beside which the entity.lock is WRITTEN",
+	// The one entry not keyed by a tool, and it is spelled out for that reason: every
+	// tool taking catalog_dirs has it resolved in one place, where the call's
+	// workspace context is composed, so the call rather than any one tool is what
+	// names it. Read, never written; a relative directory reaches the workspace root
+	// the call resolved first, as a relative 'release' does.
+	"the call: catalog_dirs": "the catalog directories a call reads beside its workspace, for every tool taking them",
 }
 
 // resolversReachedOnlyAtABoundary are the path-resolving calls that may appear

@@ -41,12 +41,12 @@ import (
 // which the whole suite has already failed.
 const runReturnCeiling = 30 * time.Second
 
-func parkedControlCommand(ctx context.Context, _ []string, _, _ io.Writer) error {
+func parkedControlCommand(ctx context.Context, _ string, _ []string, _, _ io.Writer) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
 
-func parkedStoppedCommand(ctx context.Context, _ []string, _, _ io.Writer) error {
+func parkedStoppedCommand(ctx context.Context, _ string, _ []string, _, _ io.Writer) error {
 	<-ctx.Done()
 	return ctx.Err()
 }

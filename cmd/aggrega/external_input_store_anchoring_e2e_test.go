@@ -89,8 +89,8 @@ func TestBuildFromANestedSubdirectoryServesTheSameWorkspaceStore(t *testing.T) {
 
 	// buildFrom runs the command line's own build entry point with dir as the
 	// working directory and returns the content the render emitted for the
-	// fixture's file. The output lands under dir, which is the command line's own
-	// choice about where to put a render and not an input to it.
+	// fixture's file. The output lands beneath the workspace root whatever dir is,
+	// which is where the build puts a render and not an input to it.
 	buildFrom := func(dir, surface string) string {
 		t.Helper()
 		t.Chdir(dir)
@@ -104,7 +104,7 @@ func TestBuildFromANestedSubdirectoryServesTheSameWorkspaceStore(t *testing.T) {
 			t.Fatalf("the build launched from %s failed: %v\n--- diagnostics ---\n%s\n--- output ---\n%s",
 				surface, err, diag.String(), out.String())
 		}
-		dist := filepath.Join(dir, "dist")
+		dist := filepath.Join(root, "dist")
 		tree := readRenderedTree(t, dist)
 		content := renderedFileNamed(t, tree, surface)
 		if err := os.RemoveAll(dist); err != nil {

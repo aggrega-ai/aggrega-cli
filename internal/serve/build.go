@@ -21,22 +21,21 @@ import (
 // workspace-relative path to the Release YAML, under the same contract every
 // Release-naming parameter here carries.
 //
-// Where a build writes is anchored, and the two surfaces anchor it differently
-// because what they have to anchor against differs. A build at a terminal
-// resolves the output directory against the directory it was run in, which is a
-// location the person running it stated by standing there. A request carries no
-// such location, so this wire resolves it against the workspace root instead —
-// and OutputParent is how a caller states the location a terminal states by
-// standing somewhere.
+// Where a build writes is anchored to the workspace root, on this wire as at a
+// terminal: a request that names no destination writes the default output
+// directory beneath the workspace root the session opened, composed by the one
+// function the command line's build composes it with
+// (artifactout.DefaultOutputDirIn). OutputParent is how a caller names another
+// place inside the workspace for this one build.
 type buildParams struct {
 	Release string `json:"release"`
 
 	// OutputParent is the directory the output directory is created inside,
 	// relative to the workspace root: the artifacts land in the output directory
-	// beneath it, exactly as they land beneath the invocation directory at a
-	// terminal. So a caller sending the folder its reader is looking at gets the
-	// artifacts a build run in that folder would have produced, in the place that
-	// build would have put them.
+	// beneath it, laid out exactly as they are beneath the workspace root when
+	// nothing is named. So a caller sending the folder its reader is looking at
+	// gets the artifacts written beside that reader's documents rather than at
+	// the root.
 	//
 	// 🔴 It names the output directory's PARENT and never the output directory
 	// itself, which is what separates it from the destination the other writing
@@ -175,15 +174,14 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // request named — or, where the request sent outputParent, inside that location
 // inside the workspace instead.
 //
-// 🔴 The anchor is not shared with the command line. What the two surfaces
-// share is the directory NAME, which has one home so neither can move without
-// the other; what they do not share is what that name resolves against. A
-// terminal resolves it against the directory the command was run in, which is a
-// location the person running it stated by standing there. A request states no
-// such location, so this wire's anchor is the workspace root, and outputParent
-// is how a caller states what standing somewhere states at a terminal. Absent,
-// the anchor stays at the root, which is what every request that sends nothing
-// already gets.
+// 🔴 The anchor is shared with the command line, and so is its composition. A
+// build at a terminal writes the default output directory beneath the workspace
+// root it resolved, wherever it was run from, and this method writes it beneath
+// the workspace root the session opened; both compose it through
+// artifactout.DefaultOutputDirIn, so neither surface holds a join of its own that
+// could come to disagree with the other's. outputParent is what this wire adds:
+// a caller naming another place inside the workspace for this one build. Absent,
+// the anchor stays at the root.
 //
 // A destination the request names is confined to the workspace this session
 // opened, through the one rule every destination on this surface is judged by.
@@ -491,7 +489,9 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 // buildOutputRoot is the directory a build performed by this daemon writes to:
 // the default output directory, created inside the location within the workspace
 // the request named, or inside the workspace root this session anchored to when
-// the request named none.
+// the request named none. Both are composed by artifactout.DefaultOutputDirIn, the
+// function the command line's build composes its default with, so the daemon
+// keeps no join of its own.
 //
 // It is a method rather than a literal at the call site so that what the daemon
 // can write to is readable from a test, and so that the anchoring is stated once.
@@ -516,12 +516,12 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 // produces, and the root is precisely where a request naming nothing already
 // writes, so the two states are one state.
 //
-// A daemon holding no workspace root resolves to the relative default, which is
-// what the command line does with the same value — there is no session anchor to
-// improve on it, and inventing an absolute path from the process's working
-// directory would write somewhere neither surface named. A request that names a
-// destination against such a session is refused by the rule above, which has no
-// root to confine anything against.
+// A daemon holding no workspace root is answered with what the shared function
+// answers for an empty root — the bare relative name — rather than with a case
+// of its own: there is no session anchor to compose beneath, and inventing an
+// absolute path from the process's working directory would write somewhere no
+// surface named. A request that names a destination against such a session is
+// refused by the rule above, which has no root to confine anything against.
 func (s *Server) buildOutputRoot(outputParent string) (string, *jsonRPCError) {
 	if outputParent != "" {
 		anchor, err := s.workspacePath("build: outputParent", outputParent)
@@ -532,10 +532,7 @@ func (s *Server) buildOutputRoot(outputParent string) (string, *jsonRPCError) {
 				cause:   err,
 			}
 		}
-		return filepath.Join(anchor, artifactout.DefaultOutputDir), nil
+		return artifactout.DefaultOutputDirIn(anchor), nil
 	}
-	if s.workspaceRoot == "" {
-		return artifactout.DefaultOutputDir, nil
-	}
-	return filepath.Join(s.workspaceRoot, artifactout.DefaultOutputDir), nil
+	return artifactout.DefaultOutputDirIn(s.workspaceRoot), nil
 }

@@ -375,7 +375,7 @@ func TestCommandToolArgumentsFollowTheFlagWords(t *testing.T) {
 // the argument vector it received, and its real output coming back as tool data.
 func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	var gotArgs []string
-	s := newCommandToolServer(t, func(_ context.Context, args []string, stdout, stderr io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
 		gotArgs = args
 		_, _ = io.WriteString(stdout, "wrote 3 files\n")
 		_, _ = io.WriteString(stderr, "notice: overlay applied\n")
@@ -454,7 +454,7 @@ func TestGeneratedCommandToolReturnsTheCommandsBytesVerbatim(t *testing.T) {
 	// newlines, and a trailing newline the structured writer always emits.
 	const document = "{\n  \"apiVersion\": \"aggrega.ai/v1alpha1\",\n  \"kind\": \"IR\",\n  \"spec\": {\n    \"nodes\": {}\n  }\n}\n"
 
-	s := newCommandToolServer(t, func(_ context.Context, _ []string, stdout, stderr io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, stdout, stderr io.Writer) error {
 		_, _ = io.WriteString(stdout, document)
 		_, _ = io.WriteString(stderr, "notice: something advisory\n")
 		return nil
@@ -482,7 +482,7 @@ func TestGeneratedCommandToolReturnsTheCommandsBytesVerbatim(t *testing.T) {
 // comes back as a tool-level failure carrying the command's own diagnostics,
 // rather than as an opaque protocol error.
 func TestGeneratedCommandToolSurfacesAFailure(t *testing.T) {
-	s := newCommandToolServer(t, func(_ context.Context, _ []string, _, stderr io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, _, stderr io.Writer) error {
 		_, _ = io.WriteString(stderr, "E0001: release.yaml: no such file")
 		return errDummyExit
 	})
@@ -504,7 +504,7 @@ func TestGeneratedCommandToolSurfacesAFailure(t *testing.T) {
 // it is the channel a model reads.
 func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 	var ran bool
-	s := newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, _, _ io.Writer) error {
 		ran = true
 		return nil
 	})
@@ -538,7 +538,7 @@ func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 // that no model is holding a definition for — discoverable by a reader of this
 // package and by nobody else.
 func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
-	s := newCommandToolServer(t, func(_ context.Context, _ []string, stdout, _ io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, stdout, _ io.Writer) error {
 		_, _ = io.WriteString(stdout, "ok")
 		return nil
 	})

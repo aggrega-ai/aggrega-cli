@@ -41,10 +41,10 @@ func distSnapshot(t *testing.T, dir string) map[string]string {
 // root (not CWD) and `catalog_dirs` resolve against their declaring config file
 // (not CWD), so neither the catalog searched nor the recorded source paths
 // shift with the working directory. The relative `catalog_dirs: [catalog]` here
-// also exercises declaring-file resolution end-to-end. (The dist OUTPUT location
-// follows the Release's CWD-relative `directory:` and is the author's choice,
-// orthogonal to IR content; the snapshot keys on the path within each dist root,
-// so a differing output location does not mask or cause a content difference.)
+// also exercises declaring-file resolution end-to-end. The output LOCATION is
+// invocation-independent too: both builds write dist beneath the root they
+// resolved, so the build from the subdirectory writes the root's dist and
+// nothing beneath the subdirectory.
 //
 // This test resolves its workspace explicitly, as every test in this package
 // does, but it is the one that must NOT NAME a root — and the reason is its
@@ -63,8 +63,8 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	// resolves against this file's dir (root) at load.
 	writeWorkspaceConfig(t, root, "auto_pull: true\nworkspace:\n  catalog_dirs:\n    - catalog")
 
-	// Build from the project root; the dist lands at the CWD per the Release's
-	// `directory:`. Snapshot content keyed within that dist root. Each build
+	// Build from the project root; the dist lands beneath the root. Snapshot
+	// content keyed within that dist root. Each build
 	// resolves its own workspace from the working directory it is about to build
 	// in — an empty start is that directory — so the discovery under test is the
 	// test's own explicit call rather than something inherited.
@@ -79,6 +79,11 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	fromRoot := distSnapshot(t, filepath.Join(root, "dist"))
 	if len(fromRoot) == 0 {
 		t.Fatal("build from root produced no artifacts")
+	}
+	// Cleared, so what the root's dist holds after the second build is that
+	// build's alone.
+	if err := os.RemoveAll(filepath.Join(root, "dist")); err != nil {
+		t.Fatalf("clear the first build's output: %v", err)
 	}
 
 	// Build the same release from a subdirectory; the marker walk resolves the
@@ -102,7 +107,15 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	if err := dispatchBuild(context.Background(), wsFromSub, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build from subdir: %v", err)
 	}
-	fromSub := distSnapshot(t, filepath.Join(sub, "dist"))
+	// The build from the subdirectory writes the root's dist, as the build from
+	// the root did, and nothing beneath the subdirectory it was run from.
+	fromSub := distSnapshot(t, filepath.Join(root, "dist"))
+	if len(fromSub) == 0 {
+		t.Fatalf("the build from %s wrote nothing beneath the workspace root %s", sub, root)
+	}
+	if stray := strayBuildOutput(sub); len(stray) > 0 {
+		t.Errorf("the build from %s wrote %v there; it writes beneath the workspace root", sub, stray)
+	}
 
 	if !reflect.DeepEqual(fromRoot, fromSub) {
 		// Surface the first differing path for a readable failure.

@@ -117,7 +117,11 @@ func TestTheNoticeIsNeverAddedOverAListener(t *testing.T) {
 		t.Run(transportName(tc.transport), func(t *testing.T) {
 			s := &server{transport: tc.transport}
 			res, _ := textResult("composed", nil)
-			res.workspace = s.toolWorkspaceOf(rw, nil)
+			workspace, err := s.toolWorkspaceOf(rw, nil)
+			if err != nil {
+				t.Fatalf("compose the workspace context: %v", err)
+			}
+			res.workspace = workspace
 			got := s.withNoWorkspaceNotice(res).Content[0].Text
 			if says := got != "composed"; says != tc.says {
 				t.Errorf("over %s the answer reads %q; want the notice added: %v", transportName(tc.transport), got, tc.says)

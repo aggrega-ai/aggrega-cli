@@ -48,16 +48,35 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// DefaultOutputDir is the directory a build writes its rendered artifacts to
-// when it is told nothing else. It is relative, so it resolves against whatever
-// the caller treats as the build's working location — the invocation directory
-// on the command line, the anchored workspace root in the daemon.
+// DefaultOutputDir is the name of the directory a build writes its rendered
+// artifacts to when it is told nothing else. It is a name and not a location: the
+// directory a build writes is this name composed beneath a root by
+// [DefaultOutputDirIn], never resolved against whatever folder a process happens
+// to be running in.
 //
 // It lives here rather than beside either caller because both surfaces must
 // answer "where does a build put its files" with the same word: a reader
 // comparing one surface's output against the other's finds the same directory,
 // and a change to the default reaches both at once.
 const DefaultOutputDir = "dist"
+
+// DefaultOutputDirIn returns the default output directory beneath root: where a
+// build writes when nothing names a destination of its own.
+//
+// It is the one composition of that directory. The build operation every
+// command-line build and every command an assistant's command tool runs goes
+// through asks it with the workspace root that build resolved, and the language
+// server asks it with the workspace root its session opened — or with the folder a
+// request names as the output directory's parent — so the surfaces write the same
+// directory for the same workspace because they compose it in one place, not
+// because two joins happen to agree.
+//
+// An empty root yields the bare relative name, which is all a caller holding no
+// root has to offer. A root a workspace resolution produced is absolute, so the
+// directory composed beneath one is absolute too.
+func DefaultOutputDirIn(root string) string {
+	return filepath.Join(root, DefaultOutputDir)
+}
 
 // boundariesDir is the subtree of an output root that a build regenerates in
 // full. It is named here because [WriteBuildOutput] is the only thing that acts

@@ -230,7 +230,7 @@ func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 			t.Parallel()
 			var ranArgv []string
 			var parsed parsedGlobals
-			run := func(_ context.Context, args []string, stdout, stderr io.Writer) error {
+			run := func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
 				ranArgv = append([]string(nil), args...)
 				root := globalFlagTree(&parsed)
 				root.SetArgs(args)

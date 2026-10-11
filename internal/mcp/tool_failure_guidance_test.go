@@ -101,7 +101,7 @@ func registeredToolSpecs(s *server) []toolSpec {
 // has its seam supplied here.
 func newGuidanceServer(t *testing.T) *server {
 	t.Helper()
-	s := newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error { return nil })
+	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, _, _ io.Writer) error { return nil })
 	s.listPlugins = anEnumerationFindingNoPlugins()
 	return s
 }

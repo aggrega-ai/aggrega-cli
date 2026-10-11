@@ -219,7 +219,7 @@ var describeToolSpec = toolSpec{
     "catalog_dirs": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Optional catalog directories, prepended (first-match-wins) to the workspace catalog search stack."
+      "description": "Optional catalog directories (absolute, or relative to the workspace root), prepended (first-match-wins) to the workspace catalog search stack."
     },
     "response_format": {
       "type": "string",

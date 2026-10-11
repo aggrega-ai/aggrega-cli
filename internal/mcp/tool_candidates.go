@@ -155,7 +155,7 @@ var attachCandidatesToolSpec = toolSpec{
     "catalog_dirs": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Optional catalog directories, prepended (first-match-wins) to the workspace catalog search stack. Features they declare are candidates alongside the workspace's own."
+      "description": "Optional catalog directories (absolute, or relative to the workspace root), prepended (first-match-wins) to the workspace catalog search stack. Features they declare are candidates alongside the workspace's own."
     }
   },
   "oneOf": [

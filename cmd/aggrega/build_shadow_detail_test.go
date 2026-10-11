@@ -113,8 +113,10 @@ spec:
 	catalogDirs := []string{dirA, dirB}
 	traceEnabled := false
 
-	// The build writes artifacts under a relative `dist/` in the process working
-	// directory; anchor it at root so the output is hermetic to this test.
+	// The build writes its artifacts to dist beneath the workspace root it is
+	// handed, wherever the process runs. The process is moved into root, which is
+	// not that workspace, so an output that followed the folder instead would land
+	// in this test's own temporary tree and the read below would not find it.
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	t.Chdir(root)
 
@@ -132,7 +134,7 @@ spec:
 	}
 
 	// Which directory did the render actually pick? Read the emitted output.
-	rendered := readRenderedOutput(t, filepath.Join(root, "dist"))
+	rendered := readRenderedOutput(t, filepath.Join(ws.Root(), "dist"))
 	var renderedWinner string
 	switch {
 	case strings.Contains(rendered, "from-dir-a"):

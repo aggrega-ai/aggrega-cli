@@ -279,7 +279,9 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), filepath.Join(ws, "release.yaml"), []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("a build run from beneath the workspace must find the bundle the pull cached; got: %v", berr)
 		}
-		if found, tree := distTreeContains(t, "dist", proofMutatorLabel); !found {
+		// The output lands beneath the workspace root, not beneath the directory
+		// the build was run from.
+		if found, tree := distTreeContains(t, filepath.Join(ws, "dist"), proofMutatorLabel); !found {
 			t.Errorf("rendered output does not carry the mutator label %q; the guest did not run:\n%s", proofMutatorLabel, tree)
 		}
 	})

@@ -29,6 +29,13 @@ import (
 const (
 	argumentWorkspaceRoot = workspaceconfig.WorkspaceRootArgument
 	argumentCatalogDirs   = "catalog_dirs"
+
+	// catalogDirsCaller is what workspacePath is told is resolving a call's
+	// catalog_dirs. Every tool taking the argument has it resolved in one place —
+	// where the call's workspace context is composed (toolWorkspaceOf) — rather
+	// than at the tool's own call site, so no one tool's name is the one asking:
+	// the call is.
+	catalogDirsCaller = "the call"
 )
 
 // workspaceSelection is the slice of a tool's arguments that names a workspace,
@@ -358,8 +365,11 @@ type toolWorkspace struct {
 	// directory is read as named or not where the stack was built.
 	named []string
 
-	// flagDirs are the call's own catalog_dirs argument, kept so the stack for a
-	// Release is resolved from the same argument the workspace stack was.
+	// flagDirs are the call's own catalog_dirs argument, each resolved by
+	// workspacePath against the root of the call's first resolution — a relative
+	// one read from that workspace root, an absolute one used as given — and kept
+	// so the stack for a Release is resolved from the same directories the
+	// workspace stack was, including where subjectWorkspace moves the workspace.
 	flagDirs []string
 
 	// transport is carried here rather than read from the server at each call
@@ -422,9 +432,10 @@ func rootSourceOf(rootArg string) string {
 // rootArg names, else the root this process was launched with, taken as the
 // workspace root, else the workspace discovered from the process working
 // directory (resolutionInputs). catalogDirs are the call's catalog search
-// directories, prepended (absolute) to the workspace's configured stack, which
-// in turn is followed by the conventional `catalog` directory at the workspace
-// root when that directory exists. A workspace that declares an empty
+// directories, a relative one read from that workspace root as a relative
+// 'release' is (toolWorkspaceOf), prepended to the workspace's configured stack,
+// which in turn is followed by the conventional `catalog` directory at the
+// workspace root when that directory exists. A workspace that declares an empty
 // `catalog_dirs` resolves no local catalog at all, and a call against it reads
 // only what the cache and the lockfile already carry. A call about one Release
 // reads that Release's stack through catalogDirsFor, which the workspace
@@ -445,25 +456,59 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	if err != nil {
 		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
 	}
-	return s.toolWorkspaceOf(rw, catalogDirs), nil
+	return s.toolWorkspaceOf(rw, catalogDirs)
 }
 
 // toolWorkspaceOf builds a call's workspace context from its resolution and its
 // own catalog_dirs argument. It is the one composition of that context, so a
 // listing resolving a workspace that is not held is answered from exactly the
 // context every other tool is.
-func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) *toolWorkspace {
+//
+// It is also the one place a call's catalog_dirs enter that context, and they
+// are resolved here (callCatalogDirs): a relative directory is read from the
+// workspace root this resolution found, as a relative 'release' is, rather than
+// from the folder this server was started in. Where subjectWorkspace moves the
+// workspace it hands back the directories already resolved, so a relative one
+// stays read from the root the call resolved first, as every co-argument is.
+func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (*toolWorkspace, error) {
 	cfg := rw.Config()
-	return &toolWorkspace{
+	tw := &toolWorkspace{
 		rw:        rw,
 		root:      rw.Root(),
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
-		dirs:      rw.ResolveCatalogDirs("", catalogDirs),
-		named:     rw.NamedCatalogDirs("", catalogDirs),
-		flagDirs:  catalogDirs,
 		transport: s.transport,
 	}
+	dirs, err := tw.callCatalogDirs(catalogDirs)
+	if err != nil {
+		return nil, err
+	}
+	tw.dirs = rw.ResolveCatalogDirs("", dirs)
+	tw.named = rw.NamedCatalogDirs("", dirs)
+	tw.flagDirs = dirs
+	return tw, nil
+}
+
+// callCatalogDirs resolves a call's catalog_dirs against tw's root through
+// workspacePath, the one helper every path argument on this surface is resolved
+// by: a relative directory is joined to the workspace root, and an absolute one
+// is used as given. Over a listener the argument is refused before any of this
+// runs (workspaceSelectionRefusal), so the refusal handed back here is the
+// helper's own, answered rather than dropped, should a directory ever reach it
+// there.
+func (tw *toolWorkspace) callCatalogDirs(catalogDirs []string) ([]string, error) {
+	if len(catalogDirs) == 0 {
+		return catalogDirs, nil
+	}
+	resolved := make([]string, 0, len(catalogDirs))
+	for _, dir := range catalogDirs {
+		path, refusal := tw.workspacePath(catalogDirsCaller, argumentCatalogDirs, dir)
+		if refusal != "" {
+			return nil, &pathRefusal{text: refusal}
+		}
+		resolved = append(resolved, path)
+	}
+	return resolved, nil
 }
 
 // subjectWorkspace returns the workspace a call runs in once its subject is
@@ -495,7 +540,7 @@ func (s *server) subjectWorkspace(tw *toolWorkspace, subject string) (*toolWorks
 	if rw == tw.rw {
 		return tw, nil
 	}
-	return s.toolWorkspaceOf(rw, tw.flagDirs), nil
+	return s.toolWorkspaceOf(rw, tw.flagDirs)
 }
 
 // toolWorkspaceRefusal frames a failure to resolve a call's workspace, so a call
@@ -527,9 +572,15 @@ func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs 
 		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
 	}
 	if held == nil {
-		return s.toolWorkspaceOf(rw, catalogDirs), nil
+		return s.toolWorkspaceOf(rw, catalogDirs)
 	}
-	return &toolWorkspace{root: held.Root(), flagDirs: catalogDirs, transport: s.transport, held: held}, nil
+	tw := &toolWorkspace{root: held.Root(), transport: s.transport, held: held}
+	dirs, err := tw.callCatalogDirs(catalogDirs)
+	if err != nil {
+		return nil, err
+	}
+	tw.flagDirs = dirs
+	return tw, nil
 }
 
 // heldRefusal is what a listing answers a request its held workspace cannot

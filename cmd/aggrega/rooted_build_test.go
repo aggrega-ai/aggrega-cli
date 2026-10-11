@@ -18,15 +18,16 @@ import (
 
 // rootedBuildOptions returns run with the build's writes placed under root: the
 // rendered artifacts at root/dist and a trace at root/.trace, which is the
-// layout a build started from root produces, spelled as absolute paths.
+// layout a build over a workspace rooted at root produces, spelled as absolute
+// paths.
 //
 // It is the one home for building into a test's own directory. Left to its
-// defaults, a build writes both relative to the process working directory, and
-// that directory is shared by every test in the binary: a test that moved there
-// with t.Chdir to catch the output could run beside no other test. Naming the
-// two directories outright keeps every write inside the test's own root whatever
-// the working directory is, so no test has to move it. A directory the caller
-// already chose is left as it is.
+// defaults, a build writes both beneath the workspace root it resolved, which is
+// root for a test that resolved its own; naming the two directories outright
+// keeps every write inside the test's own root even where a test resolves its
+// workspace some other way, so no test writes into the package directory every
+// test in the binary shares. A directory the caller already chose is left as it
+// is.
 func rootedBuildOptions(t *testing.T, root string, run buildops.RunOptions) buildops.RunOptions {
 	t.Helper()
 	if !filepath.IsAbs(root) {
@@ -50,9 +51,10 @@ func dispatchBuildInRoot(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, re
 		buildDiagOptions{}, rootedBuildOptions(t, rw.Root(), buildops.RunOptions{}), diagOut, out)
 }
 
-// buildOutputEntries are the entries a build writes relative to the working
-// directory when nothing places them elsewhere: the default output directory and
-// the default trace directory.
+// buildOutputEntries are the entries a build writes beneath its workspace root
+// when nothing places them elsewhere: the default output directory and the
+// default trace directory. A build whose resolution fell back to the package
+// directory, the working directory every test shares, writes them there.
 var buildOutputEntries = []string{artifactout.DefaultOutputDir, buildops.DefaultTraceDir}
 
 // strayBuildOutput reports each build-output entry present in dir, in the order
@@ -71,7 +73,8 @@ func strayBuildOutput(dir string) []string {
 // the package directory, which is the working directory every test in this
 // binary shares.
 //
-// A test that builds without placing its output writes dist and .trace there.
+// A test that builds without placing its output, over a workspace resolved from
+// that directory, writes dist and .trace there.
 // For a test running beside others that is a defect whatever it asserts: two
 // such builds race on one tree, and each can read the other's artifacts as its
 // own. Nothing inside the test notices, because the build succeeds and the

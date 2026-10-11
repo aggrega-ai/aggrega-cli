@@ -170,7 +170,7 @@ var pullToolSpec = toolSpec{
     "catalog_dirs": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Optional catalog directories, prepended (first-match-wins) to the workspace catalog search stack."
+      "description": "Optional catalog directories (absolute, or relative to the workspace root), prepended (first-match-wins) to the workspace catalog search stack."
     },
     "verify": {
       "type": "boolean",
@@ -429,11 +429,14 @@ func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pu
 	cfg := pullRequest(a, targets)
 	cfg.Workspace = tw.rw
 	cfg.ReleasePath = releasePath
-	// The caller's directories are handed over unresolved, which is the contract of
-	// the field: the resolution prepends them to the workspace's own stack itself,
-	// so this call and a command-line one derive the identical search stack from the
-	// same arguments under the same configuration.
-	cfg.CatalogDirs = a.CatalogDirs
+	// The caller's directories are handed over as the call's workspace context holds
+	// them — a relative one already read from the workspace root the call resolved,
+	// as a relative 'release' is (toolWorkspaceOf), and not from the folder this
+	// server was started in — and otherwise as the field's contract asks: the
+	// resolution prepends them to the workspace's own stack itself, so this call and
+	// a command-line one naming the same directories derive the identical search
+	// stack under the same configuration.
+	cfg.CatalogDirs = tw.flagDirs
 	cfg.CompilerVersion = s.serverVersion
 	cfg.Toolchain = s.toolchain
 	cfg.DiagOut = diagOut

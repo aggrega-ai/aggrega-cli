@@ -160,11 +160,21 @@ func (o RunOptions) irGraph(graph *types.IRGraph) error {
 // report beside it, so there is no second reading to disagree with the first.
 type Pull func(ctx context.Context, upgrade, detail bool, render pipeline.Options, diagOut, out io.Writer) (*compilerops.PreviewResult, error)
 
-// DefaultTraceDir is the directory a traced build writes to when it is told
-// nothing else. Like the default output directory it is relative, so it resolves
-// against the caller's working location, and it sits beside that directory
-// rather than under it so the rendered tree stays purely deployable.
+// DefaultTraceDir is the name of the directory a traced build writes to when it
+// is told nothing else. Like the default output directory's name it is composed
+// beneath the workspace root the build resolved ([DefaultTraceDirIn]), and it
+// sits beside that directory rather than under it so the rendered tree stays
+// purely deployable.
 const DefaultTraceDir = ".trace"
+
+// DefaultTraceDirIn returns the default trace directory beneath root: where a
+// traced build writes when nothing names a trace directory of its own. It is
+// composed the way [artifactout.DefaultOutputDirIn] composes the output
+// directory, beneath the same root, so the two stay siblings wherever the build
+// was run from.
+func DefaultTraceDirIn(root string) string {
+	return filepath.Join(root, DefaultTraceDir)
+}
 
 // RunOptions carries the build knobs that are not diagnostics. The zero value is
 // the plain build shape: rendered output to the default output directory.
@@ -225,14 +235,16 @@ type RunOptions struct {
 	// inert in the same way an ordinary build is, and the flags that fill
 	// dependencies are refused alongside it rather than silently ignored.
 	DryRun bool
-	// OutDir overrides the rendered-artifact output directory; empty
-	// renders to the default output directory.
+	// OutDir overrides the rendered-artifact output directory; empty renders to
+	// the default output directory beneath the workspace root the build resolved
+	// ([artifactout.DefaultOutputDirIn]), whatever folder the build was run from.
 	OutDir string
 	// TraceDir overrides the directory a traced build writes its per-node
-	// intermediate files to; empty writes them to .trace, beside the default
-	// output directory. It says only where a trace goes: whether one is written
-	// at all is the caller's TraceEnabled, and the directory is cleared and
-	// rewritten exactly as .trace is.
+	// intermediate files to; empty writes them to .trace beneath the workspace
+	// root ([DefaultTraceDirIn]), beside the default output directory. It says
+	// only where a trace goes: whether one is written at all is the caller's
+	// TraceEnabled, and the directory is cleared and rewritten exactly as .trace
+	// is.
 	TraceDir string
 	// IRGraph, when non-nil, is handed the graph this run resolved, once, after
 	// the render succeeded and before anything else the run writes to its status
@@ -675,21 +687,26 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 
+	// The defaults are composed beneath the workspace root this build resolved, so
+	// a build writes the same directories wherever it was run from — the root
+	// itself, a folder beneath it, or a folder elsewhere that named the root — and
+	// names them in full. Where the resolution found no workspace and fell back to
+	// the folder it started from, that folder is the root, and the build writes
+	// there.
 	outDir := run.OutDir
 	if outDir == "" {
-		outDir = artifactout.DefaultOutputDir
+		outDir = artifactout.DefaultOutputDirIn(wsRoot)
 	}
 	traceDir := run.TraceDir
 	if traceDir == "" {
-		traceDir = DefaultTraceDir
+		traceDir = DefaultTraceDirIn(wsRoot)
 	}
 
-	// The output and the trace directories are composed in a directory of their
-	// own — for the defaults, the directory the command was run in — and what is
-	// written in each is held to the root that directory picks: the workspace root
-	// where it lies inside the workspace, and the directory itself where it lies
-	// outside it, as it does when the command is run outside a workspace root named
-	// for it. The decision is the one every composed write asks, not this build's.
+	// What is written in each directory is held to the root the directory it is
+	// composed in picks: for the defaults that is the workspace root itself, and
+	// for a directory a caller named, the workspace root where it lies inside the
+	// workspace and that directory where it lies outside it. The decision is the
+	// one every composed write asks, not this build's.
 	outRoot := writescope.RootFor(wsRoot, filepath.Dir(outDir))
 	traceRoot := writescope.RootFor(wsRoot, filepath.Dir(traceDir))
 
@@ -715,7 +732,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
 		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
-		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
+		summary = fmt.Sprintf("Dry run: %d files would be written to %s; nothing was written", len(result.Artifacts), outDir)
 	} else {
 		// Write output. The boundaries subtree from a prior build of a different
 		// variant is cleared as part of the write, so GitOps consumers see exactly
@@ -723,7 +740,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := artifactout.WriteBuildOutput(outRoot, outDir, result.Artifacts); err != nil {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
-		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
+		summary = fmt.Sprintf("Build completed: %d files written to %s", len(result.Artifacts), outDir)
 	}
 
 	// Trace surface — write the collected per-step intermediate state

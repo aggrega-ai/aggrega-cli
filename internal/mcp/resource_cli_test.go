@@ -29,7 +29,7 @@ func handshakeRead(uri string) string {
 func TestReadingCliHelpRunsNoCommand(t *testing.T) {
 	t.Parallel()
 	var ran [][]string
-	s := newCommandToolServer(t, func(_ context.Context, args []string, stdout, _ io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, args []string, stdout, _ io.Writer) error {
 		ran = append(ran, args)
 		_, _ = io.WriteString(stdout, "the command ran\n")
 		return nil
@@ -78,7 +78,7 @@ func TestReadingCliHelpRunsNoCommand(t *testing.T) {
 func TestASessionHandedNoRendererServesNoCliResource(t *testing.T) {
 	t.Parallel()
 	var ran [][]string
-	s := newCommandToolServer(t, func(_ context.Context, args []string, stdout, _ io.Writer) error {
+	s := newCommandToolServer(t, func(_ context.Context, _ string, args []string, stdout, _ io.Writer) error {
 		ran = append(ran, args)
 		_, _ = io.WriteString(stdout, "the command ran\n")
 		return nil

@@ -54,6 +54,11 @@ func decodeLeadingGraph(t *testing.T, stream string) (graph map[string]any, rest
 // consumed — that newline belongs to the document rather than to whatever
 // follows, so leaving it on the remainder would make every byte-identity
 // comparison below fail on the separator instead of on the output.
+//
+// Where the document ends is the decoder's own offset. What the decoder has
+// buffered is no measure of it: the decoder reads ahead in chunks and stops
+// reading once the value is complete, so a stream longer than what it happened to
+// buffer would put the unread tail of the command's output inside the document.
 func splitLeadingGraph(t *testing.T, stream string) (document, rest string) {
 	t.Helper()
 	dec := json.NewDecoder(strings.NewReader(stream))
@@ -61,11 +66,7 @@ func splitLeadingGraph(t *testing.T, stream string) (document, rest string) {
 	if err := dec.Decode(&probe); err != nil {
 		t.Fatalf("the stream does not open with one JSON document: %v\n--- stream ---\n%s", err, truncate(stream))
 	}
-	remaining, err := io.ReadAll(dec.Buffered())
-	if err != nil {
-		t.Fatalf("read what followed the document: %v", err)
-	}
-	consumed := len(stream) - len(remaining)
+	consumed := int(dec.InputOffset())
 	document, rest = stream[:consumed], stream[consumed:]
 	rest = strings.TrimPrefix(rest, "\n")
 	return document, rest
