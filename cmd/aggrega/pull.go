@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -400,10 +399,11 @@ func pullRun(ctx context.Context, cfg pullConfig) error {
 // the resolution computed.
 //
 // What stays here is what belongs to a surface a person drives: the progress
-// spine, the interactive fork the resolution cannot settle from its inputs, the
-// skipped-catalog annotation, this binary's identity, and the report. The
-// resolution itself — the artifact-store client, the egress gate, the trust
-// surface and the lockfile write — is internal/pullops, which every surface runs.
+// spine, the interactive fork the resolution cannot settle from its inputs, this
+// binary's identity, and the report. The resolution itself — the artifact-store
+// client, the egress gate, the trust surface, the lockfile write, and the account
+// of the catalog files skipped and of where local entities are read from that a
+// failure carries — is internal/pullops, which every surface runs.
 //
 // ctx is the caller's. The resolution carries it into every step that leaves the
 // process, and it also carries the render knobs that ride on a context rather
@@ -432,13 +432,6 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	opts.CompilerVersion = provenanceCompilerVersion()
 	opts.Toolchain = toolchainStamp()
 	opts.DiagOut = diagOut
-	// The workspace's account of where it reads local entities travels with the
-	// refusals: a refused file says a document was read and rejected, while the
-	// account says which directories were read at all, and a reference that
-	// resolved to nothing may be explained by either.
-	opts.AnnotateResolutionFailure = func(err error, skipped []catalog.SkippedEntity) error {
-		return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote(cfg.ReleasePath))
-	}
 	opts.Puller = cfg.puller
 	opts.SourceResolver = cfg.sourceResolver
 	opts.RenderOptions = cfg.renderOptions

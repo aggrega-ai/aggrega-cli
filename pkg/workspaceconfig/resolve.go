@@ -224,10 +224,12 @@ func (r *ResolvedWorkspace) Warnings() []string {
 // $AGGREGA_CONFIG layer beneath and Default() at the base), and return the
 // opaque result.
 //
-// Root precedence: flagRoot (the --workspace-root override) > the nearest
+// Root precedence: flagRoot (the --workspace-root override), which must be an
+// existing folder ([NamedRootDir]) > the nearest
 // ancestor whose `.aggrega-config.yaml` carries a `workspace:` block > the
 // nearest ancestor carrying a heuristic marker (`.aggrega/`, `aggregate*.yaml`,
-// `release*.yaml`, `manifest*.yaml`) > start itself. A bare
+// `release*.yaml`, `manifest*.yaml`) > start itself, which
+// [ResolvedWorkspace.FoundNoWorkspace] reports. A bare
 // `.aggrega-config.yaml` (no `workspace:` block) does NOT anchor a root — it
 // still contributes to the cascade, but cannot hijack the root (the failure
 // mode where a home/global settings file marks every directory as a root).
@@ -570,11 +572,17 @@ func configFilePresent(path string) bool {
 
 // discoverRoot determines the workspace root and the marker that anchored it,
 // honoring the precedence documented on Resolve. absStart must be absolute.
+//
+// A named root is the root as it stands, so it must be a folder that exists: one
+// that does not is refused here (NamedRootDir), before anything else the
+// resolution does, rather than resolved as an empty workspace in which nothing is
+// found and the fault reads as a configuration problem rather than a mistyped
+// path.
 func discoverRoot(absStart, flagRoot string) (root string, marker Marker, err error) {
 	if flagRoot != "" {
-		abs, aerr := filepath.Abs(flagRoot)
-		if aerr != nil {
-			return "", MarkerNone, fmt.Errorf("workspaceconfig: --workspace-root %s: %w", flagRoot, aerr)
+		abs, nerr := NamedRootDir(flagRoot)
+		if nerr != nil {
+			return "", MarkerNone, nerr
 		}
 		return abs, MarkerNone, nil
 	}

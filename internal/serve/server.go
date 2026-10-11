@@ -275,6 +275,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1425,13 +1426,19 @@ func (s *session) workspaceOrHeldFor(root string) (*Server, error) {
 	if ws := s.workspaces.get(key); ws != nil {
 		return ws, nil
 	}
-	st, statErr := os.Stat(key)
-	if statErr != nil {
-		return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which cannot be read: %w", key, statErr)
-	}
-	if !st.IsDir() {
-		return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which is not a directory: a "+
-			"workspace root is a tree", key)
+	// Whether the root can be one is the shared resolution's judgement, the one
+	// every resolution handed a named root asks; the sentence is this surface's,
+	// naming the parameter the request sent.
+	if _, rerr := workspaceconfig.NamedRootDir(key); rerr != nil {
+		var named *workspaceconfig.NamedRootError
+		if !errors.As(rerr, &named) {
+			return nil, rerr
+		}
+		if named.NotADirectory() {
+			return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which is not a directory: a "+
+				"workspace root is a tree", key)
+		}
+		return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which cannot be read: %w", key, named.Unwrap())
 	}
 
 	s.workspaces.mu.Lock()
@@ -1882,10 +1889,12 @@ func (s *Server) forgetPublished() {
 // is pushed the diagnostics of the workspace the process was pointed at, which
 // is the workspace the operator declared by pointing it there.
 //
-// Launch anchoring itself is unchanged:
+// Launch anchoring:
 //   - When cfg.WorkspaceRoot is non-empty, Run uses the explicit path and skips
-//     discovery. The cobra wiring is expected to have validated the path; Run
-//     re-validates as defense-in-depth.
+//     discovery. The command validates the path before Run is reached, naming the
+//     flag or the variable that supplied it; a path that is not an existing
+//     folder by the time Run resolves it is refused by that resolution itself
+//     (workspaceconfig.NamedRootDir), the one judgement every named root meets.
 //   - When cfg.WorkspaceRoot is empty, Run walks upward from the daemon's cwd
 //     looking for any of the five marker types per discoverWorkspaceRoot.
 //
@@ -1909,16 +1918,6 @@ func (s *Server) forgetPublished() {
 // answer one naming that workspace: the requests listing what it holds from its
 // held view, every other one with the hold's refusal.
 func Run(ctx context.Context, cfg RunConfig) error {
-	if cfg.WorkspaceRoot != "" {
-		st, statErr := os.Stat(cfg.WorkspaceRoot)
-		if statErr != nil {
-			return fmt.Errorf("explicit workspace root %s: %w", cfg.WorkspaceRoot, statErr)
-		}
-		if !st.IsDir() {
-			return fmt.Errorf("explicit workspace root %s is not a directory", cfg.WorkspaceRoot)
-		}
-	}
-
 	// Single resolution path shared with the CLI and with every workspace a
 	// request names: discover the root (or honor the explicit one),
 	// cascade-merge the config tree, and lay the launch's command line on top.

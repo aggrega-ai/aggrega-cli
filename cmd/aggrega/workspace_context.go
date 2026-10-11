@@ -20,10 +20,18 @@ type workspaceCtxKey struct{}
 
 // lazyWorkspace resolves the workspace exactly once, on first access, and
 // caches the result. Resolution is deferred (not run in PersistentPreRunE) so
-// commands that never need a workspace — version, login, logout — never
-// trigger discovery and run cleanly outside any workspace.
+// commands that never need a workspace — version, logout — never trigger
+// discovery and run cleanly outside any workspace. login reads the workspace for
+// one thing, the offline posture of its verification ping, and withholds the
+// notice below (withholdNoWorkspaceNotice).
 type lazyWorkspace struct {
 	flagRoot string
+	// rootSource names where flagRoot came from — the flag as a reader types it,
+	// or the variable's name — as workspaceRootFromFlagOrEnv reports it, and is
+	// empty where neither supplied one. A named root that is not an existing
+	// folder is refused naming it (workspaceconfig.NameRootSource), so a value the
+	// reader never typed is reported against the variable that carried it.
+	rootSource string
 	// lookup reads the environment during resolution. It carries the --config
 	// flag as the flag form of the global-config-path override, so both the
 	// global layer and any config-mutating command resolve that path through the
@@ -53,6 +61,10 @@ type lazyWorkspace struct {
 	// invocation. The root command sets it on the command the notice names,
 	// which would otherwise be told to run what it is already running.
 	withholdFirstRun bool
+	// withholdNoWorkspace suppresses the notice that no workspace was found
+	// (noWorkspaceNotice) for this invocation. A command sets it when what it
+	// reads from the workspace does not depend on which folder is the root.
+	withholdNoWorkspace bool
 
 	// mu guards subject and resolved, which a command sets and the resolution
 	// reads.
@@ -90,6 +102,10 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 		l.resolved = true
 		l.mu.Unlock()
 		l.ws, l.err = workspaceconfig.ResolveOn(l.platform, "", l.flagRoot, l.lookup)
+		// A named root that is not an existing folder is refused by the
+		// resolution itself, before anything else it does; the refusal is told
+		// here which of the flag and the variable supplied it.
+		l.err = workspaceconfig.NameRootSource(l.err, l.rootSource)
 		if l.err == nil {
 			// The flag layer is composed here, on the one resolution every
 			// command reads, which is what makes it the ladder's top layer
@@ -104,6 +120,12 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 			out := l.advisoryWriter()
 			for _, w := range l.ws.Warnings() {
 				fmt.Fprintf(out, "warning: %s\n", w)
+			}
+			// Written from the resolution the command uses — the subject's, where
+			// the shared rule moved it — and from inside the once, so a command
+			// that resolves its workspace says at most once which folder it used.
+			if !l.withholdNoWorkspace {
+				noWorkspaceNotice(out, l.ws)
 			}
 			// Inside the once, so a command body that reads its configuration
 			// through several code paths shows the notice at most once. The
@@ -202,6 +224,43 @@ func withholdFirstRunNotice(ctx context.Context) {
 	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
 		l.withholdFirstRun = true
 	}
+}
+
+// withholdNoWorkspaceNotice marks the resolver attached to ctx so this invocation
+// shows no notice that no workspace was found. It is called by a command whose
+// reading of the workspace does not depend on which folder is the root — login,
+// which reads only the offline posture for its verification ping and stores the
+// credential where every workspace on the machine reads it — so telling its
+// reader how to name a workspace would answer a question the command never asks.
+// It must be called before the workspace is first read, which is when the notice
+// is written.
+func withholdNoWorkspaceNotice(ctx context.Context) {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
+		l.withholdNoWorkspace = true
+	}
+}
+
+// nameWorkspaceRootSource records on the resolver attached to ctx where its
+// named root came from, as workspaceRootFromFlagOrEnv reports it, so a refusal
+// of a root that is not an existing folder names the flag or the variable that
+// supplied it. The root command calls it beside withWorkspaceResolver, from the
+// one read of the flag and the variable.
+func nameWorkspaceRootSource(ctx context.Context, source string) {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
+		l.rootSource = source
+	}
+}
+
+// workspaceRootSourceFromContext returns where the resolver's named root came
+// from — the flag or the variable — for a command that resolves its workspace off
+// the shared path and still has to name it in a refusal, as workspaceRootFromContext
+// returns the root itself. Empty where nothing named a root or no resolver is
+// attached.
+func workspaceRootSourceFromContext(ctx context.Context) string {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
+		return l.rootSource
+	}
+	return ""
 }
 
 // configLookupFromContext returns the flag-aware environment lookup carried by

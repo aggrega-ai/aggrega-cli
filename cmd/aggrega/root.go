@@ -86,10 +86,11 @@ func newRootCmd() *cobra.Command {
 			// (withMachine), and the resolver picks the platform up from the same
 			// context.
 			_, env := machineFromContext(cmd.Context())
-			root, _ := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, env)
+			root, rootSource := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, env)
 			ctx := withWorkspaceResolver(cmd.Context(), root,
 				globalConfigLookup(configPathFlag, env),
 				flagOverlayFromCobra(cmd, offlineFlag, configPathFlag))
+			nameWorkspaceRootSource(ctx, rootSource)
 			if cmd.CommandPath() == configInitInvocation {
 				withholdFirstRunNotice(ctx)
 			}

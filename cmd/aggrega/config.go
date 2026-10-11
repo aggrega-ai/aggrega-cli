@@ -374,7 +374,7 @@ itself and produces no notice.`,
 			rw, err := workspaceconfig.ResolveWithoutGlobalOn(platformFromContext(cmd.Context()), "",
 				workspaceRootFromContext(cmd.Context()), lookup)
 			if err != nil {
-				return err
+				return workspaceconfig.NameRootSource(err, workspaceRootSourceFromContext(cmd.Context()))
 			}
 			return configInitRun(cmd.Context(), configInitConfig{
 				Registry:  registry,

@@ -122,6 +122,12 @@ func TestAPullNamingAnAbsoluteReleaseFromAFolderNoWorkspaceResolvesUsesTheReleas
 // condition would run the row in the Release's workspace and the pull would
 // complete.
 //
+// The relative-path row runs in the folder it was started in, which anchors
+// nothing and was named by nobody, so its pull is refused before anything is
+// fetched rather than at the registry: no artifact cache is written in a folder
+// that is not a workspace. That refusal still says the row was not answered in
+// the Release's workspace, where the pull would have completed.
+//
 // Not parallel, for the reasons the positive test gives; every row also sets the
 // process environment.
 func TestAPullNamingAnAbsoluteReleaseResolvesAsBeforeWhereAWorkspaceWasNamedOrFound(t *testing.T) {
@@ -130,6 +136,9 @@ func TestAPullNamingAnAbsoluteReleaseResolvesAsBeforeWhereAWorkspaceWasNamedOrFo
 		// setup moves the process into the folder the row runs from, sets whatever
 		// the row names, and returns the arguments the pull runs with.
 		setup func(t *testing.T, release string) []string
+		// cacheRefused is set on the row whose resolution found no workspace and
+		// was handed none, whose pull is refused for the cache it would write.
+		cacheRefused bool
 	}{
 		{
 			name: "the folder it runs in is a workspace",
@@ -167,6 +176,7 @@ func TestAPullNamingAnAbsoluteReleaseResolvesAsBeforeWhereAWorkspaceWasNamedOrFo
 				t.Chdir(startedIn)
 				return []string{"pull", "--release", relative}
 			},
+			cacheRefused: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,6 +188,15 @@ func TestAPullNamingAnAbsoluteReleaseResolvesAsBeforeWhereAWorkspaceWasNamedOrFo
 			if err == nil {
 				t.Fatalf("aggrega %s completed, so it ran in the Release's own workspace rather than the one this "+
 					"row settles on\nstderr:\n%s", strings.Join(args, " "), stderr)
+			}
+			if tc.cacheRefused {
+				var refused *workspaceconfig.CacheWriteRefusedError
+				if !errors.As(err, &refused) {
+					t.Fatalf("aggrega %s refused, but not for the cache it would write in a folder that is no "+
+						"workspace: %v", strings.Join(args, " "), err)
+				}
+				assertNoLockfile(t, release, "the refused pull")
+				return
 			}
 			if !errors.Is(err, catalog.ErrUnscopedRecipeReference()) {
 				t.Fatalf("aggrega %s refused, but not as a Recipe reference no local catalog directory holds is "+

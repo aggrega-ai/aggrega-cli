@@ -580,8 +580,10 @@ func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 //
 // The tool's result is handed on through [server.withoutHostLocations], which
 // over a listener spells each location in its text the way a caller there may be
-// told it. It is here rather than in each tool because this is the one line every
-// result crosses.
+// told it, after [server.withNoWorkspaceNotice], which over the process's own
+// streams says which folder an answer used where no workspace was found and none
+// was named. Both are here rather than in each tool because this is the one line
+// every result crosses.
 func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -615,10 +617,11 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		}
 		// Every result a tool composes leaves through here, so a caller that did not
 		// launch this process is answered without a place on this host in the text of
-		// any tool's answer, a tool added later included. The refusals above name no
-		// location and are not read.
+		// any tool's answer, a tool added later included, and a caller that did is
+		// told which folder an answer used where no workspace was found and none was
+		// named. The refusals above name no location and are not read.
 		res, rpcErr := spec.invoke(s, ctx, p.Arguments)
-		return s.withoutHostLocations(res), rpcErr
+		return s.withoutHostLocations(s.withNoWorkspaceNotice(res)), rpcErr
 	}
 	// One class of name is answered with more than "no such tool", and it is the
 	// class a caller is most likely to have read about somewhere else: a tool

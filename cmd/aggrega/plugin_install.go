@@ -255,6 +255,12 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	if err != nil {
 		return resolvedInstallable{}, err
 	}
+	// The fetched blobs are cached under the workspace's artifact cache, and a
+	// workspace found nowhere and named by nobody gets no cache: the install is
+	// refused before the fetch, with the folder and the way out in the refusal.
+	if err := rw.CacheWriteRefusal(); err != nil {
+		return resolvedInstallable{}, err
+	}
 	puller := catalog.NewDefaultOCIPuller(wsCfg)
 	if puller == nil {
 		return resolvedInstallable{}, fmt.Errorf("cannot fetch %q while the workspace is offline; installing a registry plugin requires network access", ref)

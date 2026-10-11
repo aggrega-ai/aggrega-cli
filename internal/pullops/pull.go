@@ -230,13 +230,6 @@ type Config struct {
 	// resolved. The zero value reports nothing.
 	Report Reporter
 
-	// AnnotateResolutionFailure, when non-nil, is handed a resolution or
-	// validation failure together with the catalog files the tolerant load
-	// refused, and returns the failure the caller wants reported. Only a
-	// resolution or validation failure can be explained by a refused file, so only
-	// those reach it. Nil leaves every failure exactly as raised.
-	AnnotateResolutionFailure func(err error, skipped []catalog.SkippedEntity) error
-
 	// ResolveProviderAmbiguity settles an ambiguously-served capability by asking
 	// a person. Nil halts the ambiguity loudly instead, which is the answer for
 	// every caller with nobody watching.
@@ -345,13 +338,22 @@ func requireWorkspace(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig.R
 	return ws, nil
 }
 
-// annotate hands a resolution or validation failure to the caller's annotator,
-// or returns it unchanged when the caller supplied none.
-func (c Config) annotate(err error, skipped []catalog.SkippedEntity) error {
-	if c.AnnotateResolutionFailure == nil {
-		return err
-	}
-	return c.AnnotateResolutionFailure(err, skipped)
+// annotate carries, on a resolution or validation failure, the catalog files the
+// tolerant load refused and the workspace's account of where it reads local
+// entities for the Release (workspaceconfig.ResolvedWorkspace.LocalCatalogAdviceNote),
+// composed by the one annotation every surface's account comes from
+// (compilerops.AnnotateSkipContext).
+//
+// It is composed here, in the operation, rather than handed in by each caller,
+// because the account belongs to the failure and not to the surface reporting it:
+// a hook each surface had to remember to supply is one a surface can forget, and
+// then the same failed resolution tells a reader at a terminal where entities
+// are read from and tells an assistant or an editor nothing. Only a resolution or
+// validation failure can be explained by a refused file or by where entities are
+// read from, so only those reach it; the annotation itself adds the account only
+// where a reference resolved to nothing.
+func (c Config) annotate(rw *workspaceconfig.ResolvedWorkspace, err error, skipped []catalog.SkippedEntity) error {
+	return compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote(c.ReleasePath))
 }
 
 // irEntityInfra derives the per-instance source infra for FeatureRecipe
@@ -558,6 +560,15 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	manifest, err := resolver.ResolveManifestExtends(rw.Root(), releaseDir, cfg.ReleasePath, manRes)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
+	}
+	// Everything above read the Release's own files; everything below can fill the
+	// artifact cache, from the first registry reach onward, under every mode — a
+	// verify and a dry run fill it as a write does. A workspace that was found
+	// nowhere and named by nobody gets no cache, so it is refused here, before
+	// anything is fetched, with the folder and the way out in the refusal; the
+	// caller's own usage errors above still come first.
+	if err := rw.CacheWriteRefusal(); err != nil {
+		return Result{}, err
 	}
 	// The aggregate resolve is deferred until the catalog view is opened (below) so
 	// its identity cascade can reach the catalog tier — this operation must
@@ -784,14 +795,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// catalog as absent. This path computes its own closure rather than going
 	// through the shared resolver, so it carries the check itself.
 	if faults := resolver.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
-		return Result{}, cfg.annotate(faults[0], lazyView.SkippedEntities())
+		return Result{}, cfg.annotate(rw, faults[0], lazyView.SkippedEntities())
 	}
 	// A failure of this walk, and of the resolution steps below it, is returned as the
 	// walk words it, with no label of this function's own: the walk's frames open by
 	// saying what was being resolved, so a label here would say it a second time.
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
 	if err != nil {
-		return Result{}, cfg.annotate(err, lazyView.SkippedEntities())
+		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 	cl.ReleaseDocuments = releaseDocs
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
@@ -1019,7 +1030,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// library, fails loudly here; an out-of-closure break is never validated.
 	report.phase(PhaseValidate)
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
-		return Result{}, cfg.annotate(err, lazyView.SkippedEntities())
+		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 
 	// Per-component source resolution. Build the graph through the compiler's

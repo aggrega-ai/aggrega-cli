@@ -12,9 +12,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// workspaceRootFlagName is the global flag naming the workspace root, spelled
-// once for every site that registers or reads it.
-const workspaceRootFlagName = "workspace-root"
+// workspaceRootFlagName is the global flag naming the workspace root, read from
+// the resolution's own spelling so the flag every site registers or reads and
+// the flag the resolution's sentences tell a reader to pass are one name.
+const workspaceRootFlagName = workspaceconfig.WorkspaceRootFlagName
 
 // workspaceRootFromFlagOrEnv resolves the workspace-root override and names
 // where it came from: the --workspace-root flag wins when the operator changed

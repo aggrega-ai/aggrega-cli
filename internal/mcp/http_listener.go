@@ -372,7 +372,9 @@ func requireServableWorkspace(root string, flags workspaceconfig.FlagOverlay) er
 	if err != nil {
 		return fmt.Errorf("resolve the workspace this server would serve: %w", err)
 	}
-	if rw.Marker() != workspaceconfig.MarkerCWD {
+	// The one predicate a resolution that found no workspace is told apart by,
+	// the one the notice on every other surface asks.
+	if !rw.FoundNoWorkspace() {
 		return nil
 	}
 	return fmt.Errorf("this server was started in a directory no workspace resolves from, and a server "+

@@ -27,7 +27,7 @@ import (
 // the caller spells them, and this is the one place they are, so the refusal
 // below names what was sent rather than a second spelling of it.
 const (
-	argumentWorkspaceRoot = "workspace_root"
+	argumentWorkspaceRoot = workspaceconfig.WorkspaceRootArgument
 	argumentCatalogDirs   = "catalog_dirs"
 )
 
@@ -403,6 +403,21 @@ func resolutionInputs(launchRoot, rootArg string) (start, root string) {
 	return root, root
 }
 
+// rootSourceOf names where the root resolutionInputs hands a call's resolution
+// came from, for the refusal of a root that is not an existing folder
+// (workspaceconfig.NameRootSource): the call's own argument where it sent one,
+// else this server's launch. It reads the same two inputs in the same order, so
+// the refusal names the input whose value was actually used.
+//
+// A launch root was refused at launch where it did not exist, so the second name
+// is reached only by a folder removed while the server ran.
+func rootSourceOf(rootArg string) string {
+	if rootArg != "" {
+		return "the call's '" + argumentWorkspaceRoot + "'"
+	}
+	return "this server's launch"
+}
+
 // resolveToolWorkspace resolves the workspace a tool call operates in: the root
 // rootArg names, else the root this process was launched with, taken as the
 // workspace root, else the workspace discovered from the process working
@@ -428,7 +443,7 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	start, root := resolutionInputs(s.launchRoot, rootArg)
 	rw, err := workspaceconfig.ResolveWithFlags(start, root, s.flags)
 	if err != nil {
-		return nil, toolWorkspaceRefusal(err)
+		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
 	}
 	return s.toolWorkspaceOf(rw, catalogDirs), nil
 }
@@ -509,7 +524,7 @@ func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs 
 	start, root := resolutionInputs(s.launchRoot, rootArg)
 	rw, held, err := workspaceconfig.ResolveOrHold(start, root, s.flags)
 	if err != nil {
-		return nil, toolWorkspaceRefusal(err)
+		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
 	}
 	if held == nil {
 		return s.toolWorkspaceOf(rw, catalogDirs), nil

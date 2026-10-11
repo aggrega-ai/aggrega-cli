@@ -318,7 +318,10 @@ type UpdateOptions struct {
 //
 // What it WRITES is inside the workspace: the index lands under the workspace's
 // own configured cache directory, so an index build changes nothing another
-// workspace on the machine resolves through.
+// workspace on the machine resolves through. Where the resolution found no
+// workspace and none was named, there is no workspace to write it in, and a walk
+// with a host to walk is refused before any registry is reached
+// (workspaceconfig.ResolvedWorkspace.CacheWriteRefusal).
 //
 // Host-level failure handling depends on which path selected the hosts. When the
 // caller targets a single registry, a failure there is returned immediately —
@@ -386,6 +389,14 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 		res.NoRegistriesConfigured = true
 		fmt.Fprintln(notices, "No registries configured.")
 		return res, nil
+	}
+	// The index is written under the workspace's artifact cache, and a workspace
+	// that was found nowhere and named by nobody gets no cache: a walk that would
+	// write one is refused here, before any registry is reached, with the folder
+	// and the way out in the refusal. A walk with no host to walk writes nothing and
+	// is answered above.
+	if err := rw.CacheWriteRefusal(); err != nil {
+		return res, fmt.Errorf("aggrega registry update: %w", err)
 	}
 
 	now := opts.Now

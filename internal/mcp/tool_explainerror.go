@@ -155,11 +155,27 @@ func explainToolRefusal(action, message string, refusal error, kind string) stri
 
 // explainToolErrorAt is explainToolError for a failure whose fix is taught on a
 // page no entity kind selects, named outright.
+//
+// The note naming the condition is read off the failure's own chain where the
+// chain carries one, as the render-refusal path reads it (explainToolRefusal),
+// and out of its text otherwise. A failure's text carries no short code where
+// the code prints only at the head of a terminal's rendering — a dependency
+// resolution that found no entity for a reference is one — and reading the text
+// alone would answer such a failure with neither the condition's short code nor
+// its descriptive one, which is what a caller branches on.
 func explainToolErrorAt(action string, err error, page string) string {
+	message := strings.TrimSpace(err.Error())
+	note := conditionNote(message)
+	if shortCode, ok := cerrors.ShortCodeOf(err); ok {
+		note = conditionNoteFor(shortCode)
+	}
 	var b strings.Builder
 	b.WriteString(action)
 	b.WriteString("\n\n")
-	b.WriteString(explainDiagnosticAt(err.Error(), page))
+	b.WriteString(message)
+	b.WriteString(note)
+	b.WriteString("\n\n")
+	b.WriteString(docPointerLine(page))
 	return b.String()
 }
 

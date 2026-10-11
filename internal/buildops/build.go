@@ -291,15 +291,6 @@ type Config struct {
 	// fill, rather than performing a partial fill of its own.
 	Pull Pull
 
-	// AnnotateResolutionFailure, when non-nil, is handed a resolution or
-	// validation failure together with the catalog files the tolerant load
-	// refused, and returns the failure the caller wants reported. Only a
-	// resolution or validation failure can be explained by a refused file, so
-	// only those reach it: a deprecation halt carrying a note about skipped
-	// catalog files would name bystanders as the cause. Nil leaves every failure
-	// exactly as raised.
-	AnnotateResolutionFailure func(err error, skipped []catalog.SkippedEntity) error
-
 	// DiagOut is the sink for the run's per-step diagnostics. Nil defaults to
 	// os.Stderr at the top of Run; callers pass a buffer to capture diagnostics
 	// without mutating a process global.
@@ -645,11 +636,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	if err != nil {
 		// Only a resolution or validation failure can be explained by a file the
-		// tolerant load refused, so only those are annotated: a deprecation halt
-		// carrying a note about skipped catalog files would name bystanders as the
-		// cause.
-		if compilerops.IsResolutionFailure(err) && cfg.AnnotateResolutionFailure != nil {
-			return Result{}, cfg.AnnotateResolutionFailure(err, skipped)
+		// tolerant load refused, or by where local entities are read from, so only
+		// those are annotated: a deprecation halt carrying a note about skipped
+		// catalog files would name bystanders as the cause. The annotation is
+		// composed here rather than handed in by the caller, so every surface that
+		// runs this build reports the same account of the same failure.
+		if compilerops.IsResolutionFailure(err) {
+			return Result{}, compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote(releasePath))
 		}
 		return Result{}, err
 	}

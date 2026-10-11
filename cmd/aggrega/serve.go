@@ -4,11 +4,8 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
 )
@@ -106,32 +103,28 @@ func runServe(cmd *cobra.Command, args []string) error {
 }
 
 // validateWorkspaceRootFlag enforces the contract on the workspace root a
-// server's launch names, by --workspace-root or by AGGREGA_WORKSPACE_ROOT.
-// Empty string is treated as unset (the server falls through to discovery). A
-// non-empty value resolves to an absolute path, must exist on disk, and must be
-// a directory.
+// server's launch names, by --workspace-root or by AGGREGA_WORKSPACE_ROOT,
+// before the server starts serving. Empty string is treated as unset (the server
+// falls through to discovery). A non-empty value resolves to an absolute path,
+// must exist on disk, and must be a directory.
+//
+// The judgement is the shared resolution's own (workspaceconfig.NamedRootDir),
+// the one every resolution handed a named root asks, so a launch and every
+// command refuse the same roots. What is this function's is the moment: a server
+// resolves a workspace per call, so the launch asks before the first one rather
+// than leaving the first call to find out.
 //
 // A refusal names source — the flag or the variable, whichever supplied the
 // value, as workspaceRootFromFlagOrEnv reports it — and quotes raw exactly as it
-// was given, between plain quotes and with nothing escaped, so a Windows path
-// reads as its owner typed it and a stray space at either end stays visible. A
-// launch is often composed by a client rather than typed, so the value can be one
-// its reader never saw: the refusal reports what arrived, whatever it looks like,
-// and recognises no spelling of its own.
+// was given (workspaceconfig.NamedRootError), so a launch composed by a client
+// rather than typed still says what it was handed.
 func validateWorkspaceRootFlag(raw, source string) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
-	abs, err := filepath.Abs(raw)
+	abs, err := workspaceconfig.NamedRootDir(raw)
 	if err != nil {
-		return "", fmt.Errorf(`%s names the workspace root "%s", which cannot be used: %w`, source, raw, err)
-	}
-	st, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf(`%s names the workspace root "%s", which cannot be used: %w`, source, raw, err)
-	}
-	if !st.IsDir() {
-		return "", fmt.Errorf(`%s names the workspace root "%s", which is not a directory: %s`, source, raw, abs)
+		return "", workspaceconfig.NameRootSource(err, source)
 	}
 	return abs, nil
 }

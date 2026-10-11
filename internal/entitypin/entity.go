@@ -180,6 +180,16 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	}
 	res.Pinnable = true
 
+	// The step's resolution fetches each input's source into the workspace's
+	// artifact cache, and a workspace found nowhere and named by nobody gets no
+	// cache: the step that writes is refused here, before anything is resolved,
+	// with the folder and the way out in the refusal.
+	if forWriting {
+		if err := rw.CacheWriteRefusal(); err != nil {
+			return Result{}, Plan{}, err
+		}
+	}
+
 	wsCfg := rw.Config()
 	root := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()

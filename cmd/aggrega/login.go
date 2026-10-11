@@ -33,6 +33,10 @@ func newLoginCmd() *cobra.Command {
 			"credential helper or OS keychain when present. No external login tool is required.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The workspace is read for its offline posture alone, and the credential
+			// is stored where every workspace reads it, so which folder is the root is
+			// nothing this command's reader has to act on.
+			withholdNoWorkspaceNotice(cmd.Context())
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err
