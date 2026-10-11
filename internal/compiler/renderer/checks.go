@@ -2322,14 +2322,14 @@ var BoundaryPathTemplateReadsOnlyDefinedKeys = constraint.Check[
 // Recipe — the document whose provides block an author adds the missing entry
 // to.
 //
-// # It reads presence from the pipe rather than from the authored block
+// # It reads presence from the pipe, and only presence
 //
 // The fact it reads is the value the render resolved for the key, whose second
-// result is whether the key was resolved at all. That is the answer wanted: a
-// key an author wrote and whose template resolved to nothing is a key the
-// consumer reads as unset, and reading the authored block instead would report
-// such an entry as fulfilled. It also means one fact answers the whole
-// predicate, since the fact's absence half IS the violation.
+// result is whether the key was resolved at all, and only that result is read.
+// Every entry a Recipe's provides block writes is resolved, one whose template
+// renders to nothing included — its value is the empty string — so such an
+// entry fulfils the contract: refusing it would be inspecting the value. One
+// fact answers the whole predicate, since the fact's absence half IS the violation.
 //
 // # Every shortfall is reported, not the first one
 //

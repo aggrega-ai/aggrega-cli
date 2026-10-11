@@ -203,7 +203,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, helpCatalogDir)
-	c.Flags().StringVar(&releaseFlag, "release", "", "Look a catalog name up in the terms of this Release file: through the catalog directories the workspace configuration gives that Release, with --catalog prepended. Applies to a name; a file or a registry reference is inspected as it stands and refuses it.")
+	c.Flags().StringVar(&releaseFlag, "release", "", "Look a catalog name up in the terms of this Release file: through the catalog directories the workspace configuration gives that Release, with --catalog prepended. Applies to a name; a file or a registry reference is inspected as it stands and refuses it. "+helpReleaseResolution)
 	c.Flags().BoolVar(&listFlag, "list", false, "Render identifiers only.")
 	c.Flags().BoolVar(&detailFlag, "detail", false, "Render full field bodies.")
 	c.Flags().BoolVar(&rawFlag, "raw", false, "Render the entity as authored, without resolution.")

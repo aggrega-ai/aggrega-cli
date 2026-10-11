@@ -505,6 +505,7 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 	if err != nil {
 		return err
 	}
+	harness.libraries = templateLibrariesOf(cat)
 
 	// Decline the required-socket, required-slot and presence-mandate checks for
 	// this run and say so, rather than report the author's own valid Recipe as
@@ -579,11 +580,7 @@ type buildOfOneReads struct {
 // supply.
 func buildOfOneReadsOf(rec *types.Recipe, cat *catalog.Catalog, lookup resolver.CatalogLookup) buildOfOneReads {
 	left, right := providerArtifactDelimiters(lookup, rec.Spec.Capability)
-	reads, err := renderer.RecipeTemplateReads(rec, renderer.RecipeTemplateLibraries{
-		Mappings:  cat.MappingLibraries,
-		Workloads: cat.WorkloadLibraries,
-		Artifacts: cat.ArtifactLibraries,
-	}, left, right)
+	reads, err := renderer.RecipeTemplateReads(rec, templateLibrariesOf(cat), left, right)
 	if err != nil {
 		return buildOfOneReads{}
 	}
@@ -598,6 +595,23 @@ func buildOfOneReadsOf(rec *types.Recipe, cat *catalog.Catalog, lookup resolver.
 	}
 	sort.Strings(paths)
 	return buildOfOneReads{paths: paths, readable: true}
+}
+
+// templateLibrariesOf is the set of libraries a Recipe's `$import:` entries
+// resolve against in this scope: the ones the catalog directories the check is
+// handed hold. No lockfile is read here, so a library reaches the check only by
+// sitting in one of those directories.
+//
+// The census of what a Recipe reads and the isolated render both take this one
+// set. A render handed none would stop at the first import as a library the
+// catalog does not hold while the census beside it resolved the same import, so
+// the two would disagree about one Recipe in one run.
+func templateLibrariesOf(cat *catalog.Catalog) renderer.RecipeTemplateLibraries {
+	return renderer.RecipeTemplateLibraries{
+		Mappings:  cat.MappingLibraries,
+		Workloads: cat.WorkloadLibraries,
+		Artifacts: cat.ArtifactLibraries,
+	}
 }
 
 // readsWhatABuildOfOneLacks reports whether one census path is at, beneath, or
@@ -893,6 +907,10 @@ type entityHarness struct {
 	// holds that Release, so the label is the only name it has, and the run is
 	// handed the same one it was loaded under rather than none.
 	releasePath string
+	// libraries are what the Recipe's `$import:` entries resolve against when the
+	// harness is rendered (templateLibrariesOf). The zero value holds none, so
+	// every import then stops the render as one the catalog does not hold.
+	libraries renderer.RecipeTemplateLibraries
 }
 
 // syntheticInstanceName is the single component-instance name the synthesized
@@ -1020,7 +1038,10 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		// pin what this harness resolves. Written rather than omitted: the
 		// pin-free source is what this probe MEANS, and an omission would be a
 		// different fact wearing the same face.
-		PluginPins: pluginpath.NoPins(),
+		PluginPins:        pluginpath.NoPins(),
+		MappingLibraries:  h.libraries.Mappings,
+		WorkloadLibraries: h.libraries.Workloads,
+		ArtifactLibraries: h.libraries.Artifacts,
 	}
 
 	// Tier 2: resolution, guards, IR construction — no render. A missing
