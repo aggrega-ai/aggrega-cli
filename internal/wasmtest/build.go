@@ -222,7 +222,9 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 // diagnostic read. Such a guest belongs beside the tests that drive it rather
 // than in a kit of reference examples, and it hand-writes its own wire bytes,
 // because a generated codec exists precisely to make the mistakes it has to make
-// unrepresentable.
+// unrepresentable. It serves equally a conforming guest built to make one
+// contract claim no reference example makes, so the host's consumers of that
+// claim can be driven with a real guest before any shipped plugin declares it.
 //
 // There is no toolchain-absent skip and there must not be one. The build is the
 // standard Go toolchain targeting wasip1, which ships with every Go

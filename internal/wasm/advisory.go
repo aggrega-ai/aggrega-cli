@@ -78,5 +78,6 @@ func (c ProviderContract) isZero() bool {
 		c.ArtifactDelimiters == nil &&
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
-		!c.CrossBoundaryLinking
+		!c.CrossBoundaryLinking &&
+		!c.Omits
 }

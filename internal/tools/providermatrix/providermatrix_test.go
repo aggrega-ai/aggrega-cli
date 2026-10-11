@@ -38,7 +38,7 @@ func TestScanReadsDeclaredContractsInManifestOrder(t *testing.T) {
 	}
 
 	want := []provider{
-		{Name: "alpha", PluginInputKinds: kinds(true, true, true)},
+		{Name: "alpha", PluginInputKinds: kinds(true, true, true), Omits: true},
 		{Name: "beta", PluginInputKinds: kinds(true, false, false), DelimLeft: "[[", DelimRight: "]]"},
 	}
 	if len(got) != len(want) {
@@ -149,8 +149,8 @@ func TestRenderRegionProjectsEveryClaim(t *testing.T) {
 		if !ok {
 			t.Fatalf("no row for provider %q in:\n%s", p.Name, region)
 		}
-		if len(cells) != 4 {
-			t.Fatalf("provider %q has %d capability cells, want 4", p.Name, len(cells))
+		if len(cells) != 5 {
+			t.Fatalf("provider %q has %d capability cells, want 5", p.Name, len(cells))
 		}
 		if want := mark(p.Sourced); cells[0] != want {
 			t.Errorf("%s sourced cell = %q, want %q", p.Name, cells[0], want)
@@ -163,6 +163,48 @@ func TestRenderRegionProjectsEveryClaim(t *testing.T) {
 		}
 		if want := mark(p.ArtifactsStandalone); cells[3] != want {
 			t.Errorf("%s artifacts-only cell = %q, want %q", p.Name, cells[3], want)
+		}
+		if want := mark(p.Omits); cells[4] != want {
+			t.Errorf("%s omits cell = %q, want %q", p.Name, cells[4], want)
+		}
+	}
+}
+
+// TestTheOmitsColumnIsMarkedOnlyForAGuestDeclaringTheClaim reads the claim from
+// guest source end to end: alpha's declaration sets it and beta's leaves it out,
+// so the grid marks alpha's cell and leaves beta's unmarked. The expected marks
+// are fixed here rather than taken from the scan, because a scan that stopped
+// reading the claim would report both guests as declining it, and a check built
+// from that scan would agree with it.
+func TestTheOmitsColumnIsMarkedOnlyForAGuestDeclaringTheClaim(t *testing.T) {
+	providers, err := scan(fixtureRoot)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	region, err := renderRegion(providers)
+	if err != nil {
+		t.Fatalf("renderRegion: %v", err)
+	}
+	if !strings.Contains(region, "| `omits:` |") {
+		t.Fatalf("the grid carries no omits column:\n%s", region)
+	}
+	want := map[string]string{"alpha": yes, "beta": no}
+	seen := map[string]bool{}
+	for _, l := range strings.Split(region, "\n") {
+		cells := strings.Split(strings.Trim(l, "| "), " | ")
+		name := cells[0]
+		wantMark, ok := want[name]
+		if !ok {
+			continue
+		}
+		seen[name] = true
+		if got := cells[len(cells)-1]; got != wantMark {
+			t.Errorf("%s omits cell = %q, want %q: %s", name, got, wantMark, l)
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("no row for %s in:\n%s", name, region)
 		}
 	}
 }

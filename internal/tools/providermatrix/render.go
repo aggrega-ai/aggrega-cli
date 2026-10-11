@@ -18,11 +18,13 @@ const (
 
 // renderRegion renders the capability grid and the note fixing its scope.
 //
-// The column set matches the one the page's curated introduction describes, so
-// the introduction stays true without being generated: the three input kinds a
-// provider declares, plus the alongside-artifacts case the introduction singles
-// out. Rows follow the order the guests are declared in, so a row moves only
-// when a declaration moves.
+// The input-kind columns match the ones the page's curated introduction
+// describes, so the introduction stays true without being generated: the three
+// input kinds a provider declares, plus the alongside-artifacts case the
+// introduction singles out. The last column is the provider's claim that it
+// honours omit entries, headed by the key an author writes them under. Rows
+// follow the order the guests are declared in, so a row moves only when a
+// declaration moves.
 //
 // Cells carry marks and, where a provider declares one, the delimiter pair an
 // author types in its artifact files. No cell names an implementation detail a
@@ -30,29 +32,30 @@ const (
 func renderRegion(providers []provider) (string, error) {
 	var b strings.Builder
 
-	b.WriteString("| Provider | `source:` + `valuesMapping:` | `workload:` | `artifacts:` (alongside) | artifacts-only (standalone) |\n")
-	b.WriteString("| --- | --- | --- | --- | --- |\n")
+	b.WriteString("| Provider | `source:` + `valuesMapping:` | `workload:` | `artifacts:` (alongside) | artifacts-only (standalone) | `omits:` |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
 
 	for _, p := range providers {
 		if strings.Contains(p.Name, "|") {
 			return "", fmt.Errorf("provider %q contains a table separator, which no escaping renders correctly inside a cell", p.Name)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
 			p.Name,
 			mark(p.Sourced),
 			mark(p.Synthesized),
 			alongsideCell(p),
-			mark(p.ArtifactsStandalone))
+			mark(p.ArtifactsStandalone),
+			mark(p.Omits))
 	}
 
 	// The scope note is generated rather than curated because it describes what
 	// the rows above cover, and a hand-written scope claim beside a generated
 	// list is the drift this region exists to remove.
 	b.WriteString("\n*This grid covers the providers distributed with the compiler. ")
-	b.WriteString("A provider supplied separately declares the input kinds it accepts in the ")
-	b.WriteString("same way, and the compiler reads that declaration by the same route — it is ")
-	b.WriteString("not listed here, because a published page cannot enumerate providers it has ")
-	b.WriteString("never seen.*")
+	b.WriteString("A provider supplied separately declares the input kinds it accepts, and whether ")
+	b.WriteString("it honours `omits:`, in the same way, and the compiler reads that declaration by ")
+	b.WriteString("the same route — it is not listed here, because a published page cannot enumerate ")
+	b.WriteString("providers it has never seen.*")
 
 	return b.String(), nil
 }
@@ -83,15 +86,15 @@ func alongsideCell(p provider) string {
 // what the guests declare without touching the page.
 func renderList(providers []provider) string {
 	var b strings.Builder
-	b.WriteString("provider\tsourced\tsynthesized\tartifacts_standalone\tartifacts_alongside\tdelimiters\n")
+	b.WriteString("provider\tsourced\tsynthesized\tartifacts_standalone\tartifacts_alongside\tdelimiters\tomits\n")
 	for _, p := range providers {
 		delims := "-"
 		if p.DelimLeft != "" && p.DelimRight != "" {
 			delims = p.DelimLeft + " " + p.DelimRight
 		}
-		fmt.Fprintf(&b, "%s\t%t\t%t\t%t\t%t\t%s\n",
+		fmt.Fprintf(&b, "%s\t%t\t%t\t%t\t%t\t%s\t%t\n",
 			p.Name, p.Sourced, p.Synthesized, p.ArtifactsStandalone,
-			p.AcceptsAlongsideArtifacts(), delims)
+			p.AcceptsAlongsideArtifacts(), delims, p.Omits)
 	}
 	return b.String()
 }

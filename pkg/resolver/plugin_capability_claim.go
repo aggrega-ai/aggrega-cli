@@ -60,6 +60,7 @@ func pluginContractClaim(c types.ProviderContract) *pluginpath.ProviderContractC
 		BoundaryAssembly:     c.BoundaryAssembly,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
+		Omits:                c.Omits,
 		NestSegment:          c.NestSegment,
 		SourceIgnore:         c.SourceIgnore,
 	}

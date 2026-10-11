@@ -196,6 +196,7 @@ func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 		BoundaryAssembly:     c.BoundaryAssembly,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
+		Omits:                c.Omits,
 		NestSegment:          c.NestSegment,
 	}
 	if c.ArtifactDelimiters != nil {

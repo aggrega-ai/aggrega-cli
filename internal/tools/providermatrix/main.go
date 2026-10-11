@@ -4,10 +4,11 @@
 // Command providermatrix refreshes the published provider capability grid from
 // the render-behavior contract each provider guest declares for itself.
 //
-// The grid states which of the three Recipe input kinds each provider accepts.
-// That is not knowledge the compiler core holds: a provider's input kinds are
-// its own claim, carried in the descriptor its describe() export returns, and
-// the core reads that claim rather than consulting a table of provider names.
+// The grid states which of the three Recipe input kinds each provider accepts,
+// and whether it honours omit entries. That is not knowledge the compiler core
+// holds: both are the provider's own claim, carried in the descriptor its
+// describe() export returns, and the core reads that claim rather than
+// consulting a table of provider names.
 // So the grid is projected from the guests' own declarations — the same
 // declarations the running compiler reads — and a published cell cannot say
 // something a provider does not claim.

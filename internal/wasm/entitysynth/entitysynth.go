@@ -212,6 +212,7 @@ func IsZeroContract(c wasm.ProviderContract) bool {
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
 		!c.CrossBoundaryLinking &&
+		!c.Omits &&
 		c.NestSegment == "" &&
 		c.SourceIgnore == nil
 }
@@ -245,6 +246,7 @@ func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 		BoundaryAssembly:     c.BoundaryAssembly,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
+		Omits:                c.Omits,
 		NestSegment:          c.NestSegment,
 	}
 	if c.ArtifactDelimiters != nil {

@@ -46,6 +46,20 @@ func TestUnderDeclaredNotices(t *testing.T) {
 		t.Errorf("an omitted contract should yield exactly the contract notice; got %v", noContract)
 	}
 
+	// A contract whose only claim is support for omit entries is still a contract,
+	// so an entity authoring none is told the binary reports one.
+	omitsOnly := UnderDeclaredNotices(EntityCuratedSurface{
+		ExportNames:  []string{"render_node"},
+		Capabilities: []string{"helm", "compose"},
+	}, PluginDescriptor{
+		Exports:      []PluginExport{{Name: "render_node"}},
+		Capabilities: []string{"helm", "compose"},
+		Contract:     &ProviderContract{Omits: true},
+	})
+	if len(omitsOnly) != 1 || !strings.Contains(omitsOnly[0], "render-behavior contract") {
+		t.Errorf("a contract claiming only omits support should yield the contract notice; got %v", omitsOnly)
+	}
+
 	// A surface covering everything yields no notices.
 	full := UnderDeclaredNotices(EntityCuratedSurface{
 		ExportNames:  []string{"render_node", "link_publish", "link_resolve"},

@@ -263,6 +263,10 @@ type ProviderContractClaim struct {
 	// groups through its paired link_publish and link_resolve exports. False when
 	// the plugin wires no cross-boundary edges.
 	CrossBoundaryLinking bool
+	// Omits is the authored omit-entries claim: whether the plugin leaves out of
+	// its output every rendered unit an omit entry matches and reports one count
+	// per entry. False when the plugin makes no such claim.
+	Omits bool
 	// NestSegment is the authored directory each contributor's own sub-directory
 	// sits under, for a plugin whose boundary assembly nests. Empty when the
 	// plugin names none.

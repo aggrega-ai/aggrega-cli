@@ -117,6 +117,8 @@ type ProviderContract struct {
 	ReusableInstance bool `json:"reusable_instance,omitempty" yaml:"reusable_instance,omitempty" cbor:"reusable_instance,omitempty"`
 	// CrossBoundaryLinking Whether the plugin wires cross-boundary uses edges — edges whose consuming and consumed ends assemble into different dispatch groups — by producing provider-native cross-reference wiring through its link_publish and link_resolve exports. A plugin declares it true only when it exports both. Absent (false) is the safe default: the plugin wires no cross-boundary edges.
 	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty" yaml:"cross_boundary_linking,omitempty" cbor:"cross_boundary_linking,omitempty"`
+	// Omits Whether the plugin honours the omit entries a render_node input carries: it leaves every rendered unit an entry matches out of everything it returns, and reports one count per entry it was handed in the output's omitted. A plugin declares it true only when it does both. Absent (false) is the safe default: the plugin makes no claim to leave anything out.
+	Omits bool `json:"omits,omitempty" yaml:"omits,omitempty" cbor:"omits,omitempty"`
 	// NestSegment The directory the plugin's target places each contributor's own sub-directory under, for a plugin that nests a dispatch group's per-node output. The host joins this segment, the contributor's authoring-level name, and each file's own path. Read only when boundary_assembly is nest. Absent, the host places each contributor's sub-directory directly at the dispatch position, with no enclosing directory. The value names one directory and never a path: a value carrying a path separator, or naming the current or the parent directory, is refused, because the host composes the contributor's name into it and a path fragment would place a contributor's files somewhere other than beneath the dispatch position.
 	NestSegment string `json:"nest_segment,omitempty" yaml:"nest_segment,omitempty" cbor:"nest_segment,omitempty"`
 	// SourceIgnore The files this plugin's ecosystem never ships beside a source it renders, declared as ignore rules. The host reads the declaration when an author pins a Recipe or FeatureRecipe whose capability this plugin serves for them: it composes these rules with the author's own ignore file, records the composed rules in the entity lock beside the entity, and from then on every publication of the entity, every comparison of its local source and every render of it applies the recorded rules rather than asking a plugin again. So a Recipe published for a capability carries the files its publisher's rules kept, and a plugin renders it when it speaks the same ABI version, its contract matches its entity's claim, and it needs no file outside that set. A plugin that needs a file the set left out must fail its build loudly and name the file; the host's part is to refuse a pack or a read of a file the set does not hold, naming it. Absent declares no ignore rules, and a source the plugin renders then keeps every file the author's own rules keep.
@@ -1037,6 +1039,18 @@ func (t ProviderContract) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.Omits != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"omits\":")
+		if t.Omits {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	if t.NestSegment != "" {
 		if !first {
 			buf.WriteByte(',')
@@ -1121,6 +1135,12 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 			} else {
 				t.CrossBoundaryLinking = v
 			}
+		case "omits":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Omits = v
+			}
 		case "nest_segment":
 			if s, err := readString(dec); err != nil {
 				return err
@@ -1156,7 +1176,7 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ProviderContract) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment", "source_ignore"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "omits", "nest_segment", "source_ignore"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -2292,6 +2312,9 @@ func (t ProviderContract) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	n := 2
+	if t.Omits != false {
+		n++
+	}
 	if t.NestSegment != "" {
 		n++
 	}
@@ -2312,6 +2335,10 @@ func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
+	if t.Omits != false {
+		dst = appendCBORTextString(dst, "omits")
+		dst = appendCBORBool(dst, t.Omits)
+	}
 	dst = appendCBORTextString(dst, "input_kinds")
 	if dst, err = t.InputKinds.appendCBOR(dst); err != nil {
 		return nil, err
@@ -2413,6 +2440,12 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.CrossBoundaryLinking = v
 			}
+		case "omits":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Omits = v
+			}
 		case "nest_segment":
 			if s, err := dec.readTextString(); err != nil {
 				return err
@@ -2443,7 +2476,7 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ProviderContract) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment", "source_ignore"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "omits", "nest_segment", "source_ignore"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

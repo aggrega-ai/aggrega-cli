@@ -307,6 +307,73 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 	}
 }
 
+// TestCrossCheckContract_Omits exercises the omit-entries arm of the
+// plugin-level comparison over all four cells of its two axes — whether the
+// entity claims support and whether the descriptor reports it. The two agreeing
+// cells load; each disagreeing cell halts naming the field, so an entity can
+// neither promise support its plugin lacks nor hide support its plugin declares.
+func TestCrossCheckContract_Omits(t *testing.T) {
+	t.Parallel()
+
+	descriptor := func(omits bool) PluginDescriptor {
+		return PluginDescriptor{
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
+			Exports:    []PluginExport{{Name: "render_node"}},
+			Contract: &ProviderContract{
+				InputKinds:       InputKinds{Sourced: true},
+				BoundaryAssembly: BoundaryAssemblyNone,
+				Omits:            omits,
+			},
+		}
+	}
+	claim := func(omits bool) *ProviderContract {
+		return &ProviderContract{
+			InputKinds:       InputKinds{Sourced: true},
+			BoundaryAssembly: BoundaryAssemblyNone,
+			Omits:            omits,
+		}
+	}
+
+	cases := []struct {
+		name    string
+		entity  bool
+		guest   bool
+		wantErr bool
+	}{
+		{name: "both claim support: match", entity: true, guest: true},
+		{name: "neither claims support: match", entity: false, guest: false},
+		{name: "entity claims support the descriptor does not report: halt", entity: true, guest: false, wantErr: true},
+		{name: "descriptor reports support the entity does not claim: halt", entity: false, guest: true, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := CrossCheckContract("provider/omits-renderer:1.0.0", EntityContractClaim{Contract: claim(tc.entity)}, descriptor(tc.guest))
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmContractMismatch()) {
+				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "provider/omits-renderer:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "declares omits") {
+				t.Errorf("error should name the omits field; got: %v", err)
+			}
+		})
+	}
+}
+
 // TestCrossCheckContract_EmptyClaim proves an entity with no authored
 // exports declares no claim and never halts, regardless of what the plugin
 // reports.

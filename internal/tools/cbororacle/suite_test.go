@@ -237,6 +237,12 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// string of the JSON bytes the guest wrote — a raw-message field, which the
 	// reference encoder writes as a byte string too — so it stays anchored.
 	vec[abi.RenderNodeOutput](t, "RenderNodeOutputRenderFacts", false)
+	// A source render input carrying omit entries, and an output carrying one count
+	// per entry. The members they add are lists of text-string maps and of
+	// integers, which the reference encoder writes the same way, so both stay
+	// anchored.
+	vec[abi.RenderNodeInput](t, "RenderNodeInputOmits", false)
+	vec[abi.RenderNodeOutput](t, "RenderNodeOutputOmitted", false)
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
 	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitivePayloadLeaves", false)
 	vec[abi.IRSpec](t, "IRSpecConnectionAttachment", false)
@@ -251,6 +257,7 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.LinkResolveOutput](t, "LinkResolveOutput", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorCLI", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorProvider", false)
+	vec[abi.PluginDescriptor](t, "PluginDescriptorProviderOmits", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMinimal", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMoo", false)
 	vec[abi.ParseInput](t, "ParseInput", false)

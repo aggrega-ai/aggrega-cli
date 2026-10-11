@@ -50,6 +50,9 @@ type provider struct {
 	// to imported artifact files, empty when it takes the default pair.
 	DelimLeft  string
 	DelimRight string
+	// Omits is the guest's claim that it honours omit entries, false where its
+	// declaration leaves the claim out.
+	Omits bool
 }
 
 // AcceptsAlongsideArtifacts reports whether a Recipe targeting this provider may
@@ -220,6 +223,7 @@ func readContract(lit *ast.CompositeLit) provider {
 		p.DelimLeft = stringValue(field(delims, "Left"))
 		p.DelimRight = stringValue(field(delims, "Right"))
 	}
+	p.Omits = boolValue(field(lit, "Omits"))
 	return p
 }
 

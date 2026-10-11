@@ -83,6 +83,7 @@ func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 			AssemblyNameAnnotation: &types.PluginAssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
 			ReusableInstance:       true,
 			CrossBoundaryLinking:   true,
+			Omits:                  true,
 		},
 	}
 
@@ -97,6 +98,7 @@ func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 		AssemblyNameAnnotation: &wasm.AssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
 		ReusableInstance:       true,
 		CrossBoundaryLinking:   true,
+		Omits:                  true,
 	}
 	if !reflect.DeepEqual(got.Contract, want) {
 		t.Errorf("mapped contract = %+v; want %+v", got.Contract, want)

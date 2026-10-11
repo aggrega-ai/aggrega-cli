@@ -63,8 +63,8 @@ type EntityExportClaim struct {
 // field-by-field against the descriptor's self-reported contract: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
 // assembly-name annotation, the reusable-instance claim, the cross-boundary-linking
-// claim, and the nest segment must each agree, and so must the source ignore rules
-// where the entity records any. A nil contract skips the
+// claim, the omit-entries claim, and the nest segment must each agree, and so must
+// the source ignore rules where the entity records any. A nil contract skips the
 // provider-level comparison — an entity is not required to author a
 // render-behavior contract.
 //
@@ -209,6 +209,11 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 		return fmt.Errorf(
 			"entity %q declares cross_boundary_linking %t but the plugin's describe() reports %t: %w",
 			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmContractMismatch())
+	}
+	if want.Omits != got.Omits {
+		return fmt.Errorf(
+			"entity %q declares omits %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.Omits, got.Omits, ErrWasmContractMismatch())
 	}
 	if want.NestSegment != got.NestSegment {
 		return fmt.Errorf(

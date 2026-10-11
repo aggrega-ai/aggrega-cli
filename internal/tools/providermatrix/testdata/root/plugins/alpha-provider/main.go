@@ -10,6 +10,7 @@ func descriptor() pdk.Descriptor {
 			InputKinds:       pdk.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly: "none",
 			ReusableInstance: true,
+			Omits:            true,
 		},
 	}
 }
