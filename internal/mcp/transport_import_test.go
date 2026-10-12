@@ -209,11 +209,17 @@ func TestTheImportToolResolvesItsSourceInsideTheServedWorkspace(t *testing.T) {
 // escaping path — which is the only honest way to drive this. A fabricated file
 // list would be this test writing the offending path itself and then watching
 // the host refuse its own input.
+//
+// The entry names the demo importer by its identity and version, which is what
+// attaches an importer: only the entry attaching the importer that runs hands it
+// its settings, so an entry naming anything else would leave the guest drafting
+// inside the root and this case measuring nothing. It is the first entry, which
+// is the position the case tells the stand-in resolution it attaches by.
 const importAttachmentEscapingTheRoot = `workspace: {}
 offline: true
 plugins:
   importer:
-    - uri: example.test/plugin/demo-importer:1.0.0
+    - uri: importer/demo-importer:1.0.0
       with:
         settings:
           target_namespace: "../escaped"
@@ -229,8 +235,13 @@ plugins:
 // served root, and asserts the tree in both directions: nothing above the root,
 // and nothing inside it either, because a refused import that left a contained
 // prefix behind is a partial result nobody asked for.
+//
+// The seam answers the workspace's first plugins.importer entry as attaching the
+// demo importer. The control's workspace has no such entry, so the control's
+// guest is handed no settings; the planted one has, and its settings reach the
+// guest.
 func TestADraftedPathClimbingOutOfTheServedWorkspaceIsRefused(t *testing.T) {
-	pointImportSeamAtTheDemoGuest(t)
+	pointImportSeamAtTheDemoGuestAttachedBy(t, 0)
 	f := newScopeGridFixture(t, false)
 	importOverTheListener(t, f, "flow.json", readImportFixture(t, langflowFixture))
 

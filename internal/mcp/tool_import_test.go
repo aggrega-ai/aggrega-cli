@@ -92,36 +92,60 @@ func readImportFixture(t *testing.T, path string) []byte {
 }
 
 // importDemoResolver stands in for the catalog's resolution, so a run drives the
-// real import socket and the real guest without a catalog on disk. No attachment
-// attaches the importer it answers with.
+// real import socket and the real guest without a catalog on disk.
 //
 // It answers for ANY format, which is what lets one guest serve the rows that
 // drive shape detection: the format the detection settled on is the format the
 // guest is asked for, so the file it drafts is named after it and a case can
 // read the detection's answer off the tree.
-type importDemoResolver struct{}
+//
+// attachedBy is the position of the plugins.importer entry it answers as
+// attaching the demo importer, or -1 for none, and a position the workspace's
+// list does not reach is answered as none. The import hands the importer the
+// with block of that entry and of no other, so a case whose importer must read
+// its entry's settings gives the position here. It is an answer the stand-in is
+// given rather than one it derives: which entry attaches an importer is the
+// catalog's rule, proven against a real catalog where that rule lives, and a case
+// giving a position writes the entry that rule reads as attaching this importer —
+// one naming it by its identity, importer/demo-importer, with a version.
+type importDemoResolver struct {
+	attachedBy int
+}
 
-func (importDemoResolver) ImporterPluginForFormat(format string, _ []string) (types.Plugin, int, error) {
+func (r importDemoResolver) ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error) {
+	at := -1
+	if r.attachedBy >= 0 && r.attachedBy < len(attached) {
+		at = r.attachedBy
+	}
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
 		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:" + format}}},
-	}, -1, nil
+	}, at, nil
 }
 
 // pointImportSeamAtTheDemoGuest points the shared layer's resolver-and-loader
-// seam at the built demo importer fixture for the duration of one case.
+// seam at the built demo importer fixture for the duration of one case, with no
+// plugins.importer entry attaching it.
 //
 // 🔴 It swaps a package-level variable, so no case using it may be made
 // parallel. The swap is safe as written because the runner resumes a parallel
 // test only once every sequential one has finished, and the cleanup restores it.
 func pointImportSeamAtTheDemoGuest(t *testing.T) {
 	t.Helper()
+	pointImportSeamAtTheDemoGuestAttachedBy(t, -1)
+}
+
+// pointImportSeamAtTheDemoGuestAttachedBy is pointImportSeamAtTheDemoGuest with
+// the demo importer attached by the workspace's plugins.importer entry at
+// position at.
+func pointImportSeamAtTheDemoGuestAttachedBy(t *testing.T, at int) {
+	t.Helper()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	prev := importops.BuildSeam
 	t.Cleanup(func() { importops.BuildSeam = prev })
 	importops.BuildSeam = func(*workspaceconfig.ResolvedWorkspace, importops.PluginBytesResolver) (importops.Seam, error) {
 		return importops.Seam{
-			ImporterRes: importDemoResolver{},
+			ImporterRes: importDemoResolver{attachedBy: at},
 			ImporterLoad: func(p types.Plugin) (wasm.PluginSpec, error) {
 				return wasm.PluginSpec{Name: p.Coordinate(), Path: fixture}, nil
 			},

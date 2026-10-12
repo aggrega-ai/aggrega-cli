@@ -81,16 +81,30 @@ func entriesWritten(path, key string, refs []PluginRef) []importerEntry {
 	return out
 }
 
-// checkUniqueImporterAttachments returns a wrapped ErrDuplicateImporterAttachment
-// when two entries of the composed importer list name one importer: each entry's
-// uri, with any ":<version>" split off, is the importer it names, so
+// importerNamed returns the importer a plugins.importer entry's uri names, and
+// whether it names one: the uri with any ":<version>" split off, so
 // "importer/agent-flows:1.0.0" and "importer/agent-flows:2.0.0" name one importer.
 //
-// An entry whose uri is a filesystem path names no importer and is not compared:
-// such a uri is anchored to its file's directory at load and is never an
-// importer's identity, and splitting a "version" off one would read a drive
-// letter's colon as a version separator. Which uris are paths is the loader's own
-// reading, LooksLikeOCIURI.
+// A uri that is a filesystem path names no importer: such a uri is anchored to
+// its file's directory at load and is never an importer's identity, and splitting
+// a "version" off one would read a drive letter's colon as a version separator.
+// Which uris are paths is the loader's own reading, LooksLikeOCIURI.
+//
+// It is the one reading of which importer an entry names, shared by the load-time
+// refusal of two entries naming one importer and by the writer that moves an
+// importer's one entry to a new version, so the entry the writer updates is
+// exactly the entry the refusal would have compared it with.
+func importerNamed(uri string) (string, bool) {
+	if !LooksLikeOCIURI(uri) {
+		return "", false
+	}
+	return ociref.VersionlessBase(uri), true
+}
+
+// checkUniqueImporterAttachments returns a wrapped ErrDuplicateImporterAttachment
+// when two entries of the composed importer list name one importer, as
+// importerNamed reads the importer each entry's uri names. An entry whose uri is
+// a filesystem path names no importer and is not compared.
 //
 // The list is walked in order and the first entry naming an importer an earlier
 // entry named is the one reported, beside that earlier entry, so the refusal is
@@ -111,10 +125,10 @@ func checkUniqueImporterAttachments(refs []PluginRef, written []importerEntry) e
 	}
 	first := make(map[string]int, len(refs))
 	for i, ref := range refs {
-		if !LooksLikeOCIURI(ref.URI) {
+		importer, names := importerNamed(ref.URI)
+		if !names {
 			continue
 		}
-		importer := ociref.VersionlessBase(ref.URI)
 		earlier, named := first[importer]
 		if !named {
 			first[importer] = i

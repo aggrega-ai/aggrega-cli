@@ -49,6 +49,8 @@ What add writes depends on the type:
     version and adds the bare plugin identity (<type>/<name>:<version>) to the
     plugins.<type> list. A governance entry also records its --role, one of
     ` + pluginops.GovernanceRolesHint() + `.
+    An importer the plugins.importer list already names keeps its one entry,
+    moved to the pinned version with its place and what it carries under with.
   - The provider type writes the plugin's oci:// identity as a plugins.providers
     entry; --capability names the capability the binding serves, preserving
     existing settings.

@@ -266,14 +266,18 @@ func providerBindingMutation(target, plugin string) func(mapping *yaml.Node) err
 	}
 }
 
-// UpsertPluginSocketRef adds the config-socket plugin attachment uri to the
+// UpsertPluginSocketRef records the config-socket plugin attachment uri in the
 // `plugins.<socket>` list in the workspace config file at path, preserving every
 // other setting, and writes the result back. socket is the config-socket key
 // (governance, linter, importer); uri is the bare plugin entity identity
 // (`<socket>/<name>:<version>`). An entry whose URI already matches is left in
 // place — the add is idempotent and never clobbers an existing attachment's
-// other members; a new URI is appended. A file that does not yet exist is
-// created carrying a `workspace: {}` marker and the one attachment.
+// other members. On the importer list an entry naming the same importer at
+// another version has its uri updated in place, its list position and every
+// other member (its `with` included) preserved, because that list admits one
+// entry per importer; on the governance and linter lists another version is a
+// new URI. A new URI is appended. A file that does not yet exist is created
+// carrying a `workspace: {}` marker and the one attachment.
 //
 // Like UpsertProviderBinding it routes through mutateConfigDocument, rewriting
 // only the `plugins.<socket>` list (creating the `plugins` block if absent) and
@@ -300,9 +304,11 @@ func UpsertPluginSocketRef(path, socket, uri string, role plugintype.Role) error
 // the schema does not admit is rejected here exactly as it is on the write path
 // rather than reported to a caller as a usable document.
 //
-// An attachment already carrying this URI composes to the file's existing bytes,
-// matching the write's idempotent no-clobber semantic: the reported document is
-// what the file would hold either way rather than an empty answer.
+// An attachment already carrying this URI composes to a document whose entries
+// are the file's own, matching the write's idempotent no-clobber semantic, and an
+// importer already attached at another version composes to the document with
+// that one entry moved to this version, as the write would leave it: the reported
+// document is what the file would hold either way rather than an empty answer.
 func PluginSocketRefDocument(path, socket, uri string, role plugintype.Role) ([]byte, error) {
 	if socket == "" || uri == "" {
 		return nil, fmt.Errorf("a plugin attachment needs both the socket it attaches to and the plugin identity to attach")
@@ -312,9 +318,9 @@ func PluginSocketRefDocument(path, socket, uri string, role plugintype.Role) ([]
 }
 
 // pluginSocketRefMutation builds the node surgery that records uri in a config
-// document's plugins.<socket> list: an entry whose URI already matches is left in
-// place, so the add is idempotent and never clobbers an existing attachment's
-// other members, and a new URI is appended.
+// document's plugins.<socket> list as upsertPluginRefURI decides: an entry that
+// already attaches the plugin keeps its place and its other members — on the
+// importer list its uri moves to this version — and a new attachment is appended.
 //
 // It is a factory rather than an inline closure for the reason registryMutation is
 // one — the composition and the write share this one mutation instead of each
@@ -322,7 +328,7 @@ func PluginSocketRefDocument(path, socket, uri string, role plugintype.Role) ([]
 func pluginSocketRefMutation(socket, uri string, role plugintype.Role) func(mapping *yaml.Node) error {
 	return func(mapping *yaml.Node) error {
 		pluginsNode := getOrCreateMapping(mapping, "plugins")
-		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), uri, role)
+		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), socket, uri, role)
 
 		var refsNode yaml.Node
 		if err := refsNode.Encode(refs); err != nil {
@@ -709,13 +715,34 @@ func setEncodedKey(parent *yaml.Node, key string, v any) error {
 	return nil
 }
 
-// upsertPluginRefURI appends a bare-URI PluginRef for uri when no existing entry
-// in refs carries it, or returns refs unchanged when one already does. The
-// idempotent no-clobber semantic mirrors UpsertProviderRef: re-adding the same
-// attachment neither duplicates it nor disturbs an entry's other members.
-func upsertPluginRefURI(refs []PluginRef, uri string, role plugintype.Role) []PluginRef {
+// upsertPluginRefURI records uri in the plugins.<socket> entries refs: an entry
+// that already attaches the plugin uri names has its uri set to uri in place —
+// its list position and every other member (with, function, role) kept — and a
+// bare-URI PluginRef for uri is appended when no entry does.
+//
+// Which entry already attaches the plugin depends on the socket. On the importer
+// list it is the entry naming the same importer, as importerNamed reads both
+// uris, so re-adding an importer at another version moves its one entry to that
+// version: the list admits one entry per importer, and a second entry naming it
+// would be refused when the configuration loads. Every other list keeps an exact
+// uri match, because one plugin may be attached to it more than once, each time
+// with its own with — so another version of an attached plugin is appended there
+// beside the first. A uri already present is the exact match on every list, so
+// re-adding the same attachment neither duplicates it nor disturbs its members.
+// The in-place update mirrors UpsertProviderRef.
+func upsertPluginRefURI(refs []PluginRef, socket, uri string, role plugintype.Role) []PluginRef {
+	attaches := func(existing string) bool { return existing == uri }
+	if Socket(socket) == SocketImporter {
+		if importer, names := importerNamed(uri); names {
+			attaches = func(existing string) bool {
+				named, ok := importerNamed(existing)
+				return ok && named == importer
+			}
+		}
+	}
 	for i := range refs {
-		if refs[i].URI == uri {
+		if attaches(refs[i].URI) {
+			refs[i].URI = uri
 			return refs
 		}
 	}
