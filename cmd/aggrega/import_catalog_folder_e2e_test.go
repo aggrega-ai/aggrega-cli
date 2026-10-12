@@ -4,9 +4,9 @@
 package main
 
 // End-to-end coverage, at every entry point that reaches the import operation,
-// for an importer authored in a catalog folder: the reference agent-flow importer
-// as a real Plugin entity with its built module beside it, and the JSON parser it
-// calls back to laid down the same way. `aggrega import`, the assistant's import
+// for an importer authored in a catalog folder: the reference importer of each
+// agent-flow format as a real Plugin entity with its built module beside it, and
+// the JSON parser they call back to laid down the same way. `aggrega import`, the assistant's import
 // tool through `aggrega mcp`, and the session's aggrega/import method through
 // `aggrega serve` are each driven at the real command tree, with the real import
 // seam and the plugin resolution this package supplies — nothing here points the
@@ -33,7 +33,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -50,7 +49,7 @@ var catalogFolderImportSources = []struct {
 }
 
 // catalogFolderWorkspace declares an isolated workspace whose conventional
-// catalog folder holds the importer and the parser — with their modules beside
+// catalog folder holds the importers and the parser — with their modules beside
 // them, or without — and returns its root and what the folder holds. A case calls
 // isolateMachineConfiguration first.
 func catalogFolderWorkspace(t *testing.T, withModules bool) (string, importopstest.CatalogFolder) {
@@ -104,14 +103,14 @@ func sharedCatalogFolderImport(t *testing.T, source []byte, name string) importo
 // command nor the shared operation it is held to reads configuration this machine
 // happens to carry.
 //
-// The importer fixture is built first, because the toolchain building it reads
-// those same locations — its module and build caches live there — and a build
-// pointed at empty ones would have to fetch what it already has. A fixture is
-// built at most once per test process, so every later request for it, inside the
-// isolated environment, is answered without building.
+// The importer fixtures are built first, because the toolchain building them
+// reads those same locations — its module and build caches live there — and a
+// build pointed at empty ones would have to fetch what it already has. A fixture
+// is built at most once per test process, so every later request for one, inside
+// the isolated environment, is answered without building.
 func isolateMachineConfiguration(t *testing.T) {
 	t.Helper()
-	wasmtest.EnsureFixtureBuilt(t, importopstest.ImporterFixture)
+	importopstest.BuildImporterFixtures(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -135,8 +134,8 @@ func runImportAtTheRoot(t *testing.T, root string, args ...string) (code int, st
 }
 
 // TestImportCommandRunsAnImporterFromTheCatalogFolderItsEntitySitsIn drives
-// `aggrega import` over a workspace whose catalog folder holds the importer and
-// its parser, under both deliveries, and reads what reached each stream and the
+// `aggrega import` over a workspace whose catalog folder holds the importers and
+// their parser, under both deliveries, and reads what reached each stream and the
 // disk.
 //
 // Under --dry-run the standard output stream is pinned whole against the shared
@@ -277,7 +276,8 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
 	root, folder := catalogFolderWorkspace(t, false)
-	if _, err := os.Stat(folder.Importer.Module); !os.IsNotExist(err) {
+	importer := folder.ImporterFor(t, catalogFolderImportSources[0].format)
+	if _, err := os.Stat(importer.Module); !os.IsNotExist(err) {
 		t.Fatalf("the importer's module is beside its entity (stat: %v), so this case measures nothing", err)
 	}
 	source := filepath.Join(t.TempDir(), "flow.json")
@@ -299,7 +299,7 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 		t.Fatal("the condition for a plugin no source holds carries no registered sentence")
 	}
 	documented := fmt.Sprintf("plugin %q not resolvable through any tier (embed, colocated, local, cache): %s",
-		folder.Importer.Reference, message)
+		importer.Reference, message)
 	if !strings.Contains(process, "["+short+"]") {
 		t.Errorf("the halt does not open with %s:\n%s", short, process)
 	}
@@ -316,8 +316,8 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 
 // TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder drives the
 // assistant's import tool at `aggrega mcp`, the real entry point, over its own
-// transport, against a workspace whose catalog folder holds the importer and its
-// parser. The drafts are read back off the tree, beneath the served workspace's
+// transport, against a workspace whose catalog folder holds the importers and
+// their parser. The drafts are read back off the tree, beneath the served workspace's
 // root where the tool writes them, against the shared operation's result.
 //
 // 🔴 PLANTED DEFECT: remove ResolveImportPlugin from the mcp.Config literal the
@@ -372,8 +372,8 @@ func TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 
 // TestTheSessionImportMethodRunsAnImporterFromTheCatalogFolder drives the
 // session's aggrega/import method at `aggrega serve`, the real entry point, over
-// its own framing, against a workspace whose catalog folder holds the importer
-// and its parser. The drafts are read back off the tree, beneath the output
+// its own framing, against a workspace whose catalog folder holds the importers
+// and their parser. The drafts are read back off the tree, beneath the output
 // directory the request named, against the shared operation's result.
 //
 // 🔴 PLANTED DEFECT: remove ResolveImportPlugin from the serve.RunConfig literal

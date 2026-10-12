@@ -4,11 +4,11 @@
 package main
 
 // End-to-end coverage, at every entry point that reaches the import operation,
-// for a workspace attaching two importers: two importer entities generated from
-// the reference agent-flow importer's one module — one advertising the Langflow
-// format, the other the Flowise format — beside the JSON parser they call back
-// to, each attached by a plugins.importer entry handing it a different namespace
-// to draft under. `aggrega import`, the assistant's import tool through
+// for a workspace attaching two importers: two importer entities, one generated
+// from the Langflow reference importer and so advertising the Langflow format,
+// the other from the Flowise one — beside the JSON parser they call back to, each
+// attached by a plugins.importer entry handing it a different namespace to draft
+// under. `aggrega import`, the assistant's import tool through
 // `aggrega mcp`, and the session's aggrega/import method through `aggrega serve`
 // are each driven at the real command tree, with the real import seam and the
 // plugin resolution this package supplies, for a source of each format.
@@ -56,8 +56,8 @@ func attachedImportWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	laid, _ := importopstest.LayImporters(t, root, filepath.Join(root, workspaceconfig.ConventionalCatalogDir),
-		importopstest.Importer{Name: "import-alpha", Formats: []string{"langflow"}},
-		importopstest.Importer{Name: "import-beta", Formats: []string{"flowise"}},
+		importopstest.Importer{Name: "import-alpha", Format: "langflow"},
+		importopstest.Importer{Name: "import-beta", Format: "flowise"},
 	)
 	importopstest.WriteConfiguration(t, root,
 		importopstest.Attachment{URI: laid[0].Identity, Settings: map[string]any{"target_namespace": "north"}},

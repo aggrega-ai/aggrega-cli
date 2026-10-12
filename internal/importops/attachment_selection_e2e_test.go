@@ -5,10 +5,10 @@ package importops
 
 // End-to-end coverage for what a plugins.importer attachment does, through a real
 // catalog folder holding several importers generated from the reference
-// agent-flow importer's one module, beside the JSON parser they call back to: an
-// attachment whose uri names an importer by identity and version attaches it,
-// so it is chosen among the importers advertising a format, at the version its
-// uri names, and it alone is handed the attachment's settings.
+// importers' modules, beside the JSON parser they call back to: an attachment
+// whose uri names an importer by identity and version attaches it, so it is
+// chosen among the importers advertising a format, at the version its uri names,
+// and it alone is handed the attachment's settings.
 //
 // 🔴 Every case runs the REAL seam, as the catalog-folder cases beside this file
 // do: Import builds it through [BuildSeam] from the workspace's own catalog and
@@ -151,16 +151,17 @@ func assertDraftedBy(t *testing.T, res Result, importers []string, format, wantI
 }
 
 // TestEachImporterAttachmentConfiguresOnlyTheImporterItNames drives a workspace
-// whose catalog holds two importers generated from one module, one advertising
-// the Langflow format and the other the Flowise format, and whose configuration
-// attaches both, each handing its importer a different namespace. An import of
-// each format runs the importer advertising it, and that importer drafts under
-// the namespace its own attachment handed it — never the other's.
+// whose catalog holds two importers, one generated from the Langflow reference
+// importer and so advertising the Langflow format, the other from the Flowise
+// one, and whose configuration attaches both, each handing its importer a
+// different namespace. An import of each format runs the importer advertising it,
+// and that importer drafts under the namespace its own attachment handed it —
+// never the other's.
 func TestEachImporterAttachmentConfiguresOnlyTheImporterItNames(t *testing.T) {
 	t.Parallel()
 	rw := attachedImportWorkspace(t, []importopstest.Importer{
-		{Name: importerAlpha, Formats: []string{"langflow"}},
-		{Name: importerBeta, Formats: []string{"flowise"}},
+		{Name: importerAlpha, Format: "langflow"},
+		{Name: importerBeta, Format: "flowise"},
 	}, func(laid map[string]importopstest.LaidPlugin) []importopstest.Attachment {
 		return []importopstest.Attachment{
 			handing(laid[importerAlpha], northNamespace),
@@ -202,8 +203,8 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 		{
 			name: "the attachment names the importer of the other format",
 			importers: []importopstest.Importer{
-				{Name: importerAlpha, Formats: []string{"langflow"}},
-				{Name: importerBeta, Formats: []string{"flowise"}},
+				{Name: importerAlpha, Format: "langflow"},
+				{Name: importerBeta, Format: "flowise"},
 			},
 			attach: func(laid map[string]importopstest.LaidPlugin) []importopstest.Attachment {
 				return []importopstest.Attachment{handing(laid[importerAlpha], northNamespace)}
@@ -213,7 +214,7 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 		},
 		{
 			name:      "the attachment names an importer the catalog does not hold",
-			importers: []importopstest.Importer{{Name: importerAlpha}},
+			importers: []importopstest.Importer{{Name: importerAlpha, Format: "langflow"}},
 			attach: func(map[string]importopstest.LaidPlugin) []importopstest.Attachment {
 				return []importopstest.Attachment{{
 					URI:      "importer/import-elsewhere:1.0.0",
@@ -225,7 +226,7 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 		},
 		{
 			name:      "the attachment names the parser",
-			importers: []importopstest.Importer{{Name: importerAlpha}},
+			importers: []importopstest.Importer{{Name: importerAlpha, Format: "langflow"}},
 			attach: func(laid map[string]importopstest.LaidPlugin) []importopstest.Attachment {
 				return []importopstest.Attachment{handing(laid[importopstest.ParserName], northNamespace)}
 			},
@@ -253,8 +254,10 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 // naming the two attached and not the third.
 func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 	t.Parallel()
-	two := []importopstest.Importer{{Name: importerAlpha}, {Name: importerBeta}}
-	three := []importopstest.Importer{{Name: importerAlpha}, {Name: importerBeta}, {Name: importerGamma}}
+	two := []importopstest.Importer{{Name: importerAlpha, Format: "langflow"}, {Name: importerBeta, Format: "langflow"}}
+	three := []importopstest.Importer{
+		{Name: importerAlpha, Format: "langflow"}, {Name: importerBeta, Format: "langflow"}, {Name: importerGamma, Format: "langflow"},
+	}
 
 	for _, row := range []struct {
 		name      string
@@ -325,8 +328,8 @@ func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
 	t.Parallel()
 	versions := []importopstest.Importer{
-		{Name: importerAlpha, Version: "1.0.0"},
-		{Name: importerAlpha, Version: "2.0.0"},
+		{Name: importerAlpha, Version: "1.0.0", Format: "langflow"},
+		{Name: importerAlpha, Version: "2.0.0", Format: "langflow"},
 	}
 
 	for _, row := range []struct {
@@ -383,7 +386,7 @@ func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
 // unsatisfiable-pin condition.
 func TestAnImporterAttachmentPinningAVersionTheCatalogDoesNotHoldIsRefused(t *testing.T) {
 	t.Parallel()
-	rw := attachedImportWorkspace(t, []importopstest.Importer{{Name: importerAlpha, Version: "1.0.0"}},
+	rw := attachedImportWorkspace(t, []importopstest.Importer{{Name: importerAlpha, Version: "1.0.0", Format: "langflow"}},
 		func(map[string]importopstest.LaidPlugin) []importopstest.Attachment {
 			return []importopstest.Attachment{{
 				URI:      "importer/" + importerAlpha + ":9.9.9",

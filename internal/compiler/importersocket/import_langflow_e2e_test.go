@@ -25,17 +25,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-// The tests below exercise the real agent-flow importer guest end-to-end through
-// the import-socket dispatcher: a stub resolver maps the langflow and flowise
-// formats to the built import-langflow guest, and the REAL embedded JSON parser
-// serves the guest its source tree through the parser socket. So the guest obtains
-// its tree host-mediated (never re-parsing), decomposes each node, scores it
-// against its embedded candidate knowledge, and drafts or references components —
-// the whole semantic path, proven against a genuine parsed tree.
+// The tests below exercise the real agent-flow importer guests end-to-end through
+// the import-socket dispatcher: a stub resolver maps the langflow format to the
+// built Langflow importer guest and the flowise format to the built Flowise one,
+// and the REAL embedded JSON parser serves the guest its source tree through the
+// parser socket. So the guest obtains its tree host-mediated (never re-parsing),
+// decomposes each node, scores it against the candidate knowledge it carries, and
+// drafts or references components — the whole semantic path, proven against a
+// genuine parsed tree.
 
-// agentFlowResolver resolves the langflow and flowise formats to the import-langflow
-// guest fixture. It stands in for the catalog resolver a populated workspace
-// supplies; any other format halts loudly.
+// agentFlowResolver resolves the langflow format to the Langflow importer and the
+// flowise format to the Flowise importer, each advertising its own format alone;
+// a test hands the loader the fixture built for the format it imports. It stands
+// in for the catalog resolver a populated workspace supplies; any other format
+// halts loudly.
 type agentFlowResolver struct{}
 
 func (agentFlowResolver) ImporterPluginForFormat(format string) (types.Plugin, error) {
@@ -43,8 +46,8 @@ func (agentFlowResolver) ImporterPluginForFormat(format string) (types.Plugin, e
 		return types.Plugin{}, errNoImporterForFormat
 	}
 	return types.Plugin{
-		Metadata: types.PluginMetadata{Name: "import-langflow", Version: "1.0.0", PluginType: "importer"},
-		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:langflow", "import:flowise"}}},
+		Metadata: types.PluginMetadata{Name: "import-" + format, Version: "1.0.0", PluginType: "importer"},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:" + format}}},
 	}, nil
 }
 
@@ -367,7 +370,7 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 // envelope schema gate the catalog loader runs at each parse boundary.
 func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "import-flowise-go.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "flowise-flow.json")
 

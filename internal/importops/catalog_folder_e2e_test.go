@@ -34,9 +34,9 @@ import (
 )
 
 // catalogFolderSources are the two committed agent-flow fixtures and the files
-// the reference importer drafts from each under its default posture, in which
-// every node is drafted. The paths are compared as a set: the importer's own
-// order is the reported order, and these cases are not about it.
+// the reference importer of each one's format drafts from it under its default
+// posture, in which every node is drafted. The paths are compared as a set: the
+// importer's own order is the reported order, and these cases are not about it.
 var catalogFolderSources = []struct {
 	format string
 	source string
@@ -114,14 +114,19 @@ func catalogFolderImportWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorksp
 }
 
 // catalogFolderImportWorkspaceAttaching is catalogFolderImportWorkspace whose
-// configuration attaches the folder's importer, by its identity and version, with
-// the settings given.
+// configuration attaches each of the folder's importers, by its identity and
+// version, with the settings given — so whichever importer a source's format
+// selects is handed them.
 func catalogFolderImportWorkspaceAttaching(t *testing.T, settings map[string]any) (*workspaceconfig.ResolvedWorkspace,
 	importopstest.CatalogFolder) {
 	t.Helper()
 	wsDir := aWorkspaceDir(t)
 	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
-	importopstest.WriteConfiguration(t, wsDir, importopstest.Attachment{URI: folder.Importer.Identity, Settings: settings})
+	attachments := make([]importopstest.Attachment, 0, len(folder.Importers))
+	for _, imp := range folder.Importers {
+		attachments = append(attachments, importopstest.Attachment{URI: imp.Identity, Settings: settings})
+	}
+	importopstest.WriteConfiguration(t, wsDir, attachments...)
 	rw := resolveWorkspaceAt(t, wsDir)
 	if _, err := os.Stat(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); err != nil {
 		t.Fatalf("the workspace resolved at %s, which is not the directory its configuration was written in: %v",
@@ -141,17 +146,19 @@ func draftPaths(res Result) []string {
 }
 
 // TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn drives Import over a
-// workspace whose catalog folder holds the reference importer and a JSON parser,
-// each with its module beside its entity, for a Langflow and a Flowise source.
+// workspace whose catalog folder holds the reference importer of each format and
+// a JSON parser, each with its module beside its entity, for a Langflow and a
+// Flowise source.
 //
 // Three claims per source, and none stands in for another. The drafted files are
-// the end-to-end one: the importer ran, and so did the parser it calls back to,
-// since the drafts are built from the tree the parser returns. Each module being
-// read at the beside-the-entity tier is the location claim: there is nowhere else
-// this cascade could have read either from. And the directories every call was
-// handed being the ones the catalog indexed — each entity's own directory, held
-// to the workspace root — is what says the seam handed over the catalog's answer
-// rather than one of its own, for the importer and the parser alike.
+// the end-to-end one: the importer of the source's format ran, and so did the
+// parser it calls back to, since the drafts are built from the tree the parser
+// returns. Each module being read at the beside-the-entity tier is the location
+// claim: there is nowhere else this cascade could have read either from. And the
+// directories every call was handed being the ones the catalog indexed — each
+// entity's own directory, held to the workspace root — is what says the seam
+// handed over the catalog's answer rather than one of its own, for every entity
+// the folder holds alike.
 //
 // 🔴 PLANTED DEFECT: hand the resolver nil instead of the catalog's directories in
 // buildSeam (internal/importops/seam.go, the resolvePlugin call in the load
@@ -195,7 +202,7 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 			}
 
 			calls := cascade.resolutions()
-			for _, want := range []importopstest.LaidPlugin{folder.Importer, folder.Parser} {
+			for _, want := range []importopstest.LaidPlugin{folder.ImporterFor(t, src.format), folder.Parser} {
 				i := slices.IndexFunc(calls, func(c cascadeResolution) bool { return c.uri == want.Reference })
 				if i < 0 {
 					t.Fatalf("the import never resolved %s; it resolved %v", want.Reference, calls)
@@ -205,7 +212,7 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 				}
 			}
 			for _, call := range calls {
-				for _, laid := range []importopstest.LaidPlugin{folder.Importer, folder.Parser} {
+				for _, laid := range folder.Plugins() {
 					at, ok := call.colocated[laid.Reference]
 					if !ok {
 						t.Errorf("resolving %s was handed no directory for %s; the catalog indexed %s",

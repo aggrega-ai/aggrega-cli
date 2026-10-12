@@ -2,10 +2,10 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package importopstest lays down, for a test, a catalog folder from which an
-// import runs end to end: the reference agent-flow importer and a JSON parser,
-// each as a real Plugin entity with its built module beside it — or several
-// importers generated from that one module under names, versions and formats of
-// the caller's choosing — and the workspace configuration attaching them.
+// import runs end to end: the reference importer of each agent-flow format and a
+// JSON parser, each as a real Plugin entity with its built module beside it — or
+// importers generated from those modules under names and versions of the
+// caller's choosing — and the workspace configuration attaching them.
 //
 // It exists so every surface that reaches the import operation — the operation
 // itself, the command line, the assistant's tool and the editor session — is
@@ -15,11 +15,11 @@
 //
 // Every entity is composed by the catalog generation the command line runs
 // (`aggrega plugin gen-catalog`), from the built modules, so an entity here is
-// exactly what an author generating one from their own build gets — save where a
-// caller narrows the formats an importer advertises, which is an edit an author
-// may make to an entity they own, made through the entity's own setter. Each
-// module is laid down under the name the plugin cascade reads it by, derived from
-// the entity's own artifact reference rather than spelled here.
+// exactly what an author generating one from their own build gets. Each reference
+// importer serves one format, so the format an entity advertises is the one its
+// module reports. Each module is laid down under the name the plugin cascade
+// reads it by, derived from the entity's own artifact reference rather than
+// spelled here.
 //
 // The parser is the JSON parser this binary carries, generated under a name the
 // binary does not embed, so its module can be read only from beside its entity:
@@ -44,12 +44,42 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// ImporterFixture is the built reference agent-flow importer the folder's
-// importer entity is generated from.
-const ImporterFixture = "import-langflow-go.wasm"
+// referenceImporter is the reference importer of one format: the format it
+// serves, the built fixture its entities are generated from, and the
+// metadata.name the folder's entity for it carries.
+type referenceImporter struct {
+	format, fixture, name string
+}
 
-// importerName is the metadata.name the folder's importer entity carries.
-const importerName = "import-langflow"
+// referenceImporters are the reference importers, one per format, in the order a
+// folder lays them down.
+var referenceImporters = []referenceImporter{
+	{format: "langflow", fixture: "import-langflow-go.wasm", name: "import-langflow"},
+	{format: "flowise", fixture: "import-flowise-go.wasm", name: "import-flowise"},
+}
+
+// referenceImporterFor returns the reference importer serving format, failing
+// the test when no reference importer serves it.
+func referenceImporterFor(t *testing.T, format string) referenceImporter {
+	t.Helper()
+	for _, r := range referenceImporters {
+		if r.format == format {
+			return r
+		}
+	}
+	t.Fatalf("no reference importer serves the %q format", format)
+	return referenceImporter{}
+}
+
+// BuildImporterFixtures builds the fixture of every reference importer. A caller
+// that goes on to change the process environment the toolchain reads calls this
+// first, so no fixture is built in the changed environment.
+func BuildImporterFixtures(t *testing.T) {
+	t.Helper()
+	for _, r := range referenceImporters {
+		wasmtest.EnsureFixtureBuilt(t, r.fixture)
+	}
+}
 
 // ParserName is the metadata.name the folder's parser entity carries —
 // deliberately one the binary does not embed.
@@ -81,7 +111,7 @@ type LaidPlugin struct {
 }
 
 // Importer is one importer entity a folder is asked to hold, generated from the
-// reference agent-flow importer.
+// reference importer of one format.
 type Importer struct {
 	// Name is the entity's metadata.name.
 	Name string
@@ -89,13 +119,10 @@ type Importer struct {
 	// about its own build, and so the entity's metadata.version. Empty is the
 	// fixture's own version.
 	Version string
-	// Formats, when non-empty, narrows the formats the entity advertises to these,
-	// each written as the bare format (langflow, flowise). The module itself still
-	// handles every format it handles: the narrowing is the entity's claim, which
-	// is what the catalog selects an importer by, so it is how two entities
-	// generated from one module come to advertise different formats. Empty keeps
-	// every format the module reports.
-	Formats []string
+	// Format is the format whose reference importer the entity is generated from,
+	// written as the bare format (langflow, flowise) — and so the one format the
+	// entity advertises, which is what the catalog selects an importer by.
+	Format string
 }
 
 // Attachment is one plugins.importer entry a workspace configuration carries.
@@ -109,26 +136,23 @@ type Attachment struct {
 }
 
 // LayImporters lays each importer down at dir, inside the workspace rooted at
-// workspaceRoot, generated from the reference agent-flow importer with its
-// module beside it, together with the JSON parser the importer calls back to,
+// workspaceRoot, generated from the reference importer of its format with its
+// module beside it, together with the JSON parser the importers call back to,
 // and returns the importers in the order given and the parser.
 //
-// It builds the importer fixture, and a stamped build of it for each version
-// asked for, so a caller that goes on to change the process environment the
-// toolchain reads should call this first.
+// It builds the fixture of each format asked for, and a stamped build of it for
+// each version asked for, so a caller that goes on to change the process
+// environment the toolchain reads should call this first.
 func LayImporters(t *testing.T, workspaceRoot, dir string, importers ...Importer) ([]LaidPlugin, LaidPlugin) {
 	t.Helper()
 	laid := make([]LaidPlugin, 0, len(importers))
 	for _, imp := range importers {
-		module := wasmtest.EnsureFixtureBuilt(t, ImporterFixture)
+		ref := referenceImporterFor(t, imp.Format)
+		module := wasmtest.EnsureFixtureBuilt(t, ref.fixture)
 		if imp.Version != "" {
-			module = wasmtest.EnsureStampedFixtureBuilt(t, ImporterFixture, imp.Version)
+			module = wasmtest.EnsureStampedFixtureBuilt(t, ref.fixture, imp.Version)
 		}
-		var capabilities []string
-		for _, format := range imp.Formats {
-			capabilities = append(capabilities, "import:"+format)
-		}
-		laid = append(laid, layPlugin(t, workspaceRoot, dir, module, imp.Name, capabilities, true))
+		laid = append(laid, layPlugin(t, workspaceRoot, dir, module, imp.Name, true))
 	}
 	return laid, layParser(t, workspaceRoot, dir, true)
 }
@@ -176,18 +200,38 @@ func WriteConfiguration(t *testing.T, root string, attachments ...Attachment) {
 // CatalogFolder is what LayCatalogFolder put down.
 type CatalogFolder struct {
 	// Dir is the catalog directory.
-	Dir      string
-	Importer LaidPlugin
-	Parser   LaidPlugin
+	Dir string
+	// Importers are the folder's importers: the reference importer of each format,
+	// one entity apiece, in the order a folder lays them down.
+	Importers []LaidPlugin
+	Parser    LaidPlugin
+}
+
+// ImporterFor returns the folder's importer for format, failing the test when no
+// reference importer serves it.
+func (f CatalogFolder) ImporterFor(t *testing.T, format string) LaidPlugin {
+	t.Helper()
+	for i, r := range referenceImporters {
+		if r.format == format && i < len(f.Importers) {
+			return f.Importers[i]
+		}
+	}
+	t.Fatalf("the folder holds no importer for the %q format", format)
+	return LaidPlugin{}
+}
+
+// Plugins returns every entity the folder holds: its importers, then its parser.
+func (f CatalogFolder) Plugins() []LaidPlugin {
+	return append(append([]LaidPlugin{}, f.Importers...), f.Parser)
 }
 
 // LayCatalogFolder lays the folder down at dir, inside the workspace rooted at
 // workspaceRoot, and returns what it holds.
 //
-// withModules false writes both entities and leaves each without its module —
+// withModules false writes every entity and leaves each without its module —
 // the case of a module that is not beside its entity.
 //
-// It builds the importer fixture, so a caller that goes on to change the
+// It builds the importer fixtures, so a caller that goes on to change the
 // process environment the toolchain reads should call this first.
 //
 // There is no skip here beyond the one the fixture build itself carries, and
@@ -197,12 +241,13 @@ type CatalogFolder struct {
 func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool) CatalogFolder {
 	t.Helper()
 
-	importerModule := wasmtest.EnsureFixtureBuilt(t, ImporterFixture)
-	return CatalogFolder{
-		Dir:      dir,
-		Importer: layPlugin(t, workspaceRoot, dir, importerModule, importerName, nil, withModules),
-		Parser:   layParser(t, workspaceRoot, dir, withModules),
+	folder := CatalogFolder{Dir: dir}
+	for _, r := range referenceImporters {
+		module := wasmtest.EnsureFixtureBuilt(t, r.fixture)
+		folder.Importers = append(folder.Importers, layPlugin(t, workspaceRoot, dir, module, r.name, withModules))
 	}
+	folder.Parser = layParser(t, workspaceRoot, dir, withModules)
+	return folder
 }
 
 // layParser lays the binary's own JSON parser down at dir under a name the binary
@@ -217,7 +262,7 @@ func layParser(t *testing.T, workspaceRoot, dir string, withModule bool) LaidPlu
 	if err := os.WriteFile(parserModule, parserBytes, 0o644); err != nil {
 		t.Fatalf("write the JSON parser module: %v", err)
 	}
-	return layPlugin(t, workspaceRoot, dir, parserModule, ParserName, nil, withModule)
+	return layPlugin(t, workspaceRoot, dir, parserModule, ParserName, withModule)
 }
 
 // layPlugin generates one entity from the module at module under the identity
@@ -228,11 +273,7 @@ func layParser(t *testing.T, workspaceRoot, dir string, withModule bool) LaidPlu
 // path it names, with the content it carries: the bytes and the place are both
 // the generation's, and running it as a dry run is what hands them back to be
 // read before they are written.
-//
-// capabilities, when non-empty, replaces the capabilities the generated entity
-// declares before it is written — the one change made to what the generation
-// produced, and made through the entity's own setter for its plugin type's block.
-func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, capabilities []string, withModule bool) LaidPlugin {
+func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, withModule bool) LaidPlugin {
 	t.Helper()
 
 	overlay := filepath.Join(t.TempDir(), name+".yaml")
@@ -260,12 +301,6 @@ func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, capabiliti
 	var entity types.Plugin
 	if err := yaml.Unmarshal(content, &entity); err != nil {
 		t.Fatalf("read back the generated %s entity: %v", name, err)
-	}
-	if len(capabilities) > 0 {
-		entity.Spec.SetCapabilitiesFor(entity.Metadata.PluginType, capabilities)
-		if content, err = yaml.Marshal(entity); err != nil {
-			t.Fatalf("encode the %s entity with its capabilities narrowed: %v", name, err)
-		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(doc.Path), 0o755); err != nil {

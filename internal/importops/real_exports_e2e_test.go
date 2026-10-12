@@ -7,9 +7,9 @@ package importops
 // committed byte for byte under ../compiler/importersocket/testdata/real-exports
 // with the attribution their repositories carry. Each is run through the real
 // Import, naming no format, over a workspace whose catalog folder holds the
-// reference importer and a JSON parser beside their entities — the folder
-// importopstest lays down, and the path every surface reaches. Nothing here stands
-// in for the importer, the parser or the catalog.
+// reference importer of each format and a JSON parser beside their entities — the
+// folder importopstest lays down, and the path every surface reaches. Nothing here
+// stands in for the importers, the parser or the catalog.
 
 import (
 	"bytes"
@@ -268,17 +268,20 @@ func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument
 //     connects into, holding a reference to that node — which the edge already
 //     records. An input named by the node's inputAnchors is not drafted as a value.
 //
-// 🔴 PLANTED DEFECTS, one per shape, each in the importer example's walker
-// (aggrega-pdk/go/examples/import-langflow/walk.go); the fixture the tests run is
-// rebuilt from that source when it changes.
+// 🔴 PLANTED DEFECTS, one per shape, each in the walker of the importer example
+// serving the row's format (aggrega-pdk/go/examples/import-langflow/walk.go for
+// Langflow, aggrega-pdk/go/examples/import-flowise/walk.go for Flowise); the
+// fixtures the tests run are rebuilt from those sources when they change.
 //
-//   - In parseNodes, delete the three lines `if isCanvasNote(format, outer) {
-//     continue }`: the three note rows fail, each Aggregate gaining its notes
-//     (note-hiyq7; stickynote-0, stickynote-1, stickynote-2; stickynoteagentflow-0).
-//   - In templateFields, replace `err != nil || field.Type == nil` with `err !=
-//     nil`: the template row fails, the model component gaining
-//     _frontend_node_flow_id and _frontend_node_folder_id.
-//   - In parseNodes, replace `subtract(orderedKeys(data["inputs"]),
+//   - In liftNode, delete the three lines `if isCanvasNote(outerType) { return
+//     importer.Node{}, false }`: in the Langflow walker the Langflow note row
+//     fails, its Aggregate gaining note-hiyq7; in the Flowise walker the two
+//     Flowise note rows fail, gaining stickynote-0, stickynote-1, stickynote-2 and
+//     stickynoteagentflow-0.
+//   - In the Langflow walker's templateFields, replace `err != nil || field.Type
+//     == nil` with `err != nil`: the template row fails, the model component
+//     gaining _frontend_node_flow_id and _frontend_node_folder_id.
+//   - In the Flowise walker's liftNode, replace `subtract(orderedKeys(data["inputs"]),
 //     anchorNames(data["inputAnchors"]))` with `orderedKeys(data["inputs"])`: the
 //     anchor row fails, the agent component gaining inputModeration, memory, model
 //     and tools.
@@ -484,8 +487,9 @@ func draftedTargets(t *testing.T, rel string) map[string]string {
 // A row naming a token-count field, which reads like a credential and is not one,
 // checks that it is drafted as a value and not as a slot.
 //
-// 🔴 PLANTED DEFECT — the field name restored as the classifier, in the importer
-// example's walker (aggrega-pdk/go/examples/import-langflow/walk.go). Add
+// 🔴 PLANTED DEFECT — the field name restored as the classifier, in the node-list
+// reader both importer examples' walkers share (aggrega-pdk/go/pkg/importer/tree.go).
+// Add
 //
 //	func isSecretName(name string) bool {
 //		for _, needle := range []string{"api_key", "apikey", "api-key", "token", "password", "secret", "credential"} {
@@ -496,16 +500,16 @@ func draftedTargets(t *testing.T, rel string) map[string]string {
 //		return false
 //	}
 //
-// and in parseNodes, immediately before the line that appends the sourceNode,
+// and in NodeList, immediately before the line that appends the lifted node,
 // re-split the node's parameters by name:
 //
-//	all := append(append([]string{}, fields...), secrets...)
-//	fields, secrets = nil, nil
+//	all := append(append([]string{}, node.Fields...), node.Secrets...)
+//	node.Fields, node.Secrets = nil, nil
 //	for _, f := range all {
 //		if isSecretName(f) {
-//			secrets = append(secrets, f)
+//			node.Secrets = append(node.Secrets, f)
 //		} else {
-//			fields = append(fields, f)
+//			node.Fields = append(node.Fields, f)
 //		}
 //	}
 //
@@ -627,8 +631,8 @@ func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *t
 // passing the schema, placeholder or pillar checks, or if the drafted Aggregate —
 // or anything else in the catalog — stops passing the whole-catalog check.
 //
-// 🔴 PLANTED DEFECT — the fields written directly under values, in the importer
-// example's emitter (aggrega-pdk/go/examples/import-langflow/emit.go,
+// 🔴 PLANTED DEFECT — the fields written directly under values, in the emitter
+// both importer examples share (aggrega-pdk/go/pkg/importer/emit.go,
 // draftComponentBody): delete the lines writing `type: object`, `properties:` and
 // `additionalProperties: false`, and indent each field two spaces less. Every
 // drafted Component carrying values then fails the shape check, and the Langflow
