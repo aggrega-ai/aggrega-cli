@@ -195,9 +195,9 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: cannot read the source "+sourcePath+": ", err)
 	}
 
-	// The format is selected before the attachment inputs because the with-config
-	// is consumer-scoped to the importer serving THIS format: only the matching
-	// attachment's inputs are threaded, never another attachment's.
+	// The format is settled here, ahead of the import, so a source whose shape is
+	// not recognised is refused naming the field a caller here can send rather
+	// than the command line's flag.
 	format, err := importops.SelectFormat(params.Format, params.Source, content)
 	if err != nil {
 		// The detection refusal's own sentence names the command line's flag,
@@ -213,11 +213,6 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
-	sources, settings, err := importops.AttachmentInputs(s.resolvedWorkspace, format)
-	if err != nil {
-		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
-	}
-
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
 		Source:        content,
@@ -226,8 +221,6 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		OutputDir:     outputDir,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
-		Sources:       sources,
-		Settings:      settings,
 	})
 	if ctx.Err() != nil {
 		return nil

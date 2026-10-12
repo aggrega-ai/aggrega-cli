@@ -46,9 +46,16 @@ whichever folder the command is run in (creating parent directories as needed).
 The translation is done by the importer plugin in the workspace's catalog that
 advertises the source format; import selects it, runs it, and writes what it
 produces. Its .wasm is read from the places a build reads a plugin from — beside
-its Plugin entity in a catalog folder among them — and nothing is fetched. A
-plugins.importer attachment selects no importer: it supplies the with: sources
-and settings the importer is handed.
+its Plugin entity in a catalog folder among them — and nothing is fetched.
+
+A plugins.importer attachment attaches the importer its uri names by identity
+and version — importer/<name>:<version>, as plugin add importer writes it. An
+attached importer that advertises the source format is the one that runs, at
+the version its uri names, whatever other importers advertise the format too.
+Where more than one importer advertises the format and no single one of them is
+attached, import stops and names the importers it could not choose between. An
+attachment's with: sources and settings are handed to the importer it attaches
+and to no other, so an importer no attachment names is handed none.
 
 Pass --output-dir to write the drafts beneath another directory instead. A
 relative path resolves against the directory you run the command in, as every
@@ -89,19 +96,6 @@ source the write would refuse is refused here too.`,
 				return err
 			}
 
-			// The format is selected before the attachment inputs because the
-			// with-config is consumer-scoped to the importer serving THIS format:
-			// only the matching plugins.importer attachment's inputs are threaded,
-			// never another attachment's.
-			format, err := importops.SelectFormat(opts.format, path, content)
-			if err != nil {
-				return err
-			}
-			sources, settings, err := importops.AttachmentInputs(rw, format)
-			if err != nil {
-				return err
-			}
-
 			// A destination named on the command line is a path typed here, so it
 			// is resolved against the folder the command runs in, as every typed
 			// path is, and handed on whole so the first line names where the drafts
@@ -128,12 +122,10 @@ source the write would refuse is refused here too.`,
 			res, err := importops.Import(cmd.Context(), rw, importops.Options{
 				Source:        content,
 				SourceName:    path,
-				Format:        format,
+				Format:        opts.format,
 				OutputDir:     outputDir,
 				Delivery:      delivery,
 				ResolvePlugin: importPluginBytes,
-				Sources:       sources,
-				Settings:      settings,
 			})
 			if err != nil {
 				return err

@@ -127,16 +127,9 @@ func readRealExport(t *testing.T, rel string) []byte {
 // format, through the workspace rw, with the delivery and output directory given.
 // The plugin bytes come from the cascade built from the directories the seam
 // hands over and nothing else, as in the catalog-folder cases beside this file.
+// What the importer is handed is what rw's own importer attachments hand it.
 func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel string,
 	delivery authoredcontent.Delivery, outputDir string) Result {
-	t.Helper()
-	return importRealExportWithSettings(t, rw, rel, delivery, outputDir, nil)
-}
-
-// importRealExportWithSettings is importRealExport handing the importer the
-// settings document given, as an importer attachment's with.settings reaches it.
-func importRealExportWithSettings(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel string,
-	delivery authoredcontent.Delivery, outputDir string, settings json.RawMessage) Result {
 	t.Helper()
 	res, err := Import(context.Background(), rw, Options{
 		Source:        readRealExport(t, rel),
@@ -144,7 +137,6 @@ func importRealExportWithSettings(t *testing.T, rw *workspaceconfig.ResolvedWork
 		OutputDir:     outputDir,
 		Delivery:      delivery,
 		ResolvePlugin: (&recordingCascade{}).resolve,
-		Settings:      settings,
 	})
 	if err != nil {
 		t.Fatalf("the import of %s was refused: %v", rel, err)
@@ -455,14 +447,13 @@ func markedCredentials(t *testing.T, format string, source []byte) map[string][]
 }
 
 // draftedTargets imports the export at rel with the importer's decision record
-// rendered in place of the drafts — the settings an importer attachment hands it
-// to have one — and returns the Component each source node was drafted as, by the
-// node's id in the export.
+// rendered in place of the drafts — the settings an importer attachment naming
+// the importer hands it to have one — and returns the Component each source node
+// was drafted as, by the node's id in the export.
 func draftedTargets(t *testing.T, rel string) map[string]string {
 	t.Helper()
-	rw, _ := catalogFolderImportWorkspace(t)
-	res := importRealExportWithSettings(t, rw, rel, authoredcontent.DeliveryFor(true), "",
-		json.RawMessage(`{"render_mode":"llm"}`))
+	rw, _ := catalogFolderImportWorkspaceAttaching(t, map[string]any{"render_mode": "llm"})
+	res := importRealExport(t, rw, rel, authoredcontent.DeliveryFor(true), "")
 	if len(res.Files) != 1 || res.Files[0].Path != "import-decisions.json" {
 		t.Fatalf("the decision record was not the one file the import returned: %+v", draftPaths(res))
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -26,32 +27,56 @@ import (
 // matching scaffold file. It mirrors the guest at aggrega-pdk/go/examples/import.
 const demoEchoBody = "kind: Component\nmetadata:\n  name: demo\n"
 
-// stubImporterResolver returns the demo importer entity for any requested
-// format, standing in for the catalog's capability resolution so a run drives the
-// real import socket and the real guest without a catalog on disk.
-type stubImporterResolver struct{}
+// demoImporterIdentity is the identity and version an attachment names the demo
+// importer entity below by.
+const demoImporterIdentity = "importer/demo-importer:1.0.0"
 
-func (stubImporterResolver) ImporterPluginForFormat(string) (types.Plugin, error) {
+// stubImporterResolver returns the demo importer entity for any requested
+// format, standing in for the catalog's resolution so a run drives the real
+// import socket and the real guest without a catalog on disk.
+//
+// attachedBy is the position of the attachment it answers as attaching the demo
+// importer, or -1 for none. It is an answer the stand-in is given rather than one
+// it derives: which attachment names an importer is the catalog's rule, proven
+// against a real catalog beside this file, and the cases using this stand-in are
+// about what an import does with the attachment it is told about.
+type stubImporterResolver struct {
+	attachedBy int
+}
+
+func (r stubImporterResolver) ImporterPluginForFormat(_ string, attached []string) (types.Plugin, int, error) {
+	at := -1
+	if r.attachedBy >= 0 && r.attachedBy < len(attached) {
+		at = r.attachedBy
+	}
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
 		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:demo"}}},
-	}, nil
+	}, at, nil
 }
 
 // pointSeamAtDemoGuest points BuildSeam at the built demo importer fixture for
-// the duration of one test, restoring it afterwards.
+// the duration of one test, restoring it afterwards, with no attachment
+// attaching it.
 //
 // The demo guest echoes its source directly and never draws on the parser seam,
 // so the parser pair is left nil; the parser side is exercised at the
 // import-socket level rather than through this guest.
 func pointSeamAtDemoGuest(t *testing.T) {
 	t.Helper()
+	pointSeamAtDemoGuestAttachedBy(t, -1)
+}
+
+// pointSeamAtDemoGuestAttachedBy is pointSeamAtDemoGuest with the demo importer
+// attached by the workspace's attachment at position at.
+func pointSeamAtDemoGuestAttachedBy(t *testing.T, at int) {
+	t.Helper()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	prev := BuildSeam
 	t.Cleanup(func() { BuildSeam = prev })
 	BuildSeam = func(_ *workspaceconfig.ResolvedWorkspace, _ PluginBytesResolver) (Seam, error) {
 		return Seam{
-			ImporterRes: stubImporterResolver{},
+			ImporterRes: stubImporterResolver{attachedBy: at},
 			ImporterLoad: func(p types.Plugin) (wasm.PluginSpec, error) {
 				return wasm.PluginSpec{Name: p.Coordinate(), Path: fixture}, nil
 			},
@@ -69,14 +94,39 @@ func pointSeamAtDemoGuest(t *testing.T) {
 // ran on.
 func aWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "ws")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
-	}
+	wsDir := aWorkspaceDir(t)
 	if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}
+	return resolveWorkspaceAt(t, wsDir)
+}
+
+// aWorkspaceAttaching resolves a real workspace, as aWorkspace does, whose
+// configuration carries the plugins.importer attachments given, in order.
+func aWorkspaceAttaching(t *testing.T, attachments ...importopstest.Attachment) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	wsDir := aWorkspaceDir(t)
+	importopstest.WriteConfiguration(t, wsDir, attachments...)
+	return resolveWorkspaceAt(t, wsDir)
+}
+
+// aWorkspaceDir creates the directory a scratch workspace is rooted at, inside a
+// fresh scratch tree that also holds its redirected global layer.
+func aWorkspaceDir(t *testing.T) string {
+	t.Helper()
+	wsDir := filepath.Join(t.TempDir(), "ws")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	return wsDir
+}
+
+// resolveWorkspaceAt resolves the workspace whose configuration the caller wrote
+// at wsDir, with the global configuration layer redirected into the scratch tree
+// wsDir sits in.
+func resolveWorkspaceAt(t *testing.T, wsDir string) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	root := filepath.Dir(wsDir)
 	// The redirected global layer must EXIST, not merely be pointed at: the
 	// resolution refuses a configured global path that is absent rather than
 	// treating it as a layer that contributed nothing. Writing an empty document
@@ -312,13 +362,14 @@ func TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot(t *testing.T) {
 // 🔴 TestImportRefusesAnImporterPathEscapingTheOutputRoot is the containment
 // proof, and it is driven through the REAL guest rather than a fabricated file
 // list: the demo importer names its scaffold file from a setting, so a setting
-// carrying a climbing segment makes the PLUGIN return the escaping path.
+// carrying a climbing segment, handed by the attachment attaching it, makes the
+// PLUGIN return the escaping path.
 //
 // It asserts three things, because refusing is only two thirds of the contract:
 // the refusal happens, it names the offending path, and nothing was written
 // anywhere — neither inside the output root nor outside it.
 func TestImportRefusesAnImporterPathEscapingTheOutputRoot(t *testing.T) {
-	pointSeamAtDemoGuest(t)
+	pointSeamAtDemoGuestAttachedBy(t, 0)
 
 	base := t.TempDir()
 	out := filepath.Join(base, "out")
@@ -326,20 +377,16 @@ func TestImportRefusesAnImporterPathEscapingTheOutputRoot(t *testing.T) {
 		t.Fatalf("mkdir output root: %v", err)
 	}
 
-	_, settings, err := WithInputs(&workspaceconfig.PluginRefWith{
+	rw := aWorkspaceAttaching(t, importopstest.Attachment{
+		URI:      demoImporterIdentity,
 		Settings: map[string]any{"target_namespace": "../escaped"},
 	})
-	if err != nil {
-		t.Fatalf("WithInputs: %v", err)
-	}
-
-	_, err = Import(context.Background(), aWorkspace(t), Options{
+	_, err := Import(context.Background(), rw, Options{
 		Source:        []byte("demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     out,
 		ResolvePlugin: noopResolver,
-		Settings:      settings,
 	})
 	if err == nil {
 		t.Fatal("an importer path climbing out of the output root must be refused, not written")
@@ -469,43 +516,57 @@ func TestImportRefusesWithoutAWorkspaceOrAResolver(t *testing.T) {
 	}
 }
 
-// TestAttachmentInputsAreConsumerScoped proves consumer-scoping: with two
-// importer attachments serving different formats, the attachment selected for a
-// format supplies only its own with-config — another attachment's settings never
-// leak into the invoked importer's input.
-func TestAttachmentInputsAreConsumerScoped(t *testing.T) {
+// TestAnImportReadsOnlyTheAttachmentAtThePositionItIsNamed pins what an import
+// hands an importer, given the position of the attachment the resolution
+// reported: that attachment's with-config and no other's, and nothing at all
+// where no attachment is named — including where the workspace declares exactly
+// one attachment, which names some other importer.
+//
+// A position past the end of the list names no attachment the workspace
+// declares, so it is refused rather than read as none.
+func TestAnImportReadsOnlyTheAttachmentAtThePositionItIsNamed(t *testing.T) {
 	t.Parallel()
-	refs := []workspaceconfig.PluginRef{
-		{Capability: "import:demo", With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"target_namespace": "demo-ns"}}},
-		{Capability: "import:other", With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"target_namespace": "other-ns"}}},
+	settingsOf := func(ns string) *workspaceconfig.PluginRefWith {
+		return &workspaceconfig.PluginRefWith{Settings: map[string]any{"target_namespace": ns}}
 	}
+	two := []workspaceconfig.PluginRef{
+		{URI: "importer/first:1.0.0", With: settingsOf("first-ns")},
+		{URI: "importer/second:1.0.0", With: settingsOf("second-ns")},
+	}
+	sole := []workspaceconfig.PluginRef{{URI: "importer/elsewhere:1.0.0", With: settingsOf("elsewhere-ns")}}
 
-	ref, ok := selectImporterAttachment(refs, "demo")
-	if !ok {
-		t.Fatal("selectImporterAttachment(demo): no attachment selected")
-	}
-	_, settings, err := WithInputs(ref.With)
-	if err != nil {
-		t.Fatalf("WithInputs: %v", err)
-	}
-	s := string(settings)
-	if !strings.Contains(s, "demo-ns") {
-		t.Fatalf("selected attachment's settings missing; settings = %q", s)
-	}
-	if strings.Contains(s, "other-ns") {
-		t.Fatalf("another attachment's settings leaked into the demo invocation; settings = %q", s)
-	}
-
-	// Two attachments, neither matching the format, is ambiguous: none is
-	// selected and the importer runs with no with-config rather than a guess.
-	if _, selected := selectImporterAttachment(refs, "third"); selected {
-		t.Fatal("an ambiguous attachment set must select none rather than guessing")
-	}
-	// A sole attachment applies whatever the format, which is the
-	// single-importer shape.
-	sole := []workspaceconfig.PluginRef{{With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"k": "v"}}}}
-	if _, selected := selectImporterAttachment(sole, "anything"); !selected {
-		t.Fatal("a sole attachment must apply without a per-format capability")
+	for _, tc := range []struct {
+		name    string
+		refs    []workspaceconfig.PluginRef
+		at      int
+		want    string
+		refused bool
+	}{
+		{name: "the second of two attachments", refs: two, at: 1, want: `{"target_namespace":"second-ns"}`},
+		{name: "the first of two attachments", refs: two, at: 0, want: `{"target_namespace":"first-ns"}`},
+		{name: "no attachment named, of two", refs: two, at: -1},
+		{name: "no attachment named, of one", refs: sole, at: -1},
+		{name: "a position past the end", refs: two, at: 2, refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sources, settings, err := attachmentInputs(tc.refs, tc.at)
+			if tc.refused {
+				if err == nil {
+					t.Fatalf("position %d of %d attachments was read as %q rather than refused", tc.at, len(tc.refs), settings)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("attachmentInputs: %v", err)
+			}
+			if sources != nil {
+				t.Errorf("sources = %+v; none of these attachments declares any", sources)
+			}
+			if string(settings) != tc.want {
+				t.Errorf("settings = %q; want %q", settings, tc.want)
+			}
+		})
 	}
 }
 
@@ -521,17 +582,17 @@ func TestImportSourcesAreNameSortedAndLoudOnAMiss(t *testing.T) {
 		}
 	}
 
-	sources, _, err := WithInputs(&workspaceconfig.PluginRefWith{
+	sources, _, err := withInputs(&workspaceconfig.PluginRefWith{
 		Sources: []string{filepath.Join(dir, "*.json")},
 	})
 	if err != nil {
-		t.Fatalf("WithInputs: %v", err)
+		t.Fatalf("withInputs: %v", err)
 	}
 	if len(sources) != 2 || sources[0].Name != "alpha.json" || sources[1].Name != "beta.json" {
 		t.Fatalf("sources must be base-name sorted; got %+v", sources)
 	}
 
-	if _, _, missErr := WithInputs(&workspaceconfig.PluginRefWith{
+	if _, _, missErr := withInputs(&workspaceconfig.PluginRefWith{
 		Sources: []string{filepath.Join(dir, "*.nothing")},
 	}); missErr == nil {
 		t.Fatal("a pattern matching no files must be a loud miss")
@@ -539,27 +600,23 @@ func TestImportSourcesAreNameSortedAndLoudOnAMiss(t *testing.T) {
 }
 
 // TestSettingsReachTheGuest proves the with.settings path end-to-end: a setting
-// flows through Import into the guest, which prefixes the emitted entity name
-// with it — so the drafted file lands under the prefixed name rather than the
-// bare format.
+// on the attachment attaching the importer flows through Import into the guest,
+// which prefixes the emitted entity name with it — so the drafted file lands
+// under the prefixed name rather than the bare format.
 func TestSettingsReachTheGuest(t *testing.T) {
-	pointSeamAtDemoGuest(t)
+	pointSeamAtDemoGuestAttachedBy(t, 0)
 	out := t.TempDir()
 
-	_, settings, err := WithInputs(&workspaceconfig.PluginRefWith{
+	rw := aWorkspaceAttaching(t, importopstest.Attachment{
+		URI:      demoImporterIdentity,
 		Settings: map[string]any{"target_namespace": "prod"},
 	})
-	if err != nil {
-		t.Fatalf("WithInputs: %v", err)
-	}
-
-	res, err := Import(context.Background(), aWorkspace(t), Options{
+	res, err := Import(context.Background(), rw, Options{
 		Source:        []byte("demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     out,
 		ResolvePlugin: noopResolver,
-		Settings:      settings,
 	})
 	if err != nil {
 		t.Fatalf("Import: %v", err)
@@ -581,10 +638,11 @@ func TestSettingsReachTheGuest(t *testing.T) {
 }
 
 // TestSourcesReachTheGuest proves the with.sources path end-to-end: several
-// glob-matched files are threaded into the guest, which reflects each source
-// name back as a diagnostic, confirming the host delivered every source.
+// glob-matched files named by the attachment attaching the importer are threaded
+// into the guest, which reflects each source name back as a diagnostic,
+// confirming the host delivered every source.
 func TestSourcesReachTheGuest(t *testing.T) {
-	pointSeamAtDemoGuest(t)
+	pointSeamAtDemoGuestAttachedBy(t, 0)
 
 	srcDir := t.TempDir()
 	for name, body := range map[string]string{"beta.json": `{"b":2}`, "alpha.json": `{"a":1}`} {
@@ -592,20 +650,17 @@ func TestSourcesReachTheGuest(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	sources, _, err := WithInputs(&workspaceconfig.PluginRefWith{
+
+	rw := aWorkspaceAttaching(t, importopstest.Attachment{
+		URI:     demoImporterIdentity,
 		Sources: []string{filepath.Join(srcDir, "*.json")},
 	})
-	if err != nil {
-		t.Fatalf("WithInputs: %v", err)
-	}
-
-	res, err := Import(context.Background(), aWorkspace(t), Options{
+	res, err := Import(context.Background(), rw, Options{
 		Source:        []byte("demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     t.TempDir(),
 		ResolvePlugin: noopResolver,
-		Sources:       sources,
 	})
 	if err != nil {
 		t.Fatalf("Import: %v", err)

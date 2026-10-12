@@ -23,10 +23,23 @@ import (
 // loader closure serves both sockets and no separate enable is needed for the
 // parser side.
 type Seam struct {
-	ImporterRes  importersocket.ImporterResolver
+	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
 	ParserRes    parsersocket.ParserResolver
 	ParserLoad   parsersocket.ParserLoader
+}
+
+// ImporterResolver resolves a requested source format to the importer that
+// serves it, given the uri of each of the workspace's plugins.importer
+// attachments in list order, and reports the position among them of the
+// attachment that attaches the importer it resolved, or -1 when none does.
+//
+// The catalog is the implementation an import runs through, and its
+// ImporterPluginForFormat is where an attachment selects an importer and where
+// the attachment whose with-config that importer is handed is named, in one
+// answer. A harness standing in for the catalog answers both halves itself.
+type ImporterResolver interface {
+	ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error)
 }
 
 // BuildSeam is how [Import] obtains its resolvers and loaders.
@@ -46,10 +59,12 @@ var BuildSeam = buildSeam
 
 // buildSeam builds the real resolver and loader for an import run.
 //
-// Resolution is capability-select: the importer is chosen by the format it
-// advertises (import:<format>) among the catalog's importer plugins, so a
-// workspace attaching more than one importer resolves the right one per format
-// rather than pinning a single one. The resolved plugin's bytes come from the
+// The resolver is the catalog view loaded here. An importer is chosen by the
+// format it advertises (import:<format>) among the catalog's importer plugins,
+// and where a plugins.importer attachment names one of the importers advertising
+// the requested format, that one is chosen, at the version the attachment's uri
+// names — so a workspace whose catalog holds several importers for one format
+// says which of them runs. The resolved plugin's bytes come from the
 // shared plugin cascade the caller supplied, which is the same byte-resolution
 // path every workspace-level socket plugin uses, handed the directories beside
 // the Plugin entities of the catalog view loaded here — the view that selected
@@ -58,10 +73,7 @@ var BuildSeam = buildSeam
 // plugin from beside its entity; the cascade's other tiers — a module embedded
 // in the binary, an explicit local path, the content cache — answer as they do
 // for every other plugin. Those directories are computed once per seam, from
-// this one catalog view, so the place a module sits has a single answer. The
-// plugins.importer attachment surface still carries each importer's with-config,
-// threaded consumer-scoped by [AttachmentInputs]; the catalog decides which
-// importer runs.
+// this one catalog view, so the place a module sits has a single answer.
 //
 // A plugins.importer attachment's function field is currently inert: an importer
 // has a single import export, so there is no alternate entry to dispatch to. The
@@ -91,22 +103,9 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		return resolver.PluginSpec(p.Coordinate(), resolved), nil
 	}
 	return Seam{
-		ImporterRes:  capabilitySelectImporter{cat: cat},
+		ImporterRes:  cat,
 		ImporterLoad: load,
 		ParserRes:    cat,
 		ParserLoad:   load,
 	}, nil
-}
-
-// capabilitySelectImporter is the ImporterResolver backed by the catalog's
-// capability resolution: it resolves the importer advertising import:<format>
-// among the catalog's importer plugins, halting loudly on an unadvertised or
-// ambiguous format. An importer is selected by the format it serves rather than
-// by a single pinned attachment, which is the natural resolution for an import.
-type capabilitySelectImporter struct {
-	cat *catalog.Catalog
-}
-
-func (r capabilitySelectImporter) ImporterPluginForFormat(format string) (types.Plugin, error) {
-	return r.cat.ImporterPluginForFormat(format)
 }

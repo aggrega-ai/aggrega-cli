@@ -90,8 +90,9 @@ func readImportFixture(t *testing.T, path string) []byte {
 	return b
 }
 
-// importDemoResolver stands in for the catalog's capability resolution, so a run
-// drives the real import socket and the real guest without a catalog on disk.
+// importDemoResolver stands in for the catalog's resolution, so a run drives the
+// real import socket and the real guest without a catalog on disk. No attachment
+// attaches the importer it answers with.
 //
 // It answers for ANY format, which is what lets one guest serve the rows that
 // drive shape detection: the format the detection settled on is the format the
@@ -99,11 +100,11 @@ func readImportFixture(t *testing.T, path string) []byte {
 // read the detection's answer off the tree.
 type importDemoResolver struct{}
 
-func (importDemoResolver) ImporterPluginForFormat(format string) (types.Plugin, error) {
+func (importDemoResolver) ImporterPluginForFormat(format string, _ []string) (types.Plugin, int, error) {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
 		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:" + format}}},
-	}, nil
+	}, -1, nil
 }
 
 // pointImportSeamAtTheDemoGuest points the shared layer's resolver-and-loader

@@ -152,8 +152,11 @@ var importToolSpec = toolSpec{
 		"`output_dir`, the one every drafted path is relative to, whether the file was written or handed back: " +
 		"it reports where the drafts went and chooses nothing. The workspace's catalog must hold an importer " +
 		"plugin that advertises the source's format, or the call is refused naming the capability no plugin " +
-		"advertises; nothing here ships one, and a `plugins.importer` attachment selects none — it only hands " +
-		"the importer its `with.sources` and `with.settings`. " +
+		"advertises; nothing here ships one. A `plugins.importer` attachment whose `uri` names an importer " +
+		"advertising the format, by identity and version, runs that importer at that version whatever other " +
+		"importer advertises the format too, and hands it — and no other importer — its `with.sources` and " +
+		"`with.settings`; where several advertise the format and no single one is attached, the call is " +
+		"refused naming them. " +
 		"Leave `format` out and the format is recognised from the source's own " +
 		"top-level shape, reading that one file and nothing else — no other file, no network — and a shape " +
 		"that is not recognised is refused asking for `format` rather than guessed at. Send `dry_run` to be " +
@@ -245,17 +248,12 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return tw.answer(errorResult(explainToolError("Could not read the source at "+path, err, "")))
 	}
 
-	// The format is selected before the attachment inputs because the with-config
-	// is consumer-scoped to the importer serving THIS format: only the matching
-	// attachment's inputs are threaded, never another attachment's.
+	// The format is settled here, ahead of the import, so a source whose shape is
+	// not recognised is refused in this surface's own words — naming the argument
+	// a caller here can send — rather than in the command line's.
 	format, err := importops.SelectFormat(named, source, content)
 	if err != nil {
 		return errorResult(importFormatRefusal(err))
-	}
-	sources, settings, err := importops.AttachmentInputs(tw.rw, format)
-	if err != nil {
-		return errorResult(explainToolError("Could not read the inputs this workspace threads into its importer.",
-			err, ""))
 	}
 
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
@@ -270,8 +268,6 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Format:        format,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
-		Sources:       sources,
-		Settings:      settings,
 	})
 	if err != nil {
 		return errorResult(explainDiagnostic(importRefusal(source, err), ""))

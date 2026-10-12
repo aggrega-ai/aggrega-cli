@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -69,10 +70,11 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // directory. A reporting delivery writes nothing, and the reported paths are
 // still relative to it.
 //
-// Sources and Settings are the consumer-scoped with-config of the importer
-// attachment serving this format, as [AttachmentInputs] resolves them. Both are
-// nil when the attachment declares neither, so a settings-free run stays
-// byte-identical to a bare import.
+// There is no field for the importer's with-config. What an importer is handed
+// is read by [Import] from the workspace's own plugins.importer attachments,
+// once the importer is resolved, because which attachment's inputs apply
+// depends on which importer runs — and a surface computing them ahead of the
+// resolution would be answering that before it is known.
 type Options struct {
 	Source        []byte
 	SourceName    string
@@ -80,8 +82,6 @@ type Options struct {
 	OutputDir     string
 	Delivery      authoredcontent.Delivery
 	ResolvePlugin PluginBytesResolver
-	Sources       []abi.ImportSource
-	Settings      json.RawMessage
 }
 
 // Result is what one import produced.
@@ -131,9 +131,16 @@ func (r Result) Halted() bool {
 // Import turns a foreign source description into draft Aggrega authoring files.
 //
 // It selects the source format, resolves the importer the catalog advertises for
-// that format, runs it, and either writes the drafted files under the output
-// directory — Options.OutputDir, or the root of the workspace rw where it names
-// none — or returns them for the caller to place, according to Options.Delivery.
+// that format — the one a plugins.importer attachment names, where one names an
+// advertiser — runs it with the with-config of the attachment naming it and of
+// no other, and either writes the drafted files under the output directory —
+// Options.OutputDir, or the root of the workspace rw where it names none — or
+// returns them for the caller to place, according to Options.Delivery.
+//
+// The importer is resolved once, here, before it is run: the with-config it is
+// handed depends on which importer the resolution chose, and the resolution
+// reports that together with the importer, so the attachment that selected it and
+// the attachment it is configured by are one answer rather than two.
 //
 // 🔴 The write is CONTAINED, and the containment is the reused predicate rather
 // than a check written here. A scaffold path comes from the importer plugin, so
@@ -179,8 +186,18 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
-	imported, err := importersocket.ImportArtifact(ctx, seam.ImporterRes, seam.ImporterLoad,
-		seam.ParserRes, seam.ParserLoad, format, opts.Source, opts.Sources, opts.Settings)
+	attachments := rw.Config().Plugins.Importer
+	importer, at, resolveErr := seam.ImporterRes.ImporterPluginForFormat(format, attachmentURIs(attachments))
+	var sources []abi.ImportSource
+	var settings json.RawMessage
+	if resolveErr == nil {
+		if sources, settings, err = attachmentInputs(attachments, at); err != nil {
+			return Result{}, err
+		}
+	}
+
+	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
+		seam.ImporterLoad, seam.ParserRes, seam.ParserLoad, format, opts.Source, sources, settings)
 	if err != nil {
 		return Result{}, err
 	}
@@ -207,6 +224,22 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	}
 	res.Written = written
 	return res, nil
+}
+
+// resolvedImporter hands the import socket the outcome of the resolution [Import]
+// already made, so the importer is resolved once per import.
+//
+// The outcome is handed over whole — the importer, or the refusal — rather than
+// the refusal being reported here, so a format no importer serves is reported
+// exactly as the socket reports any resolution it is refused, in its words and
+// with its own context, and not in a second spelling of them.
+type resolvedImporter struct {
+	plugin types.Plugin
+	err    error
+}
+
+func (r resolvedImporter) ImporterPluginForFormat(string) (types.Plugin, error) {
+	return r.plugin, r.err
 }
 
 // outputDirFor returns the directory an import's drafts are written under and

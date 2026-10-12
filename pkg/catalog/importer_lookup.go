@@ -5,9 +5,12 @@ package catalog
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -70,12 +73,18 @@ var errAmbiguousImporterPlugin = cerrors.Register("ambiguous-importer-plugin", c
 })
 
 // importerCapabilityDiag is the importer socket's diagnostic set for the shared
-// capability select. Only the ambiguity halt is reachable on the importer path:
-// ImporterPluginForFormat resolves a format with no publisher binding and no
-// version pin, so the shared select never enters the binding-unsatisfied or
-// version-pin branches. The binding and version slots therefore reuse the
-// no-serving-importer sentinel rather than introducing binding/version sentinels
-// the path never emits.
+// capability select.
+//
+// Two of its halts are reachable on the importer path. The ambiguity halt fires
+// when more than one importer advertises the requested format and no attachment
+// names one of them, and ImporterPluginForFormat raises it itself, with the same
+// closure, when attachments name more than one. The version-unsatisfiable slot
+// fires when an attachment naming an advertiser carries a version the catalog
+// does not hold, or a range no version it holds satisfies; it reuses the
+// no-serving-importer sentinel. The binding-unsatisfied slot is never entered:
+// ImporterPluginForFormat binds the select only to an importer it has already
+// found advertising the format, so a bound select always has a candidate, and
+// the slot reuses the same sentinel rather than one the path never emits.
 var importerCapabilityDiag = capabilityDiag{
 	noun:                 "importer plugin",
 	bindingUnsatisfied:   ErrNoImporterForFormat(),
@@ -86,37 +95,105 @@ var importerCapabilityDiag = capabilityDiag{
 }
 
 // ImporterPluginForFormat resolves a requested source format to the importer
-// Plugin entity that advertises it. It composes the "import:<format>" capability
-// and routes it through the shared capability select the provider socket uses —
-// the one filter → disambiguate → ambiguity-halt → version-select core — filtered
-// to pluginType: importer plugins whose declared capabilities list the composed
-// string by exact membership. A non-importer plugin whose capabilities happen to
-// list the composed string is excluded by the plugin-type filter, and its own
-// capabilities live in a different per-type block besides.
+// Plugin entity that serves it, and reports which of the workspace's importer
+// attachments attaches that importer.
 //
-// Every importer miss is loud: a requested format with no advertiser is
-// ErrNoImporterForFormat (mapping the shared select's bare not-found), and a
-// format advertised by more than one distinct importer plugin is
-// ErrAmbiguousImporterPlugin. There is no soft-miss fallback because an importer
-// has no zero-config default to fall back to — the requested format either has an
-// advertiser or the import cannot proceed.
+// attached is the uri of each plugins.importer attachment, in list order, and the
+// returned index is the position in it of the attachment that attaches the
+// returned importer, or -1 when none does. It is the one statement of which
+// attachment that is, so the attachment that selects an importer and the
+// attachment whose with-config that importer is handed cannot come apart.
 //
-// When exactly one importer plugin advertises the format, its version is chosen
-// by the shared three-form version select (highest available), so multiple
-// versions of one importer coexist and resolve deterministically. Resolution
-// routes through the same candidate set and select as the provider socket, so an
-// importer is resolved by exactly the mechanism a provider is — the vocabulary
-// and sentinels differ, the resolution core does not.
+// An attachment names an importer by its identity: its uri with any trailing
+// ":<version>" split off is the importer's coordinate, <pluginType>/<name>. Only
+// an attachment naming an importer that advertises the requested format takes
+// part in this resolution. One naming any other plugin, or nothing this catalog
+// holds, attaches nothing to this import and selects nothing.
 //
-// This method satisfies the importer socket's ImporterResolver seam.
-func (c *Catalog) ImporterPluginForFormat(format string) (types.Plugin, error) {
+//   - No attachment names an advertiser: the format is routed through the shared
+//     capability select the provider socket uses — the one filter → disambiguate
+//     → ambiguity-halt → version-select core — filtered to pluginType: importer
+//     plugins whose declared capabilities list "import:<format>" by exact
+//     membership, and the highest version of the one importer advertising it is
+//     chosen. The index is -1.
+//   - Attachments name one advertiser: the first of them binds the shared select
+//     to that importer through the select's binding branch, so it is chosen
+//     however many importers advertise the format, and a version on its uri pins
+//     the version through the select's version branch, in the three forms any
+//     version pin takes. The index is that attachment's.
+//   - Attachments name more than one advertiser: ErrAmbiguousImporterPlugin,
+//     naming the advertisers the attachments name, sorted.
+//
+// Every miss is loud: a requested format with no advertiser is
+// ErrNoImporterForFormat (mapping the shared select's bare not-found), as is a
+// well-formed version on an attachment that no advertised version of its importer
+// satisfies — a malformed one is reported as the malformation, as the shared
+// select reports any malformed pin — and a format advertised by more than one
+// distinct importer plugin with no
+// attachment naming one of them is ErrAmbiguousImporterPlugin. There is no
+// soft-miss fallback because an importer has no zero-config default to fall back
+// to — the requested format either has an advertiser or the import cannot
+// proceed. A non-importer plugin whose capabilities happen to list the composed
+// string is excluded by the plugin-type filter, and its own capabilities live in
+// a different per-type block besides.
+//
+// Resolution routes through the same candidate set and select as the provider
+// socket, so an importer is resolved by exactly the mechanism a provider is — the
+// vocabulary and sentinels differ, the resolution core does not.
+func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error) {
 	capability := importCapabilityPrefix + format
-	p, ok, err := c.pluginForCapability(importerPluginType, capability, "", false, nil, importerCapabilityDiag)
+
+	at := -1
+	var named []string
+	for i, uri := range attached {
+		name, advertises := c.importerAdvertising(ociref.VersionlessBase(uri), capability)
+		if !advertises {
+			continue
+		}
+		if at < 0 {
+			at = i
+		}
+		if !slices.Contains(named, name) {
+			named = append(named, name)
+		}
+	}
+	if len(named) > 1 {
+		sort.Strings(named)
+		return types.Plugin{}, -1, importerCapabilityDiag.ambiguous(capability, named)
+	}
+
+	var bindings map[string]string
+	if at >= 0 {
+		bindings = map[string]string{capability: attached[at]}
+	}
+	p, ok, err := c.pluginForCapability(importerPluginType, capability, "", false, bindings, importerCapabilityDiag)
 	if err != nil {
-		return types.Plugin{}, err
+		return types.Plugin{}, -1, err
 	}
 	if !ok {
-		return types.Plugin{}, fmt.Errorf("%w: no importer plugin advertises %q", ErrNoImporterForFormat(), capability)
+		return types.Plugin{}, -1, fmt.Errorf("%w: no importer plugin advertises %q", ErrNoImporterForFormat(), capability)
 	}
-	return p, nil
+	return p, at, nil
+}
+
+// importerAdvertising reports whether the importer at coordinate advertises
+// capability, and that importer's name.
+//
+// It reads the set and the accessors the shared capability select filters on —
+// providerResolutionPlugins, the plugin type, the coordinate a binding is
+// compared with, and each plugin's DeclaredCapabilities — so an attachment it
+// reports as naming an advertiser is one a select bound to it finds a candidate
+// for, across every version the set holds. Every version of one coordinate
+// carries the one name the coordinate is built from, so the name does not
+// depend on which version the walk meets first.
+func (c *Catalog) importerAdvertising(coordinate, capability string) (string, bool) {
+	for _, p := range c.providerResolutionPlugins() {
+		if p.Metadata.PluginType != importerPluginType || p.Coordinate() != coordinate {
+			continue
+		}
+		if slices.Contains(p.DeclaredCapabilities(), capability) {
+			return p.Metadata.Name, true
+		}
+	}
+	return "", false
 }

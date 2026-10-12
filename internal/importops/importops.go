@@ -13,9 +13,10 @@
 // # One operation, and why it is nonetheless its own package
 //
 // The subsystem carries a per-format plugin seam: an importer is resolved by the
-// format it advertises, an attachment's inputs are threaded consumer-scoped to
-// that importer alone, and the source format is either named outright or
-// recognised from the source's own shape. That is a format-detection and
+// format it advertises — among several advertisers, by the attachment naming
+// it — an attachment's inputs reach the importer it names and no other, and the
+// source format is either named outright or recognised from the source's own
+// shape. That is a format-detection and
 // plugin-selection surface, and drafting a starter document from a kind's schema
 // — the other capability that produces authoring files — has no use for any of
 // it: one converts something that already exists in a foreign format, the other

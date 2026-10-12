@@ -15,50 +15,44 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// AttachmentInputs resolves the consumer-scoped with-config for the importer
-// serving format: it selects the plugins.importer attachment that applies to
-// this format, reads that attachment's with.sources into named sources and
-// marshals its with.settings, and returns only that attachment's inputs — never
-// another attachment's.
+// attachmentURIs returns the uri of each plugins.importer attachment, in list
+// order — the form the importer resolution reads the attachments in, so the
+// position it reports back indexes refs directly.
+func attachmentURIs(refs []workspaceconfig.PluginRef) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	uris := make([]string, len(refs))
+	for i, ref := range refs {
+		uris[i] = ref.URI
+	}
+	return uris
+}
+
+// attachmentInputs returns the with-config the attachment at position at in refs
+// hands the importer it attaches: that attachment's with.sources read into named
+// sources and its with.settings marshalled, and never another attachment's.
 //
-// A workspace with no matching attachment, or a matching attachment declaring no
-// with, threads nothing (nil, nil).
-func AttachmentInputs(rw *workspaceconfig.ResolvedWorkspace, format string) ([]abi.ImportSource, json.RawMessage, error) {
-	if rw == nil {
+// at is the position the importer resolution reported, and it is the only
+// thing that names the attachment: there is no fallback to a sole attachment
+// and no reading of the requested format here, so an attachment naming a
+// different importer, or naming nothing the catalog holds, hands nothing to
+// this import. A negative at — no attachment attaches the resolved importer —
+// threads nothing (nil, nil), as does an attachment declaring no with. A
+// position past the end of refs names no attachment the workspace declares, so it
+// is refused rather than read as none.
+func attachmentInputs(refs []workspaceconfig.PluginRef, at int) ([]abi.ImportSource, json.RawMessage, error) {
+	if at < 0 {
 		return nil, nil, nil
 	}
-	ref, ok := selectImporterAttachment(rw.Config().Plugins.Importer, format)
-	if !ok {
-		return nil, nil, nil
+	if at >= len(refs) {
+		return nil, nil, fmt.Errorf("internal: the importer resolution named importer attachment %d, but the "+
+			"workspace declares %d", at, len(refs))
 	}
-	return WithInputs(ref.With)
+	return withInputs(refs[at].With)
 }
 
-// selectImporterAttachment picks the plugins.importer attachment whose
-// with-config applies to format: an attachment naming the import:<format>
-// capability wins outright; otherwise a sole attachment applies (the
-// single-importer shape, which names one importer without a per-format
-// capability). More than one attachment with no capability match is ambiguous for
-// this format, so none is selected and the importer runs with no with-config
-// rather than guessing which attachment's inputs to thread — the resolution of
-// WHICH importer runs is the catalog's job, this only decides whose with-config
-// is threaded.
-func selectImporterAttachment(refs []workspaceconfig.PluginRef, format string) (workspaceconfig.PluginRef, bool) {
-	// The importer capability vocabulary ("import:<format>") is authored on the
-	// attachment's capability field; it mirrors the catalog's importCapabilityPrefix.
-	capability := "import:" + format
-	for _, ref := range refs {
-		if ref.Capability == capability {
-			return ref, true
-		}
-	}
-	if len(refs) == 1 {
-		return refs[0], true
-	}
-	return workspaceconfig.PluginRef{}, false
-}
-
-// WithInputs builds the consumer-scoped importer inputs from one attachment's
+// withInputs builds the consumer-scoped importer inputs from one attachment's
 // with-config: with.sources read into base-name-keyed, name-sorted ImportSource
 // entries (live files, modeled on the governance verdict roles' source reading),
 // and with.settings marshalled to a deterministic JSON document (Go's
@@ -67,7 +61,7 @@ func selectImporterAttachment(refs []workspaceconfig.PluginRef, format string) (
 // Both are optional; a with declaring neither yields (nil, nil). It reads only
 // the passed attachment's with, so one importer attachment's inputs never leak
 // into another's invocation.
-func WithInputs(with *workspaceconfig.PluginRefWith) ([]abi.ImportSource, json.RawMessage, error) {
+func withInputs(with *workspaceconfig.PluginRefWith) ([]abi.ImportSource, json.RawMessage, error) {
 	if with == nil {
 		return nil, nil, nil
 	}

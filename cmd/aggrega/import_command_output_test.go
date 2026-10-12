@@ -37,14 +37,15 @@ import (
 const demoSourceBody = "demo source"
 
 // demoImporterResolver resolves any requested format to the demo importer
-// fixture's entity, so the command can be driven without a catalog on disk.
+// fixture's entity, attached by no attachment, so the command can be driven
+// without a catalog on disk.
 type demoImporterResolver struct{}
 
-func (demoImporterResolver) ImporterPluginForFormat(string) (types.Plugin, error) {
+func (demoImporterResolver) ImporterPluginForFormat(string, []string) (types.Plugin, int, error) {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
 		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:demo"}}},
-	}, nil
+	}, -1, nil
 }
 
 // pointImportSeamAtDemoGuest points the import operation's resolver-and-loader

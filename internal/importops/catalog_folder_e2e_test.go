@@ -113,6 +113,23 @@ func catalogFolderImportWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorksp
 	return rw, folder
 }
 
+// catalogFolderImportWorkspaceAttaching is catalogFolderImportWorkspace whose
+// configuration attaches the folder's importer, by its identity and version, with
+// the settings given.
+func catalogFolderImportWorkspaceAttaching(t *testing.T, settings map[string]any) (*workspaceconfig.ResolvedWorkspace,
+	importopstest.CatalogFolder) {
+	t.Helper()
+	wsDir := aWorkspaceDir(t)
+	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
+	importopstest.WriteConfiguration(t, wsDir, importopstest.Attachment{URI: folder.Importer.Identity, Settings: settings})
+	rw := resolveWorkspaceAt(t, wsDir)
+	if _, err := os.Stat(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); err != nil {
+		t.Fatalf("the workspace resolved at %s, which is not the directory its configuration was written in: %v",
+			rw.Root(), err)
+	}
+	return rw, folder
+}
+
 // draftPaths returns the drafted paths a result carries, sorted.
 func draftPaths(res Result) []string {
 	paths := make([]string, 0, len(res.Files))
