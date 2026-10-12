@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -274,6 +275,70 @@ func TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts(t *testing.T) {
 	}
 	if after := treeUnder(t, root); !slices.Equal(after, before) {
 		t.Errorf("a reporting delivery changed the tree\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+}
+
+// TestTheImportToolRefusesADraftClimbingOutOfTheWorkspaceUnderEitherDelivery
+// holds a dry run to the refusal a write gives for a drafted path that climbs
+// out of the directory the drafts are relative to — on this tool, the workspace
+// the call resolved.
+//
+// The demo importer names its drafted file after the format it is asked for, so
+// a format naming a climb makes the PLUGIN return the climbing path, through a
+// slash or through a backslash. A dry run answering with that draft would tell
+// the caller the import is fine while the write refuses it, which is what this
+// tool's own dry_run description says does not happen. Each row asserts the
+// refusal names the path the importer returned, and that nothing reached disk —
+// in the workspace or in the directory holding it.
+//
+// 🔴 PLANTED DEFECT: move the pathscope.IsLocalSlash loop out of checkFiles and
+// back to the head of writeFiles (internal/importops/import.go), and both dry-run
+// rows redden, answered with the draft instead of refused, while both write rows
+// stay green.
+func TestTheImportToolRefusesADraftClimbingOutOfTheWorkspaceUnderEitherDelivery(t *testing.T) {
+	// Not parallel: points the shared import seam.
+	pointImportSeamAtTheDemoGuest(t)
+
+	for _, climb := range []struct {
+		name    string
+		format  string
+		drafted string
+	}{
+		{"climbing through a slash", "../escaped", "../escaped.yaml"},
+		{"climbing through a backslash", `..\escaped`, `..\escaped.yaml`},
+	} {
+		for _, delivery := range []struct {
+			name   string
+			dryRun bool
+		}{
+			{"a write", false},
+			{"a dry run", true},
+		} {
+			t.Run(climb.name+", "+delivery.name, func(t *testing.T) {
+				root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+				// The directory holding the workspace is this case's own, so the tree
+				// beneath it covers both the workspace and where a climb out of it
+				// lands.
+				above := filepath.Dir(root)
+				before := treeUnder(t, above)
+
+				res := callTool(t, importToolServer(t, root), importToolName, map[string]any{
+					"source": rel, "format": climb.format, "dry_run": delivery.dryRun,
+				})
+				if !res.IsError {
+					t.Fatalf("a drafted path climbing out of the workspace was answered rather than refused: %s",
+						res.Content[0].Text)
+				}
+				text := res.Content[0].Text
+				if !strings.Contains(text, strconv.Quote(climb.drafted)) {
+					t.Errorf("the refusal does not name the path the importer returned, %s: %q",
+						strconv.Quote(climb.drafted), text)
+				}
+				if after := treeUnder(t, above); !slices.Equal(after, before) {
+					t.Errorf("a refused import changed the tree\n--- before ---\n%v\n--- after ---\n%v", before, after)
+				}
+			})
+		}
 	}
 }
 

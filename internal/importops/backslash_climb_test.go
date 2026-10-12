@@ -13,12 +13,13 @@ import (
 )
 
 // TestImportRefusesADraftClimbingThroughBackslashes drives the containment
-// refusal through the write that places an importer's drafts. A drafted path is
-// joined onto the output directory in the host's spelling, and a Windows join
-// reads a backslash as a separator, so a path climbing out through backslashes
-// would be written outside the output directory there. It is refused on every
-// platform with the same condition a climbing slash path is refused with, and
-// nothing is written. A backslash between ordinary parts climbs nowhere and is
+// refusal through the judgement every importer's drafts pass before a write
+// places them and before a dry run reports them. A drafted path is joined onto
+// the output directory in the host's spelling, and a Windows join reads a
+// backslash as a separator, so a path climbing out through backslashes would be
+// written outside the output directory there. It is refused on every platform
+// with the same condition a climbing slash path is refused with, and nothing is
+// written. A backslash between ordinary parts climbs nowhere, passes, and is
 // written — the row that keeps the refusal attributable to the climb.
 func TestImportRefusesADraftClimbingThroughBackslashes(t *testing.T) {
 	t.Parallel()
@@ -37,13 +38,20 @@ func TestImportRefusesADraftClimbingThroughBackslashes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			out := t.TempDir()
-			_, err := writeFiles(out, []abi.ScaffoldFile{{Path: tc.path, Content: "x"}})
+			files := []abi.ScaffoldFile{{Path: tc.path, Content: "x"}}
+			err := checkFiles(out, out, files)
 			var escaping *EscapingPathError
 			refused := errors.As(err, &escaping)
 			if refused != tc.refused {
-				t.Fatalf("writeFiles(%q) refused = %v (err %v); want refused = %v", tc.path, refused, err, tc.refused)
+				t.Fatalf("checkFiles(%q) refused = %v (err %v); want refused = %v", tc.path, refused, err, tc.refused)
 			}
 			if !tc.refused {
+				if err != nil {
+					t.Fatalf("checkFiles(%q): %v", tc.path, err)
+				}
+				if _, err := writeFiles(out, files); err != nil {
+					t.Fatalf("writeFiles(%q): %v", tc.path, err)
+				}
 				if _, statErr := os.Stat(filepath.Join(out, filepath.FromSlash(tc.path))); statErr != nil {
 					t.Fatalf("the contained draft %q was not written: %v", tc.path, statErr)
 				}

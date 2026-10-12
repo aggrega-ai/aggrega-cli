@@ -152,15 +152,16 @@ func (r Result) Halted() bool {
 // separator on one platform and an ordinary character on another, so the same
 // importer output would be accepted on one machine and refused on the next.
 //
-// 🔴 Every path is judged BEFORE any file is written, so an importer returning
-// one contained path and one escaping path writes neither. Validating as it went
-// would leave the contained prefix on disk from a run that was refused, which is
-// a partial result nobody asked for.
+// 🔴 Every path is judged BEFORE any file is written and before a reporting
+// delivery answers, in one place (checkFiles), so a dry run refuses exactly the
+// drafts a write refuses, and an importer returning one contained path and one
+// escaping path writes neither. Validating as it went would leave the contained
+// prefix on disk from a run that was refused, which is a partial result nobody
+// asked for.
 //
 // That containment analysis is lexical and resolves no symbolic link, so every
 // drafted path is also held, with its links resolved, to the root the output
-// directory picks (checkFiles), before anything is written and before a reporting
-// delivery answers.
+// directory picks, in the same judgement.
 //
 // A halt-severity diagnostic is reported in the Result rather than returned as an
 // error, and any files the importer produced alongside it are still written — an
@@ -255,16 +256,33 @@ func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) string {
 	return rw.Root()
 }
 
-// checkFiles judges every drafted file before any is written: the place it would
-// be written at must not lead, through a link, out of the root the output
-// directory picks against the workspace at workspaceRoot — the workspace root
-// where the output directory lies inside the workspace, and the output directory
-// itself, a directory a person typed outside the workspace, say, where it lies
-// outside it. The drafts are files the product writes on the caller's behalf, so
-// a link standing in the output directory, or in a directory on the way to a
-// draft, would otherwise turn an import into writing files elsewhere on the
-// machine.
+// checkFiles judges every drafted file before any is written and before a
+// reporting delivery answers. It is where an import's containment verdict is
+// taken, for both deliveries, so a dry run and a write refuse the same drafts.
+//
+// Two judgements, the first over the whole set before the second begins. Each
+// path must stay inside outputDir as a slash-separated logical name
+// ([pathscope.IsLocalSlash]): one climbing out of it, through slashes or
+// backslashes, an absolute one and an empty one are refused as an
+// [EscapingPathError] naming the path and outputDir, whatever is on disk. Only
+// then is each place a file would be written at held, with its links resolved:
+// it must not lead, through a link, out of the root the output directory picks
+// against the workspace at workspaceRoot — the workspace root where the output
+// directory lies inside the workspace, and the output directory itself, a
+// directory a person typed outside the workspace, say, where it lies outside it.
+// The drafts are files the product writes on the caller's behalf, so a link
+// standing in the output directory, or in a directory on the way to a draft,
+// would otherwise turn an import into writing files elsewhere on the machine.
+//
+// The order means the link judgement only ever looks at places spelled beneath
+// the output directory, and a draft carrying both faults is refused as the path
+// that does not stay inside it.
 func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error {
+	for _, f := range files {
+		if !pathscope.IsLocalSlash(f.Path) {
+			return &EscapingPathError{Path: f.Path, OutputDir: outputDir}
+		}
+	}
 	root := writescope.RootFor(workspaceRoot, outputDir)
 	for _, f := range files {
 		if err := writescope.CheckWrite(root, filepath.Join(outputDir, filepath.FromSlash(f.Path))); err != nil {
@@ -278,15 +296,11 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 // parent directories as needed, and returns the paths written in the order they
 // were written.
 //
-// The containment pass runs over the whole set first — see [Import] for why the
-// order matters and which predicate decides. Once a path has passed, joining it
-// onto the root cannot leave the root, so the join below needs no second check.
+// Every path has already passed checkFiles, over the whole set, before this is
+// called — see [Import] for why the order matters and which predicate decides.
+// Once a path has passed, joining it onto the root cannot leave the root, so the
+// join below needs no second check.
 func writeFiles(root string, files []abi.ScaffoldFile) ([]string, error) {
-	for _, f := range files {
-		if !pathscope.IsLocalSlash(f.Path) {
-			return nil, &EscapingPathError{Path: f.Path, OutputDir: root}
-		}
-	}
 	written := make([]string, 0, len(files))
 	for _, f := range files {
 		dest := filepath.Join(root, filepath.FromSlash(f.Path))

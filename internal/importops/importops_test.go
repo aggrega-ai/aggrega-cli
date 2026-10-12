@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -365,56 +366,122 @@ func TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot(t *testing.T) {
 // carrying a climbing segment, handed by the attachment attaching it, makes the
 // PLUGIN return the escaping path.
 //
-// It asserts three things, because refusing is only two thirds of the contract:
-// the refusal happens, it names the offending path, and nothing was written
-// anywhere — neither inside the output root nor outside it.
+// It is a grid, and every cell is required: a path climbing through a slash and
+// one climbing through a backslash; an output directory inside the workspace and
+// one outside it; and a write and a dry run. A dry run is held to the write's
+// refusal because a dry run answering with a draft the write then refuses tells
+// its reader an import is fine that is not. The output directory inside the
+// workspace is the cell no link judgement could refuse: the climb lands
+// elsewhere inside the very root the drafts are held to, so only the judgement
+// of the path as a name stands between it and an answer. Outside the workspace
+// the climb leaves the root without passing a link, which the link judgement
+// does not hold either.
+//
+// Each cell asserts more than the refusal, because refusing is only part of the
+// contract: the refusal is the write's own error, naming the path the importer
+// returned and the output directory it had to stay inside, and nothing was
+// written anywhere — neither inside the output directory nor where the climb
+// leads.
+//
+// 🔴 PLANTED DEFECT: move the pathscope.IsLocalSlash loop out of checkFiles and
+// back to the head of writeFiles (internal/importops/import.go), and every dry-run
+// cell reddens — the import answers with the escaping draft instead of refusing
+// it — while every write cell stays green.
 func TestImportRefusesAnImporterPathEscapingTheOutputRoot(t *testing.T) {
+	// Not parallel: it points the shared import seam.
 	pointSeamAtDemoGuestAttachedBy(t, 0)
 
-	base := t.TempDir()
-	out := filepath.Join(base, "out")
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		t.Fatalf("mkdir output root: %v", err)
+	climbs := []struct {
+		name      string
+		namespace string
+		// drafted is the path the demo importer returns for namespace.
+		drafted string
+	}{
+		{name: "climbing through a slash", namespace: "../escaped", drafted: "../escaped-demo.yaml"},
+		{name: "climbing through a backslash", namespace: `..\escaped`, drafted: `..\escaped-demo.yaml`},
+	}
+	placements := []struct {
+		name string
+		// outputDir returns the output directory for the workspace rooted at root.
+		outputDir func(t *testing.T, root string) string
+	}{
+		{name: "an output directory inside the workspace", outputDir: func(_ *testing.T, root string) string {
+			return filepath.Join(root, "drafts")
+		}},
+		{name: "an output directory outside the workspace", outputDir: func(t *testing.T, _ string) string {
+			return filepath.Join(t.TempDir(), "out")
+		}},
+	}
+	deliveries := []struct {
+		name   string
+		dryRun bool
+	}{
+		{name: "a write"},
+		{name: "a dry run", dryRun: true},
 	}
 
-	rw := aWorkspaceAttaching(t, importopstest.Attachment{
-		URI:      demoImporterIdentity,
-		Settings: map[string]any{"target_namespace": "../escaped"},
-	})
-	_, err := Import(context.Background(), rw, Options{
-		Source:        []byte("demo source"),
-		SourceName:    "demo-source.txt",
-		Format:        "demo",
-		OutputDir:     out,
-		ResolvePlugin: noopResolver,
-	})
-	if err == nil {
-		t.Fatal("an importer path climbing out of the output root must be refused, not written")
-	}
-	var escaping *EscapingPathError
-	if !errors.As(err, &escaping) {
-		t.Fatalf("the refusal must be an *EscapingPathError so a surface can name the path; got %T: %v", err, err)
-	}
-	if escaping.Offending() != "../escaped-demo.yaml" {
-		t.Fatalf("Offending() = %q; want the path the importer returned, ../escaped-demo.yaml", escaping.Offending())
-	}
-	if !strings.Contains(escaping.Error(), "../escaped-demo.yaml") {
-		t.Fatalf("the message must name the offending path; got %q", escaping.Error())
-	}
+	for _, climb := range climbs {
+		for _, placement := range placements {
+			for _, delivery := range deliveries {
+				t.Run(climb.name+", "+placement.name+", "+delivery.name, func(t *testing.T) {
+					rw := aWorkspaceAttaching(t, importopstest.Attachment{
+						URI:      demoImporterIdentity,
+						Settings: map[string]any{"target_namespace": climb.namespace},
+					})
+					out := placement.outputDir(t, rw.Root())
+					if err := os.MkdirAll(out, 0o755); err != nil {
+						t.Fatalf("mkdir output directory: %v", err)
+					}
 
-	// Nothing anywhere: not outside the root, and not inside it either.
-	if _, statErr := os.Stat(filepath.Join(base, "escaped-demo.yaml")); !os.IsNotExist(statErr) {
-		t.Fatalf("bytes escaped the output root; stat err = %v", statErr)
-	}
-	inside, _ := os.ReadDir(out)
-	if len(inside) != 0 {
-		t.Fatalf("a refused import must write nothing at all; the output root holds %d entry/entries", len(inside))
+					res, err := Import(context.Background(), rw, Options{
+						Source:        []byte("demo source"),
+						SourceName:    "demo-source.txt",
+						Format:        "demo",
+						OutputDir:     out,
+						Delivery:      authoredcontent.DeliveryFor(delivery.dryRun),
+						ResolvePlugin: noopResolver,
+					})
+					if err == nil {
+						t.Fatalf("an importer path climbing out of the output directory was answered rather than "+
+							"refused; the answer carries %+v", res.Files)
+					}
+					var escaping *EscapingPathError
+					if !errors.As(err, &escaping) {
+						t.Fatalf("the refusal must be an *EscapingPathError so a surface can name the path; got %T: %v",
+							err, err)
+					}
+					if escaping.Offending() != climb.drafted {
+						t.Errorf("Offending() = %q; want the path the importer returned, %q",
+							escaping.Offending(), climb.drafted)
+					}
+					if escaping.OutputDir != out {
+						t.Errorf("the refusal names %q as the directory the path had to stay inside; want the output "+
+							"directory %q", escaping.OutputDir, out)
+					}
+					if !strings.Contains(escaping.Error(), strconv.Quote(climb.drafted)) {
+						t.Errorf("the message must name the offending path; got %q", escaping.Error())
+					}
+
+					// Nothing anywhere: not inside the output directory, and not where
+					// the climb leads either.
+					if inside, rerr := os.ReadDir(out); rerr != nil || len(inside) != 0 {
+						t.Errorf("a refused import must write nothing at all; the output directory holds %v (read "+
+							"error %v)", inside, rerr)
+					}
+					landing := filepath.Join(filepath.Dir(out), "escaped-demo.yaml")
+					if _, statErr := os.Stat(landing); !os.IsNotExist(statErr) {
+						t.Errorf("%s exists after the draft was refused (stat err = %v)", landing, statErr)
+					}
+				})
+			}
+		}
 	}
 }
 
-// TestImportRefusesEveryEscapingShape drives the containment predicate over the
+// TestImportRefusesEveryEscapingShape drives the containment judgement over the
 // shapes a plugin could return, so a later change that reached for a
-// string-prefix comparison instead reddens here.
+// string-prefix comparison instead reddens here. It is the judgement both
+// deliveries pass, so a shape refused here is refused by a dry run as by a write.
 //
 // The contained rows matter as much as the refused ones: a guard that refused an
 // interior "a/../b" or a name merely beginning with two dots would reject
@@ -443,27 +510,34 @@ func TestImportRefusesEveryEscapingShape(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out := t.TempDir()
-			_, err := writeFiles(out, []abi.ScaffoldFile{{Path: tc.path, Content: "x"}})
+			err := checkFiles(out, out, []abi.ScaffoldFile{{Path: tc.path, Content: "x"}})
 			var escaping *EscapingPathError
 			refused := errors.As(err, &escaping)
 			if refused != tc.refused {
-				t.Fatalf("writeFiles(%q) refused = %v (err %v); want refused = %v", tc.path, refused, err, tc.refused)
+				t.Fatalf("checkFiles(%q) refused = %v (err %v); want refused = %v", tc.path, refused, err, tc.refused)
 			}
 		})
 	}
 }
 
 // 🔴 TestImportRefusesTheWholeSetWhenOnePathEscapes pins the ordering half of
-// the guard: the contained file in the same set must not reach disk, because a
-// refused run leaving a partial prefix behind is a result nobody asked for.
+// the guard: the set is judged as a whole before the first write, so the
+// contained file in the same set must not reach disk, because a refused run
+// leaving a partial prefix behind is a result nobody asked for. It runs the
+// judgement and the write in the order Import runs them.
 func TestImportRefusesTheWholeSetWhenOnePathEscapes(t *testing.T) {
 	out := t.TempDir()
-	_, err := writeFiles(out, []abi.ScaffoldFile{
+	files := []abi.ScaffoldFile{
 		{Path: "contained.yaml", Content: "first"},
 		{Path: "../escaped.yaml", Content: "second"},
-	})
+	}
+	err := checkFiles(out, out, files)
 	if err == nil {
-		t.Fatal("a set carrying an escaping path must be refused")
+		_, err = writeFiles(out, files)
+	}
+	var escaping *EscapingPathError
+	if !errors.As(err, &escaping) || escaping.Offending() != "../escaped.yaml" {
+		t.Fatalf("a set carrying an escaping path must be refused naming it; got %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(out, "contained.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("the contained file was written before the set was refused; stat err = %v", statErr)
