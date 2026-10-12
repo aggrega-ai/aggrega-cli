@@ -373,6 +373,9 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 	var appendLayers []appendSlices
 	var warnings []string
 	var signingPolicy signingPolicyAccumulator
+	// Where each importer entry the composition below assembles was written,
+	// recorded as each layer is read and before any path in it is anchored.
+	var importerFrom importerEntries
 
 	// Global layer (the explicitly named file, or the platform's default
 	// location), beneath all tree files. Suppressed for the tree-only provenance
@@ -385,6 +388,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 		}
 		if globalLoaded {
 			gdir := filepath.Dir(globalPath)
+			importerFrom.fromConfigFile(globalPath, globalCfg)
 			ga := captureAppends(globalCfg)
 			resolveAppendPaths(&ga, gdir)
 			appendLayers = append(appendLayers, ga)
@@ -430,6 +434,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 			if lerr != nil {
 				return nil, lerr
 			}
+			importerFrom.fromConfigFile(basePath, raw)
 			la := captureAppends(raw)
 			resolveAppendPaths(&la, dir)
 			appendLayers = append(appendLayers, la)
@@ -462,6 +467,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 			if cerr != nil {
 				return nil, cerr
 			}
+			importerFrom.fromCIOverlay(ciPath, ciCfg)
 			ci := foldCIAdditive(ciCfg)
 			resolveAppendPaths(&ci, dir)
 			appendLayers = append(appendLayers, ci)
@@ -485,6 +491,16 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 	// only after compose — within one layer's base list, or across the cascade
 	// and its `_append` companions — so the check runs on the composed list.
 	if err := checkUniqueProviderTargets(merged.Plugins.Providers); err != nil {
+		return nil, err
+	}
+
+	// An importer is attached by exactly one importer entry, the one that chooses
+	// its version and hands it its with-config, so a second entry naming it would
+	// be read by nothing. Duplicates arise as the provider ones do, so the check
+	// runs on the composed list too — and names the file each entry was written
+	// in, which the composed list no longer carries. The governance and linter
+	// lists are not judged: a plugin may be attached to them more than once.
+	if err := checkUniqueImporterAttachments(merged.Plugins.Importer, importerFrom.composed()); err != nil {
 		return nil, err
 	}
 

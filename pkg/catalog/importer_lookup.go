@@ -72,6 +72,30 @@ var errAmbiguousImporterPlugin = cerrors.Register("ambiguous-importer-plugin", c
 		"the advertised capability set the routing matches against."),
 })
 
+// ErrImporterVersionUnsatisfiable fires at resolution when a plugins.importer
+// entry attaches an importer advertising the requested format and pins a version
+// — "importer/agent-flows:1.2.0" or "importer/agent-flows:^1.2.0" — that no
+// version of that importer the catalog holds satisfies: an exact version it does
+// not hold, or a range none of its versions falls in. The pin is an explicit
+// request the import cannot honor, so it halts loudly rather than running another
+// version of the importer in its place. The wrapped message names the capability
+// and the version pinned. It is the importer-socket sibling of the provider
+// socket's ErrProviderVersionUnsatisfiable, scoped to the importer type and
+// phrased for the attachment the pin is written on. A pin that is none of the
+// forms a version pin takes is not this condition: it is reported as the
+// malformation, as the shared select reports any malformed pin.
+func ErrImporterVersionUnsatisfiable() error { return errImporterVersionUnsatisfiable }
+
+var errImporterVersionUnsatisfiable = cerrors.Register("importer-version-unsatisfiable", cerrors.Meta{
+	ShortCode: "E0337",
+	Message:   "no importer plugin version satisfies the plugins.importer entry's version pin",
+	RulePlace: cerrors.RuleNoStageReaches("An import evaluates the rule, when the requested source format is routed to the importer " +
+		"a plugins.importer entry attaches and the version that entry pins is matched against the versions " +
+		"of that importer the catalog holds. The import translates a foreign source description into " +
+		"entities before there is anything to compile, so no declared stage of a compilation holds the " +
+		"attachment or the versions the pin is matched against."),
+})
+
 // importerCapabilityDiag is the importer socket's diagnostic set for the shared
 // capability select.
 //
@@ -80,15 +104,16 @@ var errAmbiguousImporterPlugin = cerrors.Register("ambiguous-importer-plugin", c
 // names one of them, and ImporterPluginForFormat raises it itself, with the same
 // closure, when attachments name more than one. The version-unsatisfiable slot
 // fires when an attachment naming an advertiser carries a version the catalog
-// does not hold, or a range no version it holds satisfies; it reuses the
-// no-serving-importer sentinel. The binding-unsatisfied slot is never entered:
+// does not hold, or a range no version it holds satisfies, and reports it as
+// ErrImporterVersionUnsatisfiable. The binding-unsatisfied slot is never entered:
 // ImporterPluginForFormat binds the select only to an importer it has already
 // found advertising the format, so a bound select always has a candidate, and
-// the slot reuses the same sentinel rather than one the path never emits.
+// the slot reuses the no-serving-importer sentinel rather than one the path never
+// emits.
 var importerCapabilityDiag = capabilityDiag{
 	noun:                 "importer plugin",
 	bindingUnsatisfied:   ErrNoImporterForFormat(),
-	versionUnsatisfiable: ErrNoImporterForFormat(),
+	versionUnsatisfiable: ErrImporterVersionUnsatisfiable(),
 	ambiguous: func(capability string, candidates []string) error {
 		return fmt.Errorf("%w: format %q is advertised by importer plugins %v", ErrAmbiguousImporterPlugin(), strings.TrimPrefix(capability, importCapabilityPrefix), candidates)
 	},
@@ -125,17 +150,17 @@ var importerCapabilityDiag = capabilityDiag{
 //     naming the advertisers the attachments name, sorted.
 //
 // Every miss is loud: a requested format with no advertiser is
-// ErrNoImporterForFormat (mapping the shared select's bare not-found), as is a
+// ErrNoImporterForFormat (mapping the shared select's bare not-found); a
 // well-formed version on an attachment that no advertised version of its importer
-// satisfies — a malformed one is reported as the malformation, as the shared
-// select reports any malformed pin — and a format advertised by more than one
-// distinct importer plugin with no
-// attachment naming one of them is ErrAmbiguousImporterPlugin. There is no
-// soft-miss fallback because an importer has no zero-config default to fall back
-// to — the requested format either has an advertiser or the import cannot
-// proceed. A non-importer plugin whose capabilities happen to list the composed
-// string is excluded by the plugin-type filter, and its own capabilities live in
-// a different per-type block besides.
+// satisfies is ErrImporterVersionUnsatisfiable — a malformed one is reported as
+// the malformation, as the shared select reports any malformed pin — and a format
+// advertised by more than one distinct importer plugin with no attachment naming
+// one of them is ErrAmbiguousImporterPlugin. There is no soft-miss fallback
+// because an importer has no zero-config default to fall back to — the requested
+// format either has an advertiser or the import cannot proceed. A non-importer
+// plugin whose capabilities happen to list the composed string is excluded by the
+// plugin-type filter, and its own capabilities live in a different per-type block
+// besides.
 //
 // Resolution routes through the same candidate set and select as the provider
 // socket, so an importer is resolved by exactly the mechanism a provider is — the

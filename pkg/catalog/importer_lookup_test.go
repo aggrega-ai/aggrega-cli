@@ -228,8 +228,9 @@ func TestImporterPluginForFormat_AnAttachmentNamingAnAdvertiserAttachesIt(t *tes
 // TestImporterPluginForFormat_AnAttachmentPinningAVersionTheCatalogDoesNotHoldHalts
 // pins that an attachment naming an advertiser at a version no advertised version
 // of it satisfies halts rather than resolving to some other version, naming the
-// version it pins, under the condition the importer socket reports the shared
-// version select's refusal as.
+// version it pins, under the importer's own unsatisfiable-pin condition — and not
+// under the no-advertiser one, whose sentence would be false here: the importer
+// does advertise the format, at other versions.
 func TestImporterPluginForFormat_AnAttachmentPinningAVersionTheCatalogDoesNotHoldHalts(t *testing.T) {
 	t.Parallel()
 	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
@@ -245,8 +246,11 @@ func TestImporterPluginForFormat_AnAttachmentPinningAVersionTheCatalogDoesNotHol
 				t.Fatalf("resolved %s at %s attached by position %d; want a halt", got.Metadata.Name,
 					got.Metadata.Version, at)
 			}
-			if !errors.Is(err, catalog.ErrNoImporterForFormat()) {
-				t.Errorf("err = %v; want it reported under ErrNoImporterForFormat", err)
+			if !errors.Is(err, catalog.ErrImporterVersionUnsatisfiable()) {
+				t.Errorf("err = %v; want it reported under ErrImporterVersionUnsatisfiable", err)
+			}
+			if errors.Is(err, catalog.ErrNoImporterForFormat()) {
+				t.Errorf("err = %v; it is reported under ErrNoImporterForFormat too, whose sentence is false for an advertised importer", err)
 			}
 			if !strings.Contains(err.Error(), `pins "`+pin+`"`) {
 				t.Errorf("the halt does not name the version pinned: %v", err)

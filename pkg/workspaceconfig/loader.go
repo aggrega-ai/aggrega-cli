@@ -58,6 +58,31 @@ var errDuplicateProviderTarget = cerrors.Register("duplicate-provider-target", c
 		"so no declared stage of a compilation holds it."),
 })
 
+// ErrDuplicateImporterAttachment reports that two entries of the composed
+// importer list name one importer: their uris, each with any ":<version>" split
+// off, are the same identity — "importer/agent-flows:1.0.0" and
+// "importer/agent-flows:2.0.0" name one importer twice. Errors satisfying
+// errors.Is(err, ErrDuplicateImporterAttachment()) carry the importer named, and
+// each of the two entries by its key, its position under that key, the file it
+// was written in and its uri as written. The entry naming an importer is the one
+// that attaches it — it chooses the version and hands the importer its
+// with-config — so a second entry naming the same importer would be read by
+// nothing, its with-config dropped without a word; two entries for one importer
+// — whether within one layer or contributed across the cascade, its `_append`
+// companions and the CI-owned overlay — halt resolution loudly instead. Only the
+// importer list is judged: one plugin may be attached more than once on the
+// governance and linter lists, each attachment with its own with-config.
+func ErrDuplicateImporterAttachment() error { return errDuplicateImporterAttachment }
+
+var errDuplicateImporterAttachment = cerrors.Register("duplicate-importer-attachment", cerrors.Meta{
+	ShortCode: "E0338",
+	Message:   "importer is attached by more than one plugins.importer entry",
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the importer entries the " +
+		"cascade, its append companions and the CI-owned overlay compose into one list. The duplicate is " +
+		"a fact about the composed list rather than about any single layer, and resolution finishes before " +
+		"an import or a build starts, so no declared stage of a compilation holds it."),
+})
+
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
 // (governance, linter, importer) is bound by capability instead of by
 // uri. Errors satisfying errors.Is(err, ErrCapabilityOnCrossCuttingSocket())

@@ -379,8 +379,8 @@ func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
 // TestAnImporterAttachmentPinningAVersionTheCatalogDoesNotHoldIsRefused drives a
 // catalog holding one version of an importer and an attachment naming that
 // importer at a version the catalog does not hold. The import is refused before
-// any importer is loaded, naming the version, under the condition the shared
-// version select's refusal is reported as for the importer socket.
+// any importer is loaded, naming the version, under the importer's own
+// unsatisfiable-pin condition.
 func TestAnImporterAttachmentPinningAVersionTheCatalogDoesNotHoldIsRefused(t *testing.T) {
 	t.Parallel()
 	rw := attachedImportWorkspace(t, []importopstest.Importer{{Name: importerAlpha, Version: "1.0.0"}},
@@ -395,8 +395,8 @@ func TestAnImporterAttachmentPinningAVersionTheCatalogDoesNotHoldIsRefused(t *te
 	if err == nil {
 		t.Fatal("an import whose attachment pins a version the catalog does not hold ran")
 	}
-	if !errors.Is(err, catalog.ErrNoImporterForFormat()) {
-		t.Errorf("the refusal is not reported under the condition the importer socket reports it as: %v", err)
+	if !errors.Is(err, catalog.ErrImporterVersionUnsatisfiable()) {
+		t.Errorf("the refusal is not reported under the importer's unsatisfiable-pin condition: %v", err)
 	}
 	if !strings.Contains(err.Error(), `pins "9.9.9"`) {
 		t.Errorf("the refusal does not name the version the attachment pins: %v", err)
