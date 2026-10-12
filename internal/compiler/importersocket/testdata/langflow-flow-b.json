@@ -8,7 +8,7 @@
           "node": {
             "template": {
               "model": { "type": "str", "value": "claude-3" },
-              "api_key": { "type": "str", "value": "" }
+              "api_key": { "type": "str", "value": "", "password": true }
             }
           }
         }

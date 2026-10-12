@@ -4,7 +4,10 @@
       "id": "chatOpenAI_0",
       "data": {
         "name": "chatOpenAI",
-        "inputs": { "modelName": "gpt-4o", "temperature": "0.2", "openAIApiKey": "" }
+        "inputParams": [
+          { "label": "Connect Credential", "name": "credential", "type": "credential", "credentialNames": ["openAIApi"] }
+        ],
+        "inputs": { "modelName": "gpt-4o", "temperature": "0.2" }
       }
     },
     {

@@ -21,6 +21,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
@@ -35,8 +36,11 @@ const realExportsDir = "../compiler/importersocket/testdata/real-exports"
 // The committed real exports, by their path beneath realExportsDir.
 const (
 	langflowStarterProject = "langflow/Research Translation Loop.json"
-	flowiseChatflow        = "flowise/chatflows/Multiple Documents QnA.json"
-	flowiseAgentflow       = "flowise/agentflowsv2/Agents Handoff.json"
+	// langflowPromptingProject carries a language model node whose template holds
+	// a max_tokens field and an api_key field.
+	langflowPromptingProject = "langflow/Basic Prompting.json"
+	flowiseChatflow          = "flowise/chatflows/Multiple Documents QnA.json"
+	flowiseAgentflow         = "flowise/agentflowsv2/Agents Handoff.json"
 )
 
 // realExports are the committed exports and what the reference importer drafts
@@ -45,15 +49,11 @@ const (
 // drafts is every path the import reports, sorted. A path is reported once per
 // node that drafts it, so two nodes of one type list the component they share
 // once each.
-//
-// held names a drafted document whose validation this suite skips, with the
-// reason; see TestEveryDocumentDraftedFromARealExportValidates.
 var realExports = []struct {
 	name   string
 	source string
 	format string
 	drafts []string
-	held   map[string]string
 }{
 	{
 		name:   "a Langflow starter project",
@@ -68,10 +68,17 @@ var realExports = []struct {
 			"components/imported-component-loopcomponent.yaml",
 			"components/imported-component-parsercomponent.yaml",
 		},
-		held: map[string]string{
-			"components/imported-component-parsercomponent.yaml": "held: the parser node's source field pattern " +
-				"is drafted as a value named pattern, which the compact form reads as a constraint keyword, so " +
-				"the drafted values do not compile",
+	},
+	{
+		name:   "a Langflow starter project prompting a language model",
+		source: langflowPromptingProject,
+		format: "langflow",
+		drafts: []string{
+			"aggregate.yaml",
+			"components/imported-ai-model-chatinput.yaml",
+			"components/imported-ai-model-chatoutput.yaml",
+			"components/imported-ai-model-languagemodelcomponent.yaml",
+			"components/imported-component-prompt.yaml",
 		},
 	},
 	{
@@ -90,11 +97,6 @@ var realExports = []struct {
 			"components/imported-component-pinecone.yaml",
 			"components/imported-component-pinecone.yaml",
 		},
-		held: map[string]string{
-			"components/imported-ai-tool-retrievertool.yaml": "held: the retriever tool node's source field " +
-				"description is drafted as a value named description, which the compact form reads as a " +
-				"keyword, so the drafted values do not compile",
-		},
 	},
 	{
 		name:   "a Flowise agentflow",
@@ -111,6 +113,16 @@ var realExports = []struct {
 	},
 }
 
+// readRealExport reads the committed real export at rel.
+func readRealExport(t *testing.T, rel string) []byte {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join(realExportsDir, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read the committed real export: %v", err)
+	}
+	return source
+}
+
 // importRealExport runs Import over the committed real export at rel, naming no
 // format, through the workspace rw, with the delivery and output directory given.
 // The plugin bytes come from the cascade built from the directories the seam
@@ -118,16 +130,21 @@ var realExports = []struct {
 func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel string,
 	delivery authoredcontent.Delivery, outputDir string) Result {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join(realExportsDir, filepath.FromSlash(rel)))
-	if err != nil {
-		t.Fatalf("read the committed real export: %v", err)
-	}
+	return importRealExportWithSettings(t, rw, rel, delivery, outputDir, nil)
+}
+
+// importRealExportWithSettings is importRealExport handing the importer the
+// settings document given, as an importer attachment's with.settings reaches it.
+func importRealExportWithSettings(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel string,
+	delivery authoredcontent.Delivery, outputDir string, settings json.RawMessage) Result {
+	t.Helper()
 	res, err := Import(context.Background(), rw, Options{
-		Source:        source,
+		Source:        readRealExport(t, rel),
 		SourceName:    filepath.Base(rel),
 		OutputDir:     outputDir,
 		Delivery:      delivery,
 		ResolvePlugin: (&recordingCascade{}).resolve,
+		Settings:      settings,
 	})
 	if err != nil {
 		t.Fatalf("the import of %s was refused: %v", rel, err)
@@ -181,42 +198,71 @@ func TestImportDraftsRealLangflowAndFlowiseExports(t *testing.T) {
 	}
 }
 
-// draftedDocument is the part of a drafted document the shape cases read.
+// draftedDocument is the part of a drafted document the cases below read.
 type draftedDocument struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
 		Name string `yaml:"name"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Components map[string]any `yaml:"components"`
-		Schema     struct {
+		Components     map[string]any `yaml:"components"`
+		FeaturesSchema map[string]any `yaml:"featuresSchema"`
+		Schema         struct {
 			Values map[string]any `yaml:"values"`
 		} `yaml:"schema"`
 	} `yaml:"spec"`
 }
 
-// draftedDocumentNamed returns the drafted document whose metadata.name is name.
-func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument {
+// valueFields returns the value fields a drafted Component declares — the keys
+// of the properties block its values carry — sorted.
+func (d draftedDocument) valueFields() []string {
+	props, _ := d.Spec.Schema.Values["properties"].(map[string]any)
+	return slices.Sorted(maps.Keys(props))
+}
+
+// credentialSlots returns the credential slots a drafted Component declares —
+// the keys of its featuresSchema — sorted.
+func (d draftedDocument) credentialSlots() []string {
+	return slices.Sorted(maps.Keys(d.Spec.FeaturesSchema))
+}
+
+// draftedDocuments reads every drafted file a result carries, by metadata.name.
+// Two nodes of one type draft one document, reported once each, so a name read
+// twice must carry the same content both times.
+func draftedDocuments(t *testing.T, res Result) map[string]draftedDocument {
 	t.Helper()
+	docs := map[string]draftedDocument{}
+	contents := map[string]string{}
 	for _, f := range res.Files {
 		var doc draftedDocument
 		if err := yaml.Unmarshal([]byte(f.Content), &doc); err != nil {
 			t.Fatalf("the drafted %s is not YAML: %v", f.Path, err)
 		}
-		if doc.Metadata.Name == name {
-			return doc
+		if prior, seen := contents[doc.Metadata.Name]; seen && prior != f.Content {
+			t.Fatalf("two drafted files are both named %s and differ", doc.Metadata.Name)
 		}
+		contents[doc.Metadata.Name] = f.Content
+		docs[doc.Metadata.Name] = doc
 	}
-	t.Fatalf("no drafted document is named %s", name)
-	return draftedDocument{}
+	return docs
+}
+
+// draftedDocumentNamed returns the drafted document whose metadata.name is name.
+func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument {
+	t.Helper()
+	doc, ok := draftedDocuments(t, res)[name]
+	if !ok {
+		t.Fatalf("no drafted document is named %s", name)
+	}
+	return doc
 }
 
 // TestTheReferenceImporterReadsTheShapesRealExportsCarry pins, one row per shape,
 // how the reference importer reads a node shape real Langflow and Flowise exports
 // carry and the hand-written fixtures do not. Each row reads one drafted document
 // of a committed real export and compares a set of its keys exactly — the
-// Aggregate's components, or a drafted Component's values — so a row fails naming
-// what appeared or went missing.
+// Aggregate's components, or a drafted Component's value fields — so a row fails
+// naming what appeared or went missing.
 //
 //   - A note an author pins to the canvas — a node whose outer type is langflow's
 //     noteNode or flowise's stickyNote — runs nothing, so it is not lifted as a
@@ -225,25 +271,25 @@ func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument
 //     naming the template's kind (_type), a boolean refresh flag (is_refresh), and
 //     objects holding only a value the editor keeps (_frontend_node_flow_id,
 //     _frontend_node_folder_id). Only an entry whose value is an object carrying a
-//     type is drafted as a value.
+//     type is drafted as a field.
 //   - A flowise node's inputs also carry its anchors — the inputs another node
 //     connects into, holding a reference to that node — which the edge already
 //     records. An input named by the node's inputAnchors is not drafted as a value.
 //
 // 🔴 PLANTED DEFECTS, one per shape, each in the importer example's walker
-// (aggrega-pdk/go/examples/import-langflow/walk.go, parseNodes); the fixture the
-// tests run is rebuilt from that source when it changes.
+// (aggrega-pdk/go/examples/import-langflow/walk.go); the fixture the tests run is
+// rebuilt from that source when it changes.
 //
-//   - Delete the three lines `if isCanvasNote(format, outer) { continue }`: the three
-//     note rows fail, each Aggregate gaining its notes (note-hiyq7; stickynote-0,
-//     stickynote-1, stickynote-2; stickynoteagentflow-0).
-//   - Replace `templateFields(nestedTemplate(data["node"]))` with
-//     `orderedKeys(nestedTemplate(data["node"]))`: the template row fails, the model
-//     component gaining _frontend_node_flow_id, _frontend_node_folder_id, _type and
-//     is_refresh.
-//   - Replace `subtract(orderedKeys(data["inputs"]), anchorNames(data["inputAnchors"]))`
-//     with `orderedKeys(data["inputs"])`: the anchor row fails, the agent component
-//     gaining inputModeration, memory, model and tools.
+//   - In parseNodes, delete the three lines `if isCanvasNote(format, outer) {
+//     continue }`: the three note rows fail, each Aggregate gaining its notes
+//     (note-hiyq7; stickynote-0, stickynote-1, stickynote-2; stickynoteagentflow-0).
+//   - In templateFields, replace `err != nil || field.Type == nil` with `err !=
+//     nil`: the template row fails, the model component gaining
+//     _frontend_node_flow_id and _frontend_node_folder_id.
+//   - In parseNodes, replace `subtract(orderedKeys(data["inputs"]),
+//     anchorNames(data["inputAnchors"]))` with `orderedKeys(data["inputs"])`: the
+//     anchor row fails, the agent component gaining inputModeration, memory, model
+//     and tools.
 //
 // The first also fails TestImportDraftsRealLangflowAndFlowiseExports, whose path
 // lists then gain each note's draft; the other two leave it passing, since they
@@ -252,7 +298,7 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 	t.Parallel()
 
 	components := func(d draftedDocument) []string { return slices.Sorted(maps.Keys(d.Spec.Components)) }
-	values := func(d draftedDocument) []string { return slices.Sorted(maps.Keys(d.Spec.Schema.Values)) }
+	values := draftedDocument.valueFields
 
 	for _, tc := range []struct {
 		shape    string
@@ -315,19 +361,257 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 			res := importRealExport(t, rw, tc.source, authoredcontent.DeliveryFor(true), "")
 			got := tc.keys(draftedDocumentNamed(t, res, tc.document))
 			if !slices.Equal(got, tc.want) {
-				var extra, missing []string
-				for _, k := range got {
-					if !slices.Contains(tc.want, k) {
-						extra = append(extra, k)
-					}
-				}
-				for _, k := range tc.want {
-					if !slices.Contains(got, k) {
-						missing = append(missing, k)
-					}
-				}
+				extra, missing := setDifference(got, tc.want)
 				t.Errorf("%s from %s carries %v; unexpected %v, missing %v", tc.document, tc.source, got, extra,
 					missing)
+			}
+		})
+	}
+}
+
+// setDifference returns the elements of got absent from want, and those of want
+// absent from got.
+func setDifference(got, want []string) (extra, missing []string) {
+	for _, k := range got {
+		if !slices.Contains(want, k) {
+			extra = append(extra, k)
+		}
+	}
+	for _, k := range want {
+		if !slices.Contains(got, k) {
+			missing = append(missing, k)
+		}
+	}
+	return extra, missing
+}
+
+// markedCredentials reads, from the export itself, every field its tool marks as
+// a credential, by the id of the node that carries it, each node's names sorted:
+// for langflow a template field whose object carries password set to true; for
+// flowise an input parameter of type credential.
+//
+// It is read here independently of the importer on purpose: the case below
+// compares what the export marks with what the importer drafted, and an oracle
+// that shared the importer's reading would compare the importer with itself.
+func markedCredentials(t *testing.T, format string, source []byte) map[string][]string {
+	t.Helper()
+	marked := map[string][]string{}
+	switch format {
+	case "langflow":
+		var flow struct {
+			Data struct {
+				Nodes []struct {
+					ID   string `json:"id"`
+					Data struct {
+						Node struct {
+							Template map[string]json.RawMessage `json:"template"`
+						} `json:"node"`
+					} `json:"data"`
+				} `json:"nodes"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(source, &flow); err != nil {
+			t.Fatalf("read the langflow export: %v", err)
+		}
+		for _, n := range flow.Data.Nodes {
+			for name, raw := range n.Data.Node.Template {
+				var field struct {
+					Password bool `json:"password"`
+				}
+				if json.Unmarshal(raw, &field) == nil && field.Password {
+					marked[n.ID] = append(marked[n.ID], name)
+				}
+			}
+		}
+	case "flowise":
+		var flow struct {
+			Nodes []struct {
+				ID   string `json:"id"`
+				Data struct {
+					InputParams []struct {
+						Name string `json:"name"`
+						Type string `json:"type"`
+					} `json:"inputParams"`
+				} `json:"data"`
+			} `json:"nodes"`
+		}
+		if err := json.Unmarshal(source, &flow); err != nil {
+			t.Fatalf("read the flowise export: %v", err)
+		}
+		for _, n := range flow.Nodes {
+			for _, p := range n.Data.InputParams {
+				if p.Type == "credential" {
+					marked[n.ID] = append(marked[n.ID], p.Name)
+				}
+			}
+		}
+	default:
+		t.Fatalf("no credential marker is read for the %q format", format)
+	}
+	for id := range marked {
+		slices.Sort(marked[id])
+	}
+	return marked
+}
+
+// draftedTargets imports the export at rel with the importer's decision record
+// rendered in place of the drafts — the settings an importer attachment hands it
+// to have one — and returns the Component each source node was drafted as, by the
+// node's id in the export.
+func draftedTargets(t *testing.T, rel string) map[string]string {
+	t.Helper()
+	rw, _ := catalogFolderImportWorkspace(t)
+	res := importRealExportWithSettings(t, rw, rel, authoredcontent.DeliveryFor(true), "",
+		json.RawMessage(`{"render_mode":"llm"}`))
+	if len(res.Files) != 1 || res.Files[0].Path != "import-decisions.json" {
+		t.Fatalf("the decision record was not the one file the import returned: %+v", draftPaths(res))
+	}
+	var decisions []abi.ImportDecision
+	if err := json.Unmarshal([]byte(res.Files[0].Content), &decisions); err != nil {
+		t.Fatalf("read the decision record: %v", err)
+	}
+	targets := map[string]string{}
+	for _, d := range decisions {
+		if d.Chosen != nil && d.Chosen.Mode == "draft" {
+			targets[d.SourceNode.ID] = d.Chosen.Target
+		}
+	}
+	return targets
+}
+
+// TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker pins,
+// one row per format, that a field is drafted as a credential slot exactly when
+// the export's own tool marks it as one — Langflow's password: true on a template
+// field, Flowise's input parameter of type credential — and that a field the tool
+// does not mark is drafted as a value whatever its name.
+//
+// Each row lists every field the export marks, by the node carrying it, and the
+// case first checks that list against the export itself, so it cannot leave one
+// out. Then, for every source node the import drafted, the drafted Component's
+// credential slots are exactly the fields the export marks on that node — none
+// for a node it marks nothing on — and none of those fields is also a value field.
+// A row naming a token-count field, which reads like a credential and is not one,
+// checks that it is drafted as a value and not as a slot.
+//
+// 🔴 PLANTED DEFECT — the field name restored as the classifier, in the importer
+// example's walker (aggrega-pdk/go/examples/import-langflow/walk.go). Add
+//
+//	func isSecretName(name string) bool {
+//		for _, needle := range []string{"api_key", "apikey", "api-key", "token", "password", "secret", "credential"} {
+//			if containsFold(name, needle) {
+//				return true
+//			}
+//		}
+//		return false
+//	}
+//
+// and in parseNodes, immediately before the line that appends the sourceNode,
+// re-split the node's parameters by name:
+//
+//	all := append(append([]string{}, fields...), secrets...)
+//	fields, secrets = nil, nil
+//	for _, f := range all {
+//		if isSecretName(f) {
+//			secrets = append(secrets, f)
+//		} else {
+//			fields = append(fields, f)
+//		}
+//	}
+//
+// The Langflow max_tokens row then fails with the language model's slots reading
+// [api_key max_tokens] and its max_tokens no longer a value; the Flowise row fails
+// with the chat model's slots reading [credential maxTokens] and its maxTokens no
+// longer a value.
+func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *testing.T) {
+	t.Parallel()
+
+	type valueField struct{ document, field string }
+	for _, tc := range []struct {
+		name        string
+		source      string
+		format      string
+		credentials map[string][]string
+		tokenCount  *valueField
+	}{
+		{
+			name:   "langflow marks a credential with password true, and max_tokens carries no mark",
+			source: langflowPromptingProject,
+			format: "langflow",
+			credentials: map[string][]string{
+				"LanguageModelComponent-FLeYF": {"api_key"},
+			},
+			tokenCount: &valueField{"imported/ai-model/languagemodelcomponent", "max_tokens"},
+		},
+		{
+			name:   "flowise marks a credential with an input parameter of type credential, and maxTokens carries no mark",
+			source: flowiseChatflow,
+			format: "flowise",
+			credentials: map[string][]string{
+				"chatOpenAI_0":       {"credential"},
+				"openAIEmbeddings_0": {"credential"},
+				"openAIEmbeddings_1": {"credential"},
+				"pinecone_0":         {"credential"},
+				"pinecone_1":         {"credential"},
+			},
+			tokenCount: &valueField{"imported/ai-model/chatopenai", "maxTokens"},
+		},
+		{
+			name:   "a langflow starter project marking only its model's api_key",
+			source: langflowStarterProject,
+			format: "langflow",
+			credentials: map[string][]string{
+				"LanguageModelComponent-ps5yd": {"api_key"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if marked := markedCredentials(t, tc.format, readRealExport(t, tc.source)); !maps.EqualFunc(marked,
+				tc.credentials, slices.Equal[[]string]) {
+				t.Fatalf("the export marks %v as credentials; the row lists %v", marked, tc.credentials)
+			}
+
+			targets := draftedTargets(t, tc.source)
+			for id := range tc.credentials {
+				if _, drafted := targets[id]; !drafted {
+					t.Fatalf("the node %s the export marks a credential on was not drafted; drafted %v", id, targets)
+				}
+			}
+
+			rw, _ := catalogFolderImportWorkspace(t)
+			docs := draftedDocuments(t, importRealExport(t, rw, tc.source, authoredcontent.DeliveryFor(true), ""))
+			for _, id := range slices.Sorted(maps.Keys(targets)) {
+				doc, ok := docs[targets[id]]
+				if !ok {
+					t.Fatalf("the node %s was decided into %s, which no drafted file is named", id, targets[id])
+				}
+				want := tc.credentials[id]
+				if got := doc.credentialSlots(); !slices.Equal(got, want) {
+					t.Errorf("%s, drafted from the node %s, declares the credential slots %v; the export marks %v",
+						targets[id], id, got, want)
+				}
+				for _, field := range want {
+					if slices.Contains(doc.valueFields(), field) {
+						t.Errorf("%s, drafted from the node %s, declares the marked credential %s as a value as well",
+							targets[id], id, field)
+					}
+				}
+			}
+
+			if tc.tokenCount != nil {
+				doc, ok := docs[tc.tokenCount.document]
+				if !ok {
+					t.Fatalf("no drafted document is named %s", tc.tokenCount.document)
+				}
+				if !slices.Contains(doc.valueFields(), tc.tokenCount.field) {
+					t.Errorf("%s does not declare %s as a value; its value fields are %v", tc.tokenCount.document,
+						tc.tokenCount.field, doc.valueFields())
+				}
+				if slices.Contains(doc.credentialSlots(), tc.tokenCount.field) {
+					t.Errorf("%s declares %s, which the export does not mark, as a credential slot",
+						tc.tokenCount.document, tc.tokenCount.field)
+				}
 			}
 		})
 	}
@@ -340,16 +624,25 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 // Aggregate is checked — through the check the command runs with no argument, over
 // the directories the command reads in a workspace naming no Release.
 //
-// A drafted document named in its export's held map is skipped with the reason and
-// left out of the catalog the whole-catalog check reads: its values carry a source
-// field whose name the compact form reads as a keyword, so they do not compile.
-// Removing an entry makes the document checked like every other one, and it then
-// fails with the compact form's unknown-keyword refusal for as long as the draft
-// writes its values in that form.
+// Before a drafted Component is validated, the shape of its values is read: a
+// closed object whose fields sit under an explicit properties block — type object,
+// properties, additionalProperties false, and nothing else. Under properties every
+// key is a field name, so a source field named like a schema keyword (the Langflow
+// parser's pattern, the Flowise retriever tool's description) compiles like any
+// other; the same fields written directly under values are read as keywords and
+// refused.
 //
-// It fails if a drafted Component stops passing the schema, placeholder or pillar
-// checks, or if the drafted Aggregate — or anything else in the catalog — stops
-// passing the whole-catalog check.
+// It fails if a drafted Component's values take another shape, if one stops
+// passing the schema, placeholder or pillar checks, or if the drafted Aggregate —
+// or anything else in the catalog — stops passing the whole-catalog check.
+//
+// 🔴 PLANTED DEFECT — the fields written directly under values, in the importer
+// example's emitter (aggrega-pdk/go/examples/import-langflow/emit.go,
+// draftComponentBody): delete the lines writing `type: object`, `properties:` and
+// `additionalProperties: false`, and indent each field two spaces less. Every
+// drafted Component carrying values then fails the shape check, and the Langflow
+// parser and the Flowise retriever tool fail validation as well, with the compact
+// form's unknown-keyword refusal.
 func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 	t.Parallel()
 
@@ -365,15 +658,6 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 			if len(written) == 0 {
 				t.Fatal("the import wrote nothing to validate")
 			}
-			for path := range ex.held {
-				if !slices.Contains(written, path) {
-					t.Fatalf("%s is held but was not drafted; the held list names a document this export no "+
-						"longer drafts", path)
-				}
-				if err := os.Remove(filepath.Join(catalogDir, filepath.FromSlash(path))); err != nil {
-					t.Fatalf("leave the held %s out of the catalog: %v", path, err)
-				}
-			}
 
 			// The stack is read only now, once the drafts are on disk: the catalog
 			// folder joins it only when it exists.
@@ -382,9 +666,6 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 
 			for _, path := range written {
 				t.Run(path, func(t *testing.T) {
-					if why, held := ex.held[path]; held {
-						t.Skip(why)
-					}
 					file := filepath.Join(catalogDir, filepath.FromSlash(path))
 					data, err := os.ReadFile(file)
 					if err != nil {
@@ -396,6 +677,14 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 					}
 					if doc.Kind != "Component" {
 						return
+					}
+					if values := doc.Spec.Schema.Values; values != nil {
+						keys := slices.Sorted(maps.Keys(values))
+						if !slices.Equal(keys, []string{"additionalProperties", "properties", "type"}) ||
+							values["type"] != "object" || values["additionalProperties"] != false {
+							t.Errorf("the drafted values are not a closed object with its fields under "+
+								"properties: they carry %v\n%s", values, data)
+						}
 					}
 					vr, err := validateops.ValidateEntityContent(context.Background(), target.Root(), cacheDir,
 						pass.Dirs, pass.Named, file, data, false)
