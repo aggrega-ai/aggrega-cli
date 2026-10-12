@@ -106,6 +106,18 @@ func instructionsFor(transport transportMode) string {
 
 // instructions is the guidance this session hands a connecting client, composed
 // for the transport that session speaks.
+//
+// Where the desktop bundle that launched this process comes from a different
+// release than the executable it launched, the guidance opens with the sentence
+// saying so (releaseDifference), so the difference is in front of a model from
+// its first exchange rather than only once it asks. Where there is no such
+// difference — no bundle launched the server, or the two versions are equal —
+// the guidance is exactly instructionsFor's. The launch fixes both versions, so
+// every client reaching one process still reads one text.
 func (s *server) instructions() string {
-	return instructionsFor(s.transport)
+	guidance := instructionsFor(s.transport)
+	if difference := releaseDifference(s.reportedVersions()); difference != "" {
+		return difference + "\n\n" + guidance
+	}
+	return guidance
 }

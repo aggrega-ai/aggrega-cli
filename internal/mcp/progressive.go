@@ -149,11 +149,19 @@ type capabilityDescriptor struct {
 // Which fields are set is what tells a caller which question it asked, so the
 // two never appear together and an empty one is absent from the wire rather than
 // present and empty.
+//
+// The argumentless answer — the one a caller reads to learn what this server is
+// — also carries ServerVersion, the version this server runs, and BundleVersion,
+// the version of the desktop bundle that launched it, only where one did. Neither
+// is set on a narrowed answer or on definitions: those answer a question about
+// tools, and the versions answer one about the server (versionLine).
 type describeCapabilitiesResult struct {
-	Kind         string                 `json:"kind,omitempty"`
-	Tools        []string               `json:"tools,omitempty"`
-	Index        []capabilityProjection `json:"index,omitempty"`
-	Capabilities []capabilityDescriptor `json:"capabilities,omitempty"`
+	Kind          string                 `json:"kind,omitempty"`
+	Tools         []string               `json:"tools,omitempty"`
+	ServerVersion string                 `json:"server_version,omitempty"`
+	BundleVersion string                 `json:"bundle_version,omitempty"`
+	Index         []capabilityProjection `json:"index,omitempty"`
+	Capabilities  []capabilityDescriptor `json:"capabilities,omitempty"`
 }
 
 // kindScopeCommandToolNote is the one bound on a kind-scoped answer, written
@@ -275,7 +283,11 @@ func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMes
 	// declared order, the three joined in one, nothing iterated from a map — and
 	// it is also what keeps the index and the listing describing one surface: a
 	// second walk would agree with the first until either was edited.
+	//
+	// It is also the answer that says which release this server comes from, and
+	// which release the desktop bundle that launched it comes from, where one did.
 	payload := describeCapabilitiesResult{Index: projectTools(s.servedTools(ctx))}
+	payload.ServerVersion, payload.BundleVersion = s.reportedVersions()
 	return textResult(s.renderCapabilityIndex(payload), payload)
 }
 
@@ -475,8 +487,16 @@ func isKnownEntityKind(kind string) bool {
 // the heading is written without it rather than with an emptied gap, because a
 // bound on a family that session cannot reach is a claim about tools the caller
 // was never offered.
+//
+// An answer carrying the versions opens with the one line naming them, composed
+// from the payload's own fields, so the text and the structured answer cannot
+// report two different versions.
 func (s *server) renderCapabilityIndex(p describeCapabilitiesResult) string {
 	var b strings.Builder
+	if line := versionLine(p.ServerVersion, p.BundleVersion); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 	if p.Kind == "" {
 		fmt.Fprintf(&b, "Every tool this server offers you (%d). "+
 			"Names and purposes only — call %s again with `tools` naming the ones you want, "+

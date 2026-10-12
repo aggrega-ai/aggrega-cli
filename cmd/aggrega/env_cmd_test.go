@@ -53,8 +53,9 @@ func TestLoginPasswordPrecedence(t *testing.T) {
 }
 
 // TestBoundEnvVarsCombined: the combined enumeration includes the config-backed
-// table keys and the command-layer secrets/workspace-root, and excludes the
-// sigstore interop alias (which is intentionally not an AGGREGA_ binding).
+// table keys and the command-layer secrets, workspace-root and bundle-version
+// variables, and excludes the sigstore interop alias (which is intentionally
+// not an AGGREGA_ binding).
 func TestBoundEnvVarsCombined(t *testing.T) {
 	t.Parallel()
 	bound := make(map[string]bool)
@@ -63,7 +64,7 @@ func TestBoundEnvVarsCombined(t *testing.T) {
 	}
 	for _, want := range []string{
 		"AGGREGA_DEFAULT_REGISTRY", "AGGREGA_SIGNING_FULCIO_URL",
-		envIdentityToken, envRegistryPassword, envWorkspaceRoot,
+		envIdentityToken, envRegistryPassword, envWorkspaceRoot, envBundleVersion,
 	} {
 		if !bound[want] {
 			t.Errorf("allBoundEnvVars missing %q", want)

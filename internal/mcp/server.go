@@ -41,6 +41,15 @@ type Config struct {
 	// empty value reports an empty version.
 	ServerVersion string
 
+	// BundleVersion is the version of the desktop bundle that launched this
+	// process, as that bundle handed it over at launch, and empty where no
+	// bundle did. The argumentless capability answer reports it beside
+	// ServerVersion, and where the two differ the answer and the connect-time
+	// guidance both say the executable and the bundle come from different
+	// releases (versionLine). It is reported and never acted on: no launch and
+	// no call is refused for a difference.
+	BundleVersion string
+
 	// Toolchain is the versions a dependency resolution records into the
 	// lockfile it writes: the compiler, and each core plugin this binary
 	// carries. The command layer supplies it for the same reason it supplies
@@ -211,6 +220,12 @@ type server struct {
 	out           io.Writer
 	logw          io.Writer
 	serverVersion string
+
+	// bundleVersion is the version of the desktop bundle that launched this
+	// process (Config.BundleVersion), empty where none did. It is reported
+	// beside serverVersion and compared with it (versionLine), and nothing reads
+	// it to decide anything else.
+	bundleVersion string
 
 	// toolchain is the stamp a dependency resolution driven through this
 	// server records into the lockfile it writes. Nil records none; a test
@@ -467,6 +482,7 @@ func Run(ctx context.Context, cfg Config) error {
 		out:              stdout,
 		logw:             logw,
 		serverVersion:    cfg.ServerVersion,
+		bundleVersion:    cfg.BundleVersion,
 		toolchain:        cfg.Toolchain,
 		commandTools:     commandTools,
 		announcedTools:   announced,

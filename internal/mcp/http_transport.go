@@ -276,6 +276,10 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		out:           io.Discard,
 		logw:          logw,
 		serverVersion: cfg.ServerVersion,
+		// Carried as the other transport carries it. The desktop bundle launches
+		// a server over standard input and output, so a listener's launch carries
+		// none in practice and reports its own version alone.
+		bundleVersion: cfg.BundleVersion,
 		toolchain:     cfg.Toolchain,
 		// cfg.Commands is deliberately not derived from here. A session reached
 		// over HTTP is composed with no command surface, and the composition is

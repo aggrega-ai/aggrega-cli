@@ -155,8 +155,9 @@ func envLookupOrGetenv(look func(string) string) func(string) string {
 // Command-layer environment variables. The config-backed variables live in the
 // workspaceconfig binding table; the names below are the ones resolved at a
 // command rather than through the config overlay: the two secrets (never a
-// config field) and the workspace-root variable (feeds root discovery, not a
-// config field).
+// config field), the workspace-root variable (feeds root discovery, not a
+// config field) and the bundle-version variable (read by the assistant server
+// at launch, not a config field).
 const (
 	// envIdentityToken supplies the keyless OIDC identity token. A secret —
 	// never a config field — resolved at the signer-construction boundary. The
@@ -169,6 +170,10 @@ const (
 	// Not a config field; it feeds root discovery, so it is applied at the
 	// root-flag fallback rather than through the config overlay.
 	envWorkspaceRoot = workspaceconfig.EnvWorkspaceRoot
+	// envBundleVersion carries the version of the desktop bundle that launched
+	// the server. Not a config field and decides nothing; `aggrega mcp` reads it
+	// once at launch and reports it beside its own version.
+	envBundleVersion = workspaceconfig.EnvBundleVersion
 	// envSigstoreIDToken is the sigstore-ecosystem interop alias for the
 	// identity token. Read only by the identity-token resolver, after the
 	// AGGREGA_ token; deliberately not an AGGREGA_-prefixed binding so it is
@@ -178,15 +183,29 @@ const (
 )
 
 // allBoundEnvVars returns every AGGREGA_-prefixed environment variable the CLI
-// binds — the config-overlay table keys plus the command-resolved secrets and
-// the workspace-root variable — as the single combined enumeration the naming
-// and anti-drift guards check against. The sigstore interop alias is excluded
-// by design: it is a foreign alias, not an Aggrega setting. Order is
-// deterministic: table order, then the fixed command-layer trailer.
+// binds — the config-overlay table keys plus the command-resolved secrets, the
+// workspace-root variable and the bundle-version variable — as the single
+// combined enumeration the naming and anti-drift guards check against. The
+// sigstore interop alias is excluded by design: it is a foreign alias, not an
+// Aggrega setting. Order is deterministic: table order, then the fixed
+// command-layer trailer.
 func allBoundEnvVars() []string {
 	tableKeys := workspaceconfig.ConfigBackedEnvVars()
-	out := make([]string, 0, len(tableKeys)+3)
+	out := make([]string, 0, len(tableKeys)+4)
 	out = append(out, tableKeys...)
-	out = append(out, envIdentityToken, envRegistryPassword, envWorkspaceRoot)
+	out = append(out, envIdentityToken, envRegistryPassword, envWorkspaceRoot, envBundleVersion)
 	return out
+}
+
+// bundleVersionFromEnv returns the version of the desktop bundle that launched
+// this process, as the bundle hands it over (envBundleVersion), and the empty
+// string where nothing did — the variable unset or set empty, which is a launch
+// from a terminal, an editor or anything else that is not the bundle. look reads
+// the environment; nil reads the process's own.
+//
+// It is read once, where `aggrega mcp` starts, and handed to the server whole:
+// the server reports it and compares it with its own version, and nothing
+// anywhere refuses on what it says.
+func bundleVersionFromEnv(look func(string) string) string {
+	return envLookupOrGetenv(look)(envBundleVersion)
 }

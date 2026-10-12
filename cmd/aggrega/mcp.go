@@ -280,6 +280,10 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),
 		ServerVersion: provenanceCompilerVersion(),
+		// Read here, once, for the life of the process: the version of the desktop
+		// bundle that launched it, which the server reports beside its own. A
+		// launch the bundle did not make carries none.
+		BundleVersion: bundleVersionFromEnv(nil),
 		WorkspaceRoot: launchRoot,
 		// Set only where the launch root is not an existing folder: a refusal of
 		// it then names what supplied it, as the launch's own refusal did.

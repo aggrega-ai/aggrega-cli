@@ -22,6 +22,15 @@
 # directory is what is validated and packed, so the source directory is never
 # modified.
 #
+# THE SAME VERSION IS HANDED TO THE SERVER. The manifest's launch environment
+# carries AGGREGA_BUNDLE_VERSION, which the server reads at launch and reports
+# beside its own version, saying when the two come from different releases. The
+# checked-in entry carries the placeholder the `version` field carries, and this
+# script writes the stamped version into it in the same staged copy, so the
+# bundle and the variable it sets name one version. A manifest whose launch
+# environment carries no such entry is refused, naming it, rather than built
+# into a bundle whose server cannot tell which release launched it.
+#
 # The recipe makes outputs stamped from one tree at one moment agree; it does
 # not make a bundle built now agree with a binary built earlier. A caller that
 # needs the two to match passes --expect-version with the version the binary
@@ -60,9 +69,10 @@
 # the written bundle, so a caller can capture it; the packer's own report goes
 # to standard error. It exits 1 when the manifest fails validation (the
 # validator's message is shown), when it writes a ${user_config.KEY} naming a
-# setting it does not declare (the key is named), when the stamped version
-# differs from --expect-version, when the source directory holds anything but
-# the manifest, or when packing fails; and 2 on a usage error.
+# setting it does not declare (the key is named), when its launch environment
+# carries no AGGREGA_BUNDLE_VERSION entry, when the stamped version differs from
+# --expect-version, when the source directory holds anything but the manifest,
+# or when packing fails; and 2 on a usage error.
 #
 # Exit non-zero on the first failing step.
 set -euo pipefail
@@ -70,6 +80,12 @@ set -euo pipefail
 # The packer, at one exact version. Raise it deliberately: validate
 # extensions/mcpb/manifest.json under the new version before changing it here.
 MCPB_PACKER="@anthropic-ai/mcpb@2.1.2"
+
+# The launch-environment entry the stamped version is written into. The manifest
+# spells it as text, and a Go test holds that spelling to the one the binary
+# reads (workspaceconfig.EnvBundleVersion); this script refuses a manifest that
+# does not carry it, so its own spelling is held to the manifest's in turn.
+BUNDLE_VERSION_ENV="AGGREGA_BUNDLE_VERSION"
 
 CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 
@@ -135,11 +151,12 @@ STAGE="$(mktemp -d "${TMPDIR:-/tmp}/aggrega-mcp-bundle.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir "$STAGE/bundle"
 
-# Write the stamped copy: the source manifest with its `version` replaced and
-# every other key left in its authored order.
+# Write the stamped copy: the source manifest with its `version` and its
+# launch environment's bundle-version entry both set to the stamped version, and
+# every key left in its authored order.
 node -e '
   const fs = require("fs");
-  const [src, version, dst] = process.argv.slice(1);
+  const [src, version, dst, envName] = process.argv.slice(1);
   let manifest;
   try {
     manifest = JSON.parse(fs.readFileSync(src, "utf8"));
@@ -151,9 +168,19 @@ node -e '
     process.stderr.write("build-mcp-bundle: " + src + " does not hold a JSON object\n");
     process.exit(1);
   }
+  const launch = manifest.server && manifest.server.mcp_config;
+  const env = launch && launch.env;
+  if (env === null || typeof env !== "object" || Array.isArray(env) ||
+      !Object.prototype.hasOwnProperty.call(env, envName)) {
+    process.stderr.write("build-mcp-bundle: " + src + " carries no server.mcp_config.env." + envName +
+      ", the variable the bundle hands the server its own version through: declare it there, with the " +
+      "placeholder the version field carries, and this script writes the stamped version into both\n");
+    process.exit(1);
+  }
   manifest.version = version;
+  env[envName] = version;
   fs.writeFileSync(dst, JSON.stringify(manifest, null, 2) + "\n");
-' "$SOURCE_DIR/manifest.json" "$_ver" "$STAGE/bundle/manifest.json" || exit 1
+' "$SOURCE_DIR/manifest.json" "$_ver" "$STAGE/bundle/manifest.json" "$BUNDLE_VERSION_ENV" || exit 1
 
 # Refuse a ${user_config.KEY} naming a setting the manifest does not declare.
 # Every string the manifest holds is read, wherever it sits, because a client

@@ -48,6 +48,16 @@ on a clean checkout of a tagged commit, a development version anywhere else — 
 manifest, so the checked-in file is never edited for a release. With `--expect-version <version>` the
 build refuses, naming both versions, when the stamped one differs.
 
+**So is the `AGGREGA_BUNDLE_VERSION` entry in the manifest's launch environment.** The checked-in entry
+carries the same placeholder as `version`, and the script writes the same stamped version into both, so
+the bundle hands the server it launches the version the bundle itself carries. The server reads it once
+when it starts and reports it beside its own version on `describe-capabilities` called with no
+arguments; where the two differ, that answer and the guidance the server offers a model on connecting
+say the executable and the bundle come from different releases. Nothing refuses on a difference. The
+build refuses a manifest whose launch environment carries no such entry, naming it, and a Go test in
+this repository holds the entry's spelling in the manifest to the one the program reads, and its value
+to the placeholder `version` carries.
+
 The built file holds the manifest and nothing else, so `mcpb/` holds the manifest and nothing else, and
 the build refuses that directory when it holds anything more. These instructions sit one level above it
 for that reason.

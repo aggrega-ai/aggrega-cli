@@ -23,7 +23,8 @@
         "mcp"
       ],
       "env": {
-        "AGGREGA_WORKSPACE_ROOT": "${user_config.workspace_root}"
+        "AGGREGA_WORKSPACE_ROOT": "${user_config.workspace_root}",
+        "AGGREGA_BUNDLE_VERSION": "0.0.0"
       }
     }
   },

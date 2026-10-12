@@ -202,6 +202,141 @@ func TestTheDesktopBundleHandsItsRequiredWorkspaceFolderToTheVariableTheBinaryRe
 	}
 }
 
+// bundleVersionLaunchComplaints reports every way a bundle manifest's launch
+// fails to hand the server the bundle's own version through the variable the
+// binary reads it from, one sentence each, or none where it does.
+//
+// Two things have to hold together. The launch's environment carries the
+// variable under exactly the spelling the binary reads
+// (workspaceconfig.EnvBundleVersion), since a server reading a variable nobody
+// sets reports no bundle at all. And its value is the manifest's own version
+// field: the bundle's build writes one stamped version into both, so the
+// checked-in entry carries the placeholder the version field carries, and an
+// entry holding anything else — a different literal, or a placeholder for a
+// setting — is a bundle that would tell the server a version it is not.
+func bundleVersionLaunchComplaints(manifest []byte) []string {
+	var doc struct {
+		Version string `json:"version"`
+		Server  struct {
+			MCPConfig struct {
+				Env map[string]string `json:"env"`
+			} `json:"mcp_config"`
+		} `json:"server"`
+	}
+	if err := json.Unmarshal(manifest, &doc); err != nil {
+		return []string{fmt.Sprintf("the manifest does not decode in the shape this check reads: %v", err)}
+	}
+	value, ok := doc.Server.MCPConfig.Env[workspaceconfig.EnvBundleVersion]
+	if !ok {
+		carried := make([]string, 0, len(doc.Server.MCPConfig.Env))
+		for name := range doc.Server.MCPConfig.Env {
+			carried = append(carried, name)
+		}
+		slices.Sort(carried)
+		return []string{fmt.Sprintf("server.mcp_config.env carries no %s, the variable the binary reads the "+
+			"bundle's own version from; it carries %q", workspaceconfig.EnvBundleVersion, carried)}
+	}
+	if value != doc.Version {
+		return []string{fmt.Sprintf("server.mcp_config.env.%s is %q and the manifest's version is %q: the build "+
+			"writes one stamped version into both, so the checked-in entry carries the placeholder the version "+
+			"field carries", workspaceconfig.EnvBundleVersion, value, doc.Version)}
+	}
+	return nil
+}
+
+// TestTheDesktopBundleHandsTheServerItsOwnVersion holds the installable
+// bundle's manifest to the binary across the language boundary between them,
+// for the second variable the launch carries: the manifest, read from the
+// repository, must hand the server workspaceconfig.EnvBundleVersion, holding the
+// placeholder its version field holds, which the bundle's build replaces in both
+// with one stamped version.
+//
+// The rows after the first are that same manifest with one fault planted in it
+// each, and every one must be named: the variable misspelled, the variable
+// dropped, the entry holding a version the version field does not, and the entry
+// written as a placeholder for a setting. A check that read nothing would pass
+// the first row and fail every other.
+//
+// 🔴 PLANTED DEFECT, for the file itself: misspell the AGGREGA_BUNDLE_VERSION key
+// in extensions/mcpb/manifest.json, or change its value away from the version
+// field's, and the first row fails naming the fault. 🔴 And for the binary's
+// side: change EnvBundleVersion, the spelling the server reads, and the first row
+// fails the same way.
+func TestTheDesktopBundleHandsTheServerItsOwnVersion(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(desktopBundleManifest)
+	if err != nil {
+		t.Fatalf("read the bundle manifest: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		plant func(t *testing.T, doc map[string]any)
+		// want is the phrase the one complaint must carry; empty wants none.
+		want string
+	}{
+		{name: "the manifest as it is in the repository"},
+		{
+			name: "the variable misspelled",
+			plant: func(t *testing.T, doc map[string]any) {
+				env := objectAt(t, doc, "server", "mcp_config", "env")
+				env["AGGREGA_BUNDLE_VERISON"] = env[workspaceconfig.EnvBundleVersion]
+				delete(env, workspaceconfig.EnvBundleVersion)
+			},
+			want: "carries no " + workspaceconfig.EnvBundleVersion,
+		},
+		{
+			name: "the variable dropped",
+			plant: func(t *testing.T, doc map[string]any) {
+				delete(objectAt(t, doc, "server", "mcp_config", "env"), workspaceconfig.EnvBundleVersion)
+			},
+			want: "carries no " + workspaceconfig.EnvBundleVersion,
+		},
+		{
+			name: "the entry holding a version the version field does not",
+			plant: func(t *testing.T, doc map[string]any) {
+				objectAt(t, doc, "server", "mcp_config", "env")[workspaceconfig.EnvBundleVersion] = "0.0.0-synthetic"
+			},
+			want: "the build writes one stamped version into both",
+		},
+		{
+			name: "the entry written as a placeholder for a setting",
+			plant: func(t *testing.T, doc map[string]any) {
+				objectAt(t, doc, "server", "mcp_config", "env")[workspaceconfig.EnvBundleVersion] =
+					"${user_config.bundle_version}"
+			},
+			want: "the build writes one stamped version into both",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			manifest := raw
+			if tc.plant != nil {
+				var doc map[string]any
+				if err := json.Unmarshal(raw, &doc); err != nil {
+					t.Fatalf("decode the bundle manifest: %v", err)
+				}
+				tc.plant(t, doc)
+				planted, err := json.Marshal(doc)
+				if err != nil {
+					t.Fatalf("encode the planted manifest: %v", err)
+				}
+				manifest = planted
+			}
+			got := bundleVersionLaunchComplaints(manifest)
+			if tc.want == "" {
+				for _, complaint := range got {
+					t.Errorf("%s: %s", desktopBundleManifest, complaint)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.Contains(got[0], tc.want) {
+				t.Errorf("the planted fault was reported as %q; want one complaint carrying %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // objectAt returns the JSON object at path inside doc, failing where the
 // manifest holds no object there: a plant that could not be made would leave a
 // row asserting over the unplanted manifest.

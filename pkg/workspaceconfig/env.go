@@ -252,12 +252,27 @@ const DesktopWorkspaceFolderSetting = "Workspace folder"
 const EnvWorkspaceRootSource = EnvWorkspaceRoot + " — the variable the desktop application's " +
 	DesktopWorkspaceFolderSetting + " setting sets —"
 
+// EnvBundleVersion is the variable the installable desktop bundle
+// (extensions/mcpb/manifest.json) hands the server it launches its own version
+// through, so the server can report that version beside the one it was built at
+// and say when the two come from different releases. The bundle's build writes
+// the value from the same version it stamps into the manifest's version field;
+// a launch the bundle did not make — from a terminal, an editor, or a listener —
+// carries none, and the server then reports no bundle. It is not a Config field
+// and decides nothing: the server reads it once at launch, reports it, and
+// refuses nothing on what it says.
+//
+// That manifest is JSON and cannot name this constant, so the test that holds
+// EnvWorkspaceRoot's spelling there holds this one too.
+const EnvBundleVersion = "AGGREGA_BUNDLE_VERSION"
+
 // ConfigBackedEnvVars returns the environment variables of the config-overlay
 // table — the variables this package reads and applies onto the resolved
-// Config. The command-layer secrets (identity token, registry password) and
-// the workspace-root variable are resolved elsewhere and are not included; the
-// combined enumeration for the naming and anti-drift guards lives at the
-// command layer that knows all binding sites. Order is table order.
+// Config. The command-layer secrets (identity token, registry password), the
+// workspace-root variable and the bundle-version variable are resolved
+// elsewhere and are not included; the combined enumeration for the naming and
+// anti-drift guards lives at the command layer that knows all binding sites.
+// Order is table order.
 func ConfigBackedEnvVars() []string {
 	out := make([]string, 0, len(envBindings))
 	for _, b := range envBindings {
