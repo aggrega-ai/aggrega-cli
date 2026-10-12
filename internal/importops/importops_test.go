@@ -103,7 +103,7 @@ func aWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 
 // noopResolver satisfies the plugin-bytes seam for a run whose loader is pointed
 // past it.
-func noopResolver(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+func noopResolver(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
 	return pluginpath.ResolvedPlugin{}, nil
 }
 
@@ -445,9 +445,8 @@ func TestHaltedIsOneSpellingOfTheOutcome(t *testing.T) {
 }
 
 // TestImportRefusesWithoutAWorkspaceOrAResolver pins both wiring refusals, and
-// pins the workspace one's sentence: it is the message this condition has always
-// carried on the command line, so the reader's experience is unchanged by the
-// lift.
+// pins the workspace one's sentence, which names the remedy a reader outside a
+// workspace has to apply.
 func TestImportRefusesWithoutAWorkspaceOrAResolver(t *testing.T) {
 	t.Parallel()
 
@@ -455,7 +454,8 @@ func TestImportRefusesWithoutAWorkspaceOrAResolver(t *testing.T) {
 	if err == nil {
 		t.Fatal("a nil workspace must be refused")
 	}
-	want := "no workspace configuration resolved; run import from within a workspace that attaches an importer"
+	want := "no workspace configuration resolved; run import from within a workspace whose catalog holds an " +
+		"importer plugin advertising the source's format"
 	if err.Error() != want {
 		t.Fatalf("nil-workspace refusal = %q; want %q", err.Error(), want)
 	}

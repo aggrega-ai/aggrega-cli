@@ -43,8 +43,12 @@ func newImportCmd() *cobra.Command {
 The importer reads the source file, drafts Aggrega entities from it, and writes
 the drafted files beneath the root of the workspace the run resolved, from
 whichever folder the command is run in (creating parent directories as needed).
-The importer attached at the workspace's import socket does the translation;
-import selects it, runs it, and writes what it produces.
+The translation is done by the importer plugin in the workspace's catalog that
+advertises the source format; import selects it, runs it, and writes what it
+produces. Its .wasm is read from the places a build reads a plugin from — beside
+its Plugin entity in a catalog folder among them — and nothing is fetched. A
+plugins.importer attachment selects no importer: it supplies the with: sources
+and settings the importer is handed.
 
 Pass --output-dir to write the drafts beneath another directory instead. A
 relative path resolves against the directory you run the command in, as every
@@ -172,8 +176,20 @@ source the write would refuse is refused here too.`,
 // It exists because that cascade's inputs are derived here, in the command
 // package, and the operations layer takes the resolution as a seam rather than
 // rebuilding it.
-func importPluginBytes(rw *workspaceconfig.ResolvedWorkspace, uri string) (pluginpath.ResolvedPlugin, error) {
-	return resolvePluginURI(uri, workspacePluginResolutionInputs(rw))
+//
+// The one input it adds is colocated, the directories beside the Plugin entities
+// of the catalog view the import seam loaded to select the importer. With them
+// the cascade reads a module laid down beside its entity in a catalog directory,
+// as a build does, so an importer authored there runs without being published.
+// They arrive from that seam rather than being derived here, because only the
+// view that selected the plugin knows where its entity sits. The install path,
+// the plugin listing and the runtime plugin runner hand none, so what they
+// resolve is unchanged.
+func importPluginBytes(rw *workspaceconfig.ResolvedWorkspace, uri string,
+	colocated map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
+	in := workspacePluginResolutionInputs(rw)
+	in.colocatedDirs = colocated
+	return resolvePluginURI(uri, in)
 }
 
 // reportImportedFiles hands the drafted files back as content instead of

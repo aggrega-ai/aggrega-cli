@@ -204,7 +204,7 @@ func TestTheMCPEntryPointSuppliesThePluginResolutionAnImportRunsThrough(t *testi
 			"cascade from any non-nil function")
 	}
 	probe := builtins[0]
-	resolved, err := seam.resolve(seam.rw, probe)
+	resolved, err := seam.resolve(seam.rw, probe, nil)
 	if err != nil {
 		t.Fatalf("the resolution the command supplied cannot resolve the embedded built-in %s: %v", probe, err)
 	}
@@ -215,7 +215,7 @@ func TestTheMCPEntryPointSuppliesThePluginResolutionAnImportRunsThrough(t *testi
 	// The same probe through this package's own adapter, so the two are compared
 	// rather than each judged alone: what a served session resolves and what the
 	// command line resolves are required to be the one cascade.
-	direct, err := importPluginBytes(seam.rw, probe)
+	direct, err := importPluginBytes(seam.rw, probe, nil)
 	if err != nil {
 		t.Fatalf("the command line's own resolution of %s failed, so the comparison below measures "+
 			"nothing: %v", probe, err)

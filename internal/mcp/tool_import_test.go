@@ -133,7 +133,7 @@ func pointImportSeamAtTheDemoGuest(t *testing.T) {
 // catalog's decision and its bytes come from the loader above, so this value's
 // whole job is to be non-nil — which is exactly what a session wired by the
 // command layer has and a session that was not does not.
-func importToolResolver(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+func importToolResolver(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
 	return pluginpath.ResolvedPlugin{}, errors.New("this fixture resolves no importer module of its own")
 }
 

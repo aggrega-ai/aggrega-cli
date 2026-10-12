@@ -51,9 +51,17 @@ var BuildSeam = buildSeam
 // workspace attaching more than one importer resolves the right one per format
 // rather than pinning a single one. The resolved plugin's bytes come from the
 // shared plugin cascade the caller supplied, which is the same byte-resolution
-// path every workspace-level socket plugin uses. The plugins.importer attachment
-// surface still carries each importer's with-config, threaded consumer-scoped by
-// [AttachmentInputs]; the catalog decides which importer runs.
+// path every workspace-level socket plugin uses, handed the directories beside
+// the Plugin entities of the catalog view loaded here — the view that selected
+// the importer. So an importer authored in a catalog directory, with its built
+// module laid down beside its entity, is read from there as a build reads a
+// plugin from beside its entity; the cascade's other tiers — a module embedded
+// in the binary, an explicit local path, the content cache — answer as they do
+// for every other plugin. Those directories are computed once per seam, from
+// this one catalog view, so the place a module sits has a single answer. The
+// plugins.importer attachment surface still carries each importer's with-config,
+// threaded consumer-scoped by [AttachmentInputs]; the catalog decides which
+// importer runs.
 //
 // A plugins.importer attachment's function field is currently inert: an importer
 // has a single import export, so there is no alternate entry to dispatch to. The
@@ -62,8 +70,8 @@ var BuildSeam = buildSeam
 // entry exists.
 //
 // The parser is selected by the same format capability from the same catalog
-// view, and its bytes come from the same cascade, so a parser plugin loads
-// exactly like any other.
+// view, and its bytes come from the same cascade handed the same directories, so
+// a parser plugin loads exactly like any other — beside its entity included.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
 	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
@@ -73,9 +81,10 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		return Seam{}, fmt.Errorf("load catalog for import resolution: %w", err)
 	}
 	cat.UseEmbeddedProviderResolution()
+	colocated := cat.PluginColocatedDirs()
 
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {
-		resolved, rerr := resolvePlugin(rw, p.ArtifactReference())
+		resolved, rerr := resolvePlugin(rw, p.ArtifactReference(), colocated)
 		if rerr != nil {
 			return wasm.PluginSpec{}, rerr
 		}

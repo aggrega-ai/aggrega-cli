@@ -42,10 +42,12 @@ type ImporterResolver interface {
 
 // ImporterLoader turns a resolved importer plugin entity into a
 // hermetically-loadable wasm spec — the byte source for the guest. Obtaining a
-// plugin's bytes is the consuming site's concern, not this orchestrator's: a
-// core importer resolves to its bytes embedded in the binary, and a pulled
-// importer resolves to a verified cache slot. The seam is injected so the
-// orchestrator stays agnostic to where the bytes come from.
+// plugin's bytes is the consuming site's concern, not this orchestrator's: the
+// import operation reads them through the shared plugin cascade, which serves a
+// module embedded in the binary, one laid down beside its Plugin entity in a
+// catalog directory, one at an explicit local path and one in the workspace
+// content cache, and fetches nothing. The seam is injected so the orchestrator
+// stays agnostic to where the bytes come from.
 type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 
 // ImportArtifact resolves the importer advertising the requested format, loads
@@ -58,10 +60,12 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // puller and the platform's deterministic module config (no network, no
 // filesystem), so the same source bytes and format yield a byte-identical
 // result across runs. An importer is a pure sources→entities function; it
-// introduces no reproducibility posture of its own but inherits its consuming
-// socket's — a core importer embedded in the binary carries no lockfile pin, and
-// a future pulled importer would follow the pin discipline of the socket that
-// consumes its output.
+// introduces no reproducibility posture of its own, and an import records no
+// lockfile pin for the importer it runs. Which bytes run is the loader's answer
+// alone — the import operation's loader reads them through the shared plugin
+// cascade, from the binary, from beside the importer's Plugin entity in a
+// catalog directory, from an explicit local path or from the workspace content
+// cache — so this orchestrator holds no pin discipline of its own.
 //
 // sources carries the named sources for a multi-file import, and settings is the
 // opaque importer-specific options document the consumer supplies; the host

@@ -297,7 +297,7 @@ func TestADestinationARequestNamesIsJudgedByItsDeepestExistingPart(t *testing.T)
 			t.Parallel()
 			l := layDestinationLinks(t)
 			srv := linkedFilesServer(t, l.root, "workspace: {}\n")
-			srv.resolveImportPlugin = func(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+			srv.resolveImportPlugin = func(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
 				return pluginpath.ResolvedPlugin{}, fmt.Errorf("this fixture resolves no importer module")
 			}
 			before := treeListing(t, l.outside)

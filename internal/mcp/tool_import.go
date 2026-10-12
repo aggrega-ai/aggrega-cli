@@ -143,15 +143,18 @@ var importToolSpec = toolSpec{
 	summary: "Turns a foreign source description into draft Aggrega authoring files, written into the workspace.",
 	description: "Turn a foreign source description — a flow or a service definition exported by another tool — " +
 		"into draft Aggrega authoring files, WRITTEN into the workspace this server serves. Pass `source`, the " +
-		"description to convert. The importer attached to this workspace does the translation: it reads the " +
-		"source, drafts entities from it, and this writes what it produced, creating parent directories as " +
-		"needed. A drafted file lands at a path relative to the workspace root, which is also the coordinate " +
+		"description to convert. The importer plugin in this workspace's catalog that advertises the source's " +
+		"format does the translation: it reads the source, drafts entities from it, and this writes what it " +
+		"produced, creating parent directories as needed. " +
+		"A drafted file lands at a path relative to the workspace root, which is also the coordinate " +
 		"the other tools here report a file under, and THERE IS NO ARGUMENT NAMING A DESTINATION — the drafts " +
 		"go into the workspace the call resolved, and nowhere else. The answer names that directory as " +
 		"`output_dir`, the one every drafted path is relative to, whether the file was written or handed back: " +
-		"it reports where the drafts went and chooses nothing. The workspace must attach an importer that " +
-		"advertises the source's format, or the call is refused naming the capability no plugin advertises; " +
-		"nothing here ships one. Leave `format` out and the format is recognised from the source's own " +
+		"it reports where the drafts went and chooses nothing. The workspace's catalog must hold an importer " +
+		"plugin that advertises the source's format, or the call is refused naming the capability no plugin " +
+		"advertises; nothing here ships one, and a `plugins.importer` attachment selects none — it only hands " +
+		"the importer its `with.sources` and `with.settings`. " +
+		"Leave `format` out and the format is recognised from the source's own " +
 		"top-level shape, reading that one file and nothing else — no other file, no network — and a shape " +
 		"that is not recognised is refused asking for `format` rather than guessed at. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +

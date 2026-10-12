@@ -336,6 +336,14 @@ type pluginResolutionInputs struct {
 	workspaceRoot string
 	cacheDir      string
 	pins          map[string]string
+
+	// colocatedDirs is where the cascade reads a module laid down beside its
+	// Plugin entity in a catalog directory, keyed by the entity's artifact
+	// reference. Only an import fills it, from the catalog view that selected
+	// the importer (importPluginBytes); workspacePluginResolutionInputs leaves
+	// it nil, which disables that tier, so the install path, the listing and the
+	// runtime plugin runner resolve exactly as they would without it.
+	colocatedDirs map[string]pluginpath.ColocatedDir
 }
 
 // resolvePluginURI resolves uri to its .wasm bytes through the plugin cascade.
@@ -347,9 +355,13 @@ type pluginResolutionInputs struct {
 // location and a pin for the URI, the cache tier reads the pinned bytes and
 // verifies them against the pin, so an installed CLI plugin resolves offline from
 // the bytes cached at install; the cascade fetches nothing, so a cache miss is
-// a loud offline halt rather than a network fetch.
+// a loud offline halt rather than a network fetch. When the inputs carry the
+// directories beside the catalog's Plugin entities, the one cascade both the
+// entity-fronted resolution and the bare fallback read through also reads a
+// module laid down beside its entity.
 func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
+		ColocatedDirs: in.colocatedDirs,
 		WorkspaceRoot: in.workspaceRoot,
 		CacheDir:      in.cacheDir,
 	}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{

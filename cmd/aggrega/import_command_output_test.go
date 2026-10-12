@@ -72,7 +72,7 @@ func pointImportSeamAtDemoGuest(t *testing.T) {
 
 // noImportPluginBytes satisfies the plugin-bytes seam for a run whose loader is
 // pointed past it.
-func noImportPluginBytes(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+func noImportPluginBytes(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
 	return pluginpath.ResolvedPlugin{}, nil
 }
 

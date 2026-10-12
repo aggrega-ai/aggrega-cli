@@ -71,19 +71,32 @@ import (
 // copy that agreed with that one on the day it was written, and the agreement is
 // what would hide the first divergence.
 //
+// colocated is the one thing an import adds to that cascade: where each Plugin
+// entity of the catalog view that selected the plugin was authored, keyed by the
+// entity's artifact reference, exactly as that catalog indexed it — the
+// catalog's PluginColocatedDirs, read once per import by the seam that loaded
+// the catalog. A resolver hands it to the cascade's tier that reads a module
+// laid down beside its entity, so an importer — and the parser it draws on —
+// authored in a catalog directory runs from its catalog folder the way a build
+// loads a plugin from one. It comes from the seam rather than from the resolver
+// because only the catalog view that chose the plugin knows where its entity
+// sits; a resolver deriving the place for itself would be a second answer to a
+// question the catalog already answered. A nil map names no such place, and the
+// cascade then reads only its other tiers.
+//
 // A nil resolver is refused by [Import] rather than defaulted, because a default
 // would resolve plugin bytes by a rule no caller chose.
-type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string) (pluginpath.ResolvedPlugin, error)
+type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string,
+	colocated map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error)
 
 // workspaceOrRefuse returns the resolved workspace the caller threaded in.
 //
 // A nil workspace here is a reachable, user-facing condition rather than a
 // wiring error: an import run outside any workspace resolves no configuration,
 // so there is no catalog to select an importer from. The sentence therefore
-// names what the reader has to change — being in a workspace that attaches an
-// importer — rather than reporting an internal fault, and it is the message this
-// condition has always carried, so the reader's experience is unchanged by where
-// the check now lives.
+// names what the reader has to change — being in a workspace whose catalog holds
+// an importer plugin advertising the source's format, which is how an importer is
+// selected — rather than reporting an internal fault.
 //
 // Resolving one here from the current directory would make the result depend on a
 // directory no caller named, which is exactly the dependency routing every
@@ -93,7 +106,8 @@ type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string)
 // condition for its own reader and never reaches this sentence.
 func workspaceOrRefuse(rw *workspaceconfig.ResolvedWorkspace) (*workspaceconfig.ResolvedWorkspace, error) {
 	if rw == nil {
-		return nil, fmt.Errorf("no workspace configuration resolved; run import from within a workspace that attaches an importer")
+		return nil, fmt.Errorf("no workspace configuration resolved; run import from within a workspace whose catalog " +
+			"holds an importer plugin advertising the source's format")
 	}
 	return rw, nil
 }
