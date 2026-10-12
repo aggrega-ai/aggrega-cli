@@ -25,6 +25,13 @@
 // synthesizes no workloads, so a workload projection is an orchestrator dispatch
 // error that halts loudly.
 //
+// A sourced render then leaves out every resource the node's omit entries name by
+// its Type and its logical ID, across every template the source carries, reports
+// how many resources each entry left out, and halts where a remaining template
+// still names a left-out resource by Ref, Fn::GetAtt, DependsOn or a Fn::Sub
+// variable — a template naming a resource it does not declare is one CloudFormation
+// refuses.
+//
 // validate_node_input structurally parses a sourced template's packed files ahead
 // of render and reports each parse finding as a diagnostic; an unparsable template
 // halts the build loudly, naming the offending file, rather than surfacing as a
@@ -128,7 +135,8 @@ import (
 // with the cloudformation provider, declaring the render_node,
 // validate_node_input, assemble_boundary, link_publish, and link_resolve exports
 // and its render-behavior contract (sourced and artifacts-standalone input,
-// boundary-merge assembly, and cross-boundary linking). The host reads it once at
+// boundary-merge assembly, cross-boundary linking, and its honouring of omit
+// entries). The host reads it once at
 // load and validates it before invoking any export. CloudFormation resolves a
 // sourced template from the host's name-only listing and asks the host to pack the
 // selection, so render_node and validate_node_input declare the aggrega_pack_source
@@ -185,6 +193,10 @@ func descriptor() aggrega.PluginDescriptor {
 			BoundaryAssembly:     "merge",
 			ReusableInstance:     true,
 			CrossBoundaryLinking: true,
+			// A sourced render leaves out every resource an omit entry names by its
+			// Type and its logical ID, reports how many resources each entry left
+			// out, and refuses a template in which what remains still names one.
+			Omits: true,
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
@@ -316,13 +328,23 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
+		nodeCtx := nodeCtxFromInput(in)
+		// The resources the node's omit entries name leave every template here,
+		// before anything below reads them, so a left-out resource is neither
+		// stamped nor declared. The counts go back on the output — one per entry the
+		// input carried, and none when it carried none.
+		normalized, omitted, err := cfncore.LeaveOutSourced(normalized, in.SourceListing.RootIsDir, nodeCtx.Omits, nodeCtx.NodeID)
+		if err != nil {
+			return rendercore.RenderNodeOutput{}, err
+		}
+		out.Omitted = omitted
 		// The same stamp the fragment path applies, over the templates a sourced
 		// selection carries. The payload carries no per-entry provenance halves here,
 		// so the set is derived from the node's own render context — through the same
 		// shared builders, so a sourced resource and an artifact-contributed one carry
 		// the same keys with the same values for one node.
 		normalized, provWarnings, err := cfncore.StampSourcedProvenance(
-			normalized, in.SourceListing.RootIsDir, cfncore.ProvenanceSetFromNodeContext(nodeCtxFromInput(in)))
+			normalized, in.SourceListing.RootIsDir, cfncore.ProvenanceSetFromNodeContext(nodeCtx))
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
@@ -415,11 +437,16 @@ func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 // It exists for the sourced path, where the payload carries the node's provenance
 // rather than the per-entry halves an artifacts projection computes per entry.
 // CloudFormation reads no values, annotations or source through this context: it
-// carries only what the shared provenance builders read, so the set a sourced
-// template is stamped with is the set the host computes for the same node.
+// carries what the shared provenance builders read, so the set a sourced template
+// is stamped with is the set the host computes for the same node, and the omit
+// entries the input carries, so a sourced render leaves out what they name; only a
+// source render's input carries any. A marked entry is rebuilt with every field
+// withheld, and the render core quotes no withheld field in a refusal, so no field
+// of a marked entry reaches a text this guest returns.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,
+		Omits:            rendercore.ResolvedOmitsOf(in.Omits),
 		BoundaryPath:     in.Node.BoundaryPath,
 		SyncWave:         in.Node.SyncWave,
 		RecipeName:       in.Node.RecipeName,

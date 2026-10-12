@@ -40,11 +40,12 @@ func embeddedProviderURI(t *testing.T, provider string) string {
 	// The empty provider name defaults to helm, so the harness routes a
 	// provider-less binding exactly as the render route does.
 	leaf := map[string]string{
-		"":           "helm",
-		"helm":       "helm",
-		"compose":    "compose",
-		"helm-chart": "helm-chart",
-		"terraform":  "terraform",
+		"":               "helm",
+		"helm":           "helm",
+		"compose":        "compose",
+		"helm-chart":     "helm-chart",
+		"terraform":      "terraform",
+		"cloudformation": "cloudformation",
 	}[provider]
 	if leaf == "" {
 		t.Fatalf("no embedded rendering guest known for provider %q", provider)
@@ -97,7 +98,7 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 	return func(providerRef string) (renderer.Provider, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
 		switch bare {
-		case "", "helm", "compose", "helm-chart", "terraform":
+		case "", "helm", "compose", "helm-chart", "terraform", "cloudformation":
 		default:
 			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider(), providerRef)
 		}

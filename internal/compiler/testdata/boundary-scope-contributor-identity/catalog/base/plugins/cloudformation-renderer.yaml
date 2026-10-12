@@ -30,3 +30,4 @@ spec:
       boundaryAssembly: merge
       reusableInstance: true
       crossBoundaryLinking: true
+      omits: true

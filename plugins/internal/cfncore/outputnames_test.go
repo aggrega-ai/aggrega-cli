@@ -150,7 +150,8 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 // host's own collision check see nothing to compare — which is why this is
 // asserted here as well as at the assembly.
 func TestTwoEntriesAreDeclaredApartAtDeclaration(t *testing.T) {
-	t.Parallel()
+	// Serial, as TestSourcedDuplicateMappingKeyRefused explains: its sourced
+	// subtest drives the intrinsics processor.
 	frag := []byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n  db_host: second\n")
 	want := []string{"ordersXXdbXzhhost", "ordersXXdbXzuhost"}
 
@@ -170,7 +171,6 @@ func TestTwoEntriesAreDeclaredApartAtDeclaration(t *testing.T) {
 	})
 
 	t.Run("sourced", func(t *testing.T) {
-		t.Parallel()
 		normalized, err := NormalizeSourced([]SourcedFile{{Path: "template.yaml", Content: frag}}, false)
 		if err != nil {
 			t.Fatalf("NormalizeSourced: %v", err)

@@ -71,3 +71,4 @@ spec:
       # groups) — by emitting a cross-stack reference through its paired
       # link_publish and link_resolve exports, both declared above.
       crossBoundaryLinking: true
+      omits: true

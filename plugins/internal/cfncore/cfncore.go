@@ -4,8 +4,9 @@
 // Package cfncore is the filesystem-free CloudFormation domain core the
 // cloudformation-provider Wasm guest runs: it normalizes CloudFormation
 // fragments and sourced CloudFormation templates to pure-JSON long-form
-// intrinsics, structurally validates a sourced template, and merges a dispatch
-// group's per-node fragments into a single CloudFormation stack template. It
+// intrinsics, structurally validates a sourced template, leaves out of a sourced
+// template the resources its omit entries name ([LeaveOutSourced]), and merges a
+// dispatch group's per-node fragments into a single CloudFormation stack template. It
 // holds all the CloudFormation-specific intelligence — short-form intrinsic
 // expansion, per-fragment resource merging, output-name scoping, the
 // provides-to-Outputs projection, and sourced-template parse validation — so

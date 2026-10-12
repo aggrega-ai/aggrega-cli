@@ -523,8 +523,9 @@ type PipelineStep struct {
 
 // OmitEntry is one entry of a Recipe's or FeatureRecipe's omits list: something
 // the entity's source renders that is to be left out of the output — a document a
-// chart renders, or a service, volume or config a compose file declares — named by
-// its kind, its name and, where the entry gives one, its namespace.
+// chart renders, a service, volume or config a compose file declares, or a resource
+// a CloudFormation template declares — named by its kind, its name and, where the
+// entry gives one, its namespace.
 // Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/omits/items,
 // and identically in the FeatureRecipe schema.
 //
