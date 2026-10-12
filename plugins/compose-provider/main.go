@@ -47,9 +47,10 @@ import (
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
 // the render_node, assemble_boundary, and boundary_env_overrides exports,
 // compatibility with the compose provider engine, and its plugin-level
-// render-behavior contract (the input kinds it renders and its boundary-merge
-// assembly). The host reads it once at load and validates it before invoking any
-// export. Compose resolves its base compose document from the host's name-only
+// render-behavior contract (the input kinds it renders, its boundary-merge
+// assembly and its honouring of omit entries). The host reads it once at load
+// and validates it before invoking any export. Compose resolves its base
+// compose document from the host's name-only
 // listing and asks the host to pack it, so render_node declares the
 // aggrega_pack_source host function it imports; the host cross-checks this
 // declaration against the functions the guest actually imports. The
@@ -90,6 +91,10 @@ func descriptor() aggrega.PluginDescriptor {
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly: "merge",
 			ReusableInstance: true,
+			// A sourced render leaves out every service, volume and config an omit
+			// entry names by its key, reports how many units each entry left out,
+			// and refuses a file in which what remains still names one of them.
+			Omits: true,
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
@@ -263,8 +268,10 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 // fragment's serialized bytes as a RenderedFile. Compose's selection is a single
 // document; a pack that returns a different file count is
 // an orchestrator bug rather than authoring drift and halts loudly. The node's
-// values, identity, provenance, and merged annotations arrive in the node
-// projection and render context.
+// values, identity, provenance, merged annotations and omit entries arrive in the
+// node projection, the render context and the input's omits list, and the counts
+// the render core returns for the entries go back on the output — one per entry
+// the input carried, and none when it carried none.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.SourceListing == nil {
 		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no source listing")
@@ -286,9 +293,12 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
-	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered[path]})
+	out := rendercore.RenderNodeOutput{
+		Files:   make([]rendercore.RenderedFile, 0, len(rendered.Files)),
+		Omitted: rendered.Omitted,
+	}
+	for _, path := range sortedKeys(rendered.Files) {
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered.Files[path]})
 	}
 	return out, nil
 }
@@ -389,9 +399,15 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 // output. The markings over the values and over the workload as a whole are
 // rebuilt too: the render core reads them to keep a value the input marks out of
 // a failure's text, and they change no output byte.
+// The omit entries the input carries are rebuilt as well, so a sourced render
+// leaves out what they name; only a source render's input carries any. A marked
+// entry is rebuilt with every field withheld, and the render core quotes no
+// withheld field in a refusal, so no field of a marked entry reaches a text this
+// guest returns.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:            in.Node.ID,
+		Omits:             rendercore.ResolvedOmitsOf(in.Omits),
 		SensitiveValues:   in.Node.SensitiveValues,
 		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
 		Annotations:       mergeAnnotations(in.Context.Annotations),

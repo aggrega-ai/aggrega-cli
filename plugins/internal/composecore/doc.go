@@ -32,7 +32,8 @@
 //     mounts.
 //   - Sourced. A node whose Recipe declares source: has that file parsed and the
 //     Recipe's evaluated values deep-merged on top, per compose's own overlay
-//     semantics (see deepMergeOverlay).
+//     semantics (see deepMergeOverlay), and then the units its omit entries name
+//     left out (see leaveOut).
 //
 // Either way the result is marshalled to YAML and handed back as one
 // intermediate fragment named `<nodeID>.compose-fragment.yaml`. The fragment is

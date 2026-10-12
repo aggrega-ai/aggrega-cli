@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
@@ -141,9 +142,11 @@ func RequireOmitCounts(sent []ResolvedOmit, counts []int, document, nodeID, prov
 // omitMatchedNothingAdvice is what a reader of the zero-count halt can do about it.
 // It is the raise path's advice rather than the condition's sentence, because the
 // sentence states the condition and the remedy depends on which of two mistakes was
-// made.
-const omitMatchedNothingAdvice = "correct the entry so it names a document the source renders, or remove it; " +
-	"a source upgrade that renamed or removed the document is the usual cause"
+// made. It names no unit of any one format — a chart renders documents, a compose
+// file declares services, volumes and configs — because every provider that honours
+// the entries reports through it.
+const omitMatchedNothingAdvice = "correct the entry so it names something the source renders, or remove it; " +
+	"a source upgrade that renamed or removed it is the usual cause"
 
 // omitMatchedNothingErr raises [ErrOmitMatchedNothing] for one entry, composed from
 // the condition's registered sentence and the entry's own coordinates.
@@ -169,15 +172,12 @@ func omitMatchedNothingErr(entry ResolvedOmit, document, nodeID, provider string
 		cerrors.ComposeMessage(ErrOmitMatchedNothing(), values, omitMatchedNothingAdvice))
 }
 
-// omitFieldValue renders one resolved field of an entry for a report: quoted as it
-// resolved, or the placeholder where its template read a value declared sensitive.
-// The placeholder is never quoted, so it cannot be mistaken for a value the entry
-// resolved to.
+// omitFieldValue renders one resolved field of an entry for a report, after the
+// field's name: quoted as it resolved, or the placeholder where its template read a
+// value declared sensitive, through the one rendering a provider's own refusal of an
+// entry uses too.
 func omitFieldValue(field, resolved string, withheld bool) string {
-	if withheld {
-		return field + " " + redact.Placeholder()
-	}
-	return fmt.Sprintf("%s %q", field, resolved)
+	return field + " " + rendercore.OmitFieldText(resolved, withheld)
 }
 
 // omitReportMismatchErr raises [ErrOmitReportMismatch], composed from the

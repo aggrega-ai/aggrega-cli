@@ -4,7 +4,10 @@
 package rendercore
 
 import (
+	"strconv"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -277,6 +280,21 @@ type OmitFieldsWithheld struct {
 // than naming a field.
 func (w OmitFieldsWithheld) Any() bool {
 	return w.Kind || w.Name || w.Namespace
+}
+
+// OmitFieldText renders one resolved field of an omit entry for a text a reader is
+// shown: quoted as it resolved, or the placeholder where the field is withheld. The
+// placeholder is never quoted, so it cannot be mistaken for a value the entry
+// resolved to.
+//
+// It is the one rendering of an entry's field for every report that names one —
+// the host's report on the counts a provider returned and a provider's own refusal
+// of an entry alike — so a withheld field reads the same wherever it is reported.
+func OmitFieldText(resolved string, withheld bool) string {
+	if withheld {
+		return redact.Placeholder()
+	}
+	return strconv.Quote(resolved)
 }
 
 // omitFieldsWithheldByMark is what a marked entry says about its fields to the side

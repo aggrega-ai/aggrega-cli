@@ -11,6 +11,9 @@
 //     scalars: overlay wins, maps merge, lists are REPLACED (not appended) —
 //     this matches `docker compose -f base.yaml -f overlay.yaml config`
 //     behaviour.
+//  4. The services, volumes and configs the node's omit entries name are left
+//     out of the merged document (see leaveOut), which an overlay alone cannot
+//     do: an overlay value replaces, it never deletes.
 //
 // The merged compose document is emitted as one Intermediate=true
 // EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
@@ -38,17 +41,32 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
+// SourcedRender is what one sourced compose render returns.
+type SourcedRender struct {
+	// Files is the rendered fragment, keyed by its file name.
+	Files map[string][]byte
+	// Omitted holds one count per omit entry the render was handed, in the order
+	// they arrived: the number of units that entry left out. It is nil for a render
+	// handed none.
+	Omitted []int
+}
+
 // RenderSourcedCore parses the base compose bytes, deep-merges the values dict
-// on top, injects the compose-bridge gateway (no-op for non-bridge renders) and
-// the aggrega.ai/* provenance labels, and emits an Intermediate=true
-// compose-fragment for the boundary merger to consume. sourcePath is the
-// operator-facing source identifier threaded through only for diagnostics so the
-// parse-error messages match the source the host read.
+// on top, leaves out the units the node's omit entries name, injects the
+// compose-bridge gateway (no-op for non-bridge renders) and the aggrega.ai/*
+// provenance labels, and emits an Intermediate=true compose-fragment for the
+// boundary merger to consume. sourcePath is the operator-facing source identifier
+// threaded through only for diagnostics so the parse-error messages match the
+// source the host read.
+//
+// The omit entries are applied by leaveOut, after the overlay and before anything
+// the render adds; a render handed none emits exactly the fragment it would emit
+// if entries did not exist.
 //
 // Exported so the compose provider plugin — a separate main package, which
 // cannot reach an unexported compose function — renders through this core rather
 // than reimplementing the parse-and-overlay it describes.
-func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx rendercore.NodeRenderContext) (map[string][]byte, error) {
+func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx rendercore.NodeRenderContext) (SourcedRender, error) {
 	// A Compose file is a single YAML document. Decode the first document, then
 	// require the stream to be exhausted: a single file carrying `---`-separated
 	// documents passes the source resolver's file-count guard, but
@@ -61,12 +79,12 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 		if errors.Is(err, io.EOF) {
 			base = map[string]any{} // empty source
 		} else {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, sourcePath))
+			return SourcedRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, sourcePath))
 		}
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
+		return SourcedRender{}, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
 			fmt.Sprintf("compose: node %q: source %q contains multiple YAML documents; a compose file must be a single document", nodeCtx.NodeID, sourcePath),
 			nil, nil)
 	}
@@ -75,18 +93,25 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 	}
 
 	merged := deepMergeOverlay(base, values)
+	// The omit entries see the document the overlay produced, so a unit the values
+	// added is left out like one the source declared, and run before the gateway
+	// and the labels below, so nothing the render adds is ever matched.
+	omitted, err := leaveOut(merged, nodeCtx.Omits, nodeCtx.NodeID)
+	if err != nil {
+		return SourcedRender{}, err
+	}
 	// compose-bridge: when the fragment carries the bridge marker, generate the
-	// gateway's nginx stream config and install it as a command:, then strip the
-	// marker. No-op for every non-bridge sourced render.
+	// gateway's nginx stream config and mount it as a compose config, then strip
+	// the marker. No-op for every non-bridge sourced render.
 	if err := injectBridgeGateway(merged); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
+		return SourcedRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
 	}
 	origins := buildSingleOriginMap(merged, nodeCtx)
 	injectAggregaLabelsIntoServices(merged, origins)
 
 	body, err := rendercore.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
+		return SourcedRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}
 
 	// Output path mirrors synthesized-mode: <nodeID>.compose-fragment.yaml.
@@ -94,7 +119,10 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 	// orchestrator's per-node Phase B sub-passes wrap the file into an
 	// EmittedFile and tag origin/intermediate; sourced-mode origin is
 	// EmitOriginSource per the existing convention.
-	return map[string][]byte{nodeCtx.NodeID + ".compose-fragment.yaml": body}, nil
+	return SourcedRender{
+		Files:   map[string][]byte{nodeCtx.NodeID + ".compose-fragment.yaml": body},
+		Omitted: omitted,
+	}, nil
 }
 
 // deepMergeOverlay merges overlay onto base using docker-compose overlay

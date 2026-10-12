@@ -130,14 +130,14 @@ func TestRenderSourcedCore_BridgeDeliversItsGeneratedConfigAsAMountedComposeConf
 			map[string]string{"host": "db", "port": "5432"}),
 	}, nil)
 
-	out, err := RenderSourcedCore([]byte(bridgeGatewayFragment), "bridge-fragment.yaml",
+	rendered, err := RenderSourcedCore([]byte(bridgeGatewayFragment), "bridge-fragment.yaml",
 		map[string]any{bridgeMarkerKey: marker}, nodeCtxFor(nodeID))
 	if err != nil {
 		t.Fatalf("RenderSourcedCore: %v", err)
 	}
-	body, ok := out[nodeID+".compose-fragment.yaml"]
+	body, ok := rendered.Files[nodeID+".compose-fragment.yaml"]
 	if !ok {
-		t.Fatalf("no compose fragment emitted; got %d file(s)", len(out))
+		t.Fatalf("no compose fragment emitted; got %d file(s)", len(rendered.Files))
 	}
 
 	// The marker is an engine input, not output: it must not reach the rendered

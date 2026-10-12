@@ -21,7 +21,8 @@ func renderSourcedFile(path string, values map[string]any, nodeCtx renderer.Node
 	if err != nil {
 		return nil, err
 	}
-	return RenderSourcedCore(raw, path, values, nodeCtx)
+	rendered, err := RenderSourcedCore(raw, path, values, nodeCtx)
+	return rendered.Files, err
 }
 
 // goldenCheckAssembled compares actual against
