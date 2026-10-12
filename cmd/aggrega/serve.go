@@ -112,12 +112,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 // the one every resolution handed a named root asks, so a launch and every
 // command refuse the same roots. What is this function's is the moment: a server
 // resolves a workspace per call, so the launch asks before the first one rather
-// than leaving the first call to find out.
+// than leaving the first call to find out. What a launch does with a refusal is
+// its caller's: `aggrega serve` and a listener exit with it, while `aggrega mcp`
+// over standard input and output serves it (runMCP).
 //
-// A refusal names source — the flag or the variable, whichever supplied the
-// value, as workspaceRootFromFlagOrEnv reports it — and quotes raw exactly as it
-// was given (workspaceconfig.NamedRootError), so a launch composed by a client
-// rather than typed still says what it was handed.
+// A refusal names source — the flag, or the variable with the desktop setting
+// that sets it, whichever supplied the value, as workspaceRootFromFlagOrEnv
+// reports it — and quotes raw exactly as it was given
+// (workspaceconfig.NamedRootError), so a launch composed by a client rather than
+// typed still says what it was handed.
 func validateWorkspaceRootFlag(raw, source string) (string, error) {
 	if raw == "" {
 		return "", nil

@@ -416,16 +416,42 @@ func resolutionInputs(launchRoot, rootArg string) (start, root string) {
 // rootSourceOf names where the root resolutionInputs hands a call's resolution
 // came from, for the refusal of a root that is not an existing folder
 // (workspaceconfig.NameRootSource): the call's own argument where it sent one,
-// else this server's launch. It reads the same two inputs in the same order, so
-// the refusal names the input whose value was actually used.
+// else what supplied the launch root (launchSource) where the launch handed that
+// on, else this server's launch. It reads the call's root before the launch's,
+// as resolutionInputs does, so the refusal names the input whose value was
+// actually used.
 //
-// A launch root was refused at launch where it did not exist, so the second name
-// is reached only by a folder removed while the server ran.
-func rootSourceOf(rootArg string) string {
+// A launch whose root is not an existing folder hands its source on
+// (Config.WorkspaceRootSource), so every call resolving that root is refused in
+// the words the launch was refused in. The last name is reached by a root that
+// was an existing folder when the server started and has since gone.
+func rootSourceOf(rootArg, launchSource string) string {
 	if rootArg != "" {
 		return "the call's '" + argumentWorkspaceRoot + "'"
 	}
+	if launchSource != "" {
+		return launchSource
+	}
 	return "this server's launch"
+}
+
+// launchRootRefusal returns the refusal a call naming no workspace of its own
+// meets where the root this server was launched with is not an existing folder,
+// framed as every call refused for its workspace is (toolWorkspaceRefusal), and
+// nil where the launch named no root or named one that is.
+//
+// It asks the judgement every resolution of that root asks
+// (workspaceconfig.NamedRootDir) and names the source the resolution names
+// (rootSourceOf), so it is the refusal the server's own tools answer such a call
+// with. It is asked where a call is answered without resolving the root first.
+func (s *server) launchRootRefusal() error {
+	if s.launchRoot == "" {
+		return nil
+	}
+	if _, err := workspaceconfig.NamedRootDir(s.launchRoot); err != nil {
+		return toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf("", s.launchRootSource)))
+	}
+	return nil
 }
 
 // resolveToolWorkspace resolves the workspace a tool call operates in: the root
@@ -454,7 +480,7 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	start, root := resolutionInputs(s.launchRoot, rootArg)
 	rw, err := workspaceconfig.ResolveWithFlags(start, root, s.flags)
 	if err != nil {
-		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
+		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg, s.launchRootSource)))
 	}
 	return s.toolWorkspaceOf(rw, catalogDirs)
 }
@@ -569,7 +595,7 @@ func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs 
 	start, root := resolutionInputs(s.launchRoot, rootArg)
 	rw, held, err := workspaceconfig.ResolveOrHold(start, root, s.flags)
 	if err != nil {
-		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg)))
+		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg, s.launchRootSource)))
 	}
 	if held == nil {
 		return s.toolWorkspaceOf(rw, catalogDirs)

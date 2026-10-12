@@ -581,6 +581,18 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 			return invalidToolArguments(ct.name, err)
 		}
 	}
+	// A call naming no workspace of its own would start its command in the root
+	// this server was launched with, and be handed that root. Where that root is
+	// not an existing folder the call is answered with the refusal every tool
+	// running inside the server answers it with, and no command is started: there
+	// is no folder to start it in.
+	if _, named := supplied[argumentWorkspaceRoot]; !named {
+		if refusal := s.launchRootRefusal(); refusal != nil {
+			return errorResult(explainToolError(
+				fmt.Sprintf("Could not resolve the workspace to run `aggrega %s` in.", strings.Join(ct.path, " ")),
+				refusal, ""))
+		}
+	}
 	dir, supplied := commandFolder(s.launchRoot, supplied)
 	var serverFlags []string
 	if !ct.forwardsFlags {
@@ -678,9 +690,11 @@ func (ct commandTool) servedRootFlag(root string, supplied map[string]json.RawMe
 //     place of the one sent, so it never resolves a relative value a second time
 //     from the folder it now starts in.
 //   - A call sending none starts its command in the root this server was launched
-//     with — the root servedRootFlag hands it — which was made absolute and
-//     judged when the server started. A command that passes its arguments on
-//     verbatim starts there too, though it is handed no flag.
+//     with — the root servedRootFlag hands it — which was made absolute when the
+//     server started. A command that passes its arguments on verbatim starts
+//     there too, though it is handed no flag. Where that root is not an existing
+//     folder the call is refused before this is asked (invoke), so the folder
+//     handed back is never one that does not exist.
 //
 // Where nothing names a root — no launch root, and no workspace_root or an empty
 // one — the folder is empty and the command starts in this server's own working

@@ -177,14 +177,18 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// A workspace whose configuration is held is refused, as every tool but the two
 	// listings refuses it. Where its cache sits is what that configuration decides,
 	// so an inventory without its classes would read as the inventory of a
-	// workspace that keeps none, and the link the hold names would go unsaid.
+	// workspace that keeps none, and the link the hold names would go unsaid. A
+	// call naming no workspace of its own, on a server launched with a root that is
+	// not an existing folder, is refused for the same reason, with that root's
+	// refusal: the workspace the server was started over cannot be read at all.
 	var root, cacheDir string
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
 	switch {
 	case err == nil:
 		root = tw.root
 		cacheDir = tw.cacheDir
-	case errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()):
+	case errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()),
+		a.WorkspaceRoot == "" && s.launchRootRefusal() != nil:
 		return errorResult(explainToolError("Could not resolve the workspace to report its caches.", err, ""))
 	default:
 		tw = s.servedWorkspace()

@@ -173,6 +173,13 @@ func TestANamedRootThatIsNotAnExistingFolderIsRefusedByTheResolution(t *testing.
 			if !errors.Is(sourced, fs.ErrNotExist) {
 				t.Errorf("naming the source dropped the reason: %q", sourced)
 			}
+			// The variable is named with the desktop setting that sets it, in the
+			// words every surface reading the variable refuses its root in.
+			byVariable := workspaceconfig.NameRootSource(err, workspaceconfig.EnvWorkspaceRootSource)
+			if want := `AGGREGA_WORKSPACE_ROOT — the variable the desktop application's Workspace folder setting ` +
+				`sets — names the workspace root "` + missing + `", which cannot be used: `; !strings.HasPrefix(byVariable.Error(), want) {
+				t.Errorf("the refusal named by the variable reads %q, want it to open with %q", byVariable, want)
+			}
 		})
 		t.Run(ep.name+"/a file", func(t *testing.T) {
 			t.Parallel()

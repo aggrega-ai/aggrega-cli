@@ -175,9 +175,10 @@ func TestTheNoticeIsWrittenOnceAndWithheldWhereTheCommandMarksIt(t *testing.T) {
 // TestARootThatIsNotAnExistingFolderIsRefusedNamingWhereItCameFrom runs the
 // real command tree with a workspace root that is not there, given by the flag
 // and by the variable, to commands that resolve a workspace, and reads the
-// refusal: it names whichever supplied the value and quotes the value as given,
-// and carries the reason the folder could not be used. A command that resolves
-// no workspace is not refused for a root it never reads.
+// refusal: it names whichever supplied the value — the variable with the desktop
+// setting that sets it — and quotes the value as given, and carries the reason
+// the folder could not be used. A command that resolves no workspace is not
+// refused for a root it never reads.
 //
 // 🔴 PLANTED DEFECT: restore the explicit branch of the shared resolution to take
 // the root as given, and the two refusing rows fail — config show answers on the
@@ -196,7 +197,7 @@ func TestARootThatIsNotAnExistingFolderIsRefusedNamingWhereItCameFrom(t *testing
 			run: func(_ *testing.T, missing string) []string {
 				return []string{"--workspace-root", missing, "config", "show"}
 			}},
-		{name: "validate under AGGREGA_WORKSPACE_ROOT", source: workspaceconfig.EnvWorkspaceRoot, refused: true,
+		{name: "validate under AGGREGA_WORKSPACE_ROOT", source: workspaceconfig.EnvWorkspaceRootSource, refused: true,
 			run: func(t *testing.T, missing string) []string {
 				t.Setenv(workspaceconfig.EnvWorkspaceRoot, missing)
 				return []string{"validate"}

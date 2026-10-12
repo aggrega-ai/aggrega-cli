@@ -17,10 +17,13 @@ folder that holds the project's `.aggrega-config.yaml`, handed to the server as
 through the quoting of the command line the client composes. A client starts a local server in a folder
 of its own choosing,
 often a system folder, so without this setting every request naming no workspace would be answered
-there. The folder is taken as the workspace root itself, as `--workspace-root` is on every command, and
-a folder that does not exist is refused at startup with a message naming `AGGREGA_WORKSPACE_ROOT` and
-the value it was given. A Go test in this repository holds the variable's spelling in the manifest to
-the one the program reads.
+there. The folder is taken as the workspace root itself, as `--workspace-root` is on every command. A
+folder that does not exist does not stop the server: it writes its refusal to standard error, starts
+all the same, and answers every request that acts in the workspace with that refusal, which names
+`AGGREGA_WORKSPACE_ROOT` as the variable the **Workspace folder** setting sets and quotes the value it
+was given — so the client receives it in the answer to each such request rather than only in its log. A Go test in this
+repository holds the variable's spelling and the setting's title in the manifest to the ones the
+program reads.
 
 ## Building the bundle
 

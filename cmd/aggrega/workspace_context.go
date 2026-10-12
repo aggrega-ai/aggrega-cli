@@ -27,8 +27,9 @@ type workspaceCtxKey struct{}
 type lazyWorkspace struct {
 	flagRoot string
 	// rootSource names where flagRoot came from — the flag as a reader types it,
-	// or the variable's name — as workspaceRootFromFlagOrEnv reports it, and is
-	// empty where neither supplied one. A named root that is not an existing
+	// or the variable with the desktop setting that sets it — as
+	// workspaceRootFromFlagOrEnv reports it, and is empty where neither supplied
+	// one. A named root that is not an existing
 	// folder is refused naming it (workspaceconfig.NameRootSource), so a value the
 	// reader never typed is reported against the variable that carried it.
 	rootSource string

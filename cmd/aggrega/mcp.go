@@ -178,11 +178,15 @@ it when the flag is absent. The folder named is the workspace root
 itself, as it is for every command: a call naming no workspace of its
 own is answered there, and nothing above it is searched for a workspace,
 so name the folder that holds the workspace's .aggrega-config.yaml. A
-named folder that does not exist is refused before the server starts,
-naming the flag or the variable that supplied it and the value as it
-was given. With neither, a server on standard input and output resolves
-the workspace from the directory it was started in, while a listener is
-refused before it binds unless a workspace resolves there: one reached
+named folder that does not exist is refused, naming the flag or the
+variable that supplied it and the value as it was given: a listener is
+refused before it binds, while a server on standard input and output
+writes the refusal to stderr and starts all the same, answering every
+call that acts in that workspace with it, so a client that shows
+nothing of stderr still shows the refusal. With neither, a server on
+standard input and output resolves the workspace from the directory it
+was started in, while a listener is refused before it binds unless a
+workspace resolves there: one reached
 over HTTP serves a workspace an operator chose rather than
 whichever directory it happened to be started in. Where that directory
 anchors no workspace, a call naming no workspace of its own that names
@@ -224,31 +228,43 @@ process exits. A second request ends the process at once.`,
 // decide, before either server starts.
 func runMCP(cmd *cobra.Command, args []string) error {
 	flagRoot, _ := cmd.Flags().GetString(workspaceRootFlagName)
-	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
+	given, source := workspaceRootFromFlagOrEnv(cmd, flagRoot, nil)
+	root, err := validateWorkspaceRootFlag(given, source)
+	// The server is handed the root a call naming no workspace of its own is
+	// answered in. Where the launch named one that is not an existing folder, it is
+	// handed that root exactly as it was given, with what supplied it, so every
+	// call resolving it meets the refusal this launch met, in the same words.
+	launchRoot, launchRootSource := root, ""
+	var ws *workspaceconfig.ResolvedWorkspace
 	if err != nil {
-		return err
+		launchRoot, launchRootSource = given, source
+	} else {
+		// The workspace is read through the resolution every command reads, so the
+		// mcp block this launch honours is the one the cascade composed rather than
+		// one loaded a second time here.
+		ws, err = workspaceFromContext(cmd.Context())
 	}
-
-	// The workspace is read through the resolution every command reads, so the
-	// mcp block this launch honours is the one the cascade composed rather than
-	// one loaded a second time here.
-	ws, err := workspaceFromContext(cmd.Context())
 	var settings workspaceconfig.MCPConfig
 	var launch mcpLaunch
 	if err != nil {
-		// A workspace whose configuration is held is served all the same, over
-		// standard input and output, so the tools listing what it holds can name
-		// the held file; every other tool refuses it call by call, with the hold.
-		// The launch reads no mcp block, there being none it may read, so it takes
-		// the default transport and announces every tool — and a launch that asks
-		// for a listener is refused with the hold, since a listener's address,
-		// certificate and authorization are what the held configuration decides.
-		held := heldWorkspaceOf(cmd, root, err)
-		if held == nil || !servesHeldOverStdio(cmd) {
+		// A workspace this launch cannot use is served all the same, over standard
+		// input and output: a root it names that is not an existing folder, and a
+		// workspace whose configuration is held. The line naming why goes to
+		// stderr, and the client that launched this process — which may show its
+		// user nothing of stderr — reads it in the answer to every call that acts
+		// in that workspace, because each call resolves the workspace as it always
+		// does and meets the same refusal; the tools listing what a held workspace
+		// holds answer, naming the held file. The launch reads no mcp block, there
+		// being none it may read, so it takes the default transport and announces
+		// every tool. A launch that asks for a listener is refused at startup
+		// instead: whoever supervises a listener reads its exit, and a listener's
+		// address, certificate and authorization are what the workspace's
+		// configuration decides.
+		notice := unusableWorkspaceNotice(cmd, root, err)
+		if notice == "" || !servesUnusableWorkspaceOverStdio(cmd) {
 			return err
 		}
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v; only the tools listing what the workspace holds "+
-			"answer, and they name the file as not read\n", held.Refusal())
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), notice)
 		settings = workspaceconfig.Default().MCP
 		launch = mcpLaunch{transport: workspaceconfig.MCPTransportStdio}
 	} else {
@@ -264,7 +280,10 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),
 		ServerVersion: provenanceCompilerVersion(),
-		WorkspaceRoot: root,
+		WorkspaceRoot: launchRoot,
+		// Set only where the launch root is not an existing folder: a refusal of
+		// it then names what supplied it, as the launch's own refusal did.
+		WorkspaceRootSource: launchRootSource,
 		// Supplied for the same reason the command surface below is: the value
 		// belongs to this package and the server lives under it. Both halves of the
 		// stamp are read through the derivations this package already owns, so a
@@ -358,10 +377,33 @@ func heldWorkspaceOf(cmd *cobra.Command, root string, err error) *workspaceconfi
 	return held
 }
 
-// servesHeldOverStdio reports whether this invocation may serve a held workspace:
-// it speaks over standard input and output, by default or by --transport stdio,
-// and names no address to listen on.
-func servesHeldOverStdio(cmd *cobra.Command) bool {
+// unusableWorkspaceNotice returns the line a launch over standard input and
+// output writes to stderr before serving a workspace it cannot use, and the
+// empty string where err is no such failure and the launch ends with it.
+//
+// A root the launch names that is not an existing folder is written exactly as
+// a launch that ends with it writes it (formatCompilerError), so a client's log
+// keeps the one line every surface refusing that root prints. A workspace whose
+// configuration is held is written as a warning saying which tools still
+// answer. root is the root validateWorkspaceRootFlag returned, which
+// is the one the held view is asked for.
+func unusableWorkspaceNotice(cmd *cobra.Command, root string, err error) string {
+	var named *workspaceconfig.NamedRootError
+	if errors.As(err, &named) {
+		return formatCompilerError(err)
+	}
+	if held := heldWorkspaceOf(cmd, root, err); held != nil {
+		return fmt.Sprintf("warning: %v; only the tools listing what the workspace holds answer, and they "+
+			"name the file as not read", held.Refusal())
+	}
+	return ""
+}
+
+// servesUnusableWorkspaceOverStdio reports whether this invocation may serve a
+// workspace it cannot use — a root it names that is not an existing folder, or a
+// workspace whose configuration is held: it speaks over standard input and
+// output, by default or by --transport stdio, and names no address to listen on.
+func servesUnusableWorkspaceOverStdio(cmd *cobra.Command) bool {
 	flags := cmd.Flags()
 	if flags.Changed("listen") {
 		return false

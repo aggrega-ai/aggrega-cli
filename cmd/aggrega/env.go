@@ -25,17 +25,19 @@ const workspaceRootFlagName = workspaceconfig.WorkspaceRootFlagName
 // resolve the override through this one helper, so the environment fallback is
 // single-sourced.
 //
-// source is the flag as a reader types it, or the variable's name, whichever
-// supplied root, and empty where neither did. It is what a refusal of the value
-// names (validateWorkspaceRootFlag), so a value the reader never typed — one a
-// client's configuration put in the variable — is reported against the
-// variable that carried it rather than against a flag nobody passed.
+// source is the flag as a reader types it, or the variable named with the
+// desktop setting that sets it (workspaceconfig.EnvWorkspaceRootSource),
+// whichever supplied root, and empty where neither did. It is what a refusal of
+// the value names (validateWorkspaceRootFlag), so a value the reader never
+// typed — one a client's configuration put in the variable — is reported
+// against the variable that carried it, and the setting a desktop user changes
+// to correct it, rather than against a flag nobody passed.
 func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(string) string) (root, source string) {
 	if cmd.Flags().Changed(workspaceRootFlagName) {
 		return flagValue, "--" + workspaceRootFlagName
 	}
 	if v := envLookupOrGetenv(look)(envWorkspaceRoot); v != "" {
-		return v, envWorkspaceRoot
+		return v, workspaceconfig.EnvWorkspaceRootSource
 	}
 	return "", ""
 }

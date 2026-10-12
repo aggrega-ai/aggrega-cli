@@ -230,6 +230,28 @@ func splitPathList(raw string) []string {
 // name this constant, so a test holds its spelling there to this one.
 const EnvWorkspaceRoot = "AGGREGA_WORKSPACE_ROOT"
 
+// DesktopWorkspaceFolderSetting is the title the installable desktop bundle
+// (extensions/mcpb/manifest.json) gives the setting whose value it passes the
+// server through EnvWorkspaceRoot.
+//
+// A refusal of a root the variable supplied names that setting
+// (EnvWorkspaceRootSource), because the person reading it in the desktop
+// application's chat changes the setting rather than the variable. The manifest
+// is JSON and cannot name this constant, so the test that holds the variable's
+// spelling there holds this title there too.
+const DesktopWorkspaceFolderSetting = "Workspace folder"
+
+// EnvWorkspaceRootSource is how a refusal of a workspace root EnvWorkspaceRoot
+// supplied names where that root came from ([NameRootSource]): the variable,
+// and the desktop setting that sets it.
+//
+// It is the one place the variable is named as a root's source, so the command
+// line, both servers and the refusal a server answers its calls with all read
+// one sentence. The clause is true on every launch, wherever the variable was
+// set from: it says which setting sets the variable, not that the setting did.
+const EnvWorkspaceRootSource = EnvWorkspaceRoot + " — the variable the desktop application's " +
+	DesktopWorkspaceFolderSetting + " setting sets —"
+
 // ConfigBackedEnvVars returns the environment variables of the config-overlay
 // table — the variables this package reads and applies onto the resolved
 // Config. The command-layer secrets (identity token, registry password) and

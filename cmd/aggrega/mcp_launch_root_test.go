@@ -32,14 +32,19 @@ func writeLaunchRootFile(t *testing.T, path, body string) {
 }
 
 // TestAWorkspaceRootALaunchNamesThatIsNotThereIsRefusedNamingWhereItCameFrom
-// starts `aggrega mcp` and `aggrega serve` from the real command tree with a
-// workspace root that is not there, given by the variable or by the flag, and
-// reads the refusal: it names whichever supplied the value — the variable where
-// the variable did, the flag where the flag did, the flag where both were given
-// because the flag wins — and quotes the value as it was given. A client that
-// launches the server with a placeholder it never filled is the case the
-// wording exists for, so one row hands the variable exactly that text: the
-// refusal reports it as it arrived and recognises nothing in it.
+// starts `aggrega mcp` as a listener — by --listen, and by --transport http —
+// and `aggrega serve` from the real command tree with a workspace root that is
+// not there, given by the variable or by the flag, and reads the refusal each
+// ends with at startup: it names whichever supplied the value — the variable,
+// with the desktop setting that sets it, where the variable did, the flag where
+// the flag did, the flag where both were given because the flag wins — and
+// quotes the value as it was given. A client that launches the server with a
+// placeholder it never filled is the case the wording exists for, so one row
+// hands the variable exactly that text: the refusal reports it as it arrived and
+// recognises nothing in it. `aggrega mcp` over standard input and output serves
+// the same refusal instead of ending with it, which
+// TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput
+// drives.
 //
 // 🔴 PLANTED DEFECT: have validateWorkspaceRootFlag name "--workspace-root"
 // whatever its source, as it once did for every value, and each row whose value
@@ -52,32 +57,36 @@ func TestAWorkspaceRootALaunchNamesThatIsNotThereIsRefusedNamingWhereItCameFrom(
 	const flag = "--workspace-root"
 	missing := func(t *testing.T) string { return filepath.Join(t.TempDir(), "no-such-folder") }
 	unfilled := func(*testing.T) string { return "${user_config.workspace_root}" }
+	listen := []string{"mcp", "--listen", "127.0.0.1:0"}
+	listenHTTP := []string{"mcp", "--transport", "http", "--listen", "127.0.0.1:0"}
 
 	for _, tc := range []struct {
-		name    string
-		command string
+		name   string
+		launch []string
 		// fromVariable and fromFlag give the value through the variable, the flag,
 		// or both; the other carries nothing, or an existing folder where both.
 		fromVariable, fromFlag func(t *testing.T) string
 		wantSource, notSource  string
 	}{
-		{name: "mcp: the variable names a folder that is not there", command: "mcp",
-			fromVariable: missing, wantSource: variable, notSource: flag},
-		{name: "mcp: the variable carries a placeholder its client never filled", command: "mcp",
-			fromVariable: unfilled, wantSource: variable, notSource: flag},
-		{name: "mcp: the flag names a folder that is not there", command: "mcp",
+		{name: "mcp --listen: the variable names a folder that is not there", launch: listen,
+			fromVariable: missing, wantSource: workspaceconfig.EnvWorkspaceRootSource, notSource: flag},
+		{name: "mcp --transport http: the variable names a folder that is not there", launch: listenHTTP,
+			fromVariable: missing, wantSource: workspaceconfig.EnvWorkspaceRootSource, notSource: flag},
+		{name: "mcp --listen: the variable carries a placeholder its client never filled", launch: listen,
+			fromVariable: unfilled, wantSource: workspaceconfig.EnvWorkspaceRootSource, notSource: flag},
+		{name: "mcp --transport http: the flag names a folder that is not there", launch: listenHTTP,
 			fromFlag: missing, wantSource: flag, notSource: variable},
-		{name: "mcp: the flag wins over the variable, and is the one named", command: "mcp",
+		{name: "mcp --listen: the flag wins over the variable, and is the one named", launch: listen,
 			fromVariable: func(t *testing.T) string { return t.TempDir() }, fromFlag: missing,
 			wantSource: flag, notSource: variable},
-		{name: "serve: the variable names a folder that is not there", command: "serve",
-			fromVariable: missing, wantSource: variable, notSource: flag},
-		{name: "serve: the flag names a folder that is not there", command: "serve",
+		{name: "serve: the variable names a folder that is not there", launch: []string{"serve"},
+			fromVariable: missing, wantSource: workspaceconfig.EnvWorkspaceRootSource, notSource: flag},
+		{name: "serve: the flag names a folder that is not there", launch: []string{"serve"},
 			fromFlag: missing, wantSource: flag, notSource: variable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
-			args := []string{tc.command}
+			args := append([]string(nil), tc.launch...)
 			given := ""
 			t.Setenv(variable, "")
 			if tc.fromVariable != nil {
@@ -97,7 +106,8 @@ func TestAWorkspaceRootALaunchNamesThatIsNotThereIsRefusedNamingWhereItCameFrom(
 			cmd.SetArgs(args)
 			_, err := cmd.ExecuteContextC(context.Background())
 			if err == nil {
-				t.Fatalf("aggrega %s started over a workspace root that is not there; stdout:\n%s", tc.command, stdout.String())
+				t.Fatalf("aggrega %s started over a workspace root that is not there; stdout:\n%s",
+					strings.Join(tc.launch, " "), stdout.String())
 			}
 			want := tc.wantSource + ` names the workspace root "` + given + `"`
 			if !strings.Contains(err.Error(), want) {

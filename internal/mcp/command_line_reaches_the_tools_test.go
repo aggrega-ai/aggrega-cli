@@ -104,8 +104,9 @@ func TestACommandToolRunsItsCommandUnderTheServersCommandLine(t *testing.T) {
 	t.Parallel()
 	on, off := true, false
 	// The root the server serves. The stand-in command reads it as text and
-	// opens nothing, so it is a fixed path rather than a directory on disk.
-	const served = "/srv/served-workspace"
+	// opens nothing, but the server judges a launch root before it starts a
+	// command over it, so it is a folder that exists.
+	served := t.TempDir()
 	for _, tc := range []struct {
 		name       string
 		tool       string // "" is cli-work

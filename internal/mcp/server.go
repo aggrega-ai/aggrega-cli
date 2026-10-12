@@ -131,6 +131,19 @@ type Config struct {
 	// process rather than of how a client reached it.
 	WorkspaceRoot string
 
+	// WorkspaceRootSource names what supplied WorkspaceRoot — the flag as a
+	// reader types it, or the variable with the desktop setting that sets it —
+	// where WorkspaceRoot is handed over exactly as that source gave it because
+	// it is not an existing folder. Such a launch is served all the same over
+	// standard input and output, and every call naming no workspace of its own
+	// meets the refusal the launch met, opening with this name, so a client that
+	// shows only the answers still shows what its user has to correct.
+	//
+	// Empty, a refusal of WorkspaceRoot names this server's launch instead: that
+	// is how a root that was an existing folder when the server started, and has
+	// since gone, is reported.
+	WorkspaceRootSource string
+
 	// Flags is what the invocation that launched this process said about
 	// configuration on its command line: the global configuration file it named
 	// with --config, and the settings the reader set there. The command layer
@@ -210,6 +223,12 @@ type server struct {
 	// handed for such a call. Empty resolves from the process working directory
 	// and hands nothing. A test points it at a fixture workspace's root.
 	launchRoot string
+
+	// launchRootSource names what supplied launchRoot where the launch handed it
+	// over as given because it is not an existing folder
+	// (Config.WorkspaceRootSource), and is empty everywhere else. A refusal of
+	// the launch root opens with it (rootSourceOf).
+	launchRootSource string
 
 	// flags is the command line the process was launched with, as it bears on
 	// configuration: every workspace resolveToolWorkspace resolves is resolved
@@ -445,16 +464,17 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	s := &server{
-		out:            stdout,
-		logw:           logw,
-		serverVersion:  cfg.ServerVersion,
-		toolchain:      cfg.Toolchain,
-		commandTools:   commandTools,
-		announcedTools: announced,
-		renderHelp:     cfg.RenderHelp,
-		launchRoot:     cfg.WorkspaceRoot,
-		flags:          cfg.Flags,
-		transport:      transportStdio,
+		out:              stdout,
+		logw:             logw,
+		serverVersion:    cfg.ServerVersion,
+		toolchain:        cfg.Toolchain,
+		commandTools:     commandTools,
+		announcedTools:   announced,
+		renderHelp:       cfg.RenderHelp,
+		launchRoot:       cfg.WorkspaceRoot,
+		launchRootSource: cfg.WorkspaceRootSource,
+		flags:            cfg.Flags,
+		transport:        transportStdio,
 
 		resolveImportPlugin: cfg.ResolveImportPlugin,
 		listPlugins:         cfg.ListPlugins,
