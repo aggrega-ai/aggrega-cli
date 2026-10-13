@@ -44,20 +44,20 @@ func loadFixturePlugin(t *testing.T, fixtureName string) (*wasm.Plugin, func()) 
 // second statement of the wire shape, and the one that goes stale.
 func mutatorFixtureInput(t *testing.T) []byte {
 	t.Helper()
+	var labels abi.OrderedMap[string]
+	labels.Set("team", "payments")
+	var nodes abi.OrderedMap[abi.MutatorNode]
+	nodes.Set("payments-api", abi.MutatorNode{
+		Component:       "core/web-service",
+		ResolvedVersion: "1.4.2",
+		Labels:          labels,
+	})
 	input := abi.MutatorInput{
 		CompilationContext: abi.CompilationContext{
 			ReleaseName: "payments",
 			Environment: "prod",
 		},
-		Graph: abi.MutatorGraph{
-			Nodes: map[string]abi.MutatorNode{
-				"payments-api": {
-					Component:       "core/web-service",
-					ResolvedVersion: "1.4.2",
-					Labels:          map[string]string{"team": "payments"},
-				},
-			},
-		},
+		Graph: abi.MutatorGraph{Nodes: nodes},
 	}
 	inputBytes, err := input.EncodeCBOR()
 	if err != nil {

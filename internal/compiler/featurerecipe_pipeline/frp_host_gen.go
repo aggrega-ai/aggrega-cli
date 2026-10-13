@@ -135,7 +135,7 @@ func (t FRPStepInput) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"step_input\":")
-		if enc, err := json.Marshal(t.StepInput); err != nil {
+		if enc, err := t.StepInput.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -207,9 +207,7 @@ func (t *FRPStepInput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.StepInput); err != nil {
+				if err := t.StepInput.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -345,7 +343,7 @@ func (t FRPStepOutput) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"outputs\":")
-		if enc, err := json.Marshal(t.Outputs); err != nil {
+		if enc, err := t.Outputs.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -440,9 +438,7 @@ func (t *FRPStepOutput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Outputs); err != nil {
+				if err := t.Outputs.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -488,7 +484,7 @@ func (t DocumentSet) MarshalJSON() ([]byte, error) {
 	}
 	first = false
 	buf.WriteString("\"own\":")
-	if enc, err := json.Marshal(t.Own); err != nil {
+	if enc, err := t.Own.MarshalJSON(); err != nil {
 		return nil, err
 	} else {
 		buf.Write(enc)
@@ -499,7 +495,7 @@ func (t DocumentSet) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"host\":")
-		if enc, err := json.Marshal(t.Host); err != nil {
+		if enc, err := t.Host.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -527,9 +523,7 @@ func (t *DocumentSet) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Own); err != nil {
+				if err := t.Own.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -537,9 +531,7 @@ func (t *DocumentSet) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Host); err != nil {
+				if err := t.Host.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -1133,18 +1125,14 @@ func (t FRPStepInput) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORInt(dst, int64(t.StepIndex))
 	if !t.StepInput.IsZero() {
 		dst = appendCBORTextString(dst, "step_input")
-		{
-			keys := t.StepInput.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.StepInput.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.StepInput.Len()))
+		for k, mv := range t.StepInput.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -1185,15 +1173,18 @@ func (t *FRPStepInput) decodeCBOR(dec *cborDec) error {
 			}
 		case "step_input":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -1297,18 +1288,14 @@ func (t FRPStepOutput) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.Outputs.IsZero() {
 		dst = appendCBORTextString(dst, "outputs")
-		{
-			keys := t.Outputs.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Outputs.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Outputs.Len()))
+		for k, mv := range t.Outputs.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -1421,15 +1408,18 @@ func (t *FRPStepOutput) decodeCBOR(dec *cborDec) error {
 			}
 		case "outputs":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -1490,30 +1480,22 @@ func (t DocumentSet) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "own")
-	{
-		keys := t.Own.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Own.Get(k)
-			if dst, err = mv.appendCBOR(dst); err != nil {
-				return nil, err
-			}
+	dst = appendCBORHead(dst, 4, uint64(t.Own.Len()))
+	for k, mv := range t.Own.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		if dst, err = mv.appendCBOR(dst); err != nil {
+			return nil, err
 		}
 	}
 	if !t.Host.IsZero() {
 		dst = appendCBORTextString(dst, "host")
-		{
-			keys := t.Host.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Host.Get(k)
-				if dst, err = mv.appendCBOR(dst); err != nil {
-					return nil, err
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Host.Len()))
+		for k, mv := range t.Host.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if dst, err = mv.appendCBOR(dst); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -1540,15 +1522,18 @@ func (t *DocumentSet) decodeCBOR(dec *cborDec) error {
 		switch key {
 		case "own":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[Unit]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv Unit
 					if err := (&mv).decodeCBOR(dec); err != nil {
@@ -1560,15 +1545,18 @@ func (t *DocumentSet) decodeCBOR(dec *cborDec) error {
 			}
 		case "host":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[Unit]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv Unit
 					if err := (&mv).decodeCBOR(dec); err != nil {
@@ -2609,6 +2597,27 @@ func (d *cborDec) readArrayHeader() (int, error) {
 		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
 	}
 	return int(arg), nil
+}
+
+// readEntryKey reads the start of one entry of an order-preserving map's array
+// form — a two-element array whose first element is the text-string key — and
+// returns the key, leaving the value as the next item. An entry of any other
+// shape is refused.
+func (d *cborDec) readEntryKey() (string, error) {
+	n, err := d.readArrayHeader()
+	if err != nil {
+		return "", err
+	}
+	if n != 2 {
+		return "", fmt.Errorf("abi: cbor: an order-preserving map entry holds %d items, want 2", n)
+	}
+	return d.readTextString()
+}
+
+// duplicateKeyError is the refusal of an encoded order-preserving map that
+// repeats a key, naming the key.
+func duplicateKeyError(k string) error {
+	return fmt.Errorf("abi: duplicate key %q", k)
 }
 
 func (d *cborDec) readTextString() (string, error) {

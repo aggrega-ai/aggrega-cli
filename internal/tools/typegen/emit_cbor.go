@@ -27,6 +27,9 @@ import (
 //   - a plain string-keyed map is a definite-length CBOR map whose keys sort at
 //     runtime by their encoded text-key bytes (length-first, then bytewise) —
 //     not by Go string comparison;
+//   - an order-preserving map is a definite-length CBOR array of its entries in
+//     the map's order, each entry a two-element array of the text-string key and
+//     the value, so the order the map holds is the order the wire carries;
 //   - a slice is a definite-length CBOR array in element order;
 //   - integers use the shortest head; bools are fixed single bytes; text and
 //     byte strings use the shortest length head;
@@ -155,6 +158,78 @@ func orderedMapValueType(goType string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// isOrderedMapSpelling reports whether goType spells an order-preserving
+// container, through orderedMapValueType so every backend asks one question of
+// one predicate.
+func isOrderedMapSpelling(goType string) bool {
+	_, ok := orderedMapValueType(goType)
+	return ok
+}
+
+// orderedContainerLevels describes the containers a type spelling nests along its
+// value path — the container itself, then what it holds, and so on down to the
+// first value that is not a container — reporting at each level whether that
+// container is order-preserving. A pointer is looked through, because it changes
+// no container the wire carries. `map[string]OrderedMap[string]` is a plain map
+// holding order-preserving ones, so it reads [false, true].
+func orderedContainerLevels(goType string) []bool {
+	var levels []bool
+	for {
+		goType = strings.TrimLeft(goType, "*")
+		if val, ok := orderedMapValueType(goType); ok {
+			levels = append(levels, true)
+			goType = val
+			continue
+		}
+		switch {
+		case strings.HasPrefix(goType, "map["):
+			levels = append(levels, false)
+			goType = goType[strings.IndexByte(goType, ']')+1:]
+		case strings.HasPrefix(goType, "[]") && goType != "[]byte":
+			levels = append(levels, false)
+			goType = goType[2:]
+		default:
+			return levels
+		}
+	}
+}
+
+// checkVocabularyKeepsOrderedContainers refuses a target whose vocabulary would
+// turn an order-preserving container into something else at any level it nests.
+//
+// A vocabulary exists to rewrite spellings a destination package cannot name,
+// and an order-preserving container's VALUES are often such a spelling. The
+// container is not: the schema marks it because its order is part of what it
+// carries, and the codec writes that order on both encodings. An entry rewriting
+// the container to a plain map would silently opt that one field, in that one
+// target, out of the order the schema marks — a per-target encoding switch, which
+// is exactly what keying the form on the marking rules out. So the refusal names
+// the target, the entry and the level, and generation stops.
+func checkVocabularyKeepsOrderedContainers(t codecTarget, label string) error {
+	keys := make([]string, 0, len(t.vocabulary))
+	for k := range t.vocabulary {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, from := range keys {
+		to := t.vocabulary[from]
+		fromLevels, toLevels := orderedContainerLevels(from), orderedContainerLevels(to)
+		for level, ordered := range fromLevels {
+			if !ordered {
+				continue
+			}
+			if level >= len(toLevels) || !toLevels[level] {
+				return fmt.Errorf("typegen: %s: the vocabulary entry %q -> %q spells an order-preserving container "+
+					"at nesting level %d of the key but not of the value, so the field it rewrites would lose the "+
+					"order its schema marks. A vocabulary entry may rewrite what an order-preserving container holds, "+
+					"never the container itself: map it to the destination package's own order-preserving container",
+					label, from, to, level)
+			}
+		}
+	}
+	return nil
 }
 
 // cborStrHead returns the CBOR major-type-3 (text string) length head for a
@@ -387,30 +462,28 @@ func emitCBOREncodeMap(b *strings.Builder, src, valType, indent string, defTypes
 	fmt.Fprintf(b, "%s}\n", indent)
 }
 
-// emitCBOREncodeOrderedMap appends an order-preserving ordered map as a
-// canonical CBOR map: the same sorted-key map a plain string-keyed map encodes
-// to, so the wire shape a socket field carries does not depend on which side
-// holds the order-preserving container.
+// emitCBOREncodeOrderedMap appends an order-preserving map in its array form: a
+// definite-length CBOR array holding one two-element array per entry, the
+// text-string key then the value, in the map's own order.
 //
-// Author order is deliberately NOT carried by the key sequence here. The wire
-// counterpart of every ordered-map field on a socket payload is a plain
-// string-keyed map, whose canonical CBOR is a sorted map; emitting an
-// order-preserving array instead would produce bytes the counterpart cannot
-// decode. Where a field's content genuinely must keep author order, it travels
-// as an opaque byte-string of its own verbatim encoding, and the order lives
-// inside those bytes rather than in this map's key sequence. A field whose
-// counterpart becomes order-preserving in its own right needs an array form
-// added here, and both sides must move together.
+// The form is chosen by the field's resolved type and by nothing else: any field
+// whose schema node marks the container order-preserving reaches this arm, in
+// every codec target, so no socket and no target chooses an encoding of its own.
+// The form is still canonical. A map keeps its keys sorted because a map carries
+// no order of its own, while this container's order is part of its content; the
+// array writes that order as the content it is, so identical input still yields
+// identical bytes. A plain string-keyed map keeps the sorted map form, which is
+// why a type can carry both forms side by side.
+//
+// Each value is encoded by the ordinary value rule, so a nested order-preserving
+// container is itself an array of entries, and a value carried opaquely stays a
+// byte string of its verbatim JSON.
 func emitCBOREncodeOrderedMap(b *strings.Builder, src, valType, indent string, defTypes map[string]bool) {
-	fmt.Fprintf(b, "%s{\n", indent)
-	fmt.Fprintf(b, "%s\tkeys := %s.Keys()\n", indent, src)
-	fmt.Fprintf(b, "%s\tsortCBORKeys(keys)\n", indent)
-	fmt.Fprintf(b, "%s\tdst = appendCBORHead(dst, 5, uint64(len(keys)))\n", indent)
-	fmt.Fprintf(b, "%s\tfor _, k := range keys {\n", indent)
-	fmt.Fprintf(b, "%s\t\tdst = appendCBORTextString(dst, k)\n", indent)
-	fmt.Fprintf(b, "%s\t\tmv, _ := %s.Get(k)\n", indent, src)
-	emitCBOREncodeValue(b, "mv", valType, "", indent+"\t\t", defTypes)
-	fmt.Fprintf(b, "%s\t}\n", indent)
+	fmt.Fprintf(b, "%sdst = appendCBORHead(dst, 4, uint64(%s.Len()))\n", indent, src)
+	fmt.Fprintf(b, "%sfor k, mv := range %s.All() {\n", indent, src)
+	fmt.Fprintf(b, "%s\tdst = appendCBORHead(dst, 4, 2)\n", indent)
+	fmt.Fprintf(b, "%s\tdst = appendCBORTextString(dst, k)\n", indent)
+	emitCBOREncodeValue(b, "mv", valType, "", indent+"\t", defTypes)
 	fmt.Fprintf(b, "%s}\n", indent)
 }
 
@@ -608,11 +681,17 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, schemaType, indent str
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sif err := (&%s).decodeCBOR(dec); err != nil {\n%s\treturn err\n%s}\n", indent, dst, indent, indent)
 	case isOrderedMap:
+		// The mirror of the array form: entries are read in wire order and set in
+		// that order, so the container is rebuilt in the order the bytes carry. An
+		// entry that repeats a key is refused rather than merged, because an encoder
+		// of this form never writes one: a repeat is malformed input, and keeping
+		// either value would silently decide which of the two the sender meant.
 		fmt.Fprintf(b, "%s{\n", indent)
-		fmt.Fprintf(b, "%s\tmn, err := dec.readMapHeader()\n%s\tif err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent, indent)
+		fmt.Fprintf(b, "%s\tmn, err := dec.readArrayHeader()\n%s\tif err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent, indent)
 		fmt.Fprintf(b, "%s\tvar om %s\n", indent, goType)
 		fmt.Fprintf(b, "%s\tfor mi := 0; mi < mn; mi++ {\n", indent)
-		fmt.Fprintf(b, "%s\t\tmk, err := dec.readTextString()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
+		fmt.Fprintf(b, "%s\t\tmk, err := dec.readEntryKey()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
+		fmt.Fprintf(b, "%s\t\tif _, dup := om.Get(mk); dup {\n%s\t\t\treturn duplicateKeyError(mk)\n%s\t\t}\n", indent, indent, indent)
 		fmt.Fprintf(b, "%s\t\tvar mv %s\n", indent, omVal)
 		emitCBORDecodeValue(b, "mv", omVal, "", indent+"\t\t", defTypes)
 		fmt.Fprintf(b, "%s\t\tom.Set(mk, mv)\n", indent)
@@ -679,9 +758,13 @@ func emitCBORHelpers(b *strings.Builder) {
 }
 
 // cborHelpersSrc is the shared CBOR machinery: the append-side head/scalar/
-// float writers, the runtime key sort, the cborDec reader, and the top-level key
-// check the strict decode entry point runs ahead of the lenient body. No runtime
-// CBOR library is used — the canonical rules are inline here.
+// float writers, the runtime key sort, the cborDec reader with its entry reader
+// for an order-preserving map's array form, the refusal of a repeated key, and
+// the top-level key check the strict decode entry point runs ahead of the lenient
+// body. No runtime CBOR library is used — the canonical rules are inline here.
+//
+// The repeated-key refusal is the one sentence the package's order-keeping
+// container also refuses with on its JSON leg, where the package declares one.
 const cborHelpersSrc = `// appendCBORHead appends a CBOR head: the major type in the top three bits and
 // the shortest length/argument encoding.
 func appendCBORHead(dst []byte, major byte, arg uint64) []byte {
@@ -940,6 +1023,27 @@ func (d *cborDec) readArrayHeader() (int, error) {
 		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
 	}
 	return int(arg), nil
+}
+
+// readEntryKey reads the start of one entry of an order-preserving map's array
+// form — a two-element array whose first element is the text-string key — and
+// returns the key, leaving the value as the next item. An entry of any other
+// shape is refused.
+func (d *cborDec) readEntryKey() (string, error) {
+	n, err := d.readArrayHeader()
+	if err != nil {
+		return "", err
+	}
+	if n != 2 {
+		return "", fmt.Errorf("abi: cbor: an order-preserving map entry holds %d items, want 2", n)
+	}
+	return d.readTextString()
+}
+
+// duplicateKeyError is the refusal of an encoded order-preserving map that
+// repeats a key, naming the key.
+func duplicateKeyError(k string) error {
+	return fmt.Errorf("abi: duplicate key %q", k)
 }
 
 func (d *cborDec) readTextString() (string, error) {

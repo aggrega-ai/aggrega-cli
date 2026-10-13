@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1578,6 +1579,102 @@ func TestInlineObjectIsDeclaredByEveryBackendThatNamesIt(t *testing.T) {
 		t.Run(absent.name, func(t *testing.T) {
 			if strings.Contains(absent.src, absent.bad) {
 				t.Errorf("the emitted module contains a declaration it should not:\n%s", absent.bad)
+			}
+		})
+	}
+}
+
+// TestVocabularyOrderedContainerRefusalCanFail drives the refusal of a vocabulary
+// entry that drops a schema's order-preserving marking, in both directions and at
+// both nesting levels it reaches. A refusal nobody has seen fire is decoration,
+// and the failure this one guards is quiet: a target whose vocabulary turned one
+// order-preserving container into a plain map would still generate, compile and
+// round-trip against itself, while that one field on that one wire lost the order
+// every other target carries.
+//
+// The positive controls run first: every registered target passes, and an entry
+// that rewrites only what a container holds passes, so the refusals below are
+// attributable to the container being rewritten rather than to anything else.
+func TestVocabularyOrderedContainerRefusalCanFail(t *testing.T) {
+	for outFile, tgt := range codecTargets {
+		if err := checkVocabularyKeepsOrderedContainers(tgt, outFile); err != nil {
+			t.Errorf("registered target %s is refused, so the refusal below proves nothing: %v", outFile, err)
+		}
+	}
+
+	const schema = `{
+		"$defs": {
+			"Edge": {
+				"type": "object",
+				"properties": {
+					"inject": {"type": "object", "x-aggrega-go-type": "types.OrderedMap[types.OrderedMap[string]]"},
+					"provides": {"type": "object", "x-aggrega-go-type": "types.OrderedMap[string]"},
+					"handles": {"type": "object", "x-aggrega-go-type": "map[string]types.OrderedMap[string]"}
+				}
+			}
+		}
+	}`
+	for _, tc := range []struct {
+		name  string
+		vocab map[string]string
+		// level is the nesting level the refusal must name; -1 means the entry is
+		// admitted.
+		level int
+		entry string
+	}{
+		{
+			name: "rewriting only what the containers hold is admitted",
+			vocab: map[string]string{
+				"types.OrderedMap[types.OrderedMap[string]]": "OrderedMap[OrderedMap[string]]",
+				"types.OrderedMap[string]":                   "OrderedMap[string]",
+				"map[string]types.OrderedMap[string]":        "map[string]OrderedMap[string]",
+			},
+			level: -1,
+		},
+		{
+			name:  "the outer container dropped",
+			vocab: map[string]string{"types.OrderedMap[string]": "map[string]string"},
+			level: 0,
+			entry: "types.OrderedMap[string]",
+		},
+		{
+			name:  "the inner container of a nested one dropped",
+			vocab: map[string]string{"types.OrderedMap[types.OrderedMap[string]]": "OrderedMap[map[string]string]"},
+			level: 1,
+			entry: "types.OrderedMap[types.OrderedMap[string]]",
+		},
+		{
+			name:  "the inner container under a plain map dropped",
+			vocab: map[string]string{"map[string]types.OrderedMap[string]": "map[string]map[string]string"},
+			level: 1,
+			entry: "map[string]types.OrderedMap[string]",
+		},
+		{
+			name:  "the container carried opaquely",
+			vocab: map[string]string{"types.OrderedMap[string]": "json.RawMessage"},
+			level: 0,
+			entry: "types.OrderedMap[string]",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, lang := range []string{"", "rust", "ts"} {
+				target := codecTarget{schema: schema, schemaFile: "probe.schema.json", pkg: "probe", vocabulary: tc.vocab, lang: lang}
+				_, err := generateDefs(target)
+				if tc.level < 0 {
+					if err != nil {
+						t.Fatalf("lang %q: the admitted vocabulary was refused, so the refusals beside it prove nothing: %v", lang, err)
+					}
+					continue
+				}
+				if err == nil {
+					t.Fatalf("lang %q: generation succeeded with %q rewritten to %q; the refusal cannot fail, so it "+
+						"certifies nothing", lang, tc.entry, tc.vocab[tc.entry])
+				}
+				for _, want := range []string{fmt.Sprintf("%q", tc.entry), fmt.Sprintf("nesting level %d", tc.level), "probe.schema.json"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("lang %q: the refusal fired but does not name %s: %v", lang, want, err)
+					}
+				}
 			}
 		})
 	}

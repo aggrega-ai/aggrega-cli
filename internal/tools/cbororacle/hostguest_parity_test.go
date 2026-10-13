@@ -21,15 +21,16 @@ import (
 
 // A socket payload is encoded by one side of the plugin boundary and decoded by
 // the other, and the two sides do not hold the same Go type: an order-preserving
-// container on the compiler side is a plain string-keyed map on the plugin side.
-// The tests below pin the consequence that matters — the bytes one side emits are
-// exactly the bytes the other side emits for the same logical value, so either
-// can decode the other and neither can drift into a private dialect.
+// container on the compiler side is the compiler's own, and on the plugin side the
+// plugin binding's. The tests below pin the consequence that matters — the bytes
+// one side emits are exactly the bytes the other side emits for the same logical
+// value, so either can decode the other and neither can drift into a private
+// dialect.
 //
 // The fixtures deliberately insert keys in an order that is NOT their canonical
-// order, so a wrong encoding is observable: an encoder that carried insertion
-// order instead of canonical order would produce different bytes here rather
-// than accidentally agreeing.
+// sorted order, so a wrong encoding is observable: an encoder that sorted an
+// order-preserving container, or a decoder that rebuilt one in sorted order, would
+// produce different bytes here rather than accidentally agreeing.
 
 func om[V any](t *testing.T, kv ...any) types.OrderedMap[V] {
 	t.Helper()
@@ -105,7 +106,8 @@ func TestHostGuestWireParity_Mutator(t *testing.T) {
 	crossSide(t, "MutatorInput", got, &abi.MutatorInput{})
 
 	// Round-trip on the compiler side must be byte-stable too: the order-preserving
-	// container is rebuilt from the wire in canonical order and re-encodes identically.
+	// container is rebuilt from the wire in the order the array form carries and
+	// re-encodes identically.
 	var rt topology.MutatorInput
 	if err := rt.DecodeCBOR(got); err != nil {
 		t.Fatalf("compiler-side decode: %v", err)
@@ -118,11 +120,21 @@ func TestHostGuestWireParity_Mutator(t *testing.T) {
 		t.Errorf("compiler-side round-trip is not byte-stable:\nfirst:  %s\nsecond: %s",
 			hex.EncodeToString(got), hex.EncodeToString(again))
 	}
-	// The rebuilt map carries canonical order, which the fixture's insertion order
-	// was chosen to differ from — so this also proves the wire order is canonical
-	// rather than authored.
-	if keys := rt.Graph.Nodes.Keys(); len(keys) != 3 || keys[0] != "mid" {
-		t.Errorf("decoded node key order = %v, want canonical order with the shortest key first", keys)
+	// The rebuilt map carries the inserted order, which the fixture chose to differ
+	// from the canonical sorted one — so this also proves the wire carries the order
+	// the container held rather than a sorted one, at both levels.
+	if keys := rt.Graph.Nodes.Keys(); !sameKeys(keys, []string{"zeta/web", "alpha/db", "mid"}) {
+		t.Errorf("decoded node key order = %v, want the inserted order [zeta/web alpha/db mid]", keys)
+	}
+	if web, _ := rt.Graph.Nodes.Get("zeta/web"); !sameKeys(web.Labels.Keys(), []string{"tier", "a"}) {
+		t.Errorf("decoded label key order = %v, want the inserted order [tier a]", web.Labels.Keys())
+	}
+	var guest abi.MutatorInput
+	if err := guest.DecodeCBOR(got); err != nil {
+		t.Fatalf("plugin-side decode: %v", err)
+	}
+	if keys := guest.Graph.Nodes.Keys(); !sameKeys(keys, []string{"zeta/web", "alpha/db", "mid"}) {
+		t.Errorf("plugin-side decoded node key order = %v, want the inserted order [zeta/web alpha/db mid]", keys)
 	}
 
 	out := topology.MutatorOutput{Patches: []json.RawMessage{json.RawMessage(`[{"op":"add"}]`)}}
@@ -227,8 +239,9 @@ func TestHostGuestWireParity_Descriptor(t *testing.T) {
 
 // TestHostGuestWireParity_LinkEdge covers the deepest ordered shape on any
 // socket: an order-preserving map whose values are themselves order-preserving
-// maps. Its plugin-side counterpart is a plain map of plain maps, so this is the
-// shape most likely to expose a nesting mistake in either encoder.
+// maps. Its plugin-side counterpart nests the binding's container the same way,
+// and each level is an array of entries on the wire, so this is the shape most
+// likely to expose a nesting mistake in either encoder.
 func TestHostGuestWireParity_LinkEdge(t *testing.T) {
 	t.Parallel()
 

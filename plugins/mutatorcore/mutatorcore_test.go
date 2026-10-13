@@ -13,13 +13,24 @@ import (
 
 // threeNodeGraph returns a fixed label-projection graph the tests evaluate
 // against: two nodes carrying a tier label plus an unlabelled cache node whose
-// component is absent from the tagger mapping.
-func threeNodeGraph() map[string]abi.MutatorNode {
-	return map[string]abi.MutatorNode{
-		"web":   {Component: "core/web", Labels: map[string]string{"tier": "frontend"}},
-		"db":    {Component: "core/db", Labels: map[string]string{"tier": "backend"}},
-		"cache": {Component: "core/cache", Labels: map[string]string{}},
+// component is absent from the tagger mapping. The nodes arrive in an order that
+// is not the sorted one, so a function that walked them in arrival order would
+// emit its patches in a different order from the one every test expects.
+func threeNodeGraph() abi.OrderedMap[abi.MutatorNode] {
+	var nodes abi.OrderedMap[abi.MutatorNode]
+	nodes.Set("web", abi.MutatorNode{Component: "core/web", Labels: labels("tier", "frontend")})
+	nodes.Set("db", abi.MutatorNode{Component: "core/db", Labels: labels("tier", "backend")})
+	nodes.Set("cache", abi.MutatorNode{Component: "core/cache"})
+	return nodes
+}
+
+// labels builds a node's labels from alternating keys and values, in that order.
+func labels(kv ...string) abi.OrderedMap[string] {
+	var m abi.OrderedMap[string]
+	for i := 0; i+1 < len(kv); i += 2 {
+		m.Set(kv[i], kv[i+1])
 	}
+	return m
 }
 
 func rawList(t *testing.T, patches []json.RawMessage) []string {
@@ -119,8 +130,8 @@ func TestSelectorTagger_NoDefaultSkipsUnmapped(t *testing.T) {
 }
 
 // TestDeterministicAcrossRuns proves both guests emit a byte-identical patch
-// list across repeated runs of identical input regardless of the input map's
-// iteration order.
+// list across repeated runs of identical input, whatever the iteration order of
+// the rule's own set map.
 func TestDeterministicAcrossRuns(t *testing.T) {
 	settings := json.RawMessage(`{"rules":[{"match":{},"set":{"b":"2","a":"1","c":"3"}}]}`)
 	first, err := mutatorcore.LabelInjectorPatches(threeNodeGraph(), settings, nil)

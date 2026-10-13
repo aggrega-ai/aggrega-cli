@@ -141,14 +141,20 @@ func tsAliasBody(typeName string, members []string) string {
 // generated, not delegated to JSON.stringify:
 //
 //   - struct fields encode in schema property-declaration order;
-//   - map fields encode with keys sorted (Object.keys().sort()), matching the
-//     Go codec's sort.Strings(keys) and Rust's BTreeMap;
+//   - plain map fields encode with keys sorted (Object.keys().sort()), matching
+//     the Go codec's sort.Strings(keys) and Rust's BTreeMap;
+//   - a map the schema marks order-preserving is the language's own Map, which
+//     keeps insertion order for every key, and encodes in that order;
 //   - opaque (`any` / json.RawMessage) values carry VERBATIM via JSON.stringify
 //     of the parsed value (parse order preserved), matching Go's RawMessage
 //     byte-carry and Rust's RawValue — opaque values are never sorted;
 //   - non-required fields are omitted when empty, matching Go omitempty;
-//   - the decoder is JSON.parse into the interface (structural); the encoder
-//     carries the determinism.
+//   - a type holding no order-preserving map, at any depth, decodes by
+//     JSON.parse into the interface (structural). A type that holds one decodes
+//     through a generated reader that visits the members in the order they are
+//     written, because JSON.parse has already moved a key that is an array
+//     index, such as "8080", ahead of the rest before any generated code sees
+//     the object.
 //
 // The top-level `oneOf` is ignored — the walk reads `$defs` only. The target's
 // vocabulary rewrites x-aggrega-go-type values before the Go→TS translation.
@@ -190,6 +196,32 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 	for _, ext := range t.externalDefTypes {
 		defTypes[ext] = true
 	}
+	// Which types hold an order-preserving map, directly or through a field,
+	// decides which decoders read their JSON in member order. It is decided once
+	// here, across the module and the sibling modules it imports from, because a
+	// type's reader calls the reader of every such type it holds.
+	holders, err := tsOrderedHolders(t, defs, map[string]bool{})
+	if err != nil {
+		return nil, err
+	}
+
+	// The interfaces and the JSON codecs are built first, so the imports placed
+	// above them can name exactly what they reference.
+	var codecSrc strings.Builder
+	for _, d := range defs {
+		if v, ok := defValues[d.name]; ok {
+			emitTSValueAlias(&codecSrc, d.name, d.node, v)
+			continue
+		}
+		emitTSInterface(&codecSrc, d.name, d.node, t.vocabulary, defTypes)
+	}
+	for _, d := range defs {
+		if v, ok := defValues[d.name]; ok {
+			emitTSValueCodec(&codecSrc, d.name, v, defTypes)
+			continue
+		}
+		emitTSCodec(&codecSrc, d.name, d.node, t.vocabulary, defTypes, holders)
+	}
 
 	var b strings.Builder
 	b.WriteString("// SPDX-License-Identifier: Apache-2.0\n// Copyright 2026 Cognitio S.r.l.\n\n")
@@ -197,16 +229,23 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 	b.WriteString("// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n\n")
 
 	// A field typed as a sibling-codec type imports its interface and its encoder
-	// from the module that emits it. The decoder is not imported: a struct decode
-	// is a structural JSON.parse, so the nested type is parsed in place and only
-	// the encoder (which sorts map keys) is needed.
+	// from the module that emits it. Its decoder is imported only where this
+	// module reads it: a type holding no order-preserving map decodes by a
+	// structural JSON.parse, so the nested type is parsed in place, while one that
+	// holds such a map is read through its own module's member-order reader.
 	for _, ext := range t.externalDefTypes {
 		mod, ok := externalDefModuleTS[ext]
 		if !ok {
 			return nil, fmt.Errorf("no TS source module registered for external def type %q", ext)
 		}
-		fmt.Fprintf(&b, "import { type %s, encode%s } from \"./%s.ts\";\n", ext, ext, mod)
+		decoder := ""
+		if strings.Contains(codecSrc.String(), "decode"+ext+"(") {
+			decoder = ", decode" + ext
+		}
+		fmt.Fprintf(&b, "import { type %s, encode%s%s } from \"./%s.ts\";\n", ext, ext, decoder, mod)
 	}
+	orderedMapImports := tsOrderedMapImports(codecSrc.String())
+	b.WriteString(orderedMapImports)
 
 	// The canonical-CBOR codec fork, parallel to the JSON codec, for a guest
 	// target. Built into a temp buffer first so the CBOR-helper and external-CBOR
@@ -222,34 +261,146 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 		}
 		b.WriteString("import {\n")
 		b.WriteString("  writeHead, writeInt, writeText, writeBytes, writeBool, writeFloat,\n")
-		b.WriteString("  sortKeys, b64decode, b64encode, utf8Encode, utf8Decode, CborDec,\n")
+		// The repeated-key refusal is named only by a module that reads an
+		// order-preserving map, so only such a module imports it.
+		if strings.Contains(cborSrc.String(), "duplicateKeyError(") {
+			b.WriteString("  sortKeys, b64decode, b64encode, utf8Encode, utf8Decode, CborDec, duplicateKeyError,\n")
+		} else {
+			b.WriteString("  sortKeys, b64decode, b64encode, utf8Encode, utf8Decode, CborDec,\n")
+		}
 		b.WriteString("} from \"./cbor_gen.ts\";\n")
 		b.WriteString(tsCBORExternalImports(t, cborSrc.String()))
 	}
-	if len(t.externalDefTypes) > 0 || t.emitsCBOR() {
+	if len(t.externalDefTypes) > 0 || t.emitsCBOR() || orderedMapImports != "" {
 		b.WriteString("\n")
 	}
 
 	// Shared encode helpers, emitted once per module.
 	emitTSHelpers(&b)
 
-	for _, d := range defs {
-		if v, ok := defValues[d.name]; ok {
-			emitTSValueAlias(&b, d.name, d.node, v)
-			continue
-		}
-		emitTSInterface(&b, d.name, d.node, t.vocabulary, defTypes)
-	}
-	for _, d := range defs {
-		if v, ok := defValues[d.name]; ok {
-			emitTSValueCodec(&b, d.name, v, defTypes)
-			continue
-		}
-		emitTSCodec(&b, d.name, d.node, t.vocabulary, defTypes)
-	}
+	b.WriteString(codecSrc.String())
 	b.WriteString(cborSrc.String())
 
 	return []byte(b.String()), nil
+}
+
+// tsOrderedMapReaders are the functions of the order-keeping container's JSON
+// leg a generated module may call, in the order an import names them.
+var tsOrderedMapReaders = []string{"readJSONMembers", "readOrderedObject", "readJSONArray", "readPlainObject", "writeOrderedObject"}
+
+// tsOrderedMapImports returns the import of exactly the JSON-leg functions the
+// module body calls, or nothing where it calls none.
+func tsOrderedMapImports(body string) string {
+	var names []string
+	for _, fn := range tsOrderedMapReaders {
+		if strings.Contains(body, fn+"(") {
+			names = append(names, fn)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "import { " + strings.Join(names, ", ") + " } from \"./orderedmap_gen.ts\";\n"
+}
+
+// tsOrderedHolders returns the types a module declares or imports whose value
+// holds an order-preserving map at any depth — directly, inside a list or a
+// plain map, or through a field of another such type. Their decoders read JSON
+// in member order; every other type keeps a structural JSON.parse.
+//
+// An imported type is classified by the module that declares it, from that
+// module's own schema, so the two modules cannot disagree about whether the
+// type's decoder is a reader. visiting guards a module that imports, directly or
+// not, a module importing it back.
+func tsOrderedHolders(t codecTarget, defs []namedNode, visiting map[string]bool) (map[string]bool, error) {
+	holders := map[string]bool{}
+	for _, ext := range t.externalDefTypes {
+		mod := externalDefModuleTS[ext]
+		if visiting[mod] {
+			continue
+		}
+		sibling, ok := codecTargets[mod+".ts"]
+		if !ok {
+			return nil, fmt.Errorf("no TypeScript codec target is registered for the module %q that declares %s", mod, ext)
+		}
+		root, err := decodeNode([]byte(sibling.schema))
+		if err != nil {
+			return nil, fmt.Errorf("decode schema: %w", err)
+		}
+		visiting[mod] = true
+		theirs, err := tsOrderedHolders(sibling, expandInlineObjects(root.defs), visiting)
+		if err != nil {
+			return nil, err
+		}
+		if theirs[ext] {
+			holders[ext] = true
+		}
+	}
+	fields := map[string][]codecField{}
+	for _, d := range defs {
+		fields[d.name] = resolveCodecFields(d.name, d.node, t.vocabulary)
+	}
+	// A fixpoint over the defs in declaration order: a type that holds another
+	// type is classified once that type is, wherever the two sit in the file.
+	for changed := true; changed; {
+		changed = false
+		for _, d := range defs {
+			if holders[d.name] {
+				continue
+			}
+			for _, f := range fields[d.name] {
+				if tsHoldsOrdered(f.goType, holders) {
+					holders[d.name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return holders, nil
+}
+
+// tsHoldsOrdered reports whether a value of the resolved Go type holds an
+// order-preserving map: it is one, or it is a list, a plain map or a pointer
+// whose element holds one, or it is a type the holders set names.
+func tsHoldsOrdered(goType string, holders map[string]bool) bool {
+	goType = strings.TrimLeft(goType, "*")
+	if isOrderedMapSpelling(goType) {
+		return true
+	}
+	switch {
+	case strings.HasPrefix(goType, "map["):
+		return tsHoldsOrdered(goType[strings.IndexByte(goType, ']')+1:], holders)
+	case strings.HasPrefix(goType, "[]") && goType != "[]byte":
+		return tsHoldsOrdered(goType[2:], holders)
+	}
+	return holders[goType]
+}
+
+// tsReadExpr returns a TS expression decoding the raw JSON text held by the
+// variable raw into a value of the given resolved Go type. A value holding no
+// order-preserving map is parsed whole; one that holds one is read member by
+// member down to it, so no JSON.parse ever sees an object whose order matters.
+// depth disambiguates the parameter names of nested readers.
+func tsReadExpr(raw, goType string, holders map[string]bool, depth int) string {
+	if !tsHoldsOrdered(goType, holders) {
+		return "JSON.parse(" + raw + ")"
+	}
+	r := fmt.Sprintf("r%d", depth)
+	switch {
+	case strings.HasPrefix(goType, "*"):
+		return fmt.Sprintf("(%s === \"null\" ? null : %s)", raw, tsReadExpr(raw, goType[1:], holders, depth))
+	case isOrderedMapSpelling(goType):
+		valType, _ := orderedMapValueType(goType)
+		return fmt.Sprintf("readOrderedObject(%s, (%s) => %s)", raw, r, tsReadExpr(r, valType, holders, depth+1))
+	case strings.HasPrefix(goType, "map["):
+		valType := goType[strings.IndexByte(goType, ']')+1:]
+		return fmt.Sprintf("readPlainObject(%s, (%s) => %s)", raw, r, tsReadExpr(r, valType, holders, depth+1))
+	case strings.HasPrefix(goType, "[]"):
+		return fmt.Sprintf("readJSONArray(%s, (%s) => %s)", raw, r, tsReadExpr(r, goType[2:], holders, depth+1))
+	default:
+		return fmt.Sprintf("decode%s(%s)", goType, raw)
+	}
 }
 
 // emitTSHelpers writes the shared string-escape and verbatim-opaque helpers the
@@ -329,7 +480,9 @@ func tsFieldType(f codecField, defTypes map[string]bool) string {
 }
 
 // emitTSCodec writes the encode<T> and decode<T> functions for a def type.
-func emitTSCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
+// holders names the types whose decoder reads JSON in member order; see
+// tsOrderedHolders.
+func emitTSCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes, holders map[string]bool) {
 	fields := resolveCodecFields(typeName, n, vocab)
 
 	fmt.Fprintf(b, "export function encode%s(v: %s): string {\n", typeName, typeName)
@@ -356,7 +509,27 @@ func emitTSCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[st
 	b.WriteString("}\n\n")
 
 	fmt.Fprintf(b, "export function decode%s(data: string): %s {\n", typeName, typeName)
-	fmt.Fprintf(b, "  return JSON.parse(data) as %s;\n", typeName)
+	if !holders[typeName] {
+		fmt.Fprintf(b, "  return JSON.parse(data) as %s;\n", typeName)
+		b.WriteString("}\n\n")
+		return
+	}
+	// A type holding an order-preserving map reads its members in the order they
+	// are written. A member the type does not declare is skipped, as the CBOR
+	// decoder beside it skips one.
+	b.WriteString("  const o: any = {};\n")
+	b.WriteString("  readJSONMembers(data, (k, raw) => {\n")
+	b.WriteString("    switch (k) {\n")
+	for _, f := range fields {
+		read := tsReadExpr("raw", f.goType, holders, 0)
+		if f.nullable && tsHoldsOrdered(f.goType, holders) {
+			read = "raw === \"null\" ? null : " + read
+		}
+		fmt.Fprintf(b, "      case %q: o[%q] = %s; break;\n", f.key, f.key, read)
+	}
+	b.WriteString("    }\n")
+	b.WriteString("  });\n")
+	fmt.Fprintf(b, "  return o as %s;\n", typeName)
 	b.WriteString("}\n\n")
 }
 
@@ -377,6 +550,14 @@ func tsEncodeExpr(acc, goType string, defTypes map[string]bool, depth int) strin
 		return fmt.Sprintf("jstr(%s)", acc)
 	case goType == "json.RawMessage" || goType == "any" || goType == "interface{}":
 		return fmt.Sprintf("encodeOpaque(%s)", acc)
+	case isOrderedMapSpelling(goType):
+		// The container's own order, written member by member; the value's
+		// parameter name is depth-suffixed so a nested container does not shadow
+		// the outer one. The source carries a non-null assertion for the reason
+		// tsEncodeMap gives.
+		valType, _ := orderedMapValueType(goType)
+		v := fmt.Sprintf("v%d", depth)
+		return fmt.Sprintf("writeOrderedObject(%s!, (%s) => %s)", acc, v, tsEncodeExpr(v, valType, defTypes, depth+1))
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		return tsEncodeMap(acc, valType, defTypes, depth)
@@ -444,6 +625,8 @@ func tsOmitGuard(acc, goType string, nullable bool) string {
 		tests = append(tests, fmt.Sprintf("%s !== false", acc))
 	case goType == "int" || goType == "int64" || goType == "float64":
 		tests = append(tests, fmt.Sprintf("%s !== 0", acc))
+	case isOrderedMapSpelling(goType):
+		tests = append(tests, fmt.Sprintf("%s.size > 0", acc))
 	case strings.HasPrefix(goType, "map["):
 		tests = append(tests, fmt.Sprintf("Object.keys(%s).length > 0", acc))
 	case strings.HasPrefix(goType, "[]"):
@@ -457,8 +640,14 @@ func tsOmitGuard(acc, goType string, nullable bool) string {
 	return strings.Join(tests, " && ")
 }
 
-// goTypeToTS translates a resolved Go-vocabulary type to a TypeScript type.
+// goTypeToTS translates a resolved Go-vocabulary type to a TypeScript type. An
+// order-preserving container is the language's own Map, which keeps insertion
+// order for every key, where a plain object lists a key that is an array index
+// ahead of the rest.
 func goTypeToTS(goType string, defTypes map[string]bool) string {
+	if valType, ok := orderedMapValueType(goType); ok {
+		return "Map<string, " + goTypeToTS(valType, defTypes) + ">"
+	}
 	switch {
 	case goType == "string" || goType == "[]byte":
 		return "string"

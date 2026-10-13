@@ -126,9 +126,10 @@ func TestHostWireFRP_ComparisonIsDiscriminating(t *testing.T) {
 
 // TestHostGuestWireParity_FRPStep pins that the two sides of the pipeline-step
 // wire speak the same bytes. The plugin side does not hold the compiler side's
-// types — an order-preserving container here is a plain map there, and the scope
-// vocabulary is a named string type here and a bare string there — so agreement
-// is a property to assert rather than one the shared schema delivers by itself.
+// types — an order-preserving container here is the compiler's own and there the
+// plugin binding's, and the scope vocabulary is a named string type here and a
+// bare string there — so agreement is a property to assert rather than one the
+// shared schema delivers by itself.
 func TestHostGuestWireParity_FRPStep(t *testing.T) {
 	t.Parallel()
 
@@ -157,8 +158,8 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 	crossSide(t, "FRPStepInput", inBytes, &abi.FRPStepInput{})
 
 	// The compiler side rebuilds its order-preserving container from the wire in
-	// canonical order and re-encodes identically, which the fixture's insertion
-	// order was chosen to differ from.
+	// the order the array form carries — the insertion order, which the fixture
+	// chose to differ from the canonical sorted one — and re-encodes identically.
 	var rt frp.FRPStepInput
 	if err := rt.DecodeCBOR(inBytes); err != nil {
 		t.Fatalf("compiler-side decode: %v", err)
@@ -171,8 +172,11 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 		t.Errorf("compiler-side round-trip is not byte-stable:\nfirst:  %s\nsecond: %s",
 			hex.EncodeToString(inBytes), hex.EncodeToString(again))
 	}
-	if keys := rt.Documents.Own.Keys(); len(keys) != 2 || keys[0] != "a.yaml" {
-		t.Errorf("decoded document key order = %v, want canonical order", keys)
+	if keys := rt.Documents.Own.Keys(); !sameKeys(keys, []string{"z.yaml", "a.yaml"}) {
+		t.Errorf("decoded document key order = %v, want the inserted order [z.yaml a.yaml]", keys)
+	}
+	if keys := rt.StepInput.Keys(); !sameKeys(keys, []string{"zeta", "alpha"}) {
+		t.Errorf("decoded step input key order = %v, want the inserted order [zeta alpha]", keys)
 	}
 
 	// The output payload carries no diagnostic, because the diagnostic carry is a

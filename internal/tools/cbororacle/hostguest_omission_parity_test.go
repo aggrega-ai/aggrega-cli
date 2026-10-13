@@ -16,12 +16,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// An order-preserving container is realized as a struct value on the compiler
-// side and as a plain string-keyed map on the plugin side, and both sides mark
-// such a field as omitted when it is empty. A plain map has an absent state that
-// a struct value does not, so the compiler side matches it only by asking the
-// container itself whether it is empty — which makes conditional emission a
-// property worth pinning from both directions at once.
+// An order-preserving container is realized as a struct value on both sides of
+// the wire — the compiler's own container and the plugin binding's — and both
+// sides mark such a field as omitted when it is empty. A struct value has no
+// absent state of its own, so each side omits it only by asking the container
+// itself whether it is empty — which makes conditional emission a property worth
+// pinning from both directions at once.
 //
 // The tests below cover the empty and the populated state separately, because
 // each state hides the other's failure: an encoder emitting the key
@@ -152,13 +152,13 @@ func TestHostGuestWireParity_OmitsEmptyOrderedContainers(t *testing.T) {
 		}
 	}
 
-	// The plugin side realizes each of these as a plain map, so it must decode a
-	// payload with the keys absent and re-encode to the identical bytes. That is
-	// what makes the two sides agree on the empty case rather than merely each
-	// being self-consistent.
+	// The plugin side realizes each of these as its own order-keeping container,
+	// so it must decode a payload with the keys absent and re-encode to the
+	// identical bytes. That is what makes the two sides agree on the empty case
+	// rather than merely each being self-consistent.
 	var guest abi.IRNodeProjection
 	crossSide(t, "IRNodeProjection(empty)", b, &guest)
-	if len(guest.Values) != 0 || len(guest.Features) != 0 || len(guest.Uses) != 0 {
+	if guest.Values.Len() != 0 || guest.Features.Len() != 0 || guest.Uses.Len() != 0 {
 		t.Errorf("plugin side decoded non-empty containers from absent keys: %+v", guest)
 	}
 }

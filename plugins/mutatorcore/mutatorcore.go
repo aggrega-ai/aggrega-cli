@@ -14,8 +14,8 @@
 //
 // Byte-identical output: every function walks nodes in sorted node-ID order and
 // emits per-label patches in a stable order (rules in author order, label keys
-// in sorted order), so the emitted patch list is deterministic regardless of
-// the guest's map iteration order. Each emitted patch is a single-operation JSON
+// in sorted order), so the emitted patch list is deterministic and independent
+// of the order the nodes arrive in. Each emitted patch is a single-operation JSON
 // Patch document rooted at /nodes/<id>/labels/<key>, so the host applies it to
 // its labels-only projection and rejects any path that reaches another surface.
 package mutatorcore
@@ -63,14 +63,15 @@ const TaggerLabelKey = "tag"
 // are read from settings when settings carry a rule set, otherwise from the
 // first definition file that does. A configuration with no rules yields no
 // patches.
-func LabelInjectorPatches(nodes map[string]abi.MutatorNode, settings json.RawMessage, sources []abi.MutatorSource) ([]json.RawMessage, error) {
+func LabelInjectorPatches(nodes abi.OrderedMap[abi.MutatorNode], settings json.RawMessage, sources []abi.MutatorSource) ([]json.RawMessage, error) {
 	cfg, err := injectorConfig(settings, sources)
 	if err != nil {
 		return nil, err
 	}
 	var patches []json.RawMessage
 	for _, id := range sortedNodeIDs(nodes) {
-		labels := nodes[id].Labels
+		node, _ := nodes.Get(id)
+		labels := node.Labels
 		for _, rule := range cfg.Rules {
 			if !subsetMatch(labels, rule.Match) {
 				continue
@@ -93,7 +94,7 @@ func LabelInjectorPatches(nodes map[string]abi.MutatorNode, settings json.RawMes
 // absent from the mapping. A node whose component is unmapped and for which no
 // default is configured is left untouched. The mapping is read from the
 // attachment's definition files.
-func SelectorTaggerPatches(nodes map[string]abi.MutatorNode, settings json.RawMessage, sources []abi.MutatorSource) ([]json.RawMessage, error) {
+func SelectorTaggerPatches(nodes abi.OrderedMap[abi.MutatorNode], settings json.RawMessage, sources []abi.MutatorSource) ([]json.RawMessage, error) {
 	mapping, err := taggerMapping(sources)
 	if err != nil {
 		return nil, err
@@ -106,7 +107,8 @@ func SelectorTaggerPatches(nodes map[string]abi.MutatorNode, settings json.RawMe
 	}
 	var patches []json.RawMessage
 	for _, id := range sortedNodeIDs(nodes) {
-		tag, ok := mapping[nodes[id].Component]
+		node, _ := nodes.Get(id)
+		tag, ok := mapping[node.Component]
 		if !ok {
 			if st.Default == "" {
 				continue
@@ -189,10 +191,11 @@ func yamlTree(src abi.MutatorSource) (json.RawMessage, error) {
 }
 
 // subsetMatch reports whether labels contain every key/value pair in match. An
-// empty match is a subset of any label set, so it matches every node.
-func subsetMatch(labels, match map[string]string) bool {
+// empty match is a subset of any label set, so it matches every node. A label
+// the node does not carry reads as the empty value.
+func subsetMatch(labels abi.OrderedMap[string], match map[string]string) bool {
 	for k, v := range match {
-		if labels[k] != v {
+		if got, _ := labels.Get(k); got != v {
 			return false
 		}
 	}
@@ -233,13 +236,10 @@ func escapePointerToken(tok string) string {
 	return tok
 }
 
-// sortedNodeIDs returns the node IDs in sorted order so the emitted patch list
-// is byte-identical across runs of identical input.
-func sortedNodeIDs(nodes map[string]abi.MutatorNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
-	}
+// sortedNodeIDs returns the node IDs in sorted order, so the emitted patch list
+// does not depend on the order the nodes arrive in.
+func sortedNodeIDs(nodes abi.OrderedMap[abi.MutatorNode]) []string {
+	ids := nodes.Keys()
 	sort.Strings(ids)
 	return ids
 }

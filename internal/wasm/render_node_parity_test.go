@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -99,25 +98,29 @@ func TestRenderNodeInput_HostEmitsAttachmentsInAuthorOrder(t *testing.T) {
 }
 
 // TestRenderNodeInput_GoGuestCodecDecodesAttachments measures the third
-// language's realization of the same author-ordered attachment map. The Go guest
-// codec decodes it into a plain Go map, so a Go guest reads the attachment set
-// and every entry's content — including the sensitivity marking — but has no
-// author order to read at all: Go randomizes map iteration by design, which is a
-// stronger loss than the Rust container's re-sorting rather than a milder one.
-// The assertion is therefore over the key SET and the decoded marking, never over
-// a sequence, because an order assertion here would be the flaky kind of test
-// that passes by luck.
+// language's realization of the same author-ordered attachment map. The schema
+// marks the map order-preserving, so the Go guest codec decodes it into the
+// binding's order-keeping container: a Go guest reads the attachment set, every
+// entry's content — including the sensitivity marking — and the author order the
+// host wrote, which the assertion reads as a sequence.
 func TestRenderNodeInput_GoGuestCodecDecodesAttachments(t *testing.T) {
 	t.Parallel()
 	var decoded abi.RenderNodeInput
 	if err := decoded.UnmarshalJSON(renderNodeParityInput(t)); err != nil {
 		t.Fatalf("Go guest codec rejected the host payload: %v", err)
 	}
-	if got, want := len(decoded.Node.Features), len(renderNodeParityAttachments); got != want {
+	if got, want := decoded.Node.Features.Len(), len(renderNodeParityAttachments); got != want {
 		t.Fatalf("Go guest decoded %d attachment(s), want %d", got, want)
 	}
+	gotOrder := decoded.Node.Features.Keys()
+	for i, a := range renderNodeParityAttachments {
+		if i < len(gotOrder) && gotOrder[i] != a.alias {
+			t.Errorf("Go guest decoded the attachments in the order %v, not the author's", gotOrder)
+			break
+		}
+	}
 	for _, a := range renderNodeParityAttachments {
-		raw, ok := decoded.Node.Features[a.alias]
+		raw, ok := decoded.Node.Features.Get(a.alias)
 		if !ok {
 			t.Errorf("Go guest decoded no attachment %q", a.alias)
 			continue
@@ -178,26 +181,11 @@ func fileByPath(t *testing.T, name string, out renderer.RenderNodeOutput, path s
 }
 
 // attachmentEchoAuthorOrder is the attachment echo a guest emits when it
-// observes the wire's own key order; attachmentEchoSortedOrder is the echo a
-// guest emits when its decode container re-sorts the keys. Each entry is
-// alias=sensitive, so the echo reports the marking as well as the order.
+// observes the wire's own key order. Each entry is alias=sensitive, so the echo
+// reports the marking as well as the order.
 func attachmentEchoAuthorOrder() string {
 	parts := make([]string, 0, len(renderNodeParityAttachments))
 	for _, a := range renderNodeParityAttachments {
-		parts = append(parts, echoEntry(a.alias, a.sensitive))
-	}
-	return strings.Join(parts, ",")
-}
-
-func attachmentEchoSortedOrder() string {
-	sorted := make([]struct {
-		alias     string
-		sensitive bool
-	}, len(renderNodeParityAttachments))
-	copy(sorted, renderNodeParityAttachments)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].alias < sorted[j].alias })
-	parts := make([]string, 0, len(sorted))
-	for _, a := range sorted {
 		parts = append(parts, echoEntry(a.alias, a.sensitive))
 	}
 	return strings.Join(parts, ",")
@@ -218,18 +206,15 @@ func echoEntry(alias string, sensitive bool) string {
 // structure, not raw guest JSON bytes). The node-id echo must be structurally
 // equal across the two languages: cross-language render-socket parity.
 //
-// The attachment echo is asserted per language rather than compared across them,
-// and the asymmetry is the finding, not an oversight. The host emits the node's
-// attachments in author order (pinned separately, above), but each language's
-// generated codec decodes an author-ordered wire map into that language's own
-// map container: TypeScript's object literal keeps the order the document had,
-// while Rust's sorted-map container re-orders the keys alphabetically. A guest
-// therefore reads the same attachment SET and the same per-attachment values in
-// every language, and reads each attachment's sensitivity marking in every
-// language, but only reads the author ORDER in the languages whose container
-// preserves it. Anything keyed by attachment alias is safe in every language;
-// anything that depends on the sequence of the aliases is not. Pinning both
-// observed realizations here keeps that fact measured rather than surveyed once.
+// The attachment echo is asserted per language as well as compared across them.
+// The host emits the node's attachments in author order (pinned separately,
+// above), and the schema marks the attachment map order-preserving, so each
+// language's generated codec decodes it into that language's order-keeping
+// container: Rust's binding container and TypeScript's Map each keep the order the
+// wire carried. A guest therefore reads the same attachment SET, the same
+// per-attachment values and sensitivity markings, and the same author ORDER in
+// every language. Pinning each realization here keeps that measured rather than
+// surveyed once.
 func TestRenderSocketParity_RustTypeScript(t *testing.T) {
 	input := renderNodeParityInput(t)
 
@@ -246,8 +231,8 @@ func TestRenderSocketParity_RustTypeScript(t *testing.T) {
 		expectedEcho  string
 		echoRationale string
 	}{
-		{"rust", rustOut, attachmentEchoSortedOrder(), "the generated Rust codec decodes the attachment map into a sorted-key container"},
-		{"typescript", tsOut, attachmentEchoAuthorOrder(), "a TypeScript object literal keeps the key order the JSON document carried"},
+		{"rust", rustOut, attachmentEchoAuthorOrder(), "the generated Rust codec decodes the attachment map into its order-keeping container"},
+		{"typescript", tsOut, attachmentEchoAuthorOrder(), "the generated TypeScript codec reads the attachment map in member order into a Map"},
 	} {
 		if len(tc.out.Files) != 2 {
 			t.Fatalf("%s: expected exactly two rendered files; got %d", tc.name, len(tc.out.Files))
@@ -266,11 +251,10 @@ func TestRenderSocketParity_RustTypeScript(t *testing.T) {
 		t.Fatalf("render-socket parity mismatch between Rust and TypeScript:\n rust = %q\n ts   = %q", rustNodeEcho, tsNodeEcho)
 	}
 
-	// The render facts each fixture reports are compared byte for byte, unlike the
-	// attachment echo above: a fact's value crosses as the JSON its guest wrote, so
-	// two guests writing the same value produce the same bytes whatever their
-	// language's map container does — which is what lets a provider fix the order
-	// of a value's keys itself. Both fixtures list their facts out of name order,
+	// The render facts each fixture reports are compared byte for byte: a fact's
+	// value crosses as the JSON its guest wrote, so two guests writing the same
+	// value produce the same bytes whatever their language's map container does —
+	// which is what lets a provider fix the order of a value's keys itself. Both fixtures list their facts out of name order,
 	// report every value as a list, and write the echoed node's keys out of key
 	// order, so a decode that sorted either would fail here.
 	wantFacts := []struct{ name, value string }{

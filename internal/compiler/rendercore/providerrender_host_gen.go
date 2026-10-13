@@ -739,7 +739,7 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"values\":")
-		if enc, err := json.Marshal(t.Values); err != nil {
+		if enc, err := t.Values.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -751,7 +751,7 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"features\":")
-		if enc, err := json.Marshal(t.Features); err != nil {
+		if enc, err := t.Features.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -800,7 +800,7 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"uses\":")
-		if enc, err := json.Marshal(t.Uses); err != nil {
+		if enc, err := t.Uses.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -929,9 +929,7 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Values); err != nil {
+				if err := t.Values.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -939,9 +937,7 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Features); err != nil {
+				if err := t.Features.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -976,9 +972,7 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Uses); err != nil {
+				if err := t.Uses.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -1221,7 +1215,7 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"derived_keys\":")
-		if enc, err := json.Marshal(t.DerivedKeys); err != nil {
+		if enc, err := t.DerivedKeys.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -1348,9 +1342,7 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.DerivedKeys); err != nil {
+				if err := t.DerivedKeys.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -2674,7 +2666,7 @@ func (t WorkloadProjection) MarshalJSON() ([]byte, error) {
 				writeJSONString(&buf, k)
 				buf.WriteByte(':')
 				mv := t.AttachmentProvides[k]
-				if enc, err := json.Marshal(mv); err != nil {
+				if enc, err := mv.MarshalJSON(); err != nil {
 					return nil, err
 				} else {
 					buf.Write(enc)
@@ -2731,9 +2723,7 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
 				} else {
-					dec2 := json.NewDecoder(bytes.NewReader(raw))
-					dec2.UseNumber()
-					if err := dec2.Decode(&mv); err != nil {
+					if err := mv.UnmarshalJSON(raw); err != nil {
 						return err
 					}
 				}
@@ -3342,7 +3332,7 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"annotations\":")
-		if enc, err := json.Marshal(t.Annotations); err != nil {
+		if enc, err := t.Annotations.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -3362,7 +3352,7 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"values\":")
-		if enc, err := json.Marshal(t.Values); err != nil {
+		if enc, err := t.Values.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -3422,9 +3412,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Annotations); err != nil {
+				if err := t.Annotations.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -3438,9 +3426,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Values); err != nil {
+				if err := t.Values.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -3568,7 +3554,7 @@ func (t SubChart) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"values\":")
-		if enc, err := json.Marshal(t.Values); err != nil {
+		if enc, err := t.Values.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -3616,9 +3602,7 @@ func (t *SubChart) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Values); err != nil {
+				if err := t.Values.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -4259,7 +4243,7 @@ func (t BoundaryEnvOverridesInput) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"infra\":")
-		if enc, err := json.Marshal(t.Infra); err != nil {
+		if enc, err := t.Infra.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -4308,9 +4292,7 @@ func (t *BoundaryEnvOverridesInput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Infra); err != nil {
+				if err := t.Infra.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -5179,7 +5161,7 @@ func (t LinkEdge) MarshalJSON() ([]byte, error) {
 	}
 	first = false
 	buf.WriteString("\"provides\":")
-	if enc, err := json.Marshal(t.Provides); err != nil {
+	if enc, err := t.Provides.MarshalJSON(); err != nil {
 		return nil, err
 	} else {
 		buf.Write(enc)
@@ -5189,7 +5171,7 @@ func (t LinkEdge) MarshalJSON() ([]byte, error) {
 	}
 	first = false
 	buf.WriteString("\"inject\":")
-	if enc, err := json.Marshal(t.Inject); err != nil {
+	if enc, err := t.Inject.MarshalJSON(); err != nil {
 		return nil, err
 	} else {
 		buf.Write(enc)
@@ -5280,9 +5262,7 @@ func (t *LinkEdge) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Provides); err != nil {
+				if err := t.Provides.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -5290,9 +5270,7 @@ func (t *LinkEdge) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Inject); err != nil {
+				if err := t.Inject.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -6200,52 +6178,40 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.Type)
 	if !t.Uses.IsZero() {
 		dst = appendCBORTextString(dst, "uses")
-		{
-			keys := t.Uses.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Uses.Get(k)
-				dst = appendCBORHead(dst, 4, uint64(len(mv)))
-				for i := range mv {
-					ev := mv[i]
-					dst = appendCBORTextString(dst, ev)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Uses.Len()))
+		for k, mv := range t.Uses.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORHead(dst, 4, uint64(len(mv)))
+			for i := range mv {
+				ev := mv[i]
+				dst = appendCBORTextString(dst, ev)
 			}
 		}
 	}
 	if !t.Values.IsZero() {
 		dst = appendCBORTextString(dst, "values")
-		{
-			keys := t.Values.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Values.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Values.Len()))
+		for k, mv := range t.Values.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
 	if !t.Features.IsZero() {
 		dst = appendCBORTextString(dst, "features")
-		{
-			keys := t.Features.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Features.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Features.Len()))
+		for k, mv := range t.Features.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -6356,15 +6322,18 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 			}
 		case "values":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -6382,15 +6351,18 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 			}
 		case "features":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[types.IRFeatureEntry]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv types.IRFeatureEntry
 					if raw, err := dec.readByteString(); err != nil {
@@ -6436,15 +6408,18 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 			}
 		case "uses":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[[]string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv []string
 					{
@@ -6740,18 +6715,14 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.DerivedKeys.IsZero() {
 		dst = appendCBORTextString(dst, "derived_keys")
-		{
-			keys := t.DerivedKeys.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.DerivedKeys.Get(k)
-				dst = appendCBORHead(dst, 4, uint64(len(mv)))
-				for i := range mv {
-					ev := mv[i]
-					dst = appendCBORTextString(dst, ev)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.DerivedKeys.Len()))
+		for k, mv := range t.DerivedKeys.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORHead(dst, 4, uint64(len(mv)))
+			for i := range mv {
+				ev := mv[i]
+				dst = appendCBORTextString(dst, ev)
 			}
 		}
 	}
@@ -6812,15 +6783,18 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 			}
 		case "derived_keys":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[[]string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv []string
 					{
@@ -8113,15 +8087,11 @@ func (t WorkloadProjection) appendCBOR(dst []byte) ([]byte, error) {
 			for _, k := range keys {
 				dst = appendCBORTextString(dst, k)
 				mv := t.AttachmentProvides[k]
-				{
-					keys := mv.Keys()
-					sortCBORKeys(keys)
-					dst = appendCBORHead(dst, 5, uint64(len(keys)))
-					for _, k := range keys {
-						dst = appendCBORTextString(dst, k)
-						mv, _ := mv.Get(k)
-						dst = appendCBORTextString(dst, mv)
-					}
+				dst = appendCBORHead(dst, 4, uint64(mv.Len()))
+				for k, mv := range mv.All() {
+					dst = appendCBORHead(dst, 4, 2)
+					dst = appendCBORTextString(dst, k)
+					dst = appendCBORTextString(dst, mv)
 				}
 			}
 		}
@@ -8177,15 +8147,18 @@ func (t *WorkloadProjection) decodeCBOR(dec *cborDec) error {
 					}
 					var mv types.OrderedMap[string]
 					{
-						mn, err := dec.readMapHeader()
+						mn, err := dec.readArrayHeader()
 						if err != nil {
 							return err
 						}
 						var om types.OrderedMap[string]
 						for mi := 0; mi < mn; mi++ {
-							mk, err := dec.readTextString()
+							mk, err := dec.readEntryKey()
 							if err != nil {
 								return err
+							}
+							if _, dup := om.Get(mk); dup {
+								return duplicateKeyError(mk)
 							}
 							var mv string
 							if s, err := dec.readTextString(); err != nil {
@@ -8715,18 +8688,14 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.Type)
 	if !t.Values.IsZero() {
 		dst = appendCBORTextString(dst, "values")
-		{
-			keys := t.Values.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Values.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Values.Len()))
+		for k, mv := range t.Values.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -8740,15 +8709,11 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.Annotations.IsZero() {
 		dst = appendCBORTextString(dst, "annotations")
-		{
-			keys := t.Annotations.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Annotations.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.Annotations.Len()))
+		for k, mv := range t.Annotations.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if t.OutputDirectory != "" {
@@ -8810,15 +8775,18 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "annotations":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -8838,15 +8806,18 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "values":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -8978,18 +8949,14 @@ func (t SubChart) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORHead(dst, 5, uint64(n))
 	if !t.Values.IsZero() {
 		dst = appendCBORTextString(dst, "values")
-		{
-			keys := t.Values.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Values.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Values.Len()))
+		for k, mv := range t.Values.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -9038,15 +9005,18 @@ func (t *SubChart) decodeCBOR(dec *cborDec) error {
 			}
 		case "values":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -9658,18 +9628,14 @@ func (t BoundaryEnvOverridesInput) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORHead(dst, 5, uint64(n))
 	if !t.Infra.IsZero() {
 		dst = appendCBORTextString(dst, "infra")
-		{
-			keys := t.Infra.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Infra.Get(k)
-				if raw, mErr := json.Marshal(mv); mErr != nil {
-					return nil, mErr
-				} else {
-					dst = appendCBORByteString(dst, raw)
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.Infra.Len()))
+		for k, mv := range t.Infra.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
 			}
 		}
 	}
@@ -9730,15 +9696,18 @@ func (t *BoundaryEnvOverridesInput) decodeCBOR(dec *cborDec) error {
 			}
 		case "infra":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
@@ -10522,23 +10491,15 @@ func (t LinkEdge) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "inject")
-	{
-		keys := t.Inject.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
+	dst = appendCBORHead(dst, 4, uint64(t.Inject.Len()))
+	for k, mv := range t.Inject.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORHead(dst, 4, uint64(mv.Len()))
+		for k, mv := range mv.All() {
+			dst = appendCBORHead(dst, 4, 2)
 			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Inject.Get(k)
-			{
-				keys := mv.Keys()
-				sortCBORKeys(keys)
-				dst = appendCBORHead(dst, 5, uint64(len(keys)))
-				for _, k := range keys {
-					dst = appendCBORTextString(dst, k)
-					mv, _ := mv.Get(k)
-					dst = appendCBORTextString(dst, mv)
-				}
-			}
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	dst = appendCBORTextString(dst, "socket")
@@ -10552,15 +10513,11 @@ func (t LinkEdge) appendCBOR(dst []byte) ([]byte, error) {
 		return nil, err
 	}
 	dst = appendCBORTextString(dst, "provides")
-	{
-		keys := t.Provides.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Provides.Get(k)
-			dst = appendCBORTextString(dst, mv)
-		}
+	dst = appendCBORHead(dst, 4, uint64(t.Provides.Len()))
+	for k, mv := range t.Provides.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORTextString(dst, mv)
 	}
 	if len(t.SourceAnnotations) != 0 {
 		dst = appendCBORTextString(dst, "source_annotations")
@@ -10675,15 +10632,18 @@ func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
 			}
 		case "provides":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -10697,27 +10657,33 @@ func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
 			}
 		case "inject":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[types.OrderedMap[string]]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
 					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
+					}
 					var mv types.OrderedMap[string]
 					{
-						mn, err := dec.readMapHeader()
+						mn, err := dec.readArrayHeader()
 						if err != nil {
 							return err
 						}
 						var om types.OrderedMap[string]
 						for mi := 0; mi < mn; mi++ {
-							mk, err := dec.readTextString()
+							mk, err := dec.readEntryKey()
 							if err != nil {
 								return err
+							}
+							if _, dup := om.Get(mk); dup {
+								return duplicateKeyError(mk)
 							}
 							var mv string
 							if s, err := dec.readTextString(); err != nil {
@@ -11856,6 +11822,27 @@ func (d *cborDec) readArrayHeader() (int, error) {
 		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
 	}
 	return int(arg), nil
+}
+
+// readEntryKey reads the start of one entry of an order-preserving map's array
+// form — a two-element array whose first element is the text-string key — and
+// returns the key, leaving the value as the next item. An entry of any other
+// shape is refused.
+func (d *cborDec) readEntryKey() (string, error) {
+	n, err := d.readArrayHeader()
+	if err != nil {
+		return "", err
+	}
+	if n != 2 {
+		return "", fmt.Errorf("abi: cbor: an order-preserving map entry holds %d items, want 2", n)
+	}
+	return d.readTextString()
+}
+
+// duplicateKeyError is the refusal of an encoded order-preserving map that
+// repeats a key, naming the key.
+func duplicateKeyError(k string) error {
+	return fmt.Errorf("abi: duplicate key %q", k)
 }
 
 func (d *cborDec) readTextString() (string, error) {

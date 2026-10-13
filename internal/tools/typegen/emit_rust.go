@@ -13,8 +13,11 @@ import (
 // is serde_json itself; the generated code shapes the types so serde_json's
 // output is byte-identical to the Go reflect-free codec:
 //
-//   - map fields use BTreeMap so serde_json serializes keys in sorted order,
-//     matching the Go codec's sort.Strings(keys) determinism;
+//   - plain map fields use BTreeMap so serde_json serializes keys in sorted
+//     order, matching the Go codec's sort.Strings(keys) determinism;
+//   - a map the schema marks order-preserving uses the crate's own OrderedMap,
+//     whose serde form is an object written and read in the map's order, so a
+//     guest receives and returns the order the wire carries;
 //   - opaque (`any` / json.RawMessage) values carry as Box<RawValue> so the
 //     original bytes pass through verbatim, never re-sorted;
 //   - non-required fields carry #[serde(default, skip_serializing_if = ...)] so
@@ -74,8 +77,8 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	}
 	// The canonical-CBOR codec impls, parallel to the serde structs, for a guest
 	// target. Appended after the structs; they reference the shared cbor_gen
-	// module as crate::cbor_gen::* and add no new imports beyond BTreeMap (which a
-	// map-bearing struct already declares).
+	// module as crate::cbor_gen::* and add no new imports beyond BTreeMap and
+	// OrderedMap (which a struct holding either already declares).
 	if t.emitsCBOR() {
 		structs.WriteString("\n")
 		for _, d := range defs {
@@ -94,6 +97,9 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	}
 	if strings.Contains(structSrc, "BTreeMap<") {
 		body.WriteString("use std::collections::BTreeMap;\n")
+	}
+	if strings.Contains(structSrc, "OrderedMap<") {
+		body.WriteString("use crate::OrderedMap;\n")
 	}
 	// A field typed as a sibling-codec type (externalDefTypes) imports it from the
 	// crate root, where lib.rs re-exports every generated module's types.
@@ -195,7 +201,8 @@ func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map
 // non-required opaque value (json.RawMessage / any) has no native empty form, so
 // it wraps in Option<Box<RawValue>> and is omitted when None — matching the Go
 // codec's omit-when-empty on a json.RawMessage field. Every other shape carries
-// its own empty notion (String::is_empty, Vec::is_empty, BTreeMap::is_empty) or
+// its own empty notion (String::is_empty, Vec::is_empty, BTreeMap::is_empty,
+// OrderedMap::is_empty) or
 // is a struct value (always emitted, matching Go's omitempty no-op on a struct),
 // so it uses the plain translation.
 func rustFieldType(f codecField, defTypes map[string]bool) string {
@@ -275,6 +282,8 @@ func rustSkipPredicate(rustTy string) string {
 		return "is_default"
 	case strings.HasPrefix(rustTy, "BTreeMap<"):
 		return "BTreeMap::is_empty"
+	case strings.HasPrefix(rustTy, "OrderedMap<"):
+		return "OrderedMap::is_empty"
 	case strings.HasPrefix(rustTy, "Vec<"):
 		return "Vec::is_empty"
 	case strings.HasPrefix(rustTy, "Option<"):
@@ -287,8 +296,12 @@ func rustSkipPredicate(rustTy string) string {
 // goTypeToRust translates a resolved Go-vocabulary type string (the same
 // spelling the Go backend consumes) into the equivalent Rust type. The
 // vocabulary has already rewritten host spellings to guest spellings
-// (map[string]X, json.RawMessage, scalars); this function maps those to Rust.
+// (OrderedMap[X], map[string]X, json.RawMessage, scalars); this function maps
+// those to Rust. An order-preserving container is recognised through the same
+// predicate the Go backend asks, so the two cannot disagree about which fields
+// keep their order.
 //
+//   - OrderedMap[V] → OrderedMap<RustV> (the crate's order-keeping container)
 //   - map[string]V → BTreeMap<String, RustV> (sorted-key serialize)
 //   - []V          → Vec<RustV>
 //   - json.RawMessage / any / interface{} → Box<RawValue> (verbatim opaque)
@@ -296,6 +309,9 @@ func rustSkipPredicate(rustTy string) string {
 //   - string/bool/int → String/bool/i64
 //   - a def type name → itself
 func goTypeToRust(goType, _ string, defTypes map[string]bool) string {
+	if valType, ok := orderedMapValueType(goType); ok {
+		return "OrderedMap<" + goTypeToRust(valType, "", defTypes) + ">"
+	}
 	switch {
 	case goType == "string":
 		return "String"

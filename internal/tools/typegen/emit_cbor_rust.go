@@ -26,6 +26,10 @@ import (
 //     keys sort at runtime by their encoded text-key bytes — NOT by Rust's String
 //     Ord (which is plain lexicographic and disagrees with the CBOR length-first
 //     order), so the BTreeMap is re-sorted before emission;
+//   - an order-preserving map (the crate's OrderedMap) is a definite-length CBOR
+//     array of its entries in the map's order, each a two-element array of the
+//     text-string key and the value; decoding refuses an entry of any other
+//     shape and a key the array repeats;
 //   - a slice (Vec) is a definite-length CBOR array in element order;
 //   - integers use the shortest head; bools are fixed single bytes; text and byte
 //     strings use the shortest length head;
@@ -160,7 +164,7 @@ func rustOmitGuard(expr string, f codecField, defTypes map[string]bool) string {
 		return expr
 	case strings.HasPrefix(rustTy, "Vec<"):
 		return "!" + expr + ".is_empty()"
-	case strings.HasPrefix(rustTy, "BTreeMap<"):
+	case strings.HasPrefix(rustTy, "BTreeMap<"), strings.HasPrefix(rustTy, "OrderedMap<"):
 		return "!" + expr + ".is_empty()"
 	case strings.HasPrefix(rustTy, "Option<"):
 		return expr + ".is_some()"
@@ -263,6 +267,9 @@ func emitRustCBOREncodeRef(b *strings.Builder, src, goType, rustTy, indent strin
 		emitRustCBOREncodeRef(b, src, goType[1:], strings.TrimSuffix(strings.TrimPrefix(rustTy, "Option<"), ">"), indent, defTypes)
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%s%s.append_cbor(out)?;\n", indent, rustRefReceiver(src))
+	case isOrderedMapSpelling(goType):
+		valType, _ := orderedMapValueType(goType)
+		emitRustCBOREncodeOrderedMap(b, src, valType, goTypeToRust(valType, "", defTypes), indent, defTypes)
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		emitRustCBOREncodeMap(b, src, valType, goTypeToRust(valType, "", defTypes), indent, defTypes)
@@ -290,6 +297,22 @@ func emitRustCBOREncodeMap(b *strings.Builder, src, valType, valRust, indent str
 	fmt.Fprintf(b, "%s    for k in ks {\n", indent)
 	fmt.Fprintf(b, "%s        crate::cbor_gen::write_text(out, k);\n", indent)
 	fmt.Fprintf(b, "%s        let mv = &c[k];\n", indent)
+	emitRustCBOREncodeRef(b, "mv", valType, valRust, indent+"        ", defTypes)
+	fmt.Fprintf(b, "%s    }\n", indent)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// emitRustCBOREncodeOrderedMap appends an OrderedMap (referenced by src) in its
+// array form: an array head, then per entry in the map's order a two-element
+// array of the text-string key and the value encoded through its own reference.
+// The bindings live in a fresh block, so a nested container does not clash.
+func emitRustCBOREncodeOrderedMap(b *strings.Builder, src, valType, valRust, indent string, defTypes map[string]bool) {
+	fmt.Fprintf(b, "%s{\n", indent)
+	fmt.Fprintf(b, "%s    let c = %s;\n", indent, src)
+	fmt.Fprintf(b, "%s    crate::cbor_gen::write_head(out, 4, c.len() as u64);\n", indent)
+	fmt.Fprintf(b, "%s    for (k, mv) in c.iter() {\n", indent)
+	fmt.Fprintf(b, "%s        crate::cbor_gen::write_head(out, 4, 2);\n", indent)
+	fmt.Fprintf(b, "%s        crate::cbor_gen::write_text(out, k);\n", indent)
 	emitRustCBOREncodeRef(b, "mv", valType, valRust, indent+"        ", defTypes)
 	fmt.Fprintf(b, "%s    }\n", indent)
 	fmt.Fprintf(b, "%s}\n", indent)
@@ -352,6 +375,15 @@ func rustDecodeExpr(goType, rustTy string, defTypes map[string]bool) string {
 		return "Some(" + rustDecodeExpr(elem, inner, defTypes) + ")"
 	case defTypes[goType]:
 		return fmt.Sprintf("%s::decode_cbor_from(dec)?", goType)
+	case isOrderedMapSpelling(goType):
+		// Entries are read in wire order and inserted in that order through the
+		// container's crate-private insert, which refuses a key already present: an
+		// encoder of the array form never repeats one, so a repeat is malformed
+		// input rather than an update.
+		valType, _ := orderedMapValueType(goType)
+		valRust := goTypeToRust(valType, "", defTypes)
+		return fmt.Sprintf("{ let mn = dec.read_array_header()?; let mut m: OrderedMap<%s> = OrderedMap::new(); for _ in 0..mn { let mk = dec.read_entry_key()?; let mv = %s; m.insert_new(mk, mv).map_err(|k| crate::cbor_gen::CborError(format!(\"cbor: {}\", crate::orderedmap_gen::duplicate_key(&k))))?; } m }",
+			valRust, rustDecodeExpr(valType, valRust, defTypes))
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		valRust := goTypeToRust(valType, "", defTypes)
@@ -384,6 +416,8 @@ func rustEmptyInit(rustTy string) string {
 		return "Vec::new()"
 	case strings.HasPrefix(rustTy, "BTreeMap<"):
 		return "BTreeMap::new()"
+	case strings.HasPrefix(rustTy, "OrderedMap<"):
+		return "OrderedMap::new()"
 	case strings.HasPrefix(rustTy, "Option<"):
 		return "None"
 	default:
@@ -392,7 +426,8 @@ func rustEmptyInit(rustTy string) string {
 }
 
 // generateRustCBORHelpers produces the cbor_gen.rs helpers module: the shared
-// CBOR read/write machinery, the runtime key sort, the float16 conversions, and a
+// CBOR read/write machinery, the runtime key sort, the entry reader for an
+// order-preserving map's array form, the float16 conversions, and a
 // dependency-free base64 codec. Emitted once per crate; the per-type impls
 // reference it as crate::cbor_gen::*.
 func generateRustCBORHelpers(t codecTarget) ([]byte, error) {
@@ -743,6 +778,20 @@ impl<'a> CborDec<'a> {
             return Err(CborError(format!("cbor: expected array, got major {major}")));
         }
         Ok(arg as usize)
+    }
+
+    /// Reads the start of one entry of an order-preserving map's array form — a
+    /// two-element array whose first element is the text-string key — and returns
+    /// the key, leaving the value as the next item. An entry of any other shape
+    /// is refused.
+    pub(crate) fn read_entry_key(&mut self) -> Result<String, CborError> {
+        let n = self.read_array_header()?;
+        if n != 2 {
+            return Err(CborError(format!(
+                "cbor: an order-preserving map entry holds {n} items, want 2"
+            )));
+        }
+        self.read_text()
     }
 
     pub fn read_text(&mut self) -> Result<String, CborError> {

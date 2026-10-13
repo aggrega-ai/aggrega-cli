@@ -383,15 +383,11 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.Labels.IsZero() {
 		dst = appendCBORTextString(dst, "labels")
-		{
-			keys := t.Labels.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Labels.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.Labels.Len()))
+		for k, mv := range t.Labels.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if t.Origin != "" {
@@ -432,16 +428,12 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.InfraProvenance.IsZero() {
 		dst = appendCBORTextString(dst, "infra_provenance")
-		{
-			keys := t.InfraProvenance.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.InfraProvenance.Get(k)
-				if dst, err = mv.appendCBOR(dst); err != nil {
-					return nil, err
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.InfraProvenance.Len()))
+		for k, mv := range t.InfraProvenance.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if dst, err = mv.appendCBOR(dst); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -461,30 +453,22 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.ValuesProvenance.IsZero() {
 		dst = appendCBORTextString(dst, "values_provenance")
-		{
-			keys := t.ValuesProvenance.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.ValuesProvenance.Get(k)
-				if dst, err = mv.appendCBOR(dst); err != nil {
-					return nil, err
-				}
+		dst = appendCBORHead(dst, 4, uint64(t.ValuesProvenance.Len()))
+		for k, mv := range t.ValuesProvenance.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if dst, err = mv.appendCBOR(dst); err != nil {
+				return nil, err
 			}
 		}
 	}
 	if !t.CatalogAnnotations.IsZero() {
 		dst = appendCBORTextString(dst, "catalog_annotations")
-		{
-			keys := t.CatalogAnnotations.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.CatalogAnnotations.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.CatalogAnnotations.Len()))
+		for k, mv := range t.CatalogAnnotations.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if len(t.SensitivePayloadLeaves) != 0 {
@@ -530,15 +514,18 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 			}
 		case "labels":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -552,15 +539,18 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 			}
 		case "catalog_annotations":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -632,15 +622,18 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 			}
 		case "values_provenance":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[FieldProvenance]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv FieldProvenance
 					if err := (&mv).decodeCBOR(dec); err != nil {
@@ -652,15 +645,18 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 			}
 		case "infra_provenance":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[FieldProvenance]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv FieldProvenance
 					if err := (&mv).decodeCBOR(dec); err != nil {
@@ -1083,15 +1079,11 @@ func (t IRNode) appendCBOR(dst []byte) ([]byte, error) {
 		}
 	}
 	dst = appendCBORTextString(dst, "labels")
-	{
-		keys := t.Labels.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Labels.Get(k)
-			dst = appendCBORTextString(dst, mv)
-		}
+	dst = appendCBORHead(dst, 4, uint64(t.Labels.Len()))
+	for k, mv := range t.Labels.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORTextString(dst, mv)
 	}
 	dst = appendCBORTextString(dst, "component")
 	dst = appendCBORTextString(dst, t.Component)
@@ -1135,28 +1127,20 @@ func (t IRNode) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.ResolvedVersion)
 	if !t.CatalogAnnotations.IsZero() {
 		dst = appendCBORTextString(dst, "catalog_annotations")
-		{
-			keys := t.CatalogAnnotations.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.CatalogAnnotations.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.CatalogAnnotations.Len()))
+		for k, mv := range t.CatalogAnnotations.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if !t.ReleaseAnnotations.IsZero() {
 		dst = appendCBORTextString(dst, "release_annotations")
-		{
-			keys := t.ReleaseAnnotations.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.ReleaseAnnotations.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.ReleaseAnnotations.Len()))
+		for k, mv := range t.ReleaseAnnotations.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if t.SynthesizedBoundary != false {
@@ -1165,15 +1149,11 @@ func (t IRNode) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	if !t.AggregateAnnotations.IsZero() {
 		dst = appendCBORTextString(dst, "aggregate_annotations")
-		{
-			keys := t.AggregateAnnotations.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.AggregateAnnotations.Get(k)
-				dst = appendCBORTextString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.AggregateAnnotations.Len()))
+		for k, mv := range t.AggregateAnnotations.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORTextString(dst, mv)
 		}
 	}
 	if t.SynthesizedSubsystem != false {
@@ -1217,15 +1197,18 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "labels":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -1289,15 +1272,18 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "catalog_annotations":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -1311,15 +1297,18 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "release_annotations":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -1333,15 +1322,18 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 			}
 		case "aggregate_annotations":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[string]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv string
 					if s, err := dec.readTextString(); err != nil {
@@ -1833,16 +1825,12 @@ func (t IRSpec) appendCBOR(dst []byte) ([]byte, error) {
 		}
 	}
 	dst = appendCBORTextString(dst, "nodes")
-	{
-		keys := t.Nodes.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Nodes.Get(k)
-			if dst, err = mv.appendCBOR(dst); err != nil {
-				return nil, err
-			}
+	dst = appendCBORHead(dst, 4, uint64(t.Nodes.Len()))
+	for k, mv := range t.Nodes.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		if dst, err = mv.appendCBOR(dst); err != nil {
+			return nil, err
 		}
 	}
 	dst = appendCBORTextString(dst, "provenance")
@@ -1850,70 +1838,46 @@ func (t IRSpec) appendCBOR(dst []byte) ([]byte, error) {
 		return nil, err
 	}
 	dst = appendCBORTextString(dst, "infra_mapping")
-	{
-		keys := t.InfraMapping.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.InfraMapping.Get(k)
-			dst = appendCBORByteString(dst, mv)
-		}
+	dst = appendCBORHead(dst, 4, uint64(t.InfraMapping.Len()))
+	for k, mv := range t.InfraMapping.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORByteString(dst, mv)
 	}
 	dst = appendCBORTextString(dst, "values_mapping")
-	{
-		keys := t.ValuesMapping.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.ValuesMapping.Get(k)
-			dst = appendCBORByteString(dst, mv)
-		}
+	dst = appendCBORHead(dst, 4, uint64(t.ValuesMapping.Len()))
+	for k, mv := range t.ValuesMapping.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORByteString(dst, mv)
 	}
 	if !t.BoundaryFeatures.IsZero() {
 		dst = appendCBORTextString(dst, "boundary_features")
-		{
-			keys := t.BoundaryFeatures.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
+		dst = appendCBORHead(dst, 4, uint64(t.BoundaryFeatures.Len()))
+		for k, mv := range t.BoundaryFeatures.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORHead(dst, 4, uint64(mv.Len()))
+			for k, mv := range mv.All() {
+				dst = appendCBORHead(dst, 4, 2)
 				dst = appendCBORTextString(dst, k)
-				mv, _ := t.BoundaryFeatures.Get(k)
-				{
-					keys := mv.Keys()
-					sortCBORKeys(keys)
-					dst = appendCBORHead(dst, 5, uint64(len(keys)))
-					for _, k := range keys {
-						dst = appendCBORTextString(dst, k)
-						mv, _ := mv.Get(k)
-						if dst, err = mv.appendCBOR(dst); err != nil {
-							return nil, err
-						}
-					}
+				if dst, err = mv.appendCBOR(dst); err != nil {
+					return nil, err
 				}
 			}
 		}
 	}
 	dst = appendCBORTextString(dst, "feature_values_mapping")
-	{
-		keys := t.FeatureValuesMapping.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
+	dst = appendCBORHead(dst, 4, uint64(t.FeatureValuesMapping.Len()))
+	for k, mv := range t.FeatureValuesMapping.All() {
+		dst = appendCBORHead(dst, 4, 2)
+		dst = appendCBORTextString(dst, k)
+		dst = appendCBORHead(dst, 4, uint64(mv.Len()))
+		for k, mv := range mv.All() {
+			dst = appendCBORHead(dst, 4, 2)
 			dst = appendCBORTextString(dst, k)
-			mv, _ := t.FeatureValuesMapping.Get(k)
-			{
-				keys := mv.Keys()
-				sortCBORKeys(keys)
-				dst = appendCBORHead(dst, 5, uint64(len(keys)))
-				for _, k := range keys {
-					dst = appendCBORTextString(dst, k)
-					mv, _ := mv.Get(k)
-					if dst, err = mv.appendCBOR(dst); err != nil {
-						return nil, err
-					}
-				}
+			if dst, err = mv.appendCBOR(dst); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -1940,15 +1904,18 @@ func (t *IRSpec) decodeCBOR(dec *cborDec) error {
 		switch key {
 		case "nodes":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[IRNode]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv IRNode
 					if err := (&mv).decodeCBOR(dec); err != nil {
@@ -1976,15 +1943,18 @@ func (t *IRSpec) decodeCBOR(dec *cborDec) error {
 			}
 		case "values_mapping":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[json.RawMessage]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv json.RawMessage
 					if v, err := dec.readByteString(); err != nil {
@@ -1998,15 +1968,18 @@ func (t *IRSpec) decodeCBOR(dec *cborDec) error {
 			}
 		case "infra_mapping":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[json.RawMessage]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv json.RawMessage
 					if v, err := dec.readByteString(); err != nil {
@@ -2020,27 +1993,33 @@ func (t *IRSpec) decodeCBOR(dec *cborDec) error {
 			}
 		case "feature_values_mapping":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[OrderedMap[IRFeatureEntry]]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
 					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
+					}
 					var mv OrderedMap[IRFeatureEntry]
 					{
-						mn, err := dec.readMapHeader()
+						mn, err := dec.readArrayHeader()
 						if err != nil {
 							return err
 						}
 						var om OrderedMap[IRFeatureEntry]
 						for mi := 0; mi < mn; mi++ {
-							mk, err := dec.readTextString()
+							mk, err := dec.readEntryKey()
 							if err != nil {
 								return err
+							}
+							if _, dup := om.Get(mk); dup {
+								return duplicateKeyError(mk)
 							}
 							var mv IRFeatureEntry
 							if err := (&mv).decodeCBOR(dec); err != nil {
@@ -2056,27 +2035,33 @@ func (t *IRSpec) decodeCBOR(dec *cborDec) error {
 			}
 		case "boundary_features":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om OrderedMap[OrderedMap[IRBoundaryFeature]]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
 					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
+					}
 					var mv OrderedMap[IRBoundaryFeature]
 					{
-						mn, err := dec.readMapHeader()
+						mn, err := dec.readArrayHeader()
 						if err != nil {
 							return err
 						}
 						var om OrderedMap[IRBoundaryFeature]
 						for mi := 0; mi < mn; mi++ {
-							mk, err := dec.readTextString()
+							mk, err := dec.readEntryKey()
 							if err != nil {
 								return err
+							}
+							if _, dup := om.Get(mk); dup {
+								return duplicateKeyError(mk)
 							}
 							var mv IRBoundaryFeature
 							if err := (&mv).decodeCBOR(dec); err != nil {
@@ -2462,6 +2447,27 @@ func (d *cborDec) readArrayHeader() (int, error) {
 		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
 	}
 	return int(arg), nil
+}
+
+// readEntryKey reads the start of one entry of an order-preserving map's array
+// form — a two-element array whose first element is the text-string key — and
+// returns the key, leaving the value as the next item. An entry of any other
+// shape is refused.
+func (d *cborDec) readEntryKey() (string, error) {
+	n, err := d.readArrayHeader()
+	if err != nil {
+		return "", err
+	}
+	if n != 2 {
+		return "", fmt.Errorf("abi: cbor: an order-preserving map entry holds %d items, want 2", n)
+	}
+	return d.readTextString()
+}
+
+// duplicateKeyError is the refusal of an encoded order-preserving map that
+// repeats a key, naming the key.
+func duplicateKeyError(k string) error {
+	return fmt.Errorf("abi: duplicate key %q", k)
 }
 
 func (d *cborDec) readTextString() (string, error) {

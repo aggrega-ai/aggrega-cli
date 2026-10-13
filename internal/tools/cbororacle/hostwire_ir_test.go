@@ -32,24 +32,25 @@ import (
 //     producing cannot.
 //   - The bytes decode back through the compiler-side decoder, and the decode
 //     re-encodes identically.
-//   - Author order survives the wire in the payloads that carry it verbatim, and
-//     does not survive in the ones the canonical encoding sorts.
+//   - Author order survives the wire in every container that holds it: inside the
+//     payloads carried verbatim, and in the array form of every container the
+//     schema marks order-preserving.
 //
 // The fixture inserts keys in an order that is neither the canonical order nor the
-// alphabetical one, so an encoder that sorted where it must not — or carried
-// insertion order where it must not — produces different bytes here rather than
-// agreeing by accident. TestHostWireIR_FixtureOrderIsDiscriminating pins that
-// property of the fixture itself.
+// alphabetical one, so an encoder that sorted where it must not produces different
+// bytes here rather than agreeing by accident.
+// TestHostWireIR_FixtureOrderIsDiscriminating pins that property of the fixture
+// itself.
 
 // irFixture builds an IR graph exercising every field whose value is carried
 // verbatim as opaque bytes — the node's self-inject block and uses block, an
 // edge's per-connection values, infra and inject, an attachment's values, infra,
 // inject and sensitive-inject, and a boundary attachment's infra — alongside the
 // structurally encoded order-preserving containers beside them. The two groups
-// behave differently on the wire, which is the subject of
-// TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads. It also carries an
-// attachment written on the node's connection, so the connection that attachment
-// names crosses the wire on both sides.
+// carry their order on the wire in two different ways, which is the subject of
+// TestHostWireIR_AuthorOrderSurvivesInEveryOrderPreservingContainer. It also
+// carries an attachment written on the node's connection, so the connection that
+// attachment names crosses the wire on both sides.
 func irFixture(t *testing.T) types.IRGraph {
 	t.Helper()
 
@@ -68,7 +69,7 @@ func irFixture(t *testing.T) types.IRGraph {
 		SensitiveInject: om[types.OrderedMap[string]](t,
 			"ZED", om[string](t, "TOKEN", "api_token"),
 		),
-		// Structurally encoded: the canonical encoding sorts these.
+		// Structurally encoded, in the array form that keeps their order.
 		Labels:                 om[string](t, "zeta", "z", "b", "1"),
 		CatalogAnnotations:     om[string](t, "zzz", "3", "a", "1"),
 		ValuesProvenance:       om[types.FieldProvenance](t, "zulu", types.FieldProvenance{Origin: types.OriginExplicit}, "b", types.FieldProvenance{Origin: types.OriginExplicit}),
@@ -135,7 +136,8 @@ func irFixture(t *testing.T) types.IRGraph {
 		Kind:       types.IRKind,
 		Metadata:   types.IRMetadata{AggregateName: "shop"},
 		Spec: types.IRSpec{
-			// Structurally encoded containers, keyed out of canonical order.
+			// Structurally encoded containers, keyed out of canonical order, which
+			// the array form carries as authored.
 			Nodes:         om[types.IRNode](t, "zeta/web", node, "db", types.IRNode{Component: "core/postgres", ResolvedVersion: "15.1.0", Labels: om[string](t, "tier", "data")}),
 			Edges:         []types.IREdge{edge},
 			ValuesMapping: om[json.RawMessage](t, "zeta/web", json.RawMessage(`{"replicas":2}`), "db", json.RawMessage(`{}`)),
@@ -214,9 +216,9 @@ func TestHostWireIR_MatchesFrozenVector(t *testing.T) {
 // TestHostGuestWireParity_IRGraph asserts the two sides of the wire speak the
 // same bytes for a graph carrying every verbatim payload the schema declares.
 // The sides do not hold the same Go types — an order-preserving container here is
-// a plain string-keyed map there, and each verbatim payload here is an opaque
-// document there — so agreement is a property to assert rather than one the
-// shared schema delivers by itself.
+// the compiler's own and there the plugin binding's, and each verbatim payload
+// here is an opaque document there — so agreement is a property to assert rather
+// than one the shared schema delivers by itself.
 //
 // The fixture is richer than the frozen vector on purpose: the vector carries the
 // shape a build produces, and this carries every field at once, including the
@@ -299,33 +301,23 @@ func TestHostGuestWireParity_IRGraph(t *testing.T) {
 	}
 }
 
-// TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads records what a
-// decode of an IR graph does and does not recover, because the two halves of the
-// graph behave differently and the difference is not visible from either half
-// alone.
+// TestHostWireIR_AuthorOrderSurvivesInEveryOrderPreservingContainer records what a
+// decode of an IR graph recovers, for both of the ways the graph carries an order.
 //
 // A verbatim payload — a node's self-inject and uses blocks, an edge's values,
 // infra and inject, an attachment's values, infra, inject and sensitive-inject, a
 // boundary attachment's infra — is carried as one opaque document, so the order
 // its author wrote lives inside those bytes and comes back out of them unchanged.
 //
-// Every other order-preserving container is encoded structurally, and the
-// canonical encoding sorts a map's keys. That is the encoding's rule and the
-// reason the bytes are identical across runs and across languages. It has a
-// consequence, asserted here so it is measured rather than assumed: a decode
-// rebuilds those containers in the wire's canonical order, so the author's order
-// is not recoverable from the wire. The assertion below records that consequence.
-// It is not a property to want, to rely on, or to preserve for its own sake — the
-// canonical order is wanted, and this is what it costs.
-//
-// 🔴 Nothing in a build decodes an IR graph on the compiler side, which is why the
-// consequence is inert today. It stops being inert the moment a compiler-side path
-// decodes a graph and feeds the result to rendering: the rendered artifacts would
-// then carry canonical order where the author's order was intended, which is a
-// different output for the same input. Whoever wires such a path owes either a
-// decode that does not reach rendered artifacts, or an order-preserving array form
-// for these fields — a change both sides of the wire have to make together.
-func TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads(t *testing.T) {
+// Every other order-preserving container is encoded structurally, in the array
+// form: a list of its entries in the order the container holds them. The order is
+// part of the container's content, so the encoding writes it as content, and the
+// bytes are still identical across runs and across languages because identical
+// input holds identical order. A decode rebuilds each such container in the order
+// the array carries, so the author's order is recoverable from the wire at every
+// level, nested containers included — which is what makes a compiler-side decode
+// of a graph safe to feed to anything that renders.
+func TestHostWireIR_AuthorOrderSurvivesInEveryOrderPreservingContainer(t *testing.T) {
 	t.Parallel()
 
 	g := irFixture(t)
@@ -384,24 +376,24 @@ func TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads(t *testing.T) {
 		}
 	}
 
-	// The structurally encoded containers: the wire's canonical order, which is
-	// length-then-bytewise and is not the order the fixture authored. Recorded, not
-	// wanted; see this test's own documentation.
+	// The structurally encoded containers: author order as well, carried by the
+	// array form.
 	structural := []struct {
 		what string
 		keys []string
 		want []string
 	}{
-		{"node labels", node.Labels.Keys(), []string{"b", "zeta"}},
-		{"node catalog annotations", node.CatalogAnnotations.Keys(), []string{"a", "zzz"}},
-		{"attachment labels", obs.Labels.Keys(), []string{"b", "zeta"}},
-		{"attachment values provenance", obs.ValuesProvenance.Keys(), []string{"b", "zulu"}},
-		{"graph nodes", rt.Spec.Nodes.Keys(), []string{"db", "zeta/web"}},
-		{"values mapping", rt.Spec.ValuesMapping.Keys(), []string{"db", "zeta/web"}},
+		{"node labels", node.Labels.Keys(), []string{"zeta", "b"}},
+		{"node catalog annotations", node.CatalogAnnotations.Keys(), []string{"zzz", "a"}},
+		{"attachment labels", obs.Labels.Keys(), []string{"zeta", "b"}},
+		{"attachment values provenance", obs.ValuesProvenance.Keys(), []string{"zulu", "b"}},
+		{"graph nodes", rt.Spec.Nodes.Keys(), []string{"zeta/web", "db"}},
+		{"values mapping", rt.Spec.ValuesMapping.Keys(), []string{"zeta/web", "db"}},
 	}
 	for _, c := range structural {
 		if !sameKeys(c.keys, c.want) {
-			t.Errorf("%s came back as %v, want the wire's canonical order %v", c.what, c.keys, c.want)
+			t.Errorf("%s came back as %v, want the author's order %v — the array form carries the order the container holds",
+				c.what, c.keys, c.want)
 		}
 	}
 }
@@ -409,9 +401,9 @@ func TestHostWireIR_AuthorOrderSurvivesOnlyInTheVerbatimPayloads(t *testing.T) {
 // TestHostWireIR_FixtureOrderIsDiscriminating calibrates the order assertions
 // above. Each of them compares a decoded key sequence against an expected one, and
 // such a comparison proves nothing about where the order came from unless the
-// author's order and the wire's canonical order actually differ: where the two
-// coincide, an encoder that sorted a verbatim payload — or one that carried
-// insertion order into a structural map — would pass unnoticed.
+// author's order and the canonical sorted order actually differ: where the two
+// coincide, an encoder that sorted a verbatim payload or an order-preserving
+// container would pass unnoticed.
 //
 // So the fixture's own orders are checked here before the assertions that rest on
 // them are read as evidence. The canonical order is recomputed independently rather

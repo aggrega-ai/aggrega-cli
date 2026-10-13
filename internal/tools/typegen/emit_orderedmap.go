@@ -20,11 +20,14 @@ package main
 // map's order; and a repeated key refused, naming the key, with the same
 // sentence everywhere.
 //
-// Each also carries the unpublished entry point a generated decoder builds a map
-// through, refusing a repeated key as it goes: an unexported method in Go, a
-// crate-private method in Rust, and in TypeScript a module the package entry
-// does not re-export. The binding's own JSON decode uses it, so the refusal has
-// one home per language.
+// Each also carries the unpublished entry point a decoder builds a map through,
+// refusing a repeated key as it goes: an unexported method in Go, a crate-private
+// method in Rust, and in TypeScript a module the package entry does not
+// re-export. The binding's own JSON decode uses it, and so does the generated
+// Rust decode of the binary form. The Go container words its refusal through the
+// repeated-key error the package's shared CBOR helpers declare, which the
+// generated Go decode of the binary form returns too, so in each language the
+// two encodings refuse a repeat alike.
 
 // schemaFreeGenHeader is the provenance header of a generated file that reads no
 // schema. The comment syntax is shared by the three binding languages, so one
@@ -35,8 +38,8 @@ const schemaFreeGenHeader = "// SPDX-License-Identifier: Apache-2.0\n// Copyrigh
 
 // generateGoOrderedMap produces the Go binding's orderedmap_gen.go: the
 // order-keeping container and its JSON codec. It references the streaming JSON
-// helpers the package's helpers-bearing codec file declares, as every other codec
-// file in the package does.
+// helpers and the repeated-key error the package's helpers-bearing codec file
+// declares, as every other codec file in the package does.
 func generateGoOrderedMap(t codecTarget) ([]byte, error) {
 	return formatSource(schemaFreeGenHeader+"package "+t.pkg+"\n\n", goOrderedMapSrc)
 }
@@ -88,7 +91,9 @@ const goOrderedMapSrc = `import (
 // value whose type carries its own JSON codec, as every payload type in this
 // package does, and a string, boolean or number, are read and written directly;
 // a value of any other type is handed to encoding/json, which reads a number as
-// a json.Number.
+// a json.Number. On the binary encoding a generated codec writes a field of this
+// type as a list of key and value entries in the map's order, and refuses one
+// that repeats a key, naming the key.
 type OrderedMap[V any] struct {
 	entries *orderedEntries[V]
 }
@@ -248,7 +253,7 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 // a key is malformed rather than an update.
 func (m *OrderedMap[V]) setNew(k string, v V) error {
 	if _, ok := m.Get(k); ok {
-		return fmt.Errorf("abi: duplicate key %q", k)
+		return duplicateKeyError(k)
 	}
 	m.Set(k, v)
 	return nil
@@ -287,8 +292,11 @@ func writeOrderedValueJSON(buf *bytes.Buffer, v any) error {
 
 // readOrderedValueJSON reads the next JSON value from dec into dst, a pointer to
 // one value of an OrderedMap. A type carrying its own JSON codec is read through
-// it, and a scalar from its one token, so neither goes through encoding/json's
-// reflective decoder; any other type does, with numbers kept as json.Number.
+// it, and a scalar from its own text, so neither goes through encoding/json's
+// reflective decoder; any other type does, with numbers kept as json.Number. An
+// integer is parsed from the number's text rather than through a float, so every
+// value of its type reads back exactly, and a number with a fraction or an
+// exponent is refused rather than truncated.
 func readOrderedValueJSON(dec *json.Decoder, data []byte, dst any) error {
 	switch p := dst.(type) {
 	case json.Unmarshaler:
@@ -310,17 +318,17 @@ func readOrderedValueJSON(dec *json.Decoder, data []byte, dst any) error {
 		}
 		*p = b
 	case *int:
-		n, err := readInt(dec)
+		n, err := readOrderedIntJSON(dec, data, strconv.IntSize)
+		if err != nil {
+			return err
+		}
+		*p = int(n)
+	case *int64:
+		n, err := readOrderedIntJSON(dec, data, 64)
 		if err != nil {
 			return err
 		}
 		*p = n
-	case *int64:
-		f, err := readFloat(dec)
-		if err != nil {
-			return err
-		}
-		*p = int64(f)
 	case *float64:
 		f, err := readFloat(dec)
 		if err != nil {
@@ -337,6 +345,20 @@ func readOrderedValueJSON(dec *json.Decoder, data []byte, dst any) error {
 		return vdec.Decode(dst)
 	}
 	return nil
+}
+
+// readOrderedIntJSON reads the next JSON value from dec as an integer of the
+// given bit size, parsed from the number's own text.
+func readOrderedIntJSON(dec *json.Decoder, data []byte, bitSize int) (int64, error) {
+	raw, err := readRaw(dec, data)
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.ParseInt(string(raw), 10, bitSize)
+	if err != nil {
+		return 0, fmt.Errorf("abi: expected an integer, got %s", raw)
+	}
+	return n, nil
 }
 `
 
@@ -376,7 +398,9 @@ fn entry_ref<V>(entry: &(String, V)) -> (&String, &V) {
 ///
 /// Its serde form is a map whose entries are written in the map's order, which
 /// serde_json writes as an object. Deserializing reads the entries in the order
-/// they appear and refuses a map that repeats a key, naming the key.
+/// they appear and refuses a map that repeats a key, naming the key. On the
+/// binary encoding a generated codec writes a field of this type as a list of key
+/// and value entries in the map's order, and refuses one that repeats a key.
 #[derive(Clone)]
 pub struct OrderedMap<V> {
     entries: Vec<(String, V)>,
@@ -675,6 +699,49 @@ export function readOrderedObject<V>(text: string, value: (raw: string) => V): M
   readJSONMembers(text, (key, raw) => {
     if (out.has(key)) throw new Error("abi: duplicate key " + JSON.stringify(key));
     out.set(key, value(raw));
+  });
+  return out;
+}
+
+// readJSONArray reads the JSON array in text into an array, decoding each
+// element's raw text with element, in the order the elements are written. A
+// generated codec reads a list this way when its elements hold an
+// order-preserving map, so no element passes through JSON.parse whole. Text that
+// is not one JSON array, with nothing but whitespace around it, is refused.
+export function readJSONArray<E>(text: string, element: (raw: string) => E): E[] {
+  const out: E[] = [];
+  let i = skipWhitespace(text, 0);
+  if (text.charCodeAt(i) !== 0x5b) throw new Error("abi: expected a JSON array");
+  i = skipWhitespace(text, i + 1);
+  if (text.charCodeAt(i) === 0x5d) {
+    i = skipWhitespace(text, i + 1);
+  } else {
+    for (;;) {
+      const end = endOfValue(text, i);
+      out.push(element(text.slice(i, end)));
+      i = skipWhitespace(text, end);
+      const c = text.charCodeAt(i);
+      if (c === 0x5d) {
+        i = skipWhitespace(text, i + 1);
+        break;
+      }
+      if (c !== 0x2c) throw new Error("abi: expected ',' or ']' at offset " + i);
+      i = skipWhitespace(text, i + 1);
+    }
+  }
+  if (i !== text.length) throw new Error("abi: unexpected text after the JSON array at offset " + i);
+  return out;
+}
+
+// readPlainObject reads the JSON object in text into a plain object, decoding
+// each member's raw value text with value. A generated codec reads a plain map
+// this way when its values hold an order-preserving map: the plain map's own
+// order carries nothing, but its values' order does. As with JSON.parse, every
+// key becomes an own member, and a key the text repeats keeps its last value.
+export function readPlainObject<V>(text: string, value: (raw: string) => V): Record<string, V> {
+  const out: Record<string, V> = {};
+  readJSONMembers(text, (key, raw) => {
+    Object.defineProperty(out, key, { value: value(raw), enumerable: true, writable: true, configurable: true });
   });
   return out;
 }

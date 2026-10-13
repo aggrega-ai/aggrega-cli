@@ -162,6 +162,9 @@ func emitTSCBOREncodeValue(b *strings.Builder, acc, goType, indent string, defTy
 		emitTSCBOREncodeValue(b, acc, goType[1:], indent, defTypes, depth)
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sappendCBOR%s(out, %s);\n", indent, goType, acc)
+	case isOrderedMapSpelling(goType):
+		valType, _ := orderedMapValueType(goType)
+		emitTSCBOREncodeOrderedMap(b, acc, valType, indent, defTypes, depth)
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		emitTSCBOREncodeMap(b, acc, valType, indent, defTypes, depth)
@@ -187,6 +190,25 @@ func emitTSCBOREncodeMap(b *strings.Builder, acc, valType, indent string, defTyp
 	fmt.Fprintf(b, "%s  for (const %s of %s) {\n", indent, kk, ks)
 	fmt.Fprintf(b, "%s    writeText(out, %s);\n", indent, kk)
 	emitTSCBOREncodeValue(b, fmt.Sprintf("%s[%s]", m, kk), valType, indent+"    ", defTypes, depth+1)
+	fmt.Fprintf(b, "%s  }\n", indent)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// emitTSCBOREncodeOrderedMap appends a Map in the array form of an
+// order-preserving map: an array head, then per entry in the Map's insertion
+// order a two-element array of the text-string key and the value. The bindings
+// are depth-suffixed so a nested container does not shadow the enclosing one.
+func emitTSCBOREncodeOrderedMap(b *strings.Builder, acc, valType, indent string, defTypes map[string]bool, depth int) {
+	m := fmt.Sprintf("m%d", depth)
+	kk := fmt.Sprintf("kk%d", depth)
+	vv := fmt.Sprintf("vv%d", depth)
+	fmt.Fprintf(b, "%s{\n", indent)
+	fmt.Fprintf(b, "%s  const %s = %s;\n", indent, m, acc)
+	fmt.Fprintf(b, "%s  writeHead(out, 4, %s.size);\n", indent, m)
+	fmt.Fprintf(b, "%s  for (const [%s, %s] of %s) {\n", indent, kk, vv, m)
+	fmt.Fprintf(b, "%s    writeHead(out, 4, 2);\n", indent)
+	fmt.Fprintf(b, "%s    writeText(out, %s);\n", indent, kk)
+	emitTSCBOREncodeValue(b, vv, valType, indent+"    ", defTypes, depth+1)
 	fmt.Fprintf(b, "%s  }\n", indent)
 	fmt.Fprintf(b, "%s}\n", indent)
 }
@@ -226,6 +248,12 @@ func tsDecodeExpr(goType string, defTypes map[string]bool) string {
 		return tsDecodeExpr(goType[1:], defTypes)
 	case defTypes[goType]:
 		return fmt.Sprintf("decodeCBOR%sFrom(dec)", goType)
+	case isOrderedMapSpelling(goType):
+		// Entries are set in wire order, and a key the array repeats is refused:
+		// an encoder of the array form never writes one, so a repeat is malformed
+		// input rather than an update.
+		valType, _ := orderedMapValueType(goType)
+		return fmt.Sprintf("(() => { const m = new Map<string, any>(); const mn = dec.readArrayHeader(); for (let j = 0; j < mn; j++) { const mk = dec.readEntryKey(); if (m.has(mk)) throw duplicateKeyError(mk); m.set(mk, %s); } return m; })()", tsDecodeExpr(valType, defTypes))
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		return fmt.Sprintf("(() => { const m: any = {}; const mn = dec.readMapHeader(); for (let j = 0; j < mn; j++) { const mk = dec.readText(); m[mk] = %s; } return m; })()", tsDecodeExpr(valType, defTypes))
@@ -254,9 +282,10 @@ func tsCBORExternalImports(t codecTarget, structSrc string) string {
 }
 
 // generateTSCBORHelpers produces the cbor_gen.ts helpers module: the shared CBOR
-// read/write machinery, the runtime key sort, the float16 conversions, a
-// dependency-free base64 codec, and UTF-8 helpers. Emitted once per package; the
-// per-type codecs import it.
+// read/write machinery, the runtime key sort, the entry reader for an
+// order-preserving map's array form and its repeated-key refusal, the float16
+// conversions, a dependency-free base64 codec, and UTF-8 helpers. Emitted once
+// per package; the per-type codecs import it.
 func generateTSCBORHelpers(t codecTarget) ([]byte, error) {
 	return []byte(schemaFreeGenHeader + tsCBORHelpersSrc), nil
 }
@@ -466,6 +495,12 @@ export function sortKeys(keys: string[]): void {
   });
 }
 
+// duplicateKeyError is the refusal of an order-preserving map's array form that
+// repeats a key, naming the key.
+export function duplicateKeyError(k: string): Error {
+  return new Error("cbor: duplicate key " + JSON.stringify(k));
+}
+
 function b64Val(c: number): number {
   if (c >= 65 && c <= 90) return c - 65;
   if (c >= 97 && c <= 122) return c - 97 + 26;
@@ -577,6 +612,16 @@ export class CborDec {
     const [major, , arg] = this.readHead();
     if (major !== 4) throw new Error("cbor: expected array, got major " + major);
     return arg;
+  }
+
+  // readEntryKey reads the start of one entry of an order-preserving map's array
+  // form — a two-element array whose first element is the text-string key — and
+  // returns the key, leaving the value as the next item. An entry of any other
+  // shape is refused.
+  readEntryKey(): string {
+    const n = this.readArrayHeader();
+    if (n !== 2) throw new Error("cbor: an order-preserving map entry holds " + n + " items, want 2");
+    return this.readText();
   }
 
   readText(): string {

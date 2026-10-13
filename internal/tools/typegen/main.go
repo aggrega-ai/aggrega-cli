@@ -35,10 +35,13 @@
 // A target may carry a type vocabulary — a map that rewrites an
 // `x-aggrega-go-type` value before emission. A schema records host type
 // spellings; a target whose package cannot reference those spellings (a
-// cross-package opaque type, a host-only container) maps them to a neutral
-// spelling (e.g. an opaque host type to json.RawMessage, an order-preserving
-// host container to a plain map). Absence of an entry passes the annotation
-// value through verbatim.
+// cross-package opaque type, a host-qualified container) maps them to a neutral
+// spelling (e.g. an opaque host type to json.RawMessage, the host's qualified
+// order-preserving container to the destination package's own). Absence of an
+// entry passes the annotation value through verbatim. An entry may rewrite what
+// an order-preserving container holds but never the container itself: an entry
+// that would turn one into a plain map is refused at generation, because the
+// container's order is part of the wire contract the schema marks.
 //
 // Import resolution is mechanical and orthogonal to type emission: an emitted
 // type carrying a package selector (e.g. yaml.Node) is matched against the
@@ -305,11 +308,13 @@ const hostfuncErrorEnumDoc = "These consts are the single source of the host-fun
 //
 // lang selects the backend: "" or "go" emits the reflect-free Go codec
 // (Marshal/UnmarshalJSON); "rust" emits serde-derive structs (BTreeMap for
-// sorted map keys, RawValue for verbatim opaque carry); "ts" emits TypeScript
-// interfaces plus thin per-type sorting encoders. The Go, Rust, and TS codecs
-// produce byte-identical wire output from one schema: maps emit in sorted key
-// order and opaque values carry verbatim. A target that reads no schema — the
-// shared CBOR helpers, the order-keeping container of each binding language, the
+// sorted map keys, the crate's OrderedMap for an order-preserving one, RawValue
+// for verbatim opaque carry); "ts" emits TypeScript interfaces plus thin
+// per-type encoders and decoders. The Go, Rust, and TS codecs produce
+// byte-identical wire output from one schema: a plain map emits in sorted key
+// order, a map the schema marks order-preserving emits in the order it holds,
+// and opaque values carry verbatim. A target that reads no schema — the shared
+// CBOR helpers, the order-keeping container of each binding language, the
 // plugin-wire registry — carries a lang naming what it emits instead.
 type codecTarget struct {
 	schema     string
@@ -375,17 +380,16 @@ type codecTarget struct {
 	// Why the annotation cannot simply be corrected: for an opaque field the
 	// neutral spelling is the DELIBERATE one. Annotating such a field with its host
 	// spelling was measured and refused — the host codec would then encode it
-	// structurally, the counterpart would have to declare a typed map to decode
-	// that, and a counterpart's own canonical re-emission sorts keys, so author
-	// order would be lost on a path reaching rendered artifacts. The narrowed form
-	// ships: annotate the host spelling only outside the opaque set. So for the
-	// opaque set the schema states the wire and this table states the host, and the
-	// two are different facts rather than one of them being wrong.
+	// structurally, and the counterpart would have to declare a typed container to
+	// decode that. The narrowed form ships: annotate the host spelling only outside
+	// the opaque set. So for the opaque set the schema states the wire and this
+	// table states the host, and the two are different facts rather than one of
+	// them being wrong.
 	//
 	// It changes what the wire carries not at all. A listed field still rides as a
 	// CBOR byte-string of its verbatim JSON bytes, which for an order-preserving
 	// container is that container's own author-ordered encoding — so the order
-	// survives inside the bytes, which is the whole point of carrying it opaquely.
+	// survives inside the bytes.
 	// The declared type is read for ONE purpose: the omission decision, which has
 	// to be asked of the real type, since the emptiness of an order-preserving
 	// container is not the emptiness of a byte slice.
@@ -569,16 +573,16 @@ func (t codecTarget) emitsCBOR() bool {
 
 // frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
 // neutral, cycle-free guest vocabulary: an opaque cross-package host type
-// becomes json.RawMessage (verbatim passthrough preserves its bytes), and the
-// order-preserving host container becomes a plain map (key order is the
-// emitting host's concern; a guest that selects by content reads a map). With
-// this vocabulary the generated codec references only builtins, encoding/json,
-// and its own def-local types — no cross-package import, so the codec compiles
-// in a standalone, dependency-free module a Wasm guest can import directly.
+// becomes json.RawMessage (verbatim passthrough preserves its bytes), including
+// the values an order-preserving container holds, while the container itself
+// stays the guest package's own order-keeping one, so a guest receives the order
+// the host sent. With this vocabulary the generated codec references only
+// builtins, encoding/json, and its own package's types — no cross-package import,
+// so the codec compiles in a standalone, dependency-free module a Wasm guest can
+// import directly.
 var frpGuestNeutralVocabulary = map[string]string{
 	"renderctx.RenderContext": "json.RawMessage",
-	"OrderedMap[Unit]":        "map[string]Unit",
-	"OrderedMap[any]":         "map[string]json.RawMessage",
+	"OrderedMap[any]":         "OrderedMap[json.RawMessage]",
 	"DocumentScope":           "string",
 }
 
@@ -606,56 +610,46 @@ var frpHostVocabulary = map[string]string{
 	"DocumentScope":    "string",
 }
 
-// mutatorGuestVocabulary maps the mutator schema's host container spellings to
-// the neutral guest vocabulary: the order-preserving host containers become
-// plain maps (the guest reads a map; key order on the wire is the host's
-// concern). The mutator carries no cross-package opaque host type.
-var mutatorGuestVocabulary = map[string]string{
-	"OrderedMap[MutatorNode]": "map[string]MutatorNode",
-	"OrderedMap[string]":      "map[string]string",
-}
+// mutatorGuestVocabulary is empty: the mutator schema's annotations already spell
+// the guest realization. Its two order-preserving containers resolve to the
+// guest package's own order-keeping container, so a guest receives the graph's
+// nodes and each node's labels in the order the host holds them, and the
+// mutator carries no cross-package opaque host type.
+var mutatorGuestVocabulary = map[string]string{}
 
 // mutatorHostVocabulary maps the mutator schema's container annotations to the
 // host realization: the order-preserving types.OrderedMap (qualified, since the
-// codec lands in package topology) so the host wire is byte-deterministic across
-// runs of identical input (the determinism contract). The guest reads a plain
-// map (its vocabulary rewrites OrderedMap -> map): key order on the wire is the
-// emitting host's concern.
+// codec lands in package topology), so the host wire carries the order the host
+// built each container in, which is the order identical input always builds
+// (the determinism contract).
 var mutatorHostVocabulary = map[string]string{
 	"OrderedMap[MutatorNode]": "types.OrderedMap[MutatorNode]",
 	"OrderedMap[string]":      "types.OrderedMap[string]",
 }
 
-// annotationTransformGuestVocabulary maps the annotation-transform schema's host
-// container spelling to the neutral guest vocabulary: the order-preserving host
-// container becomes a plain map (the guest reads a map; key order on the wire is
-// the host's concern). The annotation-transform carries no cross-package opaque
-// host type.
-var annotationTransformGuestVocabulary = map[string]string{
-	"OrderedMap[string]": "map[string]string",
-}
+// annotationTransformGuestVocabulary is empty: the annotation-transform schema's
+// one container annotation already spells the guest package's own order-keeping
+// container, so a guest receives a target's annotations in the order the host
+// holds them, and the schema carries no cross-package opaque host type.
+var annotationTransformGuestVocabulary = map[string]string{}
 
 // annotationTransformHostVocabulary maps the annotation-transform schema's
 // container annotation to the host realization: the order-preserving
-// types.OrderedMap (qualified, since the codec lands in package pipeline) so the
-// host wire is byte-deterministic across runs of identical input (the determinism
-// contract). The guest reads a plain map (its vocabulary rewrites OrderedMap ->
-// map): key order on the wire is the emitting host's concern.
+// types.OrderedMap (qualified, since the codec lands in package pipeline), so the
+// host wire carries the order the host built the container in, which is the order
+// identical input always builds (the determinism contract).
 var annotationTransformHostVocabulary = map[string]string{
 	"OrderedMap[string]": "types.OrderedMap[string]",
 }
 
-// linterGuestVocabulary maps the linter schema's one host container spelling to
-// the neutral guest vocabulary: the order-preserving container a Release's
-// components ride in becomes a plain map (the guest reads a map; key order on the
-// wire is the emitting host's concern). The schema's other opaque fields already
-// carry the neutral json.RawMessage spelling, and absence of an entry passes each
-// annotation through verbatim — including the policies field, whose
-// x-aggrega-go-type: Policies annotation resolves to the typed Policies struct
-// the guest realizes.
-var linterGuestVocabulary = map[string]string{
-	"OrderedMap[json.RawMessage]": "map[string]json.RawMessage",
-}
+// linterGuestVocabulary is empty: the container a Release's components ride in is
+// annotated as the order-keeping container of the package the guest codec lands
+// in, so the guest receives the components in the Aggregate's own instance order.
+// The schema's other opaque fields already carry the neutral json.RawMessage
+// spelling, and absence of an entry passes each annotation through verbatim —
+// including the policies field, whose x-aggrega-go-type: Policies annotation
+// resolves to the typed Policies struct the guest realizes.
+var linterGuestVocabulary = map[string]string{}
 
 // linterHostVocabulary maps the linter schema's policies annotation to the host
 // realization. The host assembles the publishing-discipline configuration
@@ -673,24 +667,16 @@ var linterHostVocabulary = map[string]string{
 	"OrderedMap[json.RawMessage]": "types.OrderedMap[json.RawMessage]",
 }
 
-// irGuestVocabulary maps the IR schema's host container spellings to the neutral
-// guest vocabulary: every order-preserving OrderedMap becomes a plain map (the
-// guest reads a map; key order on the wire is the emitting host's concern), and
-// the host's named attachment-provenance string type becomes a bare string,
-// which is the whole of what a guest forwarding the value needs. The
+// irGuestVocabulary maps the host's named attachment-provenance string type to a
+// bare string, which is the whole of what a guest forwarding the value needs.
+// Every order-preserving container annotation already spells the guest
+// package's own order-keeping container, at every level it nests, so it needs
+// no entry and a guest receives the graph in the order the host holds it. The
 // inject/values/infra fields already carry the opaque json.RawMessage spelling
 // from the schema annotations, and the recursive/pointer fields carry their
 // pointer spelling, so neither needs a vocabulary entry.
 var irGuestVocabulary = map[string]string{
-	"OrderedMap[IRNode]":                        "map[string]IRNode",
-	"OrderedMap[IREdge]":                        "map[string]IREdge",
-	"OrderedMap[string]":                        "map[string]string",
-	"OrderedMap[json.RawMessage]":               "map[string]json.RawMessage",
-	"AttachmentOrigin":                          "string",
-	"OrderedMap[FieldProvenance]":               "map[string]FieldProvenance",
-	"OrderedMap[IRFeatureEntry]":                "map[string]IRFeatureEntry",
-	"OrderedMap[OrderedMap[IRFeatureEntry]]":    "map[string]map[string]IRFeatureEntry",
-	"OrderedMap[OrderedMap[IRBoundaryFeature]]": "map[string]map[string]IRBoundaryFeature",
+	"AttachmentOrigin": "string",
 }
 
 // irHostVocabulary is empty, and empty is the correct content rather than a
@@ -715,13 +701,11 @@ var irHostVocabulary = map[string]string{}
 // the wire never looks inside.
 //
 // This is where the deliberate asymmetry is written down. Every other annotation
-// in the IR schema states the host spelling and the guest vocabulary rewrites it;
-// these ten state the OPAQUE spelling, and that direction was ruled rather than
-// overlooked — annotating them with their host spelling was measured to work and
-// refused, because the counterpart would then decode a structural encoding and
-// re-emit it in sorted key order, losing author order on a path that reaches
-// rendered artifacts. So the schema states what the wire carries and this table
-// states what the compiler holds, which are two different facts.
+// in the IR schema states the host spelling, which the guest realizes as its own
+// package's types; these ten state the OPAQUE spelling, and that direction was
+// ruled rather than overlooked — annotating them with their host spelling was
+// measured to work and refused. So the schema states what the wire carries and
+// this table states what the compiler holds, which are two different facts.
 //
 // The order-preserving containers are what make the entries worth having: each
 // one's emptiness has to be asked of the container, not of a byte slice, or the
@@ -812,18 +796,19 @@ var diagnosticGuestVocabulary = map[string]string{}
 // (the render-time context, the per-render boundary context, the enriched uses
 // edge the boundary-env-overrides input carries) becomes json.RawMessage
 // (verbatim passthrough preserves its bytes), and every order-preserving host
-// container becomes a plain map (the guest reads a map; key order on the wire is
-// the emitting host's concern). The shared diagnostic is not opaque: it is the
-// generated abi.Diagnostic (named in the target's externalDefTypes), so the guest
-// codec dispatches straight to its own generated codec. The
-// ordered structured content of an output file is the same order-preserving-any
-// container as a node's values, so both surface to the guest as
-// map[string]json.RawMessage — the guest reads and echoes the content by key,
-// and the host runs the single serializer that turns it into bytes. The
-// pipeline-codec unit and patched-unit shapes surface to the guest opaquely
-// (json.RawMessage): an external PDK provider guest that implements the optional
-// carve/reassemble exports carries them verbatim, while the host realizes them
-// as the typed frp shapes its pipeline drives.
+// container becomes the guest package's own order-keeping container, at every
+// level it nests, with only what it holds rewritten where that is a host type —
+// so a guest receives each container in the order the host sent it. The shared
+// diagnostic is not opaque: it is the generated abi.Diagnostic (named in the
+// target's externalDefTypes), so the guest codec dispatches straight to its own
+// generated codec. The ordered structured content of an output file is the same
+// order-preserving-any container as a node's values, so both surface to the guest
+// as an order-keeping container of json.RawMessage — the guest reads and echoes
+// the content by key, and the host runs the single serializer that turns it into
+// bytes. The pipeline-codec unit and patched-unit shapes surface to the guest
+// opaquely (json.RawMessage): an external PDK provider guest that implements the
+// optional carve/reassemble exports carries them verbatim, while the host
+// realizes them as the typed frp shapes its pipeline drives.
 var providerGuestVocabulary = map[string]string{
 	"renderctx.RenderContext":   "json.RawMessage",
 	"renderctx.BoundaryContext": "json.RawMessage",
@@ -831,18 +816,17 @@ var providerGuestVocabulary = map[string]string{
 	"PatchedUnit":               "json.RawMessage",
 	"JSONPatchOp":               "json.RawMessage",
 	"types.EnrichedEdge":        "json.RawMessage",
-	"OrderedMap[any]":           "map[string]json.RawMessage",
-	"OrderedMap[[]string]":      "map[string][]string",
-	"types.OrderedMap[string]":  "map[string]string",
-	"types.OrderedMap[types.OrderedMap[string]]": "map[string]map[string]string",
-	"OrderedMap[types.IRFeatureEntry]":           "map[string]json.RawMessage",
-	"OrderedMap[types.Component]":                "map[string]json.RawMessage",
-	"OrderedMap[types.Feature]":                  "map[string]json.RawMessage",
-	"OrderedMap[types.Recipe]":                   "map[string]json.RawMessage",
-	"OrderedMap[types.FeatureRecipe]":            "map[string]json.RawMessage",
-	"OrderedMap[types.MappingLibrary]":           "map[string]json.RawMessage",
+	"OrderedMap[any]":           "OrderedMap[json.RawMessage]",
+	"types.OrderedMap[string]":  "OrderedMap[string]",
+	"types.OrderedMap[types.OrderedMap[string]]": "OrderedMap[OrderedMap[string]]",
+	"OrderedMap[types.IRFeatureEntry]":           "OrderedMap[json.RawMessage]",
+	"OrderedMap[types.Component]":                "OrderedMap[json.RawMessage]",
+	"OrderedMap[types.Feature]":                  "OrderedMap[json.RawMessage]",
+	"OrderedMap[types.Recipe]":                   "OrderedMap[json.RawMessage]",
+	"OrderedMap[types.FeatureRecipe]":            "OrderedMap[json.RawMessage]",
+	"OrderedMap[types.MappingLibrary]":           "OrderedMap[json.RawMessage]",
 	"types.Workload":                             "json.RawMessage",
-	"map[string]types.OrderedMap[string]":        "map[string]map[string]string",
+	"map[string]types.OrderedMap[string]":        "map[string]OrderedMap[string]",
 }
 
 // providerHostVocabulary maps the provider render schema's container annotations
@@ -1276,10 +1260,10 @@ var codecTargets = map[string]codecTarget{
 
 	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
 	// host codec into aggrega-cli's renderer package. The guest realizes the
-	// order-preserving containers as plain maps and the opaque cross-package host
-	// types (render context, boundary context, diagnostic) as json.RawMessage; the
-	// host realizes the containers as types.OrderedMap and the opaque host types at
-	// their real spelling. The abi Go codec references the helpers FRP owns in
+	// order-preserving containers as its own order-keeping container and the
+	// opaque cross-package host types (render context, boundary context) as
+	// json.RawMessage; the host realizes the containers as types.OrderedMap and the
+	// opaque host types at their real spelling. The abi Go codec references the helpers FRP owns in
 	// package abi (helpers: false); the renderer host codec is alone in its package
 	// and owns its helpers (helpers: true).
 	//
@@ -1441,8 +1425,8 @@ var codecTargets = map[string]codecTarget{
 	// order is part of what it carries. Schema-free like the helpers above, one
 	// target per language: a Go and a Rust type, and the TypeScript reader and
 	// writer that let the language's own Map keep the order of a JSON object's
-	// members. The Go target references the streaming JSON helpers the package's
-	// helpers-bearing file declares.
+	// members. The Go target references the streaming JSON helpers and the
+	// repeated-key error the package's helpers-bearing file declares.
 	"orderedmap_gen.go": {
 		pkg:  "abi",
 		lang: "go-ordered-map",
@@ -2003,8 +1987,7 @@ func isIdentByte(b byte) bool {
 // name any type at all), while the non-struct side is closed and short.
 //
 // The excluded spellings are the mechanical scalar mappings (string, bool, int,
-// any), the array recursion's slice, a pointer, a map spelling a target
-// vocabulary substitutes for an order-preserving container, and the opaque
+// any), the array recursion's slice, a pointer, a plain map, and the opaque
 // byte-slice spelling an opaque host type maps to.
 //
 // An unrecognized spelling is treated as a struct, which is the safe direction:
@@ -2099,8 +2082,12 @@ func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map
 			// The cbor tag mirrors the JSON wire key (with omitempty for
 			// non-required fields) so a reference CBOR encoder used as a test
 			// oracle keys the map by the wire key and omits the same fields the
-			// generated codec omits. (omitzero has no cbor analog; guest codec
-			// types carry no OrderedMap, so the omitzero case never applies here.)
+			// generated codec omits. omitzero has no cbor analog, and an
+			// order-keeping container is a struct whose entries a reflective
+			// encoder cannot see, so a reference encoder reaches such a field only
+			// through a view that presents the container as its list of entries —
+			// where omitempty omits an empty list, as the generated codec omits
+			// an empty container.
 			cborTag := p.name
 			if !required[p.name] {
 				cborTag += ",omitempty"
@@ -2291,6 +2278,11 @@ func emitEncodeValue(b *strings.Builder, src, goType, indent string, defTypes ma
 			emitEncodeAnyFallback(b, src, indent)
 		}
 	case defTypes[goType]:
+		fmt.Fprintf(b, "%sif enc, err := %s.MarshalJSON(); err != nil {\n%s\treturn nil, err\n%s} else {\n%s\tbuf.Write(enc)\n%s}\n", indent, src, indent, indent, indent, indent)
+	case isOrderedMapSpelling(goType):
+		// An order-preserving container writes its own JSON object, in the order
+		// it holds, through a direct call — the container's codec is the one place
+		// its order is written, and the call keeps the encode dispatch-free.
 		fmt.Fprintf(b, "%sif enc, err := %s.MarshalJSON(); err != nil {\n%s\treturn nil, err\n%s} else {\n%s\tbuf.Write(enc)\n%s}\n", indent, src, indent, indent, indent, indent)
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
@@ -2535,7 +2527,9 @@ func emitDecodeValue(b *strings.Builder, dst, goType, indent string, defTypes ma
 		} else {
 			emitDecodeAnyFallback(b, dst, goType, indent)
 		}
-	case defTypes[goType]:
+	case defTypes[goType], isOrderedMapSpelling(goType):
+		// A generated def type, or an order-preserving container, which reads its
+		// own JSON object in member order and refuses a repeated key.
 		fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else {\n", indent, indent, indent)
 		fmt.Fprintf(b, "%s\tif err := %s.UnmarshalJSON(raw); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, dst, indent, indent)
 		fmt.Fprintf(b, "%s}\n", indent)
@@ -3051,6 +3045,11 @@ func generateDefs(t codecTarget) ([]byte, error) {
 		if err := checkInlineObjectNames(t.schemaFile, root.defs); err != nil {
 			return nil, err
 		}
+		// The order-preserving form is keyed on the schema's marking, so no
+		// target's vocabulary may drop that marking from a field it rewrites.
+		if err := checkVocabularyKeepsOrderedContainers(t, targetLabel(t)); err != nil {
+			return nil, err
+		}
 	}
 	switch t.lang {
 	case "", "go":
@@ -3074,6 +3073,21 @@ func generateDefs(t codecTarget) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("typegen: unknown codec target language %q", t.lang)
 	}
+}
+
+// targetLabel names a schema-backed codec target in a refusal by what identifies
+// it: the language it emits, the destination package where it has one, and the
+// schema it is generated from. A target does not carry its own output name, and
+// these three are what tell two targets of one schema apart.
+func targetLabel(t codecTarget) string {
+	lang := map[string]string{"": "Go", "go": "Go", "rust": "Rust", "ts": "TypeScript"}[t.lang]
+	if lang == "" {
+		lang = t.lang
+	}
+	if lang == "Go" && t.pkg != "" {
+		return fmt.Sprintf("the Go codec target for package %s generated from %s", t.pkg, t.schemaFile)
+	}
+	return fmt.Sprintf("the %s codec target generated from %s", lang, t.schemaFile)
 }
 
 // checkOpaqueHostTypes refuses a codecOnly target that carries an opaque field

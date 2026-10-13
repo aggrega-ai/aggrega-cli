@@ -125,7 +125,7 @@ func (t LinterInput) MarshalJSON() ([]byte, error) {
 		}
 		first = false
 		buf.WriteString("\"components\":")
-		if enc, err := json.Marshal(t.Components); err != nil {
+		if enc, err := t.Components.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -205,9 +205,7 @@ func (t *LinterInput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Components); err != nil {
+				if err := t.Components.UnmarshalJSON(raw); err != nil {
 					return err
 				}
 			}
@@ -591,15 +589,11 @@ func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORByteString(dst, t.Proposed)
 	if !t.Components.IsZero() {
 		dst = appendCBORTextString(dst, "components")
-		{
-			keys := t.Components.Keys()
-			sortCBORKeys(keys)
-			dst = appendCBORHead(dst, 5, uint64(len(keys)))
-			for _, k := range keys {
-				dst = appendCBORTextString(dst, k)
-				mv, _ := t.Components.Get(k)
-				dst = appendCBORByteString(dst, mv)
-			}
+		dst = appendCBORHead(dst, 4, uint64(t.Components.Len()))
+		for k, mv := range t.Components.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			dst = appendCBORByteString(dst, mv)
 		}
 	}
 	dst = appendCBORTextString(dst, "entity_kind")
@@ -671,15 +665,18 @@ func (t *LinterInput) decodeCBOR(dec *cborDec) error {
 			}
 		case "components":
 			{
-				mn, err := dec.readMapHeader()
+				mn, err := dec.readArrayHeader()
 				if err != nil {
 					return err
 				}
 				var om types.OrderedMap[json.RawMessage]
 				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
+					mk, err := dec.readEntryKey()
 					if err != nil {
 						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
 					}
 					var mv json.RawMessage
 					if v, err := dec.readByteString(); err != nil {
@@ -1489,6 +1486,27 @@ func (d *cborDec) readArrayHeader() (int, error) {
 		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
 	}
 	return int(arg), nil
+}
+
+// readEntryKey reads the start of one entry of an order-preserving map's array
+// form — a two-element array whose first element is the text-string key — and
+// returns the key, leaving the value as the next item. An entry of any other
+// shape is refused.
+func (d *cborDec) readEntryKey() (string, error) {
+	n, err := d.readArrayHeader()
+	if err != nil {
+		return "", err
+	}
+	if n != 2 {
+		return "", fmt.Errorf("abi: cbor: an order-preserving map entry holds %d items, want 2", n)
+	}
+	return d.readTextString()
+}
+
+// duplicateKeyError is the refusal of an encoded order-preserving map that
+// repeats a key, naming the key.
+func duplicateKeyError(k string) error {
+	return fmt.Errorf("abi: duplicate key %q", k)
 }
 
 func (d *cborDec) readTextString() (string, error) {

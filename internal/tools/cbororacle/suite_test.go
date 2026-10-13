@@ -78,7 +78,10 @@ func runVec[T any, PT cborRT[T]](t *testing.T, file string, skipRef bool) {
 	}
 	if !skipRef {
 		em := refEncoder(t)
-		ref, err := em.Marshal(v2)
+		// Through the view that presents each order-keeping container as its list
+		// of entries, which the reference encoder writes natively; handed the
+		// container itself it would see no field and write an empty map.
+		ref, err := em.Marshal(referenceView(v2))
 		if err != nil {
 			t.Fatalf("%s: reference marshal: %v", file, err)
 		}
@@ -224,8 +227,9 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// The input of a rule that reads a whole Release, its Release and Component map
 	// populated. Each crosses as a byte string of the document's JSON bytes — a
 	// raw-message field, which the reference encoder writes as a byte string too —
-	// so the vector stays anchored, and the map's two keys pin the length-first
-	// order against an encoder this schema did not generate.
+	// so the vector stays anchored, and the map's two keys, which the map holds in
+	// an order that is not the length-first one, pin the order-preserving array form
+	// against an encoder this schema did not generate.
 	vec[abi.LinterInput](t, "LinterInputRelease", false)
 	vec[abi.LinterOutput](t, "LinterOutput", false)
 	vec[abi.IRGraph](t, "IRGraph", false)
@@ -348,10 +352,12 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.ValidateNodeOutput](t, "ErrorEnvelopeValidateNodeOutput", false)
 
 	// The map-order probe vectors: one per payload declaring a map field, with
-	// every such map populated by the probe key set. Their whole purpose is
-	// pinning map-key sort order, so they are the vectors an oracle anchor is
-	// worth most to — a sort order attested only by codecs that all sort the same
-	// way because one generator emitted them is attested by its own assumption.
+	// every such map populated by its probe key set. Their whole purpose is
+	// pinning map-key order — a plain map's sort, and an order-preserving map's
+	// own order, set as neither sorted order — so they are the vectors an oracle
+	// anchor is worth most to: an order attested only by codecs that all order the
+	// same way because one generator emitted them is attested by its own
+	// assumption.
 	vec[abi.AnnotationTarget](t, "MapOrderAnnotationTarget", false)
 	vec[abi.ArtifactProjectionEntry](t, "MapOrderArtifactProjectionEntry", false)
 	vec[abi.BoundaryEnvOverridesInput](t, "MapOrderBoundaryEnvOverridesInput", false)
@@ -367,8 +373,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.LinkEdge](t, "MapOrderLinkEdge", false)
 	vec[abi.LinkPublishOutput](t, "MapOrderLinkPublishOutput", false)
 	vec[abi.LinkResolveInput](t, "MapOrderLinkResolveInput", false)
+	vec[abi.LinterInput](t, "MapOrderLinterInput", false)
 	vec[abi.MutatorGraph](t, "MapOrderMutatorGraph", false)
 	vec[abi.MutatorNode](t, "MapOrderMutatorNode", false)
+	vec[abi.RenderNodeOutput](t, "MapOrderRenderNodeOutput", false)
 	vec[abi.RenderedNode](t, "MapOrderRenderedNode", false)
 	vec[abi.SubChart](t, "MapOrderSubChart", false)
 	vec[abi.WorkloadProjection](t, "MapOrderWorkloadProjection", false)
