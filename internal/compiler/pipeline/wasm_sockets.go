@@ -262,11 +262,14 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 	return nil
 }
 
-// runPolicySocket runs the Step-4 policy socket: it marshals the
-// analyzer's assembled PolicyInput (the full IR graph plus precalculated paths)
-// with every declared-sensitive leaf withheld, dispatches each configured policy
-// plugin's verdict_ir export (or a per-attachment override), and appends one
-// AnalysisError per failed verdict to analysis.Errors. Appending (rather than
+// runPolicySocket runs the Step-4 policy socket: it encodes the analyzer's
+// assembled PolicyInput (the full IR graph plus precalculated paths) with every
+// declared-sensitive leaf withheld as canonical CBOR, dispatches each configured
+// policy plugin's verdict_ir export (or a per-attachment override), and appends
+// one AnalysisError per failed verdict to analysis.Errors. The socket carries
+// canonical CBOR in both directions: the graph rides as a structural map whose
+// order-preserving containers keep the order the graph holds them in, and the
+// verdict list comes back in the same encoding. Appending (rather than
 // returning a function-level error) routes a policy rejection through the same
 // gate selector and appliesTo violations use: RunPipeline joins Errors into a
 // build-halting error, while the Tier-4 validation path surfaces them as
@@ -318,15 +321,15 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		}
 		// Per-ref payload: the withheld graph and the shared paths plus this
 		// attachment's own sources and settings. The graph fields are shared
-		// references (a shallow copy), so per-ref marshalling adds only this
+		// references (a shallow copy), so per-ref encoding adds only this
 		// attachment's inputs.
 		in := *analysis.PolicyInput
 		in.Graph = *withheld
 		in.Sources = sources
 		in.Settings = attachmentSettings(ref)
-		payload, err := json.Marshal(in)
+		payload, err := in.EncodeCBOR()
 		if err != nil {
-			return fmt.Errorf("ir-verdict: marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: encode input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
@@ -335,7 +338,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po abi.PolicyOutput
-		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(export, out, &po); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: po.Error}); err != nil {
@@ -373,8 +376,9 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // RenderAll: for each governance attachment the operator authored at the
 // render-verdict role,
 // it hands the plugin the rendered artifacts (path-sorted into a canonical
-// order) plus the attachment's own sources and settings, and routes the returned
-// verdicts by severity. halt stops the build loudly — the runner returns a joined
+// order) plus the attachment's own sources and settings, encoded as canonical
+// CBOR, and routes the returned verdicts — read back in the same encoding — by
+// severity. halt stops the build loudly — the runner returns a joined
 // error built from the same policyVerdictErrors → ToCompilerError conversion the
 // IR-stage gate uses, so the halt carries ErrPolicyViolation exactly as an
 // IR-stage halt does. warn and info print to the diagnostic sink and the build
@@ -409,13 +413,13 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		settings := attachmentSettings(ref)
-		payload, err := json.Marshal(analyzer.RenderPolicyInput{
+		payload, err := analyzer.RenderPolicyInput{
 			Artifacts: artifacts,
 			Sources:   sources,
 			Settings:  settings,
-		})
+		}.EncodeCBOR()
 		if err != nil {
-			return fmt.Errorf("render-verdict: marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: encode input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
@@ -424,7 +428,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po abi.PolicyOutput
-		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(export, out, &po); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: po.Error}); err != nil {

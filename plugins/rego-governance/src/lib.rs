@@ -153,7 +153,6 @@ use aggrega_pdk_rust::{
 use extism_pdk::{plugin_fn, FnResult};
 
 use governancecore::artifacts::render_input;
-use governancecore::payload::read as read_payload;
 use governancecore::sources::{project as project_sources, Source};
 use governancecore::translation::{settings_schema, Translation};
 
@@ -217,28 +216,34 @@ pub fn describe() -> FnResult<String> {
 /// Evaluates the attached policies against the build graph and reports the
 /// decisions they reached. A failure to evaluate propagates, and is surfaced as a
 /// build fault rather than as a decision.
+///
+/// Every governance role's payload and result travel as canonical CBOR, so each
+/// export takes and returns bytes rather than text.
 #[plugin_fn]
-pub fn verdict_ir(input: String) -> FnResult<String> {
+pub fn verdict_ir(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = graph_verdict(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Evaluates the attached policies against the rendered output files and reports
 /// the decisions they reached. A failure to evaluate propagates, and is surfaced
 /// as a build fault rather than as a decision.
 #[plugin_fn]
-pub fn verdict_render(input: String) -> FnResult<String> {
+pub fn verdict_render(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = rendered_verdict(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Reads the build-graph payload and evaluates the policies against it.
 ///
 /// The whole payload is the policy's input document, so a policy reads the graph
-/// and the routing paths under the names the wire gives them.
-fn graph_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let graph: PolicyInput = read_payload(&payload, &["precalculated_paths"])?;
+/// and the routing paths under the names the wire gives them. The engine reads a
+/// JSON document, so the decoded payload is written back out as one: the names a
+/// policy addresses are the names the payload declares.
+fn graph_verdict(raw: &[u8]) -> anyhow::Result<PolicyOutput> {
+    let graph = PolicyInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the ir-verdict payload: {err}"))?;
+    let payload = serde_json::to_value(&graph)?;
     let settings = graph.settings.as_deref();
     let translation = Translation::from_settings(settings)?;
     let sources = project_sources(&graph.sources);
@@ -246,9 +251,9 @@ fn graph_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
 }
 
 /// Reads the rendered-output payload and evaluates the policies against it.
-fn rendered_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let rendered: RenderPolicyInput = read_payload(&payload, &["artifacts"])?;
+fn rendered_verdict(raw: &[u8]) -> anyhow::Result<PolicyOutput> {
+    let rendered = RenderPolicyInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the render-verdict payload: {err}"))?;
     let settings = rendered.settings.as_deref();
     let translation = Translation::from_settings(settings)?;
     let sources = project_sources(&rendered.sources);
@@ -274,10 +279,6 @@ fn verdict(
 /// Reports which labels the build's nodes should carry, as the label changes the
 /// build applies. A failure to evaluate propagates, and is surfaced as a build
 /// fault rather than as a change.
-///
-/// This role's payload and result travel as canonical CBOR, so the export takes
-/// and returns bytes rather than text. The other two exports still carry the
-/// textual encoding; each reads its own payload, so they move independently.
 #[plugin_fn]
 pub fn mutate(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = label_changes(&input)?;
@@ -312,9 +313,9 @@ fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
 /// to evaluate propagates, and is surfaced as a build fault rather than as a
 /// change.
 #[plugin_fn]
-pub fn transform_annotations(input: String) -> FnResult<String> {
+pub fn transform_annotations(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = annotation_injections(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Evaluates the attached policies against the injection-target payload and reads
@@ -322,10 +323,11 @@ pub fn transform_annotations(input: String) -> FnResult<String> {
 ///
 /// The whole payload is the policy's input document, so a policy reads the
 /// targets and the registered annotation keys under the names the wire gives
-/// them.
-fn annotation_injections(raw: &str) -> anyhow::Result<AnnotationTransformOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let input: AnnotationTransformInput = read_payload(&payload, &["targets", "binding_keys"])?;
+/// them, written back out as a JSON document as the other roles' payloads are.
+fn annotation_injections(raw: &[u8]) -> anyhow::Result<AnnotationTransformOutput> {
+    let input = AnnotationTransformInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the annotation-transform payload: {err}"))?;
+    let payload = serde_json::to_value(&input)?;
     let decisions = engine::decisions(
         &project_sources(&input.sources),
         input.settings.as_deref(),
@@ -367,12 +369,12 @@ deny contains msg if {
 }
 "#;
 
-    /// Builds a graph payload carrying the named nodes.
+    /// Builds a graph carrying the named nodes.
     ///
     /// The graph is built from the generated type's own defaults rather than
-    /// hand-written JSON, so a field added to the wire shape does not silently
-    /// leave this fixture describing a graph the guest would reject.
-    fn graph_with_nodes(names: &[&str]) -> serde_json::Value {
+    /// hand-written, so a field added to the wire shape does not silently leave
+    /// this fixture describing a graph the guest would reject.
+    fn graph_with_nodes(names: &[&str]) -> aggrega_abi::IRGraph {
         let mut graph = aggrega_abi::IRGraph::default();
         for name in names {
             graph
@@ -380,21 +382,73 @@ deny contains msg if {
                 .nodes
                 .insert((*name).to_string(), aggrega_abi::IRNode::default());
         }
-        serde_json::to_value(&graph).expect("a default graph serializes")
+        graph
+    }
+
+    /// One attached file, as the payload carries it.
+    fn source(path: &str, content: &str) -> aggrega_abi::PolicySource {
+        aggrega_abi::PolicySource {
+            path: path.to_string(),
+            content: content.to_string(),
+        }
+    }
+
+    /// Settings as the payload carries them: the attachment's JSON, verbatim.
+    fn raw_settings(settings: serde_json::Value) -> Box<serde_json::value::RawValue> {
+        serde_json::value::RawValue::from_string(settings.to_string())
+            .expect("test settings are valid JSON")
+    }
+
+    /// Builds a graph-facet payload carrying the given attached files and
+    /// settings, encoded by the generated codec the host's own encoder agrees
+    /// with byte for byte — so the export reads exactly what a dispatch hands it.
+    fn graph_payload_from(
+        nodes: &[&str],
+        sources: Vec<aggrega_abi::PolicySource>,
+        settings: Option<serde_json::Value>,
+    ) -> Vec<u8> {
+        PolicyInput {
+            graph: graph_with_nodes(nodes),
+            precalculated_paths: Vec::new(),
+            sources,
+            settings: settings.map(raw_settings),
+        }
+        .encode_cbor()
+        .expect("the payload encodes")
     }
 
     /// Builds a graph-facet payload: a graph with the named nodes, one policy
     /// source, and the given settings.
-    fn graph_payload(nodes: &[&str], policy: &str, settings: Option<serde_json::Value>) -> String {
-        let mut payload = serde_json::json!({
-            "graph": graph_with_nodes(nodes),
-            "precalculated_paths": [],
-            "sources": [{ "path": "policy.rego", "content": policy }],
-        });
-        if let Some(settings) = settings {
-            payload["settings"] = settings;
+    fn graph_payload(nodes: &[&str], policy: &str, settings: Option<serde_json::Value>) -> Vec<u8> {
+        graph_payload_from(nodes, vec![source("policy.rego", policy)], settings)
+    }
+
+    /// Builds a rendered-output payload: the given artifacts, one policy source,
+    /// and the given settings.
+    fn rendered_payload(
+        artifacts: Vec<aggrega_abi::RenderedArtifact>,
+        policy: &str,
+        settings: Option<serde_json::Value>,
+    ) -> Vec<u8> {
+        RenderPolicyInput {
+            artifacts,
+            sources: vec![source("policy.rego", policy)],
+            settings: settings.map(raw_settings),
         }
-        payload.to_string()
+        .encode_cbor()
+        .expect("the payload encodes")
+    }
+
+    /// One rendered file, optionally carrying the tree the host parsed it into.
+    fn artifact(path: &str, content: &str, tree: Option<&str>, format: &str) -> aggrega_abi::RenderedArtifact {
+        aggrega_abi::RenderedArtifact {
+            path: path.to_string(),
+            content: content.to_string(),
+            tree: tree.map(|t| {
+                serde_json::value::RawValue::from_string(t.to_string()).expect("test tree is valid JSON")
+            }),
+            format: format.to_string(),
+        }
     }
 
     #[test]
@@ -447,28 +501,36 @@ deny contains msg if {
     }
 
     #[test]
+    fn a_graph_payload_that_cannot_be_read_fails_loudly() {
+        let err = graph_verdict(&[0xff, 0xff, 0xff]).expect_err("unreadable bytes are refused");
+        assert!(err.to_string().contains("ir-verdict payload"), "{err}");
+    }
+
+    #[test]
     fn the_rendered_facet_reads_the_artifacts() {
-        let payload = serde_json::json!({
-            "artifacts": [{ "path": "svc.yaml", "content": "kind: Service\n" }],
-            "sources": [{ "path": "policy.rego", "content": ARTIFACT_POLICY }],
-        });
-        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
+        let payload = rendered_payload(
+            vec![artifact("svc.yaml", "kind: Service\n", None, "")],
+            ARTIFACT_POLICY,
+            None,
+        );
+        let output = rendered_verdict(&payload).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(output.results[0].message, "a service was rendered");
     }
 
     #[test]
     fn the_rendered_facet_reads_a_host_supplied_tree() {
-        let payload = serde_json::json!({
-            "artifacts": [{
-                "path": "main.tf",
-                "content": "resource \"x\" \"y\" {\n a = 1\n}\n",
-                "tree": { "kind": "Service" },
-                "format": "hcl",
-            }],
-            "sources": [{ "path": "policy.rego", "content": ARTIFACT_POLICY }],
-        });
-        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
+        let payload = rendered_payload(
+            vec![artifact(
+                "main.tf",
+                "resource \"x\" \"y\" {\n a = 1\n}\n",
+                Some(r#"{ "kind": "Service" }"#),
+                "hcl",
+            )],
+            ARTIFACT_POLICY,
+            None,
+        );
+        let output = rendered_verdict(&payload).expect("evaluation succeeds");
         assert_eq!(
             output.results.len(),
             1,
@@ -490,13 +552,8 @@ deny contains msg if {
         assert_eq!(graph.results.len(), 1, "{:?}", graph.results);
         assert_eq!(graph.results[0].severity, SEVERITY_INFO);
 
-        let rendered_payload = serde_json::json!({
-            "artifacts": [],
-            "sources": [{ "path": "policy.rego", "content": policy }],
-            "settings": settings,
-        });
-        let rendered =
-            rendered_verdict(&rendered_payload.to_string()).expect("the rendered facet evaluates");
+        let rendered = rendered_verdict(&rendered_payload(Vec::new(), policy, Some(settings)))
+            .expect("the rendered facet evaluates");
         assert_eq!(rendered.results.len(), 1, "{:?}", rendered.results);
         assert_eq!(rendered.results[0].severity, SEVERITY_INFO);
     }
@@ -513,13 +570,8 @@ deny contains msg if {
 
     /// Builds a graph-facet payload carrying the given attached files verbatim,
     /// so a test can attach an archive where another attaches policy text.
-    fn graph_payload_with_sources(nodes: &[&str], sources: serde_json::Value) -> String {
-        serde_json::json!({
-            "graph": graph_with_nodes(nodes),
-            "precalculated_paths": [],
-            "sources": sources,
-        })
-        .to_string()
+    fn graph_payload_with_sources(nodes: &[&str], sources: Vec<aggrega_abi::PolicySource>) -> Vec<u8> {
+        graph_payload_from(nodes, sources, None)
     }
 
     /// Builds a node payload for the label-shaping role: the named nodes, each
@@ -554,8 +606,9 @@ deny contains msg if {
         input.encode_cbor().expect("the payload encodes")
     }
 
-    /// Builds an injection-target payload for the annotation-injecting role.
-    fn annotation_payload(targets: &[(&str, &str)], binding_keys: &[&str], policy: &str) -> String {
+    /// Builds an injection-target payload for the annotation-injecting role,
+    /// encoded by the generated codec as the host encodes it.
+    fn annotation_payload(targets: &[(&str, &str)], binding_keys: &[&str], policy: &str) -> Vec<u8> {
         let input = AnnotationTransformInput {
             targets: targets
                 .iter()
@@ -572,7 +625,7 @@ deny contains msg if {
             }],
             settings: None,
         };
-        serde_json::to_string(&input).expect("the payload serializes")
+        input.encode_cbor().expect("the payload encodes")
     }
 
     #[test]
@@ -758,20 +811,18 @@ deny contains msg if {
 
         // Attached separately: the policy file, plus the same data as settings,
         // which is the only way to supply data without an archive.
-        let separate = serde_json::json!({
-            "graph": graph_with_nodes(&["a", "b"]),
-            "precalculated_paths": [],
-            "sources": [{ "path": "policy.rego", "content": POLICY }],
-            "settings": serde_json::from_str::<serde_json::Value>(DATA).expect("valid"),
-        })
-        .to_string();
+        let separate = graph_payload(
+            &["a", "b"],
+            POLICY,
+            Some(serde_json::from_str::<serde_json::Value>(DATA).expect("valid")),
+        );
         let from_separate = graph_verdict(&separate).expect("the separate files evaluate");
 
         // Attached as one archive carrying both.
         let archive = encoded_archive(&[("data.json", DATA), ("policy.rego", POLICY)]);
         let from_archive = graph_verdict(&graph_payload_with_sources(
             &["a", "b"],
-            serde_json::json!([{ "path": "bundle.tar.gz.base64", "content": archive }]),
+            vec![source("bundle.tar.gz.base64", &archive)],
         ))
         .expect("the archive evaluates");
 
@@ -822,10 +873,7 @@ labels contains {"node": id, "key": "tier", "value": data.tier} if {
     fn a_damaged_archive_fails_rather_than_evaluating_nothing() {
         let payload = graph_payload_with_sources(
             &["a"],
-            serde_json::json!([{
-                "path": "bundle.tar.gz.base64",
-                "content": "not an archive at all ###",
-            }]),
+            vec![source("bundle.tar.gz.base64", "not an archive at all ###")],
         );
         let err = graph_verdict(&payload).expect_err("a damaged archive is refused");
         let message = err.to_string();
@@ -836,10 +884,8 @@ labels contains {"node": id, "key": "tier", "value": data.tier} if {
     fn a_file_not_named_as_an_archive_is_read_as_policy_text() {
         // The name is the discriminator, so a plain policy file is never
         // mistaken for an archive however its content reads.
-        let payload = graph_payload_with_sources(
-            &["a", "b"],
-            serde_json::json!([{ "path": "policy.rego", "content": GRAPH_POLICY }]),
-        );
+        let payload =
+            graph_payload_with_sources(&["a", "b"], vec![source("policy.rego", GRAPH_POLICY)]);
         let output = graph_verdict(&payload).expect("policy text evaluates");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
     }

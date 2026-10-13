@@ -25,10 +25,6 @@
 //!   would be two settings schemas, and an attachment accepted by one plugin and
 //!   refused by the other with the same settings is a difference no reader could
 //!   attribute.
-//! - The **absent-list accommodation** in [`payload`] is documented there as a
-//!   compensation to be removed once every sender writes an empty list. A
-//!   compensation with two copies is removed from one of them, and the one left
-//!   behind is the one nobody was looking at.
 //! - The **decision keys a transform role reads** and the **change instruction a
 //!   decided label becomes** are what an operator writes and what the build
 //!   applies. Two copies would be two spellings of the same authored key and two

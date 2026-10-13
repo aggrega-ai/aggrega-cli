@@ -224,8 +224,14 @@ func TestRunLocal_PayloadVariants(t *testing.T) {
 		if err != nil {
 			t.Fatalf("default-{} run against a guest that returns bytes on {} failed: %v", err)
 		}
-		if got := strings.TrimSpace(out); got != `{"results":[]}` {
-			t.Fatalf("guest bytes = %q; want the empty-results verdict", got)
+		// The verdict roles answer in canonical CBOR, so the expected bytes are what
+		// the empty verdict list encodes to — an independent statement of them.
+		want, err := abi.PolicyOutput{Results: []abi.Diagnostic{}}.EncodeCBOR()
+		if err != nil {
+			t.Fatalf("encode the expected empty verdict list: %v", err)
+		}
+		if out != string(want) {
+			t.Fatalf("guest bytes = %x; want the empty-results verdict %x", out, want)
 		}
 	})
 }

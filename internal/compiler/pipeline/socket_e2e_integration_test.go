@@ -859,16 +859,13 @@ func verdictExportOverrideInputs(t *testing.T, export string) (pipeline.Inputs, 
 // reader which line of configuration to change.
 //
 // What the halt says beyond the export depends on whether the misdirected export
-// speaks the same encoding as the role that dispatched it. The verdict roles
-// carry the textual encoding; the label-transform role carries the binary one.
-// So dispatching transform_annotations here misdirects within one encoding and
-// the refusal names the field that does not belong, while dispatching mutate
-// crosses encodings and that guest refuses the payload it was handed before it
-// produces any output at all. Both halt loudly and both name the export; only
-// the first can name a field, because a field name presupposes bytes the reader
-// can read. Each row states which it expects rather than the test assuming one
-// answer, and when every socket carries one encoding both rows name a field
-// again.
+// speaks the same encoding as the role that dispatched it, because a field name
+// presupposes bytes the reader can read. Every governance role carries the binary
+// encoding, so both misdirections here stay within one encoding: each guest reads
+// the verdict payload it was handed and answers with its own envelope, and the
+// refusal names the field that envelope carries and the verdict shape does not
+// declare. Each row states the field it expects rather than the test assuming one
+// answer.
 func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 	ctx := context.Background()
 
@@ -896,12 +893,12 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 	for _, tc := range []struct {
 		export string
 		// wantInHalt is the detail the halt must carry after the export: the
-		// field that does not belong where the encodings match, and the guest's
-		// own refusal to read the payload where they do not.
+		// field of the misdirected export's own envelope that does not belong in
+		// a verdict.
 		wantInHalt string
 	}{
-		{export: "mutate", wantInHalt: "decode MutatorInput"},
-		{export: "transform_annotations", wantInHalt: "injections"},
+		{export: "mutate", wantInHalt: `"patches"`},
+		{export: "transform_annotations", wantInHalt: `"injections"`},
 	} {
 		t.Run(tc.export, func(t *testing.T) {
 			var err error
@@ -922,6 +919,9 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 			}
 			if !strings.Contains(msg, tc.wantInHalt) {
 				t.Errorf("the halt does not carry what identifies the misdirection (%q):\n%v", tc.wantInHalt, msg)
+			}
+			if !errors.Is(err, wasm.ErrWasmOutputShape()) {
+				t.Errorf("the halt must classify as the socket output-shape refusal:\n%v", msg)
 			}
 			if strings.Contains(stderr, governanceMultiroleVerdictMsg) {
 				t.Errorf("a non-verdict export must reach no verdict at all, yet a verdict recorded:\n%s", stderr)

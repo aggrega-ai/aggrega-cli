@@ -60,14 +60,15 @@ func TestPolicyVerdictErrors_EmptyResultsIsEmpty(t *testing.T) {
 	}
 }
 
-// policyVerdictWireFixture is the guest-shaped JSON a policy plugin returns for
-// a single fired verdict that populates every field the shared diagnostic
-// carries. It is a raw wire document rather than a Go literal deliberately: a
-// struct literal proves only that the type has the fields, while this crosses
-// the same decode boundary a real guest's bytes cross, which is where the values
-// were being discarded.
+// policyVerdictWireFixture is the guest-shaped document a policy plugin returns
+// for a single fired verdict that populates every field the shared diagnostic
+// carries. It is a document rather than a Go literal deliberately: a struct
+// literal proves only that the type has the fields, while this is read the way a
+// guest's own output is read — encoded as the guest writes it and decoded through
+// the entry point the socket runners use — which is where the values were being
+// discarded. See decodeVerdictWire.
 const policyVerdictWireFixture = `{"results":[{` +
-	// Spelled literally: this fixture is the guest's wire bytes, so it must name
+	// Spelled literally: this fixture is what the guest writes, so it must name
 	// the encoded value rather than borrow the const the host decodes with.
 	`"severity":"halt",` +
 	`"message":"image must be digest-pinned",` +
@@ -79,16 +80,35 @@ const policyVerdictWireFixture = `{"results":[{` +
 	`"suggest":"replace the tag with a sha256 digest"` +
 	`}]}`
 
+// decodeVerdictWire turns a guest-shaped verdict document into the bytes a guest
+// writes on the verdict roles' wire, and reads them back through the entry point
+// both socket runners decode with. The fixtures are written as documents because
+// that is the readable form of the shape; what reaches the host is that shape in
+// the canonical binary encoding, so the decode under test is the binary one.
+func decodeVerdictWire(t *testing.T, document string) abi.PolicyOutput {
+	t.Helper()
+	var written abi.PolicyOutput
+	if err := json.Unmarshal([]byte(document), &written); err != nil {
+		t.Fatalf("read the fixture document: %v", err)
+	}
+	wire, err := written.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the fixture as a guest writes it: %v", err)
+	}
+	var out abi.PolicyOutput
+	if err := wasm.DecodeGuestOutputCBOR(wasm.VerdictIRExport, wire, &out); err != nil {
+		t.Fatalf("decode guest verdict: %v", err)
+	}
+	return out
+}
+
 // TestPolicyVerdictWire_EveryFieldReachesTheHost proves each field a guest may
 // populate on a fired verdict survives the decode the socket runners perform.
 // The assertion walks the fields beyond severity and message one at a time and
 // names the field it lost, so a regression reports which value stopped arriving
 // rather than an opaque struct inequality.
 func TestPolicyVerdictWire_EveryFieldReachesTheHost(t *testing.T) {
-	var out abi.PolicyOutput
-	if err := json.Unmarshal([]byte(policyVerdictWireFixture), &out); err != nil {
-		t.Fatalf("decode guest verdict: %v", err)
-	}
+	out := decodeVerdictWire(t, policyVerdictWireFixture)
 	if len(out.Results) != 1 {
 		t.Fatalf("decoded %d verdicts, want 1", len(out.Results))
 	}
@@ -130,10 +150,7 @@ func TestPolicyVerdictWire_EveryFieldReachesTheHost(t *testing.T) {
 // later, so the halt, the warn diagnostic, and the info record are each
 // asserted to carry every one of them.
 func TestPolicyVerdictWire_EveryFieldIsRendered(t *testing.T) {
-	var out abi.PolicyOutput
-	if err := json.Unmarshal([]byte(policyVerdictWireFixture), &out); err != nil {
-		t.Fatalf("decode guest verdict: %v", err)
-	}
+	out := decodeVerdictWire(t, policyVerdictWireFixture)
 	verdict := out.Results[0]
 
 	errs := policyVerdictErrors("oci://registry.example/policy/house-rules", out)
@@ -210,11 +227,11 @@ func TestPluginRefName(t *testing.T) {
 	}
 }
 
-// undeclaredSeverityVerdictWireFixture is the guest-shaped JSON a policy plugin
-// would return for a fired verdict carrying a severity the shared diagnostic
-// contract does not declare. It is raw wire bytes rather than a Go literal for
-// the same reason the fixture above is: the host's own vocabulary cannot produce
-// this value, so only the decode boundary can introduce it.
+// undeclaredSeverityVerdictWireFixture is the guest-shaped document a policy
+// plugin would return for a fired verdict carrying a severity the shared
+// diagnostic contract does not declare. It is a document rather than a Go
+// literal for the same reason the fixture above is: the host's own vocabulary
+// cannot produce this value, so only the decode boundary can introduce it.
 //
 // The severity is spelled literally because the point of the fixture is that the
 // value is NOT one of the declared consts.
@@ -238,10 +255,7 @@ const undeclaredSeverityVerdictWireFixture = `{"results":[{` +
 // output refuses this value outright, naming the plugin and the value, so the
 // build halts loudly instead of proceeding as though nothing fired.
 func TestPolicyVerdict_UndeclaredSeverityIsRefusedRatherThanAllowed(t *testing.T) {
-	var out abi.PolicyOutput
-	if err := json.Unmarshal([]byte(undeclaredSeverityVerdictWireFixture), &out); err != nil {
-		t.Fatalf("decode guest verdict: %v", err)
-	}
+	out := decodeVerdictWire(t, undeclaredSeverityVerdictWireFixture)
 	if len(out.Results) != 1 {
 		t.Fatalf("decoded %d verdicts, want 1", len(out.Results))
 	}

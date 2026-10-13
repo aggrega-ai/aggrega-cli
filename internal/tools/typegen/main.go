@@ -1084,9 +1084,10 @@ var codecTargets = map[string]codecTarget{
 		vocabulary: annotationTransformHostVocabulary,
 		helpers:    true, // the host annotation-transform codec is alone in package pipeline
 		pkgPath:    "github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline",
-		// binaryWire is false: this socket still carries the text wire in both
-		// directions. Its call site encodes with encoding/json and decodes through
-		// the text encoding's entry point.
+		// binaryWire: this socket's wire is canonical CBOR. Its call site encodes
+		// with the generated encoder and decodes through the binary encoding's
+		// entry point, and every guest it speaks to reads and writes the same.
+		binaryWire: true,
 		wireExports: []wireExport{
 			{role: plugintype.RoleAnnotationTransform, inputDef: "AnnotationTransformInput"},
 		},
@@ -1251,7 +1252,11 @@ var codecTargets = map[string]codecTarget{
 		crossPackageDefTypes: []string{"types.IRGraph"},
 		skipDefs:             []string{"PolicyOutput"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer",
-		// binaryWire is false: both verdict roles still carry the text wire.
+		// binaryWire: both verdict roles' wire is canonical CBOR. Each call site
+		// encodes with the generated encoder and decodes the verdict list through
+		// the binary encoding's entry point, and every guest serving either role
+		// reads and writes the same.
+		binaryWire: true,
 		wireExports: []wireExport{
 			{role: plugintype.RoleIRVerdict, inputDef: "PolicyInput"},
 			{role: plugintype.RoleRenderVerdict, inputDef: "RenderPolicyInput"},

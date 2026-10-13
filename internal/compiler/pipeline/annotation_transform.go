@@ -32,7 +32,11 @@ const injectedByAnnotationKey = "aggrega.ai/injected-by"
 // ExpandAnnotations, so an injected annotation bound in the Manifest is seen by
 // binding validation and expansion with no re-run — a bound injection becomes a
 // synthetic Feature attachment, the same explicit-declaration standing
-// annotation-driven expansion already has (Invariant 4). An unconfigured socket
+// annotation-driven expansion already has (Invariant 4). The socket carries
+// canonical CBOR in both directions: the input is encoded with the generated
+// encoder, each target's annotations riding in the order the component holds
+// them, and the output is read through the binary encoding's strict entry
+// point. An unconfigured socket
 // is a no-op (returns nil before any resolution), which keeps a build with no
 // annotation-transform attachment byte-identical to a build without the socket. A
 // resolution, load, or confinement failure halts the build loudly, as does an
@@ -66,9 +70,9 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 			Sources:     annotationSources(ref),
 			Settings:    annotationSettings(ref),
 		}
-		payload, err := json.Marshal(in)
+		payload, err := in.EncodeCBOR()
 		if err != nil {
-			return fmt.Errorf("annotation-transform: marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: encode input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
@@ -77,7 +81,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		var ao AnnotationTransformOutput
-		if err := wasm.DecodeGuestOutput(export, out, &ao); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(export, out, &ao); err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: ao.Error}); err != nil {

@@ -11,8 +11,11 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestEncodeForExportBinaryWire proves the encode arm produces the bytes the
@@ -118,19 +121,114 @@ func TestEncodeForExportConvertsAParserInput(t *testing.T) {
 // table does not know at all. The second matters as much as the first — a guest
 // reads its own input and reports its own failure, so an unknown name is passed
 // through rather than refused.
+//
+// Every row the generated table carries is on the binary wire, so the text-wire
+// arm is driven through a table built here, the way the refusal below is; the
+// unknown export goes through the generated table, where it is unknown.
 func TestEncodeForExportTextWirePassesThrough(t *testing.T) {
 	t.Parallel()
 
-	for _, export := range []string{"verdict_ir", "transform_annotations", "describe"} {
+	text := []byte(`{"k":1}`)
+	t.Run("text-wire row", func(t *testing.T) {
+		t.Parallel()
+		table := []entry{
+			{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: failEncode(t)},
+		}
+		got, err := encodeForExport(table, "verdict_ir", text)
+		if err != nil {
+			t.Fatalf("a text-wire export should pass its payload through; got %v", err)
+		}
+		if !bytes.Equal(got, text) {
+			t.Fatalf("payload = %q; want it unchanged at %q", got, text)
+		}
+	})
+	t.Run("unknown export", func(t *testing.T) {
+		t.Parallel()
+		got, err := EncodeForExport("describe", text)
+		if err != nil {
+			t.Fatalf("an export the table does not know should pass its payload through; got %v", err)
+		}
+		if !bytes.Equal(got, text) {
+			t.Fatalf("payload = %q; want it unchanged at %q", got, text)
+		}
+	})
+}
+
+// TestEncodeForExportConvertsTheGovernanceRoleInputs covers the governance roles
+// whose payloads the generated table converts besides the label-transform one:
+// the two verdict roles and the annotation-transform role. For each, the authored
+// payload is the JSON form of the role's input, and what reaches the guest must be
+// byte for byte what the host itself hands a guest serving that role for the same
+// input — so a guest driven directly reads exactly what a build gives it.
+//
+// The graph's nodes, one node's labels and the target's annotations are authored
+// in an order that is neither sorted nor reversed. The host holds them in the
+// order they were written, so a conversion that sorted them on the way would
+// produce different bytes and fail here.
+//
+// The export names are read from the role registry rather than spelled here.
+func TestEncodeForExportConvertsTheGovernanceRoleInputs(t *testing.T) {
+	t.Parallel()
+
+	var labels types.OrderedMap[string]
+	for _, k := range []string{"d", "8080", "bbbb", "aaaaaaaa", "cc"} {
+		labels.Set(k, "v-"+k)
+	}
+	var graph types.IRGraph
+	graph.APIVersion = types.IRAPIVersion
+	graph.Kind = types.IRKind
+	graph.Spec.Nodes.Set("web", types.IRNode{Labels: labels, Component: "example/web", ResolvedVersion: "1.0.0"})
+	graph.Spec.Nodes.Set("api", types.IRNode{Component: "example/api", ResolvedVersion: "2.0.0"})
+	graph.Spec.Edges = []types.IREdge{{Source: "web", Target: "api", SocketDeclaration: types.SocketDeclarationAdHoc}}
+	policy := analyzer.PolicyInput{
+		Graph:              graph,
+		PrecalculatedPaths: []analyzer.PrecalculatedPath{{PathID: "path_01", Nodes: []string{"web", "api"}, AttachedFeatures: []string{}}},
+		Sources:            []analyzer.PolicySource{{Path: "policy.rego", Content: "package p\n"}},
+		Settings:           map[string]any{"limit": json.Number("3")},
+	}
+	render := analyzer.RenderPolicyInput{
+		Artifacts: []analyzer.RenderedArtifact{{Path: "main.tf", Content: "a = 1\n", Tree: json.RawMessage(`{"a":1}`), Format: "hcl"}},
+		Settings:  map[string]any{"limit": json.Number("3")},
+	}
+	var annotations types.OrderedMap[string]
+	for _, k := range []string{"zz.example.com/last", "aa.example.com/first", "mm.example.com/mid"} {
+		annotations.Set(k, "v")
+	}
+	annotation := pipeline.AnnotationTransformInput{
+		Targets:     []pipeline.AnnotationTarget{{BoundaryPath: "main", ComponentName: "web", Annotations: annotations}},
+		BindingKeys: []string{"backup.example.com/schedule"},
+		Settings:    json.RawMessage(`{"limit":3}`),
+	}
+
+	cases := []struct {
+		role  plugintype.Role
+		value interface{ EncodeCBOR() ([]byte, error) }
+	}{
+		{plugintype.RoleIRVerdict, policy},
+		{plugintype.RoleRenderVerdict, render},
+		{plugintype.RoleAnnotationTransform, annotation},
+	}
+	for _, tc := range cases {
+		export, ok := plugintype.GovernanceRoleExport(tc.role)
+		if !ok {
+			t.Fatalf("the %s role has no default export", tc.role)
+		}
 		t.Run(export, func(t *testing.T) {
 			t.Parallel()
-			text := []byte(`{"k":1}`)
-			got, err := EncodeForExport(export, text)
+			want, err := tc.value.EncodeCBOR()
 			if err != nil {
-				t.Fatalf("a text-wire export should pass its payload through; got %v", err)
+				t.Fatalf("encode the %s input: %v", tc.role, err)
 			}
-			if !bytes.Equal(got, text) {
-				t.Fatalf("payload = %q; want it unchanged at %q", got, text)
+			authored, err := json.Marshal(tc.value)
+			if err != nil {
+				t.Fatalf("write the authored payload: %v", err)
+			}
+			got, err := EncodeForExport(export, authored)
+			if err != nil {
+				t.Fatalf("encoding the %s role's authored input should succeed; got %v", tc.role, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("encoded payload = %x; want %x", got, want)
 			}
 		})
 	}

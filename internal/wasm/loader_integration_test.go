@@ -93,23 +93,42 @@ func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 	}
 }
 
-// assertPolicyValidatorOutput parses the policy plugin's
+// policyFixtureInput is the ir-verdict payload the policy round-trip tests hand
+// every language's fixture: an empty build graph, built on the generated payload
+// type and encoded by the generated codec, in the encoding the verdict roles
+// carry. The fixtures' outputs are constants, so the payload's content is not
+// what is under test; its encoding is, because a guest reading the wrong one
+// fails before it answers.
+func policyFixtureInput(t *testing.T) []byte {
+	t.Helper()
+	inputBytes, err := abi.PolicyInput{}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode PolicyInput: %v", err)
+	}
+	return inputBytes
+}
+
+// decodePolicyOutput reads a policy fixture's output through the strict decode
+// entry point the socket itself uses, so a guest that returned some other
+// envelope is refused here rather than read as a plugin that fired no verdict.
+func decodePolicyOutput(t *testing.T, outputBytes []byte) abi.PolicyOutput {
+	t.Helper()
+	var out abi.PolicyOutput
+	if err := out.DecodeCBORStrict(outputBytes); err != nil {
+		t.Fatalf("decode PolicyOutput: %v (output: %x)", err, outputBytes)
+	}
+	return out
+}
+
+// assertPolicyValidatorOutput reads the policy plugin's
 // output bytes, asserts there are exactly two fired verdicts, and that
 // the severity pattern is halt-then-info in that order. The fixture's
 // contract is constant across languages; the assertion is shared.
 func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	t.Helper()
-	var out struct {
-		Results []struct {
-			Severity string `json:"severity"`
-			Message  string `json:"message"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal(outputBytes, &out); err != nil {
-		t.Fatalf("unmarshal PolicyValidatorOutput: %v (output: %s)", err, outputBytes)
-	}
+	out := decodePolicyOutput(t, outputBytes)
 	if len(out.Results) != 2 {
-		t.Fatalf("expected exactly two results from the fixture; got %d (output: %q)", len(out.Results), string(outputBytes))
+		t.Fatalf("expected exactly two results from the fixture; got %d (results: %+v)", len(out.Results), out.Results)
 	}
 	if out.Results[0].Severity != abi.SeverityHalt {
 		t.Errorf("expected results[0].severity=halt; got %q (message: %s)", out.Results[0].Severity, out.Results[0].Message)
@@ -154,7 +173,7 @@ func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-go.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", policyFixtureInput(t))
 	if err != nil {
 		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
@@ -169,7 +188,7 @@ func TestPluginRoundTrip_PolicyValidatorRust(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-rust.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", policyFixtureInput(t))
 	if err != nil {
 		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
@@ -200,7 +219,7 @@ func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-typescript.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", policyFixtureInput(t))
 	if err != nil {
 		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
@@ -210,10 +229,9 @@ func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
 // crossLanguageFixtureLangs enumerates the three source languages for
 // the parity tests. Each subtest's outputs are decoded into a Go
 // shape and compared via reflect.DeepEqual rather than asserting
-// byte-identical encoded bytes — JSON encoders may legitimately
-// differ in whitespace or key ordering even when the wire shape is
-// structurally equivalent. Structural equivalence is the invariant
-// the parity discipline asserts.
+// byte-identical encoded bytes: structural equivalence is the invariant
+// the parity discipline asserts, and it is what holds for every output
+// shape the parity tests read, whichever encoding carried it.
 var crossLanguageFixtureLangs = []string{"go", "rust", "typescript"}
 
 // TestCrossLanguageFixtureParity_PolicyValidator loads all three
@@ -229,29 +247,17 @@ var crossLanguageFixtureLangs = []string{"go", "rust", "typescript"}
 // the duration of the test; per-iteration release keeps memory
 // pressure bounded to one plugin at a time.
 func TestCrossLanguageFixtureParity_PolicyValidator(t *testing.T) {
-	type result struct {
-		Severity string `json:"severity"`
-		Message  string `json:"message"`
-	}
-	type output struct {
-		Results []result `json:"results"`
-	}
-
-	var decoded []output
+	var decoded []abi.PolicyOutput
 	for _, lang := range crossLanguageFixtureLangs {
 		func() {
 			plugin, cleanup := loadFixturePlugin(t, "policy-"+lang+".wasm")
 			defer cleanup()
 
-			outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
+			outputBytes, err := plugin.Call(context.Background(), "verdict_ir", policyFixtureInput(t))
 			if err != nil {
 				t.Fatalf("plugin.Call verdict_ir (%s): %v", lang, err)
 			}
-			var o output
-			if err := json.Unmarshal(outputBytes, &o); err != nil {
-				t.Fatalf("unmarshal %s output: %v (output: %s)", lang, err, outputBytes)
-			}
-			decoded = append(decoded, o)
+			decoded = append(decoded, decodePolicyOutput(t, outputBytes))
 		}()
 	}
 

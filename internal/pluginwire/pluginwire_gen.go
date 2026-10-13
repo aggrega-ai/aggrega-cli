@@ -31,9 +31,9 @@ var entries = []entry{
 	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
 	{export: "parse", shape: "ParseInput", binary: true, encode: encodeParseInput},
-	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: false, encode: encodeAnnotationTransformInput},
-	{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: encodePolicyInput},
-	{export: "verdict_render", shape: "RenderPolicyInput", binary: false, encode: encodeRenderPolicyInput},
+	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: true, encode: encodeAnnotationTransformInput},
+	{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: encodePolicyInput},
+	{export: "verdict_render", shape: "RenderPolicyInput", binary: true, encode: encodeRenderPolicyInput},
 }
 
 // encodeImportInput reads an authored text payload into that shape and

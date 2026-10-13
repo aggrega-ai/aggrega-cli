@@ -381,6 +381,9 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.LinterInput](t, "MapOrderLinterInput", false)
 	vec[abi.MutatorGraph](t, "MapOrderMutatorGraph", false)
 	vec[abi.MutatorNode](t, "MapOrderMutatorNode", false)
+	// The policy payload declares no map of its own; it carries the graph, whose
+	// nodes and a node's labels are order-preserving, held here in a populated payload.
+	vec[abi.PolicyInput](t, "MapOrderPolicyInput", false)
 	vec[abi.RenderNodeOutput](t, "MapOrderRenderNodeOutput", false)
 	vec[abi.RenderedNode](t, "MapOrderRenderedNode", false)
 	vec[abi.SubChart](t, "MapOrderSubChart", false)

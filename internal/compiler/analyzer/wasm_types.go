@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// PolicyInput is the JSON payload Step 4 hands to the policy socket. Graph
+// PolicyInput is the payload Step 4 hands to the policy socket. Graph
 // carries the full provider-agnostic IR graph — the same [types.IRGraph] the
 // Topology Builder emits — so the policy plugin reasons over the complete node,
 // edge, and attachment detail the compiler holds rather than a narrow
@@ -21,8 +21,8 @@ import (
 // generated guest codec in aggrega-abi mirrors it.
 //
 // assemblePolicyInput populates the structure on every build; the Step-4
-// policy socket marshals it to a configured policy plugin and reads
-// the plugin's verdicts back. Graph is assembled whole here, and what crosses
+// policy socket encodes it as canonical CBOR for a configured policy plugin and
+// reads the plugin's verdicts back. Graph is assembled whole here, and what crosses
 // the socket is a copy of it with every leaf the graph's own sensitivity
 // markings name replaced by the withheld marker — the same withholding the
 // printed graph applies — so a plugin still reads where a datum an author
@@ -66,7 +66,7 @@ const (
 	SeverityInfo = abi.SeverityInfo
 )
 
-// RenderPolicyInput is the JSON payload the render stage hands to a
+// RenderPolicyInput is the payload the render stage hands to a
 // policy socket that declares the render stage. Artifacts
 // carries the rendered output files the policy reasons over — each entry a
 // path and its rendered content — as an ordered list sorted by path so the

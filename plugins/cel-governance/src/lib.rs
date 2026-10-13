@@ -183,7 +183,7 @@ use aggrega_pdk_rust::{
 };
 use extism_pdk::{plugin_fn, FnResult};
 use governancecore::artifacts::render_input;
-use governancecore::payload::{read as read_payload, settings_value};
+use governancecore::payload::settings_value;
 use governancecore::sources::{project as project_sources, Source};
 use governancecore::translation::{settings_schema, Translation};
 
@@ -256,35 +256,39 @@ pub fn describe() -> FnResult<String> {
 /// Evaluates the attached expressions against the build graph and reports the
 /// decisions they reached. A failure to evaluate propagates, and is surfaced as a
 /// build fault rather than as a decision.
+///
+/// Every governance role's payload and result travel as canonical CBOR, so each
+/// export takes and returns bytes rather than text.
 #[plugin_fn]
-pub fn verdict_ir(input: String) -> FnResult<String> {
+pub fn verdict_ir(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = graph_verdict(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Evaluates the attached expressions against the rendered output files and
 /// reports the decisions they reached. A failure to evaluate propagates, and is
 /// surfaced as a build fault rather than as a decision.
 #[plugin_fn]
-pub fn verdict_render(input: String) -> FnResult<String> {
+pub fn verdict_render(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = rendered_verdict(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Reads the build-graph payload and evaluates the expressions against it.
 ///
 /// The whole payload is the input document, so a policy reads the graph and the
-/// routing paths under the names the wire gives them. The settings are written in
-/// as a value even when the attachment declared none: an expression that reads an
-/// absent field fails, so leaving the field out would turn "this attachment
-/// configured nothing" into a policy failure for every policy that reads a
-/// threshold.
-fn graph_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let graph: PolicyInput = read_payload(&payload, &["precalculated_paths"])?;
+/// routing paths under the names the wire gives them; the evaluator reads a JSON
+/// document, so the decoded payload is written back out as one. The settings are
+/// written in as a value even when the attachment declared none: an expression
+/// that reads an absent field fails, so leaving the field out would turn "this
+/// attachment configured nothing" into a policy failure for every policy that
+/// reads a threshold.
+fn graph_verdict(raw: &[u8]) -> anyhow::Result<PolicyOutput> {
+    let graph = PolicyInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the ir-verdict payload: {err}"))?;
     let translation = Translation::from_settings(graph.settings.as_deref())?;
     let sources = project_sources(&graph.sources);
-    let mut input = payload;
+    let mut input = serde_json::to_value(&graph)?;
     input[SETTINGS_FIELD] = settings_value(graph.settings.as_deref());
     verdict(&sources, &input, &translation)
 }
@@ -294,9 +298,9 @@ fn graph_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
 /// This input document is assembled rather than passed through, because the
 /// artifacts are projected into readable documents on the way. It already carries
 /// the settings under the same name.
-fn rendered_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let rendered: RenderPolicyInput = read_payload(&payload, &["artifacts"])?;
+fn rendered_verdict(raw: &[u8]) -> anyhow::Result<PolicyOutput> {
+    let rendered = RenderPolicyInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the render-verdict payload: {err}"))?;
     let translation = Translation::from_settings(rendered.settings.as_deref())?;
     let sources = project_sources(&rendered.sources);
     let input = render_input(&rendered);
@@ -320,10 +324,6 @@ fn verdict(
 /// Reports which labels the build's nodes should carry, as the label changes the
 /// build applies. A failure to evaluate propagates, and is surfaced as a build
 /// fault rather than as a change.
-///
-/// This role's payload and result travel as canonical CBOR, so the export takes
-/// and returns bytes rather than text. The other two exports still carry the
-/// textual encoding; each reads its own payload, so they move independently.
 #[plugin_fn]
 pub fn mutate(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = label_changes(&input)?;
@@ -347,16 +347,16 @@ fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
 /// to evaluate propagates, and is surfaced as a build fault rather than as a
 /// change.
 #[plugin_fn]
-pub fn transform_annotations(input: String) -> FnResult<String> {
+pub fn transform_annotations(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = annotation_injections(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Evaluates the attached expressions against the injection-target payload and
 /// reads their annotation decisions.
-fn annotation_injections(raw: &str) -> anyhow::Result<AnnotationTransformOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let input: AnnotationTransformInput = read_payload(&payload, &["targets", "binding_keys"])?;
+fn annotation_injections(raw: &[u8]) -> anyhow::Result<AnnotationTransformOutput> {
+    let input = AnnotationTransformInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the annotation-transform payload: {err}"))?;
     let document = transform_input(&input, &input.sources, input.settings.as_deref())?;
     let decisions = engine::decisions(
         &project_sources(&input.sources),
@@ -408,12 +408,12 @@ mod tests {
                 .map(a, "a service was rendered to " + a.path)
     }"#;
 
-    /// Builds a graph payload carrying the named nodes.
+    /// Builds a graph carrying the named nodes.
     ///
     /// The graph is built from the generated type's own defaults rather than
-    /// hand-written JSON, so a field added to the wire shape does not silently
-    /// leave this fixture describing a graph the guest would reject.
-    fn graph_with_nodes(names: &[&str]) -> serde_json::Value {
+    /// hand-written, so a field added to the wire shape does not silently leave
+    /// this fixture describing a graph the guest would reject.
+    fn graph_with_nodes(names: &[&str]) -> aggrega_abi::IRGraph {
         let mut graph = aggrega_abi::IRGraph::default();
         for name in names {
             graph
@@ -421,21 +421,73 @@ mod tests {
                 .nodes
                 .insert((*name).to_string(), aggrega_abi::IRNode::default());
         }
-        serde_json::to_value(&graph).expect("a default graph serializes")
+        graph
+    }
+
+    /// Settings as the payload carries them: the attachment's JSON, verbatim.
+    fn raw_settings(settings: serde_json::Value) -> Box<serde_json::value::RawValue> {
+        serde_json::value::RawValue::from_string(settings.to_string())
+            .expect("test settings are valid JSON")
+    }
+
+    /// Builds a graph-facet payload: a graph with the named nodes, one policy file
+    /// under the given name, and the given settings — encoded by the generated
+    /// codec the host's own encoder agrees with byte for byte, so the export reads
+    /// exactly what a dispatch hands it.
+    fn graph_payload_at(
+        path: &str,
+        nodes: &[&str],
+        policy: &str,
+        settings: Option<serde_json::Value>,
+    ) -> Vec<u8> {
+        PolicyInput {
+            graph: graph_with_nodes(nodes),
+            precalculated_paths: Vec::new(),
+            sources: vec![aggrega_abi::PolicySource {
+                path: path.to_string(),
+                content: policy.to_string(),
+            }],
+            settings: settings.map(raw_settings),
+        }
+        .encode_cbor()
+        .expect("the payload encodes")
     }
 
     /// Builds a graph-facet payload: a graph with the named nodes, one policy
     /// source, and the given settings.
-    fn graph_payload(nodes: &[&str], policy: &str, settings: Option<serde_json::Value>) -> String {
-        let mut payload = serde_json::json!({
-            "graph": graph_with_nodes(nodes),
-            "precalculated_paths": [],
-            "sources": [{ "path": "policy.cel", "content": policy }],
-        });
-        if let Some(settings) = settings {
-            payload["settings"] = settings;
+    fn graph_payload(nodes: &[&str], policy: &str, settings: Option<serde_json::Value>) -> Vec<u8> {
+        graph_payload_at("policy.cel", nodes, policy, settings)
+    }
+
+    /// Builds a rendered-output payload: the given artifacts, one policy source,
+    /// and the given settings.
+    fn rendered_payload(
+        artifacts: Vec<aggrega_abi::RenderedArtifact>,
+        policy: &str,
+        settings: Option<serde_json::Value>,
+    ) -> Vec<u8> {
+        RenderPolicyInput {
+            artifacts,
+            sources: vec![aggrega_abi::PolicySource {
+                path: "policy.cel".to_string(),
+                content: policy.to_string(),
+            }],
+            settings: settings.map(raw_settings),
         }
-        payload.to_string()
+        .encode_cbor()
+        .expect("the payload encodes")
+    }
+
+    /// One rendered file, optionally carrying the tree the host parsed it into.
+    fn artifact(path: &str, content: &str, tree: Option<&str>, format: &str) -> aggrega_abi::RenderedArtifact {
+        aggrega_abi::RenderedArtifact {
+            path: path.to_string(),
+            content: content.to_string(),
+            tree: tree.map(|t| {
+                serde_json::value::RawValue::from_string(t.to_string()).expect("test tree is valid JSON")
+            }),
+            format: format.to_string(),
+        }
     }
 
     #[test]
@@ -499,11 +551,12 @@ mod tests {
 
     #[test]
     fn the_rendered_facet_reads_the_artifacts() {
-        let payload = serde_json::json!({
-            "artifacts": [{ "path": "svc.yaml", "content": "kind: Service\n" }],
-            "sources": [{ "path": "policy.cel", "content": ARTIFACT_POLICY }],
-        });
-        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
+        let payload = rendered_payload(
+            vec![artifact("svc.yaml", "kind: Service\n", None, "")],
+            ARTIFACT_POLICY,
+            None,
+        );
+        let output = rendered_verdict(&payload).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(
             output.results[0].message,
@@ -513,16 +566,17 @@ mod tests {
 
     #[test]
     fn the_rendered_facet_reads_a_host_supplied_tree() {
-        let payload = serde_json::json!({
-            "artifacts": [{
-                "path": "main.tf",
-                "content": "resource \"x\" \"y\" {\n a = 1\n}\n",
-                "tree": { "kind": "Service" },
-                "format": "hcl",
-            }],
-            "sources": [{ "path": "policy.cel", "content": ARTIFACT_POLICY }],
-        });
-        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
+        let payload = rendered_payload(
+            vec![artifact(
+                "main.tf",
+                "resource \"x\" \"y\" {\n a = 1\n}\n",
+                Some(r#"{ "kind": "Service" }"#),
+                "hcl",
+            )],
+            ARTIFACT_POLICY,
+            None,
+        );
+        let output = rendered_verdict(&payload).expect("evaluation succeeds");
         assert_eq!(
             output.results.len(),
             1,
@@ -533,14 +587,12 @@ mod tests {
 
     #[test]
     fn the_rendered_facet_can_reject_on_a_file_it_could_not_read() {
-        let payload = serde_json::json!({
-            "artifacts": [{ "path": "broken.yaml", "content": "{ replicas: [1, 2\n" }],
-            "sources": [{
-                "path": "policy.cel",
-                "content": r#"{"deny": input.artifacts.filter(a, has(a.parse_error)).map(a, "unreadable output at " + a.path)}"#,
-            }],
-        });
-        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
+        let payload = rendered_payload(
+            vec![artifact("broken.yaml", "{ replicas: [1, 2\n", None, "")],
+            r#"{"deny": input.artifacts.filter(a, has(a.parse_error)).map(a, "unreadable output at " + a.path)}"#,
+            None,
+        );
+        let output = rendered_verdict(&payload).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(
             output.results[0].message,
@@ -560,13 +612,8 @@ mod tests {
         assert_eq!(graph.results.len(), 1, "{:?}", graph.results);
         assert_eq!(graph.results[0].severity, SEVERITY_INFO);
 
-        let rendered_payload = serde_json::json!({
-            "artifacts": [],
-            "sources": [{ "path": "policy.cel", "content": policy }],
-            "settings": settings,
-        });
-        let rendered =
-            rendered_verdict(&rendered_payload.to_string()).expect("the rendered facet evaluates");
+        let rendered = rendered_verdict(&rendered_payload(Vec::new(), policy, Some(settings)))
+            .expect("the rendered facet evaluates");
         assert_eq!(rendered.results.len(), 1, "{:?}", rendered.results);
         assert_eq!(rendered.results[0].severity, SEVERITY_INFO);
     }
@@ -607,16 +654,18 @@ mod tests {
     }
 
     #[test]
-    fn the_graph_facet_tolerates_absent_routing_paths() {
-        // Some senders write the absent value where the payload declares a list.
-        // Refusing it would fail an ordinary build with nothing to enumerate.
-        let payload = serde_json::json!({
-            "graph": graph_with_nodes(&["a"]),
-            "precalculated_paths": serde_json::Value::Null,
-            "sources": [{ "path": "policy.cel", "content": GRAPH_POLICY }],
-        });
-        let output = graph_verdict(&payload.to_string()).expect("evaluation succeeds");
+    fn the_graph_facet_reads_a_build_with_no_routing_paths() {
+        // A build with nothing to enumerate carries an empty list of routing
+        // paths, which is an ordinary build rather than a malformed payload.
+        let output = graph_verdict(&graph_payload(&["a"], GRAPH_POLICY, None))
+            .expect("evaluation succeeds");
         assert!(output.results.is_empty(), "{:?}", output.results);
+    }
+
+    #[test]
+    fn a_graph_payload_that_cannot_be_read_fails_loudly() {
+        let err = graph_verdict(&[0xff, 0xff, 0xff]).expect_err("unreadable bytes are refused");
+        assert!(err.to_string().contains("ir-verdict payload"), "{err}");
     }
 
     #[test]
@@ -676,13 +725,8 @@ mod tests {
 
     /// Builds a graph-facet payload carrying one policy file under the given name,
     /// so a test can choose which authored form the name selects.
-    fn payload_named(path: &str, nodes: &[&str], policy: &str) -> String {
-        serde_json::json!({
-            "graph": graph_with_nodes(nodes),
-            "precalculated_paths": [],
-            "sources": [{ "path": path, "content": policy }],
-        })
-        .to_string()
+    fn payload_named(path: &str, nodes: &[&str], policy: &str) -> Vec<u8> {
+        graph_payload_at(path, nodes, policy, None)
     }
 
     /// The label-transform payload, as canonical bytes on the wire: a build of the
@@ -714,10 +758,10 @@ mod tests {
         input.encode_cbor().expect("the payload encodes")
     }
 
-    /// The annotation-transform payload, as the host writes it: the named
+    /// The annotation-transform payload, as canonical bytes on the wire: the named
     /// components under one boundary, with one registered annotation key and one
     /// policy file.
-    fn annotation_payload(components: &[&str], path: &str, policy: &str) -> String {
+    fn annotation_payload(components: &[&str], path: &str, policy: &str) -> Vec<u8> {
         let mut input = AnnotationTransformInput {
             binding_keys: vec!["gate.example.com/tier".to_string()],
             ..Default::default()
@@ -733,7 +777,7 @@ mod tests {
             path: path.to_string(),
             content: policy.to_string(),
         });
-        serde_json::to_string(&input).expect("the payload serializes")
+        input.encode_cbor().expect("the payload encodes")
     }
 
     fn patch_documents(output: &MutatorOutput) -> Vec<serde_json::Value> {
