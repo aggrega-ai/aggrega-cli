@@ -127,7 +127,7 @@ inside the plugin is distinguishable from a failure of aggrega itself.`,
 
 			loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 			// Real-execution load: run-local actually invokes a guest export via
-			// InvokeExportStatus below, so it needs the runnable plugin and real
+			// InvokeNamedExportStatus below, so it needs the runnable plugin and real
 			// host functions that LoadAndDescribe binds — not the describe-only
 			// introspection path.
 			plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
@@ -140,7 +140,9 @@ inside the plugin is distinguishable from a failure of aggrega itself.`,
 				return err
 			}
 
-			exitCode, out, err := wasm.InvokeExportStatus(ctx, plugin, desc, export, payload)
+			// The operator names the export, so it is called by that name rather
+			// than through an identifier of the host's own.
+			exitCode, out, err := wasm.InvokeNamedExportStatus(ctx, plugin, desc, export, payload)
 			if err != nil {
 				return err
 			}

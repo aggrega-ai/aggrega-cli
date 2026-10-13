@@ -163,62 +163,113 @@ func TestHostGuestWireParity_AnnotationTransform(t *testing.T) {
 	crossSide(t, "AnnotationTransformInput", got, &abi.AnnotationTransformInput{})
 }
 
-// TestHostGuestWireParity_Linter pins a known asymmetry rather than asserting
-// the byte-identity the other pairs hold, and the asymmetry is not a property of
-// the transport: it is present on the JSON wire too.
+// TestHostGuestWireParity_Linter pins the linter payload's byte identity across
+// the boundary, in the direction each half runs in a build.
 //
-// The linter payload's publishing-discipline configuration is optional, and the
-// two sides realize it differently — the compiler side carries it as an opaque
-// payload, which has an absent state and is dropped when absent; the plugin side
-// realizes it as a typed object value, which has no absent state and therefore
-// always emits the key with an empty object. So a payload the compiler emits
-// without the key re-emits from the plugin side WITH it.
+// The publishing-discipline configuration is the typed Policies object on both
+// sides, so both write it on every input, as an empty map when no flag is set,
+// and the compiler's encoding of an input decodes on the plugin side and
+// re-encodes to the identical bytes. The input cases cover one with no flag set
+// and one carrying flags beside a whole Release, whose components are inserted in
+// an order that is not their canonical one, so a side that sorted them would
+// disagree here.
 //
-// The direction that runs in a build is unaffected: the compiler encodes this
-// payload and the plugin decodes it, and that decode succeeds. The reverse
-// direction — a plugin emitting this payload for the compiler to read — is not a
-// path any socket uses. The assertions below fix the current shape in place so
-// that closing the asymmetry, or widening it, is a deliberate change with a
-// failing test to acknowledge rather than a silent drift.
+// The findings run the other way in a build: the plugin writes the output and the
+// compiler reads it through the strict decode its dispatch sites use, so that
+// case encodes on the plugin side and re-encodes on the compiler side.
 func TestHostGuestWireParity_Linter(t *testing.T) {
 	t.Parallel()
 
-	in := validator.LinterInput{
-		RuleID:     "schema-evolution",
-		EntityKind: "Component",
-		Proposed:   json.RawMessage(`{"apiVersion":"aggrega.ai/v1alpha1"}`),
-		SourcePath: "core/compute/web-service/1.0.0/component.yaml",
+	cases := []struct {
+		name string
+		in   validator.LinterInput
+		// order is the component order the compiler side was handed, which the
+		// plugin side must decode in that order rather than a sorted one.
+		order []string
+	}{
+		{
+			name: "no flag set",
+			in: validator.LinterInput{
+				RuleID:     "schema-evolution",
+				EntityKind: "Component",
+				Proposed:   json.RawMessage(`{"apiVersion":"aggrega.ai/v1alpha1"}`),
+				SourcePath: "core/compute/web-service/1.0.0/component.yaml",
+			},
+		},
+		{
+			name: "flags set beside a whole Release",
+			in: validator.LinterInput{
+				RuleID:     "connection-credential-matches-target-key",
+				EntityKind: "Aggregate",
+				Proposed:   json.RawMessage(`{"kind":"Aggregate"}`),
+				Release:    json.RawMessage(`{"kind":"Release"}`),
+				Components: om[json.RawMessage](t,
+					"zeta", json.RawMessage(`{"kind":"Component"}`),
+					"alpha", json.RawMessage(`{"kind":"Component","n":1}`),
+					"mid", json.RawMessage(`{"kind":"Component","n":2}`),
+				),
+				Policies: validator.Policies{
+					AllowDynamicRefs:                    true,
+					AllowConnectionCredentialMismatches: true,
+				},
+			},
+			order: []string{"zeta", "alpha", "mid"},
+		},
 	}
-	hostBytes, err := in.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("compiler-side encode: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hostBytes, err := tc.in.EncodeCBOR()
+			if err != nil {
+				t.Fatalf("compiler-side encode: %v", err)
+			}
+			crossSide(t, "LinterInput", hostBytes, &abi.LinterInput{})
+
+			var guest abi.LinterInput
+			if err := guest.DecodeCBOR(hostBytes); err != nil {
+				t.Fatalf("plugin-side decode of compiler-side bytes: %v", err)
+			}
+			// The conversion compiles only while the two sides declare the same
+			// fields, which is the shared shape this test is about.
+			if got := validator.Policies(guest.Policies); got != tc.in.Policies {
+				t.Errorf("plugin-side decode of the configuration = %+v, want %+v", got, tc.in.Policies)
+			}
+			if !bytes.Equal(guest.Proposed, tc.in.Proposed) {
+				t.Errorf("plugin-side decode of the opaque payload = %q, want %q", guest.Proposed, tc.in.Proposed)
+			}
+			if tc.order != nil && !sameKeys(guest.Components.Keys(), tc.order) {
+				t.Errorf("plugin-side decoded component order = %v, want the inserted order %v",
+					guest.Components.Keys(), tc.order)
+			}
+		})
 	}
 
-	var guest abi.LinterInput
-	if err := guest.DecodeCBOR(hostBytes); err != nil {
-		t.Fatalf("plugin-side decode of compiler-side bytes: %v", err)
-	}
-	if guest.RuleID != in.RuleID || guest.EntityKind != in.EntityKind || guest.SourcePath != in.SourcePath {
-		t.Errorf("plugin-side decode lost a field: %+v", guest)
-	}
-	if !bytes.Equal(guest.Proposed, in.Proposed) {
-		t.Errorf("plugin-side decode of the opaque payload = %q, want %q", guest.Proposed, in.Proposed)
-	}
-
-	guestBytes, err := guest.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("plugin-side re-encode: %v", err)
-	}
-	// "policies" as a CBOR text string: major type 3, length 8.
-	policiesKey := append([]byte{0x60 | 8}, "policies"...)
-	if bytes.Contains(hostBytes, policiesKey) {
-		t.Errorf("compiler side now emits the optional configuration key; the asymmetry this test pins has changed: %s",
-			hex.EncodeToString(hostBytes))
-	}
-	if !bytes.Contains(guestBytes, policiesKey) {
-		t.Errorf("plugin side no longer emits the optional configuration key; the asymmetry this test pins has changed: %s",
-			hex.EncodeToString(guestBytes))
-	}
+	t.Run("findings written by the plugin side", func(t *testing.T) {
+		t.Parallel()
+		out := abi.LinterOutput{Findings: []abi.Diagnostic{
+			{RuleID: "name-shape", Severity: "halt", Message: "the name is not kebab-case"},
+			{RuleID: "category-matches-directory", Severity: "warn", Message: "the category label names another directory"},
+		}}
+		guestBytes, err := out.EncodeCBOR()
+		if err != nil {
+			t.Fatalf("plugin-side encode: %v", err)
+		}
+		var host validator.LinterOutput
+		if err := host.DecodeCBORStrict(guestBytes); err != nil {
+			t.Fatalf("compiler-side strict decode of plugin-side bytes: %v", err)
+		}
+		if len(host.Findings) != len(out.Findings) {
+			t.Fatalf("compiler-side decode carried %d finding(s), want %d", len(host.Findings), len(out.Findings))
+		}
+		back, err := host.EncodeCBOR()
+		if err != nil {
+			t.Fatalf("compiler-side re-encode: %v", err)
+		}
+		if !bytes.Equal(guestBytes, back) {
+			t.Errorf("LinterOutput: the two sides of the wire disagree.\nplugin side:   %s\ncompiler side: %s",
+				hex.EncodeToString(guestBytes), hex.EncodeToString(back))
+		}
+	})
 }
 
 func TestHostGuestWireParity_Descriptor(t *testing.T) {

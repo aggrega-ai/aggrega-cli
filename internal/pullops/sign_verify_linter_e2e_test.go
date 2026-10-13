@@ -13,6 +13,8 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -133,22 +135,27 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 		t.Errorf("plugin_type: got %q want %q", desc.PluginType, wasm.PluginTypeLinter)
 	}
 
-	payload := []byte(`{"rule_id":"name-shape","entity_kind":"Component","proposed":{"kind":"Component","metadata":{"name":"BadName"}}}`)
-	out, err := wasm.InvokeExport(ctx, plugin, desc, "lint_rules", payload)
+	// The linter socket carries canonical CBOR in both directions, so the input
+	// is encoded with the generated encoder and the answer read through the
+	// socket's strict binary decode.
+	payload, err := abi.LinterInput{
+		RuleID:     "name-shape",
+		EntityKind: "Component",
+		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"BadName"}}`),
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the linter input: %v", err)
+	}
+	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.LintRulesExport, payload)
 	if err != nil {
 		t.Fatalf("InvokeExport(lint_rules) on verified bytes: %v", err)
 	}
-	var parsed struct {
-		Findings []struct {
-			RuleID   string `json:"rule_id"`
-			Severity string `json:"severity"`
-		} `json:"findings"`
-	}
-	if err := json.Unmarshal(out, &parsed); err != nil {
-		t.Fatalf("unmarshal output: %v (raw: %s)", err, out)
+	var parsed abi.LinterOutput
+	if err := wasm.DecodeGuestOutputCBOR(wasm.LintRulesExport.Name(), out, &parsed); err != nil {
+		t.Fatalf("decode output: %v (raw: %x)", err, out)
 	}
 	if len(parsed.Findings) != 1 || parsed.Findings[0].RuleID != "name-shape" {
-		t.Fatalf("verified bytes did not run to the expected finding; got %s", out)
+		t.Fatalf("verified bytes did not run to the expected finding; got %+v", parsed.Findings)
 	}
 }
 

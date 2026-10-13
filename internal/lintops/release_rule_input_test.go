@@ -569,16 +569,8 @@ func TestReleaseRunCarriesTheCredentialMismatchSuppression(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("expected one release-scoped input; got %d", len(got))
 			}
-			var policies map[string]bool
-			if err := json.Unmarshal(got[0].Policies, &policies); err != nil {
-				t.Fatalf("policies must be a JSON object of booleans: %v (%s)", err, got[0].Policies)
-			}
-			v, ok := policies["allow_connection_credential_mismatches"]
-			if !ok {
-				t.Fatalf("the payload's policies do not carry the suppression: %s", got[0].Policies)
-			}
-			if v != tc.want {
-				t.Errorf("allow_connection_credential_mismatches = %v; want %v (policies %s)", v, tc.want, got[0].Policies)
+			if v := got[0].Policies.AllowConnectionCredentialMismatches; v != tc.want {
+				t.Errorf("allow_connection_credential_mismatches = %v; want %v (policies %+v)", v, tc.want, got[0].Policies)
 			}
 		})
 	}

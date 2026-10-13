@@ -96,7 +96,7 @@ func decodeVerdictWire(t *testing.T, document string) abi.PolicyOutput {
 		t.Fatalf("encode the fixture as a guest writes it: %v", err)
 	}
 	var out abi.PolicyOutput
-	if err := wasm.DecodeGuestOutputCBOR(wasm.VerdictIRExport, wire, &out); err != nil {
+	if err := wasm.DecodeGuestOutputCBOR(wasm.VerdictIRExport.Name(), wire, &out); err != nil {
 		t.Fatalf("decode guest verdict: %v", err)
 	}
 	return out

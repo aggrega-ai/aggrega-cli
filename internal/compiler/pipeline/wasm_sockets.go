@@ -151,11 +151,13 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 }
 
 // invokeSocketPlugin loads a plugin through the shared describe() gate, invokes
-// the named export against payload, and returns the guest's output bytes. It
-// mirrors the publishing-linter dispatch: a per-invocation loader, describe()
-// validation at load, and a Close that fires as the call unwinds so a socket
-// leaks no Wazero instance. The describe() gate refuses a plugin that lacks the
-// export or declares a descriptor the host rejects.
+// the attachment's export against payload, and returns the guest's output bytes.
+// The export is the entry function the attachment names, or roleDefault — the
+// role's listed default — when it names none. It mirrors the publishing-linter
+// dispatch: a per-invocation loader, describe() validation at load, and a Close
+// that fires as the call unwinds so a socket leaks no Wazero instance. The
+// describe() gate refuses a plugin that lacks the export or declares a
+// descriptor the host rejects.
 //
 // When the caller declares an expected plugin type on spec.PluginType, the
 // loaded descriptor's self-reported plugin_type must match it; a mismatch — a
@@ -163,12 +165,12 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 // with a legible message rather than through the cryptic missing-export error
 // the wrong export name would otherwise raise. A caller that leaves
 // spec.PluginType empty declares no expectation and skips the check.
-func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte) ([]byte, error) {
+func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, roleDefault wasm.HostExport, function string, payload []byte) ([]byte, error) {
 	var out []byte
 	err := withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
-		o, cerr := wasm.InvokeExport(ctx, plugin, desc, export, payload)
+		o, cerr := wasm.InvokeAuthoredExport(ctx, plugin, desc, roleDefault, function, payload)
 		if cerr != nil {
-			return fmt.Errorf("call %q: %w", export, cerr)
+			return fmt.Errorf("call %q: %w", wasm.AuthoredExportName(roleDefault, function), cerr)
 		}
 		out = o
 		return nil
@@ -226,10 +228,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 	cc := mutatorCompilationContext(inputs.Release)
 
 	for _, ref := range refs {
-		export := ref.Function
-		if export == "" {
-			export = wasm.MutateExport
-		}
+		export := wasm.AuthoredExportName(wasm.MutateExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("label-transform: resolve plugin %q: %w", ref.URI, err)
@@ -244,7 +243,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeSocketPlugin(ctx, spec, export, payload)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.MutateExport, ref.Function, payload)
 		if err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
@@ -310,7 +309,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	withheld := redact.Graph(&analysis.PolicyInput.Graph)
 
 	for _, ref := range refs {
-		export := policyExport(ref, wasm.VerdictIRExport)
+		export := wasm.AuthoredExportName(wasm.VerdictIRExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: resolve plugin %q: %w", ref.URI, err)
@@ -333,7 +332,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeVerdictPlugin(ctx, spec, export, payload, in.Settings)
+		out, err := invokeVerdictPlugin(ctx, spec, wasm.VerdictIRExport, ref.Function, payload, in.Settings)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
@@ -403,7 +402,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 
 	var haltErrs []analyzer.AnalysisError
 	for _, ref := range refs {
-		export := policyExport(ref, wasm.VerdictRenderExport)
+		export := wasm.AuthoredExportName(wasm.VerdictRenderExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("render-verdict: resolve plugin %q: %w", ref.URI, err)
@@ -423,7 +422,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeVerdictPlugin(ctx, spec, export, payload, settings)
+		out, err := invokeVerdictPlugin(ctx, spec, wasm.VerdictRenderExport, ref.Function, payload, settings)
 		if err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
@@ -477,31 +476,24 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 // role is structurally non-mutating regardless of what the guest emits. Sharing
 // withSocketPlugin means the settings check and the export dispatch read one
 // loaded guest — no double-load within the pass, no duplicated loader machinery.
-func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, settings map[string]any) (out []byte, err error) {
+//
+// The export is the entry function the attachment names, or roleDefault when it
+// names none. The caller supplies that default because the two verdict roles have
+// one export each, and a shared accessor cannot tell which of them it is being
+// asked about.
+func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, roleDefault wasm.HostExport, function string, payload []byte, settings map[string]any) (out []byte, err error) {
 	err = withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
 		if serr := desc.ValidateSettings(settings); serr != nil {
 			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid())
 		}
-		o, cerr := wasm.InvokeExport(ctx, plugin, desc, export, payload)
+		o, cerr := wasm.InvokeAuthoredExport(ctx, plugin, desc, roleDefault, function, payload)
 		if cerr != nil {
-			return fmt.Errorf("call %q: %w", export, cerr)
+			return fmt.Errorf("call %q: %w", wasm.AuthoredExportName(roleDefault, function), cerr)
 		}
 		out = o
 		return nil
 	})
 	return out, err
-}
-
-// policyExport returns the entry function a policy attachment dispatches to: the
-// per-attachment override when set, else roleDefault, the documented default for
-// the verdict role the attachment is serving. The caller supplies that default
-// because the two verdict roles have one export each, and a shared accessor
-// cannot tell which of them it is being asked about.
-func policyExport(ref workspaceconfig.PluginRef, roleDefault string) string {
-	if ref.Function != "" {
-		return ref.Function
-	}
-	return roleDefault
 }
 
 // attachmentSettings returns the free-form settings object the attachment

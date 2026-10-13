@@ -128,80 +128,27 @@ func minExportName(t plugintype.Type) string {
 // plugin-type registry so the literal lives once.
 var lintExportPrefix = minExportName(plugintype.Linter)
 
-// pipelineStepExportName is the required export name for a
-// feature-recipe-pipeline step plugin. It reads the name from the canonical
-// plugin-type registry so the literal lives once.
-var pipelineStepExportName = minExportName(plugintype.PipelineStep)
-
-// TransformAnnotationsExport, MutateExport, VerdictIRExport, and
-// VerdictRenderExport are the default entry-function names for the governance
-// roles: the annotation-transform role calls transform_annotations, the
-// label-transform role calls mutate, the ir-verdict role calls verdict_ir, and
-// the render-verdict role calls verdict_render. They are the single source for
-// the default a role applies when a governance attachment leaves its entry
-// function unset; they read the name from the canonical governance role→export
-// rule so the socket default and that rule read one name rather than each
-// re-spelling the literal.
+// The exports the host calls a guest with a payload — the governance roles'
+// defaults (TransformAnnotationsExport, MutateExport, VerdictIRExport,
+// VerdictRenderExport), the importer's ImportExport, the parser's ParseExport,
+// the CLI runner's CLIRunExport, the pipeline step's StepExport, the linter's
+// LintRulesExport and the provider's render family, the cross-boundary pair
+// LinkPublishExport and LinkResolveExport among them — are declared in the
+// generated host-export file beside this one, one [HostExport] per name the
+// plugin-type registry's host-export lists hold. This file's checks read them
+// from there, so the minimum-export rule, the link-pair coherence rule and the
+// export the host dispatches to read one name.
+//
+// The link pair is a paired contract: link_publish produces the wiring a
+// consumed endpoint's output needs and the published identity a consumer
+// resolves against; link_resolve produces the wiring that injects the reference
+// into the consuming endpoint's output. A provider that wires cross-boundary
+// edges declares both, and the load gate cross-checks the pair against the
+// plugin's cross-boundary-linking capability (see [PluginDescriptor.Validate]).
 //
 // The two verdict roles have one name each rather than one between them, because
 // each carries its own payload shape and the export name is what fixes which
 // shape a caller is holding.
-var (
-	TransformAnnotationsExport = governanceRoleExportName(plugintype.RoleAnnotationTransform)
-	MutateExport               = governanceRoleExportName(plugintype.RoleLabelTransform)
-	VerdictIRExport            = governanceRoleExportName(plugintype.RoleIRVerdict)
-	VerdictRenderExport        = governanceRoleExportName(plugintype.RoleRenderVerdict)
-)
-
-// governanceRoleExportName reads a governance role's required export name from
-// the canonical role→export rule, so the literal lives once.
-func governanceRoleExportName(role plugintype.Role) string {
-	name, _ := plugintype.GovernanceRoleExport(role)
-	return name
-}
-
-// ImportExport is the required export name for an importer plugin — the entry
-// point the host dispatches to when it turns a foreign source into draft Aggrega
-// authoring files. It reads the name from the canonical plugin-type registry so
-// the minimum-export rule this gate enforces and the export the host dispatches
-// to read one name rather than each re-spelling the literal.
-var ImportExport = minExportName(plugintype.Importer)
-
-// LinkPublishExport and LinkResolveExport are the two cross-boundary
-// edge-linking exports a provider plugin declares as a pair. link_publish
-// produces the wiring a consumed endpoint's output needs and the published
-// identity a consumer resolves against; link_resolve produces the wiring that
-// injects the reference into the consuming endpoint's output. They are a paired
-// contract — a provider that wires cross-boundary edges declares both, and the
-// load gate cross-checks the pair against the plugin's cross-boundary-linking
-// capability (see [PluginDescriptor.Validate]). They are the single source for
-// both the coherence rule this gate enforces and the export names the host
-// dispatches to.
-const (
-	LinkPublishExport = "link_publish"
-	LinkResolveExport = "link_resolve"
-)
-
-// providerRenderExportName is the required export name for a provider
-// plugin. It reads the name from the canonical plugin-type registry so the
-// literal lives once.
-var providerRenderExportName = minExportName(plugintype.Provider)
-
-// ParseExport is the required export name for a parser plugin — the
-// entry point the host dispatches to when it needs a source text turned into
-// a structured tree. The parser-socket orchestrator references it so the guest
-// export the host invokes cannot drift from the export the descriptor validator
-// requires. It reads the name from the canonical plugin-type registry so the
-// literal lives once.
-var ParseExport = minExportName(plugintype.Parser)
-
-// CLIRunExportName is the required export name for a CLI plugin — the
-// entry point the host dispatches to when an operator invokes the
-// plugin's aggrega <cmd> subcommand. The runtime CLI runner references it so
-// the guest export the runner invokes cannot drift from the export the
-// descriptor validator requires. It reads the name from the canonical
-// plugin-type registry so the literal lives once.
-var CLIRunExportName = minExportName(plugintype.CLI)
 
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
@@ -409,7 +356,7 @@ func (d PluginDescriptor) validateCommands(pluginIdentity string) error {
 // [ErrWasmManifestRejected] and names pluginIdentity and the specific
 // inconsistency.
 func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
-	bothExports := d.hasExport(LinkPublishExport) && d.hasExport(LinkResolveExport)
+	bothExports := d.hasExport(LinkPublishExport.Name()) && d.hasExport(LinkResolveExport.Name())
 	crossBoundaryLinking := d.Contract != nil && d.Contract.CrossBoundaryLinking
 	switch {
 	case crossBoundaryLinking && !bothExports:
@@ -565,7 +512,7 @@ func (d PluginDescriptor) hasExportWithPrefix(prefix string) bool {
 // reads the declared value first and falls back here only when it is
 // empty.
 func defaultInputPattern(pluginType PluginType, exportName string) InputPattern {
-	if pluginType == PluginTypePipelineStep && exportName == pipelineStepExportName {
+	if pluginType == PluginTypePipelineStep && exportName == StepExport.Name() {
 		return InputPatternMinimal
 	}
 	return InputPatternFull

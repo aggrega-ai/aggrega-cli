@@ -12,12 +12,17 @@
 //! The plugin self-describes via [`describe`]; the host validates that
 //! descriptor against its plugin contract before invoking
 //! [`lint_rules`].
+//!
+//! The linter socket carries canonical CBOR in both directions, so
+//! [`lint_rules`] takes and returns bytes, reading its input with
+//! `LinterInput::decode_cbor` and writing its output with
+//! `LinterOutput::encode_cbor`.
 
 use aggrega_pdk_rust::{
     describe, Diagnostic, LinterInput, LinterOutput, PluginDescriptor, PluginDescriptorMeta,
     PluginExport, API_VERSION,
 };
-use extism_pdk::{plugin_fn, FnResult, Json};
+use extism_pdk::{plugin_fn, FnResult};
 
 pub mod policies;
 pub mod raw;
@@ -66,8 +71,8 @@ pub fn describe() -> FnResult<String> {
 /// later rules register without re-versioning the plugin's exported
 /// surface.
 #[plugin_fn]
-pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
-    let input = input.0;
+pub fn lint_rules(input: Vec<u8>) -> FnResult<Vec<u8>> {
+    let input = LinterInput::decode_cbor(&input)?;
     let findings = match input.rule_id.as_str() {
         "schema-evolution" => rubric::classify(&input),
         "annotation-prefix" => rules::annotation_prefix::classify(&input),
@@ -93,8 +98,9 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
             ..Default::default()
         }],
     };
-    Ok(Json(LinterOutput {
+    let out = LinterOutput {
         findings,
         ..Default::default()
-    }))
+    };
+    Ok(out.encode_cbor()?)
 }

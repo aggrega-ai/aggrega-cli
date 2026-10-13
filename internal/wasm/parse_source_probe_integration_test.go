@@ -106,7 +106,7 @@ func embeddedParserSeam(t *testing.T) wasm.SourceParser {
 			return nil, err
 		}
 		var po abi.ParseOutput
-		if err := wasm.DecodeGuestOutputCBOR(wasm.ParseExport, out, &po); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(wasm.ParseExport.Name(), out, &po); err != nil {
 			return nil, err
 		}
 		return po.Tree, nil

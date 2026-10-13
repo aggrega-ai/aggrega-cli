@@ -70,4 +70,5 @@ package main
 //go:generate go run . ../../../../aggrega-abi/typescript/src/providerrender_gen.ts
 //go:generate go run . ../../compiler/rendercore/providerrender_host_gen.go
 //go:generate go run . ../../pluginwire/pluginwire_gen.go
+//go:generate go run . ../../wasm/hostexport_gen.go
 //go:generate go run . ../../../../aggrega-abi/typescript/src/servewire_gen.ts

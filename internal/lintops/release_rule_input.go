@@ -117,7 +117,7 @@ func releaseLinterJSON(rel *types.Release) (json.RawMessage, error) {
 // of the per-entity fields: there is no previous version, no source path and no
 // implemented Component, because the input describes a Release rather than one
 // file.
-func buildReleaseRuleInputs(rules []string, docs releaseRuleDocuments, policies json.RawMessage) []validator.LinterInput {
+func buildReleaseRuleInputs(rules []string, docs releaseRuleDocuments, policies validator.Policies) []validator.LinterInput {
 	inputs := make([]validator.LinterInput, 0, len(rules))
 	for _, r := range rules {
 		inputs = append(inputs, validator.LinterInput{

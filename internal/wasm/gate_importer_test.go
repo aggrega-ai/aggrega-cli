@@ -21,7 +21,7 @@ func TestPluginDescriptorValidateImporter(t *testing.T) {
 		AbiVersion:   ABIVersionV1Alpha1,
 		PluginType:   string(PluginTypeImporter),
 		Capabilities: []string{"import:terraform"},
-		Exports:      []PluginExport{{Name: ImportExport}},
+		Exports:      []PluginExport{{Name: ImportExport.Name()}},
 	}
 	if err := withImport.Validate("acme/importer"); err != nil {
 		t.Fatalf("importer with %q: want accept, got %v", ImportExport, err)

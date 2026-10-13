@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // entries binds each plugin export to the payload shape it receives and to the
@@ -29,6 +30,7 @@ import (
 // Sorted by export name and then payload shape.
 var entries = []entry{
 	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
+	{export: "lint_rules", shape: "LinterInput", binary: true, encode: encodeLinterInput},
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
 	{export: "parse", shape: "ParseInput", binary: true, encode: encodeParseInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: true, encode: encodeAnnotationTransformInput},
@@ -40,6 +42,16 @@ var entries = []entry{
 // re-emits it in the canonical binary encoding.
 func encodeImportInput(text []byte) ([]byte, error) {
 	var v abi.ImportInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeLinterInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeLinterInput(text []byte) ([]byte, error) {
+	var v validator.LinterInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}

@@ -55,10 +55,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 	bindingKeys := resolver.BuildAnnotationRegistry(rr.Manifest).Keys()
 
 	for _, ref := range refs {
-		export := ref.Function
-		if export == "" {
-			export = wasm.TransformAnnotationsExport
-		}
+		export := wasm.AuthoredExportName(wasm.TransformAnnotationsExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("annotation-transform: resolve plugin %q: %w", ref.URI, err)
@@ -76,7 +73,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeSocketPlugin(ctx, spec, export, payload)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.TransformAnnotationsExport, ref.Function, payload)
 		if err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}

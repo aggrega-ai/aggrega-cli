@@ -62,11 +62,13 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/exportname"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
@@ -461,17 +463,22 @@ type codecTarget struct {
 	// payload, for every export this target's types serve. It is one half of what
 	// the plugin-wire registry is emitted from; binaryWire below is the other.
 	//
-	// The export NAME is deliberately absent: an entry names either the attachment
-	// ROLE whose default the export is, or the plugin TYPE whose required export it
-	// is, and the name is read from the plugin type vocabulary's canonical rule for
-	// that key. Those rules are also what the host's own dispatch reads, so the
-	// registry and the dispatch cannot disagree about what an export is called —
-	// there is no second spelling of the name to drift.
+	// The export name is never spelled here: an entry names either the attachment
+	// ROLE whose default the export is, or the plugin TYPE whose host export it is —
+	// together with WHICH of that type's listed exports, by the constant the type's
+	// list itself reads, or alone where the list holds exactly one. The name is
+	// checked against the plugin-type registry — the role rule, or the type's
+	// host-export list. That list is also what the host's own dispatch identifiers
+	// are generated from, so the registry and the dispatch cannot disagree about
+	// what an export is called — there is no second spelling of the name to drift.
 	//
-	// A target registered on the binary wire must declare every export its socket
-	// carries here, and generation refuses one that declares none: a socket that
-	// moved to the binary wire with no entry would leave a caller converting an
-	// authored payload for its export handing the guest text it cannot read.
+	// A target registered on the binary wire must declare here every export its
+	// socket carries, and generation refuses otherwise in both directions: a
+	// binary-wire target that declares none, and a plugin type served on the binary
+	// wire whose host-export list names an export no entry declares — including a
+	// list left empty. Either would leave a caller converting an authored payload
+	// for that export handing the guest text it cannot read. An entry naming an
+	// export its type's list does not hold is refused too.
 	//
 	// An entry is admitted only where something can PIN it: the socket's output
 	// decode must route through the host's two encoding-specific decode entry
@@ -499,52 +506,103 @@ type codecTarget struct {
 // wireExport binds one guest export to the $def carrying its input payload.
 //
 // The export is named by exactly one of role and pluginType, and generation
-// refuses an entry naming both or neither. Naming the key rather than the export
-// is what keeps the export name single-sourced: it is read at emission from the
-// rule that key is governed by.
+// refuses an entry naming both or neither. Naming the key rather than spelling
+// the export is what keeps the export name single-sourced: it is read from, or
+// checked against, the plugin-type registry, where the key leads.
 type wireExport struct {
 	// role is the governance attachment role whose default entry function is the
 	// export this payload shape serves, read from the canonical role-to-export
-	// rule.
+	// rule. That default must be one the governance type's host-export list holds.
 	role plugintype.Role
-	// pluginType is the plugin type whose required export this payload shape
-	// serves, for a socket whose export is fixed by the type rather than chosen by
-	// an attachment. The export is that type's minimum-export rule, which must name
-	// one exact export rather than a prefix.
+	// pluginType is the plugin type whose host export this payload shape serves,
+	// for a socket whose export is fixed by the type rather than chosen by an
+	// attachment role.
 	pluginType plugintype.Type
+	// export is which of pluginType's listed exports this payload shape serves, set
+	// from the export-name constant the type's host-export list itself reads, so
+	// the name is never spelled here; it must be one that list holds. Left empty,
+	// the plugin type alone names the export, which it can only while its list
+	// holds exactly one.
+	//
+	// A registration names its export even on a type listing one, so that adding a
+	// second export to the type's list fails generation on the export no entry
+	// declares — naming it — rather than on this entry turning ambiguous.
+	export string
 	// inputDef is the $def name of the type carrying that export's input payload.
 	inputDef string
 }
 
-// exportName resolves the export this entry names through the rule its key is
-// governed by, and refuses an entry the rules cannot resolve to exactly one
-// export name.
-func (w wireExport) exportName() (string, error) {
+// exportName resolves the export this entry names, and the plugin type whose
+// host-export list holds it, through the registry rule its key leads to. It
+// refuses an entry the registry cannot resolve to exactly one listed export.
+//
+// registry is the plugin-type registry it reads — the real one at emission, a
+// built one where a test drives a refusal the real registry does not trip.
+func (w wireExport) exportName(registry []plugintype.Entry) (string, plugintype.Type, error) {
 	switch {
 	case w.role != "" && w.pluginType != "":
-		return "", fmt.Errorf("names both role %q and plugin type %q, so the export it serves is "+
+		return "", "", fmt.Errorf("names both role %q and plugin type %q, so the export it serves is "+
 			"named twice", string(w.role), string(w.pluginType))
+	case w.role != "" && w.export != "":
+		return "", "", fmt.Errorf("names both role %q and export %q, so the export it serves is "+
+			"named twice", string(w.role), w.export)
 	case w.role != "":
 		export, ok := plugintype.GovernanceRoleExport(w.role)
 		if !ok {
-			return "", fmt.Errorf("names role %q, which the canonical role-to-export rule does not know",
+			return "", "", fmt.Errorf("names role %q, which the canonical role-to-export rule does not know",
 				string(w.role))
 		}
-		return export, nil
+		entry, ok := registryEntry(registry, plugintype.Governance)
+		if !ok || !listsExport(entry, export) {
+			return "", "", fmt.Errorf("names role %q, whose default export %q the governance plugin type's "+
+				"host-export list does not hold", string(w.role), export)
+		}
+		return export, plugintype.Governance, nil
 	case w.pluginType != "":
-		entry, ok := plugintype.Lookup(w.pluginType)
+		entry, ok := registryEntry(registry, w.pluginType)
 		if !ok {
-			return "", fmt.Errorf("names plugin type %q, which the plugin-type registry does not know",
+			return "", "", fmt.Errorf("names plugin type %q, which the plugin-type registry does not know",
 				string(w.pluginType))
 		}
-		if entry.MinExport.Name == "" || entry.MinExport.IsPrefix {
-			return "", fmt.Errorf("names plugin type %q, whose minimum-export rule names no single export",
-				string(w.pluginType))
+		switch {
+		case len(entry.HostExports) == 0:
+			return "", "", fmt.Errorf("names plugin type %q, whose host-export list is empty, so it names no single "+
+				"export: a socket on the binary wire carries no payload the host does not list", string(w.pluginType))
+		case w.export != "":
+			if !listsExport(entry, w.export) {
+				return "", "", fmt.Errorf("names export %q of plugin type %q, which that type's host-export list "+
+					"does not hold: a payload shape serves only an export the host calls", w.export,
+					string(w.pluginType))
+			}
+			return w.export, w.pluginType, nil
+		case len(entry.HostExports) == 1:
+			return entry.HostExports[0], w.pluginType, nil
+		default:
+			return "", "", fmt.Errorf("names plugin type %q alone, whose host-export list holds %d exports, so the "+
+				"type names no single export this payload shape serves: name the listed export it serves",
+				string(w.pluginType), len(entry.HostExports))
 		}
-		return entry.MinExport.Name, nil
+	case w.export != "":
+		return "", "", fmt.Errorf("names export %q without its plugin type, so no host-export list resolves it",
+			w.export)
 	default:
-		return "", fmt.Errorf("names neither a role nor a plugin type, so nothing resolves the export it serves")
+		return "", "", fmt.Errorf("names neither a role nor a plugin type, so nothing resolves the export it serves")
 	}
+}
+
+// listsExport reports whether a plugin type's host-export list holds export.
+func listsExport(entry plugintype.Entry, export string) bool {
+	return slices.Contains(entry.HostExports, export)
+}
+
+// registryEntry returns the entry for plugin type t in registry.
+func registryEntry(registry []plugintype.Entry, t plugintype.Type) (plugintype.Entry, bool) {
+	for _, e := range registry {
+		if e.Type == t {
+			return e, true
+		}
+	}
+	return plugintype.Entry{}, false
 }
 
 // emitsDef reports whether this target emits a codec for the named $def.
@@ -651,18 +709,21 @@ var annotationTransformHostVocabulary = map[string]string{
 // resolves to the typed Policies struct the guest realizes.
 var linterGuestVocabulary = map[string]string{}
 
-// linterHostVocabulary maps the linter schema's policies annotation to the host
-// realization. The host assembles the publishing-discipline configuration
-// dynamically from the workspace config plus CLI tri-state overrides and pipes
-// it through as opaque bytes (the proven cross-boundary json.RawMessage carry),
-// so the host LinterInput.Policies is a json.RawMessage rather than the typed
-// Policies struct the guest realizes. A Release's components ride in the
+// linterHostVocabulary maps the linter schema's annotations to the host
+// realization where the two differ. A Release's components ride in the
 // order-preserving types.OrderedMap (qualified, since the codec lands in package
 // validator), so the host writes them in the Aggregate's own instance order and
-// the payload is byte-identical across runs of identical input. The entity
-// fields already carry json.RawMessage from the schema annotations.
+// the payload is byte-identical across runs of identical input; a finding is the
+// published shared diagnostic. The entity fields already carry json.RawMessage
+// from the schema annotations.
+//
+// The policies annotation deliberately has no entry. It names the Policies struct
+// this target emits beside LinterInput, so the host holds the publishing-discipline
+// configuration as the same typed object every guest codec reads, and it crosses
+// the wire as a structural map. Rewriting it to the opaque json.RawMessage would
+// make the host write a byte string where every guest reads a map, which no guest
+// decodes.
 var linterHostVocabulary = map[string]string{
-	"Policies":                    "json.RawMessage",
 	"Diagnostic":                  "abi.Diagnostic",
 	"OrderedMap[json.RawMessage]": "types.OrderedMap[json.RawMessage]",
 }
@@ -1095,9 +1156,9 @@ var codecTargets = map[string]codecTarget{
 
 	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host
 	// codec into aggrega-cli's validator package (the shipped `aggrega lint`
-	// publishing-linter dispatch). The host realizes policies as an opaque
-	// json.RawMessage it assembles dynamically; the guest realizes the typed
-	// Policies struct.
+	// publishing-linter dispatch). Both sides realize policies as the typed
+	// Policies struct, so the configuration crosses as the same structural map
+	// whichever side writes it.
 	"linter_gen.go": {
 		schema:           schemas.WasmLinterV1alpha1,
 		schemaFile:       "wasm-linter-v1alpha1.schema.json",
@@ -1121,12 +1182,28 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
+	// binaryWire: this socket's wire is canonical CBOR in both directions. Both
+	// dispatch sites encode with the generated encoder and decode through the
+	// binary encoding's entry point, and every linter guest reads and writes the
+	// same. Its export is a host export of the linter type rather than a role's
+	// default, so the entry names the plugin type and that export.
+	//
+	// crossPackageDefTypes makes each finding ride as the shared diagnostic's own
+	// structural encoding — the one every guest's codec writes — by dispatching to
+	// the codec generated beside the published type, rather than as a byte-string
+	// of its JSON document, which no guest writes.
 	"linter_host_gen.go": {
-		schema:     schemas.WasmLinterV1alpha1,
-		schemaFile: "wasm-linter-v1alpha1.schema.json",
-		pkg:        "validator",
-		vocabulary: linterHostVocabulary,
-		helpers:    true, // the host linter codec is alone in package validator
+		schema:               schemas.WasmLinterV1alpha1,
+		schemaFile:           "wasm-linter-v1alpha1.schema.json",
+		pkg:                  "validator",
+		vocabulary:           linterHostVocabulary,
+		helpers:              true, // the host linter codec is alone in package validator
+		crossPackageDefTypes: []string{"abi.Diagnostic"},
+		pkgPath:              "github.com/aggrega-ai/aggrega-cli/pkg/validator",
+		binaryWire:           true,
+		wireExports: []wireExport{
+			{pluginType: plugintype.Linter, export: exportname.LintRules, inputDef: "LinterInput"},
+		},
 	},
 
 	// IR graph — guest codec into aggrega-abi (Go/Rust/TS). The full
@@ -1320,7 +1397,7 @@ var codecTargets = map[string]codecTarget{
 	// input with the generated encoder and decodes the output through the binary
 	// encoding's entry point, and every parser guest reads and writes the same. Its
 	// one export is the parser type's required export rather than a role's default,
-	// so the entry names the plugin type.
+	// so the entry names the plugin type and that export.
 	"parse_gen.go": {
 		schema:           schemas.WasmParseV1alpha1,
 		schemaFile:       "wasm-parse-v1alpha1.schema.json",
@@ -1330,7 +1407,7 @@ var codecTargets = map[string]codecTarget{
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
 		binaryWire:       true,
 		wireExports: []wireExport{
-			{pluginType: plugintype.Parser, inputDef: "ParseInput"},
+			{pluginType: plugintype.Parser, export: exportname.Parse, inputDef: "ParseInput"},
 		},
 	},
 	"parse_gen.rs": {
@@ -1366,7 +1443,7 @@ var codecTargets = map[string]codecTarget{
 	// input with the generated encoder and decodes the output through the binary
 	// encoding's entry point, and every importer guest reads and writes the same.
 	// Its one export is the importer type's required export rather than a role's
-	// default, so the entry names the plugin type.
+	// default, so the entry names the plugin type and that export.
 	"import_gen.go": {
 		schema:           schemas.WasmImportV1alpha1,
 		schemaFile:       "wasm-import-v1alpha1.schema.json",
@@ -1376,7 +1453,7 @@ var codecTargets = map[string]codecTarget{
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
 		binaryWire:       true,
 		wireExports: []wireExport{
-			{pluginType: plugintype.Importer, inputDef: "ImportInput"},
+			{pluginType: plugintype.Importer, export: exportname.Import, inputDef: "ImportInput"},
 		},
 	},
 	"import_gen.rs": {
@@ -1472,6 +1549,16 @@ var codecTargets = map[string]codecTarget{
 	"pluginwire_gen.go": {
 		pkg:  "pluginwire",
 		lang: "go-wire-registry",
+	},
+	// The host-export identifiers. Schema-free and derived like the registry above:
+	// it reads the plugin-type registry's host-export lists and declares one
+	// identifier per listed export in the wasm package, whose payload-carrying
+	// invocation accepts only those values. So an export the host calls with a
+	// payload is named in its plugin type's list and nowhere a person edits
+	// besides, and a socket calling an export no list holds does not compile.
+	"hostexport_gen.go": {
+		pkg:  "wasm",
+		lang: "go-host-exports",
 	},
 }
 
@@ -1679,7 +1766,7 @@ func decodeOrderedProps(raw json.RawMessage) ([]namedNode, error) {
 	return out, nil
 }
 
-var initialisms = map[string]string{"api": "API", "url": "URL", "id": "ID", "ir": "IR", "uri": "URI", "json": "JSON", "dns": "DNS"}
+var initialisms = map[string]string{"api": "API", "url": "URL", "id": "ID", "ir": "IR", "uri": "URI", "json": "JSON", "dns": "DNS", "cli": "CLI"}
 
 // pascal converts a schema property key (camelCase or snake_case) to a Go
 // exported field name, applying the Go initialism convention. Segment
@@ -3088,6 +3175,8 @@ func generateDefs(t codecTarget) ([]byte, error) {
 		return generateTSOrderedMap(t)
 	case "go-wire-registry":
 		return generateWireRegistry(t)
+	case "go-host-exports":
+		return generateHostExports(t)
 	default:
 		return nil, fmt.Errorf("typegen: unknown codec target language %q", t.lang)
 	}

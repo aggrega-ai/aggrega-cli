@@ -71,7 +71,7 @@ var errWasmManifestRejected = cerrors.Register("wasm-manifest-rejected", cerrors
 })
 
 // ErrWasmGuestPanic indicates that guest plugin code panicked during a
-// Plugin.Call invocation. The Loader's Call method wraps the Extism
+// call into the plugin. The plugin's call core wraps the Extism
 // call boundary with `defer recover()`; on panic, the recovered value
 // is wrapped in an error that satisfies errors.Is against this
 // sentinel and carries the plugin identifier plus the called function
@@ -92,9 +92,9 @@ var errWasmGuestPanic = cerrors.Register("wasm-guest-panic", cerrors.Meta{
 })
 
 // ErrWasmPluginExited indicates that a guest plugin invoked WASI
-// proc_exit with a non-zero code during a Plugin.Call. The Extism
+// proc_exit with a non-zero code during a call into the plugin. The Extism
 // runtime surfaces the exit as a non-zero exit code on the call's
-// return path; Plugin.Call converts that into an error wrapping this
+// return path; the compile-time call converts that into an error wrapping this
 // sentinel. The plugin's execution is stopped; the host process is
 // unaffected. Plugin authors who reach proc_exit are doing something
 // the Aggrega plugin model does not support — plugins return their

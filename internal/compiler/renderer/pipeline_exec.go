@@ -467,15 +467,19 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		// seam: the rendered `with` input is validated against the declared
 		// input before the guest runs, and the guest's returned outputs against
 		// the declared output after. An absent export (undeclared function) is
-		// left for InvokeExport to surface precisely; an export that declares no
-		// schema is unchecked (free-form pass-through).
+		// left for the invocation's declared-export guard to surface precisely;
+		// an export that declares no schema is unchecked (free-form pass-through).
 		export, hasExport := findExport(desc, step.Function)
 		if hasExport {
 			if err := validateStepInput(export, payload, step); err != nil {
 				return nil, err
 			}
 		}
-		raw, err := wasm.InvokeExport(ctx, plugin, desc, step.Function, payload)
+		// The recipe names the function each step runs, so the export is the
+		// step's own rather than one the host chooses: it goes through the
+		// authored-export path, with the type's required export as the default a
+		// step naming none would run.
+		raw, err := wasm.InvokeAuthoredExport(ctx, plugin, desc, wasm.StepExport, step.Function, payload)
 		if err != nil {
 			return nil, err
 		}

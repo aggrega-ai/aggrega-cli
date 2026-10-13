@@ -27,8 +27,10 @@ import (
 // catalog Plugin entity to advertise the same export the adapter will drive — one
 // name, one source of truth, no drift between the routing precondition and the
 // call. It is a distinct guest entrypoint from the render export, so a provider
-// whose guest omits it (a flat-output provider) is simply never routed here.
-const AssembleBoundaryExport = "assemble_boundary"
+// whose guest omits it (a flat-output provider) is simply never routed here. It
+// is the wasm package's identifier for a name the provider plugin type's
+// host-export list holds.
+var AssembleBoundaryExport = wasm.AssembleBoundaryExport
 
 // AssemblerEngine assembles a dispatch group's per-node render outputs into a
 // single artifact through a provider Wasm guest, implementing the host
@@ -224,7 +226,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 // its validation run once per provider, not once per crossing. When the guest makes
 // no reuse claim the acquired instance is fresh per crossing and the returned
 // release closes it, so dispatch groups stay isolated by construction.
-func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export wasm.HostExport, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
@@ -249,14 +251,14 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export.Name(), out.Diagnostics); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	// Fold guest-emitted warnings into the assemble output's diagnostics as

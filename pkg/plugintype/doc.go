@@ -13,8 +13,9 @@
 // type, and the same set the published pluginType and plugin_type enums carry.
 // Each entry records the type's canonical string, its minimum-export rule (an
 // exact export name or a name prefix), the workspace socket it attaches at when
-// it is a socket type, its reproducibility tier, its attachment mechanism, and
-// the host-function load profile it loads under. Entries enumerate in a fixed
+// it is a socket type, its reproducibility tier, its attachment mechanism, the
+// host-function load profile it loads under, and the exports the host calls a
+// guest of that type with a payload. Entries enumerate in a fixed
 // author-defined order so any consumer that iterates the registry emits
 // deterministic output.
 package plugintype

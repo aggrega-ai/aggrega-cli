@@ -7,7 +7,9 @@
 // values. Every consumer in the compiler — the publishing-linter, the
 // future mutator / policy / helm-renderer / pipeline /
 // linter sockets — receives a *Plugin constructed by Loader.Load and
-// invokes it through Plugin.Call.
+// invokes it through InvokeExport, which accepts only an export the
+// plugin-type registry lists, or through the entry points for an export
+// authored content names.
 //
 // The package's AOT-purity load gate has two layers. The manifest
 // gate (see manifest_translate.go) rejects any plugin
@@ -40,7 +42,7 @@
 // determinism and ahead-of-time guarantees regardless of which plugin
 // runs.
 //
-// Plugin.Call wraps the Extism call boundary with a deferred recover()
+// The plugin's call core wraps the Extism call boundary with a deferred recover()
 // that converts a Go-side panic into an ErrWasmGuestPanic-wrapped
 // error. The wrap is a safety net behind Extism's normal error
 // envelope; most Wasm-side traps surface as ordinary Go errors through
@@ -1497,8 +1499,14 @@ func (p *Plugin) Name() string {
 	return p.name
 }
 
-// Call invokes an exported function on the plugin. Returns the output
+// call invokes an exported function on the plugin. Returns the output
 // bytes the guest wrote to its output buffer.
+//
+// It is unexported on purpose. A caller outside this package reaches a guest
+// only through [InvokeExport], which takes an export the plugin-type registry
+// lists, or through one of the entry points for an export authored content
+// names; an exported call taking any name would let a socket call an export no
+// list holds, with a payload, and nothing would refuse it.
 //
 // On a guest panic that escapes Extism's normal error envelope, the
 // panic-recovery wrap converts the panic into an error wrapping
@@ -1510,7 +1518,7 @@ func (p *Plugin) Name() string {
 // reaches a non-zero exit code by invoking WASI proc_exit; under the
 // AOT-purity discipline exit code zero is the only "ran successfully"
 // signal, so any non-zero code is an error the caller surfaces.
-func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+func (p *Plugin) call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 	exitCode, output, err := p.callRaw(ctx, funcName, input)
 	if err != nil {
 		return nil, err
@@ -1534,7 +1542,7 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 // Wasm trap (wrapped, naming the plugin and function) or a recovered guest panic
 // (wrapping [ErrWasmGuestPanic]); on either, exitCode is zero and output nil.
 //
-// It is the shared call core behind both [Plugin.Call] — which layers the
+// It is the shared call core behind both [Plugin.call] — which layers the
 // compile-time non-zero→error policy on top — and the runtime CLI runner's
 // [InvokeExportStatus] — which reads the exit code as the command's status. One
 // core keeps the trap wrap and the panic-recovery net single-sourced; the two
@@ -1567,7 +1575,7 @@ func (p *Plugin) callRaw(ctx context.Context, funcName string, input []byte) (ex
 // error path, catching a Go-side panic that escapes Extism's normal
 // error envelope.
 //
-// Extracted from Plugin.Call so the wrap shape is independently
+// Extracted from the call core so the wrap shape is independently
 // testable without needing a real Wasm-side panic source — tests pass
 // a function that panics directly.
 func callWithPanicRecovery(pluginName, funcName string, f func() ([]byte, error)) (output []byte, err error) {

@@ -78,42 +78,42 @@ type guestFailureKind struct {
 var guestFailureKinds = []guestFailureKind{
 	// compose — workload synthesis, all on render_node.
 	{"E0236", "probe http: requires at least one container port; container declares none",
-		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport.Name()},
 	{"E0237", "probe declares no shape (http/tcp/exec)",
-		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport.Name()},
 	{"E0238", "resources quantity cannot be converted to a compose deploy.resources value",
-		wasm.ErrPluginValueNotRepresentable(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginValueNotRepresentable(), wasmengine.RenderNodeExport.Name()},
 	{"E0239", "compose has no env-from-object primitive; container declares envFrom",
-		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport.Name()},
 	{"E0240", "compose cannot express this workload form",
-		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport.Name()},
 	{"E0241", "compose has no lifecycle-hook primitive; container declares lifecycle hooks",
-		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginCannotExpressInput(), wasmengine.RenderNodeExport.Name()},
 	{"E0258", "compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express",
-		wasm.ErrPluginValueNotRepresentable(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginValueNotRepresentable(), wasmengine.RenderNodeExport.Name()},
 	// compose — boundary assembly, where a configmap reference and the artifact
 	// declaring it first meet.
 	{"E0235", "configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
-		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.AssembleBoundaryExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.AssembleBoundaryExport.Name()},
 	// helm — synthesis and rendering, all on render_node.
 	{"E0243", "two rendered resources derive the same output filename with differing content",
-		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport.Name()},
 	{"E0244", "synthesized StatefulSet has more than one headless Service",
-		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport.Name()},
 	{"E0245", "synthesized StatefulSet has no headless governing Service",
-		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasmengine.RenderNodeExport.Name()},
 	// cloudformation — fragment normalization and name declaration, on render_node.
 	{"E0230", "cloudformation-provider: one mapping key is written more than once",
-		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport.Name()},
 	{"E0233", "cloudformation-provider: two entries an author wrote reach one stack Output name",
-		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport},
+		wasm.ErrPluginOutputNameCollision(), wasmengine.RenderNodeExport.Name()},
 	// cloudformation — cross-boundary linking, on the two link exports.
 	{"E0231", "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
-		wasm.ErrPluginRequiredInputUnresolved(), wasm.LinkResolveExport},
+		wasm.ErrPluginRequiredInputUnresolved(), wasm.LinkResolveExport.Name()},
 	{"E0232", "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
-		wasm.ErrPluginValueNotRepresentable(), wasm.LinkResolveExport},
+		wasm.ErrPluginValueNotRepresentable(), wasm.LinkResolveExport.Name()},
 	{"E0249", "cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack",
-		wasm.ErrPluginOutputNameCollision(), wasm.LinkPublishExport},
+		wasm.ErrPluginOutputNameCollision(), wasm.LinkPublishExport.Name()},
 }
 
 // TestNoGuestCoreDeclaresAHaltingCondition is the completeness half of the
@@ -357,7 +357,7 @@ func TestGuestFailureWithoutAConditionNamesTheHostCondition(t *testing.T) {
 		t.Fatalf("a chain naming no registered condition reported code %q / short code %q", f.Code, f.ShortCode)
 	}
 
-	hostErr := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport, wasm.GuestFailure{Message: f.Message})
+	hostErr := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport.Name(), wasm.GuestFailure{Message: f.Message})
 	short, ok := cerrors.ShortCodeOf(hostErr)
 	// The host's own condition still answers, which is the fallback rather than an
 	// absence: what must NOT happen is a code appearing from nowhere.
@@ -397,7 +397,7 @@ func TestGuestFailureHalfReportNamesNoCondition(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport, tc.f)
+			err := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport.Name(), tc.f)
 			short, _ := cerrors.ShortCodeOf(err)
 			code, _ := cerrors.CodeOf(err)
 			if short != hostShort || code != hostCode {

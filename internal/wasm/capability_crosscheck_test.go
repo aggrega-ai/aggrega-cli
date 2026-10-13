@@ -221,8 +221,8 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node"},
-			{Name: LinkPublishExport},
-			{Name: LinkResolveExport},
+			{Name: LinkPublishExport.Name()},
+			{Name: LinkResolveExport.Name()},
 		},
 		Contract: &ProviderContract{
 			InputKinds:           InputKinds{Sourced: true},

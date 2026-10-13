@@ -167,6 +167,9 @@ var codecTargetPaths = map[string][]string{
 	// The plugin-wire registry, committed beside the hand-written half of the
 	// package that answers "what does this export's wire carry".
 	"pluginwire_gen.go": {"..", "..", "pluginwire"},
+	// The host-export identifiers, committed beside the wasm package's
+	// payload-carrying invocation that accepts only their values.
+	"hostexport_gen.go": {"..", "..", "wasm"},
 }
 
 // TestTargetPathsNameRegisteredTargets checks the two path tables in the

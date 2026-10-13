@@ -20,10 +20,12 @@ import (
 // whose output the stock YAML codec cannot carve directly (a templated chart,
 // for instance) advertises them so its own output-shape knowledge (what is a
 // PATCH target versus opaque) lives in its guest; a provider that omits them is
-// never routed here and borrows the host's stock YAML codec.
-const (
-	CarveExport      = "carve"
-	ReassembleExport = "reassemble"
+// never routed here and borrows the host's stock YAML codec. Each is the wasm
+// package's identifier for a name the provider plugin type's host-export list
+// holds.
+var (
+	CarveExport      = wasm.CarveExport
+	ReassembleExport = wasm.ReassembleExport
 )
 
 // PipelineCodec reports the provider's pipeline codec, driven through its guest

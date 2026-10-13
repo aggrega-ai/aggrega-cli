@@ -73,7 +73,7 @@ func TestInvokeExportUndeclared(t *testing.T) {
 		Exports:    []PluginExport{{Name: "step"}},
 	}
 	plugin := &Plugin{name: "fixture"}
-	_, err := InvokeExport(context.Background(), plugin, desc, "render_node", nil)
+	_, err := InvokeExport(context.Background(), plugin, desc, RenderNodeExport, nil)
 	if err == nil {
 		t.Fatal("expected error invoking undeclared export")
 	}
@@ -104,11 +104,11 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 	if desc.PluginType != string(PluginTypePipelineStep) {
 		t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypePipelineStep)
 	}
-	if !desc.hasExport(pipelineStepExportName) {
-		t.Fatalf("descriptor does not declare the %q export", pipelineStepExportName)
+	if !desc.hasExport(StepExport.Name()) {
+		t.Fatalf("descriptor does not declare the %q export", StepExport.Name())
 	}
 
-	out, err := InvokeExport(ctx, plugin, desc, pipelineStepExportName, []byte(`{}`))
+	out, err := InvokeExport(ctx, plugin, desc, StepExport, []byte(`{}`))
 	if err != nil {
 		t.Fatalf("InvokeExport(step): %v", err)
 	}
@@ -118,7 +118,7 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 
 	// An export the descriptor does not declare is refused even on a
 	// live plugin.
-	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected()) {
+	if _, err := InvokeExport(ctx, plugin, desc, RenderNodeExport, nil); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("undeclared export on live plugin: got %v", err)
 	}
 }

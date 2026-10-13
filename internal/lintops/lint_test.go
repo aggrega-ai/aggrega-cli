@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -411,62 +412,79 @@ func TestLooksLikeOCIURI(t *testing.T) {
 
 // TestEffectivePolicies pins effectivePolicies' consumption of the policy
 // resolver across every workspace suppression flag. Per flag: the workspace value
-// passes through when the resolver echoes it, a resolver forcing false emits
-// false, and a resolver forcing true emits true. The resolver's own tri-state
-// precedence (the cobra --X/--no-X flag pairs) is covered separately at the
-// command layer.
+// passes through when the resolver echoes it, a resolver forcing that flag false
+// clears it, and a resolver forcing that flag true sets it. Each cell compares the
+// whole Policies value, so a flag that reached another flag's field fails as well
+// as one that reached none. The resolver's own tri-state precedence (the cobra
+// --X/--no-X flag pairs) is covered separately at the command layer.
 //
 // The table names each flag rather than reflecting over the config struct,
-// because the flag-base name and the wire key are the two things under test and
-// neither is derivable from the Go field.
+// because the flag-base name and the Policies field it sets are the two things
+// under test and neither is derivable from the other.
 func TestEffectivePolicies(t *testing.T) {
 	flagBases := []struct {
 		flag      string
 		workspace func(*workspaceconfig.PublishingDisciplineConfig, bool)
-		jsonKey   string
+		field     func(*validator.Policies) *bool
 	}{
-		{"allow-dynamic-refs", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowDynamicRefs = v }, "allow_dynamic_refs"},
-		{"allow-id-overrides", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowIDOverrides = v }, "allow_id_overrides"},
-		{"allow-direct-x-aggrega-extensions", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowDirectXAggregaExtensions = v }, "allow_direct_x_aggrega_extensions"},
-		{"allow-aggrega-ai-prefix", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowAggregaAIPrefix = v }, "allow_aggrega_ai_prefix"},
-		{"allow-nonstandard-names", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowNonstandardNames = v }, "allow_nonstandard_names"},
-		{"allow-category-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowCategoryMismatches = v }, "allow_category_mismatches"},
+		{"allow-dynamic-refs", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowDynamicRefs = v },
+			func(p *validator.Policies) *bool { return &p.AllowDynamicRefs }},
+		{"allow-id-overrides", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowIDOverrides = v },
+			func(p *validator.Policies) *bool { return &p.AllowIDOverrides }},
+		{"allow-direct-x-aggrega-extensions", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowDirectXAggregaExtensions = v },
+			func(p *validator.Policies) *bool { return &p.AllowDirectXAggregaExtensions }},
+		{"allow-aggrega-ai-prefix", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowAggregaAIPrefix = v },
+			func(p *validator.Policies) *bool { return &p.AllowAggregaAiPrefix }},
+		{"allow-nonstandard-names", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowNonstandardNames = v },
+			func(p *validator.Policies) *bool { return &p.AllowNonstandardNames }},
+		{"allow-category-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowCategoryMismatches = v },
+			func(p *validator.Policies) *bool { return &p.AllowCategoryMismatches }},
 		{"allow-undeclared-recipe-provides", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) {
 			c.AllowUndeclaredRecipeProvides = v
-		}, "allow_undeclared_recipe_provides"},
+		}, func(p *validator.Policies) *bool { return &p.AllowUndeclaredRecipeProvides }},
 		{"allow-connection-credential-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) {
 			c.AllowConnectionCredentialMismatches = v
-		}, "allow_connection_credential_mismatches"},
+		}, func(p *validator.Policies) *bool { return &p.AllowConnectionCredentialMismatches }},
 	}
 	for _, tc := range flagBases {
+		// only is the Policies value with this flag set and every other flag clear.
+		only := func() validator.Policies {
+			var p validator.Policies
+			*tc.field(&p) = true
+			return p
+		}
+		// forcing overrides this flag alone, echoing the workspace for the rest.
+		forcing := func(v bool) func(string, bool) bool {
+			return func(flag string, ws bool) bool {
+				if flag == tc.flag {
+					return v
+				}
+				return ws
+			}
+		}
 		// Cell 1: workspace=true, resolver echoes workspace → effective=true
 		t.Run(tc.flag+"/workspace-true-passthrough", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, true)
 			resolve := func(_ string, wsVal bool) bool { return wsVal }
-			out := effectivePolicies(ws, resolve)
-			if !strings.Contains(string(out), `"`+tc.jsonKey+`":true`) {
-				t.Errorf("expected %s=true; got %s", tc.jsonKey, string(out))
+			if out, want := effectivePolicies(ws, resolve), only(); out != want {
+				t.Errorf("expected only %s set; got %+v", tc.flag, out)
 			}
 		})
 		// Cell 2: workspace=true, resolver forces false → effective=false
 		t.Run(tc.flag+"/resolver-forces-false", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, true)
-			resolve := func(_ string, _ bool) bool { return false }
-			out := effectivePolicies(ws, resolve)
-			if !strings.Contains(string(out), `"`+tc.jsonKey+`":false`) {
-				t.Errorf("resolver forcing false should emit %s=false despite workspace=true; got %s", tc.jsonKey, string(out))
+			if out := effectivePolicies(ws, forcing(false)); out != (validator.Policies{}) {
+				t.Errorf("resolver forcing false should clear %s despite workspace=true; got %+v", tc.flag, out)
 			}
 		})
 		// Cell 3: workspace=false, resolver forces true → effective=true
 		t.Run(tc.flag+"/resolver-forces-true", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, false)
-			resolve := func(_ string, _ bool) bool { return true }
-			out := effectivePolicies(ws, resolve)
-			if !strings.Contains(string(out), `"`+tc.jsonKey+`":true`) {
-				t.Errorf("resolver forcing true should emit %s=true despite workspace=false; got %s", tc.jsonKey, string(out))
+			if out, want := effectivePolicies(ws, forcing(true)), only(); out != want {
+				t.Errorf("resolver forcing true should set only %s despite workspace=false; got %+v", tc.flag, out)
 			}
 		})
 	}

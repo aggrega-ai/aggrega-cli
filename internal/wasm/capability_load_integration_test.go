@@ -37,8 +37,8 @@ func TestLoadAndDescribe_CapabilityClaimAgrees(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	if !desc.hasExport(pipelineStepExportName) {
-		t.Fatalf("descriptor does not declare the %q export", pipelineStepExportName)
+	if !desc.hasExport(StepExport.Name()) {
+		t.Fatalf("descriptor does not declare the %q export", StepExport.Name())
 	}
 }
 

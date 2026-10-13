@@ -66,7 +66,7 @@ func cliDesc(command, description string) wasm.PluginDescriptor {
 	d := wasm.PluginDescriptor{
 		AbiVersion: wasm.ABIVersionV1Alpha1,
 		PluginType: string(wasm.PluginTypeCLI),
-		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
+		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExport.Name()}},
 	}
 	if command != "" {
 		d.Commands = []wasm.PluginCLICommand{{Name: command, Description: description}}

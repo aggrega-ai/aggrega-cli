@@ -227,7 +227,7 @@ func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 	desc := wasm.PluginDescriptor{
 		PluginType: string(wasm.PluginTypeCLI),
 		AbiVersion: wasm.ABIVersionV1Alpha1,
-		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
+		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExport.Name()}},
 		Commands: []wasm.PluginCLICommand{
 			{Name: "greet", Description: "greet a target"},
 			{Name: "farewell", Description: "bid a target goodbye"},

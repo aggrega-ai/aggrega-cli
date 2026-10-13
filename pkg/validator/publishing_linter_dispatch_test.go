@@ -194,44 +194,29 @@ func TestDispatchHandlesUnknownRule(t *testing.T) {
 	}
 }
 
-// TestPoliciesRoundTripThroughSchema pins the publish/consume
-// symmetry between the Go host's PublishingDisciplineConfig and the
-// Rust plugin's Policies struct (per Concern 3 disposition). A Go
-// struct with non-default values for every field is marshaled to
-// JSON, validated against the schema's Policies $def, fed to the
-// plugin through the LinterInput.policies passthrough, and the
-// finding's diagnostic message references at least one of the
-// expected flag names — which would only be possible if the Rust
-// side deserialised the same shape without field loss.
-//
-// At plugin v0.1.0 the schema-evolution rule does not consume
-// policies. This test pins the round-trip at the SCHEMA-validation
-// layer: the constructed Policies JSON object passes schema
-// validation when embedded inside a LinterInput envelope; the plugin
-// accepts the envelope without rejecting unknown fields. Future
-// rules that DO consult policies will assert flag-specific behaviour
-// against the same round-trip.
+// TestPoliciesRoundTripThroughSchema pins that the publishing-discipline
+// configuration crosses to the plugin as the typed object both sides of the
+// socket share: a Policies value with every flag set is written by the host's
+// generated codec and read by the plugin's, and the dispatch still returns the
+// schema-evolution rule's verdict. That rule does not consult policies, so this
+// pins the decode rather than a flag's effect; a flag's effect is pinned where a
+// rule consults it, as TestDispatchCategoryViolationSuppressedByPolicy does.
 func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 
-	// Construct a Policies JSON with non-default values for every
-	// field. This mirrors workspaceconfig.PublishingDisciplineConfig's
-	// shape exactly per the schema's Policies $def.
-	policies := json.RawMessage(`{
-		"allow_dynamic_refs": true,
-		"allow_id_overrides": true,
-		"allow_direct_x_aggrega_extensions": true,
-		"allow_aggrega_ai_prefix": true,
-		"allow_nonstandard_names": true,
-		"allow_category_mismatches": true
-	}`)
+	policies := validator.Policies{
+		AllowDynamicRefs:                    true,
+		AllowIDOverrides:                    true,
+		AllowDirectXAggregaExtensions:       true,
+		AllowAggregaAiPrefix:                true,
+		AllowNonstandardNames:               true,
+		AllowCategoryMismatches:             true,
+		AllowUndeclaredRecipeProvides:       true,
+		AllowConnectionCredentialMismatches: true,
+	}
 
-	// Plugin accepts the policies-bearing input without rejecting
-	// it. The schema-evolution rule itself doesn't consult policies,
-	// but the input envelope must round-trip through the plugin's
-	// deserialiser. If the schema's Policies $def diverged from the
-	// Rust Policies struct, the plugin would fail to deserialise the
-	// input and return an error rather than a finding.
+	// A plugin whose codec read policies in any other shape would fail to decode
+	// the input and return an error rather than a finding.
 	prev := loadFixture(t, "Component", "patch", "previous.yaml")
 	prop := loadFixture(t, "Component", "patch", "proposed.yaml")
 	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
@@ -418,7 +403,7 @@ func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
 			"labels": {"component.aggrega.ai/category": "compute"}
 		}
 	}`)
-	policies := json.RawMessage(`{"allow_category_mismatches": true}`)
+	policies := validator.Policies{AllowCategoryMismatches: true}
 	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "category-matches-directory",
 		EntityKind: "Component",
@@ -566,6 +551,43 @@ func TestDispatchPublishingLinterHonorsExportOverride(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), authoredExport) {
 		t.Errorf("halt diagnostic should name the authored export %q; got %v", authoredExport, err)
+	}
+}
+
+// TestLinterOutputDecodeRefusesAnUndeclaredKey drives the strict binary decode
+// both dispatch sites read a linter's answer through, over the linter shape: an
+// answer carrying only the keys the shape declares decodes, and one carrying a
+// key it does not — a verdict envelope, the answer an attachment's entry function
+// returns when it names an export of another socket — is refused with the
+// output-shape condition, naming the export and the key. Read leniently it would
+// decode to an empty finding list, which is a clean lint.
+//
+// Both payloads come from the generated encoders, so each is canonical by
+// construction and cannot drift from what a guest emits.
+func TestLinterOutputDecodeRefusesAnUndeclaredKey(t *testing.T) {
+	t.Parallel()
+
+	declared, err := validator.LinterOutput{Findings: []abi.Diagnostic{}}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode a linter answer: %v", err)
+	}
+	var out validator.LinterOutput
+	if err := wasm.DecodeGuestOutputCBOR(wasm.LintRulesExport.Name(), declared, &out); err != nil {
+		t.Fatalf("an answer carrying only declared keys must decode: %v", err)
+	}
+
+	foreign, err := abi.PolicyOutput{Results: []abi.Diagnostic{}}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode a verdict envelope: %v", err)
+	}
+	err = wasm.DecodeGuestOutputCBOR(wasm.LintRulesExport.Name(), foreign, &out)
+	if !errors.Is(err, wasm.ErrWasmOutputShape()) {
+		t.Fatalf("an answer carrying an undeclared key must halt with the output-shape condition; got %v", err)
+	}
+	for _, want := range []string{wasm.LintRulesExport.Name(), "results"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
 	}
 }
 

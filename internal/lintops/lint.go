@@ -833,20 +833,18 @@ func convertYAMLMaps(v interface{}) interface{} {
 
 // effectivePolicies merges workspace policy values with CLI tri-state overrides.
 // resolve is called per flag-base name to determine the effective value.
-func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve func(string, bool) bool) json.RawMessage {
-	policies := map[string]any{
-		"allow_dynamic_refs":                resolve("allow-dynamic-refs", ws.AllowDynamicRefs),
-		"allow_id_overrides":                resolve("allow-id-overrides", ws.AllowIDOverrides),
-		"allow_direct_x_aggrega_extensions": resolve("allow-direct-x-aggrega-extensions", ws.AllowDirectXAggregaExtensions),
-		"allow_aggrega_ai_prefix":           resolve("allow-aggrega-ai-prefix", ws.AllowAggregaAIPrefix),
-		"allow_nonstandard_names":           resolve("allow-nonstandard-names", ws.AllowNonstandardNames),
-		"allow_category_mismatches":         resolve("allow-category-mismatches", ws.AllowCategoryMismatches),
-		"allow_undeclared_recipe_provides":  resolve("allow-undeclared-recipe-provides", ws.AllowUndeclaredRecipeProvides),
-		"allow_connection_credential_mismatches": resolve("allow-connection-credential-mismatches",
+func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve func(string, bool) bool) validator.Policies {
+	return validator.Policies{
+		AllowDynamicRefs:              resolve("allow-dynamic-refs", ws.AllowDynamicRefs),
+		AllowIDOverrides:              resolve("allow-id-overrides", ws.AllowIDOverrides),
+		AllowDirectXAggregaExtensions: resolve("allow-direct-x-aggrega-extensions", ws.AllowDirectXAggregaExtensions),
+		AllowAggregaAiPrefix:          resolve("allow-aggrega-ai-prefix", ws.AllowAggregaAIPrefix),
+		AllowNonstandardNames:         resolve("allow-nonstandard-names", ws.AllowNonstandardNames),
+		AllowCategoryMismatches:       resolve("allow-category-mismatches", ws.AllowCategoryMismatches),
+		AllowUndeclaredRecipeProvides: resolve("allow-undeclared-recipe-provides", ws.AllowUndeclaredRecipeProvides),
+		AllowConnectionCredentialMismatches: resolve("allow-connection-credential-mismatches",
 			ws.AllowConnectionCredentialMismatches),
 	}
-	out, _ := json.Marshal(policies)
-	return out
 }
 
 // fetchPreviousRegistryVersion lists tags on the entity's registry reference,
@@ -941,10 +939,10 @@ func fetchPreviousRegistryVersion(
 // ruleInputSources is the per-entity material buildRuleInputs distributes over
 // the rule set.
 //
-// The fields are grouped rather than passed positionally because four of them
-// share one type: a transposed pair of JSON documents compiles cleanly and hands
-// a rule the wrong entity, which then reports about something it was never
-// looking at. A keyed literal at each call site cannot make that mistake.
+// The fields are grouped rather than passed positionally because the entity
+// documents share one type: a transposed pair of JSON documents compiles cleanly
+// and hands a rule the wrong entity, which then reports about something it was
+// never looking at. A keyed literal at each call site cannot make that mistake.
 type ruleInputSources struct {
 	// Kind is the linted entity's own kind, which scopes each rule.
 	Kind string
@@ -957,7 +955,7 @@ type ruleInputSources struct {
 	// every other kind and whenever the reference does not resolve.
 	ImplementedComponent json.RawMessage
 	// Policies is the effective per-workspace suppression set.
-	Policies json.RawMessage
+	Policies validator.Policies
 	// EntityPath is where the linted entity was read from.
 	EntityPath string
 	// PrePublish selects the rule set: the pre-publish set additionally carries

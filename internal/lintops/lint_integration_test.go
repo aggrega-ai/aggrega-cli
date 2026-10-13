@@ -254,20 +254,10 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	return false
 }
 
-// buildParticipationPolicies builds a Policies JSON with every
+// buildParticipationPolicies builds a Policies value with every
 // opt-out flag at its default, so each rule under test is active.
-func buildParticipationPolicies() json.RawMessage {
-	policies := map[string]any{
-		"allow_dynamic_refs":                false,
-		"allow_id_overrides":                false,
-		"allow_direct_x_aggrega_extensions": false,
-		"allow_aggrega_ai_prefix":           false,
-		"allow_nonstandard_names":           false,
-		"allow_category_mismatches":         false,
-		"allow_undeclared_recipe_provides":  false,
-	}
-	out, _ := json.Marshal(policies)
-	return out
+func buildParticipationPolicies() validator.Policies {
+	return validator.Policies{}
 }
 
 // implementedComponentFixture returns the Component that pairs with the

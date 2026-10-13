@@ -17,7 +17,7 @@ package wasm
 type PluginSpec struct {
 	// Name is the plugin's identifier for diagnostics. The Loader
 	// surfaces this in error messages from the AOT-purity load gate and
-	// from Plugin.Call's panic-recovery wrap. Typically the plugin's
+	// from the call core's panic-recovery wrap. Typically the plugin's
 	// catalog URI leaf (for example "publishing-linter").
 	Name string
 

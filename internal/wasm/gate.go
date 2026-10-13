@@ -12,7 +12,10 @@ import (
 
 // describeExportName is the export every plugin implements to
 // self-describe. The host calls it once at load to read the plugin's
-// declared ABI version, type, and exports before dispatching any work.
+// declared ABI version, type, and exports before dispatching any work. It
+// carries no payload, so it is not a host export: no plugin type lists it,
+// and it is called through the call core directly rather than through
+// [InvokeExport].
 const describeExportName = "describe"
 
 // LoadAndDescribe is the shared plugin-load gate: it loads the plugin
@@ -110,7 +113,7 @@ func (l *Loader) LoadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 // [ErrWasmManifestRejected]. On success the live plugin remains open for the
 // caller to invoke through InvokeExport / InvokeExportStatus and Close when done.
 func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec PluginSpec) (PluginDescriptor, error) {
-	raw, err := plugin.Call(ctx, describeExportName, nil)
+	raw, err := plugin.call(ctx, describeExportName, nil)
 	if err != nil {
 		_ = plugin.Close(ctx)
 		return PluginDescriptor{}, fmt.Errorf("wasm: plugin %q describe(): %w", spec.Name, err)
@@ -219,40 +222,104 @@ func gateExpectedType(pluginIdentity string, desc PluginDescriptor, expected Plu
 		pluginIdentity, noun, string(expected), desc.PluginType, ErrWasmPluginTypeMismatch())
 }
 
-// InvokeExport calls the named export after confirming the descriptor
-// declared it, so the host only ever invokes a function the guest
+// InvokeExport calls a host export with payload after confirming the
+// descriptor declared it, so the host only ever invokes a function the guest
 // advertised in describe(). A call to an undeclared export is refused
 // before the guest runs, with an error wrapping [ErrWasmManifestRejected]
 // that names the plugin and the missing export.
 //
-// It applies the compile-time exit-code policy through [Plugin.Call]: a
+// The export is a [HostExport], so it is one the plugin-type registry lists:
+// a socket naming an export no list holds does not compile. An export authored
+// content names goes through [InvokeAuthoredExport] instead.
+//
+// It applies the compile-time exit-code policy through the plugin's call core: a
 // non-zero guest exit is a failure wrapping [ErrWasmPluginExited]. The
 // runtime CLI counterpart [InvokeExportStatus] applies the opposite policy.
-func InvokeExport(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export string, payload []byte) ([]byte, error) {
-	if err := ensureDeclared(plugin, desc, export); err != nil {
+func InvokeExport(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export HostExport, payload []byte) ([]byte, error) {
+	if err := ensureListed(plugin, export); err != nil {
 		return nil, err
 	}
-	return plugin.Call(ctx, export, payload)
+	return invokeDeclared(ctx, plugin, desc, export.name, payload)
 }
 
-// InvokeExportStatus calls the named export like [InvokeExport] — same
-// declared-export guard — but returns the guest's exit code as a status value
-// rather than folding a non-zero exit into an error. It is the runtime-CLI
-// counterpart: for a CLI command a non-zero exit code is an ordinary command
-// status (the shell's $?), so the caller reads it as the command's result. Only
-// a real Wasm trap or a recovered guest panic is an error here; a clean exit
-// with any code, including non-zero, is a status.
+// InvokeExportStatus calls a host export like [InvokeExport] — same listed
+// export, same declared-export guard — but returns the guest's exit code as a
+// status value rather than folding a non-zero exit into an error. It is the
+// runtime-CLI counterpart: for a CLI command a non-zero exit code is an ordinary
+// command status (the shell's $?), so the caller reads it as the command's
+// result. Only a real Wasm trap or a recovered guest panic is an error here; a
+// clean exit with any code, including non-zero, is a status.
 //
-// This deliberately DIVERGES from the compile-time policy [Plugin.Call] applies,
+// This deliberately DIVERGES from the compile-time policy [InvokeExport] applies,
 // where any non-zero exit is a build failure wrapping [ErrWasmPluginExited]. The
 // two exit-code policies are a deliberate near-duplicate — a build must treat a
 // plugin's non-zero exit as a halt, a terminal command must surface it as an
 // ordinary status — and must not be unified.
-func InvokeExportStatus(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export string, payload []byte) (uint32, []byte, error) {
-	if err := ensureDeclared(plugin, desc, export); err != nil {
+func InvokeExportStatus(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export HostExport, payload []byte) (uint32, []byte, error) {
+	if err := ensureListed(plugin, export); err != nil {
 		return 0, nil, err
 	}
-	return plugin.callRaw(ctx, export, payload)
+	return invokeDeclaredStatus(ctx, plugin, desc, export.name, payload)
+}
+
+// InvokeAuthoredExport calls the export authored content names for this call —
+// the entry function a governance or linter attachment sets, or the function a
+// pipeline step names — and def, through [InvokeExport], when it names none. It
+// returns what [InvokeExport] returns, under the same compile-time exit-code
+// policy and the same declared-export guard.
+//
+// It is the stated exception to calling only a listed export, and the reason is
+// the one no list can answer: the name is the author's choice, made in a file
+// the host reads, so the host holds no list it could come from. The guard that
+// still applies is the one every call carries — the guest's describe() must
+// declare the name — and the socket's strict output decode then refuses an
+// answer that is not the socket's shape. A socket passes function straight from
+// the authored field it was read from, never a name it spelled itself, and the
+// plugin-wire call-site guard fails on a literal here.
+func InvokeAuthoredExport(ctx context.Context, plugin *Plugin, desc PluginDescriptor, def HostExport, function string, payload []byte) ([]byte, error) {
+	if function == "" {
+		return InvokeExport(ctx, plugin, desc, def, payload)
+	}
+	return invokeDeclared(ctx, plugin, desc, function, payload)
+}
+
+// InvokeNamedExportStatus calls the export an operator named on the command
+// line, under the runtime-CLI exit-code policy [InvokeExportStatus] applies. It
+// is the direct-invocation command's path, and the second stated exception to
+// calling only a listed export: the command exists to call whatever export its
+// operator names, so the name is never one the host chose. The guest's
+// describe() must still declare it.
+func InvokeNamedExportStatus(ctx context.Context, plugin *Plugin, desc PluginDescriptor, name string, payload []byte) (uint32, []byte, error) {
+	return invokeDeclaredStatus(ctx, plugin, desc, name, payload)
+}
+
+// invokeDeclared is the compile-time call shared by the listed and the authored
+// paths: the declared-export guard, then the call.
+func invokeDeclared(ctx context.Context, plugin *Plugin, desc PluginDescriptor, name string, payload []byte) ([]byte, error) {
+	if err := ensureDeclared(plugin, desc, name); err != nil {
+		return nil, err
+	}
+	return plugin.call(ctx, name, payload)
+}
+
+// invokeDeclaredStatus is the status-returning call shared by the listed and the
+// operator-named paths: the declared-export guard, then the call.
+func invokeDeclaredStatus(ctx context.Context, plugin *Plugin, desc PluginDescriptor, name string, payload []byte) (uint32, []byte, error) {
+	if err := ensureDeclared(plugin, desc, name); err != nil {
+		return 0, nil, err
+	}
+	return plugin.callRaw(ctx, name, payload)
+}
+
+// ensureListed refuses the zero HostExport, the one value of the type no list
+// produced: a declared but unassigned variable holds it, and calling it would
+// ask the guest for an export with no name.
+func ensureListed(plugin *Plugin, export HostExport) error {
+	if export.name == "" {
+		return fmt.Errorf("wasm: plugin %q: the host called an export with no name; the export must be one of the host-export identifiers",
+			plugin.Name())
+	}
+	return nil
 }
 
 // ensureDeclared is the shared declared-export guard both InvokeExport and

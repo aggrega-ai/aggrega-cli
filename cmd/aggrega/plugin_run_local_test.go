@@ -386,7 +386,7 @@ func TestRunLocal_ImporterExport(t *testing.T) {
 	guest := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 
 	out, err := runLocal(t, "--plugin", guest, "--type", "importer",
-		"--export", wasm.ImportExport, "--with", importPayload)
+		"--export", wasm.ImportExport.Name(), "--with", importPayload)
 	if err != nil {
 		t.Fatalf("an authored JSON payload should reach the importer's binary-wire export; got %v", err)
 	}

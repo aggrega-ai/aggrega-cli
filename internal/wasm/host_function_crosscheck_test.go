@@ -23,7 +23,7 @@ func TestCrossCheckHostFunctions(t *testing.T) {
 			PluginType: string(PluginTypeProvider),
 		}
 		for i, hf := range perExport {
-			name := providerRenderExportName
+			name := RenderNodeExport.Name()
 			if i > 0 {
 				name = "assemble_boundary"
 			}
@@ -117,7 +117,7 @@ func TestCrossCheckHostFunctionsDeterministicOffender(t *testing.T) {
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
-			{Name: providerRenderExportName, HostFunctions: []string{"aggrega_log", "aggrega_emit_warning"}},
+			{Name: RenderNodeExport.Name(), HostFunctions: []string{"aggrega_log", "aggrega_emit_warning"}},
 		},
 	}
 	var last string

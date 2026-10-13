@@ -468,7 +468,7 @@ func (p *Plugin) handleCLIWrite(mem pluginRawMemoryReader, w io.Writer, funcName
 // binding aggrega_emit_warning(code_ptr i64, message_ptr i64,
 // path_ptr i64). The guest emits a structured warning the host
 // accumulates into Plugin.warnings; the caller surfaces accumulated
-// warnings after Plugin.Call returns via Plugin.DrainWarnings.
+// warnings after the call returns via Plugin.DrainWarnings.
 //
 // Body extracted into handleAggregaEmitWarning so the test suite
 // can exercise the read-format-append path against a fake reader.

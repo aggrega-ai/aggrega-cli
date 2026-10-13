@@ -17,6 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -146,12 +147,13 @@ func TestImplementedComponentJSON_ResolvesOnlyForARecipeNamingAComponent(t *test
 // receiving one.
 func TestBuildRuleInputs_PerRuleFieldsReachOnlyTheirOwnRule(t *testing.T) {
 	t.Parallel()
+	shared := validator.Policies{AllowNonstandardNames: true}
 	inputs := buildRuleInputs(ruleInputSources{
 		Kind:                 "Recipe",
 		Proposed:             json.RawMessage(`{"kind":"Recipe"}`),
 		Previous:             json.RawMessage(`{"kind":"Recipe","previous":true}`),
 		ImplementedComponent: json.RawMessage(`{"kind":"Component"}`),
-		Policies:             json.RawMessage(`{}`),
+		Policies:             shared,
 		EntityPath:           "catalog/recipe/helm/broker/1.0.0/recipe.yaml",
 		PrePublish:           true,
 	})
@@ -169,7 +171,7 @@ func TestBuildRuleInputs_PerRuleFieldsReachOnlyTheirOwnRule(t *testing.T) {
 		if in.SourcePath != "" {
 			carriers["source_path"] = append(carriers["source_path"], in.RuleID)
 		}
-		if len(in.Proposed) == 0 || len(in.Policies) == 0 {
+		if len(in.Proposed) == 0 || in.Policies != shared {
 			t.Errorf("rule %q lost the shared proposed/policies payload", in.RuleID)
 		}
 	}

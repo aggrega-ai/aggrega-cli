@@ -69,7 +69,7 @@ func TestFRPStepGCSoakDeterministicAndNoHang(t *testing.T) {
 
 	payload := frpStepInputPayload(t)
 
-	first, err := wasm.InvokeExport(ctx, plugin, desc, "step", payload)
+	first, err := wasm.InvokeExport(ctx, plugin, desc, wasm.StepExport, payload)
 	if err != nil {
 		t.Fatalf("InvokeExport(step) call 0: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestFRPStepGCSoakDeterministicAndNoHang(t *testing.T) {
 		if ctx.Err() != nil {
 			t.Fatalf("soak exceeded %s after %d calls (possible hang): %v", soakTimeout, i, ctx.Err())
 		}
-		out, err := wasm.InvokeExport(ctx, plugin, desc, "step", payload)
+		out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.StepExport, payload)
 		if err != nil {
 			t.Fatalf("InvokeExport(step) call %d: %v", i, err)
 		}

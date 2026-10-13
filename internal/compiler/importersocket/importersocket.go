@@ -161,13 +161,13 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 // importer in each refusal.
 func readImportOutput(coordinate string, out []byte) (abi.ImportOutput, error) {
 	var io abi.ImportOutput
-	if err := wasm.DecodeGuestOutputCBOR(wasm.ImportExport, out, &io); err != nil {
+	if err := wasm.DecodeGuestOutputCBOR(wasm.ImportExport.Name(), out, &io); err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", coordinate, err)
 	}
-	if err := wasm.GuestReturnedError(coordinate, wasm.ImportExport, wasm.GuestFailure{Message: io.Error}); err != nil {
+	if err := wasm.GuestReturnedError(coordinate, wasm.ImportExport.Name(), wasm.GuestFailure{Message: io.Error}); err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", coordinate, err)
 	}
-	if err := wasm.GuestDiagnosticSeverities(coordinate, wasm.ImportExport, io.Diagnostics); err != nil {
+	if err := wasm.GuestDiagnosticSeverities(coordinate, wasm.ImportExport.Name(), io.Diagnostics); err != nil {
 		return abi.ImportOutput{}, err
 	}
 	return io, nil

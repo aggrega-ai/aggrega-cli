@@ -16,19 +16,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
-// linterOutput mirrors the linter plugin's response envelope for the
-// gate-level assertions below. The field set is the subset the gate
-// proof inspects; the canonical wire contract is the wasm-linter
-// schema, exercised in full by the dispatcher's own suite.
-type linterOutput struct {
-	Findings []struct {
-		RuleID         string `json:"rule_id"`
-		Severity       string `json:"severity"`
-		Classification string `json:"classification,omitempty"`
-		Message        string `json:"message"`
-	} `json:"findings"`
-}
-
 // TestLoadAndDescribePublishingLinter exercises the live describe()
 // gate end-to-end against the real publishing-linter .wasm: load,
 // describe(), validate the returned descriptor against the host
@@ -41,7 +28,9 @@ type linterOutput struct {
 // delivers the full LinterInput envelope inline (InputPatternFull) and
 // the guest produces its findings from that payload alone, calling no
 // data-fetch host function. It is full-inline-envelope delivery, not a
-// full-IR-graph projection.
+// full-IR-graph projection. The envelope crosses in the socket's canonical
+// CBOR in both directions, and the answer is read through the strict binary
+// decode the socket's own dispatch uses.
 //
 // Skips cleanly when the plugin source or the wasm32 toolchain is
 // absent — EnsureFixtureBuilt owns that decision.
@@ -69,15 +58,22 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 	if !desc.hasExportWithPrefix(lintExportPrefix) {
 		t.Errorf("descriptor declares no %s* export", lintExportPrefix)
 	}
-	if !desc.hasExport("lint_rules") {
-		t.Errorf("descriptor does not declare the %q export", "lint_rules")
+	if !desc.hasExport(LintRulesExport.Name()) {
+		t.Errorf("descriptor does not declare the %q export", LintRulesExport)
 	}
 
 	// Pattern B: full LinterInput envelope delivered inline. A
 	// three-segment-violating Component name surfaces a name-shape
 	// finding the guest derives from the payload alone.
-	payload := []byte(`{"rule_id":"name-shape","entity_kind":"Component","proposed":{"kind":"Component","metadata":{"name":"BadName"}}}`)
-	out, err := InvokeExport(ctx, plugin, desc, "lint_rules", payload)
+	payload, err := abi.LinterInput{
+		RuleID:     "name-shape",
+		EntityKind: "Component",
+		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"BadName"}}`),
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the linter input: %v", err)
+	}
+	out, err := InvokeExport(ctx, plugin, desc, LintRulesExport, payload)
 	if err != nil {
 		t.Fatalf("InvokeExport(lint_rules): %v", err)
 	}
@@ -85,12 +81,12 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 		t.Fatal("lint_rules returned empty output")
 	}
 
-	var parsed linterOutput
-	if err := json.Unmarshal(out, &parsed); err != nil {
-		t.Fatalf("unmarshal lint_rules output: %v (raw: %s)", err, out)
+	var parsed abi.LinterOutput
+	if err := DecodeGuestOutputCBOR(LintRulesExport.Name(), out, &parsed); err != nil {
+		t.Fatalf("decode lint_rules output: %v (raw: %x)", err, out)
 	}
 	if len(parsed.Findings) != 1 {
-		t.Fatalf("expected exactly one finding; got %d (raw: %s)", len(parsed.Findings), out)
+		t.Fatalf("expected exactly one finding; got %d (raw: %x)", len(parsed.Findings), out)
 	}
 	f := parsed.Findings[0]
 	if f.RuleID != "name-shape" {
@@ -102,7 +98,7 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 
 	// An export the descriptor does not declare is refused before the
 	// guest runs, even on a live plugin.
-	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected()) {
+	if _, err := InvokeExport(ctx, plugin, desc, RenderNodeExport, nil); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("undeclared export on live plugin: got %v want ErrWasmManifestRejected", err)
 	}
 }

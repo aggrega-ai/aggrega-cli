@@ -51,7 +51,7 @@ func TestParserFixtureDescribe(t *testing.T) {
 			if !slices.Contains(desc.Capabilities, "parse:demo") {
 				t.Fatalf("descriptor capabilities %v do not advertise parse:demo", desc.Capabilities)
 			}
-			if !desc.hasExport(ParseExport) {
+			if !desc.hasExport(ParseExport.Name()) {
 				t.Fatalf("descriptor does not declare the %q export", ParseExport)
 			}
 
@@ -68,7 +68,7 @@ func TestParserFixtureDescribe(t *testing.T) {
 				t.Fatalf("InvokeExport(parse): %v", err)
 			}
 			var po abi.ParseOutput
-			if err := DecodeGuestOutputCBOR(ParseExport, out, &po); err != nil {
+			if err := DecodeGuestOutputCBOR(ParseExport.Name(), out, &po); err != nil {
 				t.Fatalf("the answer is not a ParseOutput in canonical CBOR: %v (bytes %q)", err, out)
 			}
 			if !strings.Contains(string(po.Tree), `"format":"demo"`) {

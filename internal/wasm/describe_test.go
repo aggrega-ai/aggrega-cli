@@ -351,10 +351,10 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 	withRun := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
-		Exports:    []PluginExport{{Name: CLIRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	if err := withRun.Validate("acme/cli"); err != nil {
-		t.Fatalf("cli with %q: want accept, got %v", CLIRunExportName, err)
+		t.Fatalf("cli with %q: want accept, got %v", CLIRunExport.Name(), err)
 	}
 
 	// The same descriptor without cli_run fails, wrapping ErrWasmManifestRejected.
@@ -364,7 +364,7 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 		Exports:    []PluginExport{{Name: "run"}},
 	}
 	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected()) {
-		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", CLIRunExportName, err)
+		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", CLIRunExport.Name(), err)
 	}
 }
 
@@ -379,7 +379,7 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
 		Commands:   []PluginCLICommand{{Name: "greet-a", Description: "A"}, {Name: "greet-b"}},
-		Exports:    []PluginExport{{Name: CLIRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	if err := multi.Validate("acme/cli"); err != nil {
 		t.Fatalf("cli with several well-named commands: want accept, got %v", err)
@@ -388,7 +388,7 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 	none := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
-		Exports:    []PluginExport{{Name: CLIRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	if err := none.Validate("acme/cli"); err != nil {
 		t.Fatalf("cli with no commands must pass the load gate (presence is an install concern): %v", err)
@@ -398,7 +398,7 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
 		Commands:   []PluginCLICommand{{Name: "ok"}, {Name: ""}},
-		Exports:    []PluginExport{{Name: CLIRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	if err := emptyName.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("cli with an empty command name: want ErrWasmManifestRejected, got %v", err)
@@ -416,7 +416,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 		return PluginDescriptor{
 			AbiVersion:     ABIVersionV1Alpha1,
 			PluginType:     string(PluginTypeGovernance),
-			Exports:        []PluginExport{{Name: VerdictIRExport}},
+			Exports:        []PluginExport{{Name: VerdictIRExport.Name()}},
 			SettingsSchema: json.RawMessage(schema),
 		}
 	}
@@ -482,7 +482,7 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 		AbiVersion:  ABIVersionV1Alpha1,
 		PluginType:  string(PluginTypeCLI),
 		Description: "seeds a new Aggregate scaffold under the current directory",
-		Exports:     []PluginExport{{Name: CLIRunExportName}},
+		Exports:     []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	data, err := json.Marshal(want)
 	if err != nil {
@@ -504,7 +504,7 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 	none := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
-		Exports:    []PluginExport{{Name: CLIRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExport.Name()}},
 	}
 	noneData, err := json.Marshal(none)
 	if err != nil {
@@ -662,8 +662,8 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		"both-exports-and-flag-accept": {
 			exports: []PluginExport{
 				{Name: "render_node"},
-				{Name: LinkPublishExport},
-				{Name: LinkResolveExport},
+				{Name: LinkPublishExport.Name()},
+				{Name: LinkResolveExport.Name()},
 			},
 			linking: true,
 		},
@@ -683,7 +683,7 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		"flag-with-only-publish-reject": {
 			exports: []PluginExport{
 				{Name: "render_node"},
-				{Name: LinkPublishExport},
+				{Name: LinkPublishExport.Name()},
 			},
 			linking:    true,
 			wantReject: true,
@@ -691,7 +691,7 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		"flag-with-only-resolve-reject": {
 			exports: []PluginExport{
 				{Name: "render_node"},
-				{Name: LinkResolveExport},
+				{Name: LinkResolveExport.Name()},
 			},
 			linking:    true,
 			wantReject: true,
@@ -699,8 +699,8 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		"both-exports-without-flag-reject": {
 			exports: []PluginExport{
 				{Name: "render_node"},
-				{Name: LinkPublishExport},
-				{Name: LinkResolveExport},
+				{Name: LinkPublishExport.Name()},
+				{Name: LinkResolveExport.Name()},
 			},
 			linking:    false,
 			wantReject: true,
@@ -766,7 +766,7 @@ func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
 		AbiVersion: ABIVersionV1Alpha1,
 		PluginType: string(PluginTypeCLI),
 		Exports: []PluginExport{
-			{Name: CLIRunExportName, HostFunctions: []string{"aggrega_cli_write_stdout"}},
+			{Name: CLIRunExport.Name(), HostFunctions: []string{"aggrega_cli_write_stdout"}},
 		},
 	}
 	if err := cli.Validate("acme/cli"); err != nil {

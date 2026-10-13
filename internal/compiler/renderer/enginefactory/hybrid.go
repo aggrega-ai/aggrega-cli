@@ -201,7 +201,7 @@ func resolvePluginIdentity(providerRef string, catalogLookup resolver.CatalogLoo
 // wasmengine adapter drives. The name is sourced from the adapter itself, so the
 // routing precondition and the export the adapter calls are one string.
 func advertisesRenderNode(plugin types.Plugin) bool {
-	return advertisesExport(plugin, wasmengine.RenderNodeExport)
+	return advertisesExport(plugin, wasmengine.RenderNodeExport.Name())
 }
 
 // advertisesAssembleBoundary reports whether the Plugin entity declares the
@@ -209,7 +209,7 @@ func advertisesRenderNode(plugin types.Plugin) bool {
 // adapter itself, so the routing precondition and the export the adapter calls
 // are one string — mirroring advertisesRenderNode.
 func advertisesAssembleBoundary(plugin types.Plugin) bool {
-	return advertisesExport(plugin, wasmengine.AssembleBoundaryExport)
+	return advertisesExport(plugin, wasmengine.AssembleBoundaryExport.Name())
 }
 
 // advertisesExport reports whether the Plugin entity declares an export of the

@@ -5,17 +5,22 @@ package lintops
 
 // What a linter plugin is handed, read where it arrives: at a guest. These tests
 // run a guest that answers every input with one finding carrying the input's own
-// bytes, dispatched through the host's linter dispatcher, so what they read back
-// is the payload the guest received — encoded by the dispatcher itself — rather
-// than a structure the host assembled on the way to encoding it. Each plants
-// parameter values in the documents a run reads, asserts that none reaches the
-// guest, and asserts that the rest of those documents does, so a run cannot pass
-// by handing the guest nothing.
+// bytes, base64-encoded, dispatched through the host's linter dispatcher, so what
+// they read back is the payload the guest received — encoded by the dispatcher
+// itself — rather than a structure the host assembled on the way to encoding it.
+// Each plants parameter values in the documents a run reads, asserts that none
+// reaches the guest, and asserts that the rest of those documents does, so a run
+// cannot pass by handing the guest nothing.
+//
+// The payload is the socket's canonical CBOR. Every document it carries — the
+// proposed entity, a previous version, a Release — crosses as a byte string
+// holding that document's JSON verbatim, so the fragments asserted below are read
+// out of the received bytes as they are.
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"io"
 	"os"
 	"path/filepath"
@@ -59,7 +64,10 @@ func echoDispatch(t *testing.T) linterDispatch {
 }
 
 // echoedPayloads returns, per finding a run collected, the payload the echoing
-// guest received for it: the guest returns each input as its finding's message.
+// guest received for it: the guest returns each input, base64-encoded, as its
+// finding's message. Each payload must decode strictly as a linter input before
+// it is kept, so a message that is not one fails here rather than passing every
+// absence check below by carrying nothing.
 func echoedPayloads(t *testing.T, collect *FindingCollector) map[string][]string {
 	t.Helper()
 	if !collect.Reached() {
@@ -67,11 +75,15 @@ func echoedPayloads(t *testing.T, collect *FindingCollector) map[string][]string
 	}
 	byRule := map[string][]string{}
 	for _, f := range collect.Report().Findings {
-		var in validator.LinterInput
-		if err := json.Unmarshal([]byte(f.Message), &in); err != nil {
-			t.Fatalf("a finding's message is not the payload the guest was handed: %v\n%s", err, f.Message)
+		raw, err := base64.StdEncoding.DecodeString(f.Message)
+		if err != nil {
+			t.Fatalf("a finding's message is not the base64 payload the guest was handed: %v\n%s", err, f.Message)
 		}
-		byRule[f.RuleID] = append(byRule[f.RuleID], f.Message)
+		var in validator.LinterInput
+		if err := in.DecodeCBORStrict(raw); err != nil {
+			t.Fatalf("a finding's message is not the payload the guest was handed: %v\n%x", err, raw)
+		}
+		byRule[f.RuleID] = append(byRule[f.RuleID], string(raw))
 	}
 	if len(byRule) == 0 {
 		t.Fatal("the guest answered no input, so the absences below would prove nothing")
@@ -345,7 +357,7 @@ func TestPrePublishLintHandsTheGuestNoParameterValueOfThePreviousVersion(t *test
 		t.Fatalf("the schema-evolution rule is dispatched once; the guest answered it %d time(s)", len(evolution))
 	}
 	var in validator.LinterInput
-	if err := json.Unmarshal([]byte(evolution[0]), &in); err != nil {
+	if err := in.DecodeCBORStrict([]byte(evolution[0])); err != nil {
 		t.Fatalf("decode the schema-evolution payload: %v", err)
 	}
 	if len(in.Previous) == 0 {
@@ -411,7 +423,7 @@ func TestReleaseLintHandsTheGuestNoParameterValue(t *testing.T) {
 		t.Error("the pass dispatched no per-entity rule, so the per-entity payloads were never read")
 	}
 	var in validator.LinterInput
-	if err := json.Unmarshal([]byte(whole[0]), &in); err != nil {
+	if err := in.DecodeCBORStrict([]byte(whole[0])); err != nil {
 		t.Fatalf("decode the release-scoped payload: %v", err)
 	}
 	for _, fragment := range []string{

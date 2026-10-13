@@ -112,7 +112,7 @@ func TestFRPDecodeGuard(t *testing.T) {
 
 	payload := frpStepInputPayload(t)
 
-	rawFirst, err := wasm.InvokeExport(ctx, plugin, desc, "step", payload)
+	rawFirst, err := wasm.InvokeExport(ctx, plugin, desc, wasm.StepExport, payload)
 	if err != nil {
 		t.Fatalf("InvokeExport(step): %v", err)
 	}
@@ -173,7 +173,7 @@ func TestFRPDecodeGuard(t *testing.T) {
 
 	// Determinism: a second invocation of the same input returns
 	// byte-identical output.
-	rawSecond, err := wasm.InvokeExport(ctx, plugin, desc, "step", payload)
+	rawSecond, err := wasm.InvokeExport(ctx, plugin, desc, wasm.StepExport, payload)
 	if err != nil {
 		t.Fatalf("InvokeExport(step) second run: %v", err)
 	}

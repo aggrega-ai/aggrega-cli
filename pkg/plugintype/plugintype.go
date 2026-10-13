@@ -3,6 +3,10 @@
 
 package plugintype
 
+// Every export name below is read from the one place it is spelled, which the
+// code generator's plugin-wire registrations read too.
+import "github.com/aggrega-ai/aggrega-cli/internal/exportname"
+
 // Type is the canonical string identifying a Wasm plugin type. It is the value
 // a plugin declares as its plugin_type and the key the registry is indexed by.
 type Type string
@@ -123,16 +127,20 @@ func GovernanceRoleTier(role Role) (Tier, bool) {
 // advertised it in describe(). It refuses a call to one the guest did not. But
 // nothing relates the dispatched function back to the role, so an attachment may
 // point a role at any function its guest declares.
+//
+// Each default is one of the governance type's host exports (see
+// [Entry.HostExports]), read from the same declaration that list holds, so the
+// role rule and the list cannot name an export differently.
 func GovernanceRoleExport(role Role) (string, bool) {
 	switch role {
 	case RoleAnnotationTransform:
-		return "transform_annotations", true
+		return exportname.TransformAnnotations, true
 	case RoleLabelTransform:
-		return "mutate", true
+		return exportname.Mutate, true
 	case RoleIRVerdict:
-		return "verdict_ir", true
+		return exportname.VerdictIR, true
 	case RoleRenderVerdict:
-		return "verdict_render", true
+		return exportname.VerdictRender, true
 	default:
 		return "", false
 	}
@@ -205,6 +213,23 @@ type Entry struct {
 	Mechanism Mechanism
 	// LoadProfile is the host-function profile the type loads under.
 	LoadProfile LoadProfile
+	// HostExports lists, in fixed author-defined order, every export the host
+	// calls a guest of this type with a payload. It is the one authority on that
+	// set: the host calls an export it chooses only when this list holds it, the
+	// compiler's export identifiers are generated from it, and for a type whose
+	// payloads cross in the binary encoding the table the direct-invocation command
+	// converts an authored payload by carries one row per export listed here.
+	//
+	// Two kinds of export are not listed. describe takes no payload. And an export
+	// that authored content names — the entry function a governance or linter
+	// attachment sets, the function a pipeline step names, the export an operator
+	// names on the command line — is not one the host chooses, so no list can hold
+	// it: the host calls it by the name it was given, once the guest's describe()
+	// has declared that name.
+	//
+	// The slice an accessor returns is a copy, so a caller cannot change the
+	// registry through it.
+	HostExports []string
 }
 
 // entries is the registry, in fixed author-defined order. Enumeration reads a
@@ -213,11 +238,25 @@ var entries = []Entry{
 	{
 		Type:        Provider,
 		Label:       "provider",
-		MinExport:   MinExport{Name: "render_node"},
+		MinExport:   MinExport{Name: exportname.RenderNode},
 		Socket:      "provider",
 		Tier:        TierMutating,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
+		// render_node is required; the others are called only when the guest's
+		// describe() declares them, and the two link exports come as a pair.
+		HostExports: []string{
+			exportname.RenderNode,
+			exportname.ValidateNodeInput,
+			exportname.AssembleBoundary,
+			exportname.Carve,
+			exportname.Reassemble,
+			exportname.NameBound,
+			exportname.RenderedName,
+			exportname.BoundaryEnvOverrides,
+			exportname.LinkPublish,
+			exportname.LinkResolve,
+		},
 	},
 	{
 		Type:        Linter,
@@ -227,11 +266,14 @@ var entries = []Entry{
 		Tier:        TierVerdict,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
+		// The socket's default rule-evaluation export, called when a linter
+		// attachment names no entry function of its own.
+		HostExports: []string{exportname.LintRules},
 	},
 	{
 		Type:      PipelineStep,
 		Label:     "feature-recipe-pipeline",
-		MinExport: MinExport{Name: "step"},
+		MinExport: MinExport{Name: exportname.Step},
 		Socket:    "",
 		// A pipeline step patches the documents a recipe renders, so its bytes reach
 		// the rendered output and it is pinned like every other output-shaping type.
@@ -240,6 +282,9 @@ var entries = []Entry{
 		Tier:        TierMutating,
 		Mechanism:   MechanismCatalogPipelineStep,
 		LoadProfile: LoadProfileBuild,
+		// The type's required export. A recipe's pipeline step names the function
+		// it runs, so the host calls the function the step names.
+		HostExports: []string{exportname.Step},
 	},
 	{
 		Type:  Governance,
@@ -258,50 +303,74 @@ var entries = []Entry{
 		Tier:        TierMutating,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
+		// One default per attachment role, in the order GovernanceRoles lists the
+		// roles: the export a role calls when its attachment names no entry function.
+		HostExports: []string{
+			exportname.TransformAnnotations,
+			exportname.Mutate,
+			exportname.VerdictIR,
+			exportname.VerdictRender,
+		},
 	},
 	{
 		Type:        CLI,
 		Label:       "cli",
-		MinExport:   MinExport{Name: "cli_run"},
+		MinExport:   MinExport{Name: exportname.CLIRun},
 		Socket:      "",
 		Tier:        TierOrthogonal,
 		Mechanism:   MechanismRuntimeInstalled,
 		LoadProfile: LoadProfileRuntimeTerminal,
+		HostExports: []string{exportname.CLIRun},
 	},
 	{
 		Type:        Parser,
 		Label:       "parser",
-		MinExport:   MinExport{Name: "parse"},
+		MinExport:   MinExport{Name: exportname.Parse},
 		Socket:      "",
 		Tier:        TierOrthogonal,
 		Mechanism:   MechanismCapabilityAmbient,
 		LoadProfile: LoadProfileBuild,
+		HostExports: []string{exportname.Parse},
 	},
 	{
 		Type:        Importer,
 		Label:       "importer",
-		MinExport:   MinExport{Name: "import"},
+		MinExport:   MinExport{Name: exportname.Import},
 		Socket:      "importer",
 		Tier:        TierOrthogonal,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
+		HostExports: []string{exportname.Import},
 	},
 }
 
 // Entries returns every registry entry in fixed author-defined order. The
-// returned slice is a copy, so a caller may not mutate the registry through it.
+// returned slice is a copy, and so is each entry's host-export list, so a caller
+// may not mutate the registry through it.
 func Entries() []Entry {
 	out := make([]Entry, len(entries))
-	copy(out, entries)
+	for i, e := range entries {
+		out[i] = e.clone()
+	}
 	return out
 }
 
-// Lookup returns the registry entry for a plugin type and whether one exists.
+// Lookup returns the registry entry for a plugin type and whether one exists. The
+// entry's host-export list is a copy, so a caller may not mutate the registry
+// through it.
 func Lookup(t Type) (Entry, bool) {
 	for _, e := range entries {
 		if e.Type == t {
-			return e, true
+			return e.clone(), true
 		}
 	}
 	return Entry{}, false
+}
+
+// clone returns e with its host-export list copied. Entry is otherwise a value
+// type, and the list is the one field a shallow copy would share with the
+// registry.
+func (e Entry) clone() Entry {
+	e.HostExports = append([]string(nil), e.HostExports...)
+	return e
 }

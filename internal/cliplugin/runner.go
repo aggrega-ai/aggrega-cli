@@ -150,7 +150,7 @@ func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (in
 	// The guest streams its stdout/stderr through the host functions bound at
 	// LoadCLI, so by the time cli_run returns the output has already reached the
 	// injected writers; the host reads only the exit code here.
-	exitCode, _, err := wasm.InvokeExportStatus(ctx, plugin, desc, wasm.CLIRunExportName, payload)
+	exitCode, _, err := wasm.InvokeExportStatus(ctx, plugin, desc, wasm.CLIRunExport, payload)
 	if err != nil {
 		return 0, digest, err
 	}

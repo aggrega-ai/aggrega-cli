@@ -39,8 +39,8 @@ type LinterInput struct {
 	Components types.OrderedMap[json.RawMessage] `json:"components,omitempty,omitzero" yaml:"components,omitempty" cbor:"components,omitempty"`
 	// SourcePath Filesystem path the entity was loaded from. Populated by host callers walking the catalog filesystem; consumed by path-aware rules (e.g., category-matches-directory). Omitted when the caller has no path context.
 	SourcePath string `json:"source_path,omitempty" yaml:"source_path,omitempty" cbor:"source_path,omitempty"`
-	// Policies The per-workspace publishing-discipline configuration the rule consults. The guest realizes it as the typed Policies object; the host pipes it through as an opaque payload it assembles from the workspace config and CLI overrides.
-	Policies json.RawMessage `json:"policies,omitempty" yaml:"policies,omitempty" cbor:"policies,omitempty"`
+	// Policies The per-workspace publishing-discipline configuration the rule consults, carried as a Policies object the host assembles from the workspace configuration and any command-line overrides.
+	Policies Policies `json:"policies,omitempty" yaml:"policies,omitempty" cbor:"policies,omitempty"`
 }
 
 // LinterOutput The response shape the publishing-linter plugin emits. findings carries one entry per rule invocation that produced a result. The schema-evolution rule emits exactly one finding (the classification verdict); structural rules may emit zero (no violations) or many (one per offence).
@@ -139,13 +139,15 @@ func (t LinterInput) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"source_path\":")
 		writeJSONString(&buf, t.SourcePath)
 	}
-	if len(t.Policies) != 0 {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"policies\":")
-		buf.Write(t.Policies)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"policies\":")
+	if enc, err := t.Policies.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -219,7 +221,9 @@ func (t *LinterInput) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				t.Policies = raw
+				if err := t.Policies.UnmarshalJSON(raw); err != nil {
+					return err
+				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -263,7 +267,7 @@ func (t LinterOutput) MarshalJSON() ([]byte, error) {
 			buf.WriteByte(',')
 		}
 		ev := t.Findings[i]
-		if enc, err := json.Marshal(ev); err != nil {
+		if enc, err := ev.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -306,9 +310,7 @@ func (t *LinterOutput) UnmarshalJSON(data []byte) error {
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
 				} else {
-					dec2 := json.NewDecoder(bytes.NewReader(raw))
-					dec2.UseNumber()
-					if err := dec2.Decode(&elem); err != nil {
+					if err := elem.UnmarshalJSON(raw); err != nil {
 						return err
 					}
 				}
@@ -551,11 +553,8 @@ func (t LinterInput) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
-	n := 3
+	n := 4
 	if len(t.Release) != 0 {
-		n++
-	}
-	if len(t.Policies) != 0 {
 		n++
 	}
 	if len(t.Previous) != 0 {
@@ -571,15 +570,16 @@ func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
 	if len(t.Release) != 0 {
 		dst = appendCBORTextString(dst, "release")
 		dst = appendCBORByteString(dst, t.Release)
 	}
 	dst = appendCBORTextString(dst, "rule_id")
 	dst = appendCBORTextString(dst, t.RuleID)
-	if len(t.Policies) != 0 {
-		dst = appendCBORTextString(dst, "policies")
-		dst = appendCBORByteString(dst, t.Policies)
+	dst = appendCBORTextString(dst, "policies")
+	if dst, err = t.Policies.appendCBOR(dst); err != nil {
+		return nil, err
 	}
 	if len(t.Previous) != 0 {
 		dst = appendCBORTextString(dst, "previous")
@@ -695,10 +695,8 @@ func (t *LinterInput) decodeCBOR(dec *cborDec) error {
 				t.SourcePath = s
 			}
 		case "policies":
-			if v, err := dec.readByteString(); err != nil {
+			if err := (&t.Policies).decodeCBOR(dec); err != nil {
 				return err
-			} else {
-				t.Policies = json.RawMessage(v)
 			}
 		default:
 			if err := dec.skip(); err != nil {
@@ -745,10 +743,10 @@ func (t LinterOutput) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORHead(dst, 4, uint64(len(t.Findings)))
 	for i := range t.Findings {
 		ev := t.Findings[i]
-		if raw, mErr := json.Marshal(ev); mErr != nil {
-			return nil, mErr
+		if enc, encErr := ev.EncodeCBOR(); encErr != nil {
+			return nil, encErr
 		} else {
-			dst = appendCBORByteString(dst, raw)
+			dst = append(dst, enc...)
 		}
 	}
 	return dst, nil
@@ -781,12 +779,12 @@ func (t *LinterOutput) decodeCBOR(dec *cborDec) error {
 				s := make([]abi.Diagnostic, 0, sn)
 				for si := 0; si < sn; si++ {
 					var ev abi.Diagnostic
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&ev); err != nil {
+					{
+						start := dec.pos
+						if err := dec.skip(); err != nil {
+							return err
+						}
+						if err := (&ev).DecodeCBOR(dec.data[start:dec.pos]); err != nil {
 							return err
 						}
 					}

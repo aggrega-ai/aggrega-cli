@@ -74,6 +74,18 @@ type decodeSite struct {
 // nothing here. That is why the registry admits an entry only for a socket this
 // guard can see: an entry it cannot see would be exactly the unpinned
 // hand-written fact the registry exists to avoid rather than to relocate.
+//
+// It also reads every payload-carrying invocation of a guest export, which is
+// the backstop behind the invocation's own type. The host calls an export it
+// chooses only as a value the plugin-type registry's host-export lists produce,
+// so a call naming any other export does not compile; what compiles and is still
+// wrong is a value no list produced spelled at the call — the zero value, say —
+// and a name a socket chose itself handed to one of the two entry points that
+// exist for an export authored content names. Either is reported here. The
+// export identifiers the decode sites name are resolved from the lists too: the
+// wasm package declares them only as generated values of those lists, and an
+// identifier there spelling a listed name as a literal is a second spelling this
+// guard refuses.
 func TestWireRegistryAgreesWithSocketDecodeEntryPoints(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +97,19 @@ func TestWireRegistryAgreesWithSocketDecodeEntryPoints(t *testing.T) {
 	}
 
 	for _, d := range wireDisagreements(binaryExports(), sites) {
+		t.Error(d)
+	}
+
+	invocations := payloadInvocationSites(t, root)
+	if countKind(invocations, invocationListed) == 0 || countKind(invocations, invocationAuthored) == 0 {
+		t.Fatalf("found %d payload invocation(s) under %s, with no listed or no authored one among them; the "+
+			"census is looking in the wrong place, and an empty census would pass while proving nothing",
+			len(invocations), root)
+	}
+	for _, d := range invocationComplaints(invocations) {
+		t.Error(d)
+	}
+	for _, d := range hostExportConstructionComplaints(t, root) {
 		t.Error(d)
 	}
 }
@@ -173,12 +198,20 @@ func TestDecodeSiteCensusResolvesEveryNamingForm(t *testing.T) {
 		t.Fatal("the label-transform role has no default export")
 	}
 	importer, ok := plugintype.Lookup(plugintype.Importer)
-	if !ok || importer.MinExport.Name == "" || importer.MinExport.IsPrefix {
-		t.Fatal("the importer type has no exact required export")
+	if !ok || len(importer.HostExports) != 1 {
+		t.Fatal("the importer type lists no single host export")
 	}
-	if got := naming.exports["ImportExport"]; got != importer.MinExport.Name {
-		t.Fatalf("the census resolves the wasm package's ImportExport to %q; want the importer type's required "+
-			"export %q", got, importer.MinExport.Name)
+	if got := naming.exports["ImportExport"]; got != importer.HostExports[0] {
+		t.Fatalf("the census resolves the wasm package's ImportExport to %q; want the importer type's host "+
+			"export %q", got, importer.HostExports[0])
+	}
+	linter, ok := plugintype.Lookup(plugintype.Linter)
+	if !ok || len(linter.HostExports) != 1 {
+		t.Fatal("the linter type lists no single host export")
+	}
+	if got := naming.exports["LintRulesExport"]; got != linter.HostExports[0] {
+		t.Fatalf("the census resolves the wasm package's LintRulesExport to %q; want the linter type's host "+
+			"export %q, read from its list", got, linter.HostExports[0])
 	}
 
 	const src = `package synthetic
@@ -204,7 +237,7 @@ func viaNothing() { wasm.DecodeGuestOutputCBOR(export, out, &v) }
 
 	want := map[string][]string{
 		"synthetic.go:3":  {mutate},
-		"synthetic.go:5":  {importer.MinExport.Name},
+		"synthetic.go:5":  {importer.HostExports[0]},
 		"synthetic.go:7":  {"a_literal_export"},
 		"synthetic.go:9":  {mutate},
 		"synthetic.go:13": nil,
@@ -549,10 +582,13 @@ func sortedUnion(a, b []string) []string {
 // exportNameIdents reads the export-name identifiers the wasm package declares,
 // and the export each names, out of that package's own source, so this guard
 // holds no list of them. Each is resolved through the declaration's own
-// initializer, never by its spelling: a literal names its export directly, a
-// role's default is read through the canonical role-to-export rule, and a plugin
-// type's required export through that type's minimum-export rule — a prefix rule
-// names no single export and contributes none.
+// initializer, never by its spelling: a generated host-export identifier names
+// the export its plugin type's host-export list holds — read from that list, and
+// unresolved if the list does not hold it — and a role's default is read through
+// the canonical role-to-export rule. A literal resolves to itself, but only for a
+// name no list holds — the describe export, which carries no payload; a literal
+// spelling a listed export is a second spelling of a name the list already
+// holds, and is refused.
 //
 // It refuses rather than skipping a declaration it cannot resolve whose
 // identifier reads as an export name, because a missed identifier is a call site
@@ -566,8 +602,15 @@ func exportNameIdents(t *testing.T, root string, roles map[string]plugintype.Rol
 		t.Fatalf("read the wasm package at %s: %v", dir, err)
 	}
 
+	listed := map[string]bool{}
+	for _, e := range plugintype.Entries() {
+		for _, name := range e.HostExports {
+			listed[name] = true
+		}
+	}
+
 	out := map[string]string{}
-	var unresolved []string
+	var unresolved, secondSpellings []string
 	for _, e := range files {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -592,6 +635,12 @@ func exportNameIdents(t *testing.T, root string, roles map[string]plugintype.Rol
 					if i >= len(vs.Values) {
 						continue
 					}
+					if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						if export, err := strconv.Unquote(lit.Value); err == nil && listed[export] {
+							secondSpellings = append(secondSpellings, fmt.Sprintf("%s = %s in %s", ident.Name, lit.Value, name))
+							continue
+						}
+					}
 					if export, ok := resolveExportName(vs.Values[i], roles, types); ok {
 						out[ident.Name] = export
 						continue
@@ -604,6 +653,12 @@ func exportNameIdents(t *testing.T, root string, roles map[string]plugintype.Rol
 		}
 	}
 
+	if len(secondSpellings) > 0 {
+		sort.Strings(secondSpellings)
+		t.Fatalf("the wasm package spells a name a host-export list already holds as a literal (%s); the list is "+
+			"the one home of that name, and the identifier for it is generated from the list",
+			strings.Join(secondSpellings, ", "))
+	}
 	if len(unresolved) > 0 {
 		sort.Strings(unresolved)
 		t.Fatalf("the wasm package declares export-name identifiers this census cannot resolve (%s); a "+
@@ -617,7 +672,11 @@ func exportNameIdents(t *testing.T, root string, roles map[string]plugintype.Rol
 
 // resolveExportName resolves one declaration's initializer to the export it
 // names: a string literal, the role-to-export rule applied to a role named by its
-// declared identifier, or a plugin type's exact minimum export.
+// declared identifier, or — the form every generated host-export identifier
+// takes — a plugin type named by its declared identifier together with a name
+// that type's host-export list holds. A name the list does not hold resolves to
+// nothing, so a generated identifier outliving its list entry is reported as
+// unresolved rather than read as naming an export.
 func resolveExportName(value ast.Expr, roles map[string]plugintype.Role, types map[string]plugintype.Type) (string, bool) {
 	switch v := value.(type) {
 	case *ast.BasicLit:
@@ -627,22 +686,36 @@ func resolveExportName(value ast.Expr, roles map[string]plugintype.Role, types m
 		export, err := strconv.Unquote(v.Value)
 		return export, err == nil && export != ""
 	case *ast.CallExpr:
-		if len(v.Args) != 1 {
+		if len(v.Args) == 0 {
 			return "", false
 		}
 		arg, ok := v.Args[0].(*ast.SelectorExpr)
 		if !ok {
 			return "", false
 		}
-		if role, ok := roles[arg.Sel.Name]; ok {
+		if role, ok := roles[arg.Sel.Name]; ok && len(v.Args) == 1 {
 			return plugintype.GovernanceRoleExport(role)
 		}
-		if typ, ok := types[arg.Sel.Name]; ok {
-			entry, ok := plugintype.Lookup(typ)
-			if !ok || entry.MinExport.Name == "" || entry.MinExport.IsPrefix {
-				return "", false
+		typ, ok := types[arg.Sel.Name]
+		if !ok || len(v.Args) != 2 {
+			return "", false
+		}
+		lit, ok := v.Args[1].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return "", false
+		}
+		name, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return "", false
+		}
+		entry, ok := plugintype.Lookup(typ)
+		if !ok {
+			return "", false
+		}
+		for _, listed := range entry.HostExports {
+			if listed == name {
+				return listed, true
 			}
-			return entry.MinExport.Name, true
 		}
 	}
 	return "", false

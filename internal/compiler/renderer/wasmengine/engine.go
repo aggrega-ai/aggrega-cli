@@ -22,13 +22,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// The provider exports this adapter drives. Each is the wasm package's
+// identifier for a name the provider plugin type's host-export list holds, so
+// the name is spelled in that list alone, and the identifiers below give each
+// one the meaning it has here.
+
 // RenderNodeExport is the guest export this adapter drives for both sourced
 // render and workload synthesis; the helm provider guest routes on which
 // projection the RenderNodeInput carries (source vs workload). It is exported so
 // the dispatch that routes a provider to this adapter can require the catalog
 // Plugin entity to advertise the same export the adapter will drive — one name,
 // one source of truth, no drift between the routing precondition and the call.
-const RenderNodeExport = "render_node"
+var RenderNodeExport = wasm.RenderNodeExport
 
 // ValidateNodeInputExport is the optional guest export this adapter drives to
 // structurally validate a node's resolved input before render dispatch. It is
@@ -37,14 +42,14 @@ const RenderNodeExport = "render_node"
 // RenderNodeInput projection render_node receives. A provider whose guest does
 // not advertise it in describe() is never invoked here, so the input-validation
 // gate is a no-op for it.
-const ValidateNodeInputExport = "validate_node_input"
+var ValidateNodeInputExport = wasm.ValidateNodeInputExport
 
 // BoundaryEnvOverridesExport is the optional guest export this adapter drives to
 // compute a boundary's per-consumer environment overrides — the boundary-to-
 // consumer env channel a provider whose guest bridges endpoints across a network
 // seam (compose) advertises. A guest whose describe() omits it is never invoked
 // here, so the channel is a no-op for it and the host applies no overrides.
-const BoundaryEnvOverridesExport = "boundary_env_overrides"
+var BoundaryEnvOverridesExport = wasm.BoundaryEnvOverridesExport
 
 // NameBoundExport is the optional guest export this adapter drives to ask
 // whether a proposed component identity yields names the guest's target accepts.
@@ -53,7 +58,7 @@ const BoundaryEnvOverridesExport = "boundary_env_overrides"
 // host proposes is used as composed. It is deliberately absent from every
 // minimum-export rule: those are load-time requirements, and requiring this one
 // would refuse every provider plugin built before it existed.
-const NameBoundExport = "name_bound"
+var NameBoundExport = wasm.NameBoundExport
 
 // RenderedNameExport is the optional guest export this adapter drives to ask what
 // name the guest's target will give the resources it renders for a node — from
@@ -65,7 +70,7 @@ const NameBoundExport = "name_bound"
 // It is deliberately absent from every minimum-export rule, for the reason
 // [NameBoundExport] is: those are load-time requirements, and requiring this one
 // would refuse every provider plugin built before it existed.
-const RenderedNameExport = "rendered_name"
+var RenderedNameExport = wasm.RenderedNameExport
 
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Provider and renderer.WorkloadSynthesizer interfaces. It resolves the
@@ -584,7 +589,7 @@ func (e *Engine) Warm(ctx context.Context) error {
 // time through the same instance and compares the emitted bytes; a guest whose two
 // renders of identical input diverge halts the build (ErrRenderNondeterministic),
 // naming the node and provider.
-func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, source renderSource) (renderer.RenderNodeOutput, error) {
+func (e *Engine) invoke(ctx context.Context, export wasm.HostExport, input renderer.RenderNodeInput, source renderSource) (renderer.RenderNodeOutput, error) {
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
@@ -622,14 +627,14 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: decode render_node output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export.Name(), out.Diagnostics); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	// Fold any guest-emitted warnings (aggrega_emit_warning host function) into
@@ -655,7 +660,7 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 // guest-emitted warnings fold into the caller's normal drain; under this opt-in
 // mode a warning a guest emits during render may surface twice, which does not
 // affect emitted bytes.
-func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugin, desc wasm.PluginDescriptor, export string, payload, first []byte, node renderer.IRNodeProjection) error {
+func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugin, desc wasm.PluginDescriptor, export wasm.HostExport, payload, first []byte, node renderer.IRNodeProjection) error {
 	second, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 	if err != nil {
 		return err
@@ -759,13 +764,13 @@ func (e *Engine) surfaceRenderFacts(nodeCtx renderer.NodeRenderContext, reported
 	return nil
 }
 
-// advertisesExport reports whether the guest's describe() self-report declares an
-// export of the given name — the per-invocation gate for an optional export. The
-// adapter drives an optional export only when the guest advertises it, so a guest
-// that omits it is never invoked for that crossing.
-func advertisesExport(desc *wasm.PluginDescriptor, name string) bool {
+// advertisesExport reports whether the guest's describe() self-report declares
+// export — the per-invocation gate for an optional export. The adapter drives an
+// optional export only when the guest advertises it, so a guest that omits it is
+// never invoked for that crossing.
+func advertisesExport(desc *wasm.PluginDescriptor, export wasm.HostExport) bool {
 	for _, ex := range desc.Exports {
-		if ex.Name == name {
+		if ex.Name == export.Name() {
 			return true
 		}
 	}
@@ -819,7 +824,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 // decodes the validate wire shape — a diagnostics-only payload with no files.
 // Guest-emitted warnings are folded into the returned diagnostics as
 // warn-severity entries.
-func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, source renderSource) ([]renderer.Diagnostic, error) {
+func (e *Engine) invokeValidate(ctx context.Context, export wasm.HostExport, input renderer.RenderNodeInput, source renderSource) ([]renderer.Diagnostic, error) {
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
@@ -846,14 +851,14 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return nil, fmt.Errorf("wasmengine: decode validate_node_input output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export.Name(), out.Diagnostics); err != nil {
 		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
 	diags := out.Diagnostics
@@ -949,7 +954,7 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: decode name_bound output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, NameBoundExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, NameBoundExport.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1003,7 +1008,7 @@ func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: decode rendered_name output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, RenderedNameExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, RenderedNameExport.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1063,7 +1068,7 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: decode link_publish output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkPublishExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkPublishExport.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1110,7 +1115,7 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: decode link_resolve output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkResolveExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkResolveExport.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
