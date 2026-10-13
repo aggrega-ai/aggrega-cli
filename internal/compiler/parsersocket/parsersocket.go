@@ -13,7 +13,11 @@
 // The parse wire types (ParseInput, ParseOutput, and their nested span and
 // diagnostic shapes) are the single generated ABI codec the guests speak; the
 // host reads and writes that one codec directly rather than a duplicated
-// host-side copy, so the wire shape stays single-sourced from the schema.
+// host-side copy, so the wire shape stays single-sourced from the schema. The
+// socket carries that codec's canonical CBOR in both directions, the encoding a
+// guest's own request to the host for a parse already arrives in, so one
+// ParseInput has one encoding whichever side builds it, and its source bytes
+// cross as a raw byte string rather than as base64 text.
 package parsersocket
 
 import (
@@ -60,6 +64,14 @@ type ParserLoader func(types.Plugin) (wasm.PluginSpec, error)
 // options is the opaque parser-specific options document the consumer supplies;
 // the host pipes it through without interpreting it. A nil options is omitted
 // from the wire payload.
+//
+// The parser's answer is read through the strict binary decode: an answer that
+// is not a ParseOutput in canonical CBOR, or that carries a top-level field the
+// shape does not declare, halts naming the parser and its parse export. The
+// export is fixed by the parser type, so no configuration can misdirect it; the
+// decode is strict so that the plugin-wire registry's call-site guard sees the
+// binary encoding named here, which is what keeps the direct-invocation command
+// converting an authored payload for this export.
 func ParseArtifact(ctx context.Context, res ParserResolver, load ParserLoader, format string, source []byte, options json.RawMessage) (abi.ParseOutput, error) {
 	plugin, err := res.ParserPluginForFormat(format)
 	if err != nil {
@@ -72,9 +84,9 @@ func ParseArtifact(ctx context.Context, res ParserResolver, load ParserLoader, f
 	}
 	spec.PluginType = wasm.PluginTypeParser
 
-	payload, err := json.Marshal(abi.ParseInput{Format: format, Bytes: source, Options: options})
+	payload, err := abi.ParseInput{Format: format, Bytes: source, Options: options}.EncodeCBOR()
 	if err != nil {
-		return abi.ParseOutput{}, fmt.Errorf("marshal parse input for %q: %w", format, err)
+		return abi.ParseOutput{}, fmt.Errorf("encode parse input for %q: %w", format, err)
 	}
 
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
@@ -90,8 +102,8 @@ func ParseArtifact(ctx context.Context, res ParserResolver, load ParserLoader, f
 	}
 
 	var po abi.ParseOutput
-	if err := po.UnmarshalJSON(out); err != nil {
-		return abi.ParseOutput{}, fmt.Errorf("decode parse output from parser %q: %w", plugin.Coordinate(), err)
+	if err := wasm.DecodeGuestOutputCBOR(wasm.ParseExport, out, &po); err != nil {
+		return abi.ParseOutput{}, fmt.Errorf("parser %q: %w", plugin.Coordinate(), err)
 	}
 	if err := wasm.GuestReturnedError(plugin.Coordinate(), wasm.ParseExport, wasm.GuestFailure{Message: po.Error}); err != nil {
 		return abi.ParseOutput{}, fmt.Errorf("parser %q: %w", plugin.Coordinate(), err)

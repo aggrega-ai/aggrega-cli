@@ -30,6 +30,7 @@ import (
 var entries = []entry{
 	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
+	{export: "parse", shape: "ParseInput", binary: true, encode: encodeParseInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: false, encode: encodeAnnotationTransformInput},
 	{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: encodePolicyInput},
 	{export: "verdict_render", shape: "RenderPolicyInput", binary: false, encode: encodeRenderPolicyInput},
@@ -49,6 +50,16 @@ func encodeImportInput(text []byte) ([]byte, error) {
 // re-emits it in the canonical binary encoding.
 func encodeMutatorInput(text []byte) ([]byte, error) {
 	var v topology.MutatorInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeParseInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeParseInput(text []byte) ([]byte, error) {
+	var v abi.ParseInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}

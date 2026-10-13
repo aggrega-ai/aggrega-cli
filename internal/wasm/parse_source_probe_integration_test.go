@@ -84,7 +84,9 @@ func probeAnswer(t *testing.T, out []byte) (tree, failure string) {
 // real parse-go fixture parser THROUGH THE HOST: it loads the parser guest and
 // invokes its parse export, threading the ctx it was handed so the depth carried
 // on ctx crosses into the parser's own host-call boundary. This stands in for the
-// dispatcher-built seam, exercising host-mediated parsing end to end.
+// dispatcher-built seam, exercising host-mediated parsing end to end. It speaks
+// the parser socket's wire as the host does — the input encoded to canonical CBOR,
+// the answer read back through the strict binary decode.
 func embeddedParserSeam(t *testing.T) wasm.SourceParser {
 	t.Helper()
 	parserPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
@@ -95,7 +97,7 @@ func embeddedParserSeam(t *testing.T) wasm.SourceParser {
 			return nil, err
 		}
 		defer guest.Close(ctx)
-		payload, err := json.Marshal(abi.ParseInput{Format: format, Bytes: source, Options: options})
+		payload, err := abi.ParseInput{Format: format, Bytes: source, Options: options}.EncodeCBOR()
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +106,7 @@ func embeddedParserSeam(t *testing.T) wasm.SourceParser {
 			return nil, err
 		}
 		var po abi.ParseOutput
-		if err := po.UnmarshalJSON(out); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(wasm.ParseExport, out, &po); err != nil {
 			return nil, err
 		}
 		return po.Tree, nil

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -82,13 +83,24 @@ spec:
     - name: parse
 `
 
-// wantParseTree is the parse-go guest's response for the input payload
-// {"format":"demo","bytes":"aGVsbG8="} — the guest echoes the base64-decoded
-// source ("hello") back inside a small structured tree.
-const wantParseTree = `{"tree":{"format":"demo","source":"hello"}}`
+// wantParseResponse is the parse-go guest's response for the input payload
+// {"format":"demo","bytes":"aGVsbG8="}: the guest echoes the source ("hello")
+// back inside a small structured tree. The parser socket carries canonical CBOR
+// in both directions, so the command converts the authored JSON into that
+// encoding before the guest runs, and the guest answers in it. The expected bytes
+// are what the response shape encodes to — an independent statement of them —
+// rather than the command's output decoded back.
+func wantParseResponse(t *testing.T) string {
+	t.Helper()
+	want, err := abi.ParseOutput{Tree: json.RawMessage(`{"format":"demo","source":"hello"}`)}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the expected parse response: %v", err)
+	}
+	return string(want)
+}
 
 // parsePayload is the input the parse-go guest echoes; "aGVsbG8=" is base64 for
-// "hello".
+// "hello", the form the authored JSON carries a byte field in.
 const parsePayload = `{"format":"demo","bytes":"aGVsbG8="}`
 
 // TestRunLocal_ArtifactForm exercises the artifact form end to end against a real
@@ -103,8 +115,8 @@ func TestRunLocal_ArtifactForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("artifact form should run the guest and succeed; got %v", err)
 	}
-	if got := strings.TrimSpace(out); got != wantParseTree {
-		t.Fatalf("guest bytes = %q; want %q", got, wantParseTree)
+	if want := wantParseResponse(t); out != want {
+		t.Fatalf("guest bytes = %x; want %x", out, want)
 	}
 }
 
@@ -121,8 +133,8 @@ func TestRunLocal_EntityForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agreeing entity form should run the guest and succeed; got %v", err)
 	}
-	if got := strings.TrimSpace(out); got != wantParseTree {
-		t.Fatalf("guest bytes = %q; want %q", got, wantParseTree)
+	if want := wantParseResponse(t); out != want {
+		t.Fatalf("guest bytes = %x; want %x", out, want)
 	}
 }
 
@@ -197,10 +209,10 @@ func TestRunLocal_PayloadVariants(t *testing.T) {
 		}
 
 		if inlineOut != fileOut {
-			t.Fatalf("inline and @file payloads produced different bytes:\ninline: %q\n@file:  %q", inlineOut, fileOut)
+			t.Fatalf("inline and @file payloads produced different bytes:\ninline: %x\n@file:  %x", inlineOut, fileOut)
 		}
-		if got := strings.TrimSpace(inlineOut); got != wantParseTree {
-			t.Fatalf("guest bytes = %q; want %q", got, wantParseTree)
+		if want := wantParseResponse(t); inlineOut != want {
+			t.Fatalf("guest bytes = %x; want %x", inlineOut, want)
 		}
 	})
 
@@ -250,8 +262,8 @@ func TestRunLocal_TypeGate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("a matching --type should run the guest; got %v", err)
 		}
-		if got := strings.TrimSpace(out); got != wantParseTree {
-			t.Fatalf("guest bytes = %q; want %q", got, wantParseTree)
+		if want := wantParseResponse(t); out != want {
+			t.Fatalf("guest bytes = %x; want %x", out, want)
 		}
 	})
 
@@ -315,7 +327,7 @@ const labelPayload = `{"compilation_context":{},"graph":{}}`
 // payload channel was JSON-only by construction, so the moment a socket's wire
 // moved the published invocation started failing at the guest's own decoder —
 // and nothing turned red, because no test drove that export through this command.
-// Every other run-local test here uses a text-wire export and passes either way.
+// A test driving only text-wire exports passes whether the conversion runs or not.
 //
 // What it pins: the authored payload is JSON, the command converts it into the
 // encoding the export reads, and the guest decodes it and returns its own

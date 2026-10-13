@@ -269,6 +269,11 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMinimal", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMoo", false)
 	vec[abi.ParseInput](t, "ParseInput", false)
+	// A parse input whose source bytes are not valid UTF-8 and which omits the
+	// options document. The source is a byte field, which the reference encoder
+	// writes as a byte string natively, so it stays anchored: a generated codec that
+	// carried those bytes as text, or as base64 text, would disagree with it.
+	vec[abi.ParseInput](t, "ParseInputNonUTF8Source", false)
 	vec[abi.ParseOutput](t, "ParseOutput", false)
 	vec[abi.ParseOutput](t, "ParseOutputBare", false)
 	vec[abi.ImportInput](t, "ImportInput", false)

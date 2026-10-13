@@ -75,6 +75,44 @@ func TestEncodeForExportConvertsAnImporterInput(t *testing.T) {
 	}
 }
 
+// TestEncodeForExportConvertsAParserInput covers the parser's export, which is
+// fixed by its plugin type like the importer's. The authored payload is the JSON
+// form of the parse input, its source bytes base64-encoded, and what reaches the
+// guest must be byte for byte what the host itself hands a parser for the same
+// input. The source is deliberately not valid UTF-8, so the bytes the guest reads
+// can only be right if they crossed as a raw byte string: base64 text in their
+// place would be a different, longer byte run.
+//
+// The export name is read from the plugin-type registry rather than spelled here.
+func TestEncodeForExportConvertsAParserInput(t *testing.T) {
+	t.Parallel()
+
+	parser, ok := plugintype.Lookup(plugintype.Parser)
+	if !ok || parser.MinExport.Name == "" || parser.MinExport.IsPrefix {
+		t.Fatal("the parser type has no exact required export")
+	}
+	source := []byte{0xff, 0xfe, 'k', ' ', '=', ' ', 0xc3, 0x28, '\n'}
+	want, err := abi.ParseInput{
+		Format:  "demo",
+		Bytes:   source,
+		Options: json.RawMessage(`{"strict":true}`),
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the parse input: %v", err)
+	}
+	authored := []byte(`{"format":"demo","bytes":"//5rID0gwygK","options":{"strict":true}}`)
+	got, err := EncodeForExport(parser.MinExport.Name, authored)
+	if err != nil {
+		t.Fatalf("encoding the parser's authored input should succeed; got %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("encoded payload = %x; want %x", got, want)
+	}
+	if !bytes.Contains(got, source) {
+		t.Fatalf("encoded payload %x does not carry the source bytes %x as a raw run", got, source)
+	}
+}
+
 // TestEncodeForExportTextWirePassesThrough covers the two ways an export gets its
 // authored bytes back: a text-wire export the table knows, and an export the
 // table does not know at all. The second matters as much as the first — a guest
@@ -83,7 +121,7 @@ func TestEncodeForExportConvertsAnImporterInput(t *testing.T) {
 func TestEncodeForExportTextWirePassesThrough(t *testing.T) {
 	t.Parallel()
 
-	for _, export := range []string{"verdict_ir", "transform_annotations", "parse", "describe"} {
+	for _, export := range []string{"verdict_ir", "transform_annotations", "describe"} {
 		t.Run(export, func(t *testing.T) {
 			t.Parallel()
 			text := []byte(`{"k":1}`)

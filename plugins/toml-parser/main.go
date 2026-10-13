@@ -48,14 +48,20 @@ func describe() int32 {
 	return 0
 }
 
+// parse reads the ParseInput, converts its source bytes through parsercore, and
+// answers with the ParseOutput. The input and the answer both travel as canonical
+// CBOR: this socket carries the binary encoding in both directions, so the source
+// bytes arrive as a raw byte string and the tree goes back as a byte string
+// holding its JSON document verbatim.
+//
 //go:wasmexport parse
 func parse() int32 {
 	var in aggrega.ParseInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
-	raw, err := parsercore.ParseTOML(in.Bytes).MarshalJSON()
+	raw, err := parsercore.ParseTOML(in.Bytes).EncodeCBOR()
 	if err != nil {
 		pdk.SetError(err)
 		return 1

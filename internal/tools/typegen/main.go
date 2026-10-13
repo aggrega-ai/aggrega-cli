@@ -1308,12 +1308,25 @@ var codecTargets = map[string]codecTarget{
 	// a scalar, a byte field, an opaque json.RawMessage, or a def-local span/
 	// diagnostic type, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).
+	//
+	// This socket has no host codec of its own: the host reads and writes this abi
+	// Go codec directly, so the wire registration sits here. binaryWire: the
+	// socket's wire is canonical CBOR in both directions — its call site encodes the
+	// input with the generated encoder and decodes the output through the binary
+	// encoding's entry point, and every parser guest reads and writes the same. Its
+	// one export is the parser type's required export rather than a role's default,
+	// so the entry names the plugin type.
 	"parse_gen.go": {
 		schema:           schemas.WasmParseV1alpha1,
 		schemaFile:       "wasm-parse-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       parseGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
+		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
+		binaryWire:       true,
+		wireExports: []wireExport{
+			{pluginType: plugintype.Parser, inputDef: "ParseInput"},
+		},
 	},
 	"parse_gen.rs": {
 		schema:           schemas.WasmParseV1alpha1,
