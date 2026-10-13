@@ -119,7 +119,7 @@ func TestImportOnWindowsRefusesADraftTheImporterNamedForADevice(t *testing.T) {
 			})
 			out := filepath.Join(rw.Root(), "drafts")
 			res, err := Import(context.Background(), rw, Options{
-				Source:        []byte("demo source"),
+				SourcePath:    writtenSource(t, "demo source"),
 				SourceName:    "demo-source.txt",
 				Format:        "demo",
 				OutputDir:     out,

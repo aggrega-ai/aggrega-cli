@@ -29,6 +29,14 @@ func attachmentURIs(refs []workspaceconfig.PluginRef) []string {
 	return uris
 }
 
+// attachedSource is one file an attachment's with.sources names: the named source
+// the importer is handed, and the path the file was read from, which a refusal
+// names it by.
+type attachedSource struct {
+	source abi.ImportSource
+	path   string
+}
+
 // attachmentInputs returns the with-config the attachment at position at in refs
 // hands the importer it attaches: that attachment's with.sources read into named
 // sources and its with.settings marshalled, and never another attachment's.
@@ -41,7 +49,7 @@ func attachmentURIs(refs []workspaceconfig.PluginRef) []string {
 // threads nothing (nil, nil), as does an attachment declaring no with. A
 // position past the end of refs names no attachment the workspace declares, so it
 // is refused rather than read as none.
-func attachmentInputs(refs []workspaceconfig.PluginRef, at int) ([]abi.ImportSource, json.RawMessage, error) {
+func attachmentInputs(refs []workspaceconfig.PluginRef, at int) ([]attachedSource, json.RawMessage, error) {
 	if at < 0 {
 		return nil, nil, nil
 	}
@@ -53,15 +61,16 @@ func attachmentInputs(refs []workspaceconfig.PluginRef, at int) ([]abi.ImportSou
 }
 
 // withInputs builds the consumer-scoped importer inputs from one attachment's
-// with-config: with.sources read into base-name-keyed, name-sorted ImportSource
-// entries (live files, modeled on the governance verdict roles' source reading),
+// with-config: with.sources read into base-name-keyed, name-sorted named sources,
+// each beside the path it was read from (live files, modeled on the governance
+// verdict roles' source reading),
 // and with.settings marshalled to a deterministic JSON document (Go's
 // map-key-sorted encoding).
 //
 // Both are optional; a with declaring neither yields (nil, nil). It reads only
 // the passed attachment's with, so one importer attachment's inputs never leak
 // into another's invocation.
-func withInputs(with *workspaceconfig.PluginRefWith) ([]abi.ImportSource, json.RawMessage, error) {
+func withInputs(with *workspaceconfig.PluginRefWith) ([]attachedSource, json.RawMessage, error) {
 	if with == nil {
 		return nil, nil, nil
 	}
@@ -80,13 +89,14 @@ func withInputs(with *workspaceconfig.PluginRefWith) ([]abi.ImportSource, json.R
 // import sources. Each pattern is glob-expanded; a pattern matching no file is a
 // loud miss (a misconfigured attachment, not a silent empty import). Each matched
 // file's bytes are carried under its base name (never an absolute host path — for
-// portability and determinism), and the result is name-sorted so the wire is
-// byte-identical across runs. Returns nil when the attachment declares no sources.
-func importSources(patterns []string) ([]abi.ImportSource, error) {
+// portability and determinism), beside the path it was matched at, and the result
+// is name-sorted so the wire is byte-identical across runs. Returns nil when the
+// attachment declares no sources.
+func importSources(patterns []string) ([]attachedSource, error) {
 	if len(patterns) == 0 {
 		return nil, nil
 	}
-	var sources []abi.ImportSource
+	var sources []attachedSource
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
@@ -100,10 +110,13 @@ func importSources(patterns []string) ([]abi.ImportSource, error) {
 			if rerr != nil {
 				return nil, fmt.Errorf("read import source %q: %w", m, rerr)
 			}
-			sources = append(sources, abi.ImportSource{Name: filepath.Base(m), Bytes: content})
+			sources = append(sources, attachedSource{
+				source: abi.ImportSource{Name: filepath.Base(m), Bytes: content},
+				path:   m,
+			})
 		}
 	}
-	sort.Slice(sources, func(i, j int) bool { return sources[i].Name < sources[j].Name })
+	sort.Slice(sources, func(i, j int) bool { return sources[i].source.Name < sources[j].source.Name })
 	return sources, nil
 }
 

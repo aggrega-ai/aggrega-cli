@@ -54,11 +54,16 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 
 // Options carries the resolved inputs for one import.
 //
-// Source is the source description's bytes and SourceName is what it is called,
-// used to name the file in a recognition refusal and matched against the file
-// patterns the importers' recognition signatures declare. Format names the
-// source format explicitly; an empty Format means the format is recognised from
-// Source by those signatures.
+// SourcePath is where the source description is read from on this host, after the
+// caller's own rule for which paths it may name: a file, whose bytes the importer
+// is handed whole, or a directory, whose files the importer's declared file
+// patterns select are handed to it as named sources. [Import] reads it, so no
+// surface reads a source of its own and a file and a directory are told apart in
+// one place. SourceName is what the source is called as the caller received it,
+// used to name it in a refusal and, for a file, matched against the file patterns
+// the importers' recognition signatures declare. Format names the source format
+// explicitly; an empty Format means the format is recognised from the source by
+// those signatures.
 //
 // OutputDir is the directory drafted files are written under by a writing
 // delivery, and the directory every drafted path is relative to under either
@@ -79,7 +84,7 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // depends on which importer runs — and a surface computing them ahead of the
 // resolution would be answering that before it is known.
 type Options struct {
-	Source        []byte
+	SourcePath    string
 	SourceName    string
 	Format        string
 	OutputDir     string
@@ -142,13 +147,30 @@ func (r Result) Halted() bool {
 
 // Import turns a foreign source description into draft Aggrega authoring files.
 //
-// It loads the catalog view, selects the source format — the one named, or the
-// one the signatures of that view's importers recognise the source as — resolves
-// the importer the catalog advertises for that format — the one a
-// plugins.importer attachment names, where one names an advertiser — runs it with the with-config of the attachment naming it and of
-// no other, and either writes the drafted files under the output directory —
-// Options.OutputDir, or the root of the workspace rw where it names none — or
-// returns them for the caller to place, according to Options.Delivery.
+// It reads the source at Options.SourcePath, loads the catalog view, selects the
+// source format — the one named, or the one the signatures of that view's
+// importers recognise the source as — resolves the importer the catalog
+// advertises for that format — the one a plugins.importer attachment names, where
+// one names an advertiser — runs it with the with-config of the attachment naming
+// it and of no other, and either writes the drafted files under the output
+// directory — Options.OutputDir, or the root of the workspace rw where it names
+// none — or returns them for the caller to place, according to Options.Delivery.
+//
+// A file source is handed to the importer whole, as the primary bytes, exactly as
+// it is read. A directory source is handed as named sources with the primary
+// bytes empty: exactly the files the resolved importer's declared file patterns
+// select — no other file of the directory is opened — each named by its
+// slash-separated path inside the directory, in name order, together with the
+// files the importer's attachment names in its with.sources under their base
+// names, the whole list sorted by name. Before any file of the directory is read,
+// every link the read would take something from — a link to a file a relevant
+// pattern selects, and a link to a directory, which is never entered — is held to
+// the directory, a root of its own wherever it lies, and one leading out of it is
+// refused. An importer declaring no file pattern refuses a directory, and so does
+// a directory holding no file its patterns select; a directory file and a
+// with.sources file of one name refuse rather than one shadowing the other. The
+// host caps nothing: a directory too large for the importer is refused by the
+// importer's own runtime limits.
 //
 // The importer is resolved once, here, before it is run: the with-config it is
 // handed depends on which importer the resolution chose, and the resolution
@@ -182,8 +204,11 @@ func (r Result) Halted() bool {
 // error, and any files the importer produced alongside it are still written — an
 // import the importer could not complete still drafts what it could. The returned
 // error is reserved for a run that could not be performed: no workspace, no
-// plugin resolver, a catalog that would not load, a source no importer
-// recognises or more than one format's importers recognise, a guest that failed,
+// plugin resolver, a source that could not be read ([*SourceReadError]), a
+// catalog that would not load, a source no importer recognises or more than one
+// format's importers recognise, a link in a directory source leading out of it
+// ([*DirectoryLinkError]), a directory refused for the importer's patterns or a
+// name both a directory file and a with.sources file carry, a guest that failed,
 // an escaping path, a draft Windows cannot hold where the import runs on Windows,
 // or a write that failed.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
@@ -194,6 +219,14 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, fmt.Errorf("internal: no plugin resolver supplied — the caller must supply one and pass it in")
 	}
 
+	// The source is found before the catalog is loaded, so a source that cannot be
+	// read is refused as that, whatever the catalog holds. A directory is listed
+	// here and none of its files is opened yet.
+	src, err := readSource(opts.SourcePath, opts.SourceName)
+	if err != nil {
+		return Result{}, err
+	}
+
 	// The seam is built before the format is settled, because a format the caller
 	// does not name is recognised from the signatures of the importers in the
 	// catalog view the seam loads, through the parser pair it carries.
@@ -202,23 +235,35 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
-	format, err := SelectFormat(ctx, opts.Format, opts.SourceName, opts.Source, seam)
+	format, err := SelectFormat(ctx, opts.Format, src, seam)
 	if err != nil {
 		return Result{}, err
 	}
 
 	attachments := rw.Config().Plugins.Importer
 	importer, at, resolveErr := seam.ImporterRes.ImporterPluginForFormat(format, attachmentURIs(attachments))
+	var primary []byte
 	var sources []abi.ImportSource
 	var settings json.RawMessage
 	if resolveErr == nil {
-		if sources, settings, err = attachmentInputs(attachments, at); err != nil {
+		// What the source hands the importer is decided by the importer resolved, so
+		// a directory's files are selected only now; a resolution that was refused
+		// reads nothing and is reported by the socket below.
+		var read []abi.ImportSource
+		if primary, read, err = src.inputsFor(importer, format); err != nil {
+			return Result{}, err
+		}
+		var attached []attachedSource
+		if attached, settings, err = attachmentInputs(attachments, at); err != nil {
+			return Result{}, err
+		}
+		if sources, err = mergeSources(read, attached); err != nil {
 			return Result{}, err
 		}
 	}
 
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
-		seam.ImporterLoad, seam.ParserRes, seam.ParserLoad, format, opts.Source, sources, settings, seam.Catalog)
+		seam.ImporterLoad, seam.ParserRes, seam.ParserLoad, format, primary, sources, settings, seam.Catalog)
 	if err != nil {
 		return Result{}, err
 	}

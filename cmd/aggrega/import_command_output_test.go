@@ -147,7 +147,7 @@ func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) 
 			// the command hands none, so both fields of the expectation come from the
 			// result.
 			shared, err := importops.Import(context.Background(), rw, importops.Options{
-				Source:        []byte(demoSourceBody),
+				SourcePath:    source,
 				SourceName:    source,
 				Format:        "demo",
 				Delivery:      authoredcontent.DeliveryFor(true),

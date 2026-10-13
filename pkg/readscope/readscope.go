@@ -65,6 +65,15 @@
 // checkout is gone once the pull halts, so the refusal names it by the repository
 // and revision the source names, and the link by its place in the repository.
 //
+// [CheckImportDirectoryRead] is the same judgement for a file or directory an import
+// reads beneath the directory it was named, to turn the files that directory holds
+// into draft authoring files. The directory named is a root of its own wherever it
+// lies, inside the workspace or outside it: a file the import hands its importer is
+// named by its place in that directory, so what it carries is read only from inside
+// the directory, and a link leading out of it halts the import before anything is
+// read. Its refusal names the remedy such a link has: keep the file itself in the
+// directory, or import the directory the link leads to.
+//
 // [CheckReference] is the same judgement for a file a document names by a path —
 // a Release's aggregate, manifest and extends, a Manifest's extends, a Release's
 // parameters import. Such a reference is the author's words rather than a listing
@@ -79,7 +88,8 @@
 // workspace, and the directory itself where it is one the owner typed or the
 // configuration named outside the workspace. Deciding which directory a read
 // starts beneath is the reader's; deciding which root that directory holds it to
-// never is.
+// never is. Two roots are their own rather than picked that way: the checkout of a
+// fetched repository, and a directory an import was named.
 package readscope
 
 import (
@@ -97,10 +107,11 @@ import (
 // an entity's document — another document in its directory, a Plugin entity's
 // .wasm — or a file or directory beneath the workspace's artifact cache, or an
 // overlay beneath the overlay directory a catalog generation reads, or a file a
-// pull archives from a repository a source fetched, leads, through a link, out of
+// pull archives from a repository a source fetched, or a file or directory an
+// import reads beneath the directory it was named, leads, through a link, out of
 // the root it is held to: the workspace, a directory outside it the owner typed or
-// the configuration named, the artifact cache directory, or the checkout of the
-// fetched repository.
+// the configuration named, the artifact cache directory, the checkout of the
+// fetched repository, or the directory the import was named.
 //
 // Nothing is read through the link. The refusal names the path, the root it must
 // stay inside, the link it meets on the way and the place that link leads to, so
@@ -127,8 +138,9 @@ var errReadLeadsOutOfWorkspace = cerrors.Register("read-leads-out-of-workspace",
 		"a build or a pull loads — and where it reads the workspace's artifact cache: a cached entity, plugin, " +
 		"source archive, external input, documentation bundle or registry index, and the entries a cache status, " +
 		"prune or clear lists — and where a catalog generation reads the overlays beneath the overlay directory it " +
-		"was given, and where a pull archives the files of a repository a source fetched. Each of those reads the " +
-		"filesystem ahead of every declared stage, and no stage holds the entry the rule is judged against."),
+		"was given, where a pull archives the files of a repository a source fetched, and where an import reads " +
+		"the files of the directory it was named. Each of those reads the filesystem ahead of every declared " +
+		"stage, and no stage holds the entry the rule is judged against."),
 })
 
 // remedyFor is what the refusal tells its reader, in terms of what they can change,
@@ -228,6 +240,21 @@ func fetchedRemedyFor(string) string {
 		"the repository, or commit the file itself in its place, and name the revision that carries the change"
 }
 
+// importDirectoryRemedyFor is what the refusal tells its reader for a link inside a
+// directory an import was named, which must stay inside that directory at root.
+//
+// A file an import hands its importer is named by its place in the directory, so
+// what it carries is read from that place and from nowhere else, and no setting
+// names a file kept elsewhere. So the remedy is the file itself in place of the
+// link — or the directory the link leads to, imported in its own right, which is
+// read where it is named.
+func importDirectoryRemedyFor(root string) string {
+	return "nothing was read through that link. Remove the link, or make it lead to a place inside " + root +
+		". A directory you import is read only from inside itself, so keep the file itself in the directory rather " +
+		"than a link to it, or import the directory the link leads to: a directory you name is read where it leads, " +
+		"even when it is itself a link"
+}
+
 // CheckRead reports whether path, a file or directory the operation is about to
 // read beneath root, may be read: nil when it may, and the
 // [ErrReadLeadsOutOfWorkspace] halt when it leads out of root.
@@ -299,6 +326,17 @@ func CheckOverlayRead(root, path string) error {
 // exists. Empty names every path as it is on disk.
 func CheckFetchedRead(root, repository, path string) error {
 	return checkRead(root, repository, path, fetchedRemedyFor)
+}
+
+// CheckImportDirectoryRead is [CheckRead] for a file or directory about to be read
+// beneath a directory an import was named: the same judgement and the same
+// condition, with the remedy a link in an imported directory has. root is the
+// directory as the import was named it, a root of its own wherever it lies — inside
+// the workspace as much as outside it — so a link the directory holds leading out
+// of it is not read, whether it leads elsewhere in the workspace or anywhere else
+// on the machine.
+func CheckImportDirectoryRead(root, path string) error {
+	return checkRead(root, "", path, importDirectoryRemedyFor)
 }
 
 // checkRead is the judgement every entry point makes, composing the refusal with

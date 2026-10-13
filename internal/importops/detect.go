@@ -7,9 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -132,11 +132,14 @@ func formatExamples(formats []string, prefix string) string {
 // It mirrors the extension-versus-explicit precedence the parser socket uses,
 // with the importers' declared signatures standing in for the extension
 // fallback because the supported source formats share extensions.
-func SelectFormat(ctx context.Context, explicit, source string, content []byte, seam Seam) (string, error) {
+//
+// src is the source as [Import] found it, a file or a directory, and the
+// precedence is the same for both: a named format opens nothing here.
+func SelectFormat(ctx context.Context, explicit string, src *Source, seam Seam) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
-	return detectFormat(ctx, source, content, seam)
+	return detectFormat(ctx, src, seam)
 }
 
 // detectFormat recognises a source's format from the signatures the importers
@@ -144,38 +147,56 @@ func SelectFormat(ctx context.Context, explicit, source string, content []byte, 
 //
 // The host knows no format. Each importer's signatures name the syntax the
 // source is read in, the file names they apply to and the paths the parsed tree
-// must or must not carry; the source is parsed through the parser socket — the
+// must or must not carry; a file is parsed through the parser socket — the
 // parser the catalog serves for that syntax, never a grammar of the host's own —
 // and the predicates are evaluated over the tree it returns. An importer one of
 // whose signatures matches recognises the source as every format it advertises.
 //
-// It is deterministic. The importers are read in the order the catalog view
-// lists them, their signatures in declared order, the source is parsed at most
-// once per syntax however many signatures name it, and the formats recognised
-// are collected in first-seen order without repeats — so two versions of one
-// importer, or two importers of one format, recognise one format. Exactly one
-// format recognised selects it. None is an [*UndetectedFormatError] naming every
-// format the importers advertise; more than one is an [*AmbiguousFormatError]
-// naming the formats recognised. Neither guesses.
+// A directory is recognised exactly as a file is, over the files it holds: a
+// signature's patterns select the files it is tried against, and the first of
+// them, in name order, that parses in its syntax and satisfies every predicate
+// matches it. A signature declaring no file pattern applies to no file of a
+// directory. Before any file of a directory is opened, every link among its files
+// that a pattern of any importer selects, and every link to a directory, is held
+// to the directory, so a link leading out refuses with nothing read.
 //
-// A source that does not parse in a syntax — its parser reports a halting
+// It is deterministic. The importers are read in the order the catalog view
+// lists them, their signatures in declared order and a directory's files in name
+// order, a file is read at most once and parsed at most once per syntax however
+// many signatures name it, and the formats recognised are collected in first-seen
+// order without repeats — so two versions of one importer, or two importers of
+// one format, recognise one format. Exactly one format recognised selects it.
+// None is an [*UndetectedFormatError] naming every format the importers
+// advertise; more than one is an [*AmbiguousFormatError] naming the formats
+// recognised. Neither guesses.
+//
+// A file that does not parse in a syntax — its parser reports a halting
 // diagnostic — matches no signature naming that syntax. A syntax that cannot be
 // parsed at all — no parser advertises it, or its parser cannot be run — is
 // returned as an error rather than passed over: the signatures naming it went
-// unevaluated, and choosing among the rest would be a guess about them.
+// unevaluated, and choosing among the rest would be a guess about them. A file a
+// pattern selects that cannot be read is returned as the [*SourceReadError] it is.
 //
-// It makes no network access and reads no file but the source it was handed;
-// the parser runs hermetically.
-func detectFormat(ctx context.Context, source string, content []byte, seam Seam) (string, error) {
-	name := filepath.ToSlash(source)
-	parsed := map[string]parsedSource{}
+// It makes no network access and reads no file but the source it was handed and,
+// of a directory, the files a signature's patterns select; the parser runs
+// hermetically.
+func detectFormat(ctx context.Context, src *Source, seam Seam) (string, error) {
+	if src.directory {
+		if err := src.judgeLinks(func(name string) bool { return anySelects(seam.Importers, name) }); err != nil {
+			return "", err
+		}
+	}
+	parsed := map[parseKey]parsedSource{}
 	var advertised, recognised []string
 	for _, importer := range seam.Importers {
 		formats := catalog.ImporterFormats(importer)
 		advertised = appendUnseen(advertised, formats...)
-		matched, err := importerRecognises(ctx, importer, name, content, seam, parsed)
+		matched, err := importerRecognises(ctx, importer, src, seam, parsed)
 		if err != nil {
-			return "", fmt.Errorf("recognise the source format of %q: %w", source, err)
+			if readErr := (*SourceReadError)(nil); errors.As(err, &readErr) {
+				return "", err
+			}
+			return "", fmt.Errorf("recognise the source format of %q: %w", src.name, err)
 		}
 		if matched {
 			recognised = appendUnseen(recognised, formats...)
@@ -185,9 +206,9 @@ func detectFormat(ctx context.Context, source string, content []byte, seam Seam)
 	case 1:
 		return recognised[0], nil
 	case 0:
-		return "", &UndetectedFormatError{Source: source, Advertised: advertised}
+		return "", &UndetectedFormatError{Source: src.name, Advertised: advertised}
 	default:
-		return "", &AmbiguousFormatError{Source: source, Matched: recognised}
+		return "", &AmbiguousFormatError{Source: src.name, Matched: recognised}
 	}
 }
 
@@ -201,45 +222,55 @@ func appendUnseen(list []string, values ...string) []string {
 	return list
 }
 
-// parsedSource is the source read in one syntax: whether it parsed, and the
-// tree it parsed to.
+// parsedSource is a file read in one syntax: whether it parsed, and the tree it
+// parsed to.
 type parsedSource struct {
 	ok   bool
 	tree any
 }
 
+// parseKey names one parse: the file, by its name in the source, and the syntax
+// it was read in.
+type parseKey struct {
+	name, syntax string
+}
+
 // importerRecognises reports whether any of an importer's recorded signatures
 // matches the source. The signatures are read off the importer's entity, which
 // the load holds equal to what the importer's own describe() reports.
-func importerRecognises(ctx context.Context, importer types.Plugin, name string, content []byte, seam Seam,
-	parsed map[string]parsedSource) (bool, error) {
+func importerRecognises(ctx context.Context, importer types.Plugin, src *Source, seam Seam,
+	parsed map[parseKey]parsedSource) (bool, error) {
 	if importer.Spec.Importer == nil {
 		return false, nil
 	}
 	for _, sig := range importer.Spec.Importer.Detect {
-		if !filesMatch(sig.Files, name) {
-			continue
-		}
-		src, err := parseOnce(ctx, sig.Syntax, content, seam, parsed)
-		if err != nil {
-			return false, fmt.Errorf("importer %q declares a signature read in %s: %w", importer.Coordinate(), sig.Syntax, err)
-		}
-		if !src.ok {
-			continue
-		}
-		if allHold(src.tree, sig.Match) {
-			return true, nil
+		for _, f := range src.entries {
+			if f.dir || !src.applies(sig.Files, f.name) {
+				continue
+			}
+			content, err := f.bytes()
+			if err != nil {
+				return false, err
+			}
+			read, err := parseOnce(ctx, sig.Syntax, f.name, content, seam, parsed)
+			if err != nil {
+				return false, fmt.Errorf("importer %q declares a signature read in %s: %w", importer.Coordinate(), sig.Syntax, err)
+			}
+			if read.ok && allHold(read.tree, sig.Match) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
 }
 
-// parseOnce returns the source read in syntax, parsing it through the parser
-// socket the first time a syntax is asked for and answering every later request
-// for that syntax from the first.
-func parseOnce(ctx context.Context, syntax string, content []byte, seam Seam,
-	parsed map[string]parsedSource) (parsedSource, error) {
-	if src, done := parsed[syntax]; done {
+// parseOnce returns the file named name read in syntax, parsing it through the
+// parser socket the first time that file is asked for in that syntax and
+// answering every later request for the pair from the first.
+func parseOnce(ctx context.Context, syntax, name string, content []byte, seam Seam,
+	parsed map[parseKey]parsedSource) (parsedSource, error) {
+	key := parseKey{name: name, syntax: syntax}
+	if src, done := parsed[key]; done {
 		return src, nil
 	}
 	if seam.ParserRes == nil || seam.ParserLoad == nil {
@@ -259,7 +290,7 @@ func parseOnce(ctx context.Context, syntax string, content []byte, seam Seam,
 		}
 		src = parsedSource{ok: true, tree: tree}
 	}
-	parsed[syntax] = src
+	parsed[key] = src
 	return src, nil
 }
 
@@ -280,6 +311,10 @@ func haltedParse(out abi.ParseOutput) bool {
 //
 // A pattern that is not well formed matches nothing; the describe() gate refuses
 // one at load, so it reaches here only from an entity no plugin vouches for.
+//
+// It is the one matcher of a name against declared file patterns: recognition
+// asks it per signature, and the selection of a directory's files asks it through
+// [selectsFile], so which files an importer's patterns name has one answer.
 func filesMatch(patterns []string, name string) bool {
 	if len(patterns) == 0 {
 		return true
@@ -296,6 +331,51 @@ func filesMatch(patterns []string, name string) bool {
 		}
 	}
 	return false
+}
+
+// declaresFilePatterns reports whether any of an importer's recorded signatures
+// declares a file pattern — whether it says which files of a directory it reads.
+func declaresFilePatterns(importer types.Plugin) bool {
+	return len(filePatternsOf(importer)) > 0
+}
+
+// selectsFile reports whether one of the file patterns an importer's recorded
+// signatures declare matches name, a slash-separated path inside a directory. A
+// signature declaring no pattern selects no file of a directory, so an importer
+// declaring none selects nothing.
+func selectsFile(importer types.Plugin, name string) bool {
+	if importer.Spec.Importer == nil {
+		return false
+	}
+	for _, sig := range importer.Spec.Importer.Detect {
+		if len(sig.Files) > 0 && filesMatch(sig.Files, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// anySelects reports whether a file pattern of any of importers selects name.
+func anySelects(importers []types.Plugin, name string) bool {
+	for _, importer := range importers {
+		if selectsFile(importer, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// filePatternsOf returns every file pattern an importer's recorded signatures
+// declare, in declared order without repeats.
+func filePatternsOf(importer types.Plugin) []string {
+	if importer.Spec.Importer == nil {
+		return nil
+	}
+	var patterns []string
+	for _, sig := range importer.Spec.Importer.Detect {
+		patterns = appendUnseen(patterns, sig.Files...)
+	}
+	return patterns
 }
 
 // allHold reports whether every predicate holds over tree.

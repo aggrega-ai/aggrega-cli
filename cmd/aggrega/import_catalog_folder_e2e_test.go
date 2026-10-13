@@ -83,7 +83,7 @@ func sharedCatalogFolderImport(t *testing.T, source []byte, name string) importo
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
 	}
 	res, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        source,
+		SourcePath:    importopstest.WriteSource(t, filepath.Join(t.TempDir(), name), string(source)),
 		SourceName:    name,
 		Delivery:      authoredcontent.DeliveryFor(true),
 		ResolvePlugin: importPluginBytes,

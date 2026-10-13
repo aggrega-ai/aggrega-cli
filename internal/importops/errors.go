@@ -59,6 +59,68 @@ var errAmbiguousImportFormat = cerrors.Register("ambiguous-import-format", cerro
 		"no declared stage of a compilation holds the signatures or the source the rule reads."),
 })
 
+// ErrImporterDeclaresNoFilePatterns fires when an import names a directory and the
+// importer serving the source's format declares no file patterns.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match. A directory import hands its importer exactly the files the
+// importer's declared file patterns select, and an importer declaring none has
+// said nothing about which files of a directory it reads — so the import stops
+// before opening any of them rather than handing it every file the directory holds.
+// Its occurrence names the format and the importer, and the fix is the importer
+// author's: declaring the patterns its files are named by.
+func ErrImporterDeclaresNoFilePatterns() error { return errImporterDeclaresNoFilePatterns }
+
+var errImporterDeclaresNoFilePatterns = cerrors.Register("importer-declares-no-file-patterns", cerrors.Meta{
+	ShortCode: "E0341",
+	Message: "the importer serving the source's format declares no file patterns, so it reads one file and " +
+		"cannot read a directory",
+	RulePlace: cerrors.RuleNoStageReaches("An import naming a directory evaluates the rule, once the importer " +
+		"serving the source's format is resolved and before any file of the directory is opened. The import " +
+		"translates a foreign source description into entities before there is anything to compile, so no " +
+		"declared stage of a compilation holds the importer or the directory the rule reads."),
+})
+
+// ErrImportDirectoryMatchedNothing fires when an import names a directory and no
+// file in it matches the file patterns the importer serving the source's format
+// declares.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match: handing the importer no source at all would reach it as one empty
+// source, and it would fail there in words about content rather than about which
+// files were read. Its occurrence names the format, the importer and the patterns,
+// so the reader can tell whether the directory or the format is the one to change.
+func ErrImportDirectoryMatchedNothing() error { return errImportDirectoryMatchedNothing }
+
+var errImportDirectoryMatchedNothing = cerrors.Register("import-directory-matched-nothing", cerrors.Meta{
+	ShortCode: "E0342",
+	Message:   "no file in the directory matches the file patterns the importer serving the source's format declares",
+	RulePlace: cerrors.RuleNoStageReaches("An import naming a directory evaluates the rule, when the file patterns " +
+		"the resolved importer declares are matched against the files the directory holds and none matches. The " +
+		"import translates a foreign source description into entities before there is anything to compile, so no " +
+		"declared stage of a compilation holds the patterns or the directory the rule reads."),
+})
+
+// ErrImportSourceNameCollision fires when an import names a directory and a file
+// read from it and a file named in the importer's with.sources have the same name.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match. Both arrive at the importer as named sources, and a name is how an
+// importer tells one source from another, so two of one name would leave one of
+// them shadowing the other with nothing to say which. Its occurrence names the
+// name and the with.sources file.
+func ErrImportSourceNameCollision() error { return errImportSourceNameCollision }
+
+var errImportSourceNameCollision = cerrors.Register("import-source-name-collision", cerrors.Meta{
+	ShortCode: "E0343",
+	Message:   "a file read from the directory and a file named in the importer's `with.sources` have the same name",
+	RulePlace: cerrors.RuleNoStageReaches("An import naming a directory evaluates the rule, when the files read " +
+		"from the directory and the files the attachment configuring the importer names in its with.sources are " +
+		"gathered into the one list of named sources the importer is handed. The import translates a foreign " +
+		"source description into entities before there is anything to compile, so no declared stage of a " +
+		"compilation holds the sources the rule reads."),
+})
+
 // Refusal returns the occurrence of [ErrImportHalted] when the import raised a
 // halt-severity diagnostic, and nil when it did not.
 //

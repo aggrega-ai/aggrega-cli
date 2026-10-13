@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -18,12 +17,15 @@ import (
 
 // importParams is what aggrega/import takes.
 //
-// source names the file to convert, and outputDir where the drafted files go.
+// source names the file or the directory to convert, and outputDir where the
+// drafted files go.
 //
 // 🔴 The two are judged by different rules, and the split is read/write. source
-// is READ, and it is a file the person driving the client selected — a
-// description exported by another tool, which sits wherever they saved it — so an
-// absolute path naming a file outside the workspace is accepted and read.
+// is READ, and it is a file or a directory the person driving the client selected
+// — a description exported by another tool, which sits wherever they saved it — so
+// an absolute path naming one outside the workspace is accepted and read. A
+// directory is read into the named sources its importer's file patterns select,
+// held to itself wherever it lies, so no link inside it is followed out of it.
 // outputDir is WRITTEN to and is resolved inside the workspace this session
 // opened, so the drafts land in a tree the session was opened over and no request
 // can name a destination of its own choosing.
@@ -149,11 +151,12 @@ type importResult struct {
 // directory — a scaffold path comes from the plugin, so it is untrusted, and the
 // operations layer refuses an escaping one before writing anything at all.
 //
-// The source is the other case and is deliberately not confined: it is a file the
-// person driving the client selected, so an absolute path outside the workspace
-// is accepted and read. Widening the read does not widen the write — the two
-// resolve through different rules — so a request may convert a description saved
-// anywhere while the drafts it produces still land inside the workspace.
+// The source is the other case and is deliberately not confined: it is a file or
+// a directory the person driving the client selected, so an absolute path outside
+// the workspace is accepted and read, and the import reads it — a directory held
+// to itself. Widening the read does not widen the write — the two resolve through
+// different rules — so a request may convert a description saved anywhere while
+// the drafts it produces still land inside the workspace.
 //
 // It reaches no registry and no network: the importer and the parser it draws on
 // are resolved from the workspace's own catalog and their bytes come from the
@@ -168,7 +171,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	}
 	if params.Source == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"import: source is required and must name the file to convert, either as an "+
+			"import: source is required and must name the file or the directory to convert, either as an "+
 				"absolute path or relative to the root of the workspace this session opened")
 	}
 	// outputDir is required under BOTH deliveries, and a non-writing one does not
@@ -201,20 +204,13 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
-	content, err := os.ReadFile(sourcePath)
-	if err != nil {
-		// The resolved path is named rather than the value as sent, because a
-		// relative source resolves against the workspace root and a reader looking
-		// for the file needs the location that was actually opened.
-		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: cannot read the source "+sourcePath+": ", err)
-	}
-
 	// The format the request named, or none, is handed on as it is: the import
 	// settles it, recognising an unnamed one from the signatures of the importers
-	// in the workspace's catalog.
+	// in the workspace's catalog. The source is handed on as the path resolved, a
+	// file or a directory, and the import reads it.
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
-		Source:        content,
+		SourcePath:    sourcePath,
 		SourceName:    params.Source,
 		Format:        params.Format,
 		OutputDir:     outputDir,
@@ -223,6 +219,13 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	})
 	if ctx.Err() != nil {
 		return nil
+	}
+	if readErr := (*importops.SourceReadError)(nil); errors.As(err, &readErr) {
+		// The location read is named rather than the value as sent, because a
+		// relative source resolves against the workspace root and a reader looking
+		// for the file needs the location that was actually opened.
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: cannot read the source "+readErr.Path+": ",
+			readErr.Err)
 	}
 	// A source whose format the import could not settle is refused naming the
 	// field a caller here can send. The two refusals' own sentences name the

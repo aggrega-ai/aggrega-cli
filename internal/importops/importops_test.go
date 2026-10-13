@@ -154,6 +154,24 @@ func resolveWorkspaceAt(t *testing.T, wsDir string) *workspaceconfig.ResolvedWor
 	return rw
 }
 
+// writtenSource writes body to a fresh file and returns its path — the place an
+// import of that source is handed.
+func writtenSource(t *testing.T, body string) string {
+	t.Helper()
+	return importopstest.WriteSource(t, filepath.Join(t.TempDir(), "source"), body)
+}
+
+// fileSource is the source an import finds at a file named name holding content,
+// read the way an import reads it.
+func fileSource(t *testing.T, name string, content []byte) *Source {
+	t.Helper()
+	src, err := readSource(importopstest.WriteSource(t, filepath.Join(t.TempDir(), "source"), string(content)), name)
+	if err != nil {
+		t.Fatalf("read the source written for %q: %v", name, err)
+	}
+	return src
+}
+
 // noopResolver satisfies the plugin-bytes seam for a run whose loader is pointed
 // past it.
 func noopResolver(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
@@ -209,7 +227,7 @@ func TestSelectFormat(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := SelectFormat(context.Background(), tc.explicit, tc.source, tc.content, seam)
+			got, err := SelectFormat(context.Background(), tc.explicit, fileSource(t, tc.source, tc.content), seam)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("SelectFormat(%q, %q, ...) = %q, nil; want error", tc.explicit, tc.source, got)
@@ -293,7 +311,7 @@ func TestImportWritesTheDraftedFiles(t *testing.T) {
 	out := t.TempDir()
 
 	res, err := Import(context.Background(), aWorkspace(t), Options{
-		Source:        []byte("demo source"),
+		SourcePath:    writtenSource(t, "demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     out,
@@ -327,7 +345,7 @@ func TestImportUnderAReportingDeliveryWritesNothing(t *testing.T) {
 	out := t.TempDir()
 
 	res, err := Import(context.Background(), aWorkspace(t), Options{
-		Source:        []byte("demo source"),
+		SourcePath:    writtenSource(t, "demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     out,
@@ -385,7 +403,7 @@ func TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot(t *testing.T) {
 			t.Chdir(elsewhere)
 
 			res, err := Import(context.Background(), rw, Options{
-				Source:        []byte("demo source"),
+				SourcePath:    writtenSource(t, "demo source"),
 				SourceName:    "demo-source.txt",
 				Format:        "demo",
 				Delivery:      authoredcontent.DeliveryFor(row.dryRun),
@@ -493,7 +511,7 @@ func TestImportRefusesAnImporterPathEscapingTheOutputRoot(t *testing.T) {
 					}
 
 					res, err := Import(context.Background(), rw, Options{
-						Source:        []byte("demo source"),
+						SourcePath:    writtenSource(t, "demo source"),
 						SourceName:    "demo-source.txt",
 						Format:        "demo",
 						OutputDir:     out,
@@ -721,8 +739,11 @@ func TestImportSourcesAreNameSortedAndLoudOnAMiss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("withInputs: %v", err)
 	}
-	if len(sources) != 2 || sources[0].Name != "alpha.json" || sources[1].Name != "beta.json" {
+	if len(sources) != 2 || sources[0].source.Name != "alpha.json" || sources[1].source.Name != "beta.json" {
 		t.Fatalf("sources must be base-name sorted; got %+v", sources)
+	}
+	if sources[0].path != filepath.Join(dir, "alpha.json") || sources[1].path != filepath.Join(dir, "beta.json") {
+		t.Fatalf("each source must carry the path it was matched at beside its base name; got %+v", sources)
 	}
 
 	if _, _, missErr := withInputs(&workspaceconfig.PluginRefWith{
@@ -745,7 +766,7 @@ func TestSettingsReachTheGuest(t *testing.T) {
 		Settings: map[string]any{"target_namespace": "prod"},
 	})
 	res, err := Import(context.Background(), rw, Options{
-		Source:        []byte("demo source"),
+		SourcePath:    writtenSource(t, "demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     out,
@@ -789,7 +810,7 @@ func TestSourcesReachTheGuest(t *testing.T) {
 		Sources: []string{filepath.Join(srcDir, "*.json")},
 	})
 	res, err := Import(context.Background(), rw, Options{
-		Source:        []byte("demo source"),
+		SourcePath:    writtenSource(t, "demo source"),
 		SourceName:    "demo-source.txt",
 		Format:        "demo",
 		OutputDir:     t.TempDir(),
@@ -824,7 +845,7 @@ func TestTheSeamHasOneSpelling(t *testing.T) {
 		return Seam{}, errSeamProbe
 	}
 	_, err := Import(context.Background(), aWorkspace(t), Options{
-		Source:        []byte("x"),
+		SourcePath:    writtenSource(t, "x"),
 		Format:        "demo",
 		ResolvePlugin: noopResolver,
 	})

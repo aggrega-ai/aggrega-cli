@@ -33,17 +33,22 @@
 // A case needing a YAML source recognised lays the demo importer and the binary's
 // YAML parser beside them; a case needing importers whose signatures it chose
 // writes their entities without modules, for an import refused before any
-// importer runs.
+// importer runs. A case importing a directory lays the files-probe importer,
+// which declares file patterns and reports back exactly what it was handed.
 package importopstest
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
@@ -270,6 +275,15 @@ func layParser(t *testing.T, workspaceRoot, dir string, withModule bool) LaidPlu
 	return layEmbeddedParser(t, workspaceRoot, dir, embeddedJSONParser, ParserName, withModule)
 }
 
+// LayJSONParser lays the binary's own JSON parser down at dir, inside the
+// workspace rooted at workspaceRoot, under a name the binary does not embed and
+// with its module beside it — the parser a folder holding importers that read a
+// source as JSON parses it with.
+func LayJSONParser(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layParser(t, workspaceRoot, dir, true)
+}
+
 // LayYAMLParser lays the binary's own YAML parser down at dir, inside the
 // workspace rooted at workspaceRoot, under a name the binary does not embed and
 // with its module beside it — so a folder that also holds an importer whose
@@ -306,6 +320,148 @@ const DemoImporterName = "import-demo"
 func LayDemoImporter(t *testing.T, workspaceRoot, dir string) LaidPlugin {
 	t.Helper()
 	return layPlugin(t, workspaceRoot, dir, wasmtest.EnsureFixtureBuilt(t, "import-go.wasm"), DemoImporterName, true)
+}
+
+// FilesProbeFormat is the format the files-probe importer advertises.
+const FilesProbeFormat = "files-probe"
+
+// FilesProbeImporterName is the metadata.name the files-probe importer's entity
+// carries.
+const FilesProbeImporterName = "import-files-probe"
+
+// FilesProbeKind is the top-level kind a files-probe source carries, which the
+// probe's recognition signature asks for.
+const FilesProbeKind = "FilesProbe"
+
+// filesProbeArtifact is the name the built files-probe importer is published
+// under among the built fixtures. No other build layout owns it.
+const filesProbeArtifact = "files-probe-importer.wasm"
+
+// filesProbeSource is where the files-probe importer's source sits beneath the
+// module root.
+var filesProbeSource = filepath.Join("internal", "importops", "testdata", "files-probe-importer")
+
+// FilesProbeModule builds the files-probe importer and returns the built module's
+// path.
+//
+// The files-probe importer is a guest kept beside the import operation's tests
+// for one claim no reference importer makes: it declares file patterns, so a
+// directory import has files to read for it. It advertises the files-probe format
+// and one recognition signature — a JSON source named like *.probe.json, or a
+// .json file in a directory named probe, whose top-level kind is the string
+// FilesProbeKind — and it answers every import with information diagnostics
+// reporting what it was handed, in order: "input <base64>" for the whole input
+// payload, "primary <base64>" for the primary bytes, and "source <name> <base64>"
+// for each named source.
+//
+// Its source is found by walking up from the directory the test runs in to the
+// module root, so every package's tests build the one guest.
+func FilesProbeModule(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("read the test's working directory: %v", err)
+	}
+	for {
+		src := filepath.Join(dir, filesProbeSource)
+		if _, err := os.Stat(filepath.Join(src, "main.go")); err == nil {
+			return wasmtest.EnsureLocalGuestBuilt(t, src, filesProbeArtifact)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no %s above the test's working directory: the files-probe importer's source is "+
+				"supposed to ship beside the import operation's tests", filesProbeSource)
+		}
+		dir = parent
+	}
+}
+
+// FilesProbeEntity returns the files-probe importer's Plugin entity, generated
+// from its built module exactly as a folder's is — so it records the signature
+// the module declares — and lays nothing down, for a harness standing in for the
+// catalog.
+func FilesProbeEntity(t *testing.T) types.Plugin {
+	t.Helper()
+	entity, _ := generateEntity(t, t.TempDir(), filepath.Join(t.TempDir(), "catalog"), FilesProbeModule(t),
+		FilesProbeImporterName)
+	return entity
+}
+
+// LayFilesProbeImporter lays the files-probe importer ([FilesProbeModule]) down at
+// dir, inside the workspace rooted at workspaceRoot, generated from its built
+// module with the module beside it, so its entity records the signature its
+// describe() declares and an import reads the patterns from that record.
+func LayFilesProbeImporter(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layPlugin(t, workspaceRoot, dir, FilesProbeModule(t), FilesProbeImporterName, true)
+}
+
+// FilesProbeReport is what the files-probe importer reported it was handed.
+type FilesProbeReport struct {
+	// Input is the whole input payload, as the importer received it.
+	Input []byte
+	// Primary is the primary source bytes.
+	Primary []byte
+	// Sources is every named source, in the order received.
+	Sources []abi.ImportSource
+}
+
+// ReadFilesProbeReport reads the files-probe importer's report out of the
+// messages its diagnostics carry, in order. A message it does not recognise, a
+// report missing its input or its primary bytes, or bytes that are not base64,
+// fail the test.
+func ReadFilesProbeReport(t *testing.T, messages []string) FilesProbeReport {
+	t.Helper()
+	var r FilesProbeReport
+	var sawInput, sawPrimary bool
+	decode := func(s string) []byte {
+		b, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			t.Fatalf("the files-probe importer reported bytes that are not base64 (%q): %v", s, err)
+		}
+		return b
+	}
+	for _, m := range messages {
+		switch {
+		case strings.HasPrefix(m, "input "):
+			r.Input, sawInput = decode(strings.TrimPrefix(m, "input ")), true
+		case strings.HasPrefix(m, "primary "):
+			r.Primary, sawPrimary = decode(strings.TrimPrefix(m, "primary ")), true
+		case strings.HasPrefix(m, "source "):
+			rest := strings.TrimPrefix(m, "source ")
+			cut := strings.LastIndex(rest, " ")
+			if cut < 0 {
+				t.Fatalf("the files-probe importer reported a source with no bytes: %q", m)
+			}
+			r.Sources = append(r.Sources, abi.ImportSource{Name: rest[:cut], Bytes: decode(rest[cut+1:])})
+		default:
+			t.Fatalf("the files-probe importer reported a message it does not write: %q", m)
+		}
+	}
+	if !sawInput || !sawPrimary {
+		t.Fatalf("the files-probe importer's report is incomplete (input %v, primary %v): %q", sawInput, sawPrimary,
+			messages)
+	}
+	return r
+}
+
+// FilesProbeBody is the content of a source the files-probe importer's signature
+// recognises.
+func FilesProbeBody(label string) string {
+	return `{"kind":"` + FilesProbeKind + `","label":"` + label + `"}`
+}
+
+// WriteSource writes body at path, creating the directories holding it, and
+// returns path — the place an import of that source is handed.
+func WriteSource(t *testing.T, path, body string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create the directory for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	return path
 }
 
 // ReferenceImporterEntities returns the Plugin entity of the reference importer

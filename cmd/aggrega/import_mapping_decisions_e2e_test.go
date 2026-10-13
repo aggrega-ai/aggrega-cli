@@ -266,7 +266,7 @@ func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
-	root, source := mappingDecisionWorkspace(t)
+	root, _ := mappingDecisionWorkspace(t)
 
 	raw, err := os.ReadFile(decisionLineCasesFile)
 	if err != nil {
@@ -301,7 +301,7 @@ func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
 	}
 	shared, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        source,
+		SourcePath:    filepath.Join(root, "flow.json"),
 		SourceName:    "flow.json",
 		Delivery:      authoredcontent.DeliveryFor(true),
 		ResolvePlugin: importPluginBytes,

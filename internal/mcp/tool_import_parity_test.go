@@ -75,7 +75,7 @@ func TestTheImportToolDraftsWhatTheSharedOperationDoes(t *testing.T) {
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
 	}
 	shared, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        source,
+		SourcePath:    filepath.Join(oracleRoot, "flow.json"),
 		SourceName:    "flow.json",
 		ResolvePlugin: importToolResolver,
 	})
@@ -156,7 +156,7 @@ func TestAnImportBothSurfacesRefuseLeavesBothWorkspacesUntouched(t *testing.T) {
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
 	}
 	if _, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        mystery,
+		SourcePath:    filepath.Join(sharedRoot, "mystery.json"),
 		SourceName:    "mystery.json",
 		ResolvePlugin: importToolResolver,
 	}); err == nil {

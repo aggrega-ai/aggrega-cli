@@ -171,14 +171,10 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 		t.Run(src.format, func(t *testing.T) {
 			t.Parallel()
 			rw, folder := catalogFolderImportWorkspace(t)
-			source, err := os.ReadFile(src.source)
-			if err != nil {
-				t.Fatalf("read the committed source fixture: %v", err)
-			}
 
 			cascade := &recordingCascade{}
 			res, err := Import(context.Background(), rw, Options{
-				Source:        source,
+				SourcePath:    src.source,
 				SourceName:    filepath.Base(src.source),
 				Delivery:      authoredcontent.DeliveryFor(true),
 				ResolvePlugin: cascade.resolve,
@@ -241,15 +237,11 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 	t.Parallel()
 	rw, _ := catalogFolderImportWorkspace(t)
 	src := catalogFolderSources[0]
-	source, err := os.ReadFile(src.source)
-	if err != nil {
-		t.Fatalf("read the committed source fixture: %v", err)
-	}
 	outputDir := filepath.Join(rw.Root(), "drafts")
 
 	cascade := &recordingCascade{}
 	res, err := Import(context.Background(), rw, Options{
-		Source:        source,
+		SourcePath:    src.source,
 		SourceName:    filepath.Base(src.source),
 		OutputDir:     outputDir,
 		ResolvePlugin: cascade.resolve,
@@ -318,10 +310,6 @@ func TestImportRefusesADraftWhosePathALinkLeadsOutOfTheWorkspace(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rw, _ := catalogFolderImportWorkspace(t)
-			source, err := os.ReadFile(catalogFolderSources[0].source)
-			if err != nil {
-				t.Fatalf("read the committed source fixture: %v", err)
-			}
 
 			outside := t.TempDir()
 			outputDir := filepath.Join(rw.Root(), "drafts")
@@ -332,8 +320,8 @@ func TestImportRefusesADraftWhosePathALinkLeadsOutOfTheWorkspace(t *testing.T) {
 				t.Fatalf("lay the link: %v", err)
 			}
 
-			_, err = Import(context.Background(), rw, Options{
-				Source:        source,
+			_, err := Import(context.Background(), rw, Options{
+				SourcePath:    catalogFolderSources[0].source,
 				SourceName:    "flow.json",
 				OutputDir:     outputDir,
 				Delivery:      authoredcontent.DeliveryFor(tc.dryRun),

@@ -82,9 +82,8 @@ func attachedImportWorkspace(t *testing.T) string {
 func sharedAttachedImport(t *testing.T, root, file, namespace, other string) importops.Result {
 	t.Helper()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
-	source := readCatalogFolderSource(t, filepath.Join(root, file))
 	res, err := importops.Import(context.Background(), rw, importops.Options{
-		Source:        source,
+		SourcePath:    filepath.Join(root, file),
 		SourceName:    file,
 		Delivery:      authoredcontent.DeliveryFor(true),
 		ResolvePlugin: importPluginBytes,

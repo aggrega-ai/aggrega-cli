@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -296,21 +296,17 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return errorResult(explainToolError("Could not resolve the workspace to draft the entities in.", err, ""))
 	}
 
-	// The source is resolved here, through the one helper, before it is opened.
-	// That helper is also what decides how far a path a caller named may reach:
+	// The source is resolved here, through the one helper, before the import opens
+	// it. That helper is also what decides how far a path a caller named may reach:
 	// a client that launched this process names a location on the machine it is
 	// sitting at, and a caller reaching a listener names its subject inside the
-	// one workspace this process serves.
+	// one workspace this process serves. The path resolved — a file or a directory
+	// — is handed to the import, which reads it; a directory is held to itself
+	// there, so every file read from one a listener caller names stays inside the
+	// directory, which this helper has already held inside the workspace.
 	path, refusal := tw.workspacePath(importToolName, "source", source)
 	if refusal != "" {
 		return errorResult(refusal)
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		// The resolved location is named rather than the value as sent: a relative
-		// source resolves against the workspace root, and a reader looking for the
-		// file needs the place that was actually opened.
-		return tw.answer(errorResult(explainToolError("Could not read the source at "+path, err, "")))
 	}
 
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
@@ -326,12 +322,21 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	// this surface's own words — naming the argument a caller here can send —
 	// rather than in the command line's.
 	res, err := importops.Import(ctx, tw.rw, importops.Options{
-		Source:        content,
+		SourcePath:    path,
 		SourceName:    source,
 		Format:        named,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})
+	if readErr := (*importops.SourceReadError)(nil); errors.As(err, &readErr) {
+		// The location read is named rather than the value as sent: a relative
+		// source resolves against the workspace root, and a reader looking for the
+		// file needs the place that was actually opened.
+		return tw.answer(errorResult(explainToolError("Could not read the source at "+readErr.Path, readErr.Err, "")))
+	}
+	if refusal, linked := tw.importLinkRefusal(source, err); linked {
+		return tw.answer(errorResult(refusal))
+	}
 	if refusal, unsettled := importFormatRefusal(err); unsettled {
 		return errorResult(refusal)
 	}
@@ -404,6 +409,43 @@ func importFormatRefusal(err error) (string, bool) {
 		return b.String(), true
 	}
 	return "", false
+}
+
+// importLinkRefusal composes this surface's sentence for a directory source
+// holding a link that leads out of the directory, for a caller who is not told
+// where things sit on this host, and reports whether it composed one; any other
+// error, and every error over the process's own streams, is left to the caller.
+//
+// The condition's own occurrence names the place the link leads to, which is a
+// location on this host the caller reaching a listener is told nothing about, and
+// which the rewriting of prose cannot keep back when it lies outside the workspace.
+// So the sentence is composed here instead, recognised through the refusal's type
+// rather than by reading its text: it opens with the condition's short code and its
+// registered sentence, names the link by its place relative to the workspace root,
+// as every path this caller sends is named, and says nothing of where it leads.
+func (tw *toolWorkspace) importLinkRefusal(source string, err error) (string, bool) {
+	var linked *importops.DirectoryLinkError
+	if !errors.As(err, &linked) || !tw.withholdsHostLocations() {
+		return "", false
+	}
+	link, told := tw.reportedLocation(filepath.Join(linked.Directory, filepath.FromSlash(linked.Link)))
+	if !told {
+		link = keptBackLocationWords
+	}
+	var b strings.Builder
+	if short, ok := cerrors.ShortCodeOf(err); ok {
+		b.WriteString(short)
+		b.WriteString(": ")
+	}
+	if sentence, ok := cerrors.MessageOf(err); ok {
+		b.WriteString(sentence)
+		b.WriteString(". ")
+	}
+	fmt.Fprintf(&b, "%s's 'source' names %s, a directory holding the link %s, which leads out of that "+
+		"directory; a directory is imported only from inside itself, so nothing was read through the link and "+
+		"nothing was written. Remove the link, or keep the file itself in the directory rather than a link to it.",
+		importToolName, strconv.Quote(source), strconv.Quote(link))
+	return b.String(), true
 }
 
 // formatChoices names the formats a caller may send, or says the catalog

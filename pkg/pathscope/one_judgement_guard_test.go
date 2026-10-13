@@ -67,6 +67,10 @@ var decidersOfInside = map[string]string{
 	"pkg/sourceresolver/internal/archive:WalkDirectory": "the directory a fetched repository is archived from, " +
 		"a module subdirectory that is a link among them",
 	"pkg/sourceresolver/internal/archive:treeWalk.link": "every link the archive of a fetched repository meets",
+	"pkg/readscope:CheckImportDirectoryRead": "a file or directory an import reads beneath the directory it was " +
+		"named, held to that directory",
+	"internal/importops:Source.judgeLinks": "every link a directory import would read through, a file a " +
+		"pattern selects or a directory",
 
 	// Every read of the workspace's artifact cache reaches the one judgement through
 	// readscope.CheckCacheRead, against the root the cache's writes are held to. A
@@ -127,7 +131,7 @@ var decidersOfInside = map[string]string{
 // judgementsOfInside are the calls a decider is found asking.
 var judgementsOfInside = map[string][]string{
 	"pathscope":  {"ResolvesInside"},
-	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckCacheRead", "CheckOverlayRead", "CheckFetchedRead", "CheckReference"},
+	"readscope":  {"CheckRead", "CheckConfigurationRead", "CheckLockfileRead", "CheckBesideEntityRead", "CheckCacheRead", "CheckOverlayRead", "CheckFetchedRead", "CheckImportDirectoryRead", "CheckReference"},
 	"writescope": {"CheckWrite", "CheckDelete", "RootFor"},
 	// The language server's request judgement, which the assistant tools ask.
 	"serve": {"LeadsOutOfWorkspace", "ReleaseLeadsOutOfWorkspace"},

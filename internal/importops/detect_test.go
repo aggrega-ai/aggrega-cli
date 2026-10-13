@@ -94,7 +94,7 @@ func TestAPredicateHoldsOverTheParsedTree(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			seam, _ := detectionSeamOver(t, importerDeclaring("probe", []string{"probe"},
 				types.PluginDetectSignature{Syntax: "json", Match: []types.PluginPathMatch{tc.match}}))
-			got, err := detectFormat(ctx, "source.json", []byte(source), seam)
+			got, err := detectFormat(ctx, fileSource(t, "source.json", []byte(source)), seam)
 			recognised := err == nil && got == "probe"
 			if recognised != tc.want {
 				t.Fatalf("the predicate %+v recognised the source = %v (format %q, err %v); want %v",
@@ -136,7 +136,7 @@ func TestASignatureAppliesOnlyToTheFileNamesItDeclares(t *testing.T) {
 				Syntax: "json", Files: tc.files,
 				Match: []types.PluginPathMatch{{Path: "servers", Is: types.IsPresent}},
 			}))
-			got, err := detectFormat(ctx, tc.source, []byte(`{"servers":{}}`), seam)
+			got, err := detectFormat(ctx, fileSource(t, tc.source, []byte(`{"servers":{}}`)), seam)
 			recognised := err == nil && got == "probe"
 			if recognised != tc.want {
 				t.Fatalf("files %v against %q recognised = %v (err %v); want %v", tc.files, tc.source, recognised, err, tc.want)
@@ -159,7 +159,7 @@ func TestARecognitionParsesTheSourceOncePerSyntax(t *testing.T) {
 			Syntax: "yaml", Files: []string{"*.yaml"}, Match: []types.PluginPathMatch{{Path: "c", Is: types.IsPresent}},
 		}),
 	)
-	got, err := detectFormat(context.Background(), "source.json", []byte(`{"c":1}`), seam)
+	got, err := detectFormat(context.Background(), fileSource(t, "source.json", []byte(`{"c":1}`)), seam)
 	if err != nil || got != "second" {
 		t.Fatalf("the source was recognised as %q (err %v); want second", got, err)
 	}
@@ -184,7 +184,7 @@ func TestASourceNotInASyntaxMatchesNoSignatureNamingIt(t *testing.T) {
 			Syntax: "yaml", Match: []types.PluginPathMatch{{Path: "kind", Is: types.IsString, Equals: "Thing"}},
 		}),
 	)
-	got, err := detectFormat(context.Background(), "thing.yaml", []byte("kind: Thing\nspec: {}\n"), seam)
+	got, err := detectFormat(context.Background(), fileSource(t, "thing.yaml", []byte("kind: Thing\nspec: {}\n")), seam)
 	if err != nil || got != "yaml-shaped" {
 		t.Fatalf("a YAML source was recognised as %q (err %v); want yaml-shaped", got, err)
 	}
@@ -203,7 +203,7 @@ func TestASyntaxNoParserServesStopsTheRecognition(t *testing.T) {
 			Syntax: "cobol", Match: []types.PluginPathMatch{{Path: "division", Is: types.IsPresent}},
 		}),
 	)
-	_, err := detectFormat(context.Background(), "thing.json", []byte(`{"kind":"x"}`), seam)
+	_, err := detectFormat(context.Background(), fileSource(t, "thing.json", []byte(`{"kind":"x"}`)), seam)
 	if !errors.Is(err, catalog.ErrNoParserForFormat()) {
 		t.Fatalf("a signature no parser can read was passed over rather than reported: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRecognitionIsDeterministicAndCollapsesOneFormat(t *testing.T) {
 	seam, _ := detectionSeamOver(t,
 		importerDeclaring("one", []string{"shared"}, present),
 		importerDeclaring("two", []string{"shared"}, present))
-	if got, err := detectFormat(ctx, "s.json", []byte(`{"a":1}`), seam); err != nil || got != "shared" {
+	if got, err := detectFormat(ctx, fileSource(t, "s.json", []byte(`{"a":1}`)), seam); err != nil || got != "shared" {
 		t.Errorf("two importers of one format recognised %q (err %v); want the one format", got, err)
 	}
 
@@ -231,7 +231,7 @@ func TestRecognitionIsDeterministicAndCollapsesOneFormat(t *testing.T) {
 		importerDeclaring("zeta", []string{"z"}, present),
 		importerDeclaring("both", []string{"x", "y"}, present))
 	for range 3 {
-		_, err := detectFormat(ctx, "s.json", []byte(`{"a":1}`), seam)
+		_, err := detectFormat(ctx, fileSource(t, "s.json", []byte(`{"a":1}`)), seam)
 		var ambiguous *AmbiguousFormatError
 		if !errors.As(err, &ambiguous) {
 			t.Fatalf("three formats recognised were not refused as ambiguous: %v", err)
@@ -248,7 +248,7 @@ func TestRecognitionIsDeterministicAndCollapsesOneFormat(t *testing.T) {
 // recognised as it.
 func TestAnImporterRecordingNoSignatureIsNeverRecognised(t *testing.T) {
 	seam, _ := detectionSeamOver(t, importerDeclaring("silent", []string{"silent"}))
-	_, err := detectFormat(context.Background(), "s.json", []byte(`{}`), seam)
+	_, err := detectFormat(context.Background(), fileSource(t, "s.json", []byte(`{}`)), seam)
 	var undetected *UndetectedFormatError
 	if !errors.As(err, &undetected) {
 		t.Fatalf("a source was recognised by an importer declaring no signature: %v", err)

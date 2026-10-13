@@ -41,6 +41,18 @@
 // predicates generically, so a format a new importer serves is recognised with
 // no change here.
 //
+// # A source is a file or a directory
+//
+// [Import] reads the source itself, from the path a surface hands it after that
+// surface's own rule for which paths it may name, so a file and a directory are
+// told apart in one place. A file is handed to the importer whole. A directory is
+// handed as named sources: the files the importer's declared file patterns select
+// and no others, named by their slash-separated paths inside the directory, in
+// name order, with no link followed out of it — the directory is a root of its own
+// wherever it lies, judged by the workspace's one definition of inside. Which
+// files an importer reads is the importer's declaration and never the host's
+// guess, so an importer declaring no file pattern refuses a directory.
+//
 // # The write is contained
 //
 // A scaffold path is supplied by the importer plugin, so it is untrusted input.

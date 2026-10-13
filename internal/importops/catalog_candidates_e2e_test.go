@@ -106,12 +106,8 @@ func writeCatalogComponents(t *testing.T, dir string, components ...catalogCompo
 // rendered as its one file.
 func importDecisionRecord(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) []abi.ImportDecision {
 	t.Helper()
-	source, err := os.ReadFile(langflowFlow)
-	if err != nil {
-		t.Fatalf("read the committed source fixture: %v", err)
-	}
 	res, err := Import(context.Background(), rw, Options{
-		Source:        source,
+		SourcePath:    langflowFlow,
 		SourceName:    filepath.Base(langflowFlow),
 		Delivery:      authoredcontent.DeliveryFor(true),
 		ResolvePlugin: (&recordingCascade{}).resolve,

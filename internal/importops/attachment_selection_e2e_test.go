@@ -101,13 +101,9 @@ func sourceFor(t *testing.T, format string) (path string, drafts []string) {
 func importFromTheFolder(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, format string) (Result, []string, error) {
 	t.Helper()
 	path, _ := sourceFor(t, format)
-	source, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read the committed source fixture: %v", err)
-	}
 	cascade := &recordingCascade{}
 	res, err := Import(context.Background(), rw, Options{
-		Source:        source,
+		SourcePath:    path,
 		SourceName:    filepath.Base(path),
 		Format:        format,
 		Delivery:      authoredcontent.DeliveryFor(true),

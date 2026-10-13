@@ -113,10 +113,15 @@ var realExports = []struct {
 	},
 }
 
+// realExportPath is where the committed real export at rel sits.
+func realExportPath(rel string) string {
+	return filepath.Join(realExportsDir, filepath.FromSlash(rel))
+}
+
 // readRealExport reads the committed real export at rel.
 func readRealExport(t *testing.T, rel string) []byte {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join(realExportsDir, filepath.FromSlash(rel)))
+	source, err := os.ReadFile(realExportPath(rel))
 	if err != nil {
 		t.Fatalf("read the committed real export: %v", err)
 	}
@@ -132,7 +137,7 @@ func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel s
 	delivery authoredcontent.Delivery, outputDir string) Result {
 	t.Helper()
 	res, err := Import(context.Background(), rw, Options{
-		Source:        readRealExport(t, rel),
+		SourcePath:    realExportPath(rel),
 		SourceName:    filepath.Base(rel),
 		OutputDir:     outputDir,
 		Delivery:      delivery,
