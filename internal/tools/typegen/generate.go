@@ -25,6 +25,9 @@ package main
 //
 //go:generate go run . ../../../../aggrega-abi/rust/src/cbor_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/cbor_gen.ts
+//go:generate go run . ../../../../aggrega-abi/go/pkg/abi/orderedmap_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/orderedmap_gen.rs
+//go:generate go run . ../../../../aggrega-abi/typescript/src/orderedmap_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/frp_gen.rs
 //go:generate go run . ../../compiler/featurerecipe_pipeline/frp_host_gen.go

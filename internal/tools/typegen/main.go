@@ -308,7 +308,9 @@ const hostfuncErrorEnumDoc = "These consts are the single source of the host-fun
 // sorted map keys, RawValue for verbatim opaque carry); "ts" emits TypeScript
 // interfaces plus thin per-type sorting encoders. The Go, Rust, and TS codecs
 // produce byte-identical wire output from one schema: maps emit in sorted key
-// order and opaque values carry verbatim.
+// order and opaque values carry verbatim. A target that reads no schema — the
+// shared CBOR helpers, the order-keeping container of each binding language, the
+// plugin-wire registry — carries a lang naming what it emits instead.
 type codecTarget struct {
 	schema     string
 	schemaFile string
@@ -1434,6 +1436,24 @@ var codecTargets = map[string]codecTarget{
 	"cbor_gen.ts": {
 		pkg:  "abi",
 		lang: "ts-cbor-helpers",
+	},
+	// The order-keeping container of each guest binding language, for a map whose
+	// order is part of what it carries. Schema-free like the helpers above, one
+	// target per language: a Go and a Rust type, and the TypeScript reader and
+	// writer that let the language's own Map keep the order of a JSON object's
+	// members. The Go target references the streaming JSON helpers the package's
+	// helpers-bearing file declares.
+	"orderedmap_gen.go": {
+		pkg:  "abi",
+		lang: "go-ordered-map",
+	},
+	"orderedmap_gen.rs": {
+		pkg:  "abi",
+		lang: "rust-ordered-map",
+	},
+	"orderedmap_gen.ts": {
+		pkg:  "abi",
+		lang: "ts-ordered-map",
 	},
 	// The plugin-wire registry. Schema-free and derived: it reads no schema of its
 	// own and instead walks the targets above, collecting each one's wireExports
@@ -3043,6 +3063,12 @@ func generateDefs(t codecTarget) ([]byte, error) {
 		return generateRustCBORHelpers(t)
 	case "ts-cbor-helpers":
 		return generateTSCBORHelpers(t)
+	case "go-ordered-map":
+		return generateGoOrderedMap(t)
+	case "rust-ordered-map":
+		return generateRustOrderedMap(t)
+	case "ts-ordered-map":
+		return generateTSOrderedMap(t)
 	case "go-wire-registry":
 		return generateWireRegistry(t)
 	default:

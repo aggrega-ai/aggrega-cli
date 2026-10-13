@@ -141,6 +141,9 @@ var codecTargetPaths = map[string][]string{
 	"servewire_gen.ts":           {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	"cbor_gen.rs":                {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"cbor_gen.ts":                {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"orderedmap_gen.go":          {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"orderedmap_gen.rs":          {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"orderedmap_gen.ts":          {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host describe codec is committed inside aggrega-cli's wasm package.
 	"describe_host_gen.go": {"..", "..", "wasm"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
