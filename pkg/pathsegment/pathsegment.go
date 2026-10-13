@@ -148,6 +148,14 @@ func WindowsCannotHold(name string) (string, bool) {
 	return "", false
 }
 
+// WindowsCannotHoldReason says, in the words a diagnostic gives its reader, what
+// [WindowsCannotHold] reports. Every message about a name it flags — a write
+// refusing the name on Windows, a publication warning that it carries one — says it
+// with this text, so the reason a reader is given is stated once, beside the rule
+// it describes.
+const WindowsCannotHoldReason = "Windows reserves device names such as CON, PRN, AUX, NUL, COM1 and LPT1, in any " +
+	"letter case and whatever extension follows, and does not hold a segment ending in a full stop or a space as written"
+
 // isSeparator reports whether r separates the segments of a name as a Windows
 // join reads it: a slash, or a backslash.
 func isSeparator(r rune) bool { return r == '/' || r == '\\' }

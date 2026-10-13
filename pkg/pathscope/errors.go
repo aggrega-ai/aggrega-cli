@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 )
 
 // ErrNameWindowsCannotHold is the halt [PlaceBeneath] raises, on Windows only,
@@ -39,10 +40,10 @@ var errNameWindowsCannotHold = cerrors.Register("name-windows-cannot-hold", cerr
 })
 
 // windowsCannotHoldAdvice is what the refusal tells its reader, in terms of what
-// they can change.
-const windowsCannotHoldAdvice = "It was not written. Windows reserves device names such as CON, PRN, AUX, NUL, " +
-	"COM1 and LPT1, in any letter case and whatever extension follows, and does not hold a segment ending in a " +
-	"full stop or a space as written; rename that segment where the name is produced"
+// they can change. The reason is the predicate's own wording, so it is stated
+// where the rule is.
+const windowsCannotHoldAdvice = "It was not written. " + pathsegment.WindowsCannotHoldReason +
+	"; rename that segment where the name is produced"
 
 // refuseWindowsName composes the halt for name, whose segment Windows cannot hold,
 // beneath the directory dir.

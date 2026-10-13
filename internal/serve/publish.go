@@ -161,6 +161,11 @@ type publishEntityResult struct {
 	// publication carry every file in the entity's directory, and is absent where
 	// it carries only the files the entity names.
 	WholeDirectorySource string `json:"wholeDirectorySource,omitempty"`
+
+	// WindowsUnusableEntries names each entry of the published archive that
+	// Windows cannot hold as written, so a Windows workspace cannot use the
+	// version, and is absent where there is none.
+	WindowsUnusableEntries []string `json:"windowsUnusableEntries,omitempty"`
 }
 
 // publishArtifactParams is what aggrega/publishArtifact takes: the file to
@@ -306,11 +311,12 @@ func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest)
 // and that is the mechanism rather than an omission — a nil token getter means the
 // shared identity ladder has no rung that needs a person, so it refuses instead of
 // blocking on an answer nobody can give.
-// progressOut is where the publication writes its own account of itself. It is
-// a parameter rather than a discard fixed here because the caller decides
-// whether it is watching: a request that asked to be reported on gets those
-// lines as they are written, and one that did not passes a writer that drops
-// them.
+// progressOut is where the publication writes its own account of itself, its
+// warning lines included. It is a parameter rather than a discard fixed here
+// because the caller decides whether it is watching: a request that asked to be
+// reported on gets those lines as they are written, and one that did not passes a
+// writer that drops them. The entries a warning names reach every request through
+// the answer whichever it is.
 func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.Writer) (publishops.PushConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.PushConfig{}, &jsonRPCError{
@@ -351,16 +357,17 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		DestinationSupply: daemonDestinationSupply,
 		PinSourcesSupply:  daemonPinSourcesSupply,
 		Out:               progressOut,
+		Advisories:        progressOut,
 	}, nil
 }
 
 // runPublishEntity runs the publication and shapes the answer.
 //
-// The operation's status lines are not folded into the response. They are prose
-// written for a person watching, and the response answers with the facts
-// themselves; a caller that wants the prose asks to be reported on and reads it
-// as it is written, on the progress channel, rather than as a field of the
-// answer.
+// The operation's status and warning lines are not folded into the response. They
+// are prose written for a person watching, and the response answers with the facts
+// themselves — the entries a warning names among them; a caller that wants the
+// prose asks to be reported on and reads it as it is written, on the progress
+// channel, rather than as a field of the answer.
 func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEntityResult, *jsonRPCError) {
 	res, err := publishops.Push(ctx, cfg)
 	if err != nil {
@@ -371,19 +378,20 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		}
 	}
 	out := publishEntityResult{
-		Reference:            res.Reference,
-		Tag:                  res.Tag,
-		Kind:                 res.Kind,
-		MediaType:            res.MediaType,
-		Size:                 res.Size,
-		SizeText:             cacheops.HumanSize(int64(res.Size)),
-		PluginSize:           res.PluginSize,
-		Digest:               res.Digest,
-		Signed:               res.Signed,
-		AlreadyPublished:     res.AlreadyPublished,
-		DryRun:               res.DryRun,
-		Reach:                reachOf(res.Reference, !res.DryRun),
-		WholeDirectorySource: res.WholeDirectory,
+		Reference:              res.Reference,
+		Tag:                    res.Tag,
+		Kind:                   res.Kind,
+		MediaType:              res.MediaType,
+		Size:                   res.Size,
+		SizeText:               cacheops.HumanSize(int64(res.Size)),
+		PluginSize:             res.PluginSize,
+		Digest:                 res.Digest,
+		Signed:                 res.Signed,
+		AlreadyPublished:       res.AlreadyPublished,
+		DryRun:                 res.DryRun,
+		Reach:                  reachOf(res.Reference, !res.DryRun),
+		WholeDirectorySource:   res.WholeDirectory,
+		WindowsUnusableEntries: res.WindowsUnusableEntries,
 	}
 	// The plugin size is carried only for a plugin entity, so its rendering is
 	// held to the same presence: a caller never reads a rendered size with no

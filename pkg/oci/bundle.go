@@ -308,6 +308,41 @@ func publishesAlone(carried []string) bool {
 	return len(carried) == 0
 }
 
+// ArchiveEntryNames returns the name of every entry the archive [Bundle] packs for
+// the entity at entityPath, given carried as Bundle takes it: the document's own
+// file name first, then each carried path, each once. It returns nil where the
+// entity carries nothing and so publishes as its document alone, which no archive
+// holds and which a consumer lays out under a name this package chooses
+// ([SingleDocumentFileName]).
+//
+// The names are composed by the same function the archive's entries are read in,
+// so a caller asking what an archive carries reads the names the archive holds
+// rather than a second spelling of them. It judges nothing about a name: a carried
+// path that is not local to the entity's directory is refused when the archive is
+// packed.
+func ArchiveEntryNames(entityPath string, carried []string) []string {
+	if publishesAlone(carried) {
+		return nil
+	}
+	return entryNames(entityPath, carried)
+}
+
+// entryNames composes the names [collectArchiveEntries] reads: the document's own
+// file name, then each carried path, each once and in that order. The document
+// comes first because a document published alone is read as the first entry.
+func entryNames(entityPath string, carried []string) []string {
+	names := make([]string, 0, len(carried)+1)
+	seen := make(map[string]bool, len(carried)+1)
+	for _, rel := range append([]string{filepath.Base(entityPath)}, carried...) {
+		if seen[rel] {
+			continue
+		}
+		seen[rel] = true
+		names = append(names, rel)
+	}
+	return names
+}
+
 // packArchive packs the entity document at entityPath and the carried files into
 // a deterministic tar.gz archive, each at its path relative to the document's
 // directory.
@@ -371,17 +406,12 @@ type archiveEntry struct {
 // disk yet.
 func collectArchiveEntries(entityPath string, carried []string, supplied map[string][]byte) ([]archiveEntry, error) {
 	dir := filepath.Dir(entityPath)
-	names := append([]string{filepath.Base(entityPath)}, carried...)
-	seen := make(map[string]bool, len(names))
+	names := entryNames(entityPath, carried)
 	entries := make([]archiveEntry, 0, len(names))
 	for _, rel := range names {
 		if !filepath.IsLocal(filepath.FromSlash(rel)) || path.Clean(rel) != rel {
 			return nil, fmt.Errorf("carried path %q does not name a file inside %s", rel, dir)
 		}
-		if seen[rel] {
-			continue
-		}
-		seen[rel] = true
 		full := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := sourcewalk.RefuseLink(full, rel); err != nil {
 			return nil, err

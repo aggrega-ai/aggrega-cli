@@ -88,6 +88,16 @@ among those files is refused rather than followed. A local source written as a
 template names no one directory until a Release fills it in, so an entity with
 one carries every such file in its own directory, and push says so.
 
+Push warns about each file an archive carries whose path holds a part Windows
+cannot hold as written: a name Windows reserves for a device — CON, PRN, AUX,
+NUL, COM1 or LPT1, say, in any letter case and whatever extension follows — or a
+part ending in a full stop or a space. On Windows, aggrega refuses to unpack
+such a file, so a Windows workspace cannot use the version. The warning is
+written to standard error on every platform, one line per file, the entity
+document's own file name judged with the rest, and it refuses nothing: the push,
+or its dry run, goes ahead or stops exactly as it would without it. An entity
+that names nothing publishes as its document alone and is never warned about.
+
 Each file travels with mode 0644, whatever its permission bits — the execute
 bit included — in the checkout it is published from. The OCI manifest names the
 digest of the published bytes, so "aggrega pull" refuses a download that does
@@ -167,6 +177,8 @@ published; --pin-sources=false skips it for one run.`,
 				PluginPath:   opts.pluginPath,
 				PinSources:   explicitBool(cmd, "pin-sources", opts.pinSources),
 				Workspace:    rw,
+				Out:          cmd.OutOrStdout(),
+				Advisories:   cmd.ErrOrStderr(),
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
 			// honour the value; otherwise the registry policy decides whether
@@ -212,14 +224,15 @@ func listPublishableKinds(out io.Writer) error {
 //
 // The facts the operation reports are discarded here, and that is the command
 // line's own shape rather than an oversight: the operation writes its own account
-// of the publication to its status output, and that account names every fact the
-// result carries. The reference and tag, the digest, and whether the bytes were
-// already there or nothing was published at all are the identity of the line a
-// person is shown; the kind, the media type and the byte counts follow it as its
-// continuation lines; a signature that was attached says so on its own line. A
-// second rendering here would restate in full an account the terminal has just
-// been given, which is a duplicate a reader has to reconcile rather than a fact
-// they were missing.
+// of the publication to its status output, and its warnings to its advisory output,
+// and between them they name every fact the result carries. The reference and tag,
+// the digest, and whether the bytes were already there or nothing was published at
+// all are the identity of the line a person is shown; the kind, the media type and
+// the byte counts follow it as its continuation lines; a signature that was
+// attached says so on its own line; and each entry Windows cannot use is named on
+// a warning line of its own. A second rendering here would restate in full an
+// account the terminal has just been given, which is a duplicate a reader has to
+// reconcile rather than a fact they were missing.
 //
 // The two are still not the same thing, and neither substitutes for the other:
 // the prose is written for a person watching, and a surface that answers a caller
@@ -233,7 +246,7 @@ func pushRun(ctx context.Context, cfg pushConfig) error {
 	cfg.IdentitySupply = commandLineIdentitySupply
 	cfg.DestinationSupply = commandLineDestinationSupply
 	cfg.PinSourcesSupply = commandLinePinSourcesSupply
-	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
+	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output, and its warnings to this surface's error stream, and between them they name every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
 	if _, err := publishops.Push(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}

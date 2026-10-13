@@ -130,6 +130,14 @@ type PushConfig struct {
 	// os.Stdout, so a caller that wants to capture the output passes a buffer
 	// rather than mutating a process global.
 	Out io.Writer
+
+	// Advisories is the sink for what the publication reports without refusing:
+	// a warning for each entry of the published archive that Windows cannot hold
+	// as written. Nil defaults to os.Stderr, the stream a command's warnings are
+	// written to, so the status output above stays the account of the publication
+	// a script reads. A caller that answers with the result carries the same
+	// entries in WindowsUnusableEntries and may discard these lines.
+	Advisories io.Writer
 }
 
 // signerRequest projects the publication's credential inputs onto the shared
@@ -338,6 +346,16 @@ type PushResult struct {
 	// template in, so the publication cannot tell which directory that is and
 	// carries all of them; this is how a caller learns that it did.
 	WholeDirectory string
+
+	// WindowsUnusableEntries names each entry of the published archive holding a
+	// path segment Windows cannot hold as written — a name Windows reserves for a
+	// device, or a segment ending in a full stop or a space — in the order the
+	// archive's names are composed: the entity document's own file name first, then
+	// the files it carries. It is nil where there is none, which includes every
+	// entity published as its document alone and every Plugin. The publication
+	// warns about each of them on its advisory output and proceeds; the layout that
+	// unpacks the archive refuses them on Windows.
+	WindowsUnusableEntries []string
 }
 
 // writePublicationFacts writes the transport facts of a publication — what kind
@@ -400,6 +418,12 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 // carries, and which decide whether it publishes as that document or as an
 // archive; constructs the OCI repository reference; publishes via
 // pkg/oci.Push.
+//
+// Before the bundle is built, Push warns on cfg.Advisories about each entry the
+// archive will carry that holds a path segment Windows cannot hold as written
+// (ErrWindowsUnusableEntry), and reports the same entries as the result's
+// WindowsUnusableEntries. The warning refuses nothing, and a dry run warns as a
+// publication does.
 //
 // Signing is sign-before-publish: when signing is requested, Push computes
 // the proposed manifest digest, constructs the signer, and signs the digest
@@ -466,6 +490,10 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	out := cfg.Out
 	if out == nil {
 		out = os.Stdout
+	}
+	advisories := cfg.Advisories
+	if advisories == nil {
+		advisories = os.Stderr
 	}
 
 	rw, err := requireWorkspace(cfg.Workspace)
@@ -632,6 +660,20 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		return PushResult{}, err
 	}
 
+	// The entries Windows cannot hold as written are found here, once, from the
+	// names the archive will carry, composed by the function the archive's own
+	// entries are read in — so the entity document's own file name is judged with
+	// the files it carries, and an entity carrying nothing, which publishes as its
+	// document alone under no name it chose, is judged on nothing. The warning
+	// refuses nothing and is written on every platform, ahead of the dry-run branch
+	// so a dry run warns as the publication does; the result carries the same
+	// entries, so no surface derives them a second time. On Windows the bundle below
+	// refuses a carried path the platform's own locality check finds naming a
+	// device, and the warning is written before that refusal, so it says why the
+	// name cannot be used there.
+	unusable := windowsUnusableEntries(oci.ArchiveEntryNames(cfg.EntityPath, declared.Files()))
+	warnWindowsUnusable(advisories, unusable)
+
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath, declared.Files())
 	if err != nil {
 		return PushResult{}, fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
@@ -640,14 +682,15 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	reference := BuildPushReference(dest.Prefix(), header.Kind, header.Spec.Capability, header.Metadata.Name)
 	tag := header.Metadata.Version
 	result := PushResult{
-		Reference:      reference,
-		Tag:            tag,
-		Kind:           header.Kind,
-		MediaType:      mediaType,
-		Size:           len(bundleBytes),
-		Signed:         wantSign,
-		Pin:            pinned,
-		WholeDirectory: declared.WholeDirectory(),
+		Reference:              reference,
+		Tag:                    tag,
+		Kind:                   header.Kind,
+		MediaType:              mediaType,
+		Size:                   len(bundleBytes),
+		Signed:                 wantSign,
+		Pin:                    pinned,
+		WholeDirectory:         declared.WholeDirectory(),
+		WindowsUnusableEntries: namesOf(unusable),
 	}
 
 	// Searchable catalog annotations, built once and stamped identically onto

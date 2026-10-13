@@ -306,6 +306,10 @@ type publishEntityPayload struct {
 	// publication carry every file in the entity's directory, and absent where it
 	// carries only the files the entity names.
 	WholeDirectorySource string `json:"whole_directory_source,omitempty"`
+	// WindowsUnusableEntries names each entry of the published archive that
+	// Windows cannot hold as written, so a Windows workspace cannot use the
+	// version, and is absent where there is none.
+	WindowsUnusableEntries []string `json:"windows_unusable_entries,omitempty"`
 }
 
 var publishEntityToolSpec = toolSpec{
@@ -466,15 +470,17 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		DestinationSupply:         toolDestinationSupply,
 		PinSourcesSupply:          toolPinSourcesSupply,
 		Out:                       io.Discard,
+		Advisories:                io.Discard,
 	}, ""
 }
 
 // runPublishEntity runs the publication and shapes the answer.
 //
-// The operation's status lines are discarded rather than folded into the result.
-// They are prose written for a person watching a terminal, and this surface
-// answers with the facts themselves — which is the whole difference between this
-// tool and the one that runs the command in a separate process.
+// The operation's status lines and warning lines are discarded rather than folded
+// into the result. They are prose written for a person watching a terminal, and
+// this surface answers with the facts themselves — the entries a warning names
+// among them — which is the whole difference between this tool and the one that
+// runs the command in a separate process.
 //
 // tw is the workspace the answer is told against: the pin step's entity and lock
 // are locations on this host, and the caller is told them the way every answer
@@ -485,18 +491,19 @@ func runPublishEntity(ctx context.Context, tw *toolWorkspace, cfg publishops.Pus
 		return publishEntityPayload{}, err
 	}
 	payload := publishEntityPayload{
-		Reference:            res.Reference,
-		Tag:                  res.Tag,
-		Kind:                 res.Kind,
-		MediaType:            res.MediaType,
-		Size:                 res.Size,
-		PluginSize:           res.PluginSize,
-		Digest:               res.Digest,
-		Signed:               res.Signed,
-		AlreadyPublished:     res.AlreadyPublished,
-		DryRun:               res.DryRun,
-		Reach:                reachOf(res.Reference, !res.DryRun),
-		WholeDirectorySource: res.WholeDirectory,
+		Reference:              res.Reference,
+		Tag:                    res.Tag,
+		Kind:                   res.Kind,
+		MediaType:              res.MediaType,
+		Size:                   res.Size,
+		PluginSize:             res.PluginSize,
+		Digest:                 res.Digest,
+		Signed:                 res.Signed,
+		AlreadyPublished:       res.AlreadyPublished,
+		DryRun:                 res.DryRun,
+		Reach:                  reachOf(res.Reference, !res.DryRun),
+		WholeDirectorySource:   res.WholeDirectory,
+		WindowsUnusableEntries: res.WindowsUnusableEntries,
 	}
 	if res.Pin != nil {
 		pin := pinPayloadOf(tw, *res.Pin, res.DryRun)
@@ -523,6 +530,14 @@ func renderPublishEntityText(p publishEntityPayload) string {
 	if p.WholeDirectorySource != "" {
 		fmt.Fprintf(&b, " It carries every file in the entity's directory, because its source %q is a template "+
 			"and the directory it names is decided by each Release that uses it.", p.WholeDirectorySource)
+	}
+	if len(p.WindowsUnusableEntries) > 0 {
+		quoted := make([]string, len(p.WindowsUnusableEntries))
+		for i, name := range p.WindowsUnusableEntries {
+			quoted[i] = fmt.Sprintf("%q", name)
+		}
+		fmt.Fprintf(&b, " It carries entries Windows cannot hold as written (%s), so a workspace on Windows "+
+			"refuses to unpack them and cannot use the version.", strings.Join(quoted, ", "))
 	}
 	if p.Signed {
 		b.WriteString(" A signature was attached and cannot be recalled from anyone who fetches it.")
