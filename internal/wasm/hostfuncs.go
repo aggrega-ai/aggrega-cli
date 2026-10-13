@@ -5,7 +5,6 @@ package wasm
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -533,8 +532,15 @@ type pluginMemoryWriter interface {
 // binding aggrega_fetch_external_input(url_ptr i64) -> envelope_ptr
 // i64. The guest passes a pointer to a UTF-8 URL string in plugin
 // memory; the host resolves the URL through the plugin's external-
-// input service and writes one FetchExternalInputResponse JSON document back into
+// input service and writes one FetchExternalInputResponse document back into
 // plugin memory, returning its offset.
+//
+// The two slots carry different shapes. The request is a bare URL rather than
+// a payload document, so it stays UTF-8 text and is read as a string. The reply
+// is a payload document and carries canonical CBOR, success and failure alike,
+// through the reply type's generated encoder: the fetched bytes cross as a CBOR
+// byte string, raw, so a payload that is not valid UTF-8 arrives intact and
+// nothing on either side base64-encodes it.
 //
 // Failure is deliberately in-band — an error envelope, never a trap or
 // panic: an unpinned URL in a frozen closure must surface as a
@@ -589,28 +595,36 @@ func (p *Plugin) handleAggregaFetchExternalInput(ctx context.Context, reader plu
 		stack[0] = p.writeFetchFailure(writer, err.Error(), abi.CodeFetchFailed)
 		return
 	}
-	encoded := base64.StdEncoding.EncodeToString(payload)
-	stack[0] = p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Content: &encoded})
+	stack[0] = p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Content: payload})
 }
 
 // writeFetchFailure records message on the plugin's warning channel and
 // writes an error envelope carrying it, returning the envelope's
 // offset. The warning mirrors the envelope so the host caller sees the
 // same diagnostic the guest received.
+//
+// Every failure carries its code, and that is what keeps a zero-length
+// payload distinguishable from a failure: the content field is omitted when
+// empty, so the reply to an empty payload carries no field at all, and a
+// guest tells the two apart by the failure fields rather than by the
+// content key.
 func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
 	return p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Error: message, HostfuncErrorCode: code})
 }
 
-// writeFetchEnvelope marshals env and writes it into plugin memory,
-// returning the offset the guest reads it from. On a marshal or memory
-// write failure it logs a host-side diagnostic and returns offset 0 —
-// the one case where no envelope can be delivered; the guest-side PDK
-// wrapper treats a zero offset as "host returned no envelope".
+// writeFetchEnvelope encodes env as canonical CBOR and writes it into
+// plugin memory, returning the offset the guest reads it from. Success
+// and failure envelopes both pass through here, so they share one
+// encoding: a guest reads one reply slot and cannot know before decoding
+// which of the two it holds. On an encode or memory write failure it
+// logs a host-side diagnostic and returns offset 0 — the one case where
+// no envelope can be delivered; the guest-side PDK wrapper treats a zero
+// offset as "host returned no envelope".
 func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env abi.FetchExternalInputResponse) uint64 {
-	b, err := env.MarshalJSON()
+	b, err := env.EncodeCBOR()
 	if err != nil {
-		log.Printf("plugin %q: aggrega_fetch_external_input: envelope marshal failed: %v", p.name, err)
+		log.Printf("plugin %q: aggrega_fetch_external_input: envelope encode failed: %v", p.name, err)
 		return 0
 	}
 	offset, err := writer.WriteBytes(b)

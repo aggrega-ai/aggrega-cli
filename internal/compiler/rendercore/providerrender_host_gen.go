@@ -215,10 +215,10 @@ type SourceFileResponse struct {
 	HostfuncErrorCode string `json:"hostfunc_error_code,omitempty" yaml:"hostfunc_error_code,omitempty" cbor:"hostfunc_error_code,omitempty"`
 }
 
-// FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message. Exactly one of content or error is populated. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a structured payload, so only the reply has a declared shape.
+// FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message and its code. A reply that carries neither failure field is a success, so a zero-length payload is the reply with every field absent. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a structured payload, so only the reply has a declared shape.
 type FetchExternalInputResponse struct {
-	// Content The fetched content on success; absent on failure. Unlike the byte-carrying fields elsewhere in this socket, every kit holds this one as a string and the guest decodes it to recover the bytes. Held by reference so a zero-length payload still emits the content key and stays distinguishable from a failure.
-	Content *string `json:"content,omitempty" yaml:"content,omitempty" cbor:"content,omitempty"`
+	// Content The fetched payload's raw bytes on success; absent on failure, and absent when the payload is empty. The bytes cross the wire as a byte string, never as base64 text. The Go kit holds them as a byte slice; the Rust and TypeScript kits hold them as a base64 string, which each kit's fetch wrapper decodes, so every wrapper returns the payload's raw bytes.
+	Content []byte `json:"content,omitempty" yaml:"content,omitempty" cbor:"content,omitempty"`
 	// Error The failure message on failure, naming the URL and the remedy; absent on success.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 	// HostfuncErrorCode The machine-matchable failure identity on failure, drawn from the closed host-function error-code catalog, set beside the human error message; absent on success. That catalog is a fixed vocabulary naming the ways a host function can fail, and it is a different vocabulary from the halting conditions the compiler registers, whose identifiers a guest reports on a socket output as condition_code and condition_short_code — the key name says which of the two a value belongs to, so the two are never read as one set. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
@@ -2525,17 +2525,13 @@ func (t FetchExternalInputResponse) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
 	first := true
-	if t.Content != nil {
+	if len(t.Content) != 0 {
 		if !first {
 			buf.WriteByte(',')
 		}
 		first = false
 		buf.WriteString("\"content\":")
-		if enc, err := json.Marshal(t.Content); err != nil {
-			return nil, err
-		} else {
-			buf.Write(enc)
-		}
+		writeJSONBytes(&buf, t.Content)
 	}
 	if t.Error != "" {
 		if !first {
@@ -2572,14 +2568,10 @@ func (t *FetchExternalInputResponse) UnmarshalJSON(data []byte) error {
 		}
 		switch key {
 		case "content":
-			if raw, err := readRaw(dec, data); err != nil {
+			if v, err := readBytes(dec); err != nil {
 				return err
 			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Content); err != nil {
-					return err
-				}
+				t.Content = v
 			}
 		case "error":
 			if s, err := readString(dec); err != nil {
@@ -7963,7 +7955,7 @@ func (t FetchExternalInputResponse) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Error != "" {
 		n++
 	}
-	if t.Content != nil {
+	if len(t.Content) != 0 {
 		n++
 	}
 	if t.HostfuncErrorCode != "" {
@@ -7974,9 +7966,9 @@ func (t FetchExternalInputResponse) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORTextString(dst, "error")
 		dst = appendCBORTextString(dst, t.Error)
 	}
-	if t.Content != nil {
+	if len(t.Content) != 0 {
 		dst = appendCBORTextString(dst, "content")
-		dst = appendCBORTextString(dst, (*t.Content))
+		dst = appendCBORByteString(dst, t.Content)
 	}
 	if t.HostfuncErrorCode != "" {
 		dst = appendCBORTextString(dst, "hostfunc_error_code")
@@ -8004,14 +7996,10 @@ func (t *FetchExternalInputResponse) decodeCBOR(dec *cborDec) error {
 		}
 		switch key {
 		case "content":
-			{
-				var sv string
-				if s, err := dec.readTextString(); err != nil {
-					return err
-				} else {
-					sv = s
-				}
-				t.Content = &sv
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Content = v
 			}
 		case "error":
 			if s, err := dec.readTextString(); err != nil {

@@ -34,14 +34,17 @@
 // The wire payloads are hand-written rather than taken from the plugin kit, on
 // the same terms as the other guests under this directory: the guest is built
 // with GOWORK=off against its own go.mod, so it shares no module with the host
-// tests that drive it.
+// tests that drive it. That includes the fetch reply, which carries canonical
+// CBOR: the guest reads the one small map it needs with its own reader rather
+// than with the generated decoder.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o fetching-provider.wasm ./
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	pdk "github.com/extism/go-pdk"
 )
@@ -76,8 +79,9 @@ const (
 	revisionPath = "fixture-revision.txt"
 
 	// fixtureRevision identifies the contract THIS guest presents to the host test
-	// that drives it — the files it emits, their names, and the shape of their
-	// bytes. Bump it in the same edit that changes any of those.
+	// that drives it — the files it emits, their names, the shape of their bytes,
+	// and the encoding of the reply it reads them from. Bump it in the same edit
+	// that changes any of those.
 	//
 	// 🔴 DELIBERATE DUPLICATE, on the same terms as externalInputURL above and
 	// recorded so it is not "unified" away: the host test declares its own copy of
@@ -87,7 +91,7 @@ const (
 	// host (or a stale .wasm served from the fixture cache) therefore fails loudly
 	// here instead of quietly certifying a comparison against a contract that has
 	// moved.
-	fixtureRevision = "fetching-provider/1"
+	fixtureRevision = "fetching-provider/2"
 )
 
 // providerDescriptor is the fixed describe() self-report. The external-input
@@ -123,15 +127,19 @@ type renderNodeOutput struct {
 }
 
 // fetchEnvelope is the reply the external-input host function writes into guest
-// memory: either base64 content or an error message, never both.
+// memory: the fetched bytes on success, or an error message and its code on
+// failure. Content is omitted when the payload is empty, so a reply carrying no
+// failure field is a success whatever it carries.
 type fetchEnvelope struct {
-	Content *string `json:"content"`
-	Error   string  `json:"error"`
+	Content []byte
+	Error   string
+	Code    string
 }
 
 // aggregaFetchExternalInput is the host-imported external-input fetch binding.
-// Signature: (url_ptr i64) -> envelope_ptr i64. Offset 0 means the host
-// delivered no envelope at all.
+// Signature: (url_ptr i64) -> envelope_ptr i64. The URL is UTF-8 text; the
+// reply is one canonical-CBOR map. Offset 0 means the host delivered no
+// envelope at all.
 //
 //go:wasmimport extism:host/user aggrega_fetch_external_input
 func aggregaFetchExternalInput(urlPtr uint64) uint64
@@ -153,21 +161,123 @@ func fetchExternalInput(url string) string {
 	envBytes := envMem.ReadBytes()
 	envMem.Free()
 
-	var env fetchEnvelope
-	if err := json.Unmarshal(envBytes, &env); err != nil {
+	env, err := decodeFetchEnvelope(envBytes)
+	if err != nil {
 		return "undecodable-envelope: " + err.Error()
 	}
 	if env.Error != "" {
 		return env.Error
 	}
-	if env.Content == nil {
-		return "empty-envelope"
+	if env.Code != "" {
+		return "failure: " + env.Code
 	}
-	payload, err := base64.StdEncoding.DecodeString(*env.Content)
+	return string(env.Content)
+}
+
+// decodeFetchEnvelope reads the fetch reply: a definite-length CBOR map whose
+// keys are text strings and whose values are the content as a byte string and
+// the two failure fields as text strings. A key it does not know is refused
+// rather than skipped, because a reply this reader half-understood would render
+// an outcome nobody chose.
+func decodeFetchEnvelope(b []byte) (fetchEnvelope, error) {
+	var env fetchEnvelope
+	r := cborReader{data: b}
+	n, err := r.head(5)
 	if err != nil {
-		return "undecodable-content: " + err.Error()
+		return env, err
 	}
-	return string(payload)
+	for i := uint64(0); i < n; i++ {
+		key, err := r.str(3)
+		if err != nil {
+			return env, err
+		}
+		switch string(key) {
+		case "content":
+			v, err := r.str(2)
+			if err != nil {
+				return env, err
+			}
+			env.Content = v
+		case "error":
+			v, err := r.str(3)
+			if err != nil {
+				return env, err
+			}
+			env.Error = string(v)
+		case "hostfunc_error_code":
+			v, err := r.str(3)
+			if err != nil {
+				return env, err
+			}
+			env.Code = string(v)
+		default:
+			return env, fmt.Errorf("unexpected key %q", key)
+		}
+	}
+	if r.pos != len(r.data) {
+		return env, errors.New("trailing bytes after the reply")
+	}
+	return env, nil
+}
+
+// cborReader reads the few CBOR items the fetch reply is made of.
+type cborReader struct {
+	data []byte
+	pos  int
+}
+
+// head reads one item head of the given major type and returns its argument:
+// a length for a string, a pair count for a map. Only definite lengths occur on
+// this wire.
+func (r *cborReader) head(major byte) (uint64, error) {
+	if r.pos >= len(r.data) {
+		return 0, errors.New("truncated reply")
+	}
+	ib := r.data[r.pos]
+	r.pos++
+	if ib>>5 != major {
+		return 0, fmt.Errorf("major type %d where %d was expected", ib>>5, major)
+	}
+	info := ib & 0x1f
+	var width int
+	switch {
+	case info < 24:
+		return uint64(info), nil
+	case info == 24:
+		width = 1
+	case info == 25:
+		width = 2
+	case info == 26:
+		width = 4
+	case info == 27:
+		width = 8
+	default:
+		return 0, fmt.Errorf("unsupported length encoding %d", info)
+	}
+	if r.pos+width > len(r.data) {
+		return 0, errors.New("truncated reply")
+	}
+	var v uint64
+	for _, c := range r.data[r.pos : r.pos+width] {
+		v = v<<8 | uint64(c)
+	}
+	r.pos += width
+	return v, nil
+}
+
+// str reads one byte string (major type 2) or text string (major type 3) and
+// returns its bytes.
+func (r *cborReader) str(major byte) ([]byte, error) {
+	n, err := r.head(major)
+	if err != nil {
+		return nil, err
+	}
+	if n > uint64(len(r.data)-r.pos) {
+		return nil, errors.New("truncated reply")
+	}
+	v := r.data[r.pos : r.pos+int(n)]
+	r.pos += int(n)
+	return v, nil
 }
 
 //go:wasmexport describe

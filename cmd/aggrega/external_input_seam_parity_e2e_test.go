@@ -165,7 +165,7 @@ const (
 	// comparison are deliberate near-duplicates for the reason above — sharing
 	// either would blind the cross-check to what it exists to see.
 	seamFixtureRevisionFile = "fixture-revision.txt"
-	seamFixtureRevision     = "fetching-provider/1"
+	seamFixtureRevision     = "fetching-provider/2"
 )
 
 // seamFixtureServedContent is what the emitted file must contain when a seam is

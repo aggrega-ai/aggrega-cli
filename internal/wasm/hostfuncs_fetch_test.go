@@ -4,9 +4,8 @@
 package wasm
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -34,17 +33,27 @@ func (f *fakeMemoryWriter) WriteBytes(b []byte) (uint64, error) {
 }
 
 // lastEnvelope decodes the most recent payload the fake writer received
-// as a FetchExternalInputResponse.
+// as a FetchExternalInputResponse, through the reply type's canonical-CBOR
+// entry point — the one decode a guest reaches for either outcome. It
+// decodes strictly, so a reply carrying a key the shape does not declare
+// fails here rather than decoding to an empty value.
 func (f *fakeMemoryWriter) lastEnvelope(t *testing.T) abi.FetchExternalInputResponse {
+	t.Helper()
+	var env abi.FetchExternalInputResponse
+	if err := env.DecodeCBORStrict(f.lastWritten(t)); err != nil {
+		t.Fatalf("envelope is not the reply type's canonical CBOR: %v (payload %x)", err, f.lastWritten(t))
+	}
+	return env
+}
+
+// lastWritten returns the most recent payload the fake writer received,
+// verbatim.
+func (f *fakeMemoryWriter) lastWritten(t *testing.T) []byte {
 	t.Helper()
 	if len(f.written) == 0 {
 		t.Fatalf("no envelope was written to plugin memory")
 	}
-	var env abi.FetchExternalInputResponse
-	if err := json.Unmarshal(f.written[len(f.written)-1], &env); err != nil {
-		t.Fatalf("envelope is not valid JSON: %v (payload %q)", err, f.written[len(f.written)-1])
-	}
-	return env
+	return f.written[len(f.written)-1]
 }
 
 // fakeFetchService is a FetchService test double capturing the fetch
@@ -86,25 +95,68 @@ func TestHandleFetchExternalInputSuccess(t *testing.T) {
 	}
 
 	env := writer.lastEnvelope(t)
-	if env.Error != "" {
-		t.Fatalf("success path wrote an error envelope: %q", env.Error)
+	if env.Error != "" || env.HostfuncErrorCode != "" {
+		t.Fatalf("success path wrote a failure envelope: %+v", env)
 	}
-	if env.Content == nil {
-		t.Fatalf("success envelope carries no content key")
-	}
-	decoded, err := base64.StdEncoding.DecodeString(*env.Content)
-	if err != nil {
-		t.Fatalf("content is not standard base64: %v", err)
-	}
-	if string(decoded) != "external payload bytes" {
-		t.Errorf("decoded content %q, want the fetched bytes", decoded)
+	if string(env.Content) != "external payload bytes" {
+		t.Errorf("content %q, want the fetched bytes verbatim", env.Content)
 	}
 	if warnings := p.Warnings(); len(warnings) != 0 {
 		t.Errorf("success path must record no warning; got %v", warnings)
 	}
 }
 
-func TestHandleFetchExternalInputZeroLengthPayloadKeepsContentKey(t *testing.T) {
+// TestHandleFetchExternalInputContentCrossesAsRawBytes pins the content's
+// wire form, read from the canonical encoding's own rules rather than from
+// the decoder: a one-pair map whose value is a CBOR byte string (major type
+// 2) holding the fetched bytes exactly. A host that base64-encoded the bytes
+// first, or wrote them as a text string, produces different bytes here even
+// where its own decoder would round-trip them.
+//
+// The payloads are chosen so that neither shortcut can pass: one is not valid
+// UTF-8, which a text string cannot carry, and one is long enough that its
+// length needs a one-byte head of its own.
+func TestHandleFetchExternalInputContentCrossesAsRawBytes(t *testing.T) {
+	t.Parallel()
+	long := bytes.Repeat([]byte("abcdefgh"), 5) // 40 bytes: the length rides in a 0x58 head.
+	for _, tc := range []struct {
+		name    string
+		payload []byte
+		head    []byte
+	}{
+		{"not valid UTF-8", []byte{0xff, 0xfe, 0x00, 0xc3, 0x28}, []byte{0x45}},
+		{"a one-byte length head", long, []byte{0x58, byte(len(long))}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := &Plugin{name: "fetch-bytes-plugin", externalInputs: &fakeFetchService{payload: tc.payload}}
+			reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: "https://example.com/bytes"}}
+			writer := &fakeMemoryWriter{}
+
+			p.handleAggregaFetchExternalInput(context.Background(), reader, writer, []uint64{7})
+
+			// a1: map, 1 pair; 67 "content": the key as a 7-byte text string; then
+			// the byte-string head and the payload verbatim.
+			want := append([]byte{0xa1, 0x67}, "content"...)
+			want = append(want, tc.head...)
+			want = append(want, tc.payload...)
+			if got := writer.lastWritten(t); !bytes.Equal(got, want) {
+				t.Errorf("reply bytes = %x\nwant          %x", got, want)
+			}
+			if env := writer.lastEnvelope(t); !bytes.Equal(env.Content, tc.payload) {
+				t.Errorf("decoded content = %x; want the fetched bytes %x", env.Content, tc.payload)
+			}
+		})
+	}
+}
+
+// TestHandleFetchExternalInputZeroLengthPayloadIsTheEmptyReply pins how a
+// zero-length payload stays distinguishable from a failure. The content
+// field is omitted when empty, so the reply carries no field at all — the
+// empty map — while every failure carries its error message and code. A
+// guest therefore reads success from the absence of the failure fields, not
+// from the presence of the content key.
+func TestHandleFetchExternalInputZeroLengthPayloadIsTheEmptyReply(t *testing.T) {
 	t.Parallel()
 	svc := &fakeFetchService{payload: []byte{}}
 	p := &Plugin{name: "fetch-empty-plugin", externalInputs: svc}
@@ -113,12 +165,19 @@ func TestHandleFetchExternalInputZeroLengthPayloadKeepsContentKey(t *testing.T) 
 
 	p.handleAggregaFetchExternalInput(context.Background(), reader, writer, []uint64{7})
 
-	env := writer.lastEnvelope(t)
-	if env.Content == nil || *env.Content != "" {
-		t.Fatalf("zero-length payload must yield an empty content value, got %+v", env)
+	// a0: map, 0 pairs.
+	if got := writer.lastWritten(t); !bytes.Equal(got, []byte{0xa0}) {
+		t.Fatalf("zero-length payload reply = %x; want the empty map a0", got)
 	}
-	if env.Error != "" {
-		t.Errorf("zero-length payload is a success, not %q", env.Error)
+	env := writer.lastEnvelope(t)
+	if env.Error != "" || env.HostfuncErrorCode != "" {
+		t.Errorf("zero-length payload is a success, not a failure: %+v", env)
+	}
+	if len(env.Content) != 0 {
+		t.Errorf("zero-length payload decoded to content %x", env.Content)
+	}
+	if warnings := p.Warnings(); len(warnings) != 0 {
+		t.Errorf("a zero-length payload must record no warning; got %v", warnings)
 	}
 }
 
@@ -132,7 +191,7 @@ func TestHandleFetchExternalInputNilService(t *testing.T) {
 	p.handleAggregaFetchExternalInput(context.Background(), reader, writer, stack)
 
 	env := writer.lastEnvelope(t)
-	if env.Content != nil {
+	if len(env.Content) != 0 {
 		t.Fatalf("nil-service path must not carry content")
 	}
 	for _, want := range []string{"external inputs are not available in this context", "https://example.com/x"} {

@@ -298,8 +298,16 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// so a width mistake would appear identically in each and their agreement
 	// would stay green.
 	vec[abi.ParseSourceResponse](t, "ParseSourceResponseTree", false)
+	// The fetch reply in its three shapes: the failure envelope, the fetched
+	// bytes, and a zero-length payload. The content is a byte field, which the
+	// reference encoder writes as a byte string natively, so a generated codec
+	// that carried it as text, or as base64 text, disagrees with it. The
+	// zero-length shape is the empty map: the content field is omitted when
+	// empty, so a codec that emitted an empty byte string, or counted the omitted
+	// key in the map head, disagrees with the reference too.
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponse", false)
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseContent", false)
+	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseEmptyContent", false)
 
 	// The pack-source and read-source-file request and reply payloads. Each reply
 	// vector is the SUCCESS shape, which is what its failure envelope below cannot

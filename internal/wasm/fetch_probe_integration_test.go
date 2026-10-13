@@ -82,6 +82,56 @@ func TestFetchProbe_AcquireModeFetchesAndPins(t *testing.T) {
 	}
 }
 
+// TestFetchProbe_PinnedBytesArriveIdentical drives the guest through its kit
+// wrapper against a PINNED reference and asserts the bytes it receives are the
+// pinned bytes exactly. The reference is pinned through an acquiring service
+// and then served by a frozen one that holds only the pin and no transport, so
+// the bytes the guest returns can only have come from the store.
+//
+// The three payloads are the shapes that separate a byte carry from a text
+// one. A zero-length payload is a success whose reply carries no field at all,
+// so a guest that took an absent content key for a failure returns the failure
+// text instead of nothing; and a payload that is not valid UTF-8 survives only
+// a reply that carries it as raw bytes, never one that carries it as text.
+func TestFetchProbe_PinnedBytesArriveIdentical(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		served []byte
+	}{
+		{"text", []byte("pinned-external-input-bytes\n")},
+		{"zero length", []byte{}},
+		{"not valid UTF-8", []byte{0xff, 0xfe, 0x00, 0xc3, 0x28, 0x80}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write(tc.served)
+			}))
+			defer srv.Close()
+			inputURL := srv.URL + "/input.bin"
+			store := t.TempDir()
+			ctx := context.Background()
+
+			acquiring := externalinputs.NewService(store, true, srv.Client(), nil)
+			if _, err := acquiring.Fetch(ctx, inputURL, "pin-step"); err != nil {
+				t.Fatalf("pin the reference: %v", err)
+			}
+			frozen := externalinputs.NewService(store, false, nil, acquiring.Records())
+			plugin := loadFetchProbe(t, ctx, frozen)
+
+			out, err := plugin.Call(ctx, "probe", []byte(inputURL))
+			if err != nil {
+				t.Fatalf("probe call: %v", err)
+			}
+			if !bytes.Equal(out, tc.served) {
+				t.Fatalf("guest output = %x, want the pinned bytes %x", out, tc.served)
+			}
+			if warnings := plugin.Warnings(); len(warnings) != 0 {
+				t.Errorf("a pinned fetch must record no warning; got %v", warnings)
+			}
+		})
+	}
+}
+
 // TestFetchProbe_FrozenModeUnpinnedURLFailsInBand proves the frozen-
 // closure miss surfaces as a deterministic in-band failure: the guest
 // output carries the message naming the URL and the remedy, and the
