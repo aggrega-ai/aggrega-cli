@@ -36,6 +36,16 @@
 // name [Encode] writes meets it, and so does a name formed by appending a fixed
 // extension — a full stop followed by lowercase letters — to one.
 //
+// # A name somebody else chose
+//
+// A name this program did not spell — an archive entry, a draft an importer
+// returned, a rendered file's name — keeps the spelling it was given, so Windows
+// may be unable to hold it as written. [WindowsCannotHold] answers that for a
+// whole slash-separated path, segment by segment, by the same rule [Valid] applies
+// to one name: there is one list of the names Windows reserves for a device, and
+// one rule about a name ending in a full stop or a space. What to do with the
+// answer is the caller's: it refuses nothing on its own.
+//
 // Every derivation here is deterministic: identical input yields byte-identical
 // output.
 package pathsegment
@@ -108,10 +118,53 @@ func Valid(name string) bool {
 			return false
 		}
 	}
-	if last := name[len(name)-1]; last == '.' || last == ' ' {
+	return !cannotHoldSegment(name)
+}
+
+// WindowsCannotHold reports the first segment of name that Windows cannot hold as
+// written, and whether name holds one.
+//
+// name is a slash-separated logical name — an archive entry, a rendered output
+// name, the path of a drafted file — and a backslash in it is read as a separator
+// as well, as a Windows join reads one, so ".. \evil.yaml" is judged by its
+// segment ".. ". A segment Windows cannot hold as written is a name it reserves for
+// a device, in any letter case and whether or not an extension follows — "NUL",
+// "aux", "COM1.txt" — and a segment other than "." and ".." ending in a full stop
+// or a space, such as "report." or ".. ". The empty segments a leading, trailing
+// or doubled separator leaves name nothing and are passed over.
+//
+// It reads the one list of device names and the one rule about a final full stop
+// or space that [Valid] reads, so for a single segment that is neither "." nor "..",
+// is valid UTF-8 and carries no character [Valid] refuses for itself, the two give
+// one answer. Its own answer is the same on every platform — it says what Windows
+// would do with the name, wherever it is asked — and it refuses nothing: whoever
+// writes the name decides what the answer means where it writes.
+func WindowsCannotHold(name string) (string, bool) {
+	for _, segment := range strings.FieldsFunc(name, isSeparator) {
+		if cannotHoldSegment(segment) {
+			return segment, true
+		}
+	}
+	return "", false
+}
+
+// isSeparator reports whether r separates the segments of a name as a Windows
+// join reads it: a slash, or a backslash.
+func isSeparator(r rune) bool { return r == '/' || r == '\\' }
+
+// cannotHoldSegment reports whether Windows cannot hold segment, one segment of a
+// path, as written: a segment other than "." and ".." that ends in a full stop or
+// a space, or a name Windows reserves for a device. It is the one statement of
+// both rules, so [Valid] and [WindowsCannotHold] cannot come to disagree about a
+// segment.
+func cannotHoldSegment(segment string) bool {
+	if segment == "" || segment == "." || segment == ".." {
 		return false
 	}
-	return !reservedName(name)
+	if last := segment[len(segment)-1]; last == '.' || last == ' ' {
+		return true
+	}
+	return reservedName(segment)
 }
 
 // reservedName reports whether Windows reserves name for a device: CON, PRN,

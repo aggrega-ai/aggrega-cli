@@ -75,11 +75,15 @@ const importPreambleLead = "read as the demo format, with drafted paths relative
 //     the one run at the root itself, which then lands right by coincidence and
 //     still names "." on its first line, so it reddens too.
 //   - have the command hand OutputDir "." again (cmd/aggrega/import.go, the
-//     importops.Options literal): the same rows redden.
+//     importops.Options literal): the rows naming no destination from a
+//     sub-folder and from another folder redden, their drafts landing in the
+//     folder the command runs in; the row run at the root itself lands right,
+//     since "." resolves to the root there and the first line names it in full.
 //   - resolve a relative --output-dir against the workspace root instead
-//     (cmd/aggrega/import.go, join rw.Root() with opts.outputDir rather than
-//     filepath.Abs): the sub-folder relative row reddens, its drafts landing in
-//     ws/drafts rather than ws/sub/drafts.
+//     (internal/importops/import.go, have outputDirFor join rw.Root() with the
+//     named directory rather than asking pathscope.DirectoryPath): the sub-folder
+//     relative row reddens, its drafts landing in ws/drafts rather than
+//     ws/sub/drafts.
 //
 // Not parallel: it points the shared import seam, a package-level variable, and
 // moves the process working directory.

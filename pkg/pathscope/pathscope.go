@@ -30,6 +30,12 @@
 // hands on every path spelled beneath the root as named. It answers no question of
 // scope; a walker judges each link it meets with ResolvesInside.
 //
+// And beside them sits the write of a name somebody else chose, [PlaceBeneath]:
+// the one way such a name becomes a path on disk. It composes the first question
+// for the name with the two things a write owes beyond it — the directory it is
+// written beneath made a directory path ([DirectoryPath]), and, where the process
+// runs on Windows, the refusal of a name Windows cannot hold as written.
+//
 // # The entry points, and why they are separate
 //
 // [Resolve] and [IsLocalSlash] answer containment, in the two path algebras the
@@ -57,7 +63,10 @@
 // climbs out through backslashes is refused everywhere. Deciding the two
 // algebras with one function and a mode argument would put the host-dependent
 // answer one wrong argument away, so the two are separate names over one
-// unexported core and there is no mode to pass.
+// unexported core and there is no mode to pass. The one answer a write of such a
+// name gives that does depend on the machine is not a climb at all: a name
+// Windows cannot hold as written, which [PlaceBeneath] refuses where the process
+// runs on Windows and nowhere else.
 //
 // [ReportedName] answers containment's third caller: one that is about to put a
 // path in an answer somebody outside this process reads. It decides nothing new —
@@ -94,15 +103,21 @@
 //
 // # What this package deliberately does not do
 //
-// It carries no diagnostic. A refusal is reported as a bare false, beside the
-// facts a caller needs to word its own refusal, because the callers differ in
-// what a refusal means to their own reader and in the vocabulary they say it in:
-// one answers a plugin across a reply envelope, another rejects a request,
-// another skips a file silently, another halts an operation before it writes.
-// Each attaches its own condition and its own message at its own call site.
+// It carries one diagnostic and words no other refusal. A refusal of a path's
+// scope is reported as a bare false, beside the facts a caller needs to word its
+// own refusal, because the callers differ in what a refusal means to their own
+// reader and in the vocabulary they say it in: one answers a plugin across a
+// reply envelope, another rejects a request, another skips a file silently,
+// another halts an operation before it writes. Each attaches its own condition
+// and its own message at its own call site. The one diagnostic is
+// [ErrNameWindowsCannotHold], which [PlaceBeneath] raises: a name Windows cannot
+// hold is not a name leaving its directory, so no caller's own wording of a climb
+// fits it, and it means the same thing at every writer.
 //
-// Every entry point but [ResolvesInside], [SamePlace] and [WalkDir] is purely
-// lexical, exactly as [path.Clean] is. Those resolve no symbolic link, so a caller
+// Every entry point but [ResolvesInside], [SamePlace], [WalkDir], [PlaceBeneath]
+// and [DirectoryPath] is purely lexical, exactly as [path.Clean] is. The last two
+// read the working directory, to make a relative directory absolute, and resolve
+// no link either. None of the lexical ones resolves a symbolic link, so a caller
 // whose root can contain a link out of the tree asks [ResolvesInside] as well.
 package pathscope
 
@@ -320,11 +335,14 @@ func ResolveSelected(root, selected string) (string, bool) {
 // archive entry or a rendered output name — stays at or under the directory it
 // is relative to.
 //
-// The verdict is the same on every platform, so an archive unpacked on Windows
-// and on Linux is judged identically. An empty name, an absolute name, and a
-// name that climbs above its directory are all refused; a name that merely
-// begins with two dots is accepted, and an interior "a/../b" resolves to "b" and
-// is accepted.
+// The verdict is the same on every platform, so whether an archive entry climbs
+// out of its tree is judged identically on Windows and on Linux. An empty name,
+// an absolute name, and a name that climbs above its directory are all refused;
+// a name that merely begins with two dots is accepted, and an interior "a/../b"
+// resolves to "b" and is accepted. It judges the climb and nothing else: a name
+// Windows cannot hold as written is accepted here on every platform, and a writer
+// placing a name asks [PlaceBeneath], which judges the climb by this and also
+// refuses such a name where the process runs on Windows.
 //
 // A climb is judged with a backslash read as a separator as well as a slash, on
 // every platform, because a name is joined onto a root in the spelling of the
@@ -343,7 +361,9 @@ func ResolveSelected(root, selected string) (string, bool) {
 // has asked this question does not also need to check the join. A root here is
 // a directory path: an empty string is not one, and nor is a bare Windows drive
 // name such as "C:", since a Windows join onto either starts a name opening
-// with a separator from the top of the drive.
+// with a separator from the top of the drive. [DirectoryPath] makes one of a
+// directory somebody named, those two included, and [PlaceBeneath] asks it of
+// every root before joining a name onto it.
 func IsLocalSlash(name string) bool {
 	return staysInside(name) && !climbsAcrossBackslash(name) && !climbsAcrossBackslash(path.Clean(name))
 }

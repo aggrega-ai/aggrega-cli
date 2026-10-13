@@ -731,7 +731,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := artifactout.CheckBuildOutput(outRoot, outDir, result.Artifacts); err != nil {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
-		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
+		if err := artifactout.WriteDryRunReport(out, outDir, result.Artifacts); err != nil {
+			return Result{}, fmt.Errorf("write output: %w", err)
+		}
 		summary = fmt.Sprintf("Dry run: %d files would be written to %s; nothing was written", len(result.Artifacts), outDir)
 	} else {
 		// Write output. The boundaries subtree from a prior build of a different

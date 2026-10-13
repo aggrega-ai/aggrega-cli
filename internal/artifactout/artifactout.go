@@ -8,15 +8,18 @@
 // surfaces consume that map: one writes it to an output root, the other reports
 // what a write would have produced without performing it. Both need the same
 // two answers — which host path a name occupies, and in what order the set is
-// walked — so both resolve them here, and a reported path is the path that
-// would be written.
+// walked — so both resolve them here. A write and a report alike place every name
+// through pathscope.PlaceBeneath, the one way a name somebody else chose reaches
+// disk, beneath the output directory made a directory path first, so the path a
+// report names for a file is the path a write handed the same directory puts it
+// at.
 //
 // # The primitives are unexported on purpose
 //
 // The exported functions are the only entry points. The path arithmetic and the
 // iteration order behind them are unexported, so a caller cannot reach the raw
-// join and skip the containment check every write owes — the bypass does not
-// compile rather than being caught in review.
+// join and skip the judgement every write owes — the bypass does not compile
+// rather than being caught in review.
 //
 // [WriteBuildOutput] is what a surface performing a build calls, and
 // [CheckBuildOutput] is its judgement alone, for a surface that reports a build
@@ -39,7 +42,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 
@@ -112,24 +114,32 @@ func WriteBuildOutput(root, outRoot string, files map[string][]byte) error {
 	if err := CheckBuildOutput(root, outRoot, files); err != nil {
 		return err
 	}
-	boundaries := filepath.Join(filepath.Clean(outRoot), boundariesDir)
+	outRoot, err := pathscope.DirectoryPath(outRoot)
+	if err != nil {
+		return err
+	}
+	boundaries := filepath.Join(outRoot, boundariesDir)
 	if err := os.RemoveAll(boundaries); err != nil {
 		return fmt.Errorf("clean %q: %w", boundaries, err)
 	}
-	return writeChecked(filepath.Clean(outRoot), files)
+	return writeChecked(outRoot, files)
 }
 
 // CheckBuildOutput is the judgement [WriteBuildOutput] makes before it removes or
 // writes anything, and nothing else: the boundaries subtree it would clear and
-// every file it would write, held to the workspace at root, and every name held
-// to the output root. A surface that reports a build instead of writing it asks
-// it, so a report says a build would halt where the build would.
+// every file it would write, held to the workspace at root, and every name placed
+// beneath the output root. A surface that reports a build instead of writing it
+// asks it, so a report says a build would halt where the build would.
 func CheckBuildOutput(root, outRoot string, files map[string][]byte) error {
-	boundaries := filepath.Join(filepath.Clean(outRoot), boundariesDir)
+	outRoot, err := pathscope.DirectoryPath(outRoot)
+	if err != nil {
+		return err
+	}
+	boundaries := filepath.Join(outRoot, boundariesDir)
 	if err := writescope.CheckDelete(root, boundaries); err != nil {
 		return err
 	}
-	return checkAll(root, filepath.Clean(outRoot), files)
+	return checkAll(root, outRoot, files)
 }
 
 // WriteAll writes the rendered file map to disk under outRoot,
@@ -141,17 +151,29 @@ func CheckBuildOutput(root, outRoot string, files map[string][]byte) error {
 //   - Names that escape outRoot are rejected. The check defends
 //     against a malicious or buggy renderer engine emitting a name
 //     that lands outside the output root.
+//   - Where the process runs on Windows, a name holding a segment
+//     Windows cannot hold as written — a name it reserves for a device,
+//     or one ending in a full stop or a space — is refused with the halt
+//     pathscope.ErrNameWindowsCannotHold names. On every other platform
+//     such a name is written as it is.
 //   - A file whose place leads out of the workspace at root through a
 //     link is refused, before any file is written; see the package
 //     documentation.
 //
+// outRoot is made a directory path ([pathscope.DirectoryPath]) before
+// any name is placed beneath it, so an output root named relative to
+// the working directory, or as a bare Windows drive, still holds every
+// file written beneath it.
+//
 // An artifact name is a slash-separated logical name rather than a
-// path in the host's own spelling, so containment is judged in slash
-// arithmetic — identically on every platform — and the name is
+// path in the host's own spelling, so it is placed by
+// [pathscope.PlaceBeneath] — whether it escapes is judged in slash
+// arithmetic, identically on every platform — and the name is
 // converted to a host path only to write it. Judging it as a host
 // path instead would make a backslash a separator on one platform and
-// an ordinary character on another, so the same rendered output would
-// be accepted on one machine and refused on the next.
+// an ordinary character on another, so whether the same rendered output
+// escapes would be answered one way on one machine and another way on
+// the next.
 //
 // Entries are written in sorted name order. Go randomises map
 // iteration, so writing in range order would emit the same build's
@@ -166,7 +188,10 @@ func CheckBuildOutput(root, outRoot string, files map[string][]byte) error {
 // Sorting also makes that partial prefix reproducible: the same
 // failing input stops after the same set of files.
 func WriteAll(root, outRoot string, files map[string][]byte) error {
-	outRoot = filepath.Clean(outRoot)
+	outRoot, err := pathscope.DirectoryPath(outRoot)
+	if err != nil {
+		return err
+	}
 	if err := checkAll(root, outRoot, files); err != nil {
 		return err
 	}
@@ -176,11 +201,15 @@ func WriteAll(root, outRoot string, files map[string][]byte) error {
 // ReplaceAll makes dir hold exactly files: whatever dir held is removed, then the
 // set is written by the rules [WriteAll] states.
 //
-// dir and every file are held to the workspace at root before dir is removed, so a
+// dir is made a directory path first, as [WriteAll]'s output root is, and dir and
+// every file are held to the workspace at root before dir is removed, so a
 // directory leading out of the workspace through a link halts the write with
 // nothing removed and nothing written.
 func ReplaceAll(root, dir string, files map[string][]byte) error {
-	dir = filepath.Clean(dir)
+	dir, err := pathscope.DirectoryPath(dir)
+	if err != nil {
+		return err
+	}
 	if err := writescope.CheckDelete(root, dir); err != nil {
 		return err
 	}
@@ -193,29 +222,50 @@ func ReplaceAll(root, dir string, files map[string][]byte) error {
 	return writeChecked(dir, files)
 }
 
-// checkAll judges every entry of files before any is written: its name must be a
-// local logical name, and the host path it occupies under outRoot must stay in
-// the workspace at root once the links on the way to it are resolved.
+// checkAll judges every entry of files before any is written: its name must be
+// one [place] places beneath outRoot, and the host path it occupies there must
+// stay in the workspace at root once the links on the way to it are resolved.
 func checkAll(root, outRoot string, files map[string][]byte) error {
 	for _, name := range sortedNames(files) {
-		if name == "" {
-			return fmt.Errorf("empty artifact path")
+		full, err := place(outRoot, name)
+		if err != nil {
+			return err
 		}
-		if !pathscope.IsLocalSlash(name) {
-			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
-		}
-		if err := writescope.CheckWrite(root, hostPath(outRoot, name)); err != nil {
+		if err := writescope.CheckWrite(root, full); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// place returns the host path the artifact name occupies beneath outRoot, by the
+// one way a name somebody else chose is placed on disk
+// ([pathscope.PlaceBeneath]). An empty name and one escaping the output root are
+// refused in this package's words, and on Windows a name Windows cannot hold as
+// written is refused with the halt pathscope.ErrNameWindowsCannotHold names.
+func place(outRoot, name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("empty artifact path")
+	}
+	full, inside, err := pathscope.PlaceBeneath(outRoot, name)
+	if err != nil {
+		return "", err
+	}
+	if !inside {
+		return "", fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
+	}
+	return full, nil
+}
+
 // writeChecked writes files under outRoot in sorted name order. Every entry has
-// already passed checkAll.
+// already passed checkAll, and each is placed by [place] again, so the path written
+// is the path checkAll judged.
 func writeChecked(outRoot string, files map[string][]byte) error {
 	for _, name := range sortedNames(files) {
-		full := hostPath(outRoot, name)
+		full, err := place(outRoot, name)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return fmt.Errorf("mkdir %q: %w", filepath.Dir(full), err)
 		}
@@ -230,24 +280,40 @@ func writeChecked(outRoot string, files map[string][]byte) error {
 // one header per artifact naming the path that file would have occupied,
 // followed by its bytes.
 //
-// The path reported is computed by the same function that computes the path a
-// real build writes to, so what a dry run says a file would be called and what a
-// build calls it cannot come apart. The order is the same one a build writes in,
-// which makes the report byte-identical across runs of the same input rather
-// than reshuffled by map iteration.
+// outDir is made a directory path ([pathscope.DirectoryPath]) and each name is
+// placed beneath it by [place], exactly as a write does both, so the path a dry
+// run says a file would be called is the path a build handed the same directory
+// writes it to — a directory named relative to the working directory included.
+// The order is the same one a build writes in, which makes the report
+// byte-identical across runs of the same input rather than reshuffled by map
+// iteration.
+//
+// An error is the one a write would meet in making outDir a directory path or in
+// placing a name: an empty name, a name escaping the output directory, and on
+// Windows a name Windows cannot hold as written. Every name is placed before
+// anything is printed, so a set holding one refused name prints nothing.
 //
 // What it does NOT own is the report's shape. That shape is a contract a reader
 // learns, and a command whose product is not a rendered artifact set prints the
 // same one — so the rendering lives in [dryrunreport], and this function's whole
 // job is to answer the two questions that are this package's: which host path
 // each name occupies, and in what order the set is walked.
-func WriteDryRunReport(out io.Writer, outDir string, files map[string][]byte) {
+func WriteDryRunReport(out io.Writer, outDir string, files map[string][]byte) error {
+	outDir, err := pathscope.DirectoryPath(outDir)
+	if err != nil {
+		return err
+	}
 	names := sortedNames(files)
 	report := make([]dryrunreport.File, 0, len(names))
 	for _, name := range names {
-		report = append(report, dryrunreport.File{Path: hostPath(outDir, name), Content: files[name]})
+		full, err := place(outDir, name)
+		if err != nil {
+			return err
+		}
+		report = append(report, dryrunreport.File{Path: full, Content: files[name]})
 	}
 	dryrunreport.Write(out, report)
+	return nil
 }
 
 // sortedNames returns a rendered file map's names in sorted order — the
@@ -261,16 +327,4 @@ func sortedNames(files map[string][]byte) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// hostPath returns the host path an artifact name occupies under outRoot.
-// An artifact name is a slash-separated logical name rather than a path in the
-// host's own spelling, so it is converted rather than concatenated. Both the
-// surface that writes a file and the surface that reports where one would go
-// resolve it here, so a reported path is the path that would be written.
-//
-// It does not judge containment: the write path checks the name first (see
-// [WriteAll]), and the report path has nothing to contain.
-func hostPath(outRoot, name string) string {
-	return filepath.Join(outRoot, filepath.FromSlash(path.Clean(name)))
 }

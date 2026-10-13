@@ -77,8 +77,6 @@ var decidersOfInside = map[string]string{
 	"pkg/oci:readCachedSignatureBundle":                      "the cached signature bundle a recorded signature fact is checked against",
 	"pkg/sourcecache:LookupAndExtract":                       "a pinned source artifact's cached archive, metadata and manifest",
 	"pkg/externalinputs:Service.servePinned":                 "a pinned external input's stored blob",
-	"pkg/docscache:Cached":                                   "the presence of a cached documentation bundle",
-	"pkg/docscache:ReadPage":                                 "a cached documentation bundle and its manifest",
 	"internal/registryindex:LoadHost":                        "a registry host's local searchable index",
 	"internal/cacheops:holdRead":                             "every class root and file a cache status, prune or clear enumerates",
 	"pkg/lockfile:CheckRead":                                 "the lockfile beside a Release, held to the root its write is held to",

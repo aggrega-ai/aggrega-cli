@@ -442,10 +442,10 @@ func TestAnImportNamingNoOutputDirectoryUsesTheWorkspaceRoot(t *testing.T) {
 // written anywhere — neither inside the output directory nor where the climb
 // leads.
 //
-// 🔴 PLANTED DEFECT: move the pathscope.IsLocalSlash loop out of checkFiles and
-// back to the head of writeFiles (internal/importops/import.go), and every dry-run
-// cell reddens — the import answers with the escaping draft instead of refusing
-// it — while every write cell stays green.
+// 🔴 PLANTED DEFECT: have checkFiles (internal/importops/import.go) return nil at
+// its head, leaving the judgement to the draftPlace call writeFiles makes for each
+// file it writes, and every dry-run cell reddens — the import answers with the
+// escaping draft instead of refusing it — while every write cell stays green.
 func TestImportRefusesAnImporterPathEscapingTheOutputRoot(t *testing.T) {
 	// Not parallel: it points the shared import seam.
 	pointSeamAtDemoGuestAttachedBy(t, 0)

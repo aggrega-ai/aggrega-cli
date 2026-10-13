@@ -68,9 +68,10 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // default is decided here and nowhere else, so a surface that names no
 // destination hands none rather than stating the default of its own. A non-empty
 // OutputDir is the caller's — a directory a person typed, or one a request named
-// — and is used as given, a relative one against the process's working
-// directory. A reporting delivery writes nothing, and the reported paths are
-// still relative to it.
+// — and is made a directory path before any draft is placed beneath it: a
+// relative one against the process's working directory, and on Windows a drive
+// named bare as the current directory on that drive. A reporting delivery writes
+// nothing, and the reported paths are still relative to it.
 //
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
@@ -89,7 +90,7 @@ type Options struct {
 // Result is what one import produced.
 //
 // OutputDir is the directory the drafted paths are relative to: Options.OutputDir
-// as the caller handed it, or the workspace root where it named none. It is read
+// made a directory path, or the workspace root where it named none. It is read
 // from here rather than from what the caller passed, so a surface reporting where
 // the drafts went reports the directory the import actually used.
 //
@@ -154,15 +155,17 @@ func (r Result) Halted() bool {
 // reports that together with the importer, so the attachment that selected it and
 // the attachment it is configured by are one answer rather than two.
 //
-// 🔴 The write is CONTAINED, and the containment is the reused predicate rather
+// 🔴 The write is CONTAINED, and the containment is the reused judgement rather
 // than a check written here. A scaffold path comes from the importer plugin, so
-// every path is judged against [pathscope.IsLocalSlash] — the single home of
-// "does this path stay inside the directory it is relative to", and the same
-// predicate the rendered-artifact write is judged by. A path is a
-// slash-separated logical name rather than a host path, which is the algebra
-// that entry point owns: judging it as a host path would make a backslash a
-// separator on one platform and an ordinary character on another, so the same
-// importer output would be accepted on one machine and refused on the next.
+// every path is placed by [pathscope.PlaceBeneath] — the one way a name somebody
+// else chose becomes a path on disk, and the same judgement the rendered-artifact
+// write is placed by. A path is a slash-separated logical name rather than a host
+// path, which is the algebra that judgement owns: judging it as a host path would
+// make a backslash a separator on one platform and an ordinary character on
+// another, so whether the same importer output climbs out of the output directory
+// would be answered one way on one machine and another way on the next. That
+// answer is the same everywhere; what differs by machine is only that, where the
+// process runs on Windows, a draft Windows cannot hold as written is refused too.
 //
 // 🔴 Every path is judged BEFORE any file is written and before a reporting
 // delivery answers, in one place (checkFiles), so a dry run refuses exactly the
@@ -181,7 +184,8 @@ func (r Result) Halted() bool {
 // error is reserved for a run that could not be performed: no workspace, no
 // plugin resolver, a catalog that would not load, a source no importer
 // recognises or more than one format's importers recognise, a guest that failed,
-// an escaping path, or a write that failed.
+// an escaping path, a draft Windows cannot hold where the import runs on Windows,
+// or a write that failed.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
 	if _, err := workspaceOrRefuse(rw); err != nil {
 		return Result{}, err
@@ -219,7 +223,10 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
-	outputDir := outputDirFor(rw, opts.OutputDir)
+	outputDir, err := outputDirFor(rw, opts.OutputDir)
+	if err != nil {
+		return Result{}, err
+	}
 	res := Result{
 		Format:      format,
 		OutputDir:   outputDir,
@@ -261,16 +268,42 @@ func (r resolvedImporter) ImporterPluginForFormat(string) (types.Plugin, error) 
 }
 
 // outputDirFor returns the directory an import's drafts are written under and
-// relative to: the one the caller named, or, where it named none, the root of the
-// workspace rw. It is the one statement of that default, so the command line, the
-// assistant's import tool and any other caller naming no destination all land
-// their drafts at the same root rather than wherever their process happens to be
-// sitting.
-func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) string {
+// relative to: the one the caller named, made a directory path against the
+// process's working directory ([pathscope.DirectoryPath]), or, where it named none,
+// the root of the workspace rw. It is the one statement of that default, so the
+// command line, the assistant's import tool and any other caller naming no
+// destination all land their drafts at the same root rather than wherever their
+// process happens to be sitting.
+//
+// A named directory is made a directory path here, before any draft is placed
+// beneath it, so the directory the result reports and the directory the drafts are
+// written beneath are one: on Windows a drive named bare, such as "D:", is the
+// current directory on that drive, and a draft named `\notes.txt` lands beneath it
+// rather than at the top of the drive. A relative name resolves against the working
+// directory as it always has, so on every other platform the drafts land where they
+// did.
+func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) (string, error) {
 	if named != "" {
-		return named
+		return pathscope.DirectoryPath(named)
 	}
-	return rw.Root()
+	return rw.Root(), nil
+}
+
+// draftPlace returns the host path the drafted file at path is written at beneath
+// outputDir, by the one way a name somebody else chose is placed on disk
+// ([pathscope.PlaceBeneath]): a path that does not stay inside outputDir is refused
+// as an [EscapingPathError], and, where the process runs on Windows, one holding a
+// segment Windows cannot hold as written is refused with the halt
+// pathscope.ErrNameWindowsCannotHold names.
+func draftPlace(outputDir, path string) (string, error) {
+	place, inside, err := pathscope.PlaceBeneath(outputDir, path)
+	if err != nil {
+		return "", err
+	}
+	if !inside {
+		return "", &EscapingPathError{Path: path, OutputDir: outputDir}
+	}
+	return place, nil
 }
 
 // checkFiles judges every drafted file before any is written and before a
@@ -278,11 +311,12 @@ func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) string {
 // taken, for both deliveries, so a dry run and a write refuse the same drafts.
 //
 // Two judgements, the first over the whole set before the second begins. Each
-// path must stay inside outputDir as a slash-separated logical name
-// ([pathscope.IsLocalSlash]): one climbing out of it, through slashes or
-// backslashes, an absolute one and an empty one are refused as an
-// [EscapingPathError] naming the path and outputDir, whatever is on disk. Only
-// then is each place a file would be written at held, with its links resolved:
+// path must be one [draftPlace] places beneath outputDir: one climbing out of it as
+// a slash-separated logical name, through slashes or backslashes, an absolute one
+// and an empty one are refused as an [EscapingPathError] naming the path and
+// outputDir, whatever is on disk, and on Windows one Windows cannot hold as written
+// is refused naming the path and its segment. Only then is each place a file would
+// be written at held, with its links resolved:
 // it must not lead, through a link, out of the root the output directory picks
 // against the workspace at workspaceRoot — the workspace root where the output
 // directory lies inside the workspace, and the output directory itself, a
@@ -295,14 +329,17 @@ func outputDirFor(rw *workspaceconfig.ResolvedWorkspace, named string) string {
 // the output directory, and a draft carrying both faults is refused as the path
 // that does not stay inside it.
 func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error {
+	places := make([]string, 0, len(files))
 	for _, f := range files {
-		if !pathscope.IsLocalSlash(f.Path) {
-			return &EscapingPathError{Path: f.Path, OutputDir: outputDir}
+		place, err := draftPlace(outputDir, f.Path)
+		if err != nil {
+			return err
 		}
+		places = append(places, place)
 	}
 	root := writescope.RootFor(workspaceRoot, outputDir)
-	for _, f := range files {
-		if err := writescope.CheckWrite(root, filepath.Join(outputDir, filepath.FromSlash(f.Path))); err != nil {
+	for _, place := range places {
+		if err := writescope.CheckWrite(root, place); err != nil {
 			return err
 		}
 	}
@@ -315,12 +352,15 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 //
 // Every path has already passed checkFiles, over the whole set, before this is
 // called — see [Import] for why the order matters and which predicate decides.
-// Once a path has passed, joining it onto the root cannot leave the root, so the
-// join below needs no second check.
+// Each is placed by [draftPlace] again, the one way a draft reaches a host path,
+// so the place written is the place checkFiles judged.
 func writeFiles(root string, files []abi.ScaffoldFile) ([]string, error) {
 	written := make([]string, 0, len(files))
 	for _, f := range files {
-		dest := filepath.Join(root, filepath.FromSlash(f.Path))
+		dest, err := draftPlace(root, f.Path)
+		if err != nil {
+			return nil, err
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return nil, fmt.Errorf("create directory for import file %q: %w", f.Path, err)
 		}

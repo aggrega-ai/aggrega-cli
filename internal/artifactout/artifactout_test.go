@@ -259,25 +259,33 @@ func TestWriteBuildOutputRefusesAnEscapingName(t *testing.T) {
 // be useless for exactly the diff-based reading the guarantee exists for.
 func TestDryRunReportOrdersArtifactsDeterministically(t *testing.T) {
 	t.Parallel()
+	out := t.TempDir()
 	files := map[string][]byte{
 		"b/second.yaml": []byte("second\n"),
 		"a/first.yaml":  []byte("first\n"),
 		"c/third.yaml":  []byte("third"),
 	}
 	var first bytes.Buffer
-	WriteDryRunReport(&first, "dist", files)
+	if err := WriteDryRunReport(&first, out, files); err != nil {
+		t.Fatalf("WriteDryRunReport: %v", err)
+	}
 
 	for i := 0; i < 8; i++ {
 		var again bytes.Buffer
-		WriteDryRunReport(&again, "dist", files)
+		if err := WriteDryRunReport(&again, out, files); err != nil {
+			t.Fatalf("WriteDryRunReport, run %d: %v", i, err)
+		}
 		if again.String() != first.String() {
 			t.Fatalf("run %d differs from the first:\n%s\n---\n%s", i, first.String(), again.String())
 		}
 	}
 
-	want := "==> dist/a/first.yaml <==\nfirst\n\n" +
-		"==> dist/b/second.yaml <==\nsecond\n\n" +
-		"==> dist/c/third.yaml <==\nthird\n\n"
+	header := func(dir, name string) string {
+		return "==> " + filepath.Join(out, dir, name) + " <==\n"
+	}
+	want := header("a", "first.yaml") + "first\n\n" +
+		header("b", "second.yaml") + "second\n\n" +
+		header("c", "third.yaml") + "third\n\n"
 	if first.String() != want {
 		t.Errorf("report =\n%q\nwant\n%q", first.String(), want)
 	}

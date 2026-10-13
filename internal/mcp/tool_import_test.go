@@ -342,10 +342,10 @@ func TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts(t *testing.T) {
 // refusal names the path the importer returned, and that nothing reached disk —
 // in the workspace or in the directory holding it.
 //
-// 🔴 PLANTED DEFECT: move the pathscope.IsLocalSlash loop out of checkFiles and
-// back to the head of writeFiles (internal/importops/import.go), and both dry-run
-// rows redden, answered with the draft instead of refused, while both write rows
-// stay green.
+// 🔴 PLANTED DEFECT: have checkFiles (internal/importops/import.go) return nil at
+// its head, leaving the judgement to the draftPlace call writeFiles makes for each
+// file it writes, and both dry-run rows redden, answered with the draft instead of
+// refused, while both write rows stay green.
 func TestTheImportToolRefusesADraftClimbingOutOfTheWorkspaceUnderEitherDelivery(t *testing.T) {
 	// Not parallel: points the shared import seam.
 	pointImportSeamAtTheDemoGuest(t)

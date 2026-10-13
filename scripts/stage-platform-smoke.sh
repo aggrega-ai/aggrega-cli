@@ -153,6 +153,15 @@ TESTS=(
   "windows,darwin internal/mcp TestListenerServesPlaintextOnAUnixSocket"
   "windows,darwin internal/mcp TestAUnixSocketIsRemovedWhenTheListenerCloses"
   "windows,darwin internal/mcp TestListenerRefusesAnAddressInNeitherForm"
+  # A name Windows cannot hold as written — a device name, one as a directory, a
+  # segment of two dots and a space — is refused when an archive is laid out in
+  # the cache and when an import drafts it, naming it, with nothing written; and
+  # an output directory named as the bare working drive is the current directory
+  # there, so a draft opening with a separator lands beneath it. Each is declared
+  # in a Windows-only file.
+  "windows pkg/sourcecache TestOnWindowsTheLayoutRefusesANameWindowsCannotHold"
+  "windows internal/importops TestOnWindowsAnImportRefusesADraftWindowsCannotHold"
+  "windows internal/importops TestOnWindowsADraftBeneathABareDriveLandsBeneathTheCurrentDirectory"
 )
 
 fail() { printf 'stage-platform-smoke: %s\n' "$*" >&2; }

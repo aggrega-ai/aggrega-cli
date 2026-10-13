@@ -490,10 +490,19 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // what each leads to, which neither a spelling nor inside-ness settles where the
 // file system folds case — and WalkDir walks the tree beneath a root, a root that is
 // itself a link walked where it leads as ResolvesInside resolves such a root, which
-// no question of scope covers. A further export is either one of those eight
-// wearing a second name or a class nobody named — and if a genuinely new class is
-// being added, this count moves in the same change that names it, which is exactly
-// the deliberation the pin exists to force.
+// no question of scope covers. PlaceBeneath answers where a name a writer did not
+// choose is written, composing IsLocalSlash's verdict with what a write owes beyond
+// it — a root made a directory path, and the refusal of a name Windows cannot hold
+// where the process runs on Windows — so a writer reaches a path through one call
+// rather than through a composition of its own; DirectoryPath answers the part of
+// that a caller needs before it holds any name, making a directory somebody named a
+// path a name can be joined onto, so where it reports writing is where it writes;
+// and ErrNameWindowsCannotHold is the accessor of the one
+// condition PlaceBeneath raises, which matches a refusal and judges no path. A
+// further export is either one of those eleven wearing a second name or a class
+// nobody named — and if a genuinely new class is being added, this count moves in
+// the same change that names it, which is exactly the deliberation the pin exists
+// to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
@@ -528,8 +537,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 8 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly eight entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, SamePlace, WalkDir), so a ninth is either a mode in disguise or a class nobody named", exported)
+	if exported != 11 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly ten entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, SamePlace, WalkDir, PlaceBeneath, DirectoryPath) and the accessor of the one condition PlaceBeneath raises (ErrNameWindowsCannotHold), so a twelfth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

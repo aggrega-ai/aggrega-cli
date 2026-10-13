@@ -50,7 +50,9 @@ func ExtractedTree(slot, contentDigest string) string {
 // RegenerateExtracted lays out the files archive carries — a gzipped tar the caller
 // has already verified — in the slot's tree for that archive ([ExtractedTree]), and
 // returns the tree's path. An archive entry that would land outside the tree is
-// refused with a wrapped ErrFetchIntegrity before anything is written.
+// refused with a wrapped ErrFetchIntegrity before anything is written, and where the
+// process runs on Windows so is an entry holding a segment Windows cannot hold as
+// written, with pathscope.ErrNameWindowsCannotHold naming it.
 //
 // It is the one statement of how a cache slot's laid-out files are rebuilt, for a
 // source artifact's slot and a catalog entity's slot alike, and it rebuilds on every
@@ -90,7 +92,8 @@ func RegenerateExtracted(workspaceRoot, cacheDir, slot string, archive []byte) (
 // single document rather than an archive: the slot's tree for it holds that one file,
 // under name, rebuilt the same way on every call. name must be a plain relative file
 // name; one that would land outside the tree is refused with a wrapped
-// ErrFetchIntegrity.
+// ErrFetchIntegrity, and on Windows one Windows cannot hold as written is refused as
+// an archive entry is.
 func RegenerateExtractedDocument(workspaceRoot, cacheDir, slot, name string, document []byte) (string, error) {
 	return regenerate(workspaceRoot, cacheDir, slot, document, documentEntry(name, document))
 }
@@ -181,37 +184,61 @@ func (p treePlan) sortedDirs() []string {
 	return out
 }
 
-// entryPlace returns the slash-separated place an entry lands at in the tree, false
-// for an entry naming the tree itself, and a wrapped ErrFetchIntegrity for one that
-// would land outside it.
+// entryPlace returns the slash-separated place an entry lands at in tree, false for
+// an entry naming the tree itself, and a refusal for an entry that may not be laid
+// out: a wrapped ErrFetchIntegrity for one that would land outside the tree, and,
+// where the process runs on Windows, the halt pathscope.ErrNameWindowsCannotHold
+// names for one holding a segment Windows cannot hold as written.
 //
-// An entry name is slash-separated by the archive format's own definition, so
-// containment is judged in slash arithmetic — the same answer on every platform — and
-// the name is converted to a host path only where a file is touched. An entry name
-// that merely begins with two dots is an ordinary name. The joined host path is not
-// re-checked after the join: an entry the containment test accepts cannot join to a
-// place outside the tree, which is the property that test reports, and re-deriving
-// the same conclusion from the joined path would be a second implementation of the
-// containment rule, free to disagree with the first.
-func entryPlace(hdr *tar.Header) (string, bool, error) {
+// An entry name is slash-separated by the archive format's own definition, and it
+// is judged by pathscope.PlaceBeneath, the one way a name somebody else chose is
+// placed on disk. Whether it climbs out of the tree is the same answer on every
+// platform; an entry Windows cannot hold — `NUL`, `aux/x.yaml`, `report.` — is
+// refused on Windows and laid out as it is named everywhere else. An entry name
+// that merely begins with two dots is an ordinary name. Every host path the layout
+// touches is placed by the same function ([placeIn]), so no second join of an entry
+// onto the tree exists to disagree with the judgement.
+func entryPlace(tree string, hdr *tar.Header) (string, bool, error) {
 	rel := path.Clean(hdr.Name)
 	if rel == "." || rel == "/" {
 		return "", false, nil
 	}
-	if !pathscope.IsLocalSlash(hdr.Name) {
+	_, inside, err := pathscope.PlaceBeneath(tree, hdr.Name)
+	if err != nil {
+		return "", false, err
+	}
+	if !inside {
 		return "", false, fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity())
 	}
 	return rel, true, nil
 }
 
-// planTree reads what entries lays out, refusing an entry that would land outside
-// the tree and an archive naming one place as both a file and a directory.
-func planTree(entries entrySource) (treePlan, error) {
+// placeIn returns the host path the slash-separated place rel occupies in tree.
+//
+// Every place a plan holds is an entry's own place or a directory above one, so
+// every one of them was judged by [entryPlace] before the layout touched anything;
+// the refusals here are that judgement's, met again only if a plan was built from
+// another tree.
+func placeIn(tree, rel string) (string, error) {
+	host, inside, err := pathscope.PlaceBeneath(tree, rel)
+	if err != nil {
+		return "", err
+	}
+	if !inside {
+		return "", fmt.Errorf("path traversal attempt %q in archive: %w", rel, ErrFetchIntegrity())
+	}
+	return host, nil
+}
+
+// planTree reads what entries lays out in tree, refusing an entry that may not be
+// laid out there ([entryPlace]) and an archive naming one place as both a file and a
+// directory.
+func planTree(tree string, entries entrySource) (treePlan, error) {
 	plan := treePlan{dirs: map[string]bool{}, files: map[string]int{}}
 	ordinal := -1
 	err := entries(func(hdr *tar.Header, _ io.Reader) error {
 		ordinal++
-		rel, ok, err := entryPlace(hdr)
+		rel, ok, err := entryPlace(tree, hdr)
 		if err != nil || !ok {
 			return err
 		}
@@ -245,7 +272,11 @@ func planTree(entries entrySource) (treePlan, error) {
 // rather than in it, so no reader of the tree ever lists one and no concurrent
 // layout of the same tree ever removes another's.
 func layOut(slot, tree string, entries entrySource) error {
-	plan, err := planTree(entries)
+	plan, err := planTree(tree, entries)
+	if err != nil {
+		return err
+	}
+	dirs, err := hostPaths(tree, plan.sortedDirs())
 	if err != nil {
 		return err
 	}
@@ -253,7 +284,7 @@ func layOut(slot, tree string, entries entrySource) error {
 		return fmt.Errorf("mkdir %q: %w", slot, err)
 	}
 	staging := ExtractedDir(slot)
-	for _, dir := range append([]string{staging, tree}, hostPaths(tree, plan.sortedDirs())...) {
+	for _, dir := range append([]string{staging, tree}, dirs...) {
 		if err := ensureDir(dir); err != nil {
 			return err
 		}
@@ -261,8 +292,8 @@ func layOut(slot, tree string, entries entrySource) error {
 
 	// Compare every carried file first, and write only the ones that differ.
 	stale := map[int]bool{}
-	if err := eachDecidingFile(entries, plan, func(ordinal int, rel string, hdr *tar.Header, body io.Reader) error {
-		if !holdsBytes(filepath.Join(tree, filepath.FromSlash(rel)), hdr.Size, body) {
+	if err := eachDecidingFile(tree, entries, plan, func(ordinal int, place string, hdr *tar.Header, body io.Reader) error {
+		if !holdsBytes(place, hdr.Size, body) {
 			stale[ordinal] = true
 		}
 		return nil
@@ -270,11 +301,11 @@ func layOut(slot, tree string, entries entrySource) error {
 		return err
 	}
 	if len(stale) > 0 {
-		if err := eachDecidingFile(entries, plan, func(ordinal int, rel string, _ *tar.Header, body io.Reader) error {
+		if err := eachDecidingFile(tree, entries, plan, func(ordinal int, place string, _ *tar.Header, body io.Reader) error {
 			if !stale[ordinal] {
 				return nil
 			}
-			return replaceFile(staging, filepath.Join(tree, filepath.FromSlash(rel)), body)
+			return replaceFile(staging, place, body)
 		}); err != nil {
 			return err
 		}
@@ -282,32 +313,42 @@ func layOut(slot, tree string, entries entrySource) error {
 	return removeUncarried(tree, plan)
 }
 
-// hostPaths joins each slash-separated place under tree as a host path.
-func hostPaths(tree string, rels []string) []string {
+// hostPaths places each slash-separated place under tree as a host path
+// ([placeIn]).
+func hostPaths(tree string, rels []string) ([]string, error) {
 	out := make([]string, 0, len(rels))
 	for _, rel := range rels {
-		out = append(out, filepath.Join(tree, filepath.FromSlash(rel)))
+		host, err := placeIn(tree, rel)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, host)
 	}
-	return out
+	return out, nil
 }
 
 // eachDecidingFile calls fn for every regular-file entry that decides its place in
-// the plan, with the entry's ordinal and its body.
-func eachDecidingFile(entries entrySource, plan treePlan, fn func(ordinal int, rel string, hdr *tar.Header, body io.Reader) error) error {
+// the plan, with the entry's ordinal, the host path of its place in tree and its
+// body.
+func eachDecidingFile(tree string, entries entrySource, plan treePlan, fn func(ordinal int, place string, hdr *tar.Header, body io.Reader) error) error {
 	ordinal := -1
 	return entries(func(hdr *tar.Header, body io.Reader) error {
 		ordinal++
 		if hdr.Typeflag != tar.TypeReg {
 			return nil
 		}
-		rel, ok, err := entryPlace(hdr)
+		rel, ok, err := entryPlace(tree, hdr)
 		if err != nil || !ok {
 			return err
 		}
 		if plan.files[rel] != ordinal {
 			return nil
 		}
-		return fn(ordinal, rel, hdr, body)
+		place, err := placeIn(tree, rel)
+		if err != nil {
+			return err
+		}
+		return fn(ordinal, place, hdr, body)
 	})
 }
 
