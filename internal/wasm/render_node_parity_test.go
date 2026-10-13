@@ -33,11 +33,12 @@ var renderNodeParityAttachments = []struct {
 }
 
 // renderNodeParityInput builds the single fixed RenderNodeInput both
-// per-language render fixtures render. The node id and prefix are ASCII so
-// the guests' UTF-8 encoding of the emitted file content is unambiguous and
-// identical across languages. The node carries attachments so the fixtures can
-// report what each language's generated codec does with an author-ordered map
-// and whether it reads an attachment's sensitivity marking.
+// per-language render fixtures render, encoded as the render socket carries it:
+// canonical CBOR, written by the host's generated encoder. The node id and
+// prefix are ASCII so the guests' UTF-8 encoding of the emitted file content is
+// unambiguous and identical across languages. The node carries attachments so
+// the fixtures can report what each language's generated codec does with an
+// author-ordered map and whether it reads an attachment's sensitivity marking.
 func renderNodeParityInput(t *testing.T) []byte {
 	t.Helper()
 	features := types.OrderedMap[types.IRFeatureEntry]{}
@@ -62,9 +63,9 @@ func renderNodeParityInput(t *testing.T) []byte {
 		},
 		Context: renderctx.RenderContext{},
 	}
-	b, err := in.MarshalJSON()
+	b, err := in.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("marshal RenderNodeInput: %v", err)
+		t.Fatalf("encode RenderNodeInput: %v", err)
 	}
 	return b
 }
@@ -72,18 +73,20 @@ func renderNodeParityInput(t *testing.T) []byte {
 // TestRenderNodeInput_HostEmitsAttachmentsInAuthorOrder pins the promise the
 // socket contract makes about the payload itself: the host emits the node's
 // attachments in the order the author declared them, not sorted, so identical
-// input yields identical bytes. It reads the marshalled payload rather than the
-// Go value, because the byte order on the wire is the whole claim — and it is the
-// premise every guest-side order finding below is measured against.
+// input yields identical bytes. It reads the encoded payload rather than the Go
+// value, because the byte order on the wire is the whole claim — and it is the
+// premise every guest-side order finding below is measured against. Each alias
+// first appears as its entry's key, ahead of the entry's own bytes, so the first
+// occurrences are the entries' order.
 func TestRenderNodeInput_HostEmitsAttachmentsInAuthorOrder(t *testing.T) {
 	t.Parallel()
 	payload := string(renderNodeParityInput(t))
 
 	prev := -1
 	for _, a := range renderNodeParityAttachments {
-		at := strings.Index(payload, `"`+a.alias+`"`)
+		at := strings.Index(payload, a.alias)
 		if at < 0 {
-			t.Fatalf("alias %q absent from the marshalled payload", a.alias)
+			t.Fatalf("alias %q absent from the encoded payload", a.alias)
 		}
 		if at <= prev {
 			t.Errorf("alias %q appears at byte %d, not after the preceding alias at byte %d: the payload is not in author order", a.alias, at, prev)
@@ -91,9 +94,11 @@ func TestRenderNodeInput_HostEmitsAttachmentsInAuthorOrder(t *testing.T) {
 		prev = at
 	}
 
-	// The marking has to survive the marshal too, or a guest has nothing to read.
+	// The marking has to survive the encode too, or a guest has nothing to read.
+	// Each entry crosses as the bytes of its own JSON document, so the marking is
+	// read there.
 	if !strings.Contains(payload, `"sensitive":true`) {
-		t.Errorf("no attachment carries sensitive:true on the wire; payload = %s", payload)
+		t.Errorf("no attachment carries sensitive:true on the wire; payload = %x", payload)
 	}
 }
 
@@ -106,7 +111,7 @@ func TestRenderNodeInput_HostEmitsAttachmentsInAuthorOrder(t *testing.T) {
 func TestRenderNodeInput_GoGuestCodecDecodesAttachments(t *testing.T) {
 	t.Parallel()
 	var decoded abi.RenderNodeInput
-	if err := decoded.UnmarshalJSON(renderNodeParityInput(t)); err != nil {
+	if err := decoded.DecodeCBOR(renderNodeParityInput(t)); err != nil {
 		t.Fatalf("Go guest codec rejected the host payload: %v", err)
 	}
 	if got, want := decoded.Node.Features.Len(), len(renderNodeParityAttachments); got != want {
@@ -138,7 +143,8 @@ func TestRenderNodeInput_GoGuestCodecDecodesAttachments(t *testing.T) {
 
 // renderNodeFixtureOutput loads the named render fixture, exercises its
 // describe() self-report through the host descriptor validator, invokes
-// render_node with the shared input, and returns the decoded output.
+// render_node with the shared input, and returns the output decoded the way the
+// host decodes it: strictly, from the binary encoding.
 func renderNodeFixtureOutput(t *testing.T, fixtureName string, input []byte) renderer.RenderNodeOutput {
 	t.Helper()
 	plugin, cleanup := loadFixturePlugin(t, fixtureName)
@@ -161,8 +167,8 @@ func renderNodeFixtureOutput(t *testing.T, fixtureName string, input []byte) ren
 		t.Fatalf("plugin.Call render_node (%s): %v", fixtureName, err)
 	}
 	var out renderer.RenderNodeOutput
-	if err := out.UnmarshalJSON(outBytes); err != nil {
-		t.Fatalf("unmarshal RenderNodeOutput (%s): %v (bytes: %s)", fixtureName, err, outBytes)
+	if err := out.DecodeCBORStrict(outBytes); err != nil {
+		t.Fatalf("decode RenderNodeOutput (%s): %v (bytes: %x)", fixtureName, err, outBytes)
 	}
 	return out
 }
@@ -203,7 +209,7 @@ func echoEntry(alias string, sensitive bool) string {
 // Each fixture is loaded through the real loader, its descriptor is
 // validated, and its render_node output is decoded through the host's
 // generated RenderNodeOutput codec (so the comparison is over decoded
-// structure, not raw guest JSON bytes). The node-id echo must be structurally
+// structure, not raw guest bytes). The node-id echo must be structurally
 // equal across the two languages: cross-language render-socket parity.
 //
 // The attachment echo is asserted per language as well as compared across them.

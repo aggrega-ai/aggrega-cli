@@ -34,15 +34,15 @@
 // The wire payloads are hand-written rather than taken from the plugin kit, on
 // the same terms as the other guests under this directory: the guest is built
 // with GOWORK=off against its own go.mod, so it shares no module with the host
-// tests that drive it. That includes the fetch reply, which carries canonical
-// CBOR: the guest reads the one small map it needs with its own reader rather
-// than with the generated decoder.
+// tests that drive it. Both carry canonical CBOR — the render reply this guest
+// writes and the fetch reply it reads — so the guest writes the one small map it
+// returns and reads the one small map it needs with its own writer and reader
+// rather than with the generated codec.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o fetching-provider.wasm ./
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -91,7 +91,7 @@ const (
 	// host (or a stale .wasm served from the fixture cache) therefore fails loudly
 	// here instead of quietly certifying a comparison against a contract that has
 	// moved.
-	fixtureRevision = "fetching-provider/2"
+	fixtureRevision = "fetching-provider/3"
 )
 
 // providerDescriptor is the fixed describe() self-report. The external-input
@@ -112,18 +112,53 @@ const providerDescriptor = `{` +
 	`"reusable_instance":true}` +
 	`}`
 
-// renderedFile mirrors the wire shape of one returned output file. Content is
-// []byte so the standard encoder base64-encodes it, which is the encoding the
-// wire declares for those bytes.
+// renderedFile is one returned output file: its path, and its bytes, which cross
+// as a CBOR byte string.
 type renderedFile struct {
-	Path    string `json:"path"`
-	Content []byte `json:"content"`
+	Path    string
+	Content []byte
 }
 
-// renderNodeOutput is the sliver of the render reply this guest returns: the
-// files alone. Every other field is optional and absent.
-type renderNodeOutput struct {
-	Files []renderedFile `json:"files"`
+// renderNodeOutput writes the sliver of the render reply this guest returns: a
+// CBOR map whose one key, files, holds one map per file, each with its keys in
+// canonical order — the shorter key first. Every other field of the reply is
+// optional and absent.
+func renderNodeOutput(files []renderedFile) []byte {
+	out := appendHead(nil, 5, 1)
+	out = appendText(out, "files")
+	out = appendHead(out, 4, uint64(len(files)))
+	for _, f := range files {
+		out = appendHead(out, 5, 2)
+		out = appendText(out, "path")
+		out = appendText(out, f.Path)
+		out = appendText(out, "content")
+		out = append(appendHead(out, 2, uint64(len(f.Content))), f.Content...)
+	}
+	return out
+}
+
+// appendHead appends a CBOR item head of the given major type and argument in
+// its shortest form.
+func appendHead(dst []byte, major byte, n uint64) []byte {
+	m := major << 5
+	switch {
+	case n < 24:
+		return append(dst, m|byte(n))
+	case n <= 0xff:
+		return append(dst, m|24, byte(n))
+	case n <= 0xffff:
+		return append(dst, m|25, byte(n>>8), byte(n))
+	case n <= 0xffffffff:
+		return append(dst, m|26, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+	default:
+		return append(dst, m|27, byte(n>>56), byte(n>>48), byte(n>>40), byte(n>>32),
+			byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+	}
+}
+
+// appendText appends s as a CBOR text string.
+func appendText(dst []byte, s string) []byte {
+	return append(appendHead(dst, 3, uint64(len(s))), s...)
 }
 
 // fetchEnvelope is the reply the external-input host function writes into guest
@@ -288,7 +323,7 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func render_node() int32 {
-	out := renderNodeOutput{Files: []renderedFile{
+	pdk.Output(renderNodeOutput([]renderedFile{
 		{
 			Path:    outputPath,
 			Content: []byte(contentPrefix + fetchExternalInput(externalInputURL)),
@@ -297,13 +332,7 @@ func render_node() int32 {
 			Path:    revisionPath,
 			Content: []byte(fixtureRevision),
 		},
-	}}
-	raw, err := json.Marshal(out)
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(raw)
+	}))
 	return 0
 }
 

@@ -127,7 +127,7 @@ func renderNode() int32 {
 		out = rendercore.RenderNodeFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -171,7 +171,7 @@ func renderNode() int32 {
 // bodies for.
 func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
 	out, err := renderNodeFor(in)
@@ -226,12 +226,12 @@ func renderNodeFor(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, 
 func nameBound() int32 {
 	var in rendercore.NameBoundInput
 	out := rendercore.NameBoundOutput{}
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		out = rendercore.NameBoundFailure(err)
 	} else {
 		out = helmcore.NameBoundOutput(in.Proposed, in.Authored)
 	}
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -256,12 +256,12 @@ func nameBound() int32 {
 func renderedName() int32 {
 	var in rendercore.RenderedNameInput
 	out := rendercore.RenderedNameOutput{}
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		out = rendercore.RenderedNameFailure(err)
 	} else {
 		out = helmcore.RenderedNameOutput(in)
 	}
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1

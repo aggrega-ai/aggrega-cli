@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -29,19 +30,79 @@ import (
 //
 // Sorted by export name and then payload shape.
 var entries = []entry{
+	{export: "assemble_boundary", shape: "AssembleBoundaryInput", binary: true, encode: encodeAssembleBoundaryInput},
+	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", binary: true, encode: encodeBoundaryEnvOverridesInput},
+	{export: "carve", shape: "CarveInput", binary: true, encode: encodeCarveInput},
 	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
+	{export: "link_publish", shape: "LinkPublishInput", binary: true, encode: encodeLinkPublishInput},
+	{export: "link_resolve", shape: "LinkResolveInput", binary: true, encode: encodeLinkResolveInput},
 	{export: "lint_rules", shape: "LinterInput", binary: true, encode: encodeLinterInput},
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
+	{export: "name_bound", shape: "NameBoundInput", binary: true, encode: encodeNameBoundInput},
 	{export: "parse", shape: "ParseInput", binary: true, encode: encodeParseInput},
+	{export: "reassemble", shape: "ReassembleInput", binary: true, encode: encodeReassembleInput},
+	{export: "render_node", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
+	{export: "rendered_name", shape: "RenderedNameInput", binary: true, encode: encodeRenderedNameInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: true, encode: encodeAnnotationTransformInput},
+	{export: "validate_node_input", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
 	{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: encodePolicyInput},
 	{export: "verdict_render", shape: "RenderPolicyInput", binary: true, encode: encodeRenderPolicyInput},
+}
+
+// encodeAssembleBoundaryInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeAssembleBoundaryInput(text []byte) ([]byte, error) {
+	var v rendercore.AssembleBoundaryInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeBoundaryEnvOverridesInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeBoundaryEnvOverridesInput(text []byte) ([]byte, error) {
+	var v rendercore.BoundaryEnvOverridesInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeCarveInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeCarveInput(text []byte) ([]byte, error) {
+	var v rendercore.CarveInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
 }
 
 // encodeImportInput reads an authored text payload into that shape and
 // re-emits it in the canonical binary encoding.
 func encodeImportInput(text []byte) ([]byte, error) {
 	var v abi.ImportInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeLinkPublishInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeLinkPublishInput(text []byte) ([]byte, error) {
+	var v rendercore.LinkPublishInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeLinkResolveInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeLinkResolveInput(text []byte) ([]byte, error) {
+	var v rendercore.LinkResolveInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}
@@ -68,10 +129,50 @@ func encodeMutatorInput(text []byte) ([]byte, error) {
 	return v.EncodeCBOR()
 }
 
+// encodeNameBoundInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeNameBoundInput(text []byte) ([]byte, error) {
+	var v rendercore.NameBoundInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
 // encodeParseInput reads an authored text payload into that shape and
 // re-emits it in the canonical binary encoding.
 func encodeParseInput(text []byte) ([]byte, error) {
 	var v abi.ParseInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeReassembleInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeReassembleInput(text []byte) ([]byte, error) {
+	var v rendercore.ReassembleInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeRenderNodeInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeRenderNodeInput(text []byte) ([]byte, error) {
+	var v rendercore.RenderNodeInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeRenderedNameInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeRenderedNameInput(text []byte) ([]byte, error) {
+	var v rendercore.RenderedNameInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}

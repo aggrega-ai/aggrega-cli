@@ -13,23 +13,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
-// CarveExport and ReassembleExport are the optional guest exports this adapter
-// drives to carve a provider's emitted output into addressable units and to
-// reassemble it byte-faithfully after a pipeline step edits some of them. They
-// are a paired contract — a provider advertises both or neither. A provider
-// whose output the stock YAML codec cannot carve directly (a templated chart,
-// for instance) advertises them so its own output-shape knowledge (what is a
-// PATCH target versus opaque) lives in its guest; a provider that omits them is
-// never routed here and borrows the host's stock YAML codec. Each is the wasm
-// package's identifier for a name the provider plugin type's host-export list
-// holds.
-var (
-	CarveExport      = wasm.CarveExport
-	ReassembleExport = wasm.ReassembleExport
-)
-
 // PipelineCodec reports the provider's pipeline codec, driven through its guest
-// when the guest advertises both the carve and reassemble exports. It satisfies
+// when the guest advertises both the carve and reassemble exports — the optional
+// exports that carve a provider's emitted output into addressable units and
+// reassemble it byte-faithfully after a pipeline step edits some of them. They
+// are a paired contract: a provider advertises both or neither. A provider whose
+// output the stock YAML codec cannot carve directly (a templated chart, for
+// instance) advertises them so its own output-shape knowledge (what is a PATCH
+// target versus opaque) lives in its guest. It satisfies
 // renderer.CodecProvider: the pipeline executor asks the engine rendering a
 // scope "do you supply a codec?" and, when the guest advertises the exports,
 // carves and reassembles that scope across the guest ABI so the provider's
@@ -49,7 +40,7 @@ func (e *Engine) PipelineCodec(ctx context.Context, yamlIndent int) (frp.Codec, 
 	if err != nil {
 		return nil, false
 	}
-	if !advertisesExport(desc, CarveExport) || !advertisesExport(desc, ReassembleExport) {
+	if !advertisesExport(desc, wasm.CarveExport) || !advertisesExport(desc, wasm.ReassembleExport) {
 		return nil, false
 	}
 	return &guestCodec{engine: e, yamlIndent: yamlIndent, ctx: ctx}, true
@@ -107,6 +98,7 @@ func (c *guestCodec) Reassemble(name string, body []byte, segs []frp.Unit, patch
 // crossing lifecycle; the codec surface needs no source root (it carves bytes
 // already in the payload). The plugin is closed before invokeCarve returns.
 func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (renderer.CarveOutput, error) {
+	export := wasm.CarveExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.CarveOutput{}, err
@@ -121,17 +113,17 @@ func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (ren
 	}
 	defer plugin.Close(ctx)
 
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: marshal carve input: %w", err)
+		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: encode carve input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, CarveExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.CarveOutput{}, err
 	}
 	var out renderer.CarveOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: decode carve output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	return out, nil
 }
@@ -141,6 +133,7 @@ func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (ren
 // ReassembleOutput. It mirrors invokeCarve's lifecycle. The plugin is closed
 // before invokeReassemble returns.
 func invokeReassemble(ctx context.Context, e *Engine, input renderer.ReassembleInput) (renderer.ReassembleOutput, error) {
+	export := wasm.ReassembleExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.ReassembleOutput{}, err
@@ -155,17 +148,17 @@ func invokeReassemble(ctx context.Context, e *Engine, input renderer.ReassembleI
 	}
 	defer plugin.Close(ctx)
 
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: marshal reassemble input: %w", err)
+		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: encode reassemble input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, ReassembleExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.ReassembleOutput{}, err
 	}
 	var out renderer.ReassembleOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: decode reassemble output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	return out, nil
 }

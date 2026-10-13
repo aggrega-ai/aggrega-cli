@@ -69,11 +69,11 @@ type decodeSite struct {
 //
 // COVERAGE BOUND, stated because an unstated bound reads as full coverage: this
 // guard reaches a socket whose output decode routes through one of the two entry
-// points above. A socket that decodes through its generated codec directly — the
-// provider render socket does — names neither, so its wire fact is pinned by
-// nothing here. That is why the registry admits an entry only for a socket this
-// guard can see: an entry it cannot see would be exactly the unpinned
-// hand-written fact the registry exists to avoid rather than to relocate.
+// points above. A socket that decoded through its generated codec directly would
+// name neither, so its wire fact would be pinned by nothing here. That is why
+// the registry admits an entry only for a socket this guard can see: an entry it
+// cannot see would be exactly the unpinned hand-written fact the registry
+// exists to avoid rather than to relocate.
 //
 // It also reads every payload-carrying invocation of a guest export, which is
 // the backstop behind the invocation's own type. The host calls an export it

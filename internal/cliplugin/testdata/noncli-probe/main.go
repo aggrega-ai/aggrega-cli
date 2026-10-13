@@ -28,9 +28,14 @@ func describe() int32 {
 	return 0
 }
 
+// render_node answers an empty map in the render socket's binary encoding, the
+// one byte 0xa0. It is never called; the reply is there so that a guest present
+// to satisfy the provider minimum-export rule is not also one whose reply that
+// socket cannot read.
+//
 //go:wasmexport render_node
 func render_node() int32 {
-	pdk.OutputString("{}")
+	pdk.Output([]byte{0xa0})
 	return 0
 }
 

@@ -1375,12 +1375,42 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
+	// The host codec carries the socket's wire registration, because the host and
+	// the shipped provider guests both read and write this codec. binaryWire: the
+	// render family's wire is canonical CBOR in both directions — every call site
+	// encodes its input with the generated encoder and decodes the output through
+	// the binary encoding's entry point, and every provider guest reads and writes
+	// the same. The family's exports are the provider type's host-export list, so
+	// each entry names the plugin type and which listed export its payload shape
+	// serves; render_node and validate_node_input read one shape.
+	//
+	// crossPackageDefTypes makes each diagnostic ride as the shared diagnostic's own
+	// structural encoding — the one every plugin kit's codec writes — by dispatching
+	// to the codec generated beside the published type, rather than as a
+	// byte-string of its JSON document, which no kit writes. Without it a provider
+	// built with a kit could not report a diagnostic the host reads, nor read the
+	// diagnostics a contributor's render carries into its assembly.
 	"providerrender_host_gen.go": {
-		schema:     schemas.WasmProviderV1alpha1,
-		schemaFile: "wasm-provider-v1alpha1.schema.json",
-		pkg:        "rendercore",
-		vocabulary: providerHostVocabulary,
-		helpers:    true, // the host provider render codec is alone in package rendercore
+		schema:               schemas.WasmProviderV1alpha1,
+		schemaFile:           "wasm-provider-v1alpha1.schema.json",
+		pkg:                  "rendercore",
+		vocabulary:           providerHostVocabulary,
+		helpers:              true, // the host provider render codec is alone in package rendercore
+		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
+		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore",
+		binaryWire:           true,
+		wireExports: []wireExport{
+			{pluginType: plugintype.Provider, export: exportname.RenderNode, inputDef: "RenderNodeInput"},
+			{pluginType: plugintype.Provider, export: exportname.ValidateNodeInput, inputDef: "RenderNodeInput"},
+			{pluginType: plugintype.Provider, export: exportname.AssembleBoundary, inputDef: "AssembleBoundaryInput"},
+			{pluginType: plugintype.Provider, export: exportname.Carve, inputDef: "CarveInput"},
+			{pluginType: plugintype.Provider, export: exportname.Reassemble, inputDef: "ReassembleInput"},
+			{pluginType: plugintype.Provider, export: exportname.NameBound, inputDef: "NameBoundInput"},
+			{pluginType: plugintype.Provider, export: exportname.RenderedName, inputDef: "RenderedNameInput"},
+			{pluginType: plugintype.Provider, export: exportname.BoundaryEnvOverrides, inputDef: "BoundaryEnvOverridesInput"},
+			{pluginType: plugintype.Provider, export: exportname.LinkPublish, inputDef: "LinkPublishInput"},
+			{pluginType: plugintype.Provider, export: exportname.LinkResolve, inputDef: "LinkResolveInput"},
+		},
 	},
 
 	// Parser socket — guest codecs into aggrega-abi (Go/Rust/TS). A parser turns

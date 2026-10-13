@@ -198,7 +198,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		input.AggregateName = info.AggregateName
 	}
 
-	out, err := e.invokeAssemble(ctx, AssembleBoundaryExport, input)
+	out, err := e.invokeAssemble(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -216,8 +216,8 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	return files, nil
 }
 
-// invokeAssemble acquires a guest instance through the shared loader, calls the
-// named assemble export against the embedded Engine's cached descriptor, and decodes
+// invokeAssemble acquires a guest instance through the shared loader, calls
+// assemble_boundary against the embedded Engine's cached descriptor, and decodes
 // the AssembleBoundaryOutput. It mirrors Engine.invoke's memoized-descriptor
 // instance lifecycle for the assemble surface — the two share the loader, lookup,
 // descriptor memo, and reused instance (when the guest declares reusable_instance)
@@ -226,7 +226,8 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 // its validation run once per provider, not once per crossing. When the guest makes
 // no reuse claim the acquired instance is fresh per crossing and the returned
 // release closes it, so dispatch groups stay isolated by construction.
-func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export wasm.HostExport, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+func (e *AssemblerEngine) invokeAssemble(ctx context.Context, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+	export := wasm.AssembleBoundaryExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
@@ -238,9 +239,9 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export wasm.HostEx
 	}
 	defer release()
 
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: marshal assemble_boundary input: %w", err)
+		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: encode assemble_boundary input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -248,8 +249,8 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export wasm.HostEx
 	}
 
 	var out renderer.AssembleBoundaryOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,

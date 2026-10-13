@@ -693,7 +693,11 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, schemaType, indent str
 		fmt.Fprintf(b, "%s\t\tmk, err := dec.readEntryKey()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
 		fmt.Fprintf(b, "%s\t\tif _, dup := om.Get(mk); dup {\n%s\t\t\treturn duplicateKeyError(mk)\n%s\t\t}\n", indent, indent, indent)
 		fmt.Fprintf(b, "%s\t\tvar mv %s\n", indent, omVal)
-		emitCBORDecodeValue(b, "mv", omVal, "", indent+"\t\t", defTypes)
+		if hostOrderedAnyValue(goType, omVal) {
+			emitCBORDecodeOrderedAny(b, "mv", indent+"\t\t")
+		} else {
+			emitCBORDecodeValue(b, "mv", omVal, "", indent+"\t\t", defTypes)
+		}
 		fmt.Fprintf(b, "%s\t\tom.Set(mk, mv)\n", indent)
 		fmt.Fprintf(b, "%s\t}\n", indent)
 		fmt.Fprintf(b, "%s\t%s = om\n", indent, dst)
@@ -739,6 +743,31 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, schemaType, indent str
 		// residual opaque decode.
 		emitCBORDecodeOpaqueAny(b, dst, indent)
 	}
+}
+
+// hostOrderedAnyValue reports whether an order-keeping container of the given Go
+// type holds untyped values in the host vocabulary — types.OrderedMap[any], whose
+// own text decode builds each value through the ordered-map value decoder.
+func hostOrderedAnyValue(goType, omVal string) bool {
+	return strings.HasPrefix(goType, "types.OrderedMap[") && (omVal == "any" || omVal == "interface{}")
+}
+
+// emitCBORDecodeOrderedAny decodes one untyped value of a host order-keeping
+// container: read the byte-string carrying the value's JSON bytes and decode them
+// through types.DecodeJSONValue, the decode the container's own text leg applies to
+// each value it holds.
+//
+// The binary leg has to reach the same Go value the text leg does, and a bare
+// opaque decode does not: it turns a nested object into a plain map, losing the
+// key order its bytes carry, and leaves the numbers inside it as json.Number
+// where the text leg's ordered map hands its reader nested ordered maps. A reader
+// of the decoded value — a guest flattening a node's values into what it renders
+// from — would then see a different value depending on which encoding crossed,
+// so the decode is delegated to the one home of it rather than restated here.
+func emitCBORDecodeOrderedAny(b *strings.Builder, dst, indent string) {
+	fmt.Fprintf(b, "%sif raw, err := dec.readByteString(); err != nil {\n%s\treturn err\n", indent, indent)
+	fmt.Fprintf(b, "%s} else if v, err := types.DecodeJSONValue(raw); err != nil {\n%s\treturn err\n", indent, indent)
+	fmt.Fprintf(b, "%s} else {\n%s\t%s = v\n%s}\n", indent, indent, dst, indent)
 }
 
 // emitCBORDecodeOpaqueAny decodes a bare opaque any: read the byte-string (R10)

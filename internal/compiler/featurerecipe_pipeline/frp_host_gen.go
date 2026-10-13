@@ -1189,12 +1189,10 @@ func (t *FRPStepInput) decodeCBOR(dec *cborDec) error {
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
 						return err
+					} else if v, err := types.DecodeJSONValue(raw); err != nil {
+						return err
 					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
+						mv = v
 					}
 					om.Set(mk, mv)
 				}
@@ -1424,12 +1422,10 @@ func (t *FRPStepOutput) decodeCBOR(dec *cborDec) error {
 					var mv any
 					if raw, err := dec.readByteString(); err != nil {
 						return err
+					} else if v, err := types.DecodeJSONValue(raw); err != nil {
+						return err
 					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
+						mv = v
 					}
 					om.Set(mk, mv)
 				}

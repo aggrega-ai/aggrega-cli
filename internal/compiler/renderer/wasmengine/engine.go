@@ -22,10 +22,22 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// The provider exports this adapter drives. Each is the wasm package's
-// identifier for a name the provider plugin type's host-export list holds, so
-// the name is spelled in that list alone, and the identifiers below give each
-// one the meaning it has here.
+// The provider exports this adapter drives are the wasm package's identifiers for
+// the names the provider plugin type's host-export list holds, so each name is
+// spelled in that list alone. Every crossing below names the identifier of the
+// export it calls where it calls it, so the invocation, the decode of the reply
+// and any failure it reports all name one export.
+//
+// The render family's wire is canonical CBOR in both directions: each crossing
+// encodes its input with the generated binary encoder and decodes the reply
+// through the binary encoding's strict entry point, which refuses a reply that is
+// not the shape the crossing reads — a top-level field the shape does not
+// declare, a field of the wrong type, or bytes that are not a well-formed value.
+// Each export is fixed by the provider type rather than chosen by an attachment,
+// so no configuration can point a crossing at the wrong entry function; the
+// strict decode is there so the plugin-wire registry, which converts an authored
+// payload for each of these exports, is checked against the crossings that call
+// them.
 
 // RenderNodeExport is the guest export this adapter drives for both sourced
 // render and workload synthesis; the helm provider guest routes on which
@@ -34,43 +46,6 @@ import (
 // Plugin entity to advertise the same export the adapter will drive — one name,
 // one source of truth, no drift between the routing precondition and the call.
 var RenderNodeExport = wasm.RenderNodeExport
-
-// ValidateNodeInputExport is the optional guest export this adapter drives to
-// structurally validate a node's resolved input before render dispatch. It is
-// deliberately distinct from the whole-graph policy socket's validate
-// export: this one is per-node, provider-scoped, and consumes the same
-// RenderNodeInput projection render_node receives. A provider whose guest does
-// not advertise it in describe() is never invoked here, so the input-validation
-// gate is a no-op for it.
-var ValidateNodeInputExport = wasm.ValidateNodeInputExport
-
-// BoundaryEnvOverridesExport is the optional guest export this adapter drives to
-// compute a boundary's per-consumer environment overrides — the boundary-to-
-// consumer env channel a provider whose guest bridges endpoints across a network
-// seam (compose) advertises. A guest whose describe() omits it is never invoked
-// here, so the channel is a no-op for it and the host applies no overrides.
-var BoundaryEnvOverridesExport = wasm.BoundaryEnvOverridesExport
-
-// NameBoundExport is the optional guest export this adapter drives to ask
-// whether a proposed component identity yields names the guest's target accepts.
-// A guest whose target bounds or restricts the names it accepts advertises it;
-// a guest whose describe() omits it is never invoked here, and every name the
-// host proposes is used as composed. It is deliberately absent from every
-// minimum-export rule: those are load-time requirements, and requiring this one
-// would refuse every provider plugin built before it existed.
-var NameBoundExport = wasm.NameBoundExport
-
-// RenderedNameExport is the optional guest export this adapter drives to ask what
-// name the guest's target will give the resources it renders for a node — from
-// source the author supplied, or from a workload it synthesizes. A guest whose
-// target derives such a name advertises it; a guest whose describe() omits it is
-// never invoked here, and no name reaches a recipe author for any node that guest
-// renders.
-//
-// It is deliberately absent from every minimum-export rule, for the reason
-// [NameBoundExport] is: those are load-time requirements, and requiring this one
-// would refuse every provider plugin built before it existed.
-var RenderedNameExport = wasm.RenderedNameExport
 
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Provider and renderer.WorkloadSynthesizer interfaces. It resolves the
@@ -385,7 +360,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		SourceListing: listing,
 		Omits:         renderer.OmitEntriesOf(nodeCtx.Omits),
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, source)
+	out, err := e.invoke(ctx, input, source)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +424,7 @@ func (e *Engine) SynthesizeWorkload(
 			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, renderSource{})
+	out, err := e.invoke(ctx, input, renderSource{})
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +475,7 @@ func (e *Engine) EmitArtifacts(
 		Context:             e.renderContext(nodeCtx),
 		ArtifactsProjection: &proj,
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input, renderSource{})
+	out, err := e.invoke(ctx, input, renderSource{})
 	if err != nil {
 		return nil, err
 	}
@@ -566,8 +541,8 @@ func (e *Engine) Warm(ctx context.Context) error {
 	return plugin.Close(ctx)
 }
 
-// invoke acquires a guest instance through the shared loader, calls the named
-// export against the Engine's cached descriptor, and decodes the RenderNodeOutput.
+// invoke acquires a guest instance through the shared loader, calls render_node
+// against the Engine's cached descriptor, and decodes the RenderNodeOutput.
 // The shared loader carries the build's external-input service and its compilation
 // cache, so a guest fetch resolves through the pinned channel (nil when none is
 // attached — the guest then receives the in-band not-available envelope) and the
@@ -589,7 +564,8 @@ func (e *Engine) Warm(ctx context.Context) error {
 // time through the same instance and compares the emitted bytes; a guest whose two
 // renders of identical input diverge halts the build (ErrRenderNondeterministic),
 // naming the node and provider.
-func (e *Engine) invoke(ctx context.Context, export wasm.HostExport, input renderer.RenderNodeInput, source renderSource) (renderer.RenderNodeOutput, error) {
+func (e *Engine) invoke(ctx context.Context, input renderer.RenderNodeInput, source renderSource) (renderer.RenderNodeOutput, error) {
+	export := wasm.RenderNodeExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
@@ -609,9 +585,9 @@ func (e *Engine) invoke(ctx context.Context, export wasm.HostExport, input rende
 	// the rules recorded for this node's source and no other's.
 	plugin.SetSource(source.root, source.scope)
 
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: marshal render_node input: %w", err)
+		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: encode render_node input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -624,8 +600,8 @@ func (e *Engine) invoke(ctx context.Context, export wasm.HostExport, input rende
 	}
 
 	var out renderer.RenderNodeOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: decode render_node output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -744,7 +720,7 @@ func (e *Engine) surfaceDerivedKeys(nodeCtx renderer.NodeRenderContext, declared
 // refused here, before anything is forwarded, naming the fact and this guest —
 // whether or not anything would have read the fact, because the report is the
 // guest's whatever reads it. That a value is a list is the one thing read of it;
-// nothing here reads a name or looks inside a list. The JSON decode already
+// nothing here reads a name or looks inside a list. The decode already
 // copies each value out of the guest's reply; the forward copies it again so the
 // sink never depends on how a reply was decoded, because that reply also holds
 // every file the guest emitted and a fact kept after the crossing must not keep
@@ -781,7 +757,9 @@ func advertisesExport(desc *wasm.PluginDescriptor, export wasm.HostExport) bool 
 // structurally check a node's resolved input before render dispatch, returning
 // the diagnostics the guest raised. It is advertised-only: a guest that does not
 // declare the export in describe() is never invoked, and this returns no
-// diagnostics and no error. The export consumes the same RenderNodeInput
+// diagnostics and no error, so the input-validation gate is a no-op for it. The
+// export is deliberately distinct from the whole-graph policy socket's validation:
+// it is per-node, provider-scoped, and consumes the same RenderNodeInput
 // projection render_node receives; because a sourced node's source arrives as a
 // name-only listing, the guest reconstructs the bytes it parses through the
 // pack-source host function, so the per-invocation source root is set before the
@@ -794,7 +772,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 	if err != nil {
 		return nil, err
 	}
-	if !advertisesExport(desc, ValidateNodeInputExport) {
+	if !advertisesExport(desc, wasm.ValidateNodeInputExport) {
 		return nil, nil
 	}
 
@@ -812,11 +790,11 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 		}
 		input.SourceListing = listing
 	}
-	return e.invokeValidate(ctx, ValidateNodeInputExport, input, source)
+	return e.invokeValidate(ctx, input, source)
 }
 
-// invokeValidate acquires a guest instance, calls the input-validation export
-// against the Engine's cached descriptor, and decodes the ValidateNodeOutput. It
+// invokeValidate acquires a guest instance, calls validate_node_input against
+// the Engine's cached descriptor, and decodes the ValidateNodeOutput. It
 // mirrors invoke's memoized-descriptor lifecycle and per-crossing source root (the
 // validate export packs source bytes through the same host function render does):
 // the acquired instance is the Engine's reused one when the guest declares
@@ -824,7 +802,8 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 // decodes the validate wire shape — a diagnostics-only payload with no files.
 // Guest-emitted warnings are folded into the returned diagnostics as
 // warn-severity entries.
-func (e *Engine) invokeValidate(ctx context.Context, export wasm.HostExport, input renderer.RenderNodeInput, source renderSource) ([]renderer.Diagnostic, error) {
+func (e *Engine) invokeValidate(ctx context.Context, input renderer.RenderNodeInput, source renderSource) ([]renderer.Diagnostic, error) {
+	export := wasm.ValidateNodeInputExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
@@ -838,9 +817,9 @@ func (e *Engine) invokeValidate(ctx context.Context, export wasm.HostExport, inp
 
 	plugin.SetSource(source.root, source.scope)
 
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return nil, fmt.Errorf("wasmengine: marshal validate_node_input input: %w", err)
+		return nil, fmt.Errorf("wasmengine: encode validate_node_input input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -848,8 +827,8 @@ func (e *Engine) invokeValidate(ctx context.Context, export wasm.HostExport, inp
 	}
 
 	var out renderer.ValidateNodeOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return nil, fmt.Errorf("wasmengine: decode validate_node_input output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -878,11 +857,12 @@ func (e *Engine) invokeValidate(ctx context.Context, export wasm.HostExport, inp
 // and applies the returned overrides. AssemblerEngine embeds *Engine and
 // inherits this method.
 func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error) {
+	export := wasm.BoundaryEnvOverridesExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !advertisesExport(desc, BoundaryEnvOverridesExport) {
+	if !advertisesExport(desc, export) {
 		return nil, nil
 	}
 
@@ -893,18 +873,18 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 	defer release()
 
 	input := renderer.BoundaryEnvOverridesInput{InternalUsesEdges: internalUsesEdges, Infra: infra}
-	payload, err := input.MarshalJSON()
+	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return nil, fmt.Errorf("wasmengine: marshal boundary_env_overrides input: %w", err)
+		return nil, fmt.Errorf("wasmengine: encode boundary_env_overrides input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, BoundaryEnvOverridesExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return nil, err
 	}
 
 	var out renderer.BoundaryEnvOverridesOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return nil, fmt.Errorf("wasmengine: decode boundary_env_overrides output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
 	return out.Overrides, nil
 }
@@ -927,11 +907,12 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 // carrying provider-specific names, which is the coupling asking the question
 // removes. AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
+	export := wasm.NameBoundExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.NameBoundOutput{}, err
 	}
-	if !advertisesExport(desc, NameBoundExport) {
+	if !advertisesExport(desc, export) {
 		return renderer.NameBoundOutput{}, nil
 	}
 
@@ -941,20 +922,20 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 	}
 	defer release()
 
-	payload, err := in.MarshalJSON()
+	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: marshal name_bound input: %w", err)
+		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: encode name_bound input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, NameBoundExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.NameBoundOutput{}, err
 	}
 
 	var out renderer.NameBoundOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: decode name_bound output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, NameBoundExport.Name(), wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -971,7 +952,8 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 // It is advertised-only: a guest that does not declare the export in describe()
 // is never invoked, and this returns an empty output and no error — which is the
 // same answer a guest that derives no such name gives, and the same consequence:
-// a recipe author has no such name to read for that node.
+// a recipe author has no such name to read for that node. It stays out of every
+// minimum-export rule for the reason [Engine.NameBound]'s export does.
 //
 // The direction is the reverse of [Engine.NameBound] and the distinction is the
 // whole of what keeps this legal. There the host proposes a name and the guest
@@ -981,11 +963,12 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 // nothing about the target's naming crosses into the core: no alphabet, no
 // grammar, no length. AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput) (renderer.RenderedNameOutput, error) {
+	export := wasm.RenderedNameExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderedNameOutput{}, err
 	}
-	if !advertisesExport(desc, RenderedNameExport) {
+	if !advertisesExport(desc, export) {
 		return renderer.RenderedNameOutput{}, nil
 	}
 
@@ -995,20 +978,20 @@ func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput
 	}
 	defer release()
 
-	payload, err := in.MarshalJSON()
+	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: marshal rendered_name input: %w", err)
+		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: encode rendered_name input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, RenderedNameExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.RenderedNameOutput{}, err
 	}
 
 	var out renderer.RenderedNameOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: decode rendered_name output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, RenderedNameExport.Name(), wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1041,11 +1024,12 @@ func (e *Engine) LinksCrossBoundary() bool {
 // and applies the returned patches. AssemblerEngine embeds *Engine and inherits
 // this method.
 func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) (renderer.LinkPublishOutput, error) {
+	export := wasm.LinkPublishExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.LinkPublishOutput{}, err
 	}
-	if !advertisesExport(desc, wasm.LinkPublishExport) {
+	if !advertisesExport(desc, export) {
 		return renderer.LinkPublishOutput{}, nil
 	}
 
@@ -1055,20 +1039,20 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 	}
 	defer release()
 
-	payload, err := in.MarshalJSON()
+	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: marshal link_publish input: %w", err)
+		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: encode link_publish input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, wasm.LinkPublishExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.LinkPublishOutput{}, err
 	}
 
 	var out renderer.LinkPublishOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: decode link_publish output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkPublishExport.Name(), wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1088,11 +1072,12 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 // plus the peer's published handle in and applies the returned patches.
 // AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) (renderer.LinkResolveOutput, error) {
+	export := wasm.LinkResolveExport
 	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.LinkResolveOutput{}, err
 	}
-	if !advertisesExport(desc, wasm.LinkResolveExport) {
+	if !advertisesExport(desc, export) {
 		return renderer.LinkResolveOutput{}, nil
 	}
 
@@ -1102,20 +1087,20 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 	}
 	defer release()
 
-	payload, err := in.MarshalJSON()
+	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: marshal link_resolve input: %w", err)
+		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: encode link_resolve input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, wasm.LinkResolveExport, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.LinkResolveOutput{}, err
 	}
 
 	var out renderer.LinkResolveOutput
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: decode link_resolve output: %w", err)
+	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
+		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
-	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkResolveExport.Name(), wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,

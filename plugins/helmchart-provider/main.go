@@ -149,7 +149,7 @@ func renderNode() int32 {
 		out = rendercore.RenderNodeFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -163,7 +163,7 @@ func renderNode() int32 {
 // how a failure crosses and this stays about what helm-chart renders.
 func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
 	switch {
@@ -273,7 +273,7 @@ func assembleBoundary() int32 {
 		out = rendercore.AssembleBoundaryFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -287,7 +287,7 @@ func assembleBoundary() int32 {
 // renderNodeOutput does.
 func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	var in rendercore.AssembleBoundaryInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	return assembleBoundaryFromInput(in)
@@ -384,7 +384,7 @@ func assembledFileFormat(path string) string {
 //go:wasmexport carve
 func carve() int32 {
 	var in rendercore.CarveInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
@@ -395,7 +395,7 @@ func carve() int32 {
 		return 1
 	}
 
-	encoded, err := rendercore.CarveOutput{Units: units}.MarshalJSON()
+	encoded, err := rendercore.CarveOutput{Units: units}.EncodeCBOR()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
@@ -407,7 +407,7 @@ func carve() int32 {
 //go:wasmexport reassemble
 func reassemble() int32 {
 	var in rendercore.ReassembleInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
@@ -418,7 +418,7 @@ func reassemble() int32 {
 		return 1
 	}
 
-	encoded, err := rendercore.ReassembleOutput{Body: body}.MarshalJSON()
+	encoded, err := rendercore.ReassembleOutput{Body: body}.EncodeCBOR()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
@@ -483,14 +483,14 @@ func packSourcedChart(listing *rendercore.SourceListing) (*rendercore.SourceProj
 func nameBound() int32 {
 	var in rendercore.NameBoundInput
 	var out rendercore.NameBoundOutput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		out = rendercore.NameBoundFailure(err)
 	} else {
 		out = rendercore.NameBoundOutput{
 			Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored)},
 		}
 	}
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1

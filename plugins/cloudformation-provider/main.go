@@ -231,7 +231,7 @@ func renderNode() int32 {
 		out = rendercore.RenderNodeFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -245,7 +245,7 @@ func renderNode() int32 {
 // how a failure crosses and this stays about what cloudformation renders.
 func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
 
@@ -395,7 +395,7 @@ func validateNodeInput() int32 {
 		out = rendercore.ValidateNodeFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -409,7 +409,7 @@ func validateNodeInput() int32 {
 // renderNodeOutput does.
 func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.ValidateNodeOutput{}, err
 	}
 
@@ -481,7 +481,7 @@ func assembleBoundary() int32 {
 		out = rendercore.AssembleBoundaryFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -495,7 +495,7 @@ func assembleBoundary() int32 {
 // than reporting it for the reason renderNodeOutput does.
 func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	var in rendercore.AssembleBoundaryInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
@@ -532,7 +532,7 @@ func linkPublish() int32 {
 		out = rendercore.LinkPublishFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -546,7 +546,7 @@ func linkPublish() int32 {
 // renderNodeOutput does.
 func linkPublishOutput() (rendercore.LinkPublishOutput, error) {
 	var in rendercore.LinkPublishInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
 	return cfncore.LinkPublish(in.Edge, in.ProducerFiles)
@@ -559,7 +559,7 @@ func linkResolve() int32 {
 		out = rendercore.LinkResolveFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -573,7 +573,7 @@ func linkResolve() int32 {
 // renderNodeOutput does.
 func linkResolveOutput() (rendercore.LinkResolveOutput, error) {
 	var in rendercore.LinkResolveInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
 	return cfncore.LinkResolve(in.Edge, in.Handle, in.ConsumerFiles)

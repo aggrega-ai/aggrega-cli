@@ -263,6 +263,24 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.LinkPublishOutput](t, "LinkPublishOutput", false)
 	vec[abi.LinkResolveInput](t, "LinkResolveInput", false)
 	vec[abi.LinkResolveOutput](t, "LinkResolveOutput", false)
+	// The populated payloads of the render family's remaining exports. Each
+	// carries its members populated — diagnostics, file bytes, units and patched
+	// units, verdicts with and without a bound, identities, edges, author-ordered
+	// infra and per-consumer overrides. The members they add are text and byte
+	// strings, integers, booleans, lists, plain maps of text, the order-preserving
+	// infra list, and raw-message documents the reference encoder writes as byte
+	// strings too, so all of them stay anchored.
+	vec[abi.ValidateNodeOutput](t, "ValidateNodeOutput", false)
+	vec[abi.CarveInput](t, "CarveInput", false)
+	vec[abi.CarveOutput](t, "CarveOutput", false)
+	vec[abi.ReassembleInput](t, "ReassembleInput", false)
+	vec[abi.ReassembleOutput](t, "ReassembleOutput", false)
+	vec[abi.NameBoundInput](t, "NameBoundInput", false)
+	vec[abi.NameBoundOutput](t, "NameBoundOutput", false)
+	vec[abi.RenderedNameInput](t, "RenderedNameInput", false)
+	vec[abi.RenderedNameOutput](t, "RenderedNameOutput", false)
+	vec[abi.BoundaryEnvOverridesInput](t, "BoundaryEnvOverridesInput", false)
+	vec[abi.BoundaryEnvOverridesOutput](t, "BoundaryEnvOverridesOutput", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorCLI", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorProvider", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorProviderOmits", false)

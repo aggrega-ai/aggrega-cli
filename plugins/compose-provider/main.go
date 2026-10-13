@@ -130,7 +130,7 @@ func renderNode() int32 {
 		out = rendercore.RenderNodeFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -144,7 +144,7 @@ func renderNode() int32 {
 // how a failure crosses and this stays about what compose renders.
 func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
 	switch {
@@ -166,7 +166,7 @@ func assembleBoundary() int32 {
 		out = rendercore.AssembleBoundaryFailure(err)
 	}
 
-	encoded, mErr := out.MarshalJSON()
+	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {
 		pdk.SetError(mErr)
 		return 1
@@ -180,7 +180,7 @@ func assembleBoundary() int32 {
 // does.
 func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	var in rendercore.AssembleBoundaryInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	return assembleBoundaryFromInput(in)
@@ -189,7 +189,7 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 //go:wasmexport boundary_env_overrides
 func boundaryEnvOverrides() int32 {
 	var in rendercore.BoundaryEnvOverridesInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
@@ -200,7 +200,7 @@ func boundaryEnvOverrides() int32 {
 		return 1
 	}
 
-	encoded, err := rendercore.BoundaryEnvOverridesOutput{Overrides: overrides}.MarshalJSON()
+	encoded, err := rendercore.BoundaryEnvOverridesOutput{Overrides: overrides}.EncodeCBOR()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
