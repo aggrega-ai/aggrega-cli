@@ -1,0 +1,285 @@
+{
+  "_comment": "Single source of the cases the mapping-decision line is held to on both sides of a language boundary. The compiler renders the line in Go for the command line's error stream and the assistant's import tool; the VS Code extension renders the same line in TypeScript for its import channel. Both sides' specs render every decision here and require exactly its line. langflow is the committed Langflow fixture langflow-flow.json the importer socket's own tests read, imported through the reference importers against a catalog holding the two Components the compiler's end-to-end spec lays beside them, each decision exactly as the session answers it; that spec requires the live answer to equal these entries, so the extension's spec renders the decisions a real import returns. shapes are the decisions the reference importers do not produce from that fixture: a reference, an order that does not lead with the top score, a whole and a long score, no candidate, and no choice.",
+  "_revision_comment": "revision names this case set. Each side pins its OWN copy of the number and refuses a manifest declaring a different one, so a green from a side is evidence that side READ this revision, not merely that it agreed with the other. Change, add or remove a case and bump revision: both sides then refuse until each side's own pinned copy is moved, which cannot be done without running both.",
+  "revision": 1,
+  "langflow": [
+    {
+      "decision": {
+        "sourceNode": {
+          "id": "OpenAIModel-a1b2",
+          "type": "OpenAIModel",
+          "paramsSummary": "fields: model_name, temperature; secrets: api_key"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/ai-model/internal-llm",
+            "score": 0.3138,
+            "tier": "LOW",
+            "signals": {
+              "table": 0,
+              "category": 0.2,
+              "domainLabels": 0.075,
+              "shape": 0.02,
+              "name": 0.0188
+            }
+          }
+        ],
+        "chosen": {
+          "target": "imported/ai-model/openaimodel",
+          "mode": "draft",
+          "tier": "LOW"
+        },
+        "rationale": "drafted a new component; the closest candidate acme/ai-model/internal-llm scored only 0.3138"
+      },
+      "line": "mapped OpenAIModel-a1b2 (OpenAIModel) to imported/ai-model/openaimodel as a draft, LOW at 0.3138"
+    },
+    {
+      "decision": {
+        "sourceNode": {
+          "id": "Retrieval-c3d4",
+          "type": "Retrieval",
+          "paramsSummary": "fields: search_query, top_k"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/ai-model/internal-llm",
+            "score": 0.0167,
+            "tier": "NONE",
+            "signals": {
+              "table": 0,
+              "category": 0,
+              "domainLabels": 0,
+              "shape": 0,
+              "name": 0.0167
+            }
+          },
+          {
+            "componentName": "acme/datastore/kv",
+            "score": 0.0056,
+            "tier": "NONE",
+            "signals": {
+              "table": 0,
+              "category": 0,
+              "domainLabels": 0,
+              "shape": 0,
+              "name": 0.0056
+            }
+          }
+        ],
+        "chosen": {
+          "target": "imported/ai-tool/retrieval",
+          "mode": "draft",
+          "tier": "NONE"
+        },
+        "rationale": "drafted a new component; no candidate scored above the draft-new floor"
+      },
+      "line": "mapped Retrieval-c3d4 (Retrieval) to imported/ai-tool/retrieval as a draft, NONE at 0.0167"
+    },
+    {
+      "decision": {
+        "sourceNode": {
+          "id": "CustomLogic-e5f6",
+          "type": "CustomPythonComponent",
+          "paramsSummary": "fields: code"
+        },
+        "chosen": {
+          "target": "imported/component/custompythoncomponent",
+          "mode": "draft",
+          "tier": "NONE"
+        },
+        "rationale": "drafted a new component; no candidate scored above the draft-new floor"
+      },
+      "line": "mapped CustomLogic-e5f6 (CustomPythonComponent) to imported/component/custompythoncomponent as a draft, NONE"
+    }
+  ],
+  "shapes": [
+    {
+      "name": "a reference at the HIGH tier, its runner-up listed after it",
+      "decision": {
+        "sourceNode": {
+          "id": "model-1",
+          "type": "OpenAIModel",
+          "paramsSummary": "fields: model_name"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/ai-model/internal-llm",
+            "score": 0.92,
+            "tier": "HIGH",
+            "signals": {
+              "table": 0.5,
+              "category": 0.2,
+              "domainLabels": 0.15,
+              "shape": 0.02,
+              "name": 0.05
+            }
+          },
+          {
+            "componentName": "acme/ai-model/other-llm",
+            "score": 0.4,
+            "tier": "LOW",
+            "signals": {
+              "table": 0,
+              "category": 0.2,
+              "domainLabels": 0.15,
+              "shape": 0.05,
+              "name": 0
+            }
+          }
+        ],
+        "chosen": {
+          "target": "acme/ai-model/internal-llm",
+          "mode": "reference",
+          "tier": "HIGH"
+        },
+        "rationale": "referenced acme/ai-model/internal-llm at score 0.9200 (HIGH) under auto-apply",
+        "swapHint": "swap to acme/ai-model/other-llm (score 0.4000) by setting type: acme/ai-model/other-llm"
+      },
+      "line": "mapped model-1 (OpenAIModel) to acme/ai-model/internal-llm as a reference, HIGH at 0.92"
+    },
+    {
+      "name": "candidates listed lowest first, so the top score is not the first one",
+      "decision": {
+        "sourceNode": {
+          "id": "tool-2",
+          "type": "SearchTool",
+          "paramsSummary": "no parameters"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/ai-tool/a",
+            "score": 0.31,
+            "tier": "LOW",
+            "signals": {
+              "table": 0,
+              "category": 0.2,
+              "domainLabels": 0,
+              "shape": 0.11,
+              "name": 0
+            }
+          },
+          {
+            "componentName": "acme/ai-tool/b",
+            "score": 0.62,
+            "tier": "MEDIUM",
+            "signals": {
+              "table": 0.5,
+              "category": 0,
+              "domainLabels": 0,
+              "shape": 0.12,
+              "name": 0
+            }
+          }
+        ],
+        "chosen": {
+          "target": "imported/ai-tool/searchtool",
+          "mode": "draft",
+          "tier": "MEDIUM"
+        }
+      },
+      "line": "mapped tool-2 (SearchTool) to imported/ai-tool/searchtool as a draft, MEDIUM at 0.62"
+    },
+    {
+      "name": "a whole-number score",
+      "decision": {
+        "sourceNode": {
+          "id": "agent-3",
+          "type": "Agent",
+          "paramsSummary": "no parameters"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/ai-agent/runner",
+            "score": 1,
+            "tier": "HIGH",
+            "signals": {
+              "table": 0.5,
+              "category": 0.2,
+              "domainLabels": 0.15,
+              "shape": 0.1,
+              "name": 0.05
+            }
+          }
+        ],
+        "chosen": {
+          "target": "acme/ai-agent/runner",
+          "mode": "reference",
+          "tier": "HIGH"
+        }
+      },
+      "line": "mapped agent-3 (Agent) to acme/ai-agent/runner as a reference, HIGH at 1"
+    },
+    {
+      "name": "a score whose shortest form runs past four places",
+      "decision": {
+        "sourceNode": {
+          "id": "node-4",
+          "type": "Custom",
+          "paramsSummary": "no parameters"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/component/c",
+            "score": 0.30000000000000004,
+            "tier": "LOW",
+            "signals": {
+              "table": 0,
+              "category": 0.2,
+              "domainLabels": 0,
+              "shape": 0.1,
+              "name": 0
+            }
+          }
+        ],
+        "chosen": {
+          "target": "imported/component/custom",
+          "mode": "draft",
+          "tier": "LOW"
+        }
+      },
+      "line": "mapped node-4 (Custom) to imported/component/custom as a draft, LOW at 0.30000000000000004"
+    },
+    {
+      "name": "no candidate weighed, so the line ends at the tier",
+      "decision": {
+        "sourceNode": {
+          "id": "node-5",
+          "type": "Unknown",
+          "paramsSummary": "no parameters"
+        },
+        "chosen": {
+          "target": "imported/component/unknown",
+          "mode": "draft",
+          "tier": "NONE"
+        },
+        "rationale": "drafted a new component; no candidate scored above the draft-new floor"
+      },
+      "line": "mapped node-5 (Unknown) to imported/component/unknown as a draft, NONE"
+    },
+    {
+      "name": "no choice recorded",
+      "decision": {
+        "sourceNode": {
+          "id": "node-6",
+          "type": "Mystery",
+          "paramsSummary": "no parameters"
+        },
+        "candidates": [
+          {
+            "componentName": "acme/component/m",
+            "score": 0.1,
+            "tier": "NONE",
+            "signals": {
+              "table": 0,
+              "category": 0,
+              "domainLabels": 0,
+              "shape": 0.1,
+              "name": 0
+            }
+          }
+        ]
+      },
+      "line": "made no choice for node-6 (Mystery)"
+    }
+  ]
+}

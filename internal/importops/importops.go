@@ -57,7 +57,10 @@
 // A Result carries what the operation did rather than the prose describing it.
 // The command line renders its own sentence from those fields and a protocol
 // surface serializes them, so neither reads the other's presentation, and the
-// operation itself has no opinion about which surface asked.
+// operation itself has no opinion about which surface asked. The one sentence
+// two surfaces print alike — the line naming a mapping decision, which the
+// command line and the assistant's text answer both write — is composed here, by
+// [DecisionLine], so it has one wording rather than one per surface.
 package importops
 
 import (

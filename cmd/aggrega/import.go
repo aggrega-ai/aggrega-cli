@@ -78,10 +78,19 @@ signatures of more than one format match, it stops and names them. It does not
 guess. Detection reads only the named file — no other source, no network.
 
 Before the drafted output, import names on standard error the format it read
-the source as and the directory the drafted paths are relative to, alongside
-any diagnostics the importer reported. Standard output carries only the result
-— the paths written, or the drafted files themselves under --dry-run — so it can
-be piped unchanged.
+the source as and the directory the drafted paths are relative to, then any
+diagnostics the importer reported, then one line for each source node the
+importer mapped, in the importer's order:
+
+  mapped <node id> (<node type>) to <target> as a <mode>, <tier> at <score>
+
+naming the catalog Component or draft it chose for the node, whether it is
+referenced or drafted, the match tier, and the score of the best candidate it
+weighed. A node the importer weighed no candidate for has no score, and its line
+ends at the tier; a node it made no choice for reads "made no choice for <node
+id> (<node type>)". Standard output carries only the result — the paths
+written, or the drafted files themselves under --dry-run — so it can be piped
+unchanged.
 
 --dry-run does everything import does except write: standard output carries one
 document listing each drafted file's path and its content, so the result can be
@@ -138,13 +147,15 @@ source the write would refuse is refused here too.`,
 			}
 
 			// The import's commentary — how the source was read, then what the
-			// importer reported about it — goes to the error stream. Under
-			// --dry-run the standard output stream holds one parseable document
-			// and nothing else, so a commentary line there would corrupt what a
-			// caller is parsing; putting both on one stream is also what lets a
-			// reader see which importer raised an unmapped-node warning.
+			// importer reported about it, then how it mapped each node — goes to
+			// the error stream. Under --dry-run the standard output stream holds
+			// one parseable document and nothing else, so a commentary line there
+			// would corrupt what a caller is parsing; putting all of it on one
+			// stream is also what lets a reader see which importer raised an
+			// unmapped-node warning and what it chose for that node.
 			reportImportPreamble(cmd.ErrOrStderr(), res)
 			reportImportDiagnostics(cmd.ErrOrStderr(), res.Diagnostics)
+			reportImportDecisions(cmd.ErrOrStderr(), res.Decisions)
 
 			if delivery.Reports() {
 				if err := reportImportedFiles(cmd.OutOrStdout(), res.Files); err != nil {
@@ -260,5 +271,17 @@ func reportImportPreamble(w io.Writer, res importops.Result) {
 func reportImportDiagnostics(w io.Writer, diags []abi.Diagnostic) {
 	for _, d := range diags {
 		fmt.Fprintf(w, "%s: %s\n", d.Severity, d.Message)
+	}
+}
+
+// reportImportDecisions writes one line per mapping decision the importer
+// returned, in its order, so an author sees what each source node was mapped to
+// and how sure the importer was — where the import guessed — without opening the
+// drafts. The sentence is the shared one ([importops.DecisionLine]), so the
+// assistant's import tool words the same decision the same way. An importer that
+// reports no decisions adds no line.
+func reportImportDecisions(w io.Writer, decisions []abi.ImportDecision) {
+	for _, d := range decisions {
+		fmt.Fprintln(w, importops.DecisionLine(d))
 	}
 }

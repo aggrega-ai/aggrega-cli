@@ -111,16 +111,27 @@ type importDiagnostic struct {
 // not convert, and halted true. Reducing that to a failure would discard exactly
 // what the caller needs in order to act.
 //
-// files, written and diagnostics are always arrays, empty rather than absent, so
-// a client reads an import that produced nothing as an empty answer rather than
-// as a missing field.
+// decisions is the importer's mapping decision for each source node it mapped, in
+// its order, under both deliveries and whether or not the import halted: what
+// tells a client where the import guessed. Each entry is the importer's own
+// decision type rather than a projection of it, unlike a diagnostic: that type's
+// keys are already camelCase, so carrying it whole answers in this surface's
+// register with every key the importer wrote, `componentName` included, and
+// nothing renamed between the importer and the client. A candidate list, a
+// choice, a rationale or a swap hint the importer did not write is absent from
+// its entry, as it is on the importer's own answer.
+//
+// files, written, diagnostics and decisions are always arrays, empty rather than
+// absent, so a client reads an import that produced nothing as an empty answer
+// rather than as a missing field.
 type importResult struct {
-	Format      string             `json:"format"`
-	OutputDir   string             `json:"outputDir"`
-	Written     []string           `json:"written"`
-	Files       []importedFile     `json:"files"`
-	Diagnostics []importDiagnostic `json:"diagnostics"`
-	Halted      bool               `json:"halted"`
+	Format      string               `json:"format"`
+	OutputDir   string               `json:"outputDir"`
+	Written     []string             `json:"written"`
+	Files       []importedFile       `json:"files"`
+	Diagnostics []importDiagnostic   `json:"diagnostics"`
+	Decisions   []abi.ImportDecision `json:"decisions"`
+	Halted      bool                 `json:"halted"`
 }
 
 // dispatchImport turns a foreign source description into draft Aggrega
@@ -242,6 +253,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Written:     importWrittenPaths(res, delivery),
 		Files:       importedFiles(res.Files),
 		Diagnostics: importDiagnostics(res.Diagnostics),
+		Decisions:   importDecisions(res.Decisions),
 		Halted:      res.Halted(),
 	})
 }
@@ -281,4 +293,10 @@ func importDiagnostics(diags []abi.Diagnostic) []importDiagnostic {
 		out = append(out, importDiagnostic{Severity: d.Severity, Message: d.Message, Code: d.Code})
 	}
 	return out
+}
+
+// importDecisions carries the importer's decisions onto the wire in its order, as
+// an array even when it reported none.
+func importDecisions(decisions []abi.ImportDecision) []abi.ImportDecision {
+	return append(make([]abi.ImportDecision, 0, len(decisions)), decisions...)
 }

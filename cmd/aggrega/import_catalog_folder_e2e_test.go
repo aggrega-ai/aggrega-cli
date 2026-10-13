@@ -196,9 +196,13 @@ func assertImportCommandDraftsTheSharedResult(t *testing.T, root, external, form
 	}
 
 	// The preamble names this run's own root; what follows it is whatever the
-	// importer reported, which is the shared result's diagnostics.
+	// importer reported, which is the shared result's diagnostics, and then one line
+	// per mapping decision the shared result carries. The lines themselves are held
+	// to written literals beside their formatter; what this holds is that the
+	// command puts every one of them on this stream, after the diagnostics.
 	var diagnostics bytes.Buffer
 	reportImportDiagnostics(&diagnostics, shared.Diagnostics)
+	reportImportDecisions(&diagnostics, shared.Decisions)
 	wantCommentary := "read as the " + format + " format, with drafted paths relative to " + root + "\n" +
 		diagnostics.String()
 	if stderr != wantCommentary {

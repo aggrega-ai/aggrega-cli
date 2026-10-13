@@ -87,6 +87,61 @@ type importDiagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
+// importDecision is one of the importer's mapping decisions as this protocol
+// carries it: the source node, the catalog Components it weighed, what it chose,
+// why, and how to swap the choice.
+//
+// It is a projection of the socket's own decision type, for the reason the
+// diagnostic beside it is one: that type spells its keys in the plugin wire's
+// convention, and every key on this surface is snake_case. The values are the
+// importer's, unaltered and in its order; only the keys are this surface's, and
+// a candidate's Component is named under the one word `component`.
+//
+// Candidates is absent where the importer weighed none, Chosen where it made no
+// choice, and Rationale and SwapHint where it wrote none — each a fact about the
+// decision, as it is on the importer's own answer, rather than a gap.
+type importDecision struct {
+	SourceNode importDecisionNode    `json:"source_node"`
+	Candidates []importCandidate     `json:"candidates,omitempty"`
+	Chosen     *importDecisionChoice `json:"chosen,omitempty"`
+	Rationale  string                `json:"rationale,omitempty"`
+	SwapHint   string                `json:"swap_hint,omitempty"`
+}
+
+// importDecisionNode is the source node a decision resolved.
+type importDecisionNode struct {
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	ParamsSummary string `json:"params_summary"`
+}
+
+// importCandidate is one catalog Component the importer weighed for a node, with
+// its score, the tier the score falls in and the per-signal breakdown behind it.
+type importCandidate struct {
+	Component string                 `json:"component"`
+	Score     float64                `json:"score"`
+	Tier      string                 `json:"tier"`
+	Signals   importCandidateSignals `json:"signals"`
+}
+
+// importCandidateSignals is the contribution each signal made to a candidate's
+// score.
+type importCandidateSignals struct {
+	Table        float64 `json:"table"`
+	Category     float64 `json:"category"`
+	DomainLabels float64 `json:"domain_labels"`
+	Shape        float64 `json:"shape"`
+	Name         float64 `json:"name"`
+}
+
+// importDecisionChoice is what the importer chose for a node: the target, how it
+// emitted it, and the tier of the choice.
+type importDecisionChoice struct {
+	Target string `json:"target"`
+	Mode   string `json:"mode"`
+	Tier   string `json:"tier"`
+}
+
 // importPayload is the import tool's structured payload: the workspace the
 // drafts were written into, the directory the drafted paths are relative to,
 // how the source was read, what reached disk, and what the importer had to say
@@ -127,6 +182,11 @@ type importDiagnostic struct {
 // than left to the failure flag alone because a partial import still drafts
 // what it could, and a caller deciding whether to keep that needs the fact
 // rather than only the refusal.
+//
+// Decisions is the importer's mapping decision for each node it mapped, in its
+// order, under both deliveries and whether or not the import halted — what tells
+// a caller where the import guessed. It is always an array, empty for an importer
+// that reports none rather than absent.
 type importPayload struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
@@ -138,6 +198,7 @@ type importPayload struct {
 	Written     []string           `json:"written"`
 	Drafts      []importedDraft    `json:"drafts,omitempty"`
 	Diagnostics []importDiagnostic `json:"diagnostics"`
+	Decisions   []importDecision   `json:"decisions"`
 	Halted      bool               `json:"halted"`
 }
 
@@ -283,6 +344,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Format:      res.Format,
 		Written:     importWritten(res, delivery),
 		Diagnostics: importDiagnosticsFor(tw, res.Diagnostics),
+		Decisions:   importDecisionsFor(tw, res.Decisions),
 		Halted:      res.Halted(),
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
@@ -297,12 +359,13 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	// exactly this, and it is the outcome the command reaches for the same
 	// condition — so the two agree about whether one import completed. What a
 	// refusal here does NOT do is drop what the run produced: the files that
-	// reached disk, the drafts, and every diagnostic are in the payload beside
-	// the sentence.
+	// reached disk, the drafts, every diagnostic and every mapping decision are in
+	// the payload beside the sentence.
 	if halt := res.Refusal(); halt != nil {
-		return tw.answer(structuredErrorResult(explainDiagnostic(importHaltedText(payload, delivery, halt), ""), payload))
+		return tw.answer(structuredErrorResult(explainDiagnostic(
+			importHaltedText(payload, res.Decisions, delivery, halt), ""), payload))
 	}
-	return tw.answer(textResult(renderImportText(payload, delivery), payload))
+	return tw.answer(textResult(renderImportText(payload, res.Decisions, delivery), payload))
 }
 
 // importFormatRefusal composes this surface's sentence for a source whose format
@@ -395,7 +458,8 @@ func importRefusal(source string, err error) string {
 // The outcome sentence is composed here while what happened is rendered by the
 // one renderer, so a caller reading a halted answer and a caller reading a clean
 // one are told what was written in the same words.
-func importHaltedText(p importPayload, delivery authoredcontent.Delivery, halt error) string {
+func importHaltedText(p importPayload, decisions []abi.ImportDecision, delivery authoredcontent.Delivery,
+	halt error) string {
 	var b strings.Builder
 	if short, ok := cerrors.ShortCodeOf(halt); ok {
 		b.WriteString(short)
@@ -404,12 +468,13 @@ func importHaltedText(p importPayload, delivery authoredcontent.Delivery, halt e
 	b.WriteString("the importer could not translate the whole of ")
 	b.WriteString(p.Source)
 	b.WriteString(", so what it drafted is partial. The diagnostics below name what it could not translate.\n\n")
-	b.WriteString(renderImportText(p, delivery))
+	b.WriteString(renderImportText(p, decisions, delivery))
 	return b.String()
 }
 
 // renderImportText renders the human-readable answer: how the source was read,
-// what reached disk, and everything the importer reported about the source.
+// what reached disk, everything the importer reported about the source, and one
+// line for each node it mapped.
 //
 // The three write outcomes are reported differently on purpose. A write names
 // the files that reached disk and the root they are relative to, because a
@@ -417,7 +482,14 @@ func importHaltedText(p importPayload, delivery authoredcontent.Delivery, halt e
 // by design and says so, rather than reading as the third case. An import that
 // drafted nothing at all is the third, and saying nothing there would leave it
 // indistinguishable from a write that failed quietly.
-func renderImportText(p importPayload, delivery authoredcontent.Delivery) string {
+//
+// The decision lines come after the diagnostics, as they do on the command
+// line's error stream, and each is the shared sentence ([importops.DecisionLine])
+// rendered from the importer's own decision, so a reader of either surface reads
+// one decision in one wording. They are rendered from decisions, the importer's
+// own values, rather than from the payload's projection of them, because the
+// projection exists to carry this surface's keys and the sentence carries none.
+func renderImportText(p importPayload, decisions []abi.ImportDecision, delivery authoredcontent.Delivery) string {
 	var b strings.Builder
 	b.WriteString("read " + p.Source + " as the " + p.Format + " format\n")
 	switch {
@@ -434,6 +506,9 @@ func renderImportText(p importPayload, delivery authoredcontent.Delivery) string
 	}
 	for _, d := range p.Diagnostics {
 		b.WriteString("  " + d.Severity + ": " + d.Message + "\n")
+	}
+	for _, d := range decisions {
+		b.WriteString("  " + importops.DecisionLine(d) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -464,6 +539,48 @@ func importDiagnosticsFor(tw *toolWorkspace, diags []abi.Diagnostic) []importDia
 	out := make([]importDiagnostic, 0, len(diags))
 	for _, d := range diags {
 		out = append(out, importDiagnostic{Severity: d.Severity, Message: tw.reportedText(d.Message), Code: d.Code})
+	}
+	return out
+}
+
+// importDecisionsFor projects the importer's mapping decisions onto this
+// surface's shape, in the importer's order, always as an array so an importer
+// that reports none arrives as an empty list rather than a missing field.
+//
+// Every value is carried as the importer returned it. The three that are prose
+// the importer composed — a node's parameter summary, the rationale and the swap
+// hint — are told the way a diagnostic's message is, so a caller reaching a
+// listener is told no place on this host through them either.
+func importDecisionsFor(tw *toolWorkspace, decisions []abi.ImportDecision) []importDecision {
+	out := make([]importDecision, 0, len(decisions))
+	for _, d := range decisions {
+		projected := importDecision{
+			SourceNode: importDecisionNode{
+				ID:            d.SourceNode.ID,
+				Type:          d.SourceNode.Type,
+				ParamsSummary: tw.reportedText(d.SourceNode.ParamsSummary),
+			},
+			Rationale: tw.reportedText(d.Rationale),
+			SwapHint:  tw.reportedText(d.SwapHint),
+		}
+		for _, c := range d.Candidates {
+			projected.Candidates = append(projected.Candidates, importCandidate{
+				Component: c.ComponentName,
+				Score:     c.Score,
+				Tier:      c.Tier,
+				Signals: importCandidateSignals{
+					Table:        c.Signals.Table,
+					Category:     c.Signals.Category,
+					DomainLabels: c.Signals.DomainLabels,
+					Shape:        c.Signals.Shape,
+					Name:         c.Signals.Name,
+				},
+			})
+		}
+		if d.Chosen != nil {
+			projected.Chosen = &importDecisionChoice{Target: d.Chosen.Target, Mode: d.Chosen.Mode, Tier: d.Chosen.Tier}
+		}
+		out = append(out, projected)
 	}
 	return out
 }

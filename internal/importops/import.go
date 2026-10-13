@@ -108,12 +108,21 @@ type Options struct {
 // partially succeeds is exactly the case whose diagnostics are its most useful
 // output, so reducing it to a failure would discard what the caller needs. Each
 // surface decides its own outcome from [Result.Halted].
+//
+// Decisions is the importer's mapping decision for each source node it mapped,
+// in the importer's own order and exactly as it returned them: the node, the
+// catalog Components it weighed with their scores and tiers, what it chose, why,
+// and how to swap the choice. It is what lets an author see where an import
+// guessed, so every surface carries it in its answer, whatever the delivery and
+// whether or not the import halted. It is empty for an importer that reports no
+// decisions.
 type Result struct {
 	Format      string
 	OutputDir   string
 	Files       []abi.ScaffoldFile
 	Written     []string
 	Diagnostics []abi.Diagnostic
+	Decisions   []abi.ImportDecision
 }
 
 // Halted reports whether any diagnostic is of halt severity.
@@ -216,6 +225,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		OutputDir:   outputDir,
 		Files:       imported.Files,
 		Diagnostics: imported.Diagnostics,
+		Decisions:   imported.Decisions,
 	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.

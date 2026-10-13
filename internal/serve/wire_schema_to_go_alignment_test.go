@@ -50,6 +50,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -147,6 +149,26 @@ var wireExternalSchemaRoots = map[string]wireExternalSchemaRoot{
 	"#/$defs/ClientNotification": {
 		root: reflect.TypeOf(jsonRPCRequest{}),
 		why:  "the envelope a client sends with no identifier; it is decoded into the same inbound envelope type a request is, which is why it has no shape of its own here",
+	},
+	"#/$defs/ImportDecision": {
+		root: reflect.TypeOf(abi.ImportDecision{}),
+		why:  "one mapping decision an importer returned, generated from the import socket's contract and carried whole as the entries of the import answer's decisions",
+	},
+	"#/$defs/DecisionSourceNode": {
+		root: reflect.TypeOf(abi.DecisionSourceNode{}),
+		why:  "the source node a mapping decision resolved, reached through the decision",
+	},
+	"#/$defs/ImportCandidate": {
+		root: reflect.TypeOf(abi.ImportCandidate{}),
+		why:  "one catalog Component an importer weighed for a node, reached as the entries of the decision's candidates",
+	},
+	"#/$defs/CandidateSignals": {
+		root: reflect.TypeOf(abi.CandidateSignals{}),
+		why:  "the per-signal breakdown behind a candidate's score, reached through the candidate",
+	},
+	"#/$defs/DecisionChoice": {
+		root: reflect.TypeOf(abi.DecisionChoice{}),
+		why:  "what an importer chose for a node, reached through the decision",
 	},
 }
 

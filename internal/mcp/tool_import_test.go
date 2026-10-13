@@ -290,14 +290,29 @@ func TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved(t *testing.T) {
 // Both halves are asserted. A delivery that wrote nothing and also reported
 // nothing would satisfy a check on the tree alone, and one that reported the
 // drafts and wrote them too would satisfy a check on the answer alone.
+//
+// The demo importer reports no mapping decisions, which makes this the case of an
+// importer with none to report: the answer still carries decisions, as an empty
+// list rather than an absent key, and the text answer carries no decision line.
 func TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts(t *testing.T) {
 	pointImportSeamAtTheDemoGuest(t)
 	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
 	before := treeUnder(t, root)
 	s := importToolServer(t, root)
 
-	p := importToolPayload(t, callTool(t, s, importToolName,
-		map[string]any{"source": rel, "dry_run": true}))
+	res := callTool(t, s, importToolName, map[string]any{"source": rel, "dry_run": true})
+	p := importToolPayload(t, res)
+
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(res.StructuredContent, &keys); err != nil {
+		t.Fatalf("decode the structured answer's keys: %v (body %s)", err, res.StructuredContent)
+	}
+	if got := string(keys["decisions"]); got != "[]" {
+		t.Errorf("an importer reporting no decisions answered decisions as %q; want an empty list, present", got)
+	}
+	if text := res.Content[0].Text; strings.Contains(text, "mapped ") || strings.Contains(text, "made no choice") {
+		t.Errorf("an importer reporting no decisions drew a decision line in the text answer:\n%s", text)
+	}
 
 	if len(p.Written) != 0 {
 		t.Errorf("a reporting delivery named %v as written; nothing reaches disk under it", p.Written)

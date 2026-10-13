@@ -146,7 +146,8 @@ func importViaToolProtocol(t *testing.T, bin, dir, launchRoot, tool string, args
 }
 
 // importViaLanguageServer starts the built binary as `aggrega serve` at the
-// workspace root and sends one aggrega/import naming the output directory ".".
+// workspace root and sends one aggrega/import naming the output directory ".",
+// and holds the answer's decisions to an empty list.
 func importViaLanguageServer(t *testing.T, bin, root string) {
 	t.Helper()
 	cmd := exec.Command(bin, "serve")
@@ -190,6 +191,15 @@ func importViaLanguageServer(t *testing.T, bin, root string) {
 	}
 	if failure, refused := resp["error"]; refused {
 		t.Fatalf("aggrega/import was refused: %+v (stderr: %s)", failure, stderr.String())
+	}
+	// The demo importer reports no mapping decisions, so the answer is the case of
+	// an importer with none: decisions is still there, as an empty list rather than
+	// an absent key or a null.
+	result, _ := resp["result"].(map[string]any)
+	decisions, present := result["decisions"]
+	if list, isList := decisions.([]any); !present || !isList || len(list) != 0 {
+		t.Errorf("an importer reporting no decisions answered decisions as %#v (present=%v); want an empty list",
+			decisions, present)
 	}
 }
 
