@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
@@ -102,7 +103,7 @@ func TestImportArtifact_ResolvesAndRuns(t *testing.T) {
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	load := demoImporterLoader(fixture)
 
-	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("hello world"), nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("hello world"), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -129,11 +130,11 @@ func TestImportArtifact_Deterministic(t *testing.T) {
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	load := demoImporterLoader(fixture)
 
-	first, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil)
+	first, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("first ImportArtifact: %v", err)
 	}
-	second, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil)
+	second, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("second ImportArtifact: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestImportArtifact_UnknownFormatHaltsLoud(t *testing.T) {
 		return wasm.PluginSpec{}, nil
 	}
 
-	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "unknown", []byte("x"), nil, nil)
+	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "unknown", []byte("x"), nil, nil, nil)
 	if !errors.Is(err, errNoImporterForFormat) {
 		t.Fatalf("err = %v; want errNoImporterForFormat", err)
 	}
@@ -177,10 +178,11 @@ func TestImportArtifact_UnknownFormatHaltsLoud(t *testing.T) {
 // obtains a real tree host-mediated. The probe importer hands its source to the
 // aggrega_parse_source host function for the "json" format; the dispatcher's
 // injected callback resolves and runs the parser through the parser socket and
-// hands the tree back. The guest echoes the tree it received, so a clean decode
-// (no in-band failure) plus a recorded parser resolve+load proves the callback
-// fired, delegated to the parser socket, and delivered a genuine parsed tree —
-// not the tree passing through the import input payload.
+// hands the tree back. The guest answers the tree it received as its one file,
+// so a clean decode (no in-band failure) carrying that tree plus a recorded parser
+// resolve+load proves the callback fired, delegated to the parser socket, and
+// delivered a genuine parsed tree — not the tree passing through the import input
+// payload.
 func TestImportArtifact_HostMediatedParse(t *testing.T) {
 	t.Parallel()
 	importerFixture := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
@@ -191,9 +193,14 @@ func TestImportArtifact_HostMediatedParse(t *testing.T) {
 	}
 	parserRes, parserLoad, probe := demoParserSeam(parserFixture)
 
-	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
+	}
+	// The parse-go scaffold echoes the source as {format, source}, so the tree the
+	// guest answered with carries both.
+	if len(out.Files) != 1 || !strings.Contains(out.Files[0].Content, `"format":"json"`) || !strings.Contains(out.Files[0].Content, "hello") {
+		t.Fatalf("files = %+v; want the one file carrying the parser's tree", out.Files)
 	}
 
 	// The guest asked the host to parse for "json"; a genuine host-mediated
@@ -222,7 +229,7 @@ func TestImportArtifact_HostMediatedParseDeterministic(t *testing.T) {
 
 	run := func() []byte {
 		parserRes, parserLoad, _ := demoParserSeam(parserFixture)
-		out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil)
+		out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil, nil)
 		if err != nil {
 			t.Fatalf("ImportArtifact: %v", err)
 		}
@@ -243,9 +250,11 @@ func TestImportArtifact_HostMediatedParseDeterministic(t *testing.T) {
 // than the source passing through unparsed. The importer asks the host to parse
 // for "json", but the parser resolver — a real, empty catalog — advertises no
 // parser, so the reused ErrNoParserForFormat fires inside the injected callback.
-// The halt surfaces (a non-nil result) and no parser is loaded, proving the
+// The halt surfaces carrying that condition's message — the guest reports the
+// failed parse in its answer's error field — and no parser is loaded, proving the
 // dispatcher delegates to the parser socket's resolution path rather than
-// swallowing the failure.
+// swallowing the failure. Asserting the message, not merely an error, is what
+// keeps an unrelated earlier failure from satisfying this test.
 func TestImportArtifact_NoParserForFormatHaltsLoud(t *testing.T) {
 	t.Parallel()
 	importerFixture := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
@@ -269,9 +278,12 @@ func TestImportArtifact_NoParserForFormatHaltsLoud(t *testing.T) {
 		t.Fatalf("parser resolver err = %v; want ErrNoParserForFormat", err)
 	}
 
-	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"x":1}`), nil, nil)
+	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"x":1}`), nil, nil, nil)
 	if err == nil {
 		t.Fatal("ImportArtifact: want a loud halt for an unresolvable syntactic format, got nil error")
+	}
+	if !strings.Contains(err.Error(), catalog.ErrNoParserForFormat().Error()) {
+		t.Fatalf("ImportArtifact err = %v; want the halt to carry the no-parser condition's message", err)
 	}
 	if parserLoaderCalled {
 		t.Fatal("parser loader must not be reached when no parser advertises the format")

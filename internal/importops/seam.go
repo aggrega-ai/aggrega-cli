@@ -6,6 +6,8 @@ package importops
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -16,17 +18,23 @@ import (
 )
 
 // Seam is the resolver-and-loader pair for an import run, plus the parser pair
-// the importer draws on to obtain its parsed source tree.
+// the importer draws on to obtain its parsed source tree, and the view of the
+// catalog's Components the importer is handed.
 //
-// The four travel together because they are built from one catalog view: parser
+// They travel together because they are built from one catalog view: parser
 // and importer resolution share it and its embedded-resolution posture, so one
 // loader closure serves both sockets and no separate enable is needed for the
-// parser side.
+// parser side, and the Components the importer is shown are the ones held by
+// the catalog its importer was selected from.
+//
+// Catalog is nil when that catalog holds no Component, and a harness standing
+// in for the catalog leaves it nil unless it supplies a view of its own.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
 	ParserRes    parsersocket.ParserResolver
 	ParserLoad   parsersocket.ParserLoader
+	Catalog      *abi.CatalogProjection
 }
 
 // ImporterResolver resolves a requested source format to the importer that
@@ -84,6 +92,11 @@ var BuildSeam = buildSeam
 // The parser is selected by the same format capability from the same catalog
 // view, and its bytes come from the same cascade handed the same directories, so
 // a parser plugin loads exactly like any other — beside its entity included.
+//
+// The importer's view of the catalog's Components is projected from this same
+// view, once, so the import loads the catalog once and shows the importer
+// exactly the catalog it was selected from — nothing a Release contributes, and
+// nothing fetched.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
 	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
@@ -107,5 +120,6 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		ImporterLoad: load,
 		ParserRes:    cat,
 		ParserLoad:   load,
+		Catalog:      importersocket.ProjectCatalog(cat),
 	}, nil
 }

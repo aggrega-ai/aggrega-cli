@@ -268,6 +268,12 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.ParseOutput](t, "ParseOutput", false)
 	vec[abi.ParseOutput](t, "ParseOutputBare", false)
 	vec[abi.ImportInput](t, "ImportInput", false)
+	// An import input carrying a populated catalog view: nested maps of text
+	// strings, lists of text strings and lists of nested maps, which the reference
+	// encoder writes the same way, so it stays anchored. The label keys differ in
+	// length, so the length-first CBOR key order is pinned against an encoder this
+	// schema did not generate.
+	vec[abi.ImportInput](t, "ImportInputCatalog", false)
 	vec[abi.ImportOutput](t, "ImportOutput", false)
 	vec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
 	// The parse-source reply's SUCCESS shape, which its failure envelope above

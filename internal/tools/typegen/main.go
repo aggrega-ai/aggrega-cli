@@ -455,11 +455,17 @@ type codecTarget struct {
 	// payload, for every export this target's types serve. It is one half of what
 	// the plugin-wire registry is emitted from; binaryWire below is the other.
 	//
-	// The export NAME is deliberately absent: an entry names the attachment ROLE,
-	// and the export is read from the canonical role-to-export rule in the plugin
-	// type vocabulary. That rule is also what the host's own dispatch default
-	// reads, so the registry and the dispatch cannot disagree about what an export
-	// is called — there is no second spelling of the name to drift.
+	// The export NAME is deliberately absent: an entry names either the attachment
+	// ROLE whose default the export is, or the plugin TYPE whose required export it
+	// is, and the name is read from the plugin type vocabulary's canonical rule for
+	// that key. Those rules are also what the host's own dispatch reads, so the
+	// registry and the dispatch cannot disagree about what an export is called —
+	// there is no second spelling of the name to drift.
+	//
+	// A target registered on the binary wire must declare every export its socket
+	// carries here, and generation refuses one that declares none: a socket that
+	// moved to the binary wire with no entry would leave a caller converting an
+	// authored payload for its export handing the guest text it cannot read.
 	//
 	// An entry is admitted only where something can PIN it: the socket's output
 	// decode must route through the host's two encoding-specific decode entry
@@ -485,14 +491,54 @@ type codecTarget struct {
 }
 
 // wireExport binds one guest export to the $def carrying its input payload.
+//
+// The export is named by exactly one of role and pluginType, and generation
+// refuses an entry naming both or neither. Naming the key rather than the export
+// is what keeps the export name single-sourced: it is read at emission from the
+// rule that key is governed by.
 type wireExport struct {
 	// role is the governance attachment role whose default entry function is the
-	// export this payload shape serves. Naming the role rather than the export is
-	// what keeps the export name single-sourced: it is read from the canonical
-	// role-to-export rule at emission.
+	// export this payload shape serves, read from the canonical role-to-export
+	// rule.
 	role plugintype.Role
+	// pluginType is the plugin type whose required export this payload shape
+	// serves, for a socket whose export is fixed by the type rather than chosen by
+	// an attachment. The export is that type's minimum-export rule, which must name
+	// one exact export rather than a prefix.
+	pluginType plugintype.Type
 	// inputDef is the $def name of the type carrying that export's input payload.
 	inputDef string
+}
+
+// exportName resolves the export this entry names through the rule its key is
+// governed by, and refuses an entry the rules cannot resolve to exactly one
+// export name.
+func (w wireExport) exportName() (string, error) {
+	switch {
+	case w.role != "" && w.pluginType != "":
+		return "", fmt.Errorf("names both role %q and plugin type %q, so the export it serves is "+
+			"named twice", string(w.role), string(w.pluginType))
+	case w.role != "":
+		export, ok := plugintype.GovernanceRoleExport(w.role)
+		if !ok {
+			return "", fmt.Errorf("names role %q, which the canonical role-to-export rule does not know",
+				string(w.role))
+		}
+		return export, nil
+	case w.pluginType != "":
+		entry, ok := plugintype.Lookup(w.pluginType)
+		if !ok {
+			return "", fmt.Errorf("names plugin type %q, which the plugin-type registry does not know",
+				string(w.pluginType))
+		}
+		if entry.MinExport.Name == "" || entry.MinExport.IsPrefix {
+			return "", fmt.Errorf("names plugin type %q, whose minimum-export rule names no single export",
+				string(w.pluginType))
+		}
+		return entry.MinExport.Name, nil
+	default:
+		return "", fmt.Errorf("names neither a role nor a plugin type, so nothing resolves the export it serves")
+	}
 }
 
 // emitsDef reports whether this target emits a codec for the named $def.
@@ -1309,12 +1355,25 @@ var codecTargets = map[string]codecTarget{
 	// json.RawMessage, a string-to-string map, or a def-local nested type
 	// referenced by $ref, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).
+	//
+	// This socket has no host codec of its own: the host reads and writes this abi
+	// Go codec directly, so the wire registration sits here. binaryWire: the
+	// socket's wire is canonical CBOR in both directions — its call site encodes the
+	// input with the generated encoder and decodes the output through the binary
+	// encoding's entry point, and every importer guest reads and writes the same.
+	// Its one export is the importer type's required export rather than a role's
+	// default, so the entry names the plugin type.
 	"import_gen.go": {
 		schema:           schemas.WasmImportV1alpha1,
 		schemaFile:       "wasm-import-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       importGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
+		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
+		binaryWire:       true,
+		wireExports: []wireExport{
+			{pluginType: plugintype.Importer, inputDef: "ImportInput"},
+		},
 	},
 	"import_gen.rs": {
 		schema:           schemas.WasmImportV1alpha1,
@@ -1380,7 +1439,8 @@ var codecTargets = map[string]codecTarget{
 	// own and instead walks the targets above, collecting each one's wireExports
 	// and binaryWire, so the export-to-payload-to-encoding table is emitted from
 	// the same registrations that drive the codecs rather than hand-kept beside
-	// them.
+	// them — and generation fails on a target registered on the binary wire that
+	// declares no export.
 	//
 	// What reads it: the direct-invocation command, which takes an authored text
 	// payload and has to hand the guest whatever the named export's wire carries.

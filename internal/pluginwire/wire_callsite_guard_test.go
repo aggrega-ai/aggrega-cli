@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -49,7 +50,22 @@ type decodeSite struct {
 // the binary wire without its registry entry following leaves the
 // direct-invocation command handing the guest text it cannot read, which is a
 // failure with no red anywhere: the compiler's own path works, because it does
-// not consult the registry.
+// not consult the registry. It holds for every socket, whether its export is a
+// governance role's default or fixed by its plugin type: a call site decoding an
+// export through the binary entry point fails this guard unless the registry
+// lists that export as binary, so the table cannot fall behind a socket that
+// moves.
+//
+// How a call site's exports are read, and what that cannot see. A decode call's
+// exports are every export its enclosing function — and any same-file helper it
+// calls — names in one of three forms: an attachment role, read through the
+// role-to-export rule; an export-name identifier the wasm package declares, read
+// from that declaration; or a literal export name passed to the decode call
+// itself. The reading is syntactic: an export reaching the call through a
+// parameter, a variable assigned in another file, or a helper in another file is
+// not seen. A binary decode site from which none of the three resolves anything is
+// reported as a hole rather than passed, so what the reading cannot see surfaces
+// as a failure, not as a green.
 //
 // COVERAGE BOUND, stated because an unstated bound reads as full coverage: this
 // guard reaches a socket whose output decode routes through one of the two entry
@@ -105,10 +121,16 @@ func TestWireCallSiteDisagreementCanFail(t *testing.T) {
 			wantSub: "no socket-output decode call site",
 		},
 		{
+			name:    "a binary call site decoding an export the registry does not list at all",
+			binary:  map[string]bool{"mutate": true},
+			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: []string{"import"}}},
+			wantSub: "does not mark",
+		},
+		{
 			name:    "a binary call site whose export nothing resolves",
 			binary:  map[string]bool{"mutate": true},
 			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: nil}},
-			wantSub: "names no attachment role",
+			wantSub: "names no export this guard can resolve",
 		},
 	}
 
@@ -126,6 +148,82 @@ func TestWireCallSiteDisagreementCanFail(t *testing.T) {
 					joined, tc.wantSub)
 			}
 		})
+	}
+}
+
+// TestDecodeSiteCensusResolvesEveryNamingForm proves the census reads a decode
+// site's export in each form a socket call site names it, beyond the governance
+// roles alone: a role, an export-name identifier the wasm package declares, a
+// literal export name on the decode call, and either of the first two named in a
+// same-file helper. A site naming none of them resolves nothing, which the guard
+// above reports as a hole.
+//
+// The identifiers are read from the real vocabulary and the real wasm package, so
+// a census that stopped reading one of them fails here rather than silently
+// resolving nothing at a real call site.
+func TestDecodeSiteCensusResolvesEveryNamingForm(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	roles := governanceRoleIdents(t, root)
+	naming := exportNaming{roles: roles, exports: exportNameIdents(t, root, roles, pluginTypeIdents(t, root))}
+
+	mutate, ok := plugintype.GovernanceRoleExport(plugintype.RoleLabelTransform)
+	if !ok {
+		t.Fatal("the label-transform role has no default export")
+	}
+	importer, ok := plugintype.Lookup(plugintype.Importer)
+	if !ok || importer.MinExport.Name == "" || importer.MinExport.IsPrefix {
+		t.Fatal("the importer type has no exact required export")
+	}
+	if got := naming.exports["ImportExport"]; got != importer.MinExport.Name {
+		t.Fatalf("the census resolves the wasm package's ImportExport to %q; want the importer type's required "+
+			"export %q", got, importer.MinExport.Name)
+	}
+
+	const src = `package synthetic
+
+func viaRole() { _ = plugintype.RoleLabelTransform; wasm.DecodeGuestOutputCBOR(export, out, &v) }
+
+func viaExportName() { wasm.DecodeGuestOutputCBOR(wasm.ImportExport, out, &v) }
+
+func viaLiteral() { wasm.DecodeGuestOutputCBOR("a_literal_export", out, &v) }
+
+func viaHelper() { name := helper(); wasm.DecodeGuestOutputCBOR(name, out, &v) }
+
+func helper() string { return wasm.MutateExport }
+
+func viaNothing() { wasm.DecodeGuestOutputCBOR(export, out, &v) }
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "synthetic.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse the synthetic source: %v", err)
+	}
+	sites := fileDecodeSites(fset, file, "synthetic.go", naming)
+
+	want := map[string][]string{
+		"synthetic.go:3":  {mutate},
+		"synthetic.go:5":  {importer.MinExport.Name},
+		"synthetic.go:7":  {"a_literal_export"},
+		"synthetic.go:9":  {mutate},
+		"synthetic.go:13": nil,
+	}
+	if len(sites) != len(want) {
+		t.Fatalf("found %d decode sites in the synthetic source; want %d: %+v", len(sites), len(want), sites)
+	}
+	for _, s := range sites {
+		w, ok := want[s.where]
+		if !ok {
+			t.Errorf("unexpected decode site %s", s.where)
+			continue
+		}
+		if !s.binary {
+			t.Errorf("site %s names the binary entry point but was read as text", s.where)
+		}
+		if strings.Join(s.exports, ",") != strings.Join(w, ",") {
+			t.Errorf("site %s resolves exports %v; want %v", s.where, s.exports, w)
+		}
 	}
 }
 
@@ -179,9 +277,10 @@ func wireDisagreements(binary map[string]bool, sites []decodeSite) []string {
 		}
 		if len(s.exports) == 0 {
 			out = append(out, fmt.Sprintf(
-				"the socket-output decode call site at %s decodes through %s but names no attachment "+
-					"role, so this guard cannot tell which export it serves and cannot check it against "+
-					"the plugin-wire registry",
+				"the socket-output decode call site at %s decodes through %s but names no export this "+
+					"guard can resolve — no attachment role, no export-name identifier the wasm package "+
+					"declares, and no literal export name — so it cannot tell which export the site serves "+
+					"and cannot check it against the plugin-wire registry",
 				s.where, binaryDecodeEntryPoint))
 			continue
 		}
@@ -253,6 +352,15 @@ func moduleRoot(t *testing.T) string {
 	return root
 }
 
+// exportNaming is what a decode site's exports are read from: the
+// attachment-role identifiers the plugin-type vocabulary declares, each mapped to
+// its role, and the export-name identifiers the wasm package declares, each
+// mapped to the export it names.
+type exportNaming struct {
+	roles   map[string]plugintype.Role
+	exports map[string]string
+}
+
 // socketDecodeSites walks every non-test Go file in the module and returns one
 // entry per socket-output decode call, with the exports the enclosing function
 // dispatches.
@@ -263,6 +371,10 @@ func moduleRoot(t *testing.T) string {
 func socketDecodeSites(t *testing.T, root string) []decodeSite {
 	t.Helper()
 	roleValues := governanceRoleIdents(t, root)
+	naming := exportNaming{
+		roles:   roleValues,
+		exports: exportNameIdents(t, root, roleValues, pluginTypeIdents(t, root)),
+	}
 
 	var sites []decodeSite
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -291,40 +403,7 @@ func socketDecodeSites(t *testing.T, root string) []decodeSite {
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", rel, err)
 		}
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			var found []decodeSite
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				switch calleeName(call.Fun) {
-				case binaryDecodeEntryPoint:
-					found = append(found, decodeSite{
-						where:  fmt.Sprintf("%s:%d", rel, fset.Position(call.Pos()).Line),
-						binary: true,
-					})
-				case textDecodeEntryPoint:
-					found = append(found, decodeSite{
-						where:  fmt.Sprintf("%s:%d", rel, fset.Position(call.Pos()).Line),
-						binary: false,
-					})
-				}
-				return true
-			})
-			if len(found) == 0 {
-				continue
-			}
-			exports := dispatchedExports(fn, file, roleValues)
-			for i := range found {
-				found[i].exports = exports
-			}
-			sites = append(sites, found...)
-		}
+		sites = append(sites, fileDecodeSites(fset, file, rel, naming)...)
 		return nil
 	})
 	if err != nil {
@@ -334,21 +413,85 @@ func socketDecodeSites(t *testing.T, root string) []decodeSite {
 	return sites
 }
 
-// dispatchedExports returns the default export names the function dispatches,
-// read from the attachment roles it names.
+// fileDecodeSites returns one entry per socket-output decode call in one parsed
+// file, each carrying the exports its enclosing function dispatches plus any
+// literal export name the call itself passes. It reads the file it is handed and
+// nothing else, so a synthetic source can show which forms it resolves.
+func fileDecodeSites(fset *token.FileSet, file *ast.File, rel string, naming exportNaming) []decodeSite {
+	var sites []decodeSite
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		var found []decodeSite
+		var literals [][]string
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			var binary bool
+			switch calleeName(call.Fun) {
+			case binaryDecodeEntryPoint:
+				binary = true
+			case textDecodeEntryPoint:
+				binary = false
+			default:
+				return true
+			}
+			found = append(found, decodeSite{
+				where:  fmt.Sprintf("%s:%d", rel, fset.Position(call.Pos()).Line),
+				binary: binary,
+			})
+			literals = append(literals, literalExport(call))
+			return true
+		})
+		if len(found) == 0 {
+			continue
+		}
+		exports := dispatchedExports(fn, file, naming)
+		for i := range found {
+			found[i].exports = dedupe(sortedUnion(exports, literals[i]))
+		}
+		sites = append(sites, found...)
+	}
+	return sites
+}
+
+// literalExport returns the export a decode call names as a string literal in
+// its export argument, the first one, or nothing when it names it any other way.
+func literalExport(call *ast.CallExpr) []string {
+	if len(call.Args) == 0 {
+		return nil
+	}
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return nil
+	}
+	export, err := strconv.Unquote(lit.Value)
+	if err != nil || export == "" {
+		return nil
+	}
+	return []string{export}
+}
+
+// dispatchedExports returns the export names the function dispatches, read from
+// the attachment roles and the export-name identifiers it names.
 //
-// The route is role to export rather than a search for the export name itself,
-// and that is what keeps the name single-sourced: a socket function names the
-// role it serves, and the canonical role-to-export rule turns that into an
-// export. Nothing here spells an export name, so nothing here can drift from the
-// rule the host's own dispatch default reads.
+// The route is role or identifier to export rather than a search for the export
+// name itself, and that is what keeps the name single-sourced: a socket function
+// names the role it serves or the identifier the wasm package declares for its
+// export, and the canonical rule behind each turns that into an export. Nothing
+// here spells an export name, so nothing here can drift from the rule the host's
+// own dispatch reads.
 //
 // It looks one hop through a same-file helper, because a socket function that
 // shares its export default with a sibling reads it from a small function beside
 // them rather than inline.
-func dispatchedExports(fn *ast.FuncDecl, file *ast.File, roleValues map[string]plugintype.Role) []string {
-	roles := map[plugintype.Role]bool{}
-	collectRoles(fn.Body, roleValues, roles)
+func dispatchedExports(fn *ast.FuncDecl, file *ast.File, naming exportNaming) []string {
+	found := map[string]bool{}
+	collectExports(fn.Body, naming, found)
 
 	sameFileHelpers := map[string]*ast.FuncDecl{}
 	for _, decl := range file.Decls {
@@ -362,34 +505,192 @@ func dispatchedExports(fn *ast.FuncDecl, file *ast.File, roleValues map[string]p
 			return true
 		}
 		if helper, ok := sameFileHelpers[calleeName(call.Fun)]; ok && helper != fn {
-			collectRoles(helper.Body, roleValues, roles)
+			collectExports(helper.Body, naming, found)
 		}
 		return true
 	})
 
 	var out []string
-	for role := range roles {
-		if export, ok := plugintype.GovernanceRoleExport(role); ok {
-			out = append(out, export)
-		}
+	for export := range found {
+		out = append(out, export)
 	}
 	sort.Strings(out)
-	return dedupe(out)
+	return out
 }
 
-// collectRoles records every attachment role the body names by its declared
-// identifier.
-func collectRoles(body *ast.BlockStmt, roleValues map[string]plugintype.Role, into map[plugintype.Role]bool) {
+// collectExports records the export behind every attachment role and every
+// export-name identifier the body names by its declared identifier.
+func collectExports(body *ast.BlockStmt, naming exportNaming, into map[string]bool) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		if role, ok := roleValues[sel.Sel.Name]; ok {
-			into[role] = true
+		if role, ok := naming.roles[sel.Sel.Name]; ok {
+			if export, ok := plugintype.GovernanceRoleExport(role); ok {
+				into[export] = true
+			}
+		}
+		if export, ok := naming.exports[sel.Sel.Name]; ok {
+			into[export] = true
 		}
 		return true
 	})
+}
+
+// sortedUnion returns the sorted union of two lists of names, duplicates kept for
+// dedupe to drop.
+func sortedUnion(a, b []string) []string {
+	out := append(append([]string(nil), a...), b...)
+	sort.Strings(out)
+	return out
+}
+
+// exportNameIdents reads the export-name identifiers the wasm package declares,
+// and the export each names, out of that package's own source, so this guard
+// holds no list of them. Each is resolved through the declaration's own
+// initializer, never by its spelling: a literal names its export directly, a
+// role's default is read through the canonical role-to-export rule, and a plugin
+// type's required export through that type's minimum-export rule — a prefix rule
+// names no single export and contributes none.
+//
+// It refuses rather than skipping a declaration it cannot resolve whose
+// identifier reads as an export name, because a missed identifier is a call site
+// this guard reads as naming nothing, and a census that quietly misses one is the
+// way a socket's export stops being checked.
+func exportNameIdents(t *testing.T, root string, roles map[string]plugintype.Role, types map[string]plugintype.Type) map[string]string {
+	t.Helper()
+	dir := filepath.Join(root, "internal", "wasm")
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the wasm package at %s: %v", dir, err)
+	}
+
+	out := map[string]string{}
+	var unresolved []string
+	for _, e := range files {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || (gen.Tok != token.VAR && gen.Tok != token.CONST) {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, ident := range vs.Names {
+					if i >= len(vs.Values) {
+						continue
+					}
+					if export, ok := resolveExportName(vs.Values[i], roles, types); ok {
+						out[ident.Name] = export
+						continue
+					}
+					if strings.HasSuffix(ident.Name, "Export") || strings.HasSuffix(ident.Name, "ExportName") {
+						unresolved = append(unresolved, ident.Name+" in "+name)
+					}
+				}
+			}
+		}
+	}
+
+	if len(unresolved) > 0 {
+		sort.Strings(unresolved)
+		t.Fatalf("the wasm package declares export-name identifiers this census cannot resolve (%s); a "+
+			"missed identifier is a call site this guard reads as naming no export", strings.Join(unresolved, ", "))
+	}
+	if len(out) == 0 {
+		t.Fatalf("found no export-name identifier in %s; the census is looking in the wrong place", dir)
+	}
+	return out
+}
+
+// resolveExportName resolves one declaration's initializer to the export it
+// names: a string literal, the role-to-export rule applied to a role named by its
+// declared identifier, or a plugin type's exact minimum export.
+func resolveExportName(value ast.Expr, roles map[string]plugintype.Role, types map[string]plugintype.Type) (string, bool) {
+	switch v := value.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		export, err := strconv.Unquote(v.Value)
+		return export, err == nil && export != ""
+	case *ast.CallExpr:
+		if len(v.Args) != 1 {
+			return "", false
+		}
+		arg, ok := v.Args[0].(*ast.SelectorExpr)
+		if !ok {
+			return "", false
+		}
+		if role, ok := roles[arg.Sel.Name]; ok {
+			return plugintype.GovernanceRoleExport(role)
+		}
+		if typ, ok := types[arg.Sel.Name]; ok {
+			entry, ok := plugintype.Lookup(typ)
+			if !ok || entry.MinExport.Name == "" || entry.MinExport.IsPrefix {
+				return "", false
+			}
+			return entry.MinExport.Name, true
+		}
+	}
+	return "", false
+}
+
+// pluginTypeIdents reads the plugin-type constants' declared identifiers and
+// values out of the plugin-type vocabulary's own source, the same way
+// governanceRoleIdents reads the roles, and for the same reason.
+func pluginTypeIdents(t *testing.T, root string) map[string]plugintype.Type {
+	t.Helper()
+	path := filepath.Join(root, "pkg", "plugintype", "plugintype.go")
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse the plugin-type vocabulary at %s: %v", path, err)
+	}
+
+	known := map[plugintype.Type]bool{}
+	for _, e := range plugintype.Entries() {
+		known[e.Type] = true
+	}
+
+	out := map[string]plugintype.Type{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		spec, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+		for i, name := range spec.Names {
+			if i >= len(spec.Values) {
+				continue
+			}
+			lit, ok := spec.Values[i].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				continue
+			}
+			value := plugintype.Type(strings.Trim(lit.Value, "`\""))
+			if known[value] {
+				out[name.Name] = value
+			}
+		}
+		return true
+	})
+
+	if len(out) != len(known) {
+		t.Fatalf("read %d plugin-type identifiers out of %s but the vocabulary declares %d types; the census "+
+			"missed one, and a missed type is an export this guard cannot resolve", len(out), path, len(known))
+	}
+	return out
 }
 
 // governanceRoleIdents reads the attachment-role constants' declared identifiers

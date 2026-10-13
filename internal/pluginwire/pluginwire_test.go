@@ -5,10 +5,14 @@ package pluginwire
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // TestEncodeForExportBinaryWire proves the encode arm produces the bytes the
@@ -34,6 +38,40 @@ func TestEncodeForExportBinaryWire(t *testing.T) {
 	}
 	if bytes.Equal(got, []byte(`{}`)) {
 		t.Fatalf("the payload reached the guest unchanged, so nothing encoded it")
+	}
+}
+
+// TestEncodeForExportConvertsAnImporterInput covers an export whose name is fixed
+// by its plugin type rather than defaulted by a governance role: the importer's
+// export. The authored payload is the JSON form of the import input — its source
+// bytes base64-encoded, its settings an ordinary JSON object — and what reaches
+// the guest must be byte for byte what the host itself hands an importer for the
+// same input, so a guest driven directly reads exactly what a real import gives
+// it.
+//
+// The export name is read from the plugin-type registry rather than spelled here.
+func TestEncodeForExportConvertsAnImporterInput(t *testing.T) {
+	t.Parallel()
+
+	importer, ok := plugintype.Lookup(plugintype.Importer)
+	if !ok || importer.MinExport.Name == "" || importer.MinExport.IsPrefix {
+		t.Fatal("the importer type has no exact required export")
+	}
+	want, err := abi.ImportInput{
+		Format:   "demo",
+		Bytes:    []byte("hello world"),
+		Settings: json.RawMessage(`{"target_namespace":"acme"}`),
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the import input: %v", err)
+	}
+	authored := []byte(`{"format":"demo","bytes":"aGVsbG8gd29ybGQ=","settings":{"target_namespace":"acme"}}`)
+	got, err := EncodeForExport(importer.MinExport.Name, authored)
+	if err != nil {
+		t.Fatalf("encoding the importer's authored input should succeed; got %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("encoded payload = %x; want %x", got, want)
 	}
 }
 

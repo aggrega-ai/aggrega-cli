@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // generateWireRegistry emits the plugin-wire registry: the table binding each
@@ -18,17 +16,17 @@ import (
 //
 // It is derived rather than declared. There is no schema behind this target and
 // no table beside it: the emitter walks the codec targets, reads each one's
-// wireExports and binaryWire, and resolves an entry's role to an export name
-// through the canonical role-to-export rule. So the two facts the registry
-// carries live on the registrations that drive the codecs, and the export name
-// itself is spelled in neither place — it is read from the same rule the host's
-// own dispatch default reads.
+// wireExports and binaryWire, and resolves an entry's role or plugin type to an
+// export name through the canonical rule for that key. So the two facts the
+// registry carries live on the registrations that drive the codecs, and the
+// export name itself is spelled in neither place — it is read from the same rule
+// the host's own dispatch reads.
 //
 // The emitted order is sorted by export name and then payload shape, because the
 // target registry is a map: iteration order there is not stable, and a generated
 // file has to be byte-identical from one run to the next.
 func generateWireRegistry(t codecTarget) ([]byte, error) {
-	entries, err := collectWireEntries()
+	entries, err := collectWireEntries(codecTargets)
 	if err != nil {
 		return nil, err
 	}
@@ -125,18 +123,45 @@ func (e wireEntry) selector() string {
 // encodeFunc is the name of the per-shape encoder emitted for this entry.
 func (e wireEntry) encodeFunc() string { return "encode" + e.shape }
 
-// collectWireEntries walks the codec targets and returns one row per wireExports
-// entry, in a sorted order so the emitted file is byte-identical run to run.
+// collectWireEntries walks the given codec targets and returns one row per
+// wireExports entry, in a sorted order so the emitted file is byte-identical run
+// to run. It takes the targets as a parameter so each refusal can be driven over
+// a registration built to trip it.
 //
-// It refuses rather than skipping in three cases, because each one would emit a
-// registry that reads as complete and is not: a target carrying wireExports with
-// no destination import path has no way to name its shape; an entry naming a
-// role the canonical role-to-export rule does not know would silently contribute
-// no export; and an entry whose shape the target does not emit a codec for would
-// name a method that is not there.
-func collectWireEntries() ([]wireEntry, error) {
+// It refuses rather than skipping in four cases, because each one would emit a
+// registry that reads as complete and is not: a target registered on the binary
+// wire that declares no export would leave that socket's exports out of the
+// table entirely, so a caller converting an authored payload for one of them
+// would hand the guest text it cannot read; a target carrying wireExports with
+// no destination import path has no way to name its shape; an entry whose role
+// or plugin type does not resolve to exactly one export name would silently
+// contribute no export; and an entry whose shape the target does not emit a
+// codec for would name a method that is not there.
+//
+// The first refusal covers a binary-wire target declaring nothing. A target
+// declaring some of its socket's exports and not others is caught on the other
+// side of the same fact: the host's call site decoding an undeclared export
+// through the binary entry point disagrees with this table, and the plugin-wire
+// package's call-site guard fails on that disagreement.
+//
+// Targets are walked in sorted order so that, where more than one is wrong, the
+// refusal reported is the same one on every run.
+func collectWireEntries(targets map[string]codecTarget) ([]wireEntry, error) {
+	bases := make([]string, 0, len(targets))
+	for base := range targets {
+		bases = append(bases, base)
+	}
+	sort.Strings(bases)
+
 	var out []wireEntry
-	for base, t := range codecTargets {
+	for _, base := range bases {
+		t := targets[base]
+		if t.binaryWire && len(t.wireExports) == 0 {
+			return nil, fmt.Errorf("typegen: codec target %q (socket schema %s) is registered on the binary "+
+				"wire but declares no export in wireExports: every export a binary-wire socket carries must be "+
+				"declared there, so that the plugin-wire registry converts an authored payload for it into the "+
+				"encoding its guest reads", base, t.schemaFile)
+		}
 		if len(t.wireExports) == 0 {
 			continue
 		}
@@ -145,10 +170,10 @@ func collectWireEntries() ([]wireEntry, error) {
 				"so the registry cannot name the package its payload shapes are declared in", base)
 		}
 		for _, w := range t.wireExports {
-			export, ok := plugintype.GovernanceRoleExport(w.role)
-			if !ok {
-				return nil, fmt.Errorf("typegen: codec target %q names role %q in wireExports, "+
-					"which the canonical role-to-export rule does not know", base, string(w.role))
+			export, err := w.exportName()
+			if err != nil {
+				return nil, fmt.Errorf("typegen: codec target %q has a wireExports entry for %q that %w",
+					base, w.inputDef, err)
 			}
 			if !t.emitsDef(w.inputDef) {
 				return nil, fmt.Errorf("typegen: codec target %q names %q in wireExports, "+

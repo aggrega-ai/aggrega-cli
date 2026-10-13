@@ -117,25 +117,37 @@ func decodeFromEntries(raw any, selfMode bool) []fromEntry {
 // compile path the provider-base and pillar validators use). A Component with
 // no spec.schema, no `provides` pillar, or a `provides` pillar that compiles to
 // no properties yields an empty set. Mirrors FeatureProvidesKeys; both delegate
-// to providesKeysFromSchema.
+// to pillarKeysFromSchema.
 //
 // The schema is read as-authored on the resolved Component; cross-document
 // $ref expansion uses the supplied SchemaLibraries map when present.
 func ComponentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
-	return providesKeysFromSchema(comp.Spec.Schema, libraries)
+	return pillarKeysFromSchema(comp.Spec.Schema, "provides", libraries)
+}
+
+// ComponentValuesKeys returns the set of top-level keys a catalog Component's
+// `values` pillar declares — the names an Aggregate may set on an instance of
+// it. It reads the pillar exactly as ComponentProvidesKeys reads `provides`:
+// compiled through pkg/compactform, with cross-document $ref expansion against
+// the supplied SchemaLibraries, and empty for a Component declaring no values
+// pillar or one that compiles to no properties. Only the names are read; no
+// value and no default is.
+func ComponentValuesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
+	return pillarKeysFromSchema(comp.Spec.Schema, "values", libraries)
 }
 
 // FeatureProvidesKeys returns the provides-pillar keys a Feature declares in its
 // spec.schema — the output contract a realizing FeatureRecipe must publish.
-// Mirrors ComponentProvidesKeys; both delegate to providesKeysFromSchema.
+// Mirrors ComponentProvidesKeys; both delegate to pillarKeysFromSchema.
 func FeatureProvidesKeys(feat types.Feature, libraries map[string]types.SchemaLibrary) map[string]bool {
-	return providesKeysFromSchema(feat.Spec.Schema, libraries)
+	return pillarKeysFromSchema(feat.Spec.Schema, "provides", libraries)
 }
 
-// providesKeysFromSchema extracts the provides-pillar property names from an
-// entity's spec.schema node (compact-form-aware). Empty when the schema declares
-// no provides pillar or fails to compile (the pillar validator reports that fault).
-func providesKeysFromSchema(schema yaml.Node, libraries map[string]types.SchemaLibrary) map[string]bool {
+// pillarKeysFromSchema extracts the property names one pillar of an entity's
+// spec.schema node declares (compact-form-aware). Empty when the schema declares
+// no such pillar or the pillar fails to compile (the pillar validator reports
+// that fault).
+func pillarKeysFromSchema(schema yaml.Node, pillar string, libraries map[string]types.SchemaLibrary) map[string]bool {
 	keys := map[string]bool{}
 	node := &schema
 	if node.Kind == 0 {
@@ -148,14 +160,14 @@ func providesKeysFromSchema(schema yaml.Node, libraries map[string]types.SchemaL
 		return keys
 	}
 
-	var providesNode *yaml.Node
+	var pillarNode *yaml.Node
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == "provides" {
-			providesNode = node.Content[i+1]
+		if node.Content[i].Value == pillar {
+			pillarNode = node.Content[i+1]
 			break
 		}
 	}
-	if providesNode == nil {
+	if pillarNode == nil {
 		return keys
 	}
 
@@ -163,11 +175,11 @@ func providesKeysFromSchema(schema yaml.Node, libraries map[string]types.SchemaL
 	if libraries != nil {
 		opts = append(opts, compactform.WithSchemaLibraries(libraries))
 	}
-	compiled, err := compactform.Compile(providesNode, opts...)
+	compiled, err := compactform.Compile(pillarNode, opts...)
 	if err != nil {
-		// A provides pillar that fails to compile is reported by the catalog
-		// pillar validator at load; the guard treats it as exposing no keys
-		// rather than emitting a second diagnostic for the same fault.
+		// A pillar that fails to compile is reported by the catalog pillar
+		// validator at load; this reader treats it as declaring no keys rather
+		// than emitting a second diagnostic for the same fault.
 		return keys
 	}
 	props, ok := compiled["properties"].(compactform.Schema)

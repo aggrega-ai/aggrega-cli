@@ -12,7 +12,7 @@
 // never invoked guest-to-guest and the host adds no new dispatcher re-entry.
 //
 // The import wire types (ImportInput, ImportOutput, and their nested source,
-// entity, decision, diagnostic, and scaffold shapes) are the single generated
+// catalog-view, entity, decision, diagnostic, and scaffold shapes) are the single generated
 // ABI codec the guests speak; the host reads and writes that one codec directly
 // rather than a duplicated host-side copy, so the wire shape stays
 // single-sourced from the schema.
@@ -67,10 +67,26 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // catalog directory, from an explicit local path or from the workspace content
 // cache — so this orchestrator holds no pin discipline of its own.
 //
+// The socket carries the canonical CBOR encoding in both directions: the import
+// input is written by the generated codec's EncodeCBOR, and the guest's output is
+// read back through the binary encoding's strict decode entry point, which
+// refuses an output that is not an ImportOutput — a top-level field the shape
+// does not declare, or bytes that are not a CBOR map at all — naming the export.
+// The encoding is fixed by the socket, so an importer decodes its input and
+// encodes its output with the CBOR entry points its kit's ImportInput and
+// ImportOutput carry, and reports a failure it can describe in the output's
+// error field.
+//
 // sources carries the named sources for a multi-file import, and settings is the
 // opaque importer-specific options document the consumer supplies; the host
-// pipes both through without interpreting them. A nil settings is omitted from
-// the wire payload.
+// pipes both through without interpreting them — settings crosses as the bytes
+// the consumer supplied. A nil settings is omitted from the wire payload.
+//
+// catalogView is the view of the workspace catalog's Components the importer is
+// handed, as [ProjectCatalog] builds it from the catalog the import resolved
+// against. It is copied onto the payload as it is; a nil view is omitted from the
+// wire, so a payload built for a catalog holding no Component is byte-identical
+// to one built with no view at all.
 //
 // parserRes and parserLoad are the parser-socket seams the host wires into the
 // importer for host-mediated parsing. An importer that needs a source's
@@ -84,7 +100,7 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // unresolvable syntactic format halts loudly through the parser resolver rather
 // than the source passing through unparsed. The tree arrives through this
 // callback, never through the import input payload.
-func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sources []abi.ImportSource, settings json.RawMessage) (abi.ImportOutput, error) {
+func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection) (abi.ImportOutput, error) {
 	plugin, err := res.ImporterPluginForFormat(format)
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("resolve importer for format %q: %w", format, err)
@@ -96,9 +112,9 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	}
 	spec.PluginType = wasm.PluginTypeImporter
 
-	payload, err := json.Marshal(abi.ImportInput{Format: format, Bytes: source, Sources: sources, Settings: settings})
+	payload, err := abi.ImportInput{Format: format, Bytes: source, Sources: sources, Settings: settings, Catalog: catalogView}.EncodeCBOR()
 	if err != nil {
-		return abi.ImportOutput{}, fmt.Errorf("marshal import input for %q: %w", format, err)
+		return abi.ImportOutput{}, fmt.Errorf("encode import input for %q: %w", format, err)
 	}
 
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
@@ -135,15 +151,23 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("call %q on importer %q: %w", wasm.ImportExport, plugin.Coordinate(), err)
 	}
+	return readImportOutput(plugin.Coordinate(), out)
+}
 
+// readImportOutput reads an importer's answer through the socket's three
+// guest-envelope checks, in order: the bytes must be an ImportOutput in the
+// canonical CBOR the socket carries, its error field must be empty, and every
+// diagnostic it carries must have a declared severity. coordinate names the
+// importer in each refusal.
+func readImportOutput(coordinate string, out []byte) (abi.ImportOutput, error) {
 	var io abi.ImportOutput
-	if err := io.UnmarshalJSON(out); err != nil {
-		return abi.ImportOutput{}, fmt.Errorf("decode import output from importer %q: %w", plugin.Coordinate(), err)
+	if err := wasm.DecodeGuestOutputCBOR(wasm.ImportExport, out, &io); err != nil {
+		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", coordinate, err)
 	}
-	if err := wasm.GuestReturnedError(plugin.Coordinate(), wasm.ImportExport, wasm.GuestFailure{Message: io.Error}); err != nil {
-		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", plugin.Coordinate(), err)
+	if err := wasm.GuestReturnedError(coordinate, wasm.ImportExport, wasm.GuestFailure{Message: io.Error}); err != nil {
+		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", coordinate, err)
 	}
-	if err := wasm.GuestDiagnosticSeverities(plugin.Coordinate(), wasm.ImportExport, io.Diagnostics); err != nil {
+	if err := wasm.GuestDiagnosticSeverities(coordinate, wasm.ImportExport, io.Diagnostics); err != nil {
 		return abi.ImportOutput{}, err
 	}
 	return io, nil

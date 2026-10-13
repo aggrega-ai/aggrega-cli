@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
@@ -342,6 +344,45 @@ func TestRunLocal_BinaryWireExport(t *testing.T) {
 	}
 	if out != string(want) {
 		t.Fatalf("guest response = %x; want the neutral result %x", out, want)
+	}
+}
+
+// importPayload is the authored payload for an importer guest: the import input
+// written as JSON, its source bytes base64-encoded ("hello world") and its
+// settings an ordinary JSON object.
+const importPayload = `{"format":"demo","bytes":"aGVsbG8gd29ybGQ=","settings":{"target_namespace":"acme"}}`
+
+// TestRunLocal_ImporterExport drives an importer's export through this command
+// end to end against a real guest. The importer's export is fixed by its plugin
+// type rather than defaulted by a governance role, and its socket carries the
+// binary encoding in both directions, so it is the case the conversion has to
+// reach beyond the governance roles: a guest handed the authored JSON fails inside
+// its own decoder.
+//
+// The demo importer echoes its format and its settings' namespace into one drafted
+// entity and its file, so its response shows it read what the command converted.
+// That response is compared with what the response shape encodes to, an
+// independent statement of the bytes, rather than decoded back.
+func TestRunLocal_ImporterExport(t *testing.T) {
+	t.Parallel()
+	guest := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
+
+	out, err := runLocal(t, "--plugin", guest, "--type", "importer",
+		"--export", wasm.ImportExport, "--with", importPayload)
+	if err != nil {
+		t.Fatalf("an authored JSON payload should reach the importer's binary-wire export; got %v", err)
+	}
+
+	body := "kind: Component\nmetadata:\n  name: acme-demo\n"
+	want, err := abi.ImportOutput{
+		Entities: []abi.EmittedEntity{{Kind: "Component", Name: "acme-demo", Mode: "draft", Body: body}},
+		Files:    []abi.ScaffoldFile{{Path: "acme-demo.yaml", Content: body}},
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the expected response: %v", err)
+	}
+	if out != string(want) {
+		t.Fatalf("guest response = %x; want the drafted entity and file %x", out, want)
 	}
 }
 

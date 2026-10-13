@@ -21,9 +21,10 @@ import (
 // loadParseSourceProbe builds (or reuses) the parse-source-probe fixture and
 // loads it through the production Loader's LoadAndDescribe gate — so the
 // descriptor's declared host functions are cross-checked against the binary's
-// imports as part of the load. The fixture's import export hands its input to
-// the host as a source to parse and echoes the returned tree, or an in-band
-// failure prefixed with "ERR:".
+// imports as part of the load. The fixture's import export decodes the
+// ImportInput it is handed, hands its primary source bytes to the host as a
+// source to parse, and answers an ImportOutput in canonical CBOR carrying the
+// returned tree as its one file, or an in-band failure in its error field.
 func loadParseSourceProbe(t *testing.T, ctx context.Context) (*wasm.Plugin, wasm.PluginDescriptor) {
 	t.Helper()
 	path := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
@@ -34,6 +35,49 @@ func loadParseSourceProbe(t *testing.T, ctx context.Context) (*wasm.Plugin, wasm
 	}
 	t.Cleanup(func() { _ = plugin.Close(ctx) })
 	return plugin, desc
+}
+
+// probeInput is the payload the probe's import export reads: an ImportInput
+// carrying source as its primary bytes, in the canonical CBOR the importer
+// socket carries, so the probe is driven with exactly what the host hands an
+// importer.
+func probeInput(t *testing.T, source []byte) []byte {
+	t.Helper()
+	payload, err := abi.ImportInput{Format: "demo", Bytes: source}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode probe import input: %v", err)
+	}
+	return payload
+}
+
+// decodeProbeAnswer reads the probe's answer the way the importer socket reads
+// an importer's: an ImportOutput in canonical CBOR, through the strict entry
+// point. It returns the tree the one file carries on success and the in-band
+// failure otherwise. It returns its error rather than failing a test, so a host
+// callback can call it.
+func decodeProbeAnswer(out []byte) (tree, failure string, err error) {
+	var answer abi.ImportOutput
+	if err := answer.DecodeCBORStrict(out); err != nil {
+		return "", "", fmt.Errorf("the probe's answer is not an ImportOutput in canonical CBOR: %w (bytes %q)", err, out)
+	}
+	if answer.Error != "" {
+		return "", answer.Error, nil
+	}
+	if len(answer.Files) != 1 {
+		return "", "", fmt.Errorf("the probe answered %d files and no failure; want exactly the tree file", len(answer.Files))
+	}
+	return answer.Files[0].Content, "", nil
+}
+
+// probeAnswer is decodeProbeAnswer for a test body, failing the test when the
+// answer is not the shape the probe promises.
+func probeAnswer(t *testing.T, out []byte) (tree, failure string) {
+	t.Helper()
+	tree, failure, err := decodeProbeAnswer(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree, failure
 }
 
 // embeddedParserSeam returns a SourceParser that obtains a tree by running the
@@ -81,18 +125,18 @@ func TestParseSourceProbe_HostMediatedTree(t *testing.T) {
 
 	plugin.SetSourceParser(embeddedParserSeam(t))
 
-	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{"hello":"world"}`))
+	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, probeInput(t, []byte(`{"hello":"world"}`)))
 	if err != nil {
 		t.Fatalf("InvokeExport(import): %v", err)
 	}
 	// The parse-go scaffold echoes the source as {format, source}; a genuine
 	// host-mediated parse ran and its tree reached the consumer verbatim.
-	got := string(out)
-	if strings.HasPrefix(got, "ERR:") {
-		t.Fatalf("consumer reported a failure: %s", got)
+	got, failure := probeAnswer(t, out)
+	if failure != "" {
+		t.Fatalf("consumer reported a failure: %s", failure)
 	}
 	if !strings.Contains(got, `"format":"json"`) || !strings.Contains(got, `hello`) {
-		t.Errorf("consumer output = %q; want the parser's tree carrying the format and source", got)
+		t.Errorf("consumer tree = %q; want the parser's tree carrying the format and source", got)
 	}
 }
 
@@ -109,9 +153,10 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 
 	fixturePath := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
 	// The consumer's seam loads a PRODUCER (the same probe fixture, which itself
-	// calls aggrega_parse_source) and invokes it, threading the ctx the seam was
-	// handed. The producer carries its own always-succeeding seam, so a nested
-	// call that the guard failed to deny would surface this canned tree.
+	// calls aggrega_parse_source) and invokes it with the source it was asked to
+	// parse, as an import input, threading the ctx the seam was handed. The
+	// producer carries its own always-succeeding seam, so a nested call that the
+	// guard failed to deny would surface this canned tree.
 	const producerCannedTree = `{"nested_producer_seam_ran":true}`
 	consumer.SetSourceParser(func(ctx context.Context, format string, source []byte, options json.RawMessage) (json.RawMessage, error) {
 		loader := &wasm.Loader{}
@@ -123,26 +168,34 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 		producer.SetSourceParser(func(context.Context, string, []byte, json.RawMessage) (json.RawMessage, error) {
 			return json.RawMessage(producerCannedTree), nil
 		})
-		out, err := wasm.InvokeExport(ctx, producer, pdesc, wasm.ImportExport, source)
+		payload, err := abi.ImportInput{Format: "demo", Bytes: source}.EncodeCBOR()
 		if err != nil {
 			return nil, err
 		}
-		if s := string(out); strings.HasPrefix(s, "ERR:") {
-			return nil, fmt.Errorf("%s", strings.TrimPrefix(s, "ERR:"))
+		out, err := wasm.InvokeExport(ctx, producer, pdesc, wasm.ImportExport, payload)
+		if err != nil {
+			return nil, err
 		}
-		return json.RawMessage(out), nil
+		tree, failure, err := decodeProbeAnswer(out)
+		if err != nil {
+			return nil, err
+		}
+		if failure != "" {
+			return nil, fmt.Errorf("%s", failure)
+		}
+		return json.RawMessage(tree), nil
 	})
 
-	out, err := wasm.InvokeExport(ctx, consumer, cdesc, wasm.ImportExport, []byte(`{"x":1}`))
+	out, err := wasm.InvokeExport(ctx, consumer, cdesc, wasm.ImportExport, probeInput(t, []byte(`{"x":1}`)))
 	if err != nil {
 		t.Fatalf("InvokeExport(import): %v", err)
 	}
-	got := string(out)
-	if strings.Contains(got, "nested_producer_seam_ran") {
-		t.Fatalf("the nested producer-consumption call succeeded — ctx did not carry the depth across the boundary; output = %q", got)
+	tree, failure := probeAnswer(t, out)
+	if strings.Contains(tree, "nested_producer_seam_ran") {
+		t.Fatalf("the nested producer-consumption call succeeded — ctx did not carry the depth across the boundary; tree = %q", tree)
 	}
-	if !strings.Contains(got, wasm.ErrProducerConsumptionReentry().Error()) {
-		t.Fatalf("nested call was not denied with the re-entry sentinel; output = %q", got)
+	if !strings.Contains(failure, wasm.ErrProducerConsumptionReentry().Error()) {
+		t.Fatalf("nested call was not denied with the re-entry sentinel; failure = %q, tree = %q", failure, tree)
 	}
 }
 
@@ -194,12 +247,12 @@ func TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling(t *testing.T) {
 		return json.RawMessage(cannedTree), nil
 	})
 
-	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{"n":1}`))
+	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, probeInput(t, []byte(`{"n":1}`)))
 	if err != nil {
 		t.Fatalf("a host call spending %s under a %dms guest ceiling must not cancel the guest: %v", seamSpend, ceilingMs, err)
 	}
-	if string(out) != cannedTree {
-		t.Errorf("output = %q; want the seam tree %q", out, cannedTree)
+	if tree, failure := probeAnswer(t, out); failure != "" || tree != cannedTree {
+		t.Errorf("tree = %q, failure = %q; want the seam tree %q and no failure", tree, failure, cannedTree)
 	}
 }
 
@@ -216,12 +269,12 @@ func TestParseSourceProbe_SequentialCallsSucceed(t *testing.T) {
 	})
 
 	for i := 0; i < 2; i++ {
-		out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{"n":1}`))
+		out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, probeInput(t, []byte(`{"n":1}`)))
 		if err != nil {
 			t.Fatalf("sequential call %d: InvokeExport(import): %v", i, err)
 		}
-		if string(out) != cannedTree {
-			t.Errorf("sequential call %d output = %q; want the seam tree %q", i, out, cannedTree)
+		if tree, failure := probeAnswer(t, out); failure != "" || tree != cannedTree {
+			t.Errorf("sequential call %d tree = %q, failure = %q; want the seam tree %q and no failure", i, tree, failure, cannedTree)
 		}
 	}
 }
@@ -237,12 +290,12 @@ func TestParseSourceProbe_NoParser(t *testing.T) {
 		return nil, fmt.Errorf("%w: no parser plugin advertises %q", catalog.ErrNoParserForFormat(), "parse:bogus")
 	})
 
-	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{}`))
+	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, probeInput(t, []byte(`{}`)))
 	if err != nil {
 		t.Fatalf("InvokeExport(import) trapped instead of surfacing in-band: %v", err)
 	}
-	if !strings.HasPrefix(string(out), "ERR:") || !strings.Contains(string(out), catalog.ErrNoParserForFormat().Error()) {
-		t.Errorf("consumer output = %q; want an in-band ERR carrying the no-parser message", out)
+	if _, failure := probeAnswer(t, out); !strings.Contains(failure, catalog.ErrNoParserForFormat().Error()) {
+		t.Errorf("consumer failure = %q; want an in-band failure carrying the no-parser message", failure)
 	}
 	warnings := plugin.DrainWarnings()
 	found := false

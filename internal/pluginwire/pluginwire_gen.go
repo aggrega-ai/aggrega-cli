@@ -10,6 +10,7 @@ package pluginwire
 
 import (
 	"encoding/json"
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
@@ -27,10 +28,21 @@ import (
 //
 // Sorted by export name and then payload shape.
 var entries = []entry{
+	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: false, encode: encodeAnnotationTransformInput},
 	{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: encodePolicyInput},
 	{export: "verdict_render", shape: "RenderPolicyInput", binary: false, encode: encodeRenderPolicyInput},
+}
+
+// encodeImportInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeImportInput(text []byte) ([]byte, error) {
+	var v abi.ImportInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
 }
 
 // encodeMutatorInput reads an authored text payload into that shape and
