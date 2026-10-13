@@ -176,7 +176,10 @@ type PluginDetectSignature struct {
 	// parser plugin advertises as "parse:<syntax>".
 	Syntax string `json:"syntax" yaml:"syntax"`
 	// Files is the file-name patterns the signature applies to, matched against
-	// the end of the source's name. Empty applies it to a source of any name.
+	// the end of the source's name. Empty applies it to a source that is one
+	// file, whatever it is called, and to no file of a directory. The patterns of
+	// an importer's signatures are also what decide which files of a directory an
+	// import hands it.
 	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
 	// Match is the predicates the parsed tree must satisfy, all of them, in
 	// declared order.

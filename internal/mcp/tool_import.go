@@ -26,7 +26,7 @@ const importToolName = "import"
 
 // importArgs is the import tool's argument shape.
 //
-// Source names the foreign description to convert, relative to the workspace
+// Source names the file or the directory to convert, relative to the workspace
 // root or by absolute path, as every other path argument here is named. Format
 // names the source format outright; leaving it out recognises the format by the
 // signatures the importers in the workspace's catalog declare. DryRun does
@@ -206,9 +206,12 @@ var importToolSpec = toolSpec{
 	summary: "Turns a foreign source description into draft Aggrega authoring files, written into the workspace.",
 	description: "Turn a foreign source description — a flow or a service definition exported by another tool — " +
 		"into draft Aggrega authoring files, WRITTEN into the workspace this server serves. Pass `source`, the " +
-		"description to convert. The importer plugin in this workspace's catalog that advertises the source's " +
-		"format does the translation: it reads the source, drafts entities from it, and this writes what it " +
-		"produced, creating parent directories as needed. " +
+		"file or the directory to convert. The importer plugin in this workspace's catalog that advertises the " +
+		"source's format does the translation: it reads the source, drafts entities from it, and this writes what " +
+		"it produced, creating parent directories as needed. A directory — a chart or a project, say — is handed to " +
+		"the importer as exactly the files of it the importer's declared file patterns select, each named by its " +
+		"path inside the directory: an importer declaring no file patterns refuses a directory, and a link among " +
+		"the files it would read, or to a directory, that leads out of it is refused before anything is read. " +
 		"A drafted file lands at a path relative to the workspace root, which is also the coordinate " +
 		"the other tools here report a file under, and THERE IS NO ARGUMENT NAMING A DESTINATION — the drafts " +
 		"go into the workspace the call resolved, and nowhere else. The answer names that directory as " +
@@ -222,8 +225,9 @@ var importToolSpec = toolSpec{
 		"refused naming them. " +
 		"Leave `format` out and the format is recognised by the signatures the importers in this workspace's " +
 		"catalog declare — the syntax a source is read in, the file names it applies to and the paths its parsed " +
-		"tree carries — reading that one source and no other, and no network: a source no signature matches is " +
-		"refused asking for `format` and naming the formats the catalog's importers advertise, and a source " +
+		"tree carries — reading the file named, or of a directory only the files a signature's file patterns " +
+		"select, and no network: a source no signature matches is refused asking for `format` and naming the " +
+		"formats the catalog's importers advertise, and a source " +
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
@@ -241,7 +245,7 @@ var importToolSpec = toolSpec{
     "source": {
       "type": "string",
       "minLength": 1,
-      "description": "The foreign description to convert, relative to the workspace root or absolute. It must lie inside the workspace."
+      "description": "The file or directory to convert, relative to the workspace root or absolute. A directory is read into the files of it the importer's declared file patterns select, and no link inside it is followed out of it. Over HTTP it must lie inside the workspace this server serves."
     },
     "format": {
       "type": "string",
