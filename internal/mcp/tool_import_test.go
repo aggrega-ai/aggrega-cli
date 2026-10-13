@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -138,9 +139,17 @@ func pointImportSeamAtTheDemoGuest(t *testing.T) {
 // pointImportSeamAtTheDemoGuestAttachedBy is pointImportSeamAtTheDemoGuest with
 // the demo importer attached by the workspace's plugins.importer entry at
 // position at.
+//
+// The importers whose recognition signatures settle an unnamed format are the
+// reference importers' entities, generated from their built modules, and the
+// source is parsed through the binary's own parsers — so a case naming no
+// format is recognised by exactly the declarations a catalog holding those
+// importers carries, and then handed to the demo guest under that format.
 func pointImportSeamAtTheDemoGuestAttachedBy(t *testing.T, at int) {
 	t.Helper()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
+	importers := importopstest.ReferenceImporterEntities(t)
+	parserRes, parserLoad := importopstest.EmbeddedParsers(t)
 	prev := importops.BuildSeam
 	t.Cleanup(func() { importops.BuildSeam = prev })
 	importops.BuildSeam = func(*workspaceconfig.ResolvedWorkspace, importops.PluginBytesResolver) (importops.Seam, error) {
@@ -149,6 +158,9 @@ func pointImportSeamAtTheDemoGuestAttachedBy(t *testing.T, at int) {
 			ImporterLoad: func(p types.Plugin) (wasm.PluginSpec, error) {
 				return wasm.PluginSpec{Name: p.Coordinate(), Path: fixture}, nil
 			},
+			ParserRes:  parserRes,
+			ParserLoad: parserLoad,
+			Importers:  importers,
 		}, nil
 	}
 }
@@ -409,9 +421,57 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 	}
 }
 
+// TestTheImportToolRewordsAnUnsettledFormatByItsType pins this surface's two
+// re-wordings of a format the shared layer could not settle. Each names the
+// argument a caller here can send and never the terminal's flag, names the
+// source, and names the formats the refusal itself carries — the ones the
+// catalog's importers advertise, or the ones the source was recognised as — and
+// the ambiguity opens with its condition's short code. Any other error is left
+// to the caller.
+func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{"no importer recognises the source",
+			&importops.UndetectedFormatError{Source: "mystery.json", Advertised: []string{"langflow", "flowise"}},
+			[]string{"mystery.json", "'format'", `one of "langflow", "flowise"`}},
+		{"no importer advertises a format",
+			&importops.UndetectedFormatError{Source: "mystery.json"},
+			[]string{"mystery.json", "'format'", "no importer in this workspace's catalog advertises a format to name"}},
+		{"importers of two formats recognise the source",
+			&importops.AmbiguousFormatError{Source: "flow.json", Matched: []string{"langflow", "nested-flow"}},
+			[]string{"E0339: ", "flow.json", "'format'", `"langflow", "nested-flow"`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text, unsettled := importFormatRefusal(tc.err)
+			if !unsettled {
+				t.Fatalf("the refusal was not recognised by its type: %v", tc.err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Errorf("the refusal %q does not carry %q", text, want)
+				}
+			}
+			if strings.Contains(text, "--format") {
+				t.Errorf("the refusal names a command-line flag, which is a remedy this caller does not have: %q", text)
+			}
+		})
+	}
+	if _, unsettled := importFormatRefusal(errors.New("something else")); unsettled {
+		t.Error("an error that is not an unsettled format was taken for one")
+	}
+}
+
 // TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat is the
 // nothing-attached case, and it is driven with the shared layer's own resolution
 // rather than with the seam the cases above point.
+//
+// The format is named, because a catalog holding no importer recognises no
+// source — the case whose refusal is asserted here is the one past recognition,
+// where the format is settled and no importer serves it.
 //
 // The refusal is the shipped one: the condition the catalog registers for a
 // format no plugin advertises, carrying the capability an importer would have to
@@ -423,7 +483,7 @@ func TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat(t *testing.T) {
 	before := treeUnder(t, root)
 	s := importToolServer(t, root)
 
-	res := callTool(t, s, importToolName, map[string]any{"source": rel})
+	res := callTool(t, s, importToolName, map[string]any{"source": rel, "format": "langflow"})
 	if !res.IsError {
 		t.Fatalf("a workspace attaching no importer imported anyway: %s", res.Content[0].Text)
 	}

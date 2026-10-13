@@ -284,6 +284,11 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.PluginDescriptor](t, "PluginDescriptorCLI", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorProvider", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorProviderOmits", false)
+	// An importer's recognition contract populated in every field. The members it
+	// adds are text strings, lists of text strings and lists of nested maps of
+	// text strings, which the reference encoder writes the same way, so it stays
+	// anchored.
+	vec[abi.PluginDescriptor](t, "PluginDescriptorImporter", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMinimal", false)
 	vec[abi.PluginDescriptor](t, "PluginDescriptorMoo", false)
 	vec[abi.ParseInput](t, "ParseInput", false)

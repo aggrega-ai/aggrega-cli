@@ -20,11 +20,14 @@ type EntityCuratedSurface struct {
 	Capabilities []string
 	// HasContract reports whether the entity authors a render-behavior contract.
 	HasContract bool
+	// HasDetect reports whether the entity records importer recognition
+	// signatures.
+	HasDetect bool
 }
 
 // UnderDeclaredNotices reports, as advisory notice strings, each export,
-// capability, or contract the plugin's describe() self-report offers that the
-// entity's curated surface omits. It is the inverse of the load-gate cross-check:
+// capability, contract, or set of importer recognition signatures the plugin's
+// describe() self-report offers that the entity's curated surface omits. It is the inverse of the load-gate cross-check:
 // where the cross-check halts when the authored surface claims more than the
 // binary provides (author ⊄ binary), this reports where the binary provides more
 // than the entity curates (binary ⊋ entity).
@@ -63,6 +66,12 @@ func UnderDeclaredNotices(surface EntityCuratedSurface, desc PluginDescriptor) [
 	if !surface.HasContract && desc.Contract != nil && !desc.Contract.isZero() {
 		notices = append(notices,
 			"plugin describe() reports a render-behavior contract the entity does not declare")
+	}
+
+	if !surface.HasDetect && desc.Importer != nil && len(desc.Importer.Detect) != 0 {
+		notices = append(notices,
+			"plugin describe() reports importer recognition signatures the entity does not record, so an import "+
+				"naming no format recognises none of this importer's sources until the entity records them")
 	}
 
 	return notices

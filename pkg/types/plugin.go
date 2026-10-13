@@ -20,8 +20,9 @@ import (
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
 // descend into (PluginSignature, PluginRuntime, the three per-plugin-type
-// blocks PluginPipelineStep, PluginParser and PluginImporter, and the
-// contract's nested PluginArtifactDelimiters, PluginAssemblyNameAnnotation and
+// blocks PluginPipelineStep, PluginParser and PluginImporter, the importer
+// block's PluginDetectSignature and PluginPathMatch, and the contract's nested
+// PluginArtifactDelimiters, PluginAssemblyNameAnnotation and
 // PluginSourceIgnore),
 // plus the Plugin methods and the aliases below. The shared Maintainer and
 // WellKnownAnnotation types the generated fields reference live in common.go.
@@ -143,9 +144,10 @@ type PluginParser struct {
 
 // PluginImporter is the importer block on a pluginType: importer Plugin. It
 // carries the foreign source formats the plugin turns into draft authoring
-// files, and carries no meaning on any other plugin type. The block is
-// hand-written because the generator names it via x-aggrega-go-type on the
-// schema's object node and does not descend into it.
+// files and the signatures a source of those formats is recognised by, and
+// carries no meaning on any other plugin type. The block is hand-written
+// because the generator names it via x-aggrega-go-type on the schema's object
+// node and does not descend into it.
 type PluginImporter struct {
 	// Capabilities is the foreign source formats this importer turns into draft
 	// Aggrega authoring files, each written as "import:<format>" — for example
@@ -154,6 +156,51 @@ type PluginImporter struct {
 	// order. Format resolution matches a requested format against these
 	// entries.
 	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+
+	// Detect is the machine-owned record of the signatures a source of this
+	// importer's formats is recognised by when an import names no format, in the
+	// order the plugin's describe() self-report declares them. It is derived from
+	// that self-report when the entity is generated from the plugin, and the load
+	// and publication compare it with the self-report where it is present. A nil
+	// list records nothing and is compared with nothing.
+	Detect []PluginDetectSignature `json:"detect,omitempty" yaml:"detect,omitempty"`
+}
+
+// PluginDetectSignature is one way a source of an importer's formats is
+// recognised: the syntactic format the source is parsed as, the file-name
+// patterns the signature applies to, and the predicates the parsed tree must
+// satisfy. The element type is hand-written because the generator names it via
+// x-aggrega-go-type on the schema's items node and does not descend into it.
+type PluginDetectSignature struct {
+	// Syntax is the syntactic format the source is parsed as — the format a
+	// parser plugin advertises as "parse:<syntax>".
+	Syntax string `json:"syntax" yaml:"syntax"`
+	// Files is the file-name patterns the signature applies to, matched against
+	// the end of the source's name. Empty applies it to a source of any name.
+	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+	// Match is the predicates the parsed tree must satisfy, all of them, in
+	// declared order.
+	Match []PluginPathMatch `json:"match,omitempty" yaml:"match,omitempty"`
+}
+
+// PluginPathMatch is one predicate over a parsed tree: the value a dotted path
+// reaches, the kind of value it must be — one of the Is* consts — and an
+// optional string it must equal or begin with. The element type is hand-written
+// because the generator names it via x-aggrega-go-type on the schema's items
+// node and does not descend into it.
+type PluginPathMatch struct {
+	// Path is where in the tree the predicate looks, keys joined by dots from the
+	// top of the tree; a whole-number segment selects an array position.
+	Path string `json:"path" yaml:"path"`
+	// Is is what the path must reach: IsPresent, IsAbsent, or one of the five
+	// value kinds.
+	Is string `json:"is" yaml:"is"`
+	// Equals is a string the reached value must equal exactly. Empty asks for no
+	// comparison.
+	Equals string `json:"equals,omitempty" yaml:"equals,omitempty"`
+	// Prefix is a string the reached value must begin with. Empty asks for no
+	// comparison.
+	Prefix string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 }
 
 // DeclaredCapabilities returns the capabilities this Plugin declares, read from

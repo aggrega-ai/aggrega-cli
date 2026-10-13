@@ -208,7 +208,18 @@ func maximalPlugin() types.Plugin {
 			},
 			PipelineStep: &types.PluginPipelineStep{Capabilities: []string{"helm"}},
 			Parser:       &types.PluginParser{Capabilities: []string{"parse:yaml"}},
-			Importer:     &types.PluginImporter{Capabilities: []string{"import:terraform"}},
+			Importer: &types.PluginImporter{
+				Capabilities: []string{"import:terraform"},
+				Detect: []types.PluginDetectSignature{{
+					Syntax: "json",
+					Files:  []string{"*.tf.json"},
+					Match: []types.PluginPathMatch{
+						{Path: "resource", Is: types.IsObject},
+						{Path: "terraform.required_version", Is: types.IsString, Prefix: ">="},
+						{Path: "kind", Is: types.IsString, Equals: "Module"},
+					},
+				}},
+			},
 		},
 	}
 }

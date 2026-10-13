@@ -234,6 +234,12 @@ type PluginContractClaim struct {
 	// onto the wasm-side claim shape; the load gate cross-checks it against the
 	// plugin's describe() self-report.
 	Contract *ProviderContractClaim
+
+	// Detect is the importer recognition signatures the entity records, or nil
+	// where it records none — in which case the load compares nothing about them.
+	// It is the entity's own type rather than a neutral copy, because the claim
+	// carries it unchanged; the loader's caller maps it onto the wasm-side shape.
+	Detect *[]types.PluginDetectSignature
 }
 
 // ProviderContractClaim is the neutral, pluginpath-owned shape of an entity's

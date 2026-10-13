@@ -286,6 +286,29 @@ func TestHostGuestWireParity_Descriptor(t *testing.T) {
 		t.Fatalf("compiler-side encode: %v", err)
 	}
 	crossSide(t, "PluginDescriptor", got, &abi.PluginDescriptor{})
+
+	// An importer's recognition contract, every field populated, so the two sides
+	// are held to one encoding of the nested lists a signature carries.
+	importer := wasm.PluginDescriptor{
+		AbiVersion:   "v1alpha1",
+		PluginType:   "importer",
+		Capabilities: []string{"import:langflow"},
+		Exports:      []wasm.PluginExport{{Name: "import"}},
+		Importer: &wasm.ImporterContract{Detect: []wasm.DetectSignature{{
+			Syntax: "json",
+			Files:  []string{"*.json"},
+			Match: []wasm.PathMatch{
+				{Path: "data.nodes", Is: "array"},
+				{Path: "kind", Is: "string", Equals: "Flow"},
+				{Path: "$schema", Is: "string", Prefix: "https://"},
+			},
+		}}},
+	}
+	got, err = importer.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("compiler-side encode of the importer descriptor: %v", err)
+	}
+	crossSide(t, "PluginDescriptor with an importer contract", got, &abi.PluginDescriptor{})
 }
 
 // TestHostGuestWireParity_LinkEdge covers the deepest ordered shape on any

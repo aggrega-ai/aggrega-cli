@@ -23,6 +23,13 @@ type EntityContractClaim struct {
 	// authors no render-behavior contract, in which case the cross-check compares
 	// only the per-export claims.
 	Contract *ProviderContract
+
+	// Detect is the importer recognition signatures the entity records, in the
+	// same neutral shape the plugin self-reports in describe(). Nil when the
+	// entity records none — an entity generated before the record existed among
+	// them — in which case nothing about the signatures is compared; a non-nil
+	// list, even an empty one, is compared with describe() entry for entry.
+	Detect *[]DetectSignature
 }
 
 // EntityExportClaim is one export's authored capability: the export name the
@@ -68,6 +75,13 @@ type EntityExportClaim struct {
 // provider-level comparison — an entity is not required to author a
 // render-behavior contract.
 //
+// When the entity records importer recognition signatures, they are compared with
+// the ones describe() reports under importer.detect, entry for entry and in
+// order, the way the source ignore rules are: the record is what an import reads
+// to recognise a source, so a record that differs from the plugin would recognise
+// sources by signatures the plugin never declared. An entity recording none
+// makes no claim and keeps loading.
+//
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
 func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc PluginDescriptor) error {
@@ -98,7 +112,77 @@ func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc P
 			return err
 		}
 	}
+	return crossCheckDetect(entityIdentity, claim.Detect, desc.Importer)
+}
+
+// crossCheckDetect compares the recognition signatures an entity records with
+// the ones describe() reports, where the entity records any. The comparison is
+// one-sided for the reason crossCheckSourceIgnore's is: an absent record makes no
+// claim. A recorded list must equal the reported one entry for entry and in
+// order — order is part of the declaration — and the first entry to differ is
+// named by its position and field.
+func crossCheckDetect(entityIdentity string, want *[]DetectSignature, got *ImporterContract) error {
+	if want == nil {
+		return nil
+	}
+	var reported []DetectSignature
+	if got != nil {
+		reported = got.Detect
+	}
+	recorded := *want
+	if len(recorded) != len(reported) {
+		return fmt.Errorf(
+			"entity %q records %d importer.detect signature(s) but the plugin's describe() reports %d: %w",
+			entityIdentity, len(recorded), len(reported), ErrWasmContractMismatch())
+	}
+	for i := range recorded {
+		if err := crossCheckDetectSignature(entityIdentity, i, recorded[i], reported[i]); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// crossCheckDetectSignature compares one recorded signature with the reported
+// signature at the same position, naming the first field to differ.
+func crossCheckDetectSignature(entityIdentity string, i int, want, got DetectSignature) error {
+	if want.Syntax != got.Syntax {
+		return fmt.Errorf(
+			"entity %q records importer.detect[%d].syntax %q but the plugin's describe() reports %q: %w",
+			entityIdentity, i, want.Syntax, got.Syntax, ErrWasmContractMismatch())
+	}
+	if !sameStrings(want.Files, got.Files) {
+		return fmt.Errorf(
+			"entity %q records importer.detect[%d].files %q but the plugin's describe() reports %q: %w",
+			entityIdentity, i, want.Files, got.Files, ErrWasmContractMismatch())
+	}
+	if len(want.Match) != len(got.Match) {
+		return fmt.Errorf(
+			"entity %q records %d importer.detect[%d].match predicate(s) but the plugin's describe() reports %d: %w",
+			entityIdentity, len(want.Match), i, len(got.Match), ErrWasmContractMismatch())
+	}
+	for j := range want.Match {
+		if want.Match[j] != got.Match[j] {
+			return fmt.Errorf(
+				"entity %q records importer.detect[%d].match[%d] as %s but the plugin's describe() reports %s: %w",
+				entityIdentity, i, j, pathMatchText(want.Match[j]), pathMatchText(got.Match[j]), ErrWasmContractMismatch())
+		}
+	}
+	return nil
+}
+
+// pathMatchText renders one predicate in the words its fields are written in —
+// path, is, and the comparison where it declares one — so a refusal naming two
+// predicates reads as the record and the report an author compares.
+func pathMatchText(m PathMatch) string {
+	text := fmt.Sprintf("path %q is %q", m.Path, m.Is)
+	if m.Equals != "" {
+		text += fmt.Sprintf(" equals %q", m.Equals)
+	}
+	if m.Prefix != "" {
+		text += fmt.Sprintf(" prefix %q", m.Prefix)
+	}
+	return text
 }
 
 // crossCheckHostFunctions verifies that the host functions a plugin declares

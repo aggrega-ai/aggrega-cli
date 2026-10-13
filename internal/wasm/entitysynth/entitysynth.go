@@ -3,8 +3,9 @@
 
 // Package entitysynth assembles a Plugin catalog entity from a Wasm guest's
 // describe() self-report. The routing-relevant contract fields — pluginType,
-// abiVersion, capabilities, exports, and the provider render-behavior contract —
-// are always machine-derived from the descriptor, so a synthesized entity can
+// abiVersion, capabilities, exports, the provider render-behavior contract, and
+// an importer's recognition signatures — are always machine-derived from the
+// descriptor, so a synthesized entity can
 // never promise a capability the binary does not provide.
 //
 // MergeForPublish assembles a publish-ready entity by merging the descriptor
@@ -84,7 +85,8 @@ func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctio
 // applyDescriptorContract stamps the machine-derived routing contract fields
 // from a descriptor onto entity: the pluginType identity, abiVersion,
 // capabilities, exports, and — when the guest reports one — the provider
-// render-behavior contract. It is the single place a descriptor maps onto an
+// render-behavior contract and an importer's recognition signatures. It is the
+// single place a descriptor maps onto an
 // entity's routing fields, so those fields are always the compiler-checked truth
 // of what the guest does.
 //
@@ -112,6 +114,45 @@ func applyDescriptorContract(entity *types.Plugin, desc wasm.PluginDescriptor) {
 	if contract := descriptorContract(desc.Contract); contract != nil {
 		entity.Spec.Provider.Contract = *contract
 	}
+	// The recognition signatures live in the importer block, which only an
+	// importer carries — the descriptor gate refuses the contract on any other
+	// plugin type — so an importer reporting none leaves the entity without a
+	// record, and the block is created only to hold one the guest reports.
+	if detect := descriptorDetect(desc.Importer); detect != nil && desc.PluginType == string(wasm.PluginTypeImporter) {
+		if entity.Spec.Importer == nil {
+			entity.Spec.Importer = &types.PluginImporter{}
+		}
+		entity.Spec.Importer.Detect = detect
+	}
+}
+
+// descriptorDetect maps the describe() recognition signatures onto the entity's
+// machine-owned record, preserving declared order, or returns nil when the guest
+// reports none — so a guest declaring no signature leaves the omitempty field
+// absent rather than recording an empty list.
+//
+// It crosses from the GENERATED describe-socket codec into the entity's
+// hand-written shape, which cannot be one Go type for the reason
+// descriptorContract states; the load gate compares the record it writes with
+// the guest's report, so a field this copy dropped would refuse the entity it
+// generated rather than pass unseen.
+func descriptorDetect(c *wasm.ImporterContract) []types.PluginDetectSignature {
+	if c == nil || len(c.Detect) == 0 {
+		return nil
+	}
+	out := make([]types.PluginDetectSignature, 0, len(c.Detect))
+	for _, sig := range c.Detect {
+		var match []types.PluginPathMatch
+		for _, m := range sig.Match {
+			match = append(match, types.PluginPathMatch{Path: m.Path, Is: m.Is, Equals: m.Equals, Prefix: m.Prefix})
+		}
+		out = append(out, types.PluginDetectSignature{
+			Syntax: sig.Syntax,
+			Files:  append([]string(nil), sig.Files...),
+			Match:  match,
+		})
+	}
+	return out
 }
 
 // stampRuntimeHostFunctions returns the entity's runtime block carrying the

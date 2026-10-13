@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-// PluginDescriptor A plugin's complete self-declaration, returned from describe() and read once at load. It carries the ABI-compatibility handshake, the plugin type, the offered exports, and the optional per-type surfaces (a provider's render-behavior contract, a CLI plugin's commands, a settings schema, authorship metadata).
+// PluginDescriptor A plugin's complete self-declaration, returned from describe() and read once at load. It carries the ABI-compatibility handshake, the plugin type, the offered exports, and the optional per-type surfaces (a provider's render-behavior contract, an importer's recognition contract, a CLI plugin's commands, a settings schema, authorship metadata).
 type PluginDescriptor struct {
 	// AbiVersion The plugin ABI the guest binds against. The host accepts exactly this version; a guest built against any other ABI is refused at load rather than mis-invoked at dispatch.
 	AbiVersion string `json:"abi_version" yaml:"abi_version" cbor:"abi_version"`
@@ -31,6 +31,8 @@ type PluginDescriptor struct {
 	Exports []PluginExport `json:"exports" yaml:"exports" cbor:"exports"`
 	// Contract The provider's render-behavior self-report — the input kinds it renders, how it assembles a dispatch group's per-node output, and the artifact-template delimiter pair it applies. It describes the provider as a whole rather than any one export. Absent for a plugin that declares no render-behavior contract.
 	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty" cbor:"contract,omitempty"`
+	// Importer An importer's self-report of how a source of the formats it advertises is recognised when an import names no format. Only a plugin whose plugin_type is importer may declare it; any other plugin declaring it is refused at load. Absent for an importer that declares no way to recognise its formats, whose formats are then reached only by naming them.
+	Importer *ImporterContract `json:"importer,omitempty" yaml:"importer,omitempty" cbor:"importer,omitempty"`
 	// Description The plugin's own one-line human-readable description of what it does, distinct from a per-export description and from the entity's metadata description. It is informational; the host neither validates nor acts on it.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
 	// Commands The top-level aggrega command verbs a CLI plugin contributes, each with its own short-help line. One CLI plugin may contribute several commands; the host registers one command per entry and routes the resolved command name to the guest at invocation. A non-CLI plugin leaves it empty.
@@ -159,6 +161,34 @@ type AssemblyNameAnnotation struct {
 	RequireUnique bool `json:"require_unique,omitempty" yaml:"require_unique,omitempty" cbor:"require_unique,omitempty"`
 }
 
+// ImporterContract What an importer declares about its formats beyond advertising them: the signatures a source of those formats is recognised by. When an import names no format, the host reads the signatures every importer in the workspace's catalog records, matches each against the source without knowing what any format is, and reads the source as the format of the one importer whose signature matches. A source no signature matches is refused asking for the format, and a source signatures of more than one format match is refused naming them. The Plugin entity records the same list, and the host refuses an importer whose describe() report differs from the record.
+type ImporterContract struct {
+	// Detect The signatures that recognise a source of this importer's formats, in declared order; a source is recognised when any one of them matches it. A source recognised by an importer is recognised as every format the importer advertises, so an importer advertising more than one format has every match refused as ambiguous, and an importer whose sources must be recognised advertises one format. Absent or empty declares no signature, and the importer's formats are reached only by naming them.
+	Detect []DetectSignature `json:"detect,omitempty" yaml:"detect,omitempty" cbor:"detect,omitempty"`
+}
+
+// DetectSignature One way a source is recognised: the syntax the source is read in, the file names the signature applies to, and the predicates the parsed tree must satisfy. It matches a source whose name matches one of its file patterns, or any name where it declares none, whose bytes parse in its syntax, and whose parsed tree satisfies every one of its predicates.
+type DetectSignature struct {
+	// Syntax The syntactic format the source is parsed as — json or yaml, for example — which is the format a parser plugin advertises as parse:<syntax>. The host parses the source through that parser at most once whatever number of signatures name the syntax, and a source that does not parse in it matches no signature naming it. A syntax no parser in the workspace's catalog advertises stops the recognition with that parser's absence named, rather than being passed over.
+	Syntax string `json:"syntax" yaml:"syntax" cbor:"syntax"`
+	// Files The file-name patterns the signature applies to, matched against the end of the source's name with its separators read as forward slashes: a pattern of one segment is matched against the file's own name, and a pattern of several slash-separated segments against that many trailing segments of its path, so .vscode/mcp.json matches a file named mcp.json in a directory named .vscode. Within a segment, * matches any run of characters, ? matches one character, and [...] matches one character of a class. The signature applies when any pattern matches. A pattern that is not well formed is refused at load. Absent or empty applies the signature to a source of any name.
+	Files []string `json:"files,omitempty" yaml:"files,omitempty" cbor:"files,omitempty"`
+	// Match The predicates the parsed tree must satisfy, all of them, in declared order. Absent or empty asks nothing of the tree beyond parsing in the syntax.
+	Match []PathMatch `json:"match,omitempty" yaml:"match,omitempty" cbor:"match,omitempty"`
+}
+
+// PathMatch One predicate over the parsed tree: the value a path reaches, the kind of value it must be, and optionally a string it must equal or begin with.
+type PathMatch struct {
+	// Path Where in the tree the predicate looks, written as keys joined by dots from the top of the tree: data.nodes names the nodes member of the top-level data object. A segment written as a whole number, 0 or greater, selects that position of an array counting from zero, so nodes.0.type names the type of the first node; every other segment selects a member of an object. A key that itself contains a dot cannot be named.
+	Path string `json:"path" yaml:"path" cbor:"path"`
+	// Is What the path must reach: present holds when it reaches a value of any kind, null included; absent holds when it reaches nothing; object, array, string, number and boolean each hold when it reaches a value of that kind.
+	Is string `json:"is" yaml:"is" cbor:"is"`
+	// Equals A string the value the path reaches must equal exactly. A value that is not a string never equals it. At most one of equals and prefix is declared on one predicate, and a predicate declaring both is refused at load.
+	Equals string `json:"equals,omitempty" yaml:"equals,omitempty" cbor:"equals,omitempty"`
+	// Prefix A string the value the path reaches must begin with. A value that is not a string never begins with it. At most one of equals and prefix is declared on one predicate, and a predicate declaring both is refused at load.
+	Prefix string `json:"prefix,omitempty" yaml:"prefix,omitempty" cbor:"prefix,omitempty"`
+}
+
 // MarshalJSON encodes PluginDescriptor in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t PluginDescriptor) MarshalJSON() ([]byte, error) {
@@ -218,6 +248,18 @@ func (t PluginDescriptor) MarshalJSON() ([]byte, error) {
 		first = false
 		buf.WriteString("\"contract\":")
 		if enc, err := t.Contract.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	if t.Importer != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"importer\":")
+		if enc, err := t.Importer.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -347,6 +389,16 @@ func (t *PluginDescriptor) UnmarshalJSON(data []byte) error {
 				}
 				t.Contract = v
 			}
+		case "importer":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				v := new(ImporterContract)
+				if err := v.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+				t.Importer = v
+			}
 		case "description":
 			if s, err := readString(dec); err != nil {
 				return err
@@ -407,7 +459,7 @@ func (t *PluginDescriptor) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *PluginDescriptor) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "abi_version", "plugin_type", "capabilities", "exports", "contract", "description", "commands", "settings_schema", "metadata"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "abi_version", "plugin_type", "capabilities", "exports", "contract", "importer", "description", "commands", "settings_schema", "metadata"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -1546,6 +1598,328 @@ func (t *AssemblyNameAnnotation) UnmarshalJSONStrict(data []byte) error {
 	return t.UnmarshalJSON(data)
 }
 
+// MarshalJSON encodes ImporterContract in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t ImporterContract) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.Detect) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"detect\":")
+		buf.WriteByte('[')
+		for i := range t.Detect {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Detect[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes ImporterContract with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *ImporterContract) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "detect":
+			t.Detect = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem DetectSignature
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Detect = append(t.Detect, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes ImporterContract exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *ImporterContract) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "detect"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes DetectSignature in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t DetectSignature) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"syntax\":")
+	writeJSONString(&buf, t.Syntax)
+	if len(t.Files) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"files\":")
+		buf.WriteByte('[')
+		for i := range t.Files {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Files[i]
+			writeJSONString(&buf, ev)
+		}
+		buf.WriteByte(']')
+	}
+	if len(t.Match) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"match\":")
+		buf.WriteByte('[')
+		for i := range t.Match {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Match[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes DetectSignature with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *DetectSignature) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "syntax":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Syntax = s
+			}
+		case "files":
+			t.Files = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					elem = s
+				}
+				t.Files = append(t.Files, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "match":
+			t.Match = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem PathMatch
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Match = append(t.Match, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes DetectSignature exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *DetectSignature) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "syntax", "files", "match"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes PathMatch in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t PathMatch) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"path\":")
+	writeJSONString(&buf, t.Path)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"is\":")
+	writeJSONString(&buf, t.Is)
+	if t.Equals != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"equals\":")
+		writeJSONString(&buf, t.Equals)
+	}
+	if t.Prefix != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"prefix\":")
+		writeJSONString(&buf, t.Prefix)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes PathMatch with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *PathMatch) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "is":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Is = s
+			}
+		case "equals":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Equals = s
+			}
+		case "prefix":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Prefix = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes PathMatch exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *PathMatch) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "path", "is", "equals", "prefix"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // EncodeCBOR encodes PluginDescriptor as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t PluginDescriptor) EncodeCBOR() ([]byte, error) {
@@ -1561,6 +1935,9 @@ func (t PluginDescriptor) appendCBOR(dst []byte) ([]byte, error) {
 		n++
 	}
 	if t.Contract != nil {
+		n++
+	}
+	if t.Importer != nil {
 		n++
 	}
 	if t.Metadata != nil {
@@ -1600,6 +1977,14 @@ func (t PluginDescriptor) appendCBOR(dst []byte) ([]byte, error) {
 		if t.Contract == nil {
 			dst = append(dst, 0xf6)
 		} else if dst, err = t.Contract.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.Importer != nil {
+		dst = appendCBORTextString(dst, "importer")
+		if t.Importer == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.Importer.appendCBOR(dst); err != nil {
 			return nil, err
 		}
 	}
@@ -1706,6 +2091,14 @@ func (t *PluginDescriptor) decodeCBOR(dec *cborDec) error {
 				}
 				t.Contract = v
 			}
+		case "importer":
+			{
+				v := new(ImporterContract)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.Importer = v
+			}
 		case "description":
 			if s, err := dec.readTextString(); err != nil {
 				return err
@@ -1758,7 +2151,7 @@ func (t *PluginDescriptor) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *PluginDescriptor) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "abi_version", "plugin_type", "capabilities", "exports", "contract", "description", "commands", "settings_schema", "metadata"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "abi_version", "plugin_type", "capabilities", "exports", "contract", "importer", "description", "commands", "settings_schema", "metadata"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -2816,6 +3209,310 @@ func (t *AssemblyNameAnnotation) decodeCBOR(dec *cborDec) error {
 // check reads the map's own keys and does not descend.
 func (t *AssemblyNameAnnotation) DecodeCBORStrict(data []byte) error {
 	if err := refuseUndeclaredCBORKeys(data, "annotation", "require_unique"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes ImporterContract as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ImporterContract) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ImporterContract's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ImporterContract) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if len(t.Detect) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if len(t.Detect) != 0 {
+		dst = appendCBORTextString(dst, "detect")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Detect)))
+		for i := range t.Detect {
+			ev := t.Detect[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ImporterContract from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ImporterContract) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ImporterContract) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "detect":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]DetectSignature, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev DetectSignature
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Detect = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes ImporterContract exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ImporterContract) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "detect"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes DetectSignature as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t DetectSignature) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends DetectSignature's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t DetectSignature) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.Files) != 0 {
+		n++
+	}
+	if len(t.Match) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if len(t.Files) != 0 {
+		dst = appendCBORTextString(dst, "files")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Files)))
+		for i := range t.Files {
+			ev := t.Files[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	if len(t.Match) != 0 {
+		dst = appendCBORTextString(dst, "match")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Match)))
+		for i := range t.Match {
+			ev := t.Match[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "syntax")
+	dst = appendCBORTextString(dst, t.Syntax)
+	return dst, nil
+}
+
+// DecodeCBOR decodes DetectSignature from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *DetectSignature) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *DetectSignature) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "syntax":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Syntax = s
+			}
+		case "files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.Files = s
+			}
+		case "match":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]PathMatch, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev PathMatch
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Match = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes DetectSignature exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *DetectSignature) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "syntax", "files", "match"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes PathMatch as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PathMatch) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PathMatch's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PathMatch) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.Equals != "" {
+		n++
+	}
+	if t.Prefix != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "is")
+	dst = appendCBORTextString(dst, t.Is)
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	if t.Equals != "" {
+		dst = appendCBORTextString(dst, "equals")
+		dst = appendCBORTextString(dst, t.Equals)
+	}
+	if t.Prefix != "" {
+		dst = appendCBORTextString(dst, "prefix")
+		dst = appendCBORTextString(dst, t.Prefix)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PathMatch from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PathMatch) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PathMatch) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "is":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Is = s
+			}
+		case "equals":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Equals = s
+			}
+		case "prefix":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Prefix = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes PathMatch exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *PathMatch) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "path", "is", "equals", "prefix"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

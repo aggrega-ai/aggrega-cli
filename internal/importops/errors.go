@@ -36,6 +36,29 @@ var errImportHalted = cerrors.Register("import-halting-diagnostic", cerrors.Meta
 		"what it reads."),
 })
 
+// ErrAmbiguousImportFormat fires when an import names no format and the
+// signatures of more than one format recognise its source.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match: the import would otherwise have to choose between formats the
+// catalog's importers each claim, and choosing is a guess. Its occurrence names
+// every format the source was recognised as, so the reader can name the one they
+// meant.
+//
+// It is distinct from more than one importer advertising one format, which the
+// catalog reports once a format is settled: here the formats themselves differ,
+// so no attachment can settle it and only naming the format does.
+func ErrAmbiguousImportFormat() error { return errAmbiguousImportFormat }
+
+var errAmbiguousImportFormat = cerrors.Register("ambiguous-import-format", cerrors.Meta{
+	ShortCode: "E0339",
+	Message:   "more than one importer recognises the source",
+	RulePlace: cerrors.RuleNoStageReaches("An import naming no format evaluates the rule, when the signatures the importers " +
+		"of the workspace's catalog record are matched against the source and those of more than one format match. " +
+		"The import translates a foreign source description into entities before there is anything to compile, so " +
+		"no declared stage of a compilation holds the signatures or the source the rule reads."),
+})
+
 // Refusal returns the occurrence of [ErrImportHalted] when the import raised a
 // halt-severity diagnostic, and nil when it did not.
 //

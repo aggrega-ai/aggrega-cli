@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -27,8 +28,9 @@ const importToolName = "import"
 //
 // Source names the foreign description to convert, relative to the workspace
 // root or by absolute path, as every other path argument here is named. Format
-// names the source format outright; leaving it out recognises the format from
-// the source's own top-level shape. DryRun does everything the plain request
+// names the source format outright; leaving it out recognises the format by the
+// signatures the importers in the workspace's catalog declare. DryRun does
+// everything the plain request
 // does except write, which is a property of the caller rather than of this
 // surface, so it is a request field rather than a second tool and it defaults
 // to writing — the operation's product is a set of files.
@@ -46,8 +48,8 @@ type importArgs struct {
 	Source string `json:"source"`
 
 	// Format is a pointer so that a value a caller sent is distinguishable from
-	// one it left out. Absent means the format is recognised from the source's
-	// own shape, which is this tool's default and not a failure; a value the
+	// one it left out. Absent means the format is recognised by the signatures the
+	// catalog's importers declare, which is this tool's default and not a failure; a value the
 	// caller wrote and left blank is refused, because detecting instead would be
 	// an argument quietly substituted — and an argument quietly substituted
 	// reads to its sender exactly like one that was honoured. A plain string
@@ -157,9 +159,11 @@ var importToolSpec = toolSpec{
 		"importer advertises the format too, and hands it — and no other importer — its `with.sources` and " +
 		"`with.settings`; where several advertise the format and no single one is attached, the call is " +
 		"refused naming them. " +
-		"Leave `format` out and the format is recognised from the source's own " +
-		"top-level shape, reading that one file and nothing else — no other file, no network — and a shape " +
-		"that is not recognised is refused asking for `format` rather than guessed at. Send `dry_run` to be " +
+		"Leave `format` out and the format is recognised by the signatures the importers in this workspace's " +
+		"catalog declare — the syntax a source is read in, the file names it applies to and the paths its parsed " +
+		"tree carries — reading that one source and no other, and no network: a source no signature matches is " +
+		"refused asking for `format` and naming the formats the catalog's importers advertise, and a source " +
+		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
 		"write would refuse is refused under it too. What the importer could not translate comes back as " +
@@ -181,7 +185,7 @@ var importToolSpec = toolSpec{
     "format": {
       "type": "string",
       "minLength": 1,
-      "description": "The source format, named outright — for example langflow or flowise. Leave it out and the format is recognised from the source's own top-level shape."
+      "description": "The source format, named outright — for example langflow or flowise. Leave it out and the format is recognised by the signatures the importers in the workspace's catalog declare."
     },
     "dry_run": {
       "type": "boolean",
@@ -213,7 +217,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if a.Format != nil {
 		if named = strings.TrimSpace(*a.Format); named == "" {
 			return errorResult(importToolName + " was sent a blank 'format'. Name the source format outright, " +
-				"or leave 'format' out altogether and it is recognised from the source's own top-level shape; " +
+				"or leave 'format' out altogether and it is recognised by the signatures the catalog's importers declare; " +
 				"a blank value is neither, so nothing was read and nothing was written.")
 		}
 	}
@@ -248,27 +252,28 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return tw.answer(errorResult(explainToolError("Could not read the source at "+path, err, "")))
 	}
 
-	// The format is settled here, ahead of the import, so a source whose shape is
-	// not recognised is refused in this surface's own words — naming the argument
-	// a caller here can send — rather than in the command line's.
-	format, err := importops.SelectFormat(named, source, content)
-	if err != nil {
-		return errorResult(importFormatRefusal(err))
-	}
-
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
 	// No destination is handed, and that is the whole of what this surface
 	// decides about one: the layer writes beneath the root of the workspace it is
 	// handed when none is named — the workspace this call resolved — which is
 	// also where the command writes when it is given none. So the two land the
 	// same drafts in one place, and no argument here names another.
+	//
+	// The format the caller named, or none, is handed on as it is: the layer
+	// settles it, recognising an unnamed one from the signatures of the importers
+	// in the workspace's catalog, and a source it cannot settle is refused here in
+	// this surface's own words — naming the argument a caller here can send —
+	// rather than in the command line's.
 	res, err := importops.Import(ctx, tw.rw, importops.Options{
 		Source:        content,
 		SourceName:    source,
-		Format:        format,
+		Format:        named,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})
+	if refusal, unsettled := importFormatRefusal(err); unsettled {
+		return errorResult(refusal)
+	}
 	if err != nil {
 		return errorResult(explainDiagnostic(importRefusal(source, err), ""))
 	}
@@ -301,27 +306,59 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 }
 
 // importFormatRefusal composes this surface's sentence for a source whose format
-// could not be settled.
+// could not be settled, and reports whether err is one; any other error is left
+// to the caller.
 //
-// The unrecognised-shape condition is recognised through its own type rather
-// than by reading the shipped sentence, because that sentence names the flag a
-// reader at a terminal passes and a caller here has no flag to pass. Matching on
-// the type is what keeps the two in step: a surface comparing the wording would
-// keep compiling and silently stop matching the first time either moved. Every
-// other failure to settle a format is carried as it arrived.
+// The two conditions — no importer recognises the source, and importers of more
+// than one format do — are recognised through their own types rather than by
+// reading the shipped sentences, because those sentences name the flag a reader
+// at a terminal passes and a caller here has no flag to pass. Matching on the
+// type is what keeps the two in step: a surface comparing the wording would keep
+// compiling and silently stop matching the first time either moved.
 //
-// It names no format of its own. Which shapes are recognised is the detection's
-// own statement and the argument's schema is where this surface carries it, so
-// repeating a pair of format names in a refusal would be a second copy that
-// stops being true the first time the recognised set moves.
-func importFormatRefusal(err error) string {
+// The formats it names are read off the refusal itself — the ones the catalog's
+// importers advertise, or the ones the source was recognised as — so they are
+// the catalog's statement rather than a list of this surface's that would stop
+// being true the first time the catalog changed.
+func importFormatRefusal(err error) (string, bool) {
 	var undetected *importops.UndetectedFormatError
 	if errors.As(err, &undetected) {
-		return fmt.Sprintf("%s did not recognise the source format of %s from the file's own top-level shape, "+
-			"and it does not guess: send 'format' naming the format outright and call again. Nothing was read "+
-			"beyond that one file and nothing was written.", importToolName, undetected.Path())
+		return fmt.Sprintf("%s did not recognise the source format of %s from the signatures the importers in this "+
+			"workspace's catalog declare, and it does not guess: send 'format' naming the format outright (%s) and "+
+			"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats())), true
 	}
-	return explainToolError("Could not settle which format to read the source as.", err, "")
+	var ambiguous *importops.AmbiguousFormatError
+	if errors.As(err, &ambiguous) {
+		var b strings.Builder
+		if short, ok := cerrors.ShortCodeOf(err); ok {
+			b.WriteString(short)
+			b.WriteString(": ")
+		}
+		fmt.Fprintf(&b, "%s recognised the source %s as more than one format — %s — because importers of each "+
+			"declare a signature it matches, and it does not choose between them: send 'format' naming the one to "+
+			"read it as and call again. Nothing was written.", importToolName, ambiguous.Path(),
+			quotedFormats(ambiguous.Formats()))
+		return b.String(), true
+	}
+	return "", false
+}
+
+// formatChoices names the formats a caller may send, or says the catalog
+// advertises none.
+func formatChoices(formats []string) string {
+	if len(formats) == 0 {
+		return "no importer in this workspace's catalog advertises a format to name"
+	}
+	return "one of " + quotedFormats(formats)
+}
+
+// quotedFormats lists formats quoted, joined by commas.
+func quotedFormats(formats []string) string {
+	quoted := make([]string, 0, len(formats))
+	for _, f := range formats {
+		quoted = append(quoted, strconv.Quote(f))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // importRefusal composes this surface's sentence for an import the shared layer

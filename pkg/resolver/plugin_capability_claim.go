@@ -16,16 +16,17 @@ import (
 // pipeline's per-step load and the publishing-linter's workspace-config path)
 // call it rather than each re-spelling the field copy.
 //
-// Two authored surfaces cross the boundary: the per-export operates/scope (the
+// Three recorded surfaces cross the boundary: the per-export operates/scope (the
 // export name keys the cross-check; the selector is free-form documentation and
-// is not carried) and the plugin-level capabilities block. The host-function
-// surface is machine-derived and stamped, not authored, so it never participates
-// in a load-time claim. An entity that authors neither exports nor a
-// capabilities block yields nil — no claim, so the cross-check is skipped for
-// that plugin.
+// is not carried), the plugin-level capabilities block, and an importer's
+// recognition signatures. The host-function surface is machine-derived and
+// stamped, not authored, so it never participates in a load-time claim. An
+// entity that carries none of the three yields nil — no claim, so the
+// cross-check is skipped for that plugin.
 func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
 	contract := entity.Spec.Provider.Contract
-	if len(entity.Spec.Exports) == 0 && contract.IsZero() {
+	detect := importerDetectClaim(entity)
+	if len(entity.Spec.Exports) == 0 && contract.IsZero() && detect == nil {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -39,7 +40,20 @@ func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
 	return &pluginpath.PluginContractClaim{
 		Exports:  exports,
 		Contract: pluginContractClaim(contract),
+		Detect:   detect,
 	}
+}
+
+// importerDetectClaim returns the recognition signatures an importer entity
+// records, or nil where it records none. "Records none" is a nil list, the shape
+// an entity generated before the record existed decodes to, so such an entity
+// makes no claim and keeps loading.
+func importerDetectClaim(entity types.Plugin) *[]types.PluginDetectSignature {
+	if entity.Spec.Importer == nil || entity.Spec.Importer.Detect == nil {
+		return nil
+	}
+	detect := entity.Spec.Importer.Detect
+	return &detect
 }
 
 // pluginContractClaim maps a Plugin entity's authored plugin-level

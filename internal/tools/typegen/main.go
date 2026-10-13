@@ -134,11 +134,15 @@ var enumSources = map[string]enumSource{
 		schema:     schemas.PluginV1alpha1,
 		schemaFile: "plugin-v1alpha1.schema.json",
 		pkg:        "types",
-		fields:     []string{"operates", "scope"},
+		fields:     []string{"operates", "scope", "is"},
 		regen:      "// Regenerate with `go generate ./pkg/types/...`.\n",
 		doc: "These consts are the single source for the Plugin entity's per-export\n" +
 			"operates and scope vocabularies. The describe() host descriptor re-exports\n" +
 			"them so the load-time shape gate and the runtime read one set of values.\n" +
+			"\n" +
+			"They are also the single source for the kinds a recognition predicate's is\n" +
+			"names: the describe() shape gate and the import's recognition read these\n" +
+			"values rather than each re-spelling them.\n" +
 			"\n" +
 			"The feature-recipe-pipeline package consumes this scope vocabulary by\n" +
 			"aliasing these consts, so the Go values are single-sourced. A separate\n" +
@@ -1037,8 +1041,8 @@ var codecTargets = map[string]codecTarget{
 	// Describe socket — guest codecs into aggrega-abi (Go/Rust/TS). Every plugin
 	// returns the PluginDescriptor shape from its describe() export; the codec
 	// realizes that self-declaration (the exports, the optional provider render
-	// contract, the optional CLI commands and flags, the settings schema, the
-	// authorship metadata). The abi Go codec references the helpers FRP owns in
+	// contract, the optional importer recognition contract, the optional CLI
+	// commands and flags, the settings schema, the authorship metadata). The abi Go codec references the helpers FRP owns in
 	// package abi (helpers: false, the default). The annotated carries on this
 	// schema are of two kinds: an opaque JSON Schema document held verbatim as
 	// json.RawMessage, and a value held by reference so that omitting it stays

@@ -15,8 +15,8 @@
 // The subsystem carries a per-format plugin seam: an importer is resolved by the
 // format it advertises — among several advertisers, by the attachment naming
 // it — an attachment's inputs reach the importer it names and no other, and the
-// source format is either named outright or recognised from the source's own
-// shape. That is a format-detection and
+// source format is either named outright or recognised by the signatures the
+// catalog's importers declare. That is a format-detection and
 // plugin-selection surface, and drafting a starter document from a kind's schema
 // — the other capability that produces authoring files — has no use for any of
 // it: one converts something that already exists in a foreign format, the other
@@ -26,12 +26,20 @@
 // # The format is selected once, for every surface
 //
 // [SelectFormat] is the only implementation of the explicit-versus-detected
-// precedence and [DetectFormat] the only implementation of detection. A surface
-// that wants to name a format sets Options.Format; a surface that wants
-// detection leaves it empty. That is a parameter on one entry point rather than
-// a second path, because a second detection implementation would agree with the
-// first on the day it was written and drift silently afterwards — and the two
-// surfaces would then disagree about what a source file is.
+// precedence, and [Import] its only caller. A surface that wants to name a
+// format sets Options.Format; a surface that wants detection leaves it empty and
+// reads a refusal by its type off the error [Import] returns. That is a
+// parameter on one entry point rather than a second path, because a second
+// detection implementation would agree with the first on the day it was written
+// and drift silently afterwards — and the two surfaces would then disagree about
+// what a source file is.
+//
+// Detection knows no format. It reads the recognition signatures the importer
+// entities of the import's catalog view record — the syntax a source is parsed
+// in, the file names it applies to, the paths its parsed tree must or must not
+// carry — parses the source through the parser socket and evaluates those
+// predicates generically, so a format a new importer serves is recognised with
+// no change here.
 //
 // # The write is contained
 //

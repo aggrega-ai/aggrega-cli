@@ -18,23 +18,30 @@ import (
 )
 
 // Seam is the resolver-and-loader pair for an import run, plus the parser pair
-// the importer draws on to obtain its parsed source tree, and the view of the
-// catalog's Components the importer is handed.
+// the importer draws on to obtain its parsed source tree, the view of the
+// catalog's Components the importer is handed, and the importer entities whose
+// recognition signatures settle a format the import does not name.
 //
 // They travel together because they are built from one catalog view: parser
 // and importer resolution share it and its embedded-resolution posture, so one
 // loader closure serves both sockets and no separate enable is needed for the
-// parser side, and the Components the importer is shown are the ones held by
-// the catalog its importer was selected from.
+// parser side, the Components the importer is shown are the ones held by the
+// catalog its importer was selected from, and the importers a source is
+// recognised by are the ones that resolution selects among. The recognition
+// parses the source through the same parser pair the importer draws on.
 //
 // Catalog is nil when that catalog holds no Component, and a harness standing
 // in for the catalog leaves it nil unless it supplies a view of its own.
+// Importers is empty when the catalog holds no importer, and a harness standing
+// in for the catalog supplies the entities whose signatures it wants read, so
+// one that supplies none recognises no source.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
 	ParserRes    parsersocket.ParserResolver
 	ParserLoad   parsersocket.ParserLoader
 	Catalog      *abi.CatalogProjection
+	Importers    []types.Plugin
 }
 
 // ImporterResolver resolves a requested source format to the importer that
@@ -97,6 +104,11 @@ var BuildSeam = buildSeam
 // view, once, so the import loads the catalog once and shows the importer
 // exactly the catalog it was selected from — nothing a Release contributes, and
 // nothing fetched.
+//
+// The importers whose signatures recognise a source are read from this same
+// view too — every importer it resolves among, the binary's own embedded ones
+// included where it embeds any — so a source is recognised only as a format an
+// importer this view holds advertises.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
 	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
@@ -121,5 +133,6 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		ParserRes:    cat,
 		ParserLoad:   load,
 		Catalog:      importersocket.ProjectCatalog(cat),
+		Importers:    cat.ImporterPlugins(),
 	}, nil
 }

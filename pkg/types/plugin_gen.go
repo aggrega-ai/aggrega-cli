@@ -55,7 +55,7 @@ type PluginSpec struct {
 	PipelineStep *PluginPipelineStep `json:"pipelineStep,omitempty" yaml:"pipelineStep,omitempty"`
 	// Parser The parser block for a `pluginType: parser` plugin: the source formats it turns into a canonical structured tree. Present only on parser plugins; absent on every other plugin type.
 	Parser *PluginParser `json:"parser,omitempty" yaml:"parser,omitempty"`
-	// Importer The importer block for a `pluginType: importer` plugin: the foreign source formats it turns into draft Aggrega authoring files. Present only on importer plugins; absent on every other plugin type.
+	// Importer The importer block for a `pluginType: importer` plugin: the foreign source formats it turns into draft Aggrega authoring files, and the signatures a source of those formats is recognised by. Present only on importer plugins; absent on every other plugin type.
 	Importer *PluginImporter `json:"importer,omitempty" yaml:"importer,omitempty"`
 }
 

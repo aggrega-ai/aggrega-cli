@@ -87,8 +87,9 @@ func entityCommandFlags(flags []types.PluginCommandFlag) []wasm.PluginCommandFla
 }
 
 // ProjectCuratedSurface projects a Plugin entity's authored, curated surface — its
-// export names, plugin-level capabilities, and whether it authors a
-// render-behavior contract — into the shape the under-declaration advisory reads.
+// export names, plugin-level capabilities, whether it authors a render-behavior
+// contract, and whether it records importer recognition signatures — into the
+// shape the under-declaration advisory reads.
 func ProjectCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 	exportNames := make([]string, len(entity.Spec.Exports))
 	for i, e := range entity.Spec.Exports {
@@ -99,5 +100,6 @@ func ProjectCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 		ExportNames:  exportNames,
 		Capabilities: entity.DeclaredCapabilities(),
 		HasContract:  hasContract,
+		HasDetect:    importerDetectClaim(entity) != nil,
 	}
 }

@@ -270,6 +270,11 @@ func assertImportCommandDraftsTheSharedResult(t *testing.T, root, external, form
 //
 // The positive control is the case above, over the same folder with its modules:
 // the only difference between the two is the module beside the entity.
+//
+// The format is named. Naming none would have the import recognise it first, by
+// parsing the source through the folder's parser — whose module is not beside
+// its entity either — so the halt would name the parser rather than the importer
+// this case is about.
 func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing.T) {
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
@@ -286,7 +291,8 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 	}
 
 	before := treeFingerprint(t, root)
-	code, stdout, _, process := runImportAtTheRoot(t, root, source, "--dry-run")
+	code, stdout, _, process := runImportAtTheRoot(t, root, source, "--dry-run",
+		"--format", catalogFolderImportSources[0].format)
 	if code == 0 {
 		t.Fatalf("an import whose importer module is nowhere on this machine succeeded:\n%s", stdout)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // provenanceIndexPath resolves the provenance index location. It is a package
@@ -105,8 +106,9 @@ func wasmCommandFlags(flags []pluginpath.PluginCommandFlagMirror) []wasm.PluginC
 }
 
 // WasmContractClaim maps a resolved plugin's neutral capability claim onto the
-// load gate's cross-check shape — the per-export name/operates/scope triples and
-// the plugin-level capabilities block — or nil when the resolution carries none.
+// load gate's cross-check shape — the per-export name/operates/scope triples,
+// the plugin-level capabilities block and an importer's recognition signatures —
+// or nil when the resolution carries none.
 //
 // It is the single home of the neutral-claim → wasm.EntityContractClaim
 // mapping. The load path reaches it through PluginSpec; the publish path calls it
@@ -129,7 +131,35 @@ func WasmContractClaim(claim *pluginpath.PluginContractClaim) *wasm.EntityContra
 	return &wasm.EntityContractClaim{
 		Exports:  exports,
 		Contract: wasmContract(claim.Contract),
+		Detect:   wasmDetect(claim.Detect),
 	}
+}
+
+// wasmDetect maps the recognition signatures an entity records onto the load
+// gate's cross-check shape, or nil where the entity records none.
+//
+// The copy below survives for the reason wasmContract's input-kind copy does: it
+// crosses into the GENERATED describe-socket codec, which is single-sourced at
+// that schema and cannot share the entity's hand-written type. A field missed
+// here would arrive empty and compare unequal to a plugin that declares it, so
+// the omission is loud at the load rather than silent.
+func wasmDetect(recorded *[]types.PluginDetectSignature) *[]wasm.DetectSignature {
+	if recorded == nil {
+		return nil
+	}
+	out := make([]wasm.DetectSignature, 0, len(*recorded))
+	for _, sig := range *recorded {
+		match := make([]wasm.PathMatch, 0, len(sig.Match))
+		for _, m := range sig.Match {
+			match = append(match, wasm.PathMatch{Path: m.Path, Is: m.Is, Equals: m.Equals, Prefix: m.Prefix})
+		}
+		out = append(out, wasm.DetectSignature{
+			Syntax: sig.Syntax,
+			Files:  append([]string(nil), sig.Files...),
+			Match:  match,
+		})
+	}
+	return &out
 }
 
 // recordProvenance records the resolved guest's content digest against its

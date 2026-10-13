@@ -66,10 +66,16 @@ directory you named outside it, out of that directory — is refused, and nothin
 is written.
 
 The source format selects how the importer reads the file. Pass --format to
-name it explicitly. When --format is omitted, import inspects the file's
-top-level shape to recognize the format; if the shape is not recognized, import
-stops and asks for --format rather than guessing. Detection reads only the
-named file — no other files, no network.
+name it explicitly. When --format is omitted, import recognizes the format by
+the signatures the importers in the workspace's catalog declare: each names the
+syntax a source is read in, the file names it applies to and the paths its
+parsed tree must or must not carry. The file is parsed by the parser the catalog
+serves for a syntax, once for each syntax a signature applying to its name reads
+it in, and the format of the one importer whose signature matches is the one
+read. If no signature matches, import stops, asks
+for --format and names the formats the catalog's importers advertise; if
+signatures of more than one format match, it stops and names them. It does not
+guess. Detection reads only the named file — no other source, no network.
 
 Before the drafted output, import names on standard error the format it read
 the source as and the directory the drafted paths are relative to, alongside
@@ -153,7 +159,7 @@ source the write would refuse is refused here too.`,
 			return res.Refusal()
 		},
 	}
-	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
+	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding detection by the catalog's importer signatures (for example langflow or flowise)")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in. Without it the drafts are written beneath the root of the workspace the run resolved.")
 	return c
@@ -219,8 +225,8 @@ func reportImportedFiles(w io.Writer, files []abi.ScaffoldFile) error {
 //
 // The format is what says which importer read the file, and it is the one fact
 // the drafted output does not already carry — with --format omitted the format
-// is recognised from the source's own shape, and nothing else says which shape
-// was recognised. It is named on every run rather than only on a recognised
+// is recognised by the signatures the catalog's importers declare, and nothing
+// else says which format they recognised. It is named on every run rather than only on a recognised
 // one: conditioning the line on how the format was arrived at would make the
 // output depend on the route to the fact rather than on the fact, and would put
 // a second reading of "was this named explicitly" at a surface whose job is to

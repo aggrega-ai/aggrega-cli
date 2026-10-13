@@ -6,7 +6,9 @@ package serve
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
@@ -38,9 +40,10 @@ import (
 // would answer with drafts belonging to nowhere.
 //
 // format names the source format explicitly. An absent value means the format is
-// recognised from the source's own shape, which is the same default the command
-// line carries — so a caller that names nothing gets detection rather than a
-// refusal, and a caller converting a source whose shape is not recognised names
+// recognised by the signatures the importers in the workspace's catalog declare,
+// which is the same default the command line carries — so a caller that names
+// nothing gets detection rather than a refusal, and a caller converting a source
+// no signature recognises, or signatures of more than one format recognise, names
 // the format instead.
 //
 // dryRun does everything the plain request does except write: it answers with the
@@ -195,35 +198,36 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: cannot read the source "+sourcePath+": ", err)
 	}
 
-	// The format is settled here, ahead of the import, so a source whose shape is
-	// not recognised is refused naming the field a caller here can send rather
-	// than the command line's flag.
-	format, err := importops.SelectFormat(params.Format, params.Source, content)
-	if err != nil {
-		// The detection refusal's own sentence names the command line's flag,
-		// which is the right remedy at a terminal and unreachable from a request.
-		// The condition is recognised through its type rather than by reading the
-		// sentence, and the field a caller here can actually send is what this
-		// refusal names.
-		if undetected := (*importops.UndetectedFormatError)(nil); errors.As(err, &undetected) {
-			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-				"import: the source format of "+undetected.Path()+" was not recognised from its shape; "+
-					"send format to name it explicitly (for example langflow or flowise)")
-		}
-		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
-	}
-
+	// The format the request named, or none, is handed on as it is: the import
+	// settles it, recognising an unnamed one from the signatures of the importers
+	// in the workspace's catalog.
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
 		Source:        content,
 		SourceName:    params.Source,
-		Format:        format,
+		Format:        params.Format,
 		OutputDir:     outputDir,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})
 	if ctx.Err() != nil {
 		return nil
+	}
+	// A source whose format the import could not settle is refused naming the
+	// field a caller here can send. The two refusals' own sentences name the
+	// command line's flag, which is the right remedy at a terminal and
+	// unreachable from a request, so each is recognised through its type rather
+	// than by reading the sentence, and the formats it names are read off it.
+	if undetected := (*importops.UndetectedFormatError)(nil); errors.As(err, &undetected) {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+			"import: the source format of "+undetected.Path()+" was not recognised from its shape by the "+
+				"signatures the importers in the workspace's catalog declare; send format to name it explicitly ("+
+				sessionFormatExamples(undetected.Formats())+")")
+	}
+	if ambiguous := (*importops.AmbiguousFormatError)(nil); errors.As(err, &ambiguous) {
+		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ",
+			fmt.Errorf("%w (source %s, recognised as %s); send format naming the one to read it as",
+				importops.ErrAmbiguousImportFormat(), ambiguous.Path(), strings.Join(ambiguous.Formats(), ", ")))
 	}
 	if err != nil {
 		if escaping := (*importops.EscapingPathError)(nil); errors.As(err, &escaping) {
@@ -240,6 +244,16 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Diagnostics: importDiagnostics(res.Diagnostics),
 		Halted:      res.Halted(),
 	})
+}
+
+// sessionFormatExamples names the formats a request may send in the field, or
+// says the catalog advertises none — so a refusal never offers an example the
+// workspace's catalog cannot serve.
+func sessionFormatExamples(formats []string) string {
+	if len(formats) == 0 {
+		return "no importer in the workspace's catalog advertises a format to name"
+	}
+	return "for example " + strings.Join(formats, " or ")
 }
 
 // importWrittenPaths projects the written set, always as an array so a caller

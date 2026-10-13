@@ -116,7 +116,15 @@ var proseOnlyFailureReturns = map[string]int{
 	// The generated command-tool surface. Its post-run failure path holds both
 	// captured streams and concatenates them into prose, so the bytes survive
 	// and the separation between output and diagnostics does not.
-	"commandtools.go": 2,
+	//
+	// The other two are decided before any command is started, so no command has
+	// run and there is no output to carry: the refusal of arguments the command
+	// does not accept, and — for a call naming no workspace of its own — the
+	// refusal of the root this server was launched with where that root is not an
+	// existing folder, which leaves no folder to start the command in. That second
+	// refusal is the one every tool running inside the server answers the same
+	// root with, and it carries the reason in its own words.
+	"commandtools.go": 3,
 	// The two graph-node tools. Both run the preview with the render skipped and
 	// refuse before any result is handed back, so at the failure return there is
 	// nothing structured in hand. One entry each refuses a Release path this
@@ -289,25 +297,31 @@ var proseOnlyFailureReturns = map[string]int{
 	// code where the condition carries one, and carrying the validator's own
 	// sentence where the refusal is the schema's.
 	"tool_document_edit.go": 7,
-	// The foreign-description import. Nine of these are decided before the
-	// importer is reached at all: the refusal of a request naming no source, the
-	// refusal of one naming a blank format, the withdrawal a caller signals
-	// before any resolution, a session carrying no plugin resolution an importer
-	// could be loaded through, a workspace that could not be resolved, a source
-	// path this session may not name, a source that could not be read, a format
-	// that could not be settled from the file's own shape, and inputs the
-	// workspace's importer attachment declares that could not be read. At each of
-	// them nothing has been translated and nothing has been written, so there is
-	// nothing in hand to carry.
+	// The foreign-description import. Seven of these are decided before the
+	// shared import layer is entered at all: the refusal of a request naming no
+	// source, the refusal of one naming a blank format, the withdrawal a caller
+	// signals before any resolution, a session carrying no plugin resolution an
+	// importer could be loaded through, a workspace that could not be resolved, a
+	// source path this session may not name, and a source that could not be read.
+	// At each of them nothing has been translated and nothing has been written, so
+	// there is nothing in hand to carry.
 	//
-	// The tenth is the only post-run one, and that it loses nothing is
+	// The eighth is a format the shared layer could not settle: a source no
+	// importer's recognition signature matches, or one the signatures of more
+	// than one format match. The layer decides it before any importer is loaded,
+	// from the signatures the catalog's importers declare and the source parsed
+	// in the syntaxes they name, and hands back the zero result with it, so
+	// nothing has been translated or written. The formats it offers, or the ones
+	// the source was recognised as, are carried in the refusal's own words.
+	//
+	// The ninth is the only post-run one, and that it loses nothing is
 	// established rather than assumed: every failing return of the shared import
 	// layer's entry point hands back the zero result, so no partially-populated
 	// result exists for it to carry. The one outcome that DOES have findings in
 	// hand — an importer that could not translate the whole source — is not in
 	// this count at all: it takes the structured route and carries the files that
 	// reached disk, the drafts and every diagnostic.
-	"tool_import.go": 10,
+	"tool_import.go": 9,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals. Position
 	// lookup carries two more, refusing a document path this session may not name

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -158,13 +160,31 @@ func noopResolver(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginp
 	return pluginpath.ResolvedPlugin{}, nil
 }
 
-// TestSelectFormat exercises the format-selection contract: the Langflow shape's
-// nested data.nodes resolves to "langflow"; the Flowise shape's flat
-// nodes+edges resolves to "flowise"; a JSON shape matching neither halts with a
-// loud diagnostic rather than guessing; and an explicit format wins over
-// whatever the content would detect.
+// referenceDetectionSeam is a seam standing in for a catalog that holds the
+// reference importer of each agent-flow format and the binary's own parsers: the
+// importers are the entities generated from their built modules, so they carry
+// the recognition signatures those modules declare, and the parsers are read
+// straight from the binary. It resolves no importer, so it serves recognition
+// and nothing after it.
+func referenceDetectionSeam(t *testing.T) Seam {
+	t.Helper()
+	parserRes, parserLoad := importopstest.EmbeddedParsers(t)
+	return Seam{
+		ParserRes:  parserRes,
+		ParserLoad: parserLoad,
+		Importers:  importopstest.ReferenceImporterEntities(t),
+	}
+}
+
+// TestSelectFormat exercises the format-selection contract over the two
+// reference importers' declared signatures: a source whose graph is nested
+// under data.nodes is recognised as langflow, and one whose nodes and edges are
+// flat arrays as flowise — the two shapes the host once spelled itself, now read
+// off the importers. A JSON shape matching neither, content that is not JSON, a
+// top-level array and a null data.nodes are refused rather than guessed at, and
+// an explicit format wins over whatever the content would be recognised as.
 func TestSelectFormat(t *testing.T) {
-	t.Parallel()
+	seam := referenceDetectionSeam(t)
 
 	langflow := []byte(`{"data":{"nodes":[],"edges":[]}}`)
 	flowise := []byte(`{"nodes":[],"edges":[]}`)
@@ -179,9 +199,9 @@ func TestSelectFormat(t *testing.T) {
 	}{
 		{name: "langflow nested data.nodes", source: "flow.json", content: langflow, want: "langflow"},
 		{name: "flowise flat nodes+edges", source: "chatflow.json", content: flowise, want: "flowise"},
-		{name: "ambiguous json is a loud fall-through", source: "x.json", content: []byte(`{"foo":"bar"}`), wantErr: true},
-		{name: "garbage is a loud fall-through", source: "x.json", content: []byte("not json at all"), wantErr: true},
-		{name: "top-level array is a loud fall-through", source: "x.json", content: []byte(`[1,2,3]`), wantErr: true},
+		{name: "a json shape matching neither is refused", source: "x.json", content: []byte(`{"foo":"bar"}`), wantErr: true},
+		{name: "content that is not json is refused", source: "x.json", content: []byte("not json at all"), wantErr: true},
+		{name: "a top-level array is refused", source: "x.json", content: []byte(`[1,2,3]`), wantErr: true},
 		{name: "a null data.nodes is not an array", source: "x.json", content: []byte(`{"data":{"nodes":null}}`), wantErr: true},
 		{name: "explicit format wins over langflow content", explicit: "flowise", source: "flow.json", content: langflow, want: "flowise"},
 		{name: "explicit format wins over garbage content", explicit: "langflow", source: "x.json", content: []byte("not json"), want: "langflow"},
@@ -189,17 +209,21 @@ func TestSelectFormat(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := SelectFormat(tc.explicit, tc.source, tc.content)
+			got, err := SelectFormat(context.Background(), tc.explicit, tc.source, tc.content, seam)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("SelectFormat(%q, %q, ...) = %q, nil; want error", tc.explicit, tc.source, got)
 				}
 				var undetected *UndetectedFormatError
 				if !errors.As(err, &undetected) {
-					t.Fatalf("SelectFormat refusal must be an *UndetectedFormatError so a surface can re-word it; got %T", err)
+					t.Fatalf("SelectFormat refusal must be an *UndetectedFormatError so a surface can re-word it; got %T: %v", err, err)
 				}
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
+				}
+				if want := []string{"langflow", "flowise"}; !slices.Equal(undetected.Formats(), want) {
+					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
+						undetected.Formats(), want)
 				}
 				return
 			}
@@ -214,15 +238,50 @@ func TestSelectFormat(t *testing.T) {
 }
 
 // TestUndetectedFormatMessageNamesTheTerminalRemedy pins the sentence the
-// command line has always printed, so lifting the subsystem left that surface's
-// output unchanged. A protocol surface re-words it through the type instead.
+// command line prints: the file, the flag, and the formats the catalog's
+// importers advertise as the examples — or, where they advertise none, that
+// there is nothing to name. A protocol surface re-words it through the type.
 func TestUndetectedFormatMessageNamesTheTerminalRemedy(t *testing.T) {
 	t.Parallel()
-	err := &UndetectedFormatError{Source: "flow.json"}
-	want := `cannot detect the source format of "flow.json"; pass --format to name it explicitly ` +
-		`(for example --format langflow or --format flowise)`
+	for _, tc := range []struct {
+		formats []string
+		want    string
+	}{
+		{[]string{"langflow", "flowise"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
+			`explicitly (for example --format langflow or --format flowise)`},
+		{[]string{"langflow"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
+			`explicitly (for example --format langflow)`},
+		{[]string{"a", "b", "c"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
+			`explicitly (for example --format a, --format b or --format c)`},
+		{nil, `cannot detect the source format of "flow.json"; pass --format to name it explicitly ` +
+			`(no importer plugin in the workspace's catalog advertises a format to name)`},
+	} {
+		err := &UndetectedFormatError{Source: "flow.json", Advertised: tc.formats}
+		if err.Error() != tc.want {
+			t.Errorf("Error() with %v advertised = %q; want %q", tc.formats, err.Error(), tc.want)
+		}
+	}
+}
+
+// TestAnAmbiguousSourceIsRefusedUnderItsOwnCondition pins the refusal for a source
+// the signatures of more than one format recognise: it is the registered
+// ambiguous-import-format condition, reachable by errors.Is and carrying its short
+// code through the chain, and its sentence names the source and every format it
+// was recognised as before asking for --format.
+func TestAnAmbiguousSourceIsRefusedUnderItsOwnCondition(t *testing.T) {
+	t.Parallel()
+	var err error = &AmbiguousFormatError{Source: "flow.json", Matched: []string{"langflow", "nested-flow"}}
+	if !errors.Is(err, ErrAmbiguousImportFormat()) {
+		t.Fatalf("the refusal is not the ambiguous-import-format condition: %v", err)
+	}
+	if short, ok := cerrors.ShortCodeOf(err); !ok || short != "E0339" {
+		t.Errorf("the refusal carries short code %q (found %v); want E0339", short, ok)
+	}
+	want := `more than one importer recognises the source (source "flow.json", recognised as "langflow", ` +
+		`"nested-flow"). Pass --format to name the one to read it as (for example --format langflow or ` +
+		`--format nested-flow)`
 	if err.Error() != want {
-		t.Fatalf("Error() = %q; want %q", err.Error(), want)
+		t.Errorf("Error() = %q; want %q", err.Error(), want)
 	}
 }
 

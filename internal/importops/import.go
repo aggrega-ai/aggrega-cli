@@ -55,8 +55,10 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // Options carries the resolved inputs for one import.
 //
 // Source is the source description's bytes and SourceName is what it is called,
-// used only to name the file in a detection refusal. Format names the source
-// format explicitly; an empty Format means the format is detected from Source.
+// used to name the file in a recognition refusal and matched against the file
+// patterns the importers' recognition signatures declare. Format names the
+// source format explicitly; an empty Format means the format is recognised from
+// Source by those signatures.
 //
 // OutputDir is the directory drafted files are written under by a writing
 // delivery, and the directory every drafted path is relative to under either
@@ -130,9 +132,10 @@ func (r Result) Halted() bool {
 
 // Import turns a foreign source description into draft Aggrega authoring files.
 //
-// It selects the source format, resolves the importer the catalog advertises for
-// that format — the one a plugins.importer attachment names, where one names an
-// advertiser — runs it with the with-config of the attachment naming it and of
+// It loads the catalog view, selects the source format — the one named, or the
+// one the signatures of that view's importers recognise the source as — resolves
+// the importer the catalog advertises for that format — the one a
+// plugins.importer attachment names, where one names an advertiser — runs it with the with-config of the attachment naming it and of
 // no other, and either writes the drafted files under the output directory —
 // Options.OutputDir, or the root of the workspace rw where it names none — or
 // returns them for the caller to place, according to Options.Delivery.
@@ -167,8 +170,9 @@ func (r Result) Halted() bool {
 // error, and any files the importer produced alongside it are still written — an
 // import the importer could not complete still drafts what it could. The returned
 // error is reserved for a run that could not be performed: no workspace, no
-// plugin resolver, a catalog that would not load, a guest that failed, an
-// escaping path, or a write that failed.
+// plugin resolver, a catalog that would not load, a source no importer
+// recognises or more than one format's importers recognise, a guest that failed,
+// an escaping path, or a write that failed.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
 	if _, err := workspaceOrRefuse(rw); err != nil {
 		return Result{}, err
@@ -177,12 +181,15 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, fmt.Errorf("internal: no plugin resolver supplied — the caller must supply one and pass it in")
 	}
 
-	format, err := SelectFormat(opts.Format, opts.SourceName, opts.Source)
+	// The seam is built before the format is settled, because a format the caller
+	// does not name is recognised from the signatures of the importers in the
+	// catalog view the seam loads, through the parser pair it carries.
+	seam, err := BuildSeam(rw, opts.ResolvePlugin)
 	if err != nil {
 		return Result{}, err
 	}
 
-	seam, err := BuildSeam(rw, opts.ResolvePlugin)
+	format, err := SelectFormat(ctx, opts.Format, opts.SourceName, opts.Source, seam)
 	if err != nil {
 		return Result{}, err
 	}

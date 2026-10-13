@@ -26,19 +26,32 @@
 // an import over this folder therefore reads the parser the importer calls back
 // to through the same tier it reads the importer through, and a resolution that
 // silently fell back to the binary's own copy could not satisfy it.
+//
+// Because every entity is generated from its module, each reference importer's
+// entity records the recognition signatures its module declares, and an import
+// naming no format over the folder recognises a source by those and nothing else.
+// A case needing a YAML source recognised lays the demo importer and the binary's
+// YAML parser beside them; a case needing importers whose signatures it chose
+// writes their entities without modules, for an import refused before any
+// importer runs.
 package importopstest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -254,26 +267,144 @@ func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool)
 // does not embed, with its module beside it when withModule is set.
 func layParser(t *testing.T, workspaceRoot, dir string, withModule bool) LaidPlugin {
 	t.Helper()
-	parserBytes, ok := embedded.Lookup(embeddedJSONParser)
-	if !ok {
-		t.Fatalf("this binary carries no %s, so no parser can be laid down beside an entity", embeddedJSONParser)
-	}
-	parserModule := filepath.Join(t.TempDir(), "json-parser.wasm")
-	if err := os.WriteFile(parserModule, parserBytes, 0o644); err != nil {
-		t.Fatalf("write the JSON parser module: %v", err)
-	}
-	return layPlugin(t, workspaceRoot, dir, parserModule, ParserName, withModule)
+	return layEmbeddedParser(t, workspaceRoot, dir, embeddedJSONParser, ParserName, withModule)
 }
 
-// layPlugin generates one entity from the module at module under the identity
-// name, writes it where the generation addresses it beneath dir, and lays the
-// module beside it when withModule is set.
+// LayYAMLParser lays the binary's own YAML parser down at dir, inside the
+// workspace rooted at workspaceRoot, under a name the binary does not embed and
+// with its module beside it — so a folder that also holds an importer whose
+// recognition signature reads a source as YAML can parse it there.
+func LayYAMLParser(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layEmbeddedParser(t, workspaceRoot, dir, "parser/yaml", "catalog-yaml", true)
+}
+
+// layEmbeddedParser lays the parser the binary embeds at coordinate down at dir
+// under the entity name name, with its module beside it when withModule is set.
+func layEmbeddedParser(t *testing.T, workspaceRoot, dir, coordinate, name string, withModule bool) LaidPlugin {
+	t.Helper()
+	parserBytes, ok := embedded.Lookup(coordinate)
+	if !ok {
+		t.Fatalf("this binary carries no %s, so no parser can be laid down beside an entity", coordinate)
+	}
+	parserModule := filepath.Join(t.TempDir(), name+".wasm")
+	if err := os.WriteFile(parserModule, parserBytes, 0o644); err != nil {
+		t.Fatalf("write the %s parser module: %v", coordinate, err)
+	}
+	return layPlugin(t, workspaceRoot, dir, parserModule, name, withModule)
+}
+
+// DemoImporterName is the metadata.name the demo importer's entity carries.
+const DemoImporterName = "import-demo"
+
+// LayDemoImporter lays the demo importer down at dir, inside the workspace rooted
+// at workspaceRoot, generated from its built module with the module beside it.
+// The demo importer advertises the demo format and declares one recognition
+// signature, which reads a source as YAML and asks for the string DemoSource at
+// its top-level kind — so a folder holding it and a YAML parser recognises such a
+// source as the demo format with nothing else telling it so.
+func LayDemoImporter(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layPlugin(t, workspaceRoot, dir, wasmtest.EnsureFixtureBuilt(t, "import-go.wasm"), DemoImporterName, true)
+}
+
+// ReferenceImporterEntities returns the Plugin entity of the reference importer
+// of each format, in the order a folder lays them down, generated from each
+// built module exactly as a folder's are — so each carries the recognition
+// signatures its module declares — and lays nothing down.
 //
-// The generation runs as a dry run and its one document is then written at the
-// path it names, with the content it carries: the bytes and the place are both
-// the generation's, and running it as a dry run is what hands them back to be
-// read before they are written.
-func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, withModule bool) LaidPlugin {
+// It is for a harness standing in for the catalog: handed as the importers whose
+// signatures an import reads, these are the declarations a real catalog folder
+// holds rather than a copy of them written beside the harness.
+func ReferenceImporterEntities(t *testing.T) []types.Plugin {
+	t.Helper()
+	out := make([]types.Plugin, 0, len(referenceImporters))
+	for _, r := range referenceImporters {
+		module := wasmtest.EnsureFixtureBuilt(t, r.fixture)
+		entity, _ := generateEntity(t, t.TempDir(), filepath.Join(t.TempDir(), "catalog"), module, r.name)
+		out = append(out, entity)
+	}
+	return out
+}
+
+// EmbeddedParsers returns a parser resolution and loader serving each syntax
+// from the parser the binary embeds for it — json and yaml among them — read
+// straight from the binary, so a harness standing in for the catalog parses
+// through a real parser with no catalog on disk. A syntax the binary embeds no
+// parser for is refused as a catalog refuses one no parser advertises.
+func EmbeddedParsers(t *testing.T) (parsersocket.ParserResolver, parsersocket.ParserLoader) {
+	t.Helper()
+	res := embeddedParserResolver{}
+	load := func(p types.Plugin) (wasm.PluginSpec, error) {
+		raw, ok := embedded.Lookup(p.Coordinate())
+		if !ok {
+			return wasm.PluginSpec{}, fmt.Errorf("this binary embeds no %s", p.Coordinate())
+		}
+		return wasm.PluginSpec{Name: p.Coordinate(), Bytes: raw}, nil
+	}
+	return res, load
+}
+
+// embeddedParserResolver resolves a syntax to the parser the binary embeds for
+// it, by the coordinate the binary keys its parsers under.
+type embeddedParserResolver struct{}
+
+func (embeddedParserResolver) ParserPluginForFormat(format string) (types.Plugin, error) {
+	if _, ok := embedded.Lookup("parser/" + format); !ok {
+		return types.Plugin{}, fmt.Errorf("%w: this binary embeds no parser for %q", catalog.ErrNoParserForFormat(), format)
+	}
+	return types.Plugin{
+		Metadata: types.PluginMetadata{Name: format, Version: "1.0.0", PluginType: "parser"},
+		Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:" + format}}},
+	}, nil
+}
+
+// WriteImporterEntity writes, at dir, a Plugin entity for an importer that
+// advertises formats and records the recognition signatures detect, with no
+// module beside it, and returns what it laid. It is the entity of an importer
+// no module vouches for — what a recognition reads without ever loading the
+// importer, so a case whose import is refused before any importer runs can hold
+// importers whose signatures it chose.
+func WriteImporterEntity(t *testing.T, dir, name string, formats []string, detect []types.PluginDetectSignature) LaidPlugin {
+	t.Helper()
+	capabilities := make([]string, 0, len(formats))
+	for _, f := range formats {
+		capabilities = append(capabilities, "import:"+f)
+	}
+	entity := types.Plugin{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Plugin",
+		Metadata:   types.PluginMetadata{Name: name, Version: "1.0.0", PluginType: "importer"},
+		Spec: types.PluginSpec{
+			AbiVersion: "v1alpha1",
+			Importer:   &types.PluginImporter{Capabilities: capabilities, Detect: detect},
+		},
+	}
+	body, err := yaml.Marshal(entity)
+	if err != nil {
+		t.Fatalf("encode the %s entity: %v", name, err)
+	}
+	entityDir := filepath.Join(dir, "importer", name, entity.Metadata.Version)
+	if err := os.MkdirAll(entityDir, 0o755); err != nil {
+		t.Fatalf("create the %s entity's directory: %v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(entityDir, "plugin.yaml"), body, 0o644); err != nil {
+		t.Fatalf("write the %s entity: %v", name, err)
+	}
+	return LaidPlugin{
+		Reference: entity.ArtifactReference(),
+		Identity:  entity.Coordinate() + ":" + entity.Metadata.Version,
+		Name:      name,
+		Version:   entity.Metadata.Version,
+		EntityDir: entityDir,
+		Module:    filepath.Join(entityDir, pluginpath.PluginLeaf(entity.ArtifactReference())),
+	}
+}
+
+// generateEntity generates one entity from the module at module under the
+// identity name, addressed beneath dir, and returns it and the document the
+// generation produced, writing nothing.
+func generateEntity(t *testing.T, workspaceRoot, dir, module, name string) (types.Plugin, authoredcontent.Document) {
 	t.Helper()
 
 	overlay := filepath.Join(t.TempDir(), name+".yaml")
@@ -296,12 +427,27 @@ func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, withModule
 		t.Fatalf("generating the %s entity produced %d documents, want exactly one", name, len(res.Documents))
 	}
 	doc := res.Documents[0]
-	content := []byte(doc.Content)
 
 	var entity types.Plugin
-	if err := yaml.Unmarshal(content, &entity); err != nil {
+	if err := yaml.Unmarshal([]byte(doc.Content), &entity); err != nil {
 		t.Fatalf("read back the generated %s entity: %v", name, err)
 	}
+	return entity, doc
+}
+
+// layPlugin generates one entity from the module at module under the identity
+// name, writes it where the generation addresses it beneath dir, and lays the
+// module beside it when withModule is set.
+//
+// The generation runs as a dry run and its one document is then written at the
+// path it names, with the content it carries: the bytes and the place are both
+// the generation's, and running it as a dry run is what hands them back to be
+// read before they are written.
+func layPlugin(t *testing.T, workspaceRoot, dir, module, name string, withModule bool) LaidPlugin {
+	t.Helper()
+
+	entity, doc := generateEntity(t, workspaceRoot, dir, module, name)
+	content := []byte(doc.Content)
 
 	if err := os.MkdirAll(filepath.Dir(doc.Path), 0o755); err != nil {
 		t.Fatalf("create the %s entity's directory: %v", name, err)

@@ -11,6 +11,10 @@ package types
 // operates and scope vocabularies. The describe() host descriptor re-exports
 // them so the load-time shape gate and the runtime read one set of values.
 //
+// They are also the single source for the kinds a recognition predicate's is
+// names: the describe() shape gate and the import's recognition read these
+// values rather than each re-spelling them.
+//
 // The feature-recipe-pipeline package consumes this scope vocabulary by
 // aliasing these consts, so the Go values are single-sourced. A separate
 // schema (the feature-recipe pipeline-step schema) declares the same scope
@@ -25,4 +29,14 @@ const (
 const (
 	ScopeOwn  = "own"
 	ScopeHost = "host"
+)
+
+const (
+	IsPresent = "present"
+	IsAbsent  = "absent"
+	IsObject  = "object"
+	IsArray   = "array"
+	IsString  = "string"
+	IsNumber  = "number"
+	IsBoolean = "boolean"
 )

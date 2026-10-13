@@ -258,3 +258,38 @@ func TestImporterPluginForFormat_AnAttachmentPinningAVersionTheCatalogDoesNotHol
 		})
 	}
 }
+
+// TestImporterPluginsListsEveryImporterInKeyOrder holds the set an import reads
+// recognition signatures from: every importer the view resolves among, every
+// version included and no plugin of another type, ordered by the key the catalog
+// indexes each under rather than by the map holding them — so one catalog lists
+// them in one order on every read. ImporterFormats reads each one's formats with
+// the import prefix taken off, in the order the entity lists them.
+func TestImporterPluginsListsEveryImporterInKeyOrder(t *testing.T) {
+	t.Parallel()
+	parser := types.Plugin{
+		Metadata: types.PluginMetadata{Name: "json", Version: "1.0.0", PluginType: "parser"},
+		Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:json"}}},
+	}
+	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
+		"importer/zeta:1.0.0":  importerPlugin("zeta", "1.0.0", "import:z"),
+		"importer/alpha:2.0.0": importerPlugin("alpha", "2.0.0", "import:b", "import:a"),
+		"importer/alpha:1.0.0": importerPlugin("alpha", "1.0.0", "import:b"),
+		"parser/json:1.0.0":    parser,
+	}}
+	for range 3 {
+		var got []string
+		for _, p := range c.ImporterPlugins() {
+			got = append(got, p.Metadata.Name+":"+p.Metadata.Version)
+		}
+		if want := []string{"alpha:1.0.0", "alpha:2.0.0", "zeta:1.0.0"}; strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("ImporterPlugins listed %v; want %v", got, want)
+		}
+	}
+	if got := catalog.ImporterFormats(importerPlugin("alpha", "2.0.0", "import:b", "import:a")); strings.Join(got, ",") != "b,a" {
+		t.Errorf("ImporterFormats = %v; want [b a]", got)
+	}
+	if got := catalog.ImporterFormats(parser); got != nil {
+		t.Errorf("a parser's formats were read as import formats: %v", got)
+	}
+}

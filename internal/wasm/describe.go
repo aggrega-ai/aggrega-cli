@@ -5,6 +5,8 @@ package wasm
 
 import (
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -14,7 +16,8 @@ import (
 // The descriptor wire types — PluginDescriptor and its nested PluginExport,
 // PluginCLICommand (with its per-command PluginCommandFlag list), ProviderContract
 // and that contract's nested InputKinds, ArtifactDelimiters, and
-// AssemblyNameAnnotation, plus PluginDescriptorMeta — are generated with their
+// AssemblyNameAnnotation, ImporterContract with its DetectSignature and PathMatch
+// lists, plus PluginDescriptorMeta — are generated with their
 // streaming JSON codec from the descriptor schema into the companion generated
 // file. The host decodes a guest's describe() output through that codec, so the
 // boundary shape check is the typed decode itself. An optional nested object the
@@ -190,6 +193,15 @@ const (
 	ScopeHost = types.ScopeHost
 )
 
+// detectKinds is the closed set of values a recognition predicate's is may
+// name, in the order the schema declares them. The values are the
+// schema-generated Plugin vocabulary, read here so this load-time shape gate and
+// the import's recognition accept one set rather than each re-spelling it.
+var detectKinds = []string{
+	types.IsPresent, types.IsAbsent, types.IsObject, types.IsArray,
+	types.IsString, types.IsNumber, types.IsBoolean,
+}
+
 // Validate checks a parsed descriptor against the host's contract and
 // returns nil if the plugin is admissible, or an error wrapping
 // [ErrWasmManifestRejected] naming pluginIdentity and the specific
@@ -248,6 +260,11 @@ const (
 //     importer's capabilities are not judged: `parse:<format>` and
 //     `import:<format>` carry the colon as part of the name, and they are
 //     resolved by format, never through a Recipe's reference.
+//   - the importer recognition contract is well-shaped: only an importer
+//     declares it, every signature names a syntax, every file pattern is well
+//     formed, and every predicate names a path, an is from the declared kinds
+//     and at most one of equals and prefix. Whether a parser serves the syntax
+//     is not judged here; the recognition says so when it parses.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -297,7 +314,57 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
+	if err := d.validateImporterContract(pluginIdentity); err != nil {
+		return err
+	}
+
 	return d.validateLinkCapability(pluginIdentity)
+}
+
+// validateImporterContract shape-checks the importer recognition contract: only
+// an importer may declare it, every signature names the syntax the source is
+// parsed as, every file pattern is well formed, and every predicate names a
+// path, an is drawn from the declared kinds, and at most one of equals and
+// prefix. This is shape validation only — it does not check that a parser serves
+// the syntax, which is the recognition's to say when it parses, and it does not
+// cross-check the signatures against the entity's record, which the load gate
+// does. A returned error wraps [ErrWasmManifestRejected] and names
+// pluginIdentity and the offending entry by its position.
+func (d PluginDescriptor) validateImporterContract(pluginIdentity string) error {
+	if d.Importer == nil {
+		return nil
+	}
+	if PluginType(d.PluginType) != PluginTypeImporter {
+		return fmt.Errorf("plugin %q (plugin_type %q) declares an importer recognition contract, which only an importer declares: %w",
+			pluginIdentity, d.PluginType, ErrWasmManifestRejected())
+	}
+	for i, sig := range d.Importer.Detect {
+		if sig.Syntax == "" {
+			return fmt.Errorf("plugin %q declares importer.detect[%d] with an empty syntax: %w",
+				pluginIdentity, i, ErrWasmManifestRejected())
+		}
+		for _, pattern := range sig.Files {
+			if _, err := path.Match(pattern, ""); err != nil {
+				return fmt.Errorf("plugin %q declares importer.detect[%d] with the file pattern %q, which is not well formed: %w",
+					pluginIdentity, i, pattern, ErrWasmManifestRejected())
+			}
+		}
+		for j, m := range sig.Match {
+			if m.Path == "" {
+				return fmt.Errorf("plugin %q declares importer.detect[%d].match[%d] with an empty path: %w",
+					pluginIdentity, i, j, ErrWasmManifestRejected())
+			}
+			if !slices.Contains(detectKinds, m.Is) {
+				return fmt.Errorf("plugin %q declares importer.detect[%d].match[%d] with is %q (want one of %q): %w",
+					pluginIdentity, i, j, m.Is, detectKinds, ErrWasmManifestRejected())
+			}
+			if m.Equals != "" && m.Prefix != "" {
+				return fmt.Errorf("plugin %q declares importer.detect[%d].match[%d] with both equals and prefix; a predicate declares at most one: %w",
+					pluginIdentity, i, j, ErrWasmManifestRejected())
+			}
+		}
+	}
+	return nil
 }
 
 // validateCapabilityNames refuses a colon in a capability name a Recipe's

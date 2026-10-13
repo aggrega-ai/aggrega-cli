@@ -201,6 +201,49 @@ func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (typ
 	return p, at, nil
 }
 
+// ImporterPlugins returns every importer Plugin entity this catalog view resolves
+// importers from — the set ImporterPluginForFormat selects among, every version
+// it holds included — ordered by the key the catalog indexes each under,
+// <pluginType>/<name>:<version>.
+//
+// It is what an import recognising a source's format reads the recognition
+// signatures of. Reading the same set the resolution selects from is what keeps
+// the format a source is recognised as one an importer this view holds
+// advertises, and the order is fixed by the keys rather than by the map the set
+// is held in, so the same catalog yields the same order on every run.
+func (c *Catalog) ImporterPlugins() []types.Plugin {
+	set := c.providerResolutionPlugins()
+	keys := make([]string, 0, len(set))
+	for key, p := range set {
+		if p.Metadata.PluginType == importerPluginType {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]types.Plugin, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, set[key])
+	}
+	return out
+}
+
+// ImporterFormats returns the formats an importer Plugin advertises, each with
+// its import:<format> prefix removed, in the order the entity lists them. An
+// entry carrying no such prefix names no import format and is left out.
+//
+// It is the one place outside this file the prefix is taken off, so a caller
+// naming an importer's formats reads them through the same constant the
+// resolution composes a requested format with.
+func ImporterFormats(p types.Plugin) []string {
+	var formats []string
+	for _, capability := range p.DeclaredCapabilities() {
+		if format, ok := strings.CutPrefix(capability, importCapabilityPrefix); ok {
+			formats = append(formats, format)
+		}
+	}
+	return formats
+}
+
 // importerAdvertising reports whether the importer at coordinate advertises
 // capability, and that importer's name.
 //
