@@ -30,9 +30,138 @@ import (
 // built Langflow importer guest and the flowise format to the built Flowise one,
 // and the REAL embedded JSON parser serves the guest its source tree through the
 // parser socket. So the guest obtains its tree host-mediated (never re-parsing),
-// decomposes each node, scores it against the candidate knowledge it carries, and
-// drafts or references components — the whole semantic path, proven against a
-// genuine parsed tree.
+// decomposes each node, scores it against the Components of the catalog view it is
+// handed — standardComponents, loaded as the import loads a workspace's catalog
+// and projected by ProjectCatalog — and drafts or references components: the
+// whole semantic path, proven against a genuine parsed tree.
+
+// standardComponents is the catalog the cases import against: seven Components
+// modelled on standard-library ai-model, ai-tool and ai-agent Components, each
+// carrying the labels a Component of its category carries and the value keys the
+// cases' nodes are scored against.
+var standardComponents = map[string]string{
+	"openai.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-model/openai
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/category: ai-model
+    model.aggrega.ai/capability: generative
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    values:
+      model: { type: string }
+      temperature: { type: number }
+      strict_response_format: { type: boolean }
+`,
+	"anthropic.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-model/anthropic
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/category: ai-model
+    model.aggrega.ai/capability: generative
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    values:
+      model: { type: string }
+      temperature: { type: number }
+`,
+	"openai-embedding.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-model/openai-embedding
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/category: ai-model
+    model.aggrega.ai/capability: embedding
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    values:
+      model: { type: string }
+`,
+	"retrieval.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-tool/retrieval
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: function
+    component.aggrega.ai/category: ai-tool
+    tool.aggrega.ai/impact: read-only
+spec:
+  schema:
+    values:
+      top_k: { type: integer }
+      side_effects: { type: string }
+`,
+	"http-request.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-tool/http-request
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: function
+    component.aggrega.ai/category: ai-tool
+    tool.aggrega.ai/impact: mutating
+spec:
+  schema:
+    values:
+      method: { type: string }
+      payload_schema_ref: { type: string }
+`,
+	"langflow.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-agent/langflow
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+    component.aggrega.ai/category: ai-agent
+    agent.aggrega.ai/autonomy: copilot
+spec:
+  schema:
+    values:
+      flow_id: { type: string }
+      tweaks: { type: object }
+`,
+	"flowise.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-agent/flowise
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+    component.aggrega.ai/category: ai-agent
+    agent.aggrega.ai/autonomy: copilot
+spec:
+  schema:
+    values:
+      chatflow_id: { type: string }
+      override_config: { type: object }
+`,
+}
+
+// standardCatalogView is the view of standardComponents the host hands an
+// importer: the catalog loaded as the import loads a workspace's, projected by
+// ProjectCatalog. It fails the test unless every Component is in the view, so a
+// case scoring against fewer candidates than it was written for cannot pass.
+func standardCatalogView(t *testing.T) *abi.CatalogProjection {
+	t.Helper()
+	view := importersocket.ProjectCatalog(loadProjectionFixture(t, standardComponents))
+	if view == nil || len(view.Components) != len(standardComponents) {
+		t.Fatalf("the catalog view of the standard Components is %+v; want one entry per Component", view)
+	}
+	return view
+}
 
 // agentFlowResolver resolves the langflow format to the Langflow importer and the
 // flowise format to the Flowise importer, each advertising its own format alone;
@@ -130,10 +259,11 @@ func decisionForType(t *testing.T, out abi.ImportOutput, nodeType string) abi.Im
 }
 
 // TestImportLangflow_AutoApplyReferencesAndDrafts is the headline end-to-end proof:
-// a real Langflow flow, imported in auto-apply mode, references its high-confidence
-// nodes (OpenAI model, retrieval tool) at the standard-library components and
-// drafts a new component for the node that matches nothing (a custom Python
-// component). It prints the real scaffolded output for inspection.
+// a real Langflow flow, imported in auto-apply mode against the standard
+// Components' catalog view, references its high-confidence nodes (OpenAI model,
+// retrieval tool) at those catalog Components and drafts a new component for the
+// node that matches nothing (a custom Python component). It prints the real
+// scaffolded output for inspection.
 func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	t.Parallel()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
@@ -141,7 +271,7 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	source := readFixture(t, "langflow-flow.json")
 
 	settings := settingsJSON(t, map[string]any{"reuse_mode": "auto-apply-above-threshold"})
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settings, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settings, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -192,15 +322,15 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 
 // TestImportLangflow_HintsOnlyDraftsEverything proves the locked default posture:
 // with reuse_mode unset (hints-only), the importer references nothing — every node
-// is drafted — but a HIGH match still records a strong swap hint the author can act
-// on. Nothing is silently referenced.
+// is drafted — but a HIGH match against the catalog view still records a strong
+// swap hint the author can act on. Nothing is silently referenced.
 func TestImportLangflow_HintsOnlyDraftsEverything(t *testing.T) {
 	t.Parallel()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -229,7 +359,7 @@ func TestImportLangflow_Deterministic(t *testing.T) {
 
 	run := func() []byte {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, nil)
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, standardCatalogView(t))
 		if err != nil {
 			t.Fatalf("ImportArtifact: %v", err)
 		}
@@ -256,7 +386,7 @@ func TestImportLangflow_MultiFile(t *testing.T) {
 		{Name: "flow-a.json", Bytes: readFixture(t, "langflow-flow.json")},
 		{Name: "flow-b.json", Bytes: readFixture(t, "langflow-flow-b.json")},
 	}
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, sources, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, sources, nil, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -292,7 +422,7 @@ func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 
 	do := func(mode string) abi.ImportOutput {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, map[string]any{"render_mode": mode}), nil)
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, map[string]any{"render_mode": mode}), standardCatalogView(t))
 		if err != nil {
 			t.Fatalf("ImportArtifact(%s): %v", mode, err)
 		}
@@ -330,8 +460,9 @@ func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 }
 
 // TestImportLangflow_TieBrokenByName pins the deterministic tie-break: a node whose
-// only signal is its inferred category ties every ai-model candidate at the same
-// score, and the candidates come back ordered by component name.
+// only signal is its inferred category ties every ai-model Component of the
+// catalog view at the same score, and the candidates come back ordered by
+// component name.
 func TestImportLangflow_TieBrokenByName(t *testing.T) {
 	t.Parallel()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
@@ -342,7 +473,7 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 	// candidate shares — so every ai-model candidate scores exactly the category
 	// weight and ties.
 	tie := []byte(`{"data":{"nodes":[{"id":"GenericModel-1","data":{"type":"GenericModel","node":{"template":{"unshared_param":{"type":"str"}}}}}],"edges":[]}}`)
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, nil, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, nil, nil, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -374,7 +505,7 @@ func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "flowise-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, nil, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, nil, nil, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
