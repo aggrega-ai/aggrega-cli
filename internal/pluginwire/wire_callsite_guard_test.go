@@ -19,42 +19,36 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
-// The two socket-output decode entry points. There is one per encoding rather
-// than one function told the encoding per call site, deliberately: naming the
-// wrong one of two is a mistake a test can see, while telling one function the
-// wrong encoding is a mistake nothing observes. This guard is that test.
-const (
-	textDecodeEntryPoint   = "DecodeGuestOutput"
-	binaryDecodeEntryPoint = "DecodeGuestOutputCBOR"
-)
+// decodeEntryPoint is the socket-output decode entry point every socket's call
+// site reads its guest's output through. Naming it at a call site is what makes a
+// socket's decode visible to this guard.
+const decodeEntryPoint = "DecodeGuestOutputCBOR"
 
-// decodeSite is one socket-output decode call: where it is, which of the two
-// entry points it names, and which exports the enclosing function dispatches.
+// decodeSite is one socket-output decode call: where it is, and which exports the
+// enclosing function dispatches.
 type decodeSite struct {
 	where   string
-	binary  bool
 	exports []string
 }
 
 // TestWireRegistryAgreesWithSocketDecodeEntryPoints is the pin between the two
 // halves of one fact.
 //
-// The registry records, per export, whether that export's wire is binary. The
-// call site records the same fact a second time, by naming one of two decode
-// entry points. Nothing makes the two agree — the registry is a declaration and
-// the call site is code — so a socket moved on one side and not the other
-// produces a build that compiles, a suite that passes, and a wire that is
-// broken in exactly one direction.
+// The registry records which exports a socket calls with a payload in the binary
+// encoding. The call site records the same fact a second time, by decoding that
+// export's output through the decode entry point. Nothing makes the two agree —
+// the registry is a declaration and the call site is code — so a socket present
+// on one side and not the other produces a build that compiles, a suite that
+// passes, and a direct invocation that is broken.
 //
-// The direction that matters most is the second one below. A socket flipping to
-// the binary wire without its registry entry following leaves the
-// direct-invocation command handing the guest text it cannot read, which is a
-// failure with no red anywhere: the compiler's own path works, because it does
-// not consult the registry. It holds for every socket, whether its export is a
-// governance role's default or fixed by its plugin type: a call site decoding an
-// export through the binary entry point fails this guard unless the registry
-// lists that export as binary, so the table cannot fall behind a socket that
-// moves.
+// The direction that matters most is the second one below. A socket whose
+// registry entry is missing leaves the direct-invocation command handing the
+// guest text it cannot read, which is a failure with no red anywhere: the
+// compiler's own path works, because it does not consult the registry. It holds
+// for every socket, whether its export is a governance role's default or fixed by
+// its plugin type: a call site decoding an export through the entry point fails
+// this guard unless the registry lists that export, so the table cannot fall
+// behind a socket that is added.
 //
 // How a call site's exports are read, and what that cannot see. A decode call's
 // exports are every export its enclosing function — and any same-file helper it
@@ -63,17 +57,17 @@ type decodeSite struct {
 // from that declaration; or a literal export name passed to the decode call
 // itself. The reading is syntactic: an export reaching the call through a
 // parameter, a variable assigned in another file, or a helper in another file is
-// not seen. A binary decode site from which none of the three resolves anything is
+// not seen. A decode site from which none of the three resolves anything is
 // reported as a hole rather than passed, so what the reading cannot see surfaces
 // as a failure, not as a green.
 //
 // COVERAGE BOUND, stated because an unstated bound reads as full coverage: this
-// guard reaches a socket whose output decode routes through one of the two entry
-// points above. A socket that decoded through its generated codec directly would
-// name neither, so its wire fact would be pinned by nothing here. That is why
-// the registry admits an entry only for a socket this guard can see: an entry it
-// cannot see would be exactly the unpinned hand-written fact the registry
-// exists to avoid rather than to relocate.
+// guard reaches a socket whose output decode routes through the entry point
+// above. A socket that decoded through its generated codec directly would not
+// name it, so its wire fact would be pinned by nothing here. That is why the
+// registry admits an entry only for a socket this guard can see: an entry it
+// cannot see would be exactly the unpinned hand-written fact the registry exists
+// to avoid rather than to relocate.
 //
 // It also reads every payload-carrying invocation of a guest export, which is
 // the backstop behind the invocation's own type. The host calls an export it
@@ -96,7 +90,7 @@ func TestWireRegistryAgreesWithSocketDecodeEntryPoints(t *testing.T) {
 			"wrong place, and an empty census would pass this guard while proving nothing", root)
 	}
 
-	for _, d := range wireDisagreements(binaryExports(), sites) {
+	for _, d := range wireDisagreements(listedExports(), sites) {
 		t.Error(d)
 	}
 
@@ -123,38 +117,26 @@ func TestWireCallSiteDisagreementCanFail(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		binary  map[string]bool
+		listed  map[string]bool
 		sites   []decodeSite
 		wantSub string
 	}{
 		{
-			name:    "registry says binary, call site decodes text",
-			binary:  map[string]bool{"mutate": true},
-			sites:   []decodeSite{{where: "a.go:1", binary: false, exports: []string{"mutate"}}},
-			wantSub: "decodes with " + textDecodeEntryPoint,
-		},
-		{
-			name:    "registry says text, call site decodes binary",
-			binary:  map[string]bool{"verdict_ir": false},
-			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: []string{"verdict_ir"}}},
-			wantSub: "does not mark",
-		},
-		{
-			name:    "registry marks an export binary and no call site decodes it that way",
-			binary:  map[string]bool{"mutate": true},
-			sites:   []decodeSite{{where: "a.go:1", binary: false, exports: []string{"verdict_ir"}}},
+			name:    "the registry lists an export no call site decodes",
+			listed:  map[string]bool{"mutate": true},
+			sites:   []decodeSite{{where: "a.go:1", exports: []string{"verdict_ir"}}},
 			wantSub: "no socket-output decode call site",
 		},
 		{
-			name:    "a binary call site decoding an export the registry does not list at all",
-			binary:  map[string]bool{"mutate": true},
-			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: []string{"import"}}},
-			wantSub: "does not mark",
+			name:    "a call site decoding an export the registry does not list",
+			listed:  map[string]bool{"mutate": true},
+			sites:   []decodeSite{{where: "a.go:1", exports: []string{"import"}}},
+			wantSub: "does not list",
 		},
 		{
-			name:    "a binary call site whose export nothing resolves",
-			binary:  map[string]bool{"mutate": true},
-			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: nil}},
+			name:    "a call site whose export nothing resolves",
+			listed:  map[string]bool{"mutate": true},
+			sites:   []decodeSite{{where: "a.go:1", exports: nil}},
 			wantSub: "names no export this guard can resolve",
 		},
 	}
@@ -162,15 +144,52 @@ func TestWireCallSiteDisagreementCanFail(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := wireDisagreements(tc.binary, tc.sites)
+			got := wireDisagreements(tc.listed, tc.sites)
 			if len(got) == 0 {
 				t.Fatalf("desynchronised input produced no complaint; the guard cannot fail, "+
-					"so its green says nothing (binary=%v sites=%v)", tc.binary, tc.sites)
+					"so its green says nothing (listed=%v sites=%v)", tc.listed, tc.sites)
 			}
 			joined := strings.Join(got, "\n")
 			if !strings.Contains(joined, tc.wantSub) {
 				t.Fatalf("complaint does not name the disagreement: got\n%s\nwant a mention of %q",
 					joined, tc.wantSub)
+			}
+		})
+	}
+}
+
+// TestWireRegistryGuardReachesEveryListedExport takes every export the generated
+// registry lists, drops it, and requires the comparison over the module's real
+// decode call sites to complain, naming that export. A synthetic pair proves the
+// comparison's logic; this proves it reaches every socket that ships, so a
+// socket whose registration declares no export — which no generation-time check
+// can see, since such a registration serves no plugin type — is reported here
+// from its decode site, and a socket added later is covered without this test
+// being edited. It refuses an empty registry, because a loop over nothing passes
+// while proving nothing.
+func TestWireRegistryGuardReachesEveryListedExport(t *testing.T) {
+	t.Parallel()
+
+	listed := listedExports()
+	if len(listed) == 0 {
+		t.Fatal("the generated registry lists no export, so there is nothing to drop and this test proves nothing")
+	}
+	sites := socketDecodeSites(t, moduleRoot(t))
+
+	for _, dropped := range sortedExports(listed) {
+		t.Run(dropped, func(t *testing.T) {
+			t.Parallel()
+			weakened := make(map[string]bool, len(listed))
+			for export := range listed {
+				if export != dropped {
+					weakened[export] = true
+				}
+			}
+			got := wireDisagreements(weakened, sites)
+			joined := strings.Join(got, "\n")
+			if !strings.Contains(joined, strconv.Quote(dropped)) {
+				t.Fatalf("with %q dropped from the registry the comparison over the real call sites did not name it, "+
+					"so a socket decoding that export with no registration would pass; got\n%s", dropped, joined)
 			}
 		})
 	}
@@ -251,80 +270,62 @@ func viaNothing() { wasm.DecodeGuestOutputCBOR(export, out, &v) }
 			t.Errorf("unexpected decode site %s", s.where)
 			continue
 		}
-		if !s.binary {
-			t.Errorf("site %s names the binary entry point but was read as text", s.where)
-		}
 		if strings.Join(s.exports, ",") != strings.Join(w, ",") {
 			t.Errorf("site %s resolves exports %v; want %v", s.where, s.exports, w)
 		}
 	}
 }
 
-// wireDisagreements compares the registry's binary set against the entry point
-// each socket-output decode call site names, and returns one complaint per
+// wireDisagreements compares the exports the registry lists against the exports
+// each socket-output decode call site decodes, and returns one complaint per
 // disagreement. It is a pure function so a planted disagreement can prove it
 // fires; the two censuses feeding it are gathered by the callers above.
 //
-// It reads in both directions on purpose. Only the second catches a socket that
-// moved to the binary wire while its registry entry stayed behind, which is the
-// failure the direct-invocation command shows and no other gate does.
-func wireDisagreements(binary map[string]bool, sites []decodeSite) []string {
+// It reads in both directions on purpose. Only the second catches a socket whose
+// registry entry is missing, which is the failure the direct-invocation command
+// shows and no other gate does.
+func wireDisagreements(listed map[string]bool, sites []decodeSite) []string {
 	var out []string
 
-	// Direction one: every export the registry marks binary is decoded through the
-	// binary entry point, and never through the text one.
-	for _, export := range sortedBinaryExports(binary) {
-		var binarySites, textSites []string
+	// Direction one: every export the registry lists is decoded through the entry
+	// point at some call site.
+	for _, export := range sortedExports(listed) {
+		decoded := false
 		for _, s := range sites {
-			if !containsExport(s.exports, export) {
-				continue
-			}
-			if s.binary {
-				binarySites = append(binarySites, s.where)
-			} else {
-				textSites = append(textSites, s.where)
+			if containsExport(s.exports, export) {
+				decoded = true
+				break
 			}
 		}
-		for _, where := range textSites {
+		if !decoded {
 			out = append(out, fmt.Sprintf(
-				"the plugin-wire registry marks export %q as carrying the binary wire, but its socket "+
-					"call site at %s decodes with %s, the text entry point: the registry and the call "+
-					"site disagree about that socket's encoding, and only one of them can be right",
-				export, where, textDecodeEntryPoint))
-		}
-		if len(binarySites) == 0 {
-			out = append(out, fmt.Sprintf(
-				"the plugin-wire registry marks export %q as carrying the binary wire, but no "+
-					"socket-output decode call site decodes it through %s: either the socket has not "+
-					"moved and the registry is ahead of it, or the call site is not visible to this guard",
-				export, binaryDecodeEntryPoint))
+				"the plugin-wire registry lists export %q, but no socket-output decode call site decodes it "+
+					"through %s: either no socket calls that export and the registry is ahead of the code, or "+
+					"the call site is not visible to this guard",
+				export, decodeEntryPoint))
 		}
 	}
 
-	// Direction two: every call site naming the binary entry point dispatches
-	// exports the registry marks binary — and resolves at least one, since a site
-	// whose export nothing resolves is a hole rather than a pass.
+	// Direction two: every call site naming the entry point dispatches exports the
+	// registry lists — and resolves at least one, since a site whose export nothing
+	// resolves is a hole rather than a pass.
 	for _, s := range sites {
-		if !s.binary {
-			continue
-		}
 		if len(s.exports) == 0 {
 			out = append(out, fmt.Sprintf(
 				"the socket-output decode call site at %s decodes through %s but names no export this "+
 					"guard can resolve — no attachment role, no export-name identifier the wasm package "+
 					"declares, and no literal export name — so it cannot tell which export the site serves "+
 					"and cannot check it against the plugin-wire registry",
-				s.where, binaryDecodeEntryPoint))
+				s.where, decodeEntryPoint))
 			continue
 		}
 		for _, export := range s.exports {
-			if !binary[export] {
+			if !listed[export] {
 				out = append(out, fmt.Sprintf(
 					"the socket-output decode call site at %s decodes export %q through %s, but the "+
-						"plugin-wire registry does not mark that export as carrying the binary wire: a "+
-						"socket that moved without its registry entry hands an authored payload to a guest "+
-						"in the wrong encoding, and nothing else reports it",
-					s.where, export, binaryDecodeEntryPoint))
+						"plugin-wire registry does not list that export: a socket without its registry entry "+
+						"hands an authored payload to a guest in the wrong encoding, and nothing else reports it",
+					s.where, export, decodeEntryPoint))
 			}
 		}
 	}
@@ -333,29 +334,23 @@ func wireDisagreements(binary map[string]bool, sites []decodeSite) []string {
 	return out
 }
 
-// binaryExports reduces the generated registry to the export-to-encoding fact
-// this guard checks. An export appearing more than once contributes one entry;
-// a target is one wire, so its exports cannot disagree with themselves.
-func binaryExports() map[string]bool {
+// listedExports reduces the generated registry to the set of exports it lists,
+// which is the fact this guard checks. An export appearing more than once — one
+// export serving two payload shapes — contributes one entry.
+func listedExports() map[string]bool {
 	out := map[string]bool{}
 	for _, e := range entries {
-		if prev, seen := out[e.export]; seen && prev != e.binary {
-			// Not reachable from a generated table — the encoding sits on the target
-			// and every entry from one target shares it — but left loud rather than
-			// silently taking one of the two.
-			panic("pluginwire: export " + e.export + " is registered with two different encodings")
-		}
-		out[e.export] = e.binary
+		out[e.export] = true
 	}
 	return out
 }
 
-func sortedBinaryExports(binary map[string]bool) []string {
+// sortedExports returns the set's exports in sorted order, so complaints and
+// subtests read the same on every run.
+func sortedExports(set map[string]bool) []string {
 	var out []string
-	for export, isBinary := range binary {
-		if isBinary {
-			out = append(out, export)
-		}
+	for export := range set {
+		out = append(out, export)
 	}
 	sort.Strings(out)
 	return out
@@ -464,18 +459,11 @@ func fileDecodeSites(fset *token.FileSet, file *ast.File, rel string, naming exp
 			if !ok {
 				return true
 			}
-			var binary bool
-			switch calleeName(call.Fun) {
-			case binaryDecodeEntryPoint:
-				binary = true
-			case textDecodeEntryPoint:
-				binary = false
-			default:
+			if calleeName(call.Fun) != decodeEntryPoint {
 				return true
 			}
 			found = append(found, decodeSite{
-				where:  fmt.Sprintf("%s:%d", rel, fset.Position(call.Pos()).Line),
-				binary: binary,
+				where: fmt.Sprintf("%s:%d", rel, fset.Position(call.Pos()).Line),
 			})
 			literals = append(literals, literalExport(call))
 			return true

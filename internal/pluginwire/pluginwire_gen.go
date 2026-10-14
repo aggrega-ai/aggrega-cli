@@ -19,36 +19,36 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-// entries binds each plugin export to the payload shape it receives and to the
-// encoding that export's wire carries.
+// entries binds each plugin export a socket calls with a payload in the
+// canonical binary encoding to the payload shape that export receives.
 //
-// Two facts sit here that nothing else can supply. Which shape an export
-// receives is not derivable from the export's name — a name is a symbol in the
-// guest's export section and carries no shape with it — and whether that export's
-// wire is binary is fixed by the socket rather than by anything a caller can see.
-// Both are read from the payload-codec registrations, so the table and the codecs
-// it names are generated from one source.
+// Which shape an export receives is a fact nothing else can supply: it is not
+// derivable from the export's name — a name is a symbol in the guest's export
+// section and carries no shape with it. It is read from the payload-codec
+// registrations, so the table and the codecs it names are generated from one
+// source. An export absent from the table is one no socket calls with a payload
+// in that encoding by default.
 //
 // Sorted by export name and then payload shape.
 var entries = []entry{
-	{export: "assemble_boundary", shape: "AssembleBoundaryInput", binary: true, encode: encodeAssembleBoundaryInput},
-	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", binary: true, encode: encodeBoundaryEnvOverridesInput},
-	{export: "carve", shape: "CarveInput", binary: true, encode: encodeCarveInput},
-	{export: "import", shape: "ImportInput", binary: true, encode: encodeImportInput},
-	{export: "link_publish", shape: "LinkPublishInput", binary: true, encode: encodeLinkPublishInput},
-	{export: "link_resolve", shape: "LinkResolveInput", binary: true, encode: encodeLinkResolveInput},
-	{export: "lint_rules", shape: "LinterInput", binary: true, encode: encodeLinterInput},
-	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
-	{export: "name_bound", shape: "NameBoundInput", binary: true, encode: encodeNameBoundInput},
-	{export: "parse", shape: "ParseInput", binary: true, encode: encodeParseInput},
-	{export: "reassemble", shape: "ReassembleInput", binary: true, encode: encodeReassembleInput},
-	{export: "render_node", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
-	{export: "rendered_name", shape: "RenderedNameInput", binary: true, encode: encodeRenderedNameInput},
-	{export: "step", shape: "FRPStepInput", binary: true, encode: encodeFRPStepInput},
-	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: true, encode: encodeAnnotationTransformInput},
-	{export: "validate_node_input", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
-	{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: encodePolicyInput},
-	{export: "verdict_render", shape: "RenderPolicyInput", binary: true, encode: encodeRenderPolicyInput},
+	{export: "assemble_boundary", shape: "AssembleBoundaryInput", encode: encodeAssembleBoundaryInput},
+	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", encode: encodeBoundaryEnvOverridesInput},
+	{export: "carve", shape: "CarveInput", encode: encodeCarveInput},
+	{export: "import", shape: "ImportInput", encode: encodeImportInput},
+	{export: "link_publish", shape: "LinkPublishInput", encode: encodeLinkPublishInput},
+	{export: "link_resolve", shape: "LinkResolveInput", encode: encodeLinkResolveInput},
+	{export: "lint_rules", shape: "LinterInput", encode: encodeLinterInput},
+	{export: "mutate", shape: "MutatorInput", encode: encodeMutatorInput},
+	{export: "name_bound", shape: "NameBoundInput", encode: encodeNameBoundInput},
+	{export: "parse", shape: "ParseInput", encode: encodeParseInput},
+	{export: "reassemble", shape: "ReassembleInput", encode: encodeReassembleInput},
+	{export: "render_node", shape: "RenderNodeInput", encode: encodeRenderNodeInput},
+	{export: "rendered_name", shape: "RenderedNameInput", encode: encodeRenderedNameInput},
+	{export: "step", shape: "FRPStepInput", encode: encodeFRPStepInput},
+	{export: "transform_annotations", shape: "AnnotationTransformInput", encode: encodeAnnotationTransformInput},
+	{export: "validate_node_input", shape: "RenderNodeInput", encode: encodeRenderNodeInput},
+	{export: "verdict_ir", shape: "PolicyInput", encode: encodePolicyInput},
+	{export: "verdict_render", shape: "RenderPolicyInput", encode: encodeRenderPolicyInput},
 }
 
 // encodeAssembleBoundaryInput reads an authored text payload into that shape and

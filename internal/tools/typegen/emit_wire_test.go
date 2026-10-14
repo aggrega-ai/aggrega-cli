@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -23,8 +24,8 @@ func TestWireRegistryEmitsOneEncoderPerSharedShape(t *testing.T) {
 
 	target := codecTarget{pkg: "pluginwire"}
 	shared := []wireEntry{
-		{export: "first_export", shape: "SharedInput", binary: true, pkgPath: "example.com/socket"},
-		{export: "second_export", shape: "SharedInput", binary: true, pkgPath: "example.com/socket"},
+		{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket"},
+		{export: "second_export", shape: "SharedInput", pkgPath: "example.com/socket"},
 	}
 	src, err := emitWireRegistry(target, shared)
 	if err != nil {
@@ -40,8 +41,8 @@ func TestWireRegistryEmitsOneEncoderPerSharedShape(t *testing.T) {
 	}
 
 	clash := []wireEntry{
-		{export: "first_export", shape: "SharedInput", binary: true, pkgPath: "example.com/socket"},
-		{export: "second_export", shape: "SharedInput", binary: true, pkgPath: "example.com/other"},
+		{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket"},
+		{export: "second_export", shape: "SharedInput", pkgPath: "example.com/other"},
 	}
 	_, err = emitWireRegistry(target, clash)
 	if err == nil {
@@ -54,92 +55,20 @@ func TestWireRegistryEmitsOneEncoderPerSharedShape(t *testing.T) {
 	}
 }
 
-// TestWireRegistryRefusesABinaryWireTargetDeclaringNoExport drives the refusal
-// that makes declaring a binary-wire socket's exports mandatory. A target marked
-// binaryWire with nothing in wireExports would generate a table that reads as
-// complete while leaving that socket out of it, so the direct-invocation command
-// would hand the socket's guest text it cannot read and nothing would report it.
-//
-// The control row is the same registration with its export declared, so the
-// refusal is attributable to the missing declaration rather than to anything else
-// about the target.
-func TestWireRegistryRefusesABinaryWireTargetDeclaringNoExport(t *testing.T) {
-	t.Parallel()
-
-	base := codecTarget{
-		schemaFile: "wasm-example-v1alpha1.schema.json",
-		pkgPath:    "example.com/socket",
-		binaryWire: true,
-	}
-	declared := base
-	declared.wireExports = []wireExport{{pluginType: plugintype.Importer, inputDef: "ExampleInput"}}
-
-	if _, err := collectWireEntries(map[string]codecTarget{"example_gen.go": declared}); err != nil {
-		t.Fatalf("a binary-wire target declaring its export should generate; got %v", err)
-	}
-
-	_, err := collectWireEntries(map[string]codecTarget{"example_gen.go": base})
-	if err == nil {
-		t.Fatal("a binary-wire target declaring no export generated a registry; the refusal cannot fail, " +
-			"so a socket can move to the binary wire with its exports missing from the table")
-	}
-	for _, want := range []string{"example_gen.go", "wasm-example-v1alpha1.schema.json", "binary wire", "wireExports"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %q: %v", want, err)
-		}
-	}
-}
-
-// TestWireRegistryRefusalCanFailOverTheRealRegistrations takes every target the
-// generator actually registers on the binary wire, strips its declared exports,
-// and requires generation to refuse naming that target. A synthetic registration
-// proves the refusal's logic; this proves it reaches the registrations that ship,
-// so a target moved to the binary wire later is covered without this test being
-// edited. It refuses an empty set of binary-wire targets, because a loop over
-// nothing passes while proving nothing.
-func TestWireRegistryRefusalCanFailOverTheRealRegistrations(t *testing.T) {
-	t.Parallel()
-
-	var binaryTargets []string
-	for base, tgt := range codecTargets {
-		if tgt.binaryWire {
-			binaryTargets = append(binaryTargets, base)
-		}
-	}
-	sort.Strings(binaryTargets)
-	if len(binaryTargets) == 0 {
-		t.Fatal("no codec target is registered on the binary wire, so there is nothing to strip and this " +
-			"test proves nothing")
-	}
-
-	for _, stripped := range binaryTargets {
-		t.Run(stripped, func(t *testing.T) {
-			t.Parallel()
-			weakened := make(map[string]codecTarget, len(codecTargets))
-			for base, tgt := range codecTargets {
-				weakened[base] = tgt
-			}
-			tgt := weakened[stripped]
-			tgt.wireExports = nil
-			weakened[stripped] = tgt
-
-			_, err := collectWireEntries(weakened)
-			if err == nil {
-				t.Fatalf("generation succeeded with the exports of binary-wire target %q stripped", stripped)
-			}
-			if !strings.Contains(err.Error(), stripped) {
-				t.Errorf("the refusal does not name the stripped target %q: %v", stripped, err)
-			}
-		})
-	}
-}
-
 // TestWireRegistryRefusesAnEntryItCannotResolve covers each way a wireExports
 // entry can fail to name exactly one export, every one of which would otherwise
 // contribute a row naming no export or the wrong one. The positive rows resolve
 // through the role rule and the host-export lists, and every export name an entry
 // names or a row expects is read from those rather than spelled here, so this test
 // holds no second copy of any export name.
+//
+// A positive row whose plugin type lists several exports carries the rest of
+// that list beside its entry, under a shape of their own. Generation refuses a
+// served plugin type that leaves a listed export undeclared, and that refusal is
+// TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid's subject, not this
+// one's; so a positive row serves its type completely and is read by its own
+// shape alone. The row still fails if its entry resolves wrongly: the export the
+// row expects is then the one left undeclared.
 func TestWireRegistryRefusesAnEntryItCannotResolve(t *testing.T) {
 	t.Parallel()
 
@@ -166,16 +95,19 @@ func TestWireRegistryRefusesAnEntryItCannotResolve(t *testing.T) {
 	oneOfSeveral := provider.HostExports[len(provider.HostExports)-1]
 
 	cases := []struct {
-		name       string
-		entry      wireExport
+		name  string
+		entry wireExport
+		// rest declares the other exports the entry's plugin type lists, for a
+		// positive row on a type listing several.
+		rest       []wireExport
 		wantExport string
 		wantSub    string
 	}{
-		{name: "a role resolves to its default export", entry: wireExport{role: plugintype.RoleLabelTransform, inputDef: "X"}, wantExport: roleExport},
+		{name: "a role resolves to its default export", entry: wireExport{role: plugintype.RoleLabelTransform, inputDef: "X"}, rest: declaringTheRest(t, plugintype.Governance, roleExport), wantExport: roleExport},
 		{name: "a plugin type resolves to its one host export", entry: wireExport{pluginType: plugintype.Importer, inputDef: "X"}, wantExport: importer.HostExports[0]},
 		{name: "a plugin type whose load rule is a prefix resolves through its host-export list", entry: wireExport{pluginType: plugintype.Linter, inputDef: "X"}, wantExport: linter.HostExports[0]},
 		{name: "a plugin type and its one listed export resolve to that export", entry: wireExport{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "X"}, wantExport: importer.HostExports[0]},
-		{name: "a plugin type and one of its several listed exports resolve to that export", entry: wireExport{pluginType: plugintype.Provider, export: oneOfSeveral, inputDef: "X"}, wantExport: oneOfSeveral},
+		{name: "a plugin type and one of its several listed exports resolve to that export", entry: wireExport{pluginType: plugintype.Provider, export: oneOfSeveral, inputDef: "X"}, rest: declaringTheRest(t, plugintype.Provider, oneOfSeveral), wantExport: oneOfSeveral},
 		{name: "both keys", entry: wireExport{role: plugintype.RoleLabelTransform, pluginType: plugintype.Importer, inputDef: "X"}, wantSub: "both"},
 		{name: "a role and an export", entry: wireExport{role: plugintype.RoleLabelTransform, export: roleExport, inputDef: "X"}, wantSub: "both"},
 		{name: "neither key", entry: wireExport{inputDef: "X"}, wantSub: "neither"},
@@ -189,14 +121,21 @@ func TestWireRegistryRefusesAnEntryItCannotResolve(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			target := codecTarget{pkgPath: "example.com/socket", wireExports: []wireExport{tc.entry}}
+			target := codecTarget{pkgPath: "example.com/socket",
+				wireExports: append([]wireExport{tc.entry}, tc.rest...)}
 			got, err := collectWireEntries(map[string]codecTarget{"example_gen.go": target})
 			if tc.wantSub == "" {
 				if err != nil {
 					t.Fatalf("the entry should resolve; got %v", err)
 				}
-				if len(got) != 1 || got[0].export != tc.wantExport {
-					t.Fatalf("rows = %+v; want one row for export %q", got, tc.wantExport)
+				var own []wireEntry
+				for _, row := range got {
+					if row.shape == tc.entry.inputDef {
+						own = append(own, row)
+					}
+				}
+				if len(own) != 1 || own[0].export != tc.wantExport {
+					t.Fatalf("rows for the entry's shape = %+v; want one row for export %q", own, tc.wantExport)
 				}
 				return
 			}
@@ -208,6 +147,25 @@ func TestWireRegistryRefusesAnEntryItCannotResolve(t *testing.T) {
 			}
 		})
 	}
+}
+
+// declaringTheRest returns one wireExports entry for every export plugin type pt
+// lists other than except, each naming the shape "Rest", so a target holding
+// them beside an entry for except serves pt completely while that entry stays the
+// only one of its own shape.
+func declaringTheRest(t *testing.T, pt plugintype.Type, except string) []wireExport {
+	t.Helper()
+	entry, ok := plugintype.Lookup(pt)
+	if !ok || !slices.Contains(entry.HostExports, except) {
+		t.Fatalf("the %s type does not list %q, so there is no rest of its list to declare beside it", pt, except)
+	}
+	var out []wireExport
+	for _, export := range entry.HostExports {
+		if export != except {
+			out = append(out, wireExport{pluginType: pt, export: export, inputDef: "Rest"})
+		}
+	}
+	return out
 }
 
 // everyRole returns one wireExports entry per governance attachment role, each
@@ -236,13 +194,12 @@ func withHostExports(t plugintype.Type, list []string) []plugintype.Entry {
 
 // TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid drives the refusals
 // that tie the registry to the host-export lists, each over a list built to trip
-// it beside a control over the real one: a binary-wire socket whose plugin type
-// lists nothing, a role whose default its type's list does not hold, and a
-// binary-wire plugin type listing an export no entry declares a payload shape
-// for — both for a type listing one export and for one listing several, each of
-// whose registrations names the export it serves. Each would emit a table that
-// reads as complete while an export the host calls with a payload is missing from
-// it.
+// it beside a control over the real one: a socket whose plugin type lists
+// nothing, a role whose default its type's list does not hold, and a served
+// plugin type listing an export no entry declares a payload shape for — both for
+// a type listing one export and for one listing several, each of whose
+// registrations names the export it serves. Each would emit a table that reads as
+// complete while an export the host calls with a payload is missing from it.
 func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 	t.Parallel()
 
@@ -286,29 +243,29 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 		wantSubs []string
 	}{
 		{
-			name: "a binary-wire socket whose plugin type lists no export",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket", binaryWire: true,
+			name: "a socket whose plugin type lists no export",
+			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
 				wireExports: []wireExport{{pluginType: plugintype.Linter, inputDef: "ExampleInput"}}},
 			registry: withHostExports(plugintype.Linter, nil),
 			wantSubs: []string{"example_gen.go", string(plugintype.Linter), "host-export list is empty"},
 		},
 		{
 			name: "a role whose default its type's list does not hold",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket", binaryWire: true,
+			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
 				wireExports: everyRole("ExampleInput")},
 			registry: withHostExports(plugintype.Governance, withoutRenderVerdict),
 			wantSubs: []string{"example_gen.go", string(plugintype.RoleRenderVerdict), renderVerdict},
 		},
 		{
-			name: "a binary-wire plugin type listing an export no entry declares",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket", binaryWire: true,
+			name: "a served plugin type listing an export no entry declares",
+			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
 				wireExports: []wireExport{{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "ExampleInput"}}},
 			registry: withHostExports(plugintype.Importer, append(append([]string(nil), importer.HostExports...), unregistered)),
 			wantSubs: []string{"example_gen.go", string(plugintype.Importer), unregistered},
 		},
 		{
-			name: "a binary-wire plugin type listing several exports, one of which no entry declares",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket", binaryWire: true,
+			name: "a served plugin type listing several exports, one of which no entry declares",
+			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
 				wireExports: everyProviderExport},
 			registry: withHostExports(plugintype.Provider, append(append([]string(nil), provider.HostExports...), unregistered)),
 			wantSubs: []string{"example_gen.go", string(plugintype.Provider), unregistered},
@@ -337,17 +294,16 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 }
 
 // TestWireRegistryRefusesAnUnregisteredExportOverTheRealRegistrations takes every
-// plugin type the generator's real registrations serve on the binary wire, adds
-// an export to that type's host-export list, and requires generation to refuse,
-// naming the type and the export. It is the proof that adding an export to such a
-// type's list cannot reach the host without its payload shape reaching the
-// direct-invocation command's table too, and it covers a socket moved to the
-// binary wire later without this test being edited. The refusal it reaches names
-// the added export because every real registration names the export it serves, by
-// role or by plugin type and export, so the added export is the one left without
-// a registration rather than a registration left ambiguous. It refuses an empty
-// set of binary-wire types, because a loop over nothing passes while proving
-// nothing.
+// plugin type the generator's real registrations serve, adds an export to that
+// type's host-export list, and requires generation to refuse, naming the type and
+// the export. It is the proof that adding an export to such a type's list cannot
+// reach the host without its payload shape reaching the direct-invocation
+// command's table too, and it covers a socket registered later without this test
+// being edited. The refusal it reaches names the added export because every real
+// registration names the export it serves, by role or by plugin type and export,
+// so the added export is the one left without a registration rather than a
+// registration left ambiguous. It refuses an empty set of served types, because a
+// loop over nothing passes while proving nothing.
 func TestWireRegistryRefusesAnUnregisteredExportOverTheRealRegistrations(t *testing.T) {
 	t.Parallel()
 
@@ -357,9 +313,6 @@ func TestWireRegistryRefusesAnUnregisteredExportOverTheRealRegistrations(t *test
 
 	served := map[plugintype.Type]bool{}
 	for _, tgt := range codecTargets {
-		if !tgt.binaryWire {
-			continue
-		}
 		for _, w := range tgt.wireExports {
 			if _, pluginType, err := w.exportName(plugintype.Entries()); err == nil {
 				served[pluginType] = true
@@ -372,7 +325,7 @@ func TestWireRegistryRefusesAnUnregisteredExportOverTheRealRegistrations(t *test
 	}
 	sort.Strings(types)
 	if len(types) == 0 {
-		t.Fatal("no plugin type is served on the binary wire, so there is nothing to extend and this test proves nothing")
+		t.Fatal("no plugin type is served by a registration, so there is nothing to extend and this test proves nothing")
 	}
 
 	const added = "an_export_added_without_a_registration"

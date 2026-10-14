@@ -333,7 +333,8 @@ const labelPayload = `{"compilation_context":{},"graph":{}}`
 // payload channel was JSON-only by construction, so the moment a socket's wire
 // moved the published invocation started failing at the guest's own decoder —
 // and nothing turned red, because no test drove that export through this command.
-// A test driving only text-wire exports passes whether the conversion runs or not.
+// A test driving only exports the command passes through unchanged passes whether
+// the conversion runs or not.
 //
 // What it pins: the authored payload is JSON, the command converts it into the
 // encoding the export reads, and the guest decodes it and returns its own

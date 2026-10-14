@@ -489,21 +489,19 @@ func TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce(t *testing.T) {
 // leniently it would have yielded an empty verdict list, which is a legitimate
 // allow.
 //
-// The misdirected export is one that shares the decoding socket's encoding, so
-// the refusal names the field. A misdirection across two encodings halts too, but
-// cannot name a field: a field name presupposes bytes the reader can read. That
-// case is exercised where the sockets actually run rather than here, because this
-// test's subject is the formatter. Each row therefore hands the envelope over in
-// the encoding its own socket reads, through that socket's decode entry point.
+// Every socket output crosses in the binary encoding and decodes through one
+// entry point, so each row hands the envelope over in that encoding and the
+// refusal names the field. An answer the reader cannot read as a map at all halts
+// too, but names no field; that case is exercised at the decode boundary rather
+// than here, because this test's subject is the formatter.
 func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 	t.Parallel()
 
 	const (
-		export  = "transform_annotations"
-		plugin  = "example/policy-guard:1.0.0"
-		payload = `{"injections":[{"boundary_path":"main","component_name":"a","annotation_key":"k","annotation_value":"v"}]}`
+		export = "transform_annotations"
+		plugin = "example/policy-guard:1.0.0"
 	)
-	binaryPayload, err := abi.AnnotationTransformOutput{
+	payload, err := abi.AnnotationTransformOutput{
 		Injections: []abi.AnnotationInjection{{BoundaryPath: "main", ComponentName: "a", AnnotationKey: "k", AnnotationValue: "v"}},
 	}.EncodeCBOR()
 	if err != nil {
@@ -513,9 +511,6 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 	for _, tc := range []struct {
 		// name is the socket whose wrap the row reproduces.
 		name string
-		// decode reads the misdirected envelope the way that socket's call site
-		// reads its guest's output, in the encoding its wire carries.
-		decode func(dst *abi.PolicyOutput) error
 		// wrap is what that socket adds around the refusal, in the shape its
 		// own call site uses.
 		wrap func(error) error
@@ -524,13 +519,11 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 	}{
 		{
 			name:       "the verdict role over the IR graph",
-			decode:     func(dst *abi.PolicyOutput) error { return wasm.DecodeGuestOutputCBOR(export, binaryPayload, dst) },
 			wrap:       func(err error) error { return fmt.Errorf("ir-verdict: plugin %q: %w", plugin, err) },
 			wantPrefix: `ir-verdict: plugin "` + plugin + `": `,
 		},
 		{
 			name:       "the publishing linter",
-			decode:     func(dst *abi.PolicyOutput) error { return wasm.DecodeGuestOutput(export, []byte(payload), dst) },
 			wrap:       func(err error) error { return fmt.Errorf("publishing_linter: %w", err) },
 			wantPrefix: "publishing_linter: ",
 		},
@@ -538,8 +531,10 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			// The socket's call site reads its guest's output through the one
+			// decode entry point every socket output routes through.
 			var out abi.PolicyOutput
-			refusal := tc.decode(&out)
+			refusal := wasm.DecodeGuestOutputCBOR(export, payload, &out)
 			if refusal == nil {
 				t.Fatal("the payload is not the shape the socket reads: expected a refusal, got nil")
 			}

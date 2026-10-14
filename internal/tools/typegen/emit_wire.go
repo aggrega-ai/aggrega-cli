@@ -13,20 +13,20 @@ import (
 )
 
 // generateWireRegistry emits the plugin-wire registry: the table binding each
-// guest export to the payload shape that export receives, the encoding its wire
-// carries, and a function that turns an authored text payload into those wire
-// bytes.
+// guest export a socket calls with a payload in the canonical binary encoding to
+// the payload shape that export receives, and a function that turns an authored
+// text payload into those wire bytes.
 //
 // It is derived rather than declared. There is no schema behind this target and
 // no table beside it: the emitter walks the codec targets, reads each one's
-// wireExports and binaryWire, and resolves an entry's role, or its plugin type
-// and the listed export it names, to an export name through the plugin-type
-// registry. So the two facts the registry carries live on the registrations that
-// drive the codecs, and the export name itself is spelled in neither place — an
-// entry reads it from the host-export lists the host's own dispatch identifiers
-// are generated from, or names it by the constant those lists read and is checked
-// against them. Every export those lists hold for a plugin type served on the
-// binary wire gets its row, or generation fails.
+// wireExports, and resolves an entry's role, or its plugin type and the listed
+// export it names, to an export name through the plugin-type registry. So the
+// fact the registry carries lives on the registrations that drive the codecs,
+// and the export name itself is spelled in neither place — an entry reads it
+// from the host-export lists the host's own dispatch identifiers are generated
+// from, or names it by the constant those lists read and is checked against
+// them. Every export those lists hold for a plugin type a registration serves
+// gets its row, or generation fails.
 //
 // The emitted order is sorted by export name and then payload shape, because the
 // target registry is a map: iteration order there is not stable, and a generated
@@ -53,8 +53,8 @@ func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 	body.WriteString(wireRegistryTableDoc)
 	body.WriteString("var entries = []entry{\n")
 	for _, e := range entries {
-		fmt.Fprintf(&body, "\t{export: %q, shape: %q, binary: %t, encode: %s},\n",
-			e.export, e.shape, e.binary, e.encodeFunc())
+		fmt.Fprintf(&body, "\t{export: %q, shape: %q, encode: %s},\n",
+			e.export, e.shape, e.encodeFunc())
 	}
 	body.WriteString("}\n\n")
 
@@ -92,15 +92,15 @@ func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 // wireRegistryTableDoc is the godoc the emitted table carries. It is written
 // here rather than in the destination package because the table is generated:
 // the reason an entry exists belongs beside the entry a reader finds.
-const wireRegistryTableDoc = `// entries binds each plugin export to the payload shape it receives and to the
-// encoding that export's wire carries.
+const wireRegistryTableDoc = `// entries binds each plugin export a socket calls with a payload in the
+// canonical binary encoding to the payload shape that export receives.
 //
-// Two facts sit here that nothing else can supply. Which shape an export
-// receives is not derivable from the export's name — a name is a symbol in the
-// guest's export section and carries no shape with it — and whether that export's
-// wire is binary is fixed by the socket rather than by anything a caller can see.
-// Both are read from the payload-codec registrations, so the table and the codecs
-// it names are generated from one source.
+// Which shape an export receives is a fact nothing else can supply: it is not
+// derivable from the export's name — a name is a symbol in the guest's export
+// section and carries no shape with it. It is read from the payload-codec
+// registrations, so the table and the codecs it names are generated from one
+// source. An export absent from the table is one no socket calls with a payload
+// in that encoding by default.
 //
 // Sorted by export name and then payload shape.
 `
@@ -115,9 +115,6 @@ const wireRegistryTableDoc = `// entries binds each plugin export to the payload
 // declarations are hand-written carries none and is read by the standard
 // library. So this introduces no second decode implementation — it selects
 // whichever the shape already has.
-//
-// It is emitted for every entry, binary or not, so that changing an export's
-// wire is a one-field edit on the registration rather than new code here.
 const wireEncodeFuncTemplate = `// encode%s reads an authored text payload into that shape and
 // re-emits it in the canonical binary encoding.
 func %s(text []byte) ([]byte, error) {
@@ -131,11 +128,10 @@ func %s(text []byte) ([]byte, error) {
 `
 
 // wireEntry is one emitted registry row: an export, the payload shape it
-// receives, the encoding its wire carries, and where that shape is declared.
+// receives, and where that shape is declared.
 type wireEntry struct {
 	export  string
 	shape   string
-	binary  bool
 	pkgPath string
 }
 
@@ -155,26 +151,26 @@ func (e wireEntry) encodeFunc() string { return "encode" + e.shape }
 // to run. It takes the targets as a parameter so each refusal can be driven over
 // a registration built to trip it.
 //
-// It refuses rather than skipping in five cases, because each one would emit a
-// registry that reads as complete and is not: a target registered on the binary
-// wire that declares no export would leave that socket's exports out of the
-// table entirely, so a caller converting an authored payload for one of them
-// would hand the guest text it cannot read; a target carrying wireExports with
+// It refuses rather than skipping in four cases, because each one would emit a
+// registry that reads as complete and is not: a target carrying wireExports with
 // no destination import path has no way to name its shape; an entry whose role
 // or plugin type does not resolve to exactly one listed export — or that names an
 // export its type's list does not hold — would contribute no export or a wrong
-// one, and a binary-wire socket whose plugin type lists nothing is refused here
-// too; an entry whose shape the target does not emit a codec for would
-// name a method that is not there; and a plugin type served on the binary wire
-// whose host-export list holds an export no binary-wire entry declares would
-// leave that export out of the table.
+// one, and a socket whose plugin type lists nothing is refused here too; an entry
+// whose shape the target does not emit a codec for would name a method that is
+// not there; and a plugin type a registration serves whose host-export list holds
+// an export no entry declares would leave that export out of the table, so a
+// caller converting an authored payload for it would hand the guest text it
+// cannot read.
 //
 // The last refusal is what makes the host-export list and this table agree for
-// every socket on the binary wire: adding an export to such a type's list fails
-// generation until a registration declares its payload shape. A type listing
-// several exports reaches it too, because each registration on such a type must
-// name the export it serves. The plugin-wire package's call-site guard checks the
-// same fact from the call sites' side.
+// every socket a registration serves: adding an export to such a type's list
+// fails generation until a registration declares its payload shape. A type
+// listing several exports reaches it too, because each registration on such a
+// type must name the export it serves. A socket target that declares no export at
+// all serves no type here, so nothing in this walk can see it; the plugin-wire
+// package's call-site guard checks the same fact from the call sites' side, where
+// such a socket's decode site names an export the table does not list.
 //
 // Targets are walked in sorted order so that, where more than one is wrong, the
 // refusal reported is the same one on every run.
@@ -194,19 +190,13 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 	sort.Strings(bases)
 
 	var out []wireEntry
-	// servedBy records, per plugin type served on the binary wire, the targets
+	// servedBy records, per plugin type a registration serves, the targets
 	// serving it, and declared the exports their entries declare, so the closing
 	// check can name both sides of a gap.
 	servedBy := map[plugintype.Type][]string{}
 	declared := map[string]bool{}
 	for _, base := range bases {
 		t := targets[base]
-		if t.binaryWire && len(t.wireExports) == 0 {
-			return nil, fmt.Errorf("typegen: codec target %q (socket schema %s) is registered on the binary "+
-				"wire but declares no export in wireExports: every export a binary-wire socket carries must be "+
-				"declared there, so that the plugin-wire registry converts an authored payload for it into the "+
-				"encoding its guest reads", base, t.schemaFile)
-		}
 		if len(t.wireExports) == 0 {
 			continue
 		}
@@ -224,22 +214,19 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 				return nil, fmt.Errorf("typegen: codec target %q names %q in wireExports, "+
 					"which that target emits no codec for", base, w.inputDef)
 			}
-			if t.binaryWire {
-				if !slices.Contains(servedBy[pluginType], base) {
-					servedBy[pluginType] = append(servedBy[pluginType], base)
-				}
-				declared[export] = true
+			if !slices.Contains(servedBy[pluginType], base) {
+				servedBy[pluginType] = append(servedBy[pluginType], base)
 			}
+			declared[export] = true
 			out = append(out, wireEntry{
 				export:  export,
 				shape:   w.inputDef,
-				binary:  t.binaryWire,
 				pkgPath: t.pkgPath,
 			})
 		}
 	}
 
-	// Every export a binary-wire plugin type lists has a row. The types are read in
+	// Every export a served plugin type lists has a row. The types are read in
 	// registry order and their exports in list order, so the refusal reported is
 	// the same one on every run.
 	for _, entry := range registry {
@@ -249,10 +236,10 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 		}
 		for _, export := range entry.HostExports {
 			if !declared[export] {
-				return nil, fmt.Errorf("typegen: the %s plugin type is served on the binary wire by codec target(s) "+
-					"%s, and its host-export list holds %q, which no binary-wire wireExports entry declares: every "+
-					"export a binary-wire socket's plugin type lists must have its payload shape declared, so that "+
-					"the plugin-wire registry converts an authored payload for it into the encoding its guest reads",
+				return nil, fmt.Errorf("typegen: the %s plugin type is served by codec target(s) %s, and its "+
+					"host-export list holds %q, which no wireExports entry declares: every export a served plugin "+
+					"type lists must have its payload shape declared, so that the plugin-wire registry converts an "+
+					"authored payload for it into the encoding its guest reads",
 					entry.Type, strings.Join(targetsServing, ", "), export)
 			}
 		}

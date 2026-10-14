@@ -157,42 +157,41 @@ func TestEncodeForExportConvertsAStepInput(t *testing.T) {
 	}
 }
 
-// TestEncodeForExportTextWirePassesThrough covers the two ways an export gets its
-// authored bytes back: a text-wire export the table knows, and an export the
-// table does not know at all. The second matters as much as the first — a guest
-// reads its own input and reports its own failure, so an unknown name is passed
-// through rather than refused.
+// TestEncodeForExportPassesAnUnlistedExportThrough covers the exports that get
+// their authored bytes back because the generated table does not list them: the
+// describe export, which takes no payload; the CLI type's host export, whose
+// payload crosses as JSON; and an entry function an attachment names, which no
+// socket calls by default. A guest reads its own input and reports its own
+// failure, so an unlisted name is passed through rather than refused.
 //
-// Every row the generated table carries is on the binary wire, so the text-wire
-// arm is driven through a table built here, the way the refusal below is; the
-// unknown export goes through the generated table, where it is unknown.
-func TestEncodeForExportTextWirePassesThrough(t *testing.T) {
+// Each goes through the generated table, and each is first required to be absent
+// from it, so a row cannot pass because an export it names was listed and its
+// encoder happened to return the bytes it was handed.
+func TestEncodeForExportPassesAnUnlistedExportThrough(t *testing.T) {
 	t.Parallel()
 
+	cli, ok := plugintype.Lookup(plugintype.CLI)
+	if !ok || len(cli.HostExports) != 1 {
+		t.Fatal("the CLI type lists no single host export")
+	}
 	text := []byte(`{"k":1}`)
-	t.Run("text-wire row", func(t *testing.T) {
-		t.Parallel()
-		table := []entry{
-			{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: failEncode(t)},
-		}
-		got, err := encodeForExport(table, "verdict_ir", text)
-		if err != nil {
-			t.Fatalf("a text-wire export should pass its payload through; got %v", err)
-		}
-		if !bytes.Equal(got, text) {
-			t.Fatalf("payload = %q; want it unchanged at %q", got, text)
-		}
-	})
-	t.Run("unknown export", func(t *testing.T) {
-		t.Parallel()
-		got, err := EncodeForExport("describe", text)
-		if err != nil {
-			t.Fatalf("an export the table does not know should pass its payload through; got %v", err)
-		}
-		if !bytes.Equal(got, text) {
-			t.Fatalf("payload = %q; want it unchanged at %q", got, text)
-		}
-	})
+	for _, export := range []string{"describe", cli.HostExports[0], "verdict_an_attachment_names"} {
+		t.Run(export, func(t *testing.T) {
+			t.Parallel()
+			for _, e := range entries {
+				if e.export == export {
+					t.Fatalf("the generated table lists %q, so this row does not drive the pass-through", export)
+				}
+			}
+			got, err := EncodeForExport(export, text)
+			if err != nil {
+				t.Fatalf("an export the table does not list should pass its payload through; got %v", err)
+			}
+			if !bytes.Equal(got, text) {
+				t.Fatalf("payload = %q; want it unchanged at %q", got, text)
+			}
+		})
+	}
 }
 
 // TestEncodeForExportConvertsTheGovernanceRoleInputs covers the governance roles
@@ -276,20 +275,19 @@ func TestEncodeForExportConvertsTheGovernanceRoleInputs(t *testing.T) {
 }
 
 // TestEncodeForExportRefusesAnAmbiguousBinaryExport drives the arm the generated
-// table cannot reach yet: one export naming two payload shapes, on a socket whose
-// wire has moved to binary. The refusal is the point — encoding as one of the two
-// would hand the guest bytes it silently misreads, and an export name cannot say
-// which shape was meant.
+// table cannot reach: one export naming two payload shapes. The refusal is the
+// point — encoding as one of the two would hand the guest bytes it silently
+// misreads, and an export name cannot say which shape was meant.
 func TestEncodeForExportRefusesAnAmbiguousBinaryExport(t *testing.T) {
 	t.Parallel()
 
 	table := []entry{
-		{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: failEncode(t)},
-		{export: "verdict_ir", shape: "RenderPolicyInput", binary: true, encode: failEncode(t)},
+		{export: "verdict_ir", shape: "PolicyInput", encode: failEncode(t)},
+		{export: "verdict_ir", shape: "RenderPolicyInput", encode: failEncode(t)},
 	}
 	_, err := encodeForExport(table, "verdict_ir", []byte(`{}`))
 	if err == nil {
-		t.Fatal("an export naming two payload shapes on a binary wire should refuse rather than guess")
+		t.Fatal("an export naming two payload shapes should refuse rather than guess")
 	}
 	for _, want := range []string{"verdict_ir", "PolicyInput", "RenderPolicyInput"} {
 		if !strings.Contains(err.Error(), want) {
@@ -304,13 +302,13 @@ func TestEncodeForExportEncodesAnUnambiguousBinaryExport(t *testing.T) {
 	t.Parallel()
 
 	table := []entry{
-		{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: func(text []byte) ([]byte, error) {
+		{export: "verdict_ir", shape: "PolicyInput", encode: func(text []byte) ([]byte, error) {
 			return append([]byte("encoded:"), text...), nil
 		}},
 	}
 	got, err := encodeForExport(table, "verdict_ir", []byte(`{}`))
 	if err != nil {
-		t.Fatalf("one payload shape on a binary wire should encode; got %v", err)
+		t.Fatalf("one payload shape should encode; got %v", err)
 	}
 	if string(got) != "encoded:{}" {
 		t.Fatalf("payload = %q; want the table's own encoder to have run", got)
@@ -322,20 +320,17 @@ func TestEncodeForExportEncodesAnUnambiguousBinaryExport(t *testing.T) {
 func failEncode(t *testing.T) func([]byte) ([]byte, error) {
 	t.Helper()
 	return func([]byte) ([]byte, error) {
-		t.Error("an ambiguous binary-wire export must refuse before any encoder runs")
+		t.Error("an ambiguous export must refuse before any encoder runs")
 		return nil, nil
 	}
 }
 
 // TestEveryRegisteredEncoderRuns exercises every row's encoder, not only the
-// rows whose socket has already moved.
+// rows a dedicated test above converts a real payload for.
 //
-// The encoders are emitted for every row on purpose, so that moving a socket to
-// the binary wire is a one-field edit on its registration rather than new code.
-// The cost of that is three encoders nothing calls yet, and an unexercised
-// encoder is a mechanism whose first real use is also its first test — at the
-// moment a wire moves, which is the worst moment to discover it. So each one is
-// driven here.
+// An encoder no test drives is a mechanism whose first real use is also its first
+// test — at the moment an author runs a guest directly, which is the worst moment
+// to discover it. So each one is driven here.
 //
 // The assertion is the shape of the result rather than its bytes: a canonical
 // encoding of a struct is a CBOR map, whose leading byte carries major type 5.

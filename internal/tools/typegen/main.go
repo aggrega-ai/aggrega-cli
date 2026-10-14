@@ -464,8 +464,11 @@ type codecTarget struct {
 	// lookup cannot, catching an entry naming a def the schema no longer declares.
 	skipDefs []string
 	// wireExports binds a guest export to the $def carrying that export's INPUT
-	// payload, for every export this target's types serve. It is one half of what
-	// the plugin-wire registry is emitted from; binaryWire below is the other.
+	// payload, for every export this target's types serve. The plugin-wire
+	// registry is emitted from it: each entry is an export a socket calls with a
+	// payload in the canonical binary encoding, which every socket whose output the
+	// host decodes carries in both directions, so a target declares its exports
+	// here and nothing else about its wire.
 	//
 	// The export name is never spelled here: an entry names either the attachment
 	// ROLE whose default the export is, or the plugin TYPE whose host export it is —
@@ -476,31 +479,23 @@ type codecTarget struct {
 	// are generated from, so the registry and the dispatch cannot disagree about
 	// what an export is called — there is no second spelling of the name to drift.
 	//
-	// A target registered on the binary wire must declare here every export its
-	// socket carries, and generation refuses otherwise in both directions: a
-	// binary-wire target that declares none, and a plugin type served on the binary
-	// wire whose host-export list names an export no entry declares — including a
-	// list left empty. Either would leave a caller converting an authored payload
-	// for that export handing the guest text it cannot read. An entry naming an
-	// export its type's list does not hold is refused too.
+	// A plugin type an entry serves must have every export its host-export list
+	// names declared here, and generation refuses otherwise — including a list left
+	// empty — because a listed export left out would leave a caller converting an
+	// authored payload for it handing the guest text it cannot read. An entry naming
+	// an export its type's list does not hold is refused too. A socket target that
+	// declares no export at all is caught from the other side, by the plugin-wire
+	// package's call-site guard: its decode site names an export the registry does
+	// not list.
 	//
 	// An entry is admitted only where something can PIN it: the socket's output
-	// decode must route through the host's two encoding-specific decode entry
-	// points, because naming one of those two at a call site is the observable
-	// choice the registry is checked against. A socket that decodes through its
-	// generated codec directly offers nothing to check, so an entry for it would
-	// be an unpinned hand-written fact — which is the failure this registry exists
-	// to avoid rather than to relocate.
+	// decode must route through the host's socket-output decode entry point,
+	// because naming it at a call site is the observable fact the registry is
+	// checked against. A socket that decodes through its generated codec directly
+	// offers nothing to check, so an entry for it would be an unpinned hand-written
+	// fact — which is the failure this registry exists to avoid rather than to
+	// relocate.
 	wireExports []wireExport
-	// binaryWire records whether the exports named in wireExports carry the
-	// canonical-CBOR wire rather than the text one.
-	//
-	// It sits on the target rather than on each entry because the target is the
-	// unit that moves: one target is one schema realized into one destination
-	// package, there is no wire negotiation, and a socket's host side and its whole
-	// guest set therefore change encoding together or not at all. Two exports
-	// sharing a target share a wire by construction.
-	binaryWire bool
 	// pkgPath is the destination package's Go import path. Only a target carrying
 	// wireExports needs it — the registry emitter imports the package to name the
 	// payload type — and emission refuses a wireExports target that omits it.
@@ -975,12 +970,11 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
-	// The host codec carries the socket's wire registration. binaryWire: the
-	// pipeline step's wire is canonical CBOR in both directions — the walk encodes
-	// each step's input with the generated encoder and decodes the step's answer
-	// through the binary encoding's entry point, and every step guest reads and
-	// writes the same. Its export is the pipeline-step type's host export, so the
-	// entry names the plugin type and that export.
+	// The host codec carries the socket's wire registration. The walk encodes each
+	// step's input with the generated encoder and decodes the step's answer through
+	// the host's socket-output decode entry point, and every step guest reads and
+	// writes the same encoding. Its export is the pipeline-step type's host export,
+	// so the entry names the plugin type and that export.
 	//
 	// crossPackageDefTypes makes each diagnostic ride as the shared diagnostic's own
 	// structural encoding — the one every plugin kit's codec writes — by
@@ -995,7 +989,6 @@ var codecTargets = map[string]codecTarget{
 		helpers:              true, // the host feature-recipe-pipeline codec is alone in its package
 		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
-		binaryWire:           true,
 		wireExports: []wireExport{
 			{pluginType: plugintype.PipelineStep, export: exportname.Step, inputDef: "FRPStepInput"},
 		},
@@ -1126,10 +1119,9 @@ var codecTargets = map[string]codecTarget{
 		vocabulary: mutatorHostVocabulary,
 		helpers:    true, // the host mutator codec is alone in package topology
 		pkgPath:    "github.com/aggrega-ai/aggrega-cli/internal/compiler/topology",
-		// binaryWire: this socket's wire is canonical CBOR. Its call site encodes
-		// with the generated encoder and decodes through the binary encoding's
-		// entry point, and every guest it speaks to reads and writes the same.
-		binaryWire: true,
+		// Its call site encodes with the generated encoder and decodes through the
+		// host's socket-output decode entry point, and every guest it speaks to
+		// reads and writes the same encoding.
 		wireExports: []wireExport{
 			{role: plugintype.RoleLabelTransform, inputDef: "MutatorInput"},
 		},
@@ -1167,10 +1159,9 @@ var codecTargets = map[string]codecTarget{
 		vocabulary: annotationTransformHostVocabulary,
 		helpers:    true, // the host annotation-transform codec is alone in package pipeline
 		pkgPath:    "github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline",
-		// binaryWire: this socket's wire is canonical CBOR. Its call site encodes
-		// with the generated encoder and decodes through the binary encoding's
-		// entry point, and every guest it speaks to reads and writes the same.
-		binaryWire: true,
+		// Its call site encodes with the generated encoder and decodes through the
+		// host's socket-output decode entry point, and every guest it speaks to
+		// reads and writes the same encoding.
 		wireExports: []wireExport{
 			{role: plugintype.RoleAnnotationTransform, inputDef: "AnnotationTransformInput"},
 		},
@@ -1204,11 +1195,11 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
-	// binaryWire: this socket's wire is canonical CBOR in both directions. Both
-	// dispatch sites encode with the generated encoder and decode through the
-	// binary encoding's entry point, and every linter guest reads and writes the
-	// same. Its export is a host export of the linter type rather than a role's
-	// default, so the entry names the plugin type and that export.
+	// Both dispatch sites encode with the generated encoder and decode through the
+	// host's socket-output decode entry point, and every linter guest reads and
+	// writes the same encoding. Its export is a host export of the linter type
+	// rather than a role's default, so the entry names the plugin type and that
+	// export.
 	//
 	// crossPackageDefTypes makes each finding ride as the shared diagnostic's own
 	// structural encoding — the one every guest's codec writes — by dispatching to
@@ -1222,7 +1213,6 @@ var codecTargets = map[string]codecTarget{
 		helpers:              true, // the host linter codec is alone in package validator
 		crossPackageDefTypes: []string{"abi.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/pkg/validator",
-		binaryWire:           true,
 		wireExports: []wireExport{
 			{pluginType: plugintype.Linter, export: exportname.LintRules, inputDef: "LinterInput"},
 		},
@@ -1351,11 +1341,9 @@ var codecTargets = map[string]codecTarget{
 		crossPackageDefTypes: []string{"types.IRGraph"},
 		skipDefs:             []string{"PolicyOutput"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer",
-		// binaryWire: both verdict roles' wire is canonical CBOR. Each call site
-		// encodes with the generated encoder and decodes the verdict list through
-		// the binary encoding's entry point, and every guest serving either role
-		// reads and writes the same.
-		binaryWire: true,
+		// Each call site encodes with the generated encoder and decodes the verdict
+		// list through the host's socket-output decode entry point, and every guest
+		// serving either role reads and writes the same encoding.
 		wireExports: []wireExport{
 			{role: plugintype.RoleIRVerdict, inputDef: "PolicyInput"},
 			{role: plugintype.RoleRenderVerdict, inputDef: "RenderPolicyInput"},
@@ -1398,13 +1386,12 @@ var codecTargets = map[string]codecTarget{
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	// The host codec carries the socket's wire registration, because the host and
-	// the shipped provider guests both read and write this codec. binaryWire: the
-	// render family's wire is canonical CBOR in both directions — every call site
+	// the shipped provider guests both read and write this codec. Every call site
 	// encodes its input with the generated encoder and decodes the output through
-	// the binary encoding's entry point, and every provider guest reads and writes
-	// the same. The family's exports are the provider type's host-export list, so
-	// each entry names the plugin type and which listed export its payload shape
-	// serves; render_node and validate_node_input read one shape.
+	// the host's socket-output decode entry point, and every provider guest reads
+	// and writes the same encoding. The family's exports are the provider type's
+	// host-export list, so each entry names the plugin type and which listed export
+	// its payload shape serves; render_node and validate_node_input read one shape.
 	//
 	// crossPackageDefTypes makes each diagnostic ride as the shared diagnostic's own
 	// structural encoding — the one every plugin kit's codec writes — by dispatching
@@ -1420,7 +1407,6 @@ var codecTargets = map[string]codecTarget{
 		helpers:              true, // the host provider render codec is alone in package rendercore
 		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore",
-		binaryWire:           true,
 		wireExports: []wireExport{
 			{pluginType: plugintype.Provider, export: exportname.RenderNode, inputDef: "RenderNodeInput"},
 			{pluginType: plugintype.Provider, export: exportname.ValidateNodeInput, inputDef: "RenderNodeInput"},
@@ -1444,12 +1430,12 @@ var codecTargets = map[string]codecTarget{
 	// references the helpers FRP owns in package abi (helpers: false, the default).
 	//
 	// This socket has no host codec of its own: the host reads and writes this abi
-	// Go codec directly, so the wire registration sits here. binaryWire: the
-	// socket's wire is canonical CBOR in both directions — its call site encodes the
-	// input with the generated encoder and decodes the output through the binary
-	// encoding's entry point, and every parser guest reads and writes the same. Its
-	// one export is the parser type's required export rather than a role's default,
-	// so the entry names the plugin type and that export.
+	// Go codec directly, so the wire registration sits here. Its call site encodes
+	// the input with the generated encoder and decodes the output through the
+	// host's socket-output decode entry point, and every parser guest reads and
+	// writes the same encoding. Its one export is the parser type's required export
+	// rather than a role's default, so the entry names the plugin type and that
+	// export.
 	"parse_gen.go": {
 		schema:           schemas.WasmParseV1alpha1,
 		schemaFile:       "wasm-parse-v1alpha1.schema.json",
@@ -1457,7 +1443,6 @@ var codecTargets = map[string]codecTarget{
 		vocabulary:       parseGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
-		binaryWire:       true,
 		wireExports: []wireExport{
 			{pluginType: plugintype.Parser, export: exportname.Parse, inputDef: "ParseInput"},
 		},
@@ -1490,12 +1475,12 @@ var codecTargets = map[string]codecTarget{
 	// references the helpers FRP owns in package abi (helpers: false, the default).
 	//
 	// This socket has no host codec of its own: the host reads and writes this abi
-	// Go codec directly, so the wire registration sits here. binaryWire: the
-	// socket's wire is canonical CBOR in both directions — its call site encodes the
-	// input with the generated encoder and decodes the output through the binary
-	// encoding's entry point, and every importer guest reads and writes the same.
-	// Its one export is the importer type's required export rather than a role's
-	// default, so the entry names the plugin type and that export.
+	// Go codec directly, so the wire registration sits here. Its call site encodes
+	// the input with the generated encoder and decodes the output through the
+	// host's socket-output decode entry point, and every importer guest reads and
+	// writes the same encoding. Its one export is the importer type's required
+	// export rather than a role's default, so the entry names the plugin type and
+	// that export.
 	"import_gen.go": {
 		schema:           schemas.WasmImportV1alpha1,
 		schemaFile:       "wasm-import-v1alpha1.schema.json",
@@ -1503,7 +1488,6 @@ var codecTargets = map[string]codecTarget{
 		vocabulary:       importGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
-		binaryWire:       true,
 		wireExports: []wireExport{
 			{pluginType: plugintype.Importer, export: exportname.Import, inputDef: "ImportInput"},
 		},
@@ -1587,17 +1571,17 @@ var codecTargets = map[string]codecTarget{
 		lang: "ts-ordered-map",
 	},
 	// The plugin-wire registry. Schema-free and derived: it reads no schema of its
-	// own and instead walks the targets above, collecting each one's wireExports
-	// and binaryWire, so the export-to-payload-to-encoding table is emitted from
-	// the same registrations that drive the codecs rather than hand-kept beside
-	// them — and generation fails on a target registered on the binary wire that
-	// declares no export.
+	// own and instead walks the targets above, collecting each one's wireExports,
+	// so the export-to-payload table is emitted from the same registrations that
+	// drive the codecs rather than hand-kept beside them — and generation fails on
+	// a served plugin type whose host-export list names an export no registration
+	// declares.
 	//
 	// What reads it: the direct-invocation command, which takes an authored text
 	// payload and has to hand the guest whatever the named export's wire carries.
-	// It cannot derive that from the export name — the socket fixes it — so the
-	// fact has to be written down somewhere, and here it sits on the registrations
-	// a test can pin against the call sites they describe.
+	// It cannot derive the payload shape from the export name, so the fact has to
+	// be written down somewhere, and here it sits on the registrations a test can
+	// pin against the call sites they describe.
 	"pluginwire_gen.go": {
 		pkg:  "pluginwire",
 		lang: "go-wire-registry",
