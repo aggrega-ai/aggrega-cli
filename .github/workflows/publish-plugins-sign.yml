@@ -18,10 +18,14 @@ name: Publish and sign core plugins
 #                        nothing and opens no upload session. It is the run's
 #                        first act, a dry run's included, so a manual dry run
 #                        is also how to prove that the stored credential
-#                        matches the registry. It runs the repository's own
-#                        check script and nothing else but, first, the refusal
-#                        of a run with no self-hosted runner named for the local
-#                        jobs.
+#                        matches the registry. Before that request it decides,
+#                        from the event, the dry_run input and the ref alone,
+#                        whether this run signs the Windows binaries, and
+#                        refuses a decision to leave them unsigned on a run
+#                        that publishes, as described below. It runs the
+#                        repository's own scripts and nothing else but, first,
+#                        the refusal of a run with no self-hosted runner named
+#                        for the local jobs.
 #   sources              Checks out the sibling repositories the CLI builds
 #                        against, at the refs the CLI's go.mod pins once the CLI
 #                        tree is on the release tag, with a read token minted
@@ -55,7 +59,9 @@ name: Publish and sign core plugins
 #                        as Cognitio S.r.l., through Azure Artifact Signing,
 #                        every signature carrying an RFC 3161 timestamp, and
 #                        hands them on with a SHA-256 list of them as
-#                        windows-binaries-signed. It runs on the runner the
+#                        windows-binaries-signed, on every run but a manual dry
+#                        run launched from a ref the signing identity is taken
+#                        not to admit, which skips it. It runs on the runner the
 #                        AGGREGA_RUNNER label names, after the build, and reads
 #                        the three from the hand-over folder once they match its
 #                        list. It may mint the OIDC token, which it exchanges
@@ -176,7 +182,12 @@ name: Publish and sign core plugins
 # and last checks their signatures: Windows' own Get-AuthenticodeSignature must
 # report each one valid, signed by Cognitio S.r.l. and timestamped, and each
 # must match sign-windows' SHA-256 list, while the unsigned copies the build
-# wrote are shown refused. They need nothing the build needs — no
+# wrote are shown refused. On a manual dry run from a ref the signing identity
+# is taken not to admit, nothing is signed: windows-smoke runs the unsigned
+# binaries the build wrote, through the same script, which reports the
+# signature check not applicable rather than passed, and sign-and-publish, which
+# waits for sign-windows, is skipped with it, so such a run prints no publish
+# plan. They need nothing the build needs — no
 # sibling repository, no toolchain, no secret, no network beyond their own
 # loopback address — because the build job stages everything each runs as one
 # workflow artifact per target. They publish nothing, and sign-and-publish
@@ -217,9 +228,19 @@ name: Publish and sign core plugins
 # are proven before a tag exists, runs the Windows and macOS smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads the image archive and
 # prints what it would push, publish, sign and release, doing none of it, and
-# record-published is skipped. A dispatch from a ref the signing identity's
-# federated credentials in Azure do not admit fails in sign-windows, naming the
-# ref.
+# record-published is skipped.
+#
+# Which refs may sign is decided by the signing identity's federated
+# credentials in Azure. The refs this workflow takes them to admit — the main
+# branch and every tag — are written once, in .github/scripts/windows-signing.sh.
+# A dry run launched from any other ref signs nothing: sign-windows is skipped,
+# windows-smoke runs the unsigned binaries the build wrote, its signature check
+# not applicable, and sign-and-publish is skipped with sign-windows. That skip
+# is decided in registry-credential by the event, the dry_run input and the ref,
+# before anything is built or signed, and never by a signing that failed; the
+# same job refuses it on a tag push and on a dispatch that is not a dry run,
+# which always sign, so on those a ref the credentials do not admit fails in
+# sign-windows, naming the ref.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -275,7 +296,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
+        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release. From a ref other than main or a tag, the Windows binaries are not signed: the Windows smoke job runs them unsigned and no plan is printed."
         required: false
         default: true
         type: boolean
@@ -322,10 +343,18 @@ jobs:
     # A hosted runner, as the other publishers' credential checks run: the job is
     # one request, and it holds the registry password in a job that runs no
     # third-party code. It is the run's first job, so it is also where a run with
-    # no runner for the local jobs stops.
+    # no runner for the local jobs stops, and where the run decides whether it
+    # signs the Windows binaries.
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
+    # Whether this run signs the Windows binaries, sign or skip, as the decision
+    # step below wrote it and the guard step after it let it stand. sign-windows
+    # and windows-smoke read it, and name this job in their needs for that.
+    outputs:
+      signing: ${{ steps.signing.outputs.signing }}
+
     steps:
       - name: Require the runner the local jobs share
         # sources, build, sign-windows, sign-and-publish, record-published and
@@ -344,13 +373,46 @@ jobs:
           echo "publish-plugins: the sources, build, signing, publishing, recording and clean-up jobs run on the runner labelled $AGGREGA_RUNNER"
 
       - name: Check out the CLI
-        # Only for the check script. The launched ref, not the release tag: a
-        # dispatch naming an earlier tag still runs the check from the launched
-        # ref.
+        # Only for the scripts the steps below run. The launched ref, not the
+        # release tag: a dispatch naming an earlier tag still runs them from the
+        # launched ref.
         uses: actions/checkout@v5
         with:
           path: aggrega-cli
           persist-credentials: false
+
+      - name: Decide whether this run signs the Windows binaries
+        # From the event, the dry_run input and the ref alone, before anything
+        # is built or signed: sign on every run but a manual dry run launched
+        # from a ref the signing identity is taken not to admit, which is skip.
+        # The refs it is taken to admit are written once, in the script. On
+        # skip, sign-windows is skipped and windows-smoke runs the unsigned
+        # binaries the build wrote; no signing has happened yet, so a signing
+        # that failed can never be what decided it.
+        id: signing
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          RUN_REF: ${{ github.ref }}
+        run: |
+          aggrega-cli/.github/scripts/windows-signing.sh decide \
+            --event "$EVENT_NAME" --dry-run "$DISPATCH_DRY_RUN" --ref "$RUN_REF"
+
+      - name: Refuse to leave the Windows binaries unsigned on a run that publishes
+        # The decision as the jobs after this one read it, held to the one
+        # property that keeps an unsigned binary from a release: skip stands only
+        # on a workflow_dispatch with dry_run true, and any other value, an empty
+        # one included, is refused. The script reads the event and the input
+        # itself rather than trusting the step above, so a decision gone wrong
+        # stops the run here, before anything is built, signed or published, and
+        # a tag push or a dispatch that publishes always signs.
+        env:
+          SIGNING: ${{ steps.signing.outputs.signing }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          aggrega-cli/.github/scripts/windows-signing.sh guard \
+            --signing "$SIGNING" --event "$EVENT_NAME" --dry-run "$DISPATCH_DRY_RUN"
 
       - name: Check the stored registry credential
         # One GET /v2/ with the stored credential, before anything is built;
@@ -1056,7 +1118,8 @@ jobs:
         # Everything the windows-smoke job runs, staged by one script into one
         # directory: the three Windows binaries above, unsigned, which the smoke
         # run holds as what its signature check must refuse, since it runs the
-        # copies sign-windows signed; a Windows test executable
+        # copies sign-windows signed — or runs these, on a dry run that signs
+        # nothing; a Windows test executable
         # for each package whose tests prove a platform split, cross-compiled
         # here because the Windows runner has no toolchain and no sibling
         # repositories; the two worked examples, each with the workspace this
@@ -1333,10 +1396,14 @@ jobs:
   sign-windows:
     # Signs the three Windows binaries the build job built, with Authenticode, so
     # that Windows names their publisher, Cognitio S.r.l., and can tell that
-    # nothing changed them since. It carries no if: and runs on every trigger, a
-    # dry run's included, so the signing and the Windows smoke run's check of it
-    # are proven before a tag exists; windows-smoke and sign-and-publish both
-    # wait for it.
+    # nothing changed them since. It runs on every trigger, a dry run's included,
+    # so the signing and the Windows smoke run's check of it are proven before a
+    # tag exists — on every run but a manual dry run launched from a ref the
+    # signing identity is taken not to admit, which registry-credential decides
+    # before anything is built, and on which this job is skipped. Its if: reads
+    # that decision and nothing else: a signing that failed cannot skip it, and
+    # on a run that publishes no ref can either. windows-smoke and
+    # sign-and-publish both wait for it.
     #
     # The signing service is Azure Artifact Signing, which keeps its keys in its
     # own hardware: jsign sends each file's digest to it, and it signs with a
@@ -1351,7 +1418,9 @@ jobs:
     # OIDC token, which only a job granted id-token:write can mint, is exchanged
     # with Microsoft Entra ID for a short-lived token that may sign with that
     # profile. Which refs of which workflow may make that exchange is decided by
-    # the identity's federated credentials in Azure, and stated nowhere here.
+    # the identity's federated credentials in Azure; the refs a dry run takes
+    # them to admit are stated once, in .github/scripts/windows-signing.sh, and
+    # read only to decide whether a dry run signs.
     # Everything that runs in this job can reach those tokens, so what runs is
     # kept to the shell's own utilities, curl, GitHub's own artifact upload, and
     # jsign — one jar, fetched at one version and refused unless its SHA-256 is
@@ -1374,7 +1443,13 @@ jobs:
     # which leaves the signature out, does not. The bytes the build reproduces
     # are the unsigned ones, and the bytes that run on Windows and ship are the
     # ones this job signs, which its SHA-256 list names.
-    needs: build
+    #
+    # registry-credential is named because a job reads the outputs only of the
+    # jobs it names. The condition runs this job unless the decision is skip, so
+    # a decision that is anything else signs; the guard in registry-credential
+    # has already refused skip on a run that publishes.
+    needs: [registry-credential, build]
+    if: ${{ needs.registry-credential.outputs.signing != 'skip' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 30
     permissions:
@@ -1537,8 +1612,8 @@ jobs:
         #
         # A refused exchange fails here, naming the HTTP status, Entra ID's
         # error and its description, and this run's ref: the identity's
-        # federated credentials in Azure decide which refs may sign, so a
-        # dispatch from a ref they do not admit stops here.
+        # federated credentials in Azure decide which refs may sign, so a run
+        # that reaches this step from a ref they do not admit stops here.
         #
         # jsign signs the three in one invocation, because it asks the service
         # for the certificate chain once per invocation. --tsaurl and --tsmode
@@ -1659,9 +1734,14 @@ jobs:
     # Waits for the build, for sign-windows and for every smoke run —
     # windows-smoke and both targets of macos-smoke — and starts only when each
     # one succeeded: a job is skipped when a job it needs failed, was cancelled
-    # or was skipped, and neither this job nor sign-windows nor a smoke job
-    # carries an if: of its own, so no trigger skips one of them and lets this
-    # job through. Nothing is pushed, signed, published or released unless the
+    # or was skipped, and this job carries no if: of its own, so it never starts
+    # beside a job it needs that did not succeed. sign-windows is skipped on a
+    # manual dry run from a ref the signing identity is taken not to admit, and
+    # this job is skipped with it there, so the unsigned binaries windows-smoke
+    # runs on such a run never reach it. windows-smoke's own if: lets that job
+    # run when sign-windows was skipped so, and decides that job alone: this
+    # job's needs name sign-windows itself. Nothing is pushed, signed,
+    # published or released unless the
     # binaries passed on their own platforms, and a dry run prints its plan only
     # once they have. The build is named as well because a job reads the
     # outputs only of the jobs it names, and sign-windows because this job
@@ -2342,8 +2422,8 @@ jobs:
     # binaries and hands them to windows-smoke as an artifact, saved under the
     # names the smoke inputs give the binaries; on every other run each step is
     # skipped and the job passes at once. It runs on every run, rather than
-    # being skipped, because windows-smoke waits for it and carries no condition
-    # of its own that could let a skipped dependency through. The download reads
+    # being skipped, because windows-smoke waits for it and runs only once it has
+    # succeeded. The download reads
     # this repository's releases with the run's own token; the job runs nothing
     # but the GitHub CLI and the artifact upload, which is why it is a job of its
     # own: windows-smoke runs code a token must not reach. It starts once the
@@ -2400,11 +2480,38 @@ jobs:
     # failure, saying what failed. sign-and-publish waits for it, so a failure
     # here publishes nothing. On a dry run naming smoke_binaries_from it runs
     # the binaries smoke-binaries fetched instead, and fails whatever they do.
-    needs: [build, smoke-binaries, sign-windows]
+    #
+    # On a manual dry run from a ref the signing identity is taken not to admit,
+    # registry-credential decides that nothing is signed and sign-windows is
+    # skipped: this job then runs the unsigned binaries the build wrote, staged
+    # in its inputs, every check reporting its verdict, the signature check
+    # reported not applicable rather than passed, and fails whatever the others
+    # do. sign-and-publish is skipped on such a run, since it needs sign-windows
+    # itself, so those binaries go no further.
+    #
+    # The if: takes the place of the default, which would skip this job whenever
+    # sign-windows is skipped. It runs when the run was not cancelled, when
+    # registry-credential, build and smoke-binaries succeeded, and when
+    # sign-windows either succeeded or was skipped on a decision of skip; a
+    # sign-windows that failed, or was skipped on any other ground, skips this
+    # job. registry-credential is named because a job reads the outputs only of
+    # the jobs it names.
+    needs: [registry-credential, build, smoke-binaries, sign-windows]
+    if: >-
+      ${{ !cancelled()
+      && needs.registry-credential.result == 'success'
+      && needs.build.result == 'success'
+      && needs.smoke-binaries.result == 'success'
+      && (needs.sign-windows.result == 'success'
+      || (needs.sign-windows.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip')) }}
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # This run's signing decision, sign or skip, as registry-credential wrote
+      # it: on skip no signed binaries exist, and the unsigned ones run.
+      SIGNING: ${{ needs.registry-credential.outputs.signing }}
     defaults:
       run:
         # The shell Git for Windows installs on the runner; the script it runs
@@ -2433,7 +2540,9 @@ jobs:
       - name: Download the signed Windows binaries
         # The three binaries sign-windows signed, and SHA256SUMS, its list of
         # them: the binaries every check below runs, and the ones the release
-        # attaches.
+        # attaches. Not on a run whose decision is skip, on which sign-windows
+        # signed nothing and uploaded nothing.
+        if: ${{ env.SIGNING != 'skip' }}
         uses: actions/download-artifact@v4
         with:
           name: windows-binaries-signed
@@ -2462,14 +2571,23 @@ jobs:
         # Cognitio S.r.l. and timestamped, with the unsigned copy the build wrote
         # shown refused. On a dry run naming smoke_binaries_from, the binaries
         # downloaded above run instead, the signature check among the checks
-        # reporting on them, and the step fails whatever they do.
+        # reporting on them, and the step fails whatever they do. On a run whose
+        # decision is skip, the script is told the binaries are unsigned: it runs
+        # the ones the build wrote, staged in its inputs, every check reporting
+        # its verdict, reports the signature check not applicable rather than
+        # passed, and fails whatever the others do.
         # aggrega-cli/scripts/platform-smoke.sh --help says what each check
         # asserts.
         env:
           SUBSTITUTE_TAG: ${{ inputs.smoke_binaries_from }}
         run: |
           set -euo pipefail
-          args=(--target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke" --signed "$RUNNER_TEMP/windows-signed")
+          args=(--target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke")
+          if [ "$SIGNING" = skip ]; then
+            args+=(--unsigned)
+          else
+            args+=(--signed "$RUNNER_TEMP/windows-signed")
+          fi
           if [ -n "$SUBSTITUTE_TAG" ]; then
             args+=(--binaries "$RUNNER_TEMP/substituted-binaries")
           fi

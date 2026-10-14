@@ -11,8 +11,10 @@
 # SHA256SUMS, the SHA-256 list of them. The signed binaries are the ones every
 # step runs, because they are the ones the release attaches; the unsigned copies
 # the build wrote, staged in bin/, run in no step, and step 11 holds them as what
-# its checks must refuse. The macOS binaries are not signed by the release, so a
-# darwin target runs the staged ones and takes no --signed.
+# its checks must refuse. On a run that signs nothing, --unsigned takes the place
+# of --signed: every step runs the unsigned copies in bin/, and step 11, with no
+# signature to check, is not applicable. The macOS binaries are not signed by the
+# release, so a darwin target runs the staged ones and takes neither.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
 # registry but the one it starts on this machine; it does need bash 4.3 or later,
 # which macOS does not ship. Before the checks it holds the inputs and the machine
@@ -33,7 +35,8 @@
 #     and none of them may carry the quarantine mark, under which Gatekeeper would
 #     assess a program that is not notarized before it runs
 #
-# Then, in order, stopping at the first failure with what failed:
+# Then, in order, stopping at the first failure with what failed unless
+# --unsigned or --binaries is given (below):
 #
 #   1. versions   each binary reports, as `version` and as `version -o json`, the
 #                 version staged with it, and the JSON names the target as its
@@ -112,7 +115,10 @@
 #                 its certificate, issued for a few days only, expires. Each file's
 #                 status, signer and timestamper are printed. Then the same
 #                 signature check over the unsigned full binary staged in bin/,
-#                 and the same list check over bin/, must refuse them
+#                 and the same list check over bin/, must refuse them. Given
+#                 --unsigned it checks nothing: it prints that it is not
+#                 applicable, and the run's last lines list it so, never as
+#                 passed
 #
 # Each binary started in steps 1-8 has every AGGREGA_ setting of the machine
 # unset, the global configuration pointed at an empty directory (XDG_CONFIG_HOME
@@ -127,19 +133,29 @@
 # with -NoProfile, so no profile of the machine shapes what it reports.
 #
 # Usage:
-#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir>] [--binaries <dir>]
+#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
 # --signed <dir> names the directory holding the signed Windows binaries and
-# SHA256SUMS. It is required for windows/amd64 and refused for a darwin target.
+# SHA256SUMS. It is required for windows/amd64, unless --unsigned is given, and
+# refused for a darwin target.
+#
+# --unsigned runs the windows/amd64 binaries staged in bin/, unsigned as the
+# build wrote them: the way to run the checks on a run that signs nothing. It is
+# refused with --signed and for a darwin target. Each step then runs whatever an
+# earlier one reported; step 11 checks nothing and is reported not applicable,
+# never passed; and the run ends naming every step that failed and the step that
+# was not applicable. It exits 1 when a step failed and 3 when none did — never
+# 0, since what ran is not the signed binaries the release attaches.
 #
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
 # them, in place of the ones it would run otherwise (the --signed ones for
-# windows/amd64, the staged ones for macOS): the way to show which checks the
-# binaries of another release fail. Each step then runs whatever an earlier one
-# reported, and the run ends naming every step that failed. It exits 1 when one
-# did and 3 when none did — never 0, since what passed is binaries the release
-# does not carry.
+# windows/amd64, the staged ones for macOS and with --unsigned): the way to show
+# which checks the binaries of another release fail. Each step then runs whatever
+# an earlier one reported, and the run ends naming every step that failed. It
+# exits 1 when one did and 3 when none did — never 0, since what passed is
+# binaries the release does not carry. With --unsigned as well, step 11 is not
+# applicable, as above.
 #
 # <goos>/<goarch> is windows/amd64, darwin/arm64 or darwin/amd64. Writes its working
 # files under <dir>/run, which must not exist yet. An argument it cannot use is
@@ -156,7 +172,7 @@ step() { printf '\n==> %s\n' "$*"; }
 . scripts/lib/platform-smoke-common.sh
 smoke_require_bash || exit 1
 
-INPUTS="" SIGNED="" SUBSTITUTE=""
+INPUTS="" SIGNED="" UNSIGNED="" SUBSTITUTE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target)
@@ -173,6 +189,10 @@ while [ "$#" -gt 0 ]; do
       [ -n "${2:-}" ] || { fail "--signed needs the directory holding the signed binaries and SHA256SUMS"; exit 2; }
       SIGNED="$2"
       shift 2
+      ;;
+    --unsigned)
+      UNSIGNED=1
+      shift
       ;;
     --binaries)
       [ -n "${2:-}" ] || { fail "--binaries needs the directory holding the binaries to run"; exit 2; }
@@ -197,10 +217,17 @@ GOOS_T="${TARGET%/*}" GOARCH_T="${TARGET#*/}"
 EXE_SUFFIX=""
 [ "$GOOS_T" = windows ] && EXE_SUFFIX=".exe"
 # The release signs the Windows binaries and no others, so the signed directory is
-# what a Windows run must be handed and what a macOS run must not be.
+# what a Windows run must be handed and what a macOS run must not be. A Windows
+# run that signs nothing says so with --unsigned in its place, and a macOS run
+# takes neither.
+[ -z "$SIGNED" ] || [ -z "$UNSIGNED" ] ||
+  { fail "--signed and --unsigned cannot both be given: --signed runs the signed binaries in its directory, --unsigned the unsigned ones in bin/"; exit 2; }
 case "$GOOS_T" in
-  windows) [ -n "$SIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones"; exit 2; } ;;
-  *) [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64 alone; the release does not sign the $TARGET binaries"; exit 2; } ;;
+  windows) [ -n "$SIGNED" ] || [ -n "$UNSIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones; on a run that signs nothing, give --unsigned instead"; exit 2; } ;;
+  *)
+    [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64 alone; the release does not sign the $TARGET binaries"; exit 2; }
+    [ -z "$UNSIGNED" ] || { fail "--unsigned applies to windows/amd64 alone; the release does not sign the $TARGET binaries, so every run of them runs them as staged"; exit 2; }
+    ;;
 esac
 # The runner names directories in the Windows form; this shell works in its own.
 if command -v cygpath >/dev/null 2>&1; then
@@ -285,6 +312,9 @@ if [ -n "$SIGNED" ]; then
   require_binary_set "$SIGNED" "$SUMS_NAME"
   BIN_DIR="$SIGNED"
   echo "platform-smoke: running the signed binaries in $SIGNED; bin/ holds the unsigned ones the build wrote"
+fi
+if [ -n "$UNSIGNED" ]; then
+  echo "platform-smoke: --unsigned: this run signs nothing, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 11 is not applicable"
 fi
 if [ -n "$SUBSTITUTE" ]; then
   require_binary_set "$SUBSTITUTE"
@@ -746,8 +776,17 @@ check_signature() {
 # starts, end with it. The subshell is not the left side of || or &&: there the
 # shell would stop honouring set -e inside it, and a failing command would no
 # longer end the step. A failing step ends the run, unless --binaries named the
-# binaries, in which case the run goes on and names every failed step at its end.
-FAILED=()
+# binaries or --unsigned was given, in which case the run goes on and names every
+# failed step at its end. GO_ON says why a run goes on; RAN and NOT_CARRIED name,
+# for its last lines, the binaries it ran in place of the ones the release
+# attaches, and why those are not them.
+FAILED=() NOT_APPLICABLE=()
+GO_ON="" RAN="" NOT_CARRIED=""
+if [ -n "$SUBSTITUTE" ]; then
+  GO_ON="--binaries named the binaries" RAN="the binaries in $SUBSTITUTE" NOT_CARRIED="which the release does not carry"
+elif [ -n "$UNSIGNED" ]; then
+  GO_ON="--unsigned has every step report its verdict" RAN="the unsigned binaries in $INPUTS/bin" NOT_CARRIED="which the release attaches only signed"
+fi
 run_step() { # <title> <function> [isolated]
   local title="$1" fn="$2" isolated="${3:-}" rc
   step "$title"
@@ -761,8 +800,17 @@ run_step() { # <title> <function> [isolated]
   set -e
   [ "$rc" = 0 ] && return 0
   FAILED+=("$title")
-  [ -n "$SUBSTITUTE" ] || exit 1
-  printf 'platform-smoke %s: step failed; going on, since --binaries named the binaries\n' "$TARGET" >&2
+  [ -n "$GO_ON" ] || exit 1
+  printf 'platform-smoke %s: step failed; going on, since %s\n' "$TARGET" "$GO_ON" >&2
+}
+
+# A step that cannot apply to the binaries this run runs: it is headed like any
+# other, says why it checks nothing, and is listed at the end as not applicable,
+# neither among the steps that passed nor among those that failed.
+not_applicable() { # <title> <why>
+  step "$1"
+  printf 'not applicable: %s\n' "$2"
+  NOT_APPLICABLE+=("$1")
 }
 
 run_step "1. versions" check_versions isolated
@@ -776,17 +824,29 @@ run_step "8. chart: validate, pull and build the chart-backed $CHART_RELEASE, an
 run_step "9. escapes: the escape check refuses a planted escape byte" check_escapes
 run_step "10. tests" check_tests
 if [ "$GOOS_T" = windows ]; then
-  run_step "11. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists" check_signature
+  SIGNATURE_STEP="11. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
+  if [ -n "$UNSIGNED" ]; then
+    not_applicable "$SIGNATURE_STEP" \
+      "--unsigned: this run signs nothing, so there is no signature and no SHA256SUMS to hold the binaries to; this step neither passed nor failed"
+  else
+    run_step "$SIGNATURE_STEP" check_signature
+  fi
 fi
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
-  printf '\nplatform-smoke: %s: with the binaries in %s, %d step(s) failed:\n' "$TARGET" "$SUBSTITUTE" "${#FAILED[@]}" >&2
+  printf '\nplatform-smoke: %s: with %s, %d step(s) failed:\n' "$TARGET" "$RAN" "${#FAILED[@]}" >&2
   printf '  %s\n' "${FAILED[@]}" >&2
-  exit 1
 fi
-if [ -n "$SUBSTITUTE" ]; then
-  printf '\nplatform-smoke: %s: every step passed with the binaries in %s, which the release does not carry, so the run does not pass\n' \
-    "$TARGET" "$SUBSTITUTE" >&2
+if [ "${#NOT_APPLICABLE[@]}" -gt 0 ]; then
+  printf '\nplatform-smoke: %s: not applicable, so neither passed nor failed:\n' "$TARGET" >&2
+  printf '  %s\n' "${NOT_APPLICABLE[@]}" >&2
+fi
+[ "${#FAILED[@]}" -eq 0 ] || exit 1
+if [ -n "$RAN" ]; then
+  which_passed="every step"
+  [ "${#NOT_APPLICABLE[@]}" -eq 0 ] || which_passed="every other step"
+  printf '\nplatform-smoke: %s: %s passed with %s, %s, so the run does not pass\n' \
+    "$TARGET" "$which_passed" "$RAN" "$NOT_CARRIED" >&2
   exit 3
 fi
 printf '\nplatform-smoke: %s: every check passed\n' "$TARGET"

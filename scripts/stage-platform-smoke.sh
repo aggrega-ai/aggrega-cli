@@ -15,7 +15,8 @@
 #               aggrega-stripped-darwin-<arch>. The
 #               Windows ones are unsigned: the smoke run runs the signed copies
 #               the release attaches, handed to it apart (its --signed), and
-#               holds these as what its signature check must refuse
+#               holds these as what its signature check must refuse; or, given
+#               --unsigned on a run that signs nothing, runs these
 #   tests/      one test executable for the target per package listed below,
 #               cross-compiled here, and tests.txt, which names for each executable
 #               its package and the tests it runs there
