@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -432,7 +431,14 @@ func (tw *toolWorkspace) importLinkRefusal(source string, err error) (string, bo
 	if !errors.As(err, &linked) || !tw.withholdsHostLocations() {
 		return "", false
 	}
-	link, told := tw.reportedLocation(filepath.Join(linked.Directory, filepath.FromSlash(linked.Link)))
+	// The check that refused the read records the link it judged as the refusal's
+	// source location, on this host, so the link is reported from there rather than
+	// rebuilt here.
+	link, told := "", false
+	var occurrence *cerrors.CompilerError
+	if errors.As(linked, &occurrence) && occurrence.Source().File != "" {
+		link, told = tw.reportedLocation(occurrence.Source().File)
+	}
 	if !told {
 		link = keptBackLocationWords
 	}

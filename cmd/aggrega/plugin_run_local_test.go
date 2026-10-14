@@ -329,12 +329,11 @@ const labelPayload = `{"compilation_context":{},"graph":{}}`
 // TestRunLocal_BinaryWireExport drives an export whose wire is NOT text through
 // this command, end to end against a real guest.
 //
-// It is the test whose absence let the capability disappear twice. The command's
-// payload channel was JSON-only by construction, so the moment a socket's wire
-// moved the published invocation started failing at the guest's own decoder —
-// and nothing turned red, because no test drove that export through this command.
-// A test driving only exports the command passes through unchanged passes whether
-// the conversion runs or not.
+// The command's payload channel takes JSON, while a socket on the binary wire
+// reads its payload in that encoding, so an invocation that skipped the
+// conversion would fail at the guest's own decoder. A test driving only exports
+// the command passes through unchanged passes whether the conversion runs or
+// not, which is why this one drives an export the command converts.
 //
 // What it pins: the authored payload is JSON, the command converts it into the
 // encoding the export reads, and the guest decodes it and returns its own

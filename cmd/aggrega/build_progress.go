@@ -398,8 +398,8 @@ const (
 	// elapsed times line up in a single right-hand column across every row that
 	// carries one — the phase rows and the total-build-time line. It is wide
 	// enough to clear the longest body (the longest phase row of any spine,
-	// marker included); the render row no longer carries an inline bar, so the
-	// column is far narrower than when it had to clear a full bar.
+	// marker included); the render row carries no inline bar, so no row needs
+	// room for one.
 	rowBodyColumn = 30
 	// elapsedFieldWidth right-aligns the elapsed value within its own column so
 	// single- and multi-digit second counts still align on their trailing 's'.
