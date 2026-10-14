@@ -4,10 +4,12 @@
 package featurerecipe_pipeline
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,13 +53,18 @@ func opaqueMap(pairs ...string) types.OrderedMap[Unit] {
 type scriptedInvoker struct {
 	outputs map[string]FRPStepOutput
 	// raw scripts a step's reply as the guest's own wire bytes rather than as a Go
-	// value the host marshals. It is what lets a test put a value on the wire that
-	// the host's own types would never produce — an undeclared severity, say — so
+	// value the host encodes. It is what lets a test put a value on the wire that
+	// the host's own walk would never produce — an undeclared severity, say — so
 	// the decode boundary is exercised with what a real guest could send. A step
 	// present in raw wins over one present in outputs.
 	raw      map[string][]byte
 	fail     map[string]error // step id -> invoke error
 	received map[string][]byte
+	// inputs records the step input the walk handed over beside the payload.
+	inputs map[string]types.OrderedMap[any]
+	// check is the outputs check a step's invocation returns, as an invoker that
+	// read the export's declared output contract returns one.
+	check map[string]OutputsCheck
 }
 
 func newScripted() *scriptedInvoker {
@@ -66,19 +73,47 @@ func newScripted() *scriptedInvoker {
 		raw:      map[string][]byte{},
 		fail:     map[string]error{},
 		received: map[string][]byte{},
+		inputs:   map[string]types.OrderedMap[any]{},
+		check:    map[string]OutputsCheck{},
 	}
 }
 
-func (s *scriptedInvoker) invoke(_ context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
+func (s *scriptedInvoker) invoke(_ context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, OutputsCheck, error) {
 	s.received[step.ID] = payload
+	s.inputs[step.ID] = input
 	if err, ok := s.fail[step.ID]; ok {
-		return nil, err
+		return nil, nil, err
 	}
+	check := s.check[step.ID]
 	if b, ok := s.raw[step.ID]; ok {
-		return b, nil
+		return b, check, nil
 	}
 	out := s.outputs[step.ID]
-	return json.Marshal(out)
+	raw, err := out.EncodeCBOR()
+	return raw, check, err
+}
+
+// guestReply encodes out the way a guest built with a plugin kit answers: the
+// binary encoding of the step's output shape, written by the kits' own codec from
+// the kits' own types rather than by the host's.
+func guestReply(t *testing.T, out abi.FRPStepOutput) []byte {
+	t.Helper()
+	b, err := out.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the guest's reply: %v", err)
+	}
+	return b
+}
+
+// receivedInput decodes the payload the walk handed a step, in the encoding the
+// step's guest reads.
+func receivedInput(t *testing.T, payload []byte) FRPStepInput {
+	t.Helper()
+	var in FRPStepInput
+	if err := in.DecodeCBORStrict(payload); err != nil {
+		t.Fatalf("decode the step's payload: %v", err)
+	}
+	return in
 }
 
 func patch(scope string, key, op, path string, value any) JSONPatchOp {
@@ -255,10 +290,7 @@ func TestWalk_SideEffectAndPrecedingThreading(t *testing.T) {
 		t.Errorf("side effects not accumulated: %+v", res.SideEffects)
 	}
 	// Step 2 must have seen step 1 in PrecedingSteps with its side effect.
-	var s2in FRPStepInput
-	if err := json.Unmarshal(inv.received["s2"], &s2in); err != nil {
-		t.Fatalf("unmarshal s2 payload: %v", err)
-	}
+	s2in := receivedInput(t, inv.received["s2"])
 	if len(s2in.PrecedingSteps) != 1 {
 		t.Fatalf("s2 preceding steps = %d, want 1", len(s2in.PrecedingSteps))
 	}
@@ -425,7 +457,7 @@ func TestWalk_GuestReportedErrorMatchesHostTaxonomy(t *testing.T) {
 func TestWalk_UnknownDiagnosticSeverityHalts(t *testing.T) {
 	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
-	inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"critical","message":"a value no socket declares"}]}`)
+	inv.raw["s1"] = guestReply(t, abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: "critical", Message: "a value no socket declares"}}})
 
 	step := types.PipelineStep{ID: "s1", Plugin: "oci://registry.example/policy/house-rules", Function: "render_chart"}
 
@@ -468,7 +500,7 @@ func TestWalk_DeclaredDiagnosticSeverityPasses(t *testing.T) {
 
 	for _, sev := range []string{abi.SeverityWarn, abi.SeverityInfo} {
 		inv := newScripted()
-		inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"` + sev + `","message":"heads up"}]}`)
+		inv.raw["s1"] = guestReply(t, abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: sev, Message: "heads up"}}})
 		res, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
 			inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 		if err != nil {
@@ -480,7 +512,7 @@ func TestWalk_DeclaredDiagnosticSeverityPasses(t *testing.T) {
 	}
 
 	inv := newScripted()
-	inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"` + abi.SeverityHalt + `","message":"guest refused"}]}`)
+	inv.raw["s1"] = guestReply(t, abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: abi.SeverityHalt, Message: "guest refused"}}})
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err == nil {
@@ -488,5 +520,119 @@ func TestWalk_DeclaredDiagnosticSeverityPasses(t *testing.T) {
 	}
 	if errors.Is(err, wasm.ErrWasmDiagnosticSeverity()) {
 		t.Errorf("the halting severity was refused by the severity guard rather than routed: %v", err)
+	}
+}
+
+// TestWalk_RefusesARepeatedOutputKey proves a step's answer naming one output key
+// twice halts at the walk's decode with the output-shape condition, naming the
+// export, rather than keeping either entry. No codec can write such an answer —
+// every order-keeping container holds a key once — so the bytes are written by
+// hand: one map whose outputs entry is the order-keeping array form, carrying the
+// key "k" twice, each value the bytes of a JSON string.
+func TestWalk_RefusesARepeatedOutputKey(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	inv := newScripted()
+	inv.raw["s1"] = []byte{
+		0xa1, 0x67, 'o', 'u', 't', 'p', 'u', 't', 's',
+		0x82,
+		0x82, 0x61, 'k', 0x43, '"', 'a', '"',
+		0x82, 0x61, 'k', 0x43, '"', 'b', '"',
+	}
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "render_chart"}},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if !errors.Is(err, wasm.ErrWasmOutputShape()) {
+		t.Fatalf("err = %v, want the output-shape condition", err)
+	}
+	for _, want := range []string{`"render_chart"`, `"k"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not name %s: %v", want, err)
+		}
+	}
+}
+
+// authoredOrder is a key order no sort produces, with an integer-like key in the
+// middle, which a JavaScript object would move to the front.
+var authoredOrder = []string{"zeta", "10", "alpha"}
+
+// TestWalk_HandsTheInvokerTheInputThePayloadCarries proves the step input the
+// walk hands its invoker beside the payload is the one the payload carries, in the
+// order the `with` rendered it — so a check of the step's declared input contract
+// reads the value the guest reads, without decoding the payload again.
+func TestWalk_HandsTheInvokerTheInputThePayloadCarries(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	inv := newScripted()
+	render := func(name, text string, data any) (string, error) { return text, nil }
+	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", With: "zeta: 1\n\"10\": ten\nalpha: a\n"}}
+
+	if _, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, render); err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+
+	handed := inv.inputs["s1"]
+	carried := receivedInput(t, inv.received["s1"]).StepInput
+	if got := handed.Keys(); !slices.Equal(got, authoredOrder) {
+		t.Errorf("the input handed to the invoker is in order %v, want the rendered order %v", got, authoredOrder)
+	}
+	if got := carried.Keys(); !slices.Equal(got, authoredOrder) {
+		t.Errorf("the input the payload carries is in order %v, want the rendered order %v", got, authoredOrder)
+	}
+	handedJSON, err := json.Marshal(handed)
+	if err != nil {
+		t.Fatalf("encode the handed input: %v", err)
+	}
+	carriedJSON, err := json.Marshal(carried)
+	if err != nil {
+		t.Fatalf("encode the carried input: %v", err)
+	}
+	if !bytes.Equal(handedJSON, carriedJSON) {
+		t.Errorf("the input handed over is not the one the payload carries:\n handed:  %s\n carried: %s", handedJSON, carriedJSON)
+	}
+}
+
+// TestWalk_AppliesTheOutputsCheckToTheDecodedOutputs proves the walk applies the
+// outputs check its invoker returned to the outputs it decoded from the guest's
+// answer, in the order the guest returned them, and reports a refusal as the
+// invocation's — halting even an optional step on a violated contract. A check
+// that passes lets the step commit its outputs to the steps channel.
+func TestWalk_AppliesTheOutputsCheckToTheDecodedOutputs(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	var outs types.OrderedMap[any]
+	for _, k := range authoredOrder {
+		outs.Set(k, "v-"+k)
+	}
+
+	inv := newScripted()
+	inv.outputs["s1"] = FRPStepOutput{Outputs: outs}
+	var seen []string
+	inv.check["s1"] = func(got types.OrderedMap[any]) error {
+		seen = got.Keys()
+		return fmt.Errorf("outputs refused: %w", ErrPipelineContractViolation())
+	}
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if !errors.Is(err, ErrPipelineContractViolation()) {
+		t.Fatalf("err = %v, want the check's contract violation, halting the optional step", err)
+	}
+	if !strings.Contains(err.Error(), `step "s1" (index 0) invoke: outputs refused`) {
+		t.Errorf("err = %v, want the check's refusal reported as the invocation's", err)
+	}
+	if !slices.Equal(seen, authoredOrder) {
+		t.Errorf("the check read the outputs in order %v, want the order the guest returned %v", seen, authoredOrder)
+	}
+
+	passing := newScripted()
+	passing.outputs["s1"] = FRPStepOutput{Outputs: outs}
+	passing.check["s1"] = func(types.OrderedMap[any]) error { return nil }
+	withCtx := &types.TemplateContext{}
+	if _, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
+		passing.invoke, withCtx, renderctx.RenderContext{}, noEval); err != nil {
+		t.Fatalf("a passing check halted the walk: %v", err)
+	}
+	so, ok := withCtx.Steps.Get("s1")
+	if !ok {
+		t.Fatal(".steps.s1 absent after a step whose outputs passed the check")
+	}
+	if got := so.Outputs.Keys(); !slices.Equal(got, authoredOrder) {
+		t.Errorf(".steps.s1.outputs is in order %v, want %v", got, authoredOrder)
 	}
 }

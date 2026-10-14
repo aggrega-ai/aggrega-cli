@@ -65,10 +65,7 @@ func TestWalk_StepsChannelCrossStepDataFlow(t *testing.T) {
 	}
 
 	// B's rendered step input carries A's value.
-	var bIn FRPStepInput
-	if err := json.Unmarshal(inv.received["B"], &bIn); err != nil {
-		t.Fatalf("unmarshal B payload: %v", err)
-	}
+	bIn := receivedInput(t, inv.received["B"])
 	got, _ := bIn.StepInput.Get("received")
 	if got != "from-A" {
 		t.Errorf("B step input received = %v, want from-A", got)

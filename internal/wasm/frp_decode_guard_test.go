@@ -25,10 +25,10 @@ const (
 )
 
 // frpStepInputPayload builds an FRPStepInput payload faithful to the
-// host's walk-time marshaling: it constructs the real
+// host's walk-time encoding: it constructs the real
 // [frp.FRPStepInput] value — own set keyed by unit token, each unit's
-// Tree carrying the document's RFC-6902-addressable view — and marshals
-// it through the same json.Marshal path the production walk uses. The own
+// Tree carrying the document's RFC-6902-addressable view — and encodes
+// it through the same generated binary encoder the production walk uses. The own
 // set carries a Deployment and a Service so the guest's content-selection
 // is exercised: the Deployment must be patched and the Service must be
 // left untouched. A host unit is included so the host-scope EMIT path
@@ -51,9 +51,9 @@ func frpStepInputPayload(t *testing.T) []byte {
 		Documents: frp.DocumentSet{Own: own, Host: host},
 		StepIndex: 0,
 	}
-	payload, err := json.Marshal(in)
+	payload, err := in.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("marshal FRPStepInput payload: %v", err)
+		t.Fatalf("encode FRPStepInput payload: %v", err)
 	}
 	return payload
 }
@@ -117,12 +117,12 @@ func TestFRPDecodeGuard(t *testing.T) {
 		t.Fatalf("InvokeExport(step): %v", err)
 	}
 
-	// Decode into the real host output type, proving wire parity on the
-	// return leg too: the guest's bytes unmarshal cleanly into
-	// frp.FRPStepOutput.
+	// Decode into the real host output type through the decode the walk runs,
+	// proving wire parity on the return leg too: the guest's bytes decode
+	// strictly into frp.FRPStepOutput.
 	var out frp.FRPStepOutput
-	if err := json.Unmarshal(rawFirst, &out); err != nil {
-		t.Fatalf("unmarshal FRPStepOutput from guest output %q: %v", rawFirst, err)
+	if err := wasm.DecodeGuestOutputCBOR(wasm.StepExport.Name(), rawFirst, &out); err != nil {
+		t.Fatalf("decode FRPStepOutput from guest output %x: %v", rawFirst, err)
 	}
 
 	// Exactly one own-scope PATCH, rooted at the Deployment key the guest
@@ -178,7 +178,7 @@ func TestFRPDecodeGuard(t *testing.T) {
 		t.Fatalf("InvokeExport(step) second run: %v", err)
 	}
 	if !bytes.Equal(rawFirst, rawSecond) {
-		t.Errorf("step output not byte-identical across two runs:\nfirst:  %s\nsecond: %s", rawFirst, rawSecond)
+		t.Errorf("step output not byte-identical across two runs:\nfirst:  %x\nsecond: %x", rawFirst, rawSecond)
 	}
 }
 

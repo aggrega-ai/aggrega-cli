@@ -72,10 +72,7 @@ func TestWalk_WhenFalseSkipsPassThrough(t *testing.T) {
 		t.Errorf("skipped step's guest was invoked")
 	}
 	// s2's input tree must show the pre-skip value (s1 contributed nothing).
-	var s2in FRPStepInput
-	if err := json.Unmarshal(inv.received["s2"], &s2in); err != nil {
-		t.Fatalf("unmarshal s2 payload: %v", err)
-	}
+	s2in := receivedInput(t, inv.received["s2"])
 	if got := getString(t, s2in.Documents.Own, "a.yaml", "x"); got != "0" {
 		t.Errorf("s2 saw x=%q, want 0 (skipped step must contribute no patch)", got)
 	}
@@ -127,10 +124,7 @@ func TestWalk_WhenFalseNoPrecedingEntry(t *testing.T) {
 	if len(res.SideEffects) != 0 {
 		t.Errorf("skipped step contributed side effects: %+v", res.SideEffects)
 	}
-	var s2in FRPStepInput
-	if err := json.Unmarshal(inv.received["s2"], &s2in); err != nil {
-		t.Fatalf("unmarshal s2 payload: %v", err)
-	}
+	s2in := receivedInput(t, inv.received["s2"])
 	if len(s2in.PrecedingSteps) != 0 {
 		t.Errorf("s2 saw %d preceding steps, want 0 (skipped step must not record)", len(s2in.PrecedingSteps))
 	}

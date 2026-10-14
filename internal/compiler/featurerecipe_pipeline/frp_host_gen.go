@@ -329,7 +329,7 @@ func (t FRPStepOutput) MarshalJSON() ([]byte, error) {
 				buf.WriteByte(',')
 			}
 			ev := t.Diagnostics[i]
-			if enc, err := json.Marshal(ev); err != nil {
+			if enc, err := ev.MarshalJSON(); err != nil {
 				return nil, err
 			} else {
 				buf.Write(enc)
@@ -423,9 +423,7 @@ func (t *FRPStepOutput) UnmarshalJSON(data []byte) error {
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
 				} else {
-					dec2 := json.NewDecoder(bytes.NewReader(raw))
-					dec2.UseNumber()
-					if err := dec2.Decode(&elem); err != nil {
+					if err := elem.UnmarshalJSON(raw); err != nil {
 						return err
 					}
 				}
@@ -1312,10 +1310,10 @@ func (t FRPStepOutput) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORHead(dst, 4, uint64(len(t.Diagnostics)))
 		for i := range t.Diagnostics {
 			ev := t.Diagnostics[i]
-			if raw, mErr := json.Marshal(ev); mErr != nil {
-				return nil, mErr
+			if enc, encErr := ev.EncodeCBOR(); encErr != nil {
+				return nil, encErr
 			} else {
-				dst = appendCBORByteString(dst, raw)
+				dst = append(dst, enc...)
 			}
 		}
 	}
@@ -1391,12 +1389,12 @@ func (t *FRPStepOutput) decodeCBOR(dec *cborDec) error {
 				s := make([]renderctx.Diagnostic, 0, sn)
 				for si := 0; si < sn; si++ {
 					var ev renderctx.Diagnostic
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&ev); err != nil {
+					{
+						start := dec.pos
+						if err := dec.skip(); err != nil {
+							return err
+						}
+						if err := (&ev).DecodeCBOR(dec.data[start:dec.pos]); err != nil {
 							return err
 						}
 					}

@@ -33,11 +33,11 @@ var stepInputContract = json.RawMessage(`{"type":"object","properties":{"origin"
 // contractInvoker runs the real input-contract check over whatever the step's
 // `with` rendered, and never reaches a guest: every row it serves refuses there.
 func contractInvoker() frp.StepInvoker {
-	return func(_ context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
-		if err := validateStepInput(wasm.PluginExport{Input: stepInputContract}, payload, step); err != nil {
-			return nil, err
+	return func(_ context.Context, step types.PipelineStep, input types.OrderedMap[any], _ []byte) ([]byte, frp.OutputsCheck, error) {
+		if err := validateStepInput(wasm.PluginExport{Input: stepInputContract}, input, step); err != nil {
+			return nil, nil, err
 		}
-		return nil, errors.New("the row's input satisfied the contract, so the row proves nothing")
+		return nil, nil, errors.New("the row's input satisfied the contract, so the row proves nothing")
 	}
 }
 

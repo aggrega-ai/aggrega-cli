@@ -404,6 +404,51 @@ func TestRunLocal_ImporterExport(t *testing.T) {
 	}
 }
 
+// stepPayload is the authored payload for a pipeline step: the step input written
+// as JSON, carrying one own-scope Deployment the step content-selects.
+const stepPayload = `{"documents":{"own":{"deploy.yaml":{"token":"deploy.yaml","media_type":"application/yaml",` +
+	`"tree":{"kind":"Deployment","metadata":{"name":"web"}}}}},"step_index":0}`
+
+// TestRunLocal_StepExport drives a pipeline step's export through this command end
+// to end against a real guest. The step's socket carries the binary encoding in
+// both directions, so a guest handed the authored JSON fails inside its own
+// decoder: the clean run shows the command converted it.
+//
+// The Go kit's step example patches the Deployment it was handed and emits a
+// ConfigMap into its own set, so its response shows it read what the command
+// converted. That response is compared with what the response shape encodes to,
+// an independent statement of the bytes, rather than decoded back.
+func TestRunLocal_StepExport(t *testing.T) {
+	t.Parallel()
+	guest := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+
+	out, err := runLocal(t, "--plugin", guest, "--type", "pipeline-step",
+		"--export", wasm.StepExport.Name(), "--with", stepPayload)
+	if err != nil {
+		t.Fatalf("an authored JSON payload should reach the step's binary-wire export; got %v", err)
+	}
+
+	want, err := abi.FRPStepOutput{
+		Patches: []abi.JSONPatchOp{{
+			Scope: "own", Key: "deploy.yaml", Op: "add",
+			Path: "/metadata/annotations/aggrega.ai~1pipeline-patched", Value: "true",
+		}},
+		SideEffects: []abi.SideEffect{{
+			Kind: "emit_file", Scope: "own",
+			File: &abi.SideEffectFile{
+				Path:    "pipeline-configmap.yaml",
+				Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: pipeline-emitted\ndata:\n  source: frp-step-go\n",
+			},
+		}},
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the expected response: %v", err)
+	}
+	if out != string(want) {
+		t.Fatalf("guest response = %x; want the patch and the emitted file %x", out, want)
+	}
+}
+
 // TestRunLocal_BinaryWireExportRejectsMalformedPayload proves the authoring
 // surface is still checked as JSON for a binary-wire export: the payload is
 // refused up front, by the same message every other export gets, rather than

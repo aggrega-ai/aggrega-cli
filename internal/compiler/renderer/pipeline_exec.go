@@ -6,7 +6,6 @@ package renderer
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -444,10 +443,10 @@ func splitBoundaryPath(bp string) []string {
 // plugin. It mirrors the publishing-linter's dispatch precedent; loading per
 // step is acceptable (batch amortisation is a follow-on).
 func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
-	return func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
+	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
 		resolved, err := lookup(step.Plugin)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// The external-input service rides the pipeline context (the only
 		// plumbing shared with the command layer); absent, the nil field
@@ -459,20 +458,21 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		stepSpec.PluginType = wasm.PluginTypePipelineStep
 		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		defer plugin.Close(ctx)
 
 		// An export that declares a typed input/output schema types the step
 		// seam: the rendered `with` input is validated against the declared
 		// input before the guest runs, and the guest's returned outputs against
-		// the declared output after. An absent export (undeclared function) is
-		// left for the invocation's declared-export guard to surface precisely;
-		// an export that declares no schema is unchecked (free-form pass-through).
+		// the declared output after, by the walk, from the outputs it decoded.
+		// An absent export (undeclared function) is left for the invocation's
+		// declared-export guard to surface precisely; an export that declares
+		// no schema is unchecked (free-form pass-through).
 		export, hasExport := findExport(desc, step.Function)
 		if hasExport {
-			if err := validateStepInput(export, payload, step); err != nil {
-				return nil, err
+			if err := validateStepInput(export, input, step); err != nil {
+				return nil, nil, err
 			}
 		}
 		// The recipe names the function each step runs, so the export is the
@@ -481,14 +481,14 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		// step naming none would run.
 		raw, err := wasm.InvokeAuthoredExport(ctx, plugin, desc, wasm.StepExport, step.Function, payload)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if hasExport {
-			if err := validateStepOutput(export, raw, step); err != nil {
-				return nil, err
-			}
+		if !hasExport {
+			return raw, nil, nil
 		}
-		return raw, nil
+		return raw, func(outputs types.OrderedMap[any]) error {
+			return validateStepOutput(export, outputs, step)
+		}, nil
 	}
 }
 
@@ -497,18 +497,14 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 // no-op. A value that does not satisfy the schema returns a plain,
 // operator-facing error naming the step and wrapping
 // [frp.ErrPipelineContractViolation] so the walk halts even for an optional
-// step. The step input is taken from the marshalled [frp.FRPStepInput] payload
-// the walk built, and the validator round-trips it through JSON so the schema
-// sees a plain JSON value, not the ordered-map wrapper.
-func validateStepInput(export wasm.PluginExport, payload []byte, step types.PipelineStep) error {
+// step. input is the step input as the walk rendered it, the value the payload
+// carries; the validator reads it as the JSON value it encodes, never as the
+// ordered-map wrapper.
+func validateStepInput(export wasm.PluginExport, input types.OrderedMap[any], step types.PipelineStep) error {
 	if len(export.Input) == 0 {
 		return nil
 	}
-	var in frp.FRPStepInput
-	if err := json.Unmarshal(payload, &in); err != nil {
-		return err
-	}
-	if err := wasm.ValidateValueAgainstSchema(export.Input, in.StepInput); err != nil {
+	if err := wasm.ValidateValueAgainstSchema(export.Input, input); err != nil {
 		return &stepInputRefused{stepID: step.ID, cause: err}
 	}
 	return nil
@@ -560,13 +556,13 @@ func withholdStepInputRefusal(invoke frp.StepInvoker, withheld redact.Keys) frp.
 	if !withheld.AnyWithheld() {
 		return invoke
 	}
-	return func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
-		raw, err := invoke(ctx, step, payload)
+	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
+		raw, checkOutputs, err := invoke(ctx, step, input, payload)
 		var refused *stepInputRefused
 		if err != nil && errors.As(err, &refused) && templateReadsWithheld(step.With, withheld) {
-			return raw, refused.withheld()
+			return raw, checkOutputs, refused.withheld()
 		}
-		return raw, err
+		return raw, checkOutputs, err
 	}
 }
 
@@ -574,18 +570,14 @@ func withholdStepInputRefusal(invoke frp.StepInvoker, withheld redact.Keys) frp.
 // declared output schema. An export that declares no output schema is a no-op.
 // Outputs that do not satisfy the schema return a plain, operator-facing error
 // naming the step and wrapping [frp.ErrPipelineContractViolation] so the walk
-// halts even for an optional step. The outputs are taken from the returned
-// [frp.FRPStepOutput] bytes, and the validator round-trips them through JSON so
-// the schema sees a plain JSON value, not the ordered-map wrapper.
-func validateStepOutput(export wasm.PluginExport, raw []byte, step types.PipelineStep) error {
+// halts even for an optional step. outputs are the ones the walk decoded from the
+// guest's answer; the validator reads them as the JSON value they encode, never as
+// the ordered-map wrapper.
+func validateStepOutput(export wasm.PluginExport, outputs types.OrderedMap[any], step types.PipelineStep) error {
 	if len(export.Output) == 0 {
 		return nil
 	}
-	var out frp.FRPStepOutput
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return err
-	}
-	if err := wasm.ValidateValueAgainstSchema(export.Output, out.Outputs); err != nil {
+	if err := wasm.ValidateValueAgainstSchema(export.Output, outputs); err != nil {
 		return fmt.Errorf("pipeline step %q returned outputs that do not satisfy the declared output contract: %w: %w",
 			step.ID, err, frp.ErrPipelineContractViolation())
 	}

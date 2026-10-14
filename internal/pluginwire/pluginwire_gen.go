@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
@@ -43,6 +44,7 @@ var entries = []entry{
 	{export: "reassemble", shape: "ReassembleInput", binary: true, encode: encodeReassembleInput},
 	{export: "render_node", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
 	{export: "rendered_name", shape: "RenderedNameInput", binary: true, encode: encodeRenderedNameInput},
+	{export: "step", shape: "FRPStepInput", binary: true, encode: encodeFRPStepInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: true, encode: encodeAnnotationTransformInput},
 	{export: "validate_node_input", shape: "RenderNodeInput", binary: true, encode: encodeRenderNodeInput},
 	{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: encodePolicyInput},
@@ -173,6 +175,16 @@ func encodeRenderNodeInput(text []byte) ([]byte, error) {
 // re-emits it in the canonical binary encoding.
 func encodeRenderedNameInput(text []byte) ([]byte, error) {
 	var v rendercore.RenderedNameInput
+	if err := json.Unmarshal(text, &v); err != nil {
+		return nil, err
+	}
+	return v.EncodeCBOR()
+}
+
+// encodeFRPStepInput reads an authored text payload into that shape and
+// re-emits it in the canonical binary encoding.
+func encodeFRPStepInput(text []byte) ([]byte, error) {
+	var v frp.FRPStepInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}

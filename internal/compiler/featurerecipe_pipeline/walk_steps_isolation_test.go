@@ -5,7 +5,6 @@ package featurerecipe_pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -75,10 +74,7 @@ func TestWalk_StepsChannelIsolatedPerPipeline(t *testing.T) {
 
 	// The foreign reference did not resolve during the walk: the step's rendered
 	// `with` recorded the channel as isolated.
-	var in FRPStepInput
-	if err := json.Unmarshal(inv.received["mine"], &in); err != nil {
-		t.Fatalf("unmarshal mine payload: %v", err)
-	}
+	in := receivedInput(t, inv.received["mine"])
 	if got, _ := in.StepInput.Get("foreign_visible"); got != "gone" {
 		t.Errorf("foreign entry was visible to the step; got %v, want gone", got)
 	}

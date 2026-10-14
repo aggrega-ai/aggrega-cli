@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -113,6 +114,46 @@ func TestEncodeForExportConvertsAParserInput(t *testing.T) {
 	}
 	if !bytes.Contains(got, source) {
 		t.Fatalf("encoded payload %x does not carry the source bytes %x as a raw run", got, source)
+	}
+}
+
+// TestEncodeForExportConvertsAStepInput covers the pipeline-step type's export.
+// The authored payload is the JSON form of the step input, and what reaches the
+// guest must be byte for byte what the walk itself hands a step for the same input,
+// so a step driven directly reads exactly what a build gives it. The documents and
+// the `with` keys are authored in an order no sort produces, an integer-like key
+// among them: the walk holds them in the order they were rendered, so a conversion
+// that sorted them on the way would produce different bytes and fail here.
+//
+// The export name is read from the plugin-type registry rather than spelled here.
+func TestEncodeForExportConvertsAStepInput(t *testing.T) {
+	t.Parallel()
+
+	step, ok := plugintype.Lookup(plugintype.PipelineStep)
+	if !ok || len(step.HostExports) != 1 {
+		t.Fatal("the pipeline-step type lists no single host export")
+	}
+	var own types.OrderedMap[frp.Unit]
+	own.Set("z.yaml", frp.Unit{Token: "z.yaml", MediaType: "application/yaml", Tree: json.RawMessage(`{"kind":"Service"}`)})
+	own.Set("a.yaml", frp.Unit{Token: "a.yaml", MediaType: "application/yaml", Tree: json.RawMessage(`{"kind":"Deployment"}`)})
+	var with types.OrderedMap[any]
+	with.Set("zeta", "z")
+	with.Set("10", "ten")
+	with.Set("alpha", "a")
+	want, err := frp.FRPStepInput{Documents: frp.DocumentSet{Own: own}, StepInput: with, StepIndex: 2}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the step input: %v", err)
+	}
+	authored := []byte(`{"documents":{"own":{` +
+		`"z.yaml":{"token":"z.yaml","media_type":"application/yaml","tree":{"kind":"Service"}},` +
+		`"a.yaml":{"token":"a.yaml","media_type":"application/yaml","tree":{"kind":"Deployment"}}}},` +
+		`"step_input":{"zeta":"z","10":"ten","alpha":"a"},"step_index":2}`)
+	got, err := EncodeForExport(step.HostExports[0], authored)
+	if err != nil {
+		t.Fatalf("encoding the step's authored input should succeed; got %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("encoded payload = %x; want %x", got, want)
 	}
 }
 

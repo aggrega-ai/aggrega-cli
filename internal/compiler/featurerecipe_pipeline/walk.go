@@ -22,17 +22,31 @@ import (
 // optional pipeline step failed and the walk continued without it.
 const stepSkippedCode = "pipeline-step-skipped"
 
-// StepInvoker invokes one pipeline step's guest export with the marshalled
-// [FRPStepInput] payload and returns the raw [FRPStepOutput] bytes. The
-// caller binds this to the shared describe() gate's InvokeExport (resolving
-// and loading the plugin upstream); the walk reaches the guest only through
-// this seam, so it carries no plugin-resolution or loading concern and is
-// unit-testable with a stub invoker.
+// StepInvoker invokes one pipeline step's guest export with the encoded
+// [FRPStepInput] payload — the canonical binary encoding the step's guest reads —
+// and returns the guest's raw [FRPStepOutput] bytes. The caller binds this to the
+// shared describe() gate's authored-export invocation (resolving and loading the
+// plugin upstream); the walk reaches the guest only through this seam, so it
+// carries no plugin-resolution or loading concern and is unit-testable with a stub
+// invoker.
+//
+// input is the step input the payload carries, handed over as the value the walk
+// rendered rather than left for the invoker to read back out of the payload, so a
+// check of the step's declared input contract reads it as it stands. checkOutputs
+// is the same hand-over in the other direction: the invoker knows the output
+// contract the export it ran declares, and the walk holds the outputs it decoded
+// from the guest's answer, so the invoker returns the check and the walk applies
+// it to those outputs. Neither direction decodes the payload a second time. A nil
+// checkOutputs checks nothing.
 //
 // A non-nil error is treated as a step failure: a guest trap, a refused
 // export, or any invoke-path fault. The walk classifies it strict or
 // optional per the step's Optional flag.
-type StepInvoker func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error)
+type StepInvoker func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) (raw []byte, checkOutputs OutputsCheck, err error)
+
+// OutputsCheck checks the outputs a step returned against the output contract the
+// export it ran declares, returning the refusal when they do not satisfy it.
+type OutputsCheck func(outputs types.OrderedMap[any]) error
 
 // TemplateEvaluator renders a Go template string against a data value and
 // returns the rendered text. It is the seam through which the walk reaches
@@ -275,28 +289,43 @@ func runStep(
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
-	payload, err := json.Marshal(FRPStepInput{
+	payload, err := FRPStepInput{
 		Documents:      *docs,
 		StepInput:      stepInput,
 		Context:        renderCtx,
 		StepIndex:      index,
 		PrecedingSteps: preceding,
-	})
+	}.EncodeCBOR()
 	if err != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
-	raw, err := invoke(ctx, step, payload)
+	raw, checkOutputs, err := invoke(ctx, step, stepInput, payload)
 	if err != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
+	// The recipe names the function each step runs, so the export the answer came
+	// back from is the step's own, with the pipeline-step type's export as the
+	// default a step naming none would run — the same name the invocation used.
+	export := wasm.AuthoredExportName(wasm.StepExport, step.Function)
 	var out FRPStepOutput
-	if err := wasm.DecodeGuestOutput(step.Function, raw, &out); err != nil {
+	if err := wasm.DecodeGuestOutputCBOR(export, raw, &out); err != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
-	if gerr := wasm.GuestReturnedError(step.Plugin, step.Function, wasm.GuestFailure{Message: out.Error}); gerr != nil {
+	// The returned outputs are checked against the export's declared output
+	// contract from the value just decoded. The refusal is the invoked export's, so
+	// it is reported as the invocation's, and it is raised ahead of the guest's own
+	// failure report, so an answer whose outputs violate the contract halts on the
+	// contract even where the guest also reported a failure.
+	if checkOutputs != nil {
+		if err := checkOutputs(out.Outputs); err != nil {
+			return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed(), step.ID, index, err)
+		}
+	}
+
+	if gerr := wasm.GuestReturnedError(step.Plugin, export, wasm.GuestFailure{Message: out.Error}); gerr != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, gerr)
 	}
 
@@ -306,7 +335,7 @@ func runStep(
 	// the same standing a step whose returned outputs fail the declared output
 	// schema has. Optional tolerates a step that could not do its job; it does not
 	// tolerate output the host cannot route.
-	if serr := wasm.GuestDiagnosticSeverities(step.Plugin, step.Function, out.Diagnostics); serr != nil {
+	if serr := wasm.GuestDiagnosticSeverities(step.Plugin, export, out.Diagnostics); serr != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w: %w",
 			ErrPipelineStepFailed(), step.ID, index, serr, ErrPipelineContractViolation())
 	}

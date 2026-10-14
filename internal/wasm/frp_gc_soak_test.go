@@ -83,7 +83,7 @@ func TestFRPStepGCSoakDeterministicAndNoHang(t *testing.T) {
 			t.Fatalf("InvokeExport(step) call %d: %v", i, err)
 		}
 		if !bytes.Equal(first, out) {
-			t.Fatalf("step output not byte-identical at call %d:\nfirst: %s\ngot:   %s", i, first, out)
+			t.Fatalf("step output not byte-identical at call %d:\nfirst: %x\ngot:   %x", i, first, out)
 		}
 		if i%soakForcedGCEvery == 0 {
 			runtime.GC()

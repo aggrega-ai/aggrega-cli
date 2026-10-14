@@ -975,12 +975,30 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
+	// The host codec carries the socket's wire registration. binaryWire: the
+	// pipeline step's wire is canonical CBOR in both directions — the walk encodes
+	// each step's input with the generated encoder and decodes the step's answer
+	// through the binary encoding's entry point, and every step guest reads and
+	// writes the same. Its export is the pipeline-step type's host export, so the
+	// entry names the plugin type and that export.
+	//
+	// crossPackageDefTypes makes each diagnostic ride as the shared diagnostic's own
+	// structural encoding — the one every plugin kit's codec writes — by
+	// dispatching to the codec generated beside the published type, rather than as
+	// a byte-string of its JSON document, which no kit writes. Without it a step
+	// built with a kit could not report a diagnostic the host reads.
 	"frp_host_gen.go": {
-		schema:     schemas.WasmFrpStepV1alpha1,
-		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
-		pkg:        "featurerecipe_pipeline",
-		vocabulary: frpHostVocabulary,
-		helpers:    true, // the host feature-recipe-pipeline codec is alone in its package
+		schema:               schemas.WasmFrpStepV1alpha1,
+		schemaFile:           "wasm-frp-step-v1alpha1.schema.json",
+		pkg:                  "featurerecipe_pipeline",
+		vocabulary:           frpHostVocabulary,
+		helpers:              true, // the host feature-recipe-pipeline codec is alone in its package
+		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
+		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
+		binaryWire:           true,
+		wireExports: []wireExport{
+			{pluginType: plugintype.PipelineStep, export: exportname.Step, inputDef: "FRPStepInput"},
+		},
 	},
 
 	// Shared diagnostic — guest codecs into aggrega-abi (Go/Rust/TS). The single

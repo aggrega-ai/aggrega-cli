@@ -108,7 +108,9 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 		t.Fatalf("descriptor does not declare the %q export", StepExport.Name())
 	}
 
-	out, err := InvokeExport(ctx, plugin, desc, StepExport, []byte(`{}`))
+	// The empty map in the binary encoding the step export reads: a step input
+	// carrying no documents.
+	out, err := InvokeExport(ctx, plugin, desc, StepExport, []byte{0xa0})
 	if err != nil {
 		t.Fatalf("InvokeExport(step): %v", err)
 	}

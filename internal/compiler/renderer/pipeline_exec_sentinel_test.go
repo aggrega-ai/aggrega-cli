@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// cannedInvoker returns a StepInvoker that always replies with the marshalled
+// cannedInvoker returns a StepInvoker that always replies with the encoded
 // out, regardless of the payload. It is the test seam for driving the executor
 // down failure paths the reference plugin cannot produce (a PATCH to an absent
 // token; a /host op from a hostless step). The executor body
@@ -23,12 +22,12 @@ import (
 // the invoker is canned — so these tests assert the real halt behaviour.
 func cannedInvoker(t *testing.T, out frp.FRPStepOutput) frp.StepInvoker {
 	t.Helper()
-	raw, err := json.Marshal(out)
+	raw, err := out.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("marshal canned output: %v", err)
+		t.Fatalf("encode canned output: %v", err)
 	}
-	return func(_ context.Context, _ types.PipelineStep, _ []byte) ([]byte, error) {
-		return raw, nil
+	return func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], _ []byte) ([]byte, frp.OutputsCheck, error) {
+		return raw, nil, nil
 	}
 }
 

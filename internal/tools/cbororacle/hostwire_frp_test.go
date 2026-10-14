@@ -124,6 +124,40 @@ func TestHostWireFRP_ComparisonIsDiscriminating(t *testing.T) {
 	}
 }
 
+// TestHostWireFRP_ReadsTheSharedBinaryVectors holds the compiler side's codec to
+// the shared vectors' binary halves for every shape a step answers with: it
+// decodes each one strictly, through the entry point the walk decodes a step's
+// answer with, and re-encodes it to the same bytes. The vectors are the plugin
+// kits' bytes — the oracle anchors them — so this is the compiler reading what a
+// kit-built step writes. The input shapes are left out on purpose: the compiler
+// side re-marshals the render context it is handed from its own type, which may
+// normalize a document it would never have written itself.
+func TestHostWireFRP_ReadsTheSharedBinaryVectors(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"FRPStepOutput", "ErrorEnvelopeFRPStepOutput", "MapOrderFRPStepOutput"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			want, err := hex.DecodeString(string(sharedVector(t, name+".cbor.hex")))
+			if err != nil {
+				t.Fatalf("read the vector's binary half: %v", err)
+			}
+			var out frp.FRPStepOutput
+			if err := out.DecodeCBORStrict(want); err != nil {
+				t.Fatalf("compiler-side strict decode of the shared vector: %v", err)
+			}
+			got, err := out.EncodeCBOR()
+			if err != nil {
+				t.Fatalf("compiler-side re-encode: %v", err)
+			}
+			if !bytes.Equal(want, got) {
+				t.Errorf("the compiler side does not write the shared vector's bytes:\n vector: %s\n    got: %s",
+					hex.EncodeToString(want), hex.EncodeToString(got))
+			}
+		})
+	}
+}
+
 // TestHostGuestWireParity_FRPStep pins that the two sides of the pipeline-step
 // wire speak the same bytes. The plugin side does not hold the compiler side's
 // types — an order-preserving container here is the compiler's own and there the
@@ -179,11 +213,9 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 		t.Errorf("decoded step input key order = %v, want the inserted order [zeta alpha]", keys)
 	}
 
-	// The output payload carries no diagnostic, because the diagnostic carry is a
-	// known asymmetry pinned separately below. Everything else on the payload is
-	// asserted byte-identical here, so this is also the positive control for that
-	// test: the same payload without a diagnostic crosses cleanly, which is what
-	// attributes the refusal there to the diagnostic and to nothing else.
+	// The output payload carries no diagnostic; the diagnostic carry is asserted
+	// separately below, in both directions, with the identifiers a diagnostic may
+	// carry beyond its two required members.
 	out := frp.FRPStepOutput{
 		Patches: []frp.JSONPatchOp{{
 			Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "add",
@@ -199,31 +231,25 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 	crossSide(t, "FRPStepOutput", outBytes, &abi.FRPStepOutput{})
 }
 
-// TestHostGuestWireParity_FRPDiagnosticCarry pins a known asymmetry rather than
-// asserting the byte-identity the rest of this socket holds, and the asymmetry is
-// not a property of this socket: it belongs to every socket carrying the shared
-// diagnostic, because it comes from how the two sides realize that one shape.
+// TestHostGuestWireParity_FRPDiagnosticCarry pins that the two sides of the
+// pipeline-step wire speak one binary form for the shared diagnostic a step's
+// answer carries. A step built with a plugin kit writes each diagnostic through the
+// kit's codec as the shared diagnostic's own structural encoding, and the walk
+// decodes the answer strictly, so the compiler side must read exactly that form —
+// and write it, so the two sides emit the same bytes for the same value.
 //
-// The plugin side realizes a diagnostic as a generated type it can encode
-// natively, so it writes a structured value. The compiler side realizes it at a
-// cross-package spelling its own codec cannot dispatch to, so it writes the
-// diagnostic as opaque bytes instead. Neither side can read the other's binary
-// form, in either direction.
-//
-// The transport that runs in a build is unaffected, and that is why this is a
-// pinned shape rather than a failing build: the pipeline walk carries this payload
-// as JSON, where the two sides agree byte for byte — asserted below so the claim
-// is measured rather than assumed. The binary transport is not a path this socket
-// uses today.
-//
-// The assertions fix the current shape in place so that closing the asymmetry, or
-// widening it, is a deliberate change with a failing test to acknowledge rather
-// than a silent drift.
+// The diagnostics reach past the two required members — a code and a location —
+// so the structural form is exercised beyond its smallest shape.
 func TestHostGuestWireParity_FRPDiagnosticCarry(t *testing.T) {
 	t.Parallel()
 
-	hostOut := frp.FRPStepOutput{Diagnostics: []renderctx.Diagnostic{{Severity: abi.SeverityWarn, Message: "heads up"}}}
-	guestOut := abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: abi.SeverityWarn, Message: "heads up"}}}
+	diags := []abi.Diagnostic{
+		{Severity: abi.SeverityWarn, Message: "heads up", Code: "step-advisory",
+			Location: &abi.Location{URI: "payments-api", Kind: "helm", Line: 7}},
+		{Severity: abi.SeverityInfo, Message: "noted"},
+	}
+	hostOut := frp.FRPStepOutput{Diagnostics: append([]renderctx.Diagnostic(nil), diags...)}
+	guestOut := abi.FRPStepOutput{Diagnostics: append([]abi.Diagnostic(nil), diags...)}
 
 	hostCBOR, err := hostOut.EncodeCBOR()
 	if err != nil {
@@ -233,23 +259,28 @@ func TestHostGuestWireParity_FRPDiagnosticCarry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plugin-side encode: %v", err)
 	}
-	if bytes.Equal(hostCBOR, guestCBOR) {
-		t.Errorf("the two sides now agree on the binary diagnostic carry; the asymmetry this test pins has closed: %s",
-			hex.EncodeToString(hostCBOR))
+	if !bytes.Equal(hostCBOR, guestCBOR) {
+		t.Errorf("the two sides disagree on the binary diagnostic carry:\ncompiler side: %s\nplugin side:   %s",
+			hex.EncodeToString(hostCBOR), hex.EncodeToString(guestCBOR))
 	}
 
-	var intoGuest abi.FRPStepOutput
-	if err := intoGuest.DecodeCBOR(hostCBOR); err == nil {
-		t.Errorf("the plugin side now reads the compiler side's binary diagnostic carry; the asymmetry this test pins has changed")
-	}
+	// The direction a step's answer travels: the compiler side strictly decodes the
+	// plugin side's bytes and re-encodes them identically.
+	guestToHost(t, "FRPStepOutput", guestCBOR, &frp.FRPStepOutput{})
+	// And the reverse, so neither side holds a private dialect.
+	crossSide(t, "FRPStepOutput", hostCBOR, &abi.FRPStepOutput{})
+
 	var intoHost frp.FRPStepOutput
-	if err := intoHost.DecodeCBOR(guestCBOR); err == nil {
-		t.Errorf("the compiler side now reads the plugin side's binary diagnostic carry; the asymmetry this test pins has changed")
+	if err := intoHost.DecodeCBORStrict(guestCBOR); err != nil {
+		t.Fatalf("compiler-side strict decode: %v", err)
+	}
+	if len(intoHost.Diagnostics) != 2 || intoHost.Diagnostics[0].Location == nil ||
+		intoHost.Diagnostics[0].Location.Line != 7 || intoHost.Diagnostics[0].Code != "step-advisory" {
+		t.Errorf("the compiler side did not read the diagnostics the plugin side wrote: %+v", intoHost.Diagnostics)
 	}
 
-	// The transport the pipeline walk actually uses. Both sides emit the same
-	// bytes and each reads the other's, so the asymmetry above is confined to the
-	// binary encoding.
+	// The text form agrees too: the authored payload the direct-invocation command
+	// reads, and every JSON consumer of a step's answer, see the same diagnostic.
 	hostJSON, err := json.Marshal(hostOut)
 	if err != nil {
 		t.Fatalf("compiler-side JSON marshal: %v", err)
@@ -259,15 +290,8 @@ func TestHostGuestWireParity_FRPDiagnosticCarry(t *testing.T) {
 		t.Fatalf("plugin-side JSON marshal: %v", err)
 	}
 	if !bytes.Equal(hostJSON, guestJSON) {
-		t.Errorf("the two sides disagree on the JSON diagnostic carry, which the walk depends on:\ncompiler side: %s\nplugin side:   %s",
+		t.Errorf("the two sides disagree on the JSON diagnostic carry:\ncompiler side: %s\nplugin side:   %s",
 			hostJSON, guestJSON)
-	}
-	var jsonIntoHost frp.FRPStepOutput
-	if err := json.Unmarshal(guestJSON, &jsonIntoHost); err != nil {
-		t.Fatalf("compiler-side JSON decode of the plugin side's payload, the direction a build runs: %v", err)
-	}
-	if len(jsonIntoHost.Diagnostics) != 1 || jsonIntoHost.Diagnostics[0].Message != "heads up" {
-		t.Errorf("the diagnostic did not survive the direction a build runs: %+v", jsonIntoHost.Diagnostics)
 	}
 }
 
@@ -387,7 +411,7 @@ func TestHostGuestWireParity_FRPConditionalMapHeadMatchesBody(t *testing.T) {
 // TestHostWireFRP_OmitsAndEmitsOnTheJSONWire asserts the same conditionality on
 // the JSON wire, in both directions. One omission decision drives both encodings,
 // so a key's presence is asserted on both rather than on the binary one alone —
-// and the JSON wire is the one the pipeline walk actually puts on the boundary.
+// the JSON form is the one an authored payload is written in.
 func TestHostWireFRP_OmitsAndEmitsOnTheJSONWire(t *testing.T) {
 	t.Parallel()
 

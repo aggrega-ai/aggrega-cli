@@ -483,9 +483,10 @@ func TestFRPStepOutput_ReusesRendererDiagnostic(t *testing.T) {
 // the internal test package must avoid.
 func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 	var received []byte
-	invoke := func(_ context.Context, _ types.PipelineStep, payload []byte) ([]byte, error) {
+	invoke := func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
 		received = payload
-		return json.Marshal(frp.FRPStepOutput{})
+		raw, err := frp.FRPStepOutput{}.EncodeCBOR()
+		return raw, nil, err
 	}
 
 	var own types.OrderedMap[frp.Unit]
@@ -506,12 +507,12 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 	var got frp.FRPStepInput
-	if err := json.Unmarshal(received, &got); err != nil {
-		t.Fatalf("unmarshal received payload: %v", err)
+	if err := got.DecodeCBORStrict(received); err != nil {
+		t.Fatalf("decode received payload: %v", err)
 	}
 	v, ok := got.StepInput.Get("key")
 	if !ok {
-		t.Fatalf("step input missing rendered `with` key; payload=%s", received)
+		t.Fatalf("step input missing rendered `with` key; payload=%x", received)
 	}
 	if s, _ := v.(string); s != "rendered-value" {
 		t.Errorf("step input key = %v, want rendered-value", v)
