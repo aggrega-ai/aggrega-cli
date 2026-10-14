@@ -134,7 +134,7 @@ func checkUniqueImporterAttachments(refs []PluginRef, written []importerEntry) e
 			first[importer] = i
 			continue
 		}
-		return fmt.Errorf("workspaceconfig: importer %q is attached by %s and again by %s; keep exactly one plugins.importer entry per importer, its uri naming the version you want: %w",
+		return fmt.Errorf("importer %q is attached by %s and again by %s; keep exactly one plugins.importer entry per importer, its uri naming the version you want: %w",
 			importer, describe(earlier), describe(i), ErrDuplicateImporterAttachment())
 	}
 	return nil
