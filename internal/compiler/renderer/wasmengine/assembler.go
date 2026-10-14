@@ -241,7 +241,7 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, input renderer.Ass
 
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: encode assemble_boundary input: %w", err)
+		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("encode assemble_boundary input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -250,7 +250,7 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, input renderer.Ass
 
 	var out renderer.AssembleBoundaryOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.AssembleBoundaryOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,

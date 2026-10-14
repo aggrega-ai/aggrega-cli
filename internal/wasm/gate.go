@@ -316,7 +316,7 @@ func invokeDeclaredStatus(ctx context.Context, plugin *Plugin, desc PluginDescri
 // ask the guest for an export with no name.
 func ensureListed(plugin *Plugin, export HostExport) error {
 	if export.name == "" {
-		return fmt.Errorf("wasm: plugin %q: the host called an export with no name; the export must be one of the host-export identifiers",
+		return fmt.Errorf("plugin %q: the host called an export with no name; the export must be one of the host-export identifiers",
 			plugin.Name())
 	}
 	return nil

@@ -221,7 +221,7 @@ func checkVocabularyKeepsOrderedContainers(t codecTarget, label string) error {
 				continue
 			}
 			if level >= len(toLevels) || !toLevels[level] {
-				return fmt.Errorf("typegen: %s: the vocabulary entry %q -> %q spells an order-preserving container "+
+				return fmt.Errorf("%s: the vocabulary entry %q -> %q spells an order-preserving container "+
 					"at nesting level %d of the key but not of the value, so the field it rewrites would lose the "+
 					"order its schema marks. A vocabulary entry may rewrite what an order-preserving container holds, "+
 					"never the container itself: map it to the destination package's own order-preserving container",

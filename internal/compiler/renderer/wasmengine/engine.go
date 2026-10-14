@@ -587,7 +587,7 @@ func (e *Engine) invoke(ctx context.Context, input renderer.RenderNodeInput, sou
 
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: encode render_node input: %w", err)
+		return renderer.RenderNodeOutput{}, fmt.Errorf("encode render_node input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -601,7 +601,7 @@ func (e *Engine) invoke(ctx context.Context, input renderer.RenderNodeInput, sou
 
 	var out renderer.RenderNodeOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.RenderNodeOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -819,7 +819,7 @@ func (e *Engine) invokeValidate(ctx context.Context, input renderer.RenderNodeIn
 
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return nil, fmt.Errorf("wasmengine: encode validate_node_input input: %w", err)
+		return nil, fmt.Errorf("encode validate_node_input input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -828,7 +828,7 @@ func (e *Engine) invokeValidate(ctx context.Context, input renderer.RenderNodeIn
 
 	var out renderer.ValidateNodeOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return nil, fmt.Errorf("wasmengine: %w", err)
+		return nil, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -875,7 +875,7 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 	input := renderer.BoundaryEnvOverridesInput{InternalUsesEdges: internalUsesEdges, Infra: infra}
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return nil, fmt.Errorf("wasmengine: encode boundary_env_overrides input: %w", err)
+		return nil, fmt.Errorf("encode boundary_env_overrides input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -884,7 +884,7 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 
 	var out renderer.BoundaryEnvOverridesOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return nil, fmt.Errorf("wasmengine: %w", err)
+		return nil, err
 	}
 	return out.Overrides, nil
 }
@@ -924,7 +924,7 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 
 	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: encode name_bound input: %w", err)
+		return renderer.NameBoundOutput{}, fmt.Errorf("encode name_bound input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -933,7 +933,7 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 
 	var out renderer.NameBoundOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.NameBoundOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -980,7 +980,7 @@ func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput
 
 	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: encode rendered_name input: %w", err)
+		return renderer.RenderedNameOutput{}, fmt.Errorf("encode rendered_name input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -989,7 +989,7 @@ func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput
 
 	var out renderer.RenderedNameOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.RenderedNameOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -1041,7 +1041,7 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 
 	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: encode link_publish input: %w", err)
+		return renderer.LinkPublishOutput{}, fmt.Errorf("encode link_publish input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -1050,7 +1050,7 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 
 	var out renderer.LinkPublishOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.LinkPublishOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,
@@ -1089,7 +1089,7 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 
 	payload, err := in.EncodeCBOR()
 	if err != nil {
-		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: encode link_resolve input: %w", err)
+		return renderer.LinkResolveOutput{}, fmt.Errorf("encode link_resolve input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -1098,7 +1098,7 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 
 	var out renderer.LinkResolveOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.LinkResolveOutput{}, err
 	}
 	if err := wasm.GuestReturnedError(e.pluginURI, export.Name(), wasm.GuestFailure{
 		Message:   out.Error,

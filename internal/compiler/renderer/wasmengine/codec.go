@@ -115,7 +115,7 @@ func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (ren
 
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: encode carve input: %w", err)
+		return renderer.CarveOutput{}, fmt.Errorf("encode carve input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -123,7 +123,7 @@ func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (ren
 	}
 	var out renderer.CarveOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.CarveOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.CarveOutput{}, err
 	}
 	return out, nil
 }
@@ -150,7 +150,7 @@ func invokeReassemble(ctx context.Context, e *Engine, input renderer.ReassembleI
 
 	payload, err := input.EncodeCBOR()
 	if err != nil {
-		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: encode reassemble input: %w", err)
+		return renderer.ReassembleOutput{}, fmt.Errorf("encode reassemble input: %w", err)
 	}
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
@@ -158,7 +158,7 @@ func invokeReassemble(ctx context.Context, e *Engine, input renderer.ReassembleI
 	}
 	var out renderer.ReassembleOutput
 	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return renderer.ReassembleOutput{}, fmt.Errorf("wasmengine: %w", err)
+		return renderer.ReassembleOutput{}, err
 	}
 	return out, nil
 }

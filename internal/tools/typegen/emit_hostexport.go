@@ -92,7 +92,7 @@ func collectHostExportIdents(entries []plugintype.Entry) ([]hostExportIdent, err
 	for _, e := range entries {
 		for _, name := range e.HostExports {
 			if name == "" {
-				return nil, fmt.Errorf("typegen: the %s plugin type's host-export list holds an empty name, "+
+				return nil, fmt.Errorf("the %s plugin type's host-export list holds an empty name, "+
 					"which names no export a guest can declare", e.Type)
 			}
 			id := hostExportIdent{
@@ -102,7 +102,7 @@ func collectHostExportIdents(entries []plugintype.Entry) ([]hostExportIdent, err
 				ident:      pascal(name) + "Export",
 			}
 			if prev, dup := seen[id.ident]; dup {
-				return nil, fmt.Errorf("typegen: host export %q of the %s plugin type and host export %q of the %s "+
+				return nil, fmt.Errorf("host export %q of the %s plugin type and host export %q of the %s "+
 					"plugin type both derive the identifier %s, so the compiler could not name the two apart",
 					prev.export, prev.pluginType, name, e.Type, id.ident)
 			}

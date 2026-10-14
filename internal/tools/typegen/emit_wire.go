@@ -62,7 +62,7 @@ func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 	for _, e := range entries {
 		if pkgPath, done := emitted[e.encodeFunc()]; done {
 			if pkgPath != e.pkgPath {
-				return nil, fmt.Errorf("typegen: payload shape %q is declared in both %s and %s, so its encoder "+
+				return nil, fmt.Errorf("payload shape %q is declared in both %s and %s, so its encoder "+
 					"would be declared twice under one name", e.shape, pkgPath, e.pkgPath)
 			}
 			continue
@@ -207,7 +207,7 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 		for _, w := range t.wireExports {
 			export, pluginType, err := w.exportName(registry)
 			if err != nil {
-				return nil, fmt.Errorf("typegen: codec target %q has a wireExports entry for %q that %w",
+				return nil, fmt.Errorf("codec target %q has a wireExports entry for %q that %w",
 					base, w.inputDef, err)
 			}
 			if !t.emitsDef(w.inputDef) {
@@ -236,7 +236,7 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 		}
 		for _, export := range entry.HostExports {
 			if !declared[export] {
-				return nil, fmt.Errorf("typegen: the %s plugin type is served by codec target(s) %s, and its "+
+				return nil, fmt.Errorf("the %s plugin type is served by codec target(s) %s, and its "+
 					"host-export list holds %q, which no wireExports entry declares: every export a served plugin "+
 					"type lists must have its payload shape declared, so that the plugin-wire registry converts an "+
 					"authored payload for it into the encoding its guest reads",
