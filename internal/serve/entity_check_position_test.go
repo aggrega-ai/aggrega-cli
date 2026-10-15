@@ -3,10 +3,10 @@
 
 package serve
 
-// Where the editor draws the finding a check of one catalog entity reports: on
-// the key the finding's own chain names in the entity, and on the entity's kind:
-// key where it names none — never on the licence comment a catalog file opens
-// with.
+// Where the editor draws the finding a check of one catalog entity reports, and at
+// which tier: on the key the finding's own chain names in the entity, and on the
+// entity's kind: key where it names none — never on the licence comment a catalog
+// file opens with — at the tier the check reported it at.
 //
 // Every expected position is read off the fixture's text — the line each key is
 // written on — and never off the code under test.
@@ -27,10 +27,15 @@ import (
 //
 // The assertion row is the shape a catalog Recipe declaring a runtime
 // prerequisite takes: checked on its own, nothing affirms the prerequisite, so
-// the assertion fails, and the entry is drawn on that assertion's own key. The
-// other rows are findings whose chain names no key in the Recipe — an implements
-// target the catalog does not hold, and a Release that is not there — and they
-// are drawn on the Recipe's kind: key.
+// the assertion fails. The check reports that as a warning rather than its
+// verdict — it writes its own Release, so it cannot tell an assertion waiting on
+// a Release from a broken one — and the entry is a warning drawn on that
+// assertion's own key, carrying the sentence saying a Release must satisfy it.
+// The template row is the same Recipe with the prerequisite affirmed and its
+// workload template mistyped: that fault is the check's verdict, and its entry
+// stays an error. The other rows are findings whose chain names no key in the
+// Recipe — an implements target the catalog does not hold, and a Release that is
+// not there — and they are errors drawn on the Recipe's kind: key.
 func TestTheEntityCheckDrawsItsFindingWhereItsChainPoints(t *testing.T) {
 	t.Parallel()
 	srv, root := entityCheckWorkspace(t)
@@ -54,21 +59,39 @@ func TestTheEntityCheckDrawsItsFindingWhereItsChainPoints(t *testing.T) {
 		// carries is a phrase of the entry under test, which is how it is found.
 		carries string
 		// key is the key the entry must be drawn on, as the fixture spells it at the
-		// head of its line.
+		// head of its line, or "" where the row does not read the entry's position.
 		key string
 		// keyPath is the key path the entry must publish, or "" for none.
 		keyPath string
 		// code is the condition the entry must name, or "" where the row does not
 		// read one.
 		code string
+		// severity is the tier the entry must be published at.
+		severity string
+		// also is a phrase the same entry must carry beside carries, or "".
+		also string
 	}{
 		{
-			name:    "a failing Recipe assertion is drawn on its own key",
+			name:     "a failing Recipe assertion is a warning drawn on its own key",
+			release:  "release-recipe.yaml",
+			carries:  "the RabbitMQ Cluster Operator must be installed",
+			key:      assertion + ":",
+			keyPath:  ".spec.assertions." + assertion,
+			code:     assertionCode,
+			severity: editorSeverityWarning,
+			also:     "A Release must satisfy this assertion before a build of it can pass.",
+		},
+		{
+			name:    "a template fault in the same Recipe stays an error",
 			release: "release-recipe.yaml",
-			carries: "the RabbitMQ Cluster Operator must be installed",
-			key:     assertion + ":",
-			keyPath: ".spec.assertions." + assertion,
-			code:    assertionCode,
+			edit: func(s string) string {
+				affirmed := strings.Replace(s, `optional .infra "control_plane_present" false`,
+					`optional .infra "control_plane_present" true`, 1)
+				return strings.Replace(affirmed, "{{ optional .infra `image` `nginx:alpine` }}", "{{ .infra.imge.repo }}", 1)
+			},
+			carries:  "<.infra.imge.repo>",
+			keyPath:  ".spec.workload",
+			severity: editorSeverityError,
 		},
 		{
 			name:    "a finding naming no key in the Recipe is drawn on its kind: key",
@@ -76,14 +99,16 @@ func TestTheEntityCheckDrawsItsFindingWhereItsChainPoints(t *testing.T) {
 			edit: func(s string) string {
 				return strings.Replace(s, "implements: example/compute/service", "implements: example/compute/absent", 1)
 			},
-			carries: `implements target "example/compute/absent" not found in catalog`,
-			key:     "kind:",
+			carries:  `implements target "example/compute/absent" not found in catalog`,
+			key:      "kind:",
+			severity: editorSeverityError,
 		},
 		{
-			name:    "a Release that is not there is drawn on the Recipe's kind: key",
-			release: "release-gone.yaml",
-			carries: "the Release release-gone.yaml does not exist",
-			key:     "kind:",
+			name:     "a Release that is not there is drawn on the Recipe's kind: key",
+			release:  "release-gone.yaml",
+			carries:  "the Release release-gone.yaml does not exist",
+			key:      "kind:",
+			severity: editorSeverityError,
 		},
 	}
 	// Not parallel: the rows share one daemon and name one file.
@@ -108,14 +133,22 @@ func TestTheEntityCheckDrawsItsFindingWhereItsChainPoints(t *testing.T) {
 				t.Fatalf("want one entry carrying %q; the answer carries %q", tc.carries, diagMessages(res.Diagnostics))
 			}
 			got := found[0]
-			line, column := keyPosition(t, content, tc.key)
-			if line == 1 {
-				t.Fatalf("the fixture writes %s on its first line, so this row cannot tell it from the head of the file", tc.key)
+			if got.Severity != tc.severity {
+				t.Errorf("the entry is published at severity %q; want %q", got.Severity, tc.severity)
 			}
-			endColumn := column + len(strings.TrimSuffix(tc.key, ":"))
-			if got.Line != line || got.Column != column || got.EndLine != line || got.EndColumn != endColumn {
-				t.Errorf("the entry is drawn at %d:%d-%d:%d; want %s at %d:%d-%d:%d",
-					got.Line, got.Column, got.EndLine, got.EndColumn, tc.key, line, column, line, endColumn)
+			if tc.also != "" && !strings.Contains(got.Message, tc.also) {
+				t.Errorf("the entry does not carry %q:\n%s", tc.also, got.Message)
+			}
+			if tc.key != "" {
+				line, column := keyPosition(t, content, tc.key)
+				if line == 1 {
+					t.Fatalf("the fixture writes %s on its first line, so this row cannot tell it from the head of the file", tc.key)
+				}
+				endColumn := column + len(strings.TrimSuffix(tc.key, ":"))
+				if got.Line != line || got.Column != column || got.EndLine != line || got.EndColumn != endColumn {
+					t.Errorf("the entry is drawn at %d:%d-%d:%d; want %s at %d:%d-%d:%d",
+						got.Line, got.Column, got.EndLine, got.EndColumn, tc.key, line, column, line, endColumn)
+				}
 			}
 			if got.KeyPath != tc.keyPath {
 				t.Errorf("the entry names key path %q; want %q", got.KeyPath, tc.keyPath)

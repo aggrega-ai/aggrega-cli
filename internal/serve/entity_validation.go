@@ -54,9 +54,16 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // same text the tool reports — drawn where entityCheckFinding places it, and the
 // advisory lines it gathers while reading the catalog, which never fail its
 // verdict, at the warning tier ahead of it, the order they were decided in. A
-// configured catalog directory where nothing exists is not in the stack the check
-// is handed, so it is read as holding nothing, as the command line's check reads
-// it, and the verdict is the one
+// failed assertion is one of the check's warnings rather than its verdict, as the
+// check itself decides: it is drawn where entityCheckFinding places it, on the
+// assertion's own key where the check states one, at the warning tier and in the
+// check's words, after the advisory lines and where a blocking finding would
+// stand. This handler reads which of the two the check reported and decides
+// nothing about severity.
+//
+// A configured catalog directory where nothing exists is not in the stack the
+// check is handed, so it is read as holding nothing, as the command line's check
+// reads it, and the verdict is the one
 // given with that directory not listed. Each such directory is named at the warning
 // tier ahead of every other entry — the stack is decided before the check reads
 // anything — in the line `aggrega pull` and `aggrega build` print for it, so an
@@ -66,7 +73,7 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // showed in place.
 func (s *Server) runEntityValidation(ctx context.Context, releasePath, file string, content []byte) []Diagnostic {
 	if _, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil); err != nil {
-		return []Diagnostic{s.entityCheckFinding(file, content, err)}
+		return []Diagnostic{s.entityCheckFinding(file, content, err, editorSeverityError)}
 	}
 	dirs, named, absent := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath), s.absentCatalogDirLines(releasePath)
 	res, err := validateops.ValidateEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
@@ -81,15 +88,20 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 	for _, note := range res.Notes {
 		diags = append(diags, closureAdvisoryDiagnostic(strings.TrimSpace(note)))
 	}
+	for _, warning := range res.Warnings {
+		diags = append(diags, s.entityCheckFinding(file, content, warning, editorSeverityWarning))
+	}
 	if err != nil {
-		diags = append(diags, s.entityCheckFinding(file, content, err))
+		diags = append(diags, s.entityCheckFinding(file, content, err, editorSeverityError))
 	}
 	return diags
 }
 
-// entityCheckFinding maps one blocking finding a single-entity check of file
-// reports onto file's diagnostics, in the check's own words and with the
-// identifiers its chain names.
+// entityCheckFinding maps one finding a single-entity check of file reports onto
+// file's diagnostics, at severity, in the check's own words and with the
+// identifiers its chain names. The severity is the one the check reported the
+// finding at — the error tier for the finding it fails on, the warning tier for a
+// finding it reports as a warning — and is never decided here.
 //
 // It is drawn where its own chain points within file, read through
 // compilerops.FindingLocation — the one reading of where a finding points, which a
@@ -105,7 +117,7 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 // unplaced. The path the chain named is published only where it is a path into
 // this file, since the entry's key path is a coordinate within the document the
 // entry stands on.
-func (s *Server) entityCheckFinding(file string, content []byte, err error) Diagnostic {
+func (s *Server) entityCheckFinding(file string, content []byte, err error, severity string) Diagnostic {
 	var keyPath string
 	if document, key := compilerops.FindingLocation(err, s.workspaceRoot); document != "" &&
 		filepath.Clean(document) == filepath.Clean(file) {
@@ -118,7 +130,7 @@ func (s *Server) entityCheckFinding(file string, content []byte, err error) Diag
 		Column:         col,
 		EndLine:        endLine,
 		EndColumn:      endCol,
-		Severity:       editorSeverityError,
+		Severity:       severity,
 		Message:        err.Error(),
 		ConditionCodes: conditionCodesOf(err),
 		KeyPath:        keyPath,

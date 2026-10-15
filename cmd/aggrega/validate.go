@@ -89,8 +89,12 @@ func newValidateCmd() *cobra.Command {
 			"reported as not attempted too: the generated harness wires no connection and\n" +
 			"attaches no Feature, so that render cannot be judged there, and a fault of\n" +
 			"the Recipe's own beside such a read is set aside with it. A template that\n" +
-			"does not parse, a reference the render refuses and a Recipe assertion that\n" +
-			"calls fail still fail. Any other kind is refused here\n" +
+			"does not parse and a reference the render refuses still fail. An assertion\n" +
+			"that calls fail, the Recipe's own or one its Component declares, is printed\n" +
+			"as a warning closed by a sentence saying a Release must satisfy it before a\n" +
+			"build can pass, and does not fail the check: the generated harness sets none\n" +
+			"of a real Release's values, so it cannot tell an assertion waiting on one from\n" +
+			"one that is broken, and a build still halts on it. Any other kind is refused here\n" +
 			"today, and the refusal names the scope that checks it instead: a whole-catalog\n" +
 			"run reaches an Aggregate and the library kinds when they sit in a catalog\n" +
 			"directory, and --release reaches a Release, the Manifest it names and the\n" +
@@ -227,6 +231,11 @@ func validatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 // the resolver that left it out and written to stderr ahead of the check's own
 // advisory notes, since the stack is decided before the check reads anything. It
 // changes what a reader is told and never the verdict or the exit code.
+//
+// What the core reports as a warning — a failed assertion, which the core decides
+// is not its verdict — is written to stderr after the advisory notes, opened by
+// "warning:" as the render's own advisories are, and the exit code is the core's
+// verdict without it. Nothing here decides which findings are warnings.
 func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path, release string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
@@ -260,6 +269,9 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	}
 	for _, note := range res.Notes {
 		fmt.Fprintln(os.Stderr, note)
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
 	}
 	return verr
 }

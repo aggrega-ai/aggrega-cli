@@ -135,7 +135,11 @@ var validateToolSpec = toolSpec{
 		"under .context.inject, .context.uses or .features is reported as not attempted rather than failed: valid, " +
 		"with no diagnostic, and the text naming those reads and the sentence the render stopped on. What decides it is " +
 		"what the Recipe reads, so a fault of its own beside such a read is set aside with it; a template that does " +
-		"not parse, a reference the render refuses and a Recipe assertion that calls fail still fail. Any other kind is refused, " +
+		"not parse and a reference the render refuses still fail. An assertion that calls fail, the Recipe's own or one its " +
+		"Component declares, answers valid with no diagnostic and its failure in `notices`, closed by a sentence saying a " +
+		"Release must satisfy it before a build can pass: the synthesized Release sets none of a real Release's values, so " +
+		"the check cannot tell an assertion waiting on one from one that is broken, and a build still halts on it. " +
+		"Any other kind is refused, " +
 		"naming the kinds `entity` accepts and the scope that checks it instead. `entity` with `release` runs those same " +
 		"checks in that Release's terms: the entity's references — the Component a Recipe implements, a library a pillar " +
 		"refers to — resolve through the catalog directories the workspace configuration gives that Release rather than " +
@@ -387,6 +391,12 @@ func validateReleaseScope(
 // `aggrega pull` and `aggrega build` print for it (absentCatalogDirLines), leads
 // Notices ahead of the check's own advisory lines, since the stack is decided
 // before the check reads anything. It never moves Valid.
+//
+// What the check reports as a warning — a failed assertion, which the core
+// decides is not its verdict — follows the advisory lines in Notices, in the
+// core's words, and moves Valid no more than they do. The text half carries it
+// too, as the text carries a blocking error, because it is the whole of what the
+// caller has to act on. Nothing here decides which findings are warnings.
 func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity, release string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
@@ -429,6 +439,10 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	if verr != nil {
 		diags = []string{verr.Error()}
 	}
+	warnings := make([]string, 0, len(res.Warnings))
+	for _, w := range res.Warnings {
+		warnings = append(warnings, w.Error())
+	}
 	artifactKeys := make([]string, 0, len(res.Artifacts))
 	for _, art := range res.Artifacts {
 		artifactKeys = append(artifactKeys, art.Key)
@@ -438,7 +452,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		Valid:       len(diags) == 0,
 		Diagnostics: tw.reportedTexts(diags),
 		Artifacts:   artifactKeys,
-		Notices:     tw.reportedTexts(slices.Concat(absent, res.Notes)),
+		Notices:     tw.reportedTexts(slices.Concat(absent, res.Notes, warnings)),
 	}
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(entityPath)
 	if releasePath != "" {
@@ -765,22 +779,26 @@ func renderValidateText(p validateResultPayload, format string) string {
 
 // renderEntityText renders the human-readable single-entity result: the core's
 // ordered report lines (identity header, per-tier status, and the render-failure
-// block when the isolated render did not complete), then the blocking error when
-// the entity did not validate, then a render-artifact key summary when the render
-// emitted artifacts. Artifact bytes are never printed here — the summary names the
-// keys only.
+// block when the isolated render did not complete), then each finding the core
+// reported as a warning, then the blocking error when the entity did not
+// validate, then a render-artifact key summary when the render emitted artifacts.
+// Artifact bytes are never printed here — the summary names the keys only.
 //
 // The blocking error is written for the same reason the plugin scope writes its
 // own: it is the whole of what the caller has to act on. Left out, the text half
 // reports only which file was read and what kind it is while the structured half
 // carries the condition, its short code and the constraint — one capability
 // answering at two fidelities depending on which half the caller reads, and the
-// half a person reads is the one that said nothing.
+// half a person reads is the one that said nothing. A warning is written for the
+// same reason, opened by "warning:" as the command line opens it.
 func renderEntityText(res validateops.EntityResult, verr error, artifactKeys []string) string {
 	var b strings.Builder
 	for _, line := range res.Diagnostics {
 		b.WriteString(line)
 		b.WriteByte('\n')
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintf(&b, "warning: %s\n", w)
 	}
 	if verr != nil {
 		b.WriteString(verr.Error())

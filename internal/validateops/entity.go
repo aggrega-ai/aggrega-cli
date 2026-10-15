@@ -44,15 +44,25 @@ type RenderedArtifact struct {
 // slots and presence mandates a single-entity run could not cover, the
 // not-attempted explanation when the Recipe's source is one
 // a single-entity run cannot fetch or when its render stopped while its
-// templates read what a build of one cannot supply, and the render-failure
-// explanation when a render that WAS attempted did not complete for any other
-// reason — each verbatim and newline-free (a renderer emits one per line). Artifacts carries the rendered output of a
+// templates read what a build of one cannot supply, the explanation of a run that
+// stopped on a failed assertion, and the render-failure explanation when a render
+// that WAS attempted did not complete for any other reason — each verbatim and
+// newline-free (a renderer emits one per line). Artifacts carries the rendered output of a
 // render-bearing Recipe, ordered by key, so a caller can print the bytes or
 // summarize a count. Notes
 // carries advisory lines a caller routes to a diagnostic stream rather than the
 // primary report. Kind is the resolved entity kind, empty when the input never
 // resolved to a known kind (in which case the returned error explains why and
 // Diagnostics is empty).
+//
+// Warnings carries what the check reports without failing: a run that stopped on
+// a failed assertion, which this check reports as a warning for the reason
+// failedAssertion gives. Each entry is the error the run stopped with — its text
+// is that stop's own followed by the sentence saying a Release must satisfy the
+// assertion, and its chain is the stop's — so a caller places it and reads its
+// condition exactly as it would a blocking error's, and routes it to the stream
+// its advisories go to. A result carrying one is Valid, and the error returned
+// beside it is nil.
 type EntityResult struct {
 	Path        string
 	Kind        string
@@ -60,6 +70,7 @@ type EntityResult struct {
 	Diagnostics []string
 	Artifacts   []RenderedArtifact
 	Notes       []string
+	Warnings    []error
 }
 
 // ValidateEntity reads the entity file, dispatches on its kind, and runs the
@@ -68,6 +79,10 @@ type EntityResult struct {
 // blocking error so a schema break halts before any catalog work, alongside the
 // partial result accumulated up to that point so a caller can still render the
 // progress that preceded the failure.
+//
+// A failed assertion is not blocking here: it is returned in the result's
+// Warnings, with the result valid and no error, for the reason failedAssertion
+// gives. Every other stop keeps its place as the returned error.
 //
 // A value the kind requires that the document leaves empty is reported ahead
 // of every other tier, and every such value is reported at once: each is named
@@ -456,6 +471,10 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // did not cover instead of leaving a silent difference between what validate
 // checks and what a build checks.
 //
+// One finding is reported rather than declined, at a lower tier than a build
+// reports it: an assertion that calls fail, in the Recipe or in the Component it
+// implements, is a warning here, for the reason failedAssertion gives.
+//
 // The Recipe is read through the shared per-entity resolve rather than decoded
 // here, for the reason the Component path gives: that resolve is where the local
 // source and every file an import names are anchored to the directory holding the
@@ -642,18 +661,14 @@ func providerArtifactDelimiters(lookup resolver.CatalogLookup, capability string
 
 // recipeOwnRenderFaults are the conditions a render stop carries when the fault
 // is the Recipe's own whatever a real build would supply: a reference the
-// template is refused, in any of the forms the render refuses one, and a Recipe
-// assertion that called fail. Each is matched through its exported accessor.
+// template is refused, in any of the forms the render refuses one. Each is
+// matched through its exported accessor.
 //
-// An assertion is here because a Recipe assertion over a value a Release sets —
-// an image, a prerequisite's presence — fails every build of one, and that
-// failure is kept: the assertion is the Recipe saying what it requires, and the
-// check reports it. The condition is the one an assertion's fail call raises; an
-// assertion that halts on a key it reads but does not find names none, and is
-// decided like any other stop. A template that does not parse is not here because
-// no condition names it; it is ruled out by buildOfOneReads being unreadable.
+// A failed assertion is not here, and is not declined either: the render tier
+// reports it as a warning before this set is consulted (failedAssertion). A
+// template that does not parse is not here because no condition names it; it is
+// ruled out by buildOfOneReads being unreadable.
 var recipeOwnRenderFaults = []func() error{
-	renderer.ErrAssertionFailed,
 	renderer.ErrTemplateUnknownRoot,
 	renderer.ErrProvidesSelfContainment,
 	renderer.ErrLocalsForwardReference,
@@ -674,7 +689,9 @@ var recipeOwnRenderFaults = []func() error{
 // stop's own sentence so the reader can see which it was.
 //
 // A run its caller withdrew is not a render stop at all, so it is never declined:
-// the withdrawal is returned as the caller's own, whatever the Recipe reads.
+// the withdrawal is returned as the caller's own, whatever the Recipe reads. A
+// render that stopped on a failed assertion is never asked about here: the render
+// tier reports it as a warning first, whatever the Recipe reads.
 func (r buildOfOneReads) declinesRenderStop(err error) bool {
 	if !r.readable || len(r.paths) == 0 {
 		return false
@@ -1019,6 +1036,13 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // reported as not attempted, naming those reads and carrying the stop's own
 // sentence, and every other stop fails the run as before. Nothing about the
 // render itself depends on it.
+//
+// A run that stops on a failed assertion, at either tier, is reported as a
+// warning rather than failing the check, for the reason failedAssertion gives: the
+// Component's assertions stop Tier 2, since they run in the steps every run takes
+// before rendering, and the Recipe's stop Tier 3. That is asked before reads is,
+// so an assertion beside a read a build of one cannot supply is reported as the
+// assertion it is.
 func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool, reads buildOfOneReads) error {
 	// A single-entity harness runs against no workspace at all — it synthesizes
 	// its Release in memory — so the defaults are the configuration in force, and
@@ -1047,6 +1071,13 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 	// Tier 2: resolution, guards, IR construction — no render. A missing
 	// required input, a guard halt, or a resolution error surfaces here.
 	if _, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{SkipRender: true}); err != nil {
+		if failedAssertion(err) {
+			// A render runs the same steps first, so it would stop on the same
+			// assertion: there is nothing past it for Tier 3 to check.
+			warnFailedAssertion(res, "Resolution", fmt.Errorf("resolution: %w", err))
+			res.Diagnostics = append(res.Diagnostics, "Render: not attempted (the run stopped on that assertion)")
+			return nil
+		}
 		return fmt.Errorf("resolution: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Resolution: valid")
@@ -1074,6 +1105,10 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		SuppressUnsupportedFieldWarnings: suppressUnsupportedFieldWarnings,
 	})
 	if err != nil {
+		if failedAssertion(err) {
+			warnFailedAssertion(res, "Render", &renderStopError{err: err})
+			return nil
+		}
 		if reads.declinesRenderStop(err) {
 			res.Diagnostics = append(res.Diagnostics,
 				"Render: not attempted (this Recipe reads values a build of one cannot supply)",
@@ -1147,6 +1182,74 @@ func (e *renderStopError) Error() string {
 // frame of it.
 func (e *renderStopError) Unwrap() error {
 	return e.err
+}
+
+// assertionAwaitsRelease is the sentence a failed assertion's warning gains,
+// saying what the check leaves to a build. It is written once, beside the one
+// decision that reports an assertion as a warning.
+const assertionAwaitsRelease = "A Release must satisfy this assertion before a build of it can pass."
+
+// failedAssertion reports whether a run of the check stopped on an assertion that
+// called fail — one the Recipe declares, or one the Component it implements
+// declares.
+//
+// It is the one decision about how this check reports a failed assertion, and the
+// answer is a warning rather than the check's verdict. The check writes its own
+// Release (buildEntityHarness), so nothing a real Release sets reaches the build of
+// one, and an assertion over such a value — an image, a prerequisite's presence —
+// fails here whether or not the entity is sound. The check cannot tell an
+// assertion waiting on a value a Release sets from one that is broken, so it
+// reports every failed assertion as a warning and leaves the verdict to a build,
+// which always has a Release and halts on the assertion as it always has.
+//
+// Only the condition fail raises counts. An assertion that stops on a key it
+// reads but does not find names none: that is a fault in the assertion's own text,
+// and is decided like any other stop.
+func failedAssertion(err error) bool {
+	return errors.Is(err, renderer.ErrAssertionFailed())
+}
+
+// warnFailedAssertion records a run that stopped on a failed assertion: the
+// report names the tier that stopped and says why the stop is not the verdict,
+// the stop travels in Warnings, and the result is valid.
+func warnFailedAssertion(res *EntityResult, tier string, stop error) {
+	res.Diagnostics = append(res.Diagnostics,
+		tier+": stopped on a failed assertion, reported as a warning",
+		"  Validating a Recipe on its own places its Component in a build whose",
+		"  Release this check writes itself, so nothing a real Release sets reaches",
+		"  it, and an assertion waiting on such a value cannot be told from one that",
+		"  is broken. The warning names the assertion and what it requires.")
+	res.Warnings = append(res.Warnings, &assertionWarning{stop: stop})
+	res.Valid = true
+}
+
+// assertionWarning is a failed assertion this check reports as a warning.
+//
+// Its text is the stop with every cause beneath it on one line, closed as a
+// sentence, followed by assertionAwaitsRelease, so every surface carrying it says
+// the same thing. The causes are written out because the frame a stop opens with
+// may name only the phase that stopped — the Component's assertions — while the
+// assertion and the sentence its author wrote sit further in. Unwrap returns the
+// stop, so every frame beneath it — the key the assertion is written under, the
+// condition it raised — is read through it as through a blocking error.
+type assertionWarning struct {
+	stop error
+}
+
+// Error renders the stop and its causes on one line, then the sentence saying a
+// Release must satisfy the assertion.
+func (w *assertionWarning) Error() string {
+	text := strings.TrimRight(cerrors.CauseChain(w.stop), " \t\n")
+	if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") {
+		text += "."
+	}
+	return text + " " + assertionAwaitsRelease
+}
+
+// Unwrap returns the stop the warning reports, so errors.Is and errors.As reach
+// every frame of it.
+func (w *assertionWarning) Unwrap() error {
+	return w.stop
 }
 
 // pillarPlaceholders holds the placeholders a build of one fills for the

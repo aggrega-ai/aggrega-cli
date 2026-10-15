@@ -33,6 +33,9 @@ const (
 	notAttempted
 	// failed is a render stop the check reports: it fails with a render stop.
 	failed
+	// warned is a render that stopped on a failed assertion: it passes, carries
+	// no artifact, names no reads, and reports the assertion as its one warning.
+	warned
 )
 
 // buildOfOneWorkload is the probe Recipe's workload with the given image
@@ -99,9 +102,11 @@ spec:
 // but does not stop the render is not declined: the render ran and completed.
 //
 // What still fails beside such a read is what no supplied value changes: a
-// template that does not parse, a reference the render refuses, and a Recipe
-// assertion — here one over optional infra a Release sets. A Recipe reading none
-// of those values fails on its own fault as before, inline or imported.
+// template that does not parse, and a reference the render refuses. A Recipe
+// reading none of those values fails on its own fault as before, inline or
+// imported. A Recipe assertion beside such a read — here one over optional infra
+// a Release sets — is neither set aside nor failed: it is reported as the
+// warning a failed assertion always is in this check.
 //
 // The outcome is read from structure, never from a sentence: an error that is a
 // render stop, a condition matched through its exported accessor, artifacts or
@@ -186,10 +191,10 @@ func TestValidateRecipeDeclinesWhatABuildOfOneCannotSupply(t *testing.T) {
 			wantCondition: renderer.ErrTemplateUnknownRoot(),
 		},
 		{
-			name:          "a Recipe assertion over optional infra fails beside such a read",
+			name:          "a Recipe assertion over optional infra beside such a read is a warning",
 			image:         inject,
 			assertion:     true,
-			want:          failed,
+			want:          warned,
 			wantReads:     []string{".context.inject.env.TAG"},
 			wantCondition: renderer.ErrAssertionFailed(),
 		},
@@ -224,6 +229,9 @@ func TestValidateRecipeDeclinesWhatABuildOfOneCannotSupply(t *testing.T) {
 				if !res.Valid {
 					t.Errorf("Valid = false with no error\nreport:\n%s", report)
 				}
+				if len(res.Warnings) != 0 {
+					t.Errorf("warnings = %q, want none\nreport:\n%s", res.Warnings, report)
+				}
 				if got := len(res.Artifacts) > 0; got != (tc.want == rendered) {
 					t.Errorf("rendered artifacts = %d, want rendered = %v\nreport:\n%s",
 						len(res.Artifacts), tc.want == rendered, report)
@@ -233,6 +241,27 @@ func TestValidateRecipeDeclinesWhatABuildOfOneCannotSupply(t *testing.T) {
 					if !slices.Contains(res.Diagnostics, line) {
 						t.Errorf("the report does not name the reads as %q:\n%s", line, report)
 					}
+				}
+			case warned:
+				if err != nil {
+					t.Fatalf("ValidateEntity: %v\nreport:\n%s", err, report)
+				}
+				if !res.Valid {
+					t.Errorf("Valid = false with no error\nreport:\n%s", report)
+				}
+				if len(res.Artifacts) != 0 {
+					t.Errorf("rendered artifacts = %d, want none\nreport:\n%s", len(res.Artifacts), report)
+				}
+				for _, line := range res.Diagnostics {
+					if strings.HasPrefix(line, "  Reads: ") {
+						t.Errorf("the report sets the render aside as %q rather than reporting the assertion:\n%s", line, report)
+					}
+				}
+				if len(res.Warnings) != 1 {
+					t.Fatalf("warnings = %q, want the one failed assertion\nreport:\n%s", res.Warnings, report)
+				}
+				if !errors.Is(res.Warnings[0], tc.wantCondition) {
+					t.Errorf("the warning does not name the condition %q:\n%v", tc.wantCondition, res.Warnings[0])
 				}
 			case failed:
 				if err == nil {
@@ -278,6 +307,10 @@ func probeBuildOfOneReads(t *testing.T, root, cache, dir, path string) buildOfOn
 // a stop a failure whatever the Recipe reads. Each condition is its own row, named
 // through its exported accessor and wrapped the way the render wraps a stop, so a
 // condition dropped from the set the check consults turns its row red.
+//
+// A failed assertion has no row: the render tier reports it as a warning before
+// this decision is asked, which TestValidateRecipeDeclinesWhatABuildOfOneCannotSupply
+// holds through the check itself.
 func TestDeclinesRenderStopKeepsTheRecipesOwnFaults(t *testing.T) {
 	declining := buildOfOneReads{paths: []string{".context.inject.env.TAG"}, readable: true}
 	stop := func(cause error) error {
@@ -297,7 +330,6 @@ func TestDeclinesRenderStopKeepsTheRecipesOwnFaults(t *testing.T) {
 		{name: "a stop whose reads could not be taken is not", reads: buildOfOneReads{paths: declining.paths}, err: plain},
 		{name: "a run its caller withdrew is not", reads: declining, err: stop(context.Canceled)},
 		{name: "a run whose deadline passed is not", reads: declining, err: stop(context.DeadlineExceeded)},
-		{name: "an assertion stop is not", reads: declining, err: stop(fmt.Errorf("%w: set infra.note", renderer.ErrAssertionFailed()))},
 		{name: "a refused reference is not", reads: declining, err: stop(renderer.ErrTemplateUnknownRoot())},
 		{name: "a provides reference outside its set is not", reads: declining, err: stop(renderer.ErrProvidesSelfContainment())},
 		{name: "a locals forward reference is not", reads: declining, err: stop(renderer.ErrLocalsForwardReference())},
