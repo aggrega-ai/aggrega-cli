@@ -2,10 +2,10 @@ services:
   api:
     image: app:1.0
     environment:
+      NESTED: ""
       ZEBRA: z
       ALPHA: a
       MIDDLE: m
-      NESTED: ""
     labels:
       aggrega.ai/aggregate-name: test-agg
       aggrega.ai/boundary-path: default

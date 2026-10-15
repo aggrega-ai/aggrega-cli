@@ -309,11 +309,13 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 	goldenCheck(t, "secrets-env-and-file", files[0].Body)
 }
 
-// TestSynthesizeWorkload_EnvAuthorOrder — the rendered environment: block keeps
-// the container's author order, not alphabetical. Variables are declared
-// ZEBRA, ALPHA, MIDDLE and a secret env entry NESTED appends last; the golden
-// must list them in that sequence, proving the Invariant-8 author-order clause
-// (no map-sort substituted for the OrderedMap).
+// TestSynthesizeWorkload_EnvAuthorOrder — the rendered environment: block lists
+// the attachment-read entries first and the plain variables after them, each
+// kind in author order, never alphabetical. Variables are declared ZEBRA,
+// ALPHA, MIDDLE and an attachment-read entry NESTED comes before them; the
+// golden lists NESTED, ZEBRA, ALPHA, MIDDLE, proving the order is a function of
+// the authored order alone — the Invariant-8 author-order clause (no map-sort
+// substituted for the OrderedMap).
 func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}

@@ -13,14 +13,27 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestEnvOrderParity_ComposeMatchesHelm is the cross-provider guard for the
-// single-sourced "iterate the container's env in author order" mechanic: the
-// compose and helm synthesizers are independent implementations, so a shared
-// Workload fixture is run through both and the rendered env-key sequences are
-// asserted equal to each other AND to the authored order. The two providers emit
-// different env shapes (compose `environment:` map, helm `env:` list), so the
-// keys are read out of the rendered YAML node tree, where document order is
-// authoritative regardless of any map round-trip.
+// TestEnvOrderParity_ComposeMatchesHelm is the cross-provider guard for a
+// container's environment order: every attachment-read entry (`as: env`) first,
+// then every plain variable, each kind in its authored order. Helm needs that
+// order, because Kubernetes expands a `$(NAME)` reference in an env value from
+// the entries listed before it, so the Secret-read entries must precede the
+// plain values that reference them; compose writes the same sequence so one
+// Workload renders one environment order on every target. The compose and helm
+// synthesizers are independent implementations, so a shared Workload fixture is
+// run through both and the rendered env-key sequences are asserted equal to the
+// expected sequence AND to each other.
+//
+// The fixture is built so a wrong rule cannot pass: the variables and the
+// attachment-read entries are each authored out of alphabetical order, so a
+// sort fails; an `as: file` attachment sits between the two env entries, so a
+// file entry leaking into the environment fails; and the expected sequence puts
+// both attachment-read entries ahead of every variable, so writing the plain
+// variables first fails.
+//
+// The two providers emit different env shapes (compose `environment:` map, helm
+// `env:` list), so the keys are read out of the rendered YAML node tree, where
+// document order is authoritative regardless of any map round-trip.
 //
 // The import of the helm provider's core from the compose provider's core is
 // DELIBERATE, and it is the only place one provider's core reaches into
@@ -41,7 +54,9 @@ import (
 func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 	t.Parallel()
 
-	authored := []string{"ZEBRA", "ALPHA", "MIDDLE", "NESTED"}
+	// Written out literally rather than derived from the fixture, so the rule is
+	// stated once here and both providers are compared against it.
+	expected := []string{"DB_PASSWORD", "API_TOKEN", "ZEBRA", "ALPHA", "MIDDLE"}
 
 	makeWorkload := func() *types.Workload {
 		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
@@ -49,7 +64,9 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 		c.Variables.Set("ZEBRA", "z")
 		c.Variables.Set("ALPHA", "a")
 		c.Variables.Set("MIDDLE", "m")
-		c.Attachments.Set("NESTED", types.AttachmentRef{From: "db-credentials", As: "env"})
+		c.Attachments.Set("DB_PASSWORD", types.AttachmentRef{From: "db-credentials", As: "env"})
+		c.Attachments.Set("tls-cert", types.AttachmentRef{From: "tls", As: "file", Path: "/etc/tls/cert.pem"})
+		c.Attachments.Set("API_TOKEN", types.AttachmentRef{From: "api-credentials", As: "env"})
 		w.Containers.Set("main", c)
 		return w
 	}
@@ -75,11 +92,11 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 	composeOrder := composeEnvKeys(t, composeFiles[0].Body)
 	helmOrder := helmEnvKeys(t, helmFiles[0].Body)
 
-	if !equalSeq(composeOrder, authored) {
-		t.Errorf("compose env order = %v, want authored %v", composeOrder, authored)
+	if !equalSeq(composeOrder, expected) {
+		t.Errorf("compose env order = %v, want %v (attachment-read entries, then variables, each in authored order)", composeOrder, expected)
 	}
-	if !equalSeq(helmOrder, authored) {
-		t.Errorf("helm env order = %v, want authored %v", helmOrder, authored)
+	if !equalSeq(helmOrder, expected) {
+		t.Errorf("helm env order = %v, want %v (attachment-read entries, then variables, each in authored order)", helmOrder, expected)
 	}
 	if !equalSeq(composeOrder, helmOrder) {
 		t.Errorf("cross-engine env order divergence:\n  compose = %v\n  helm    = %v", composeOrder, helmOrder)

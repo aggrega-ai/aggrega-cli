@@ -38,7 +38,9 @@
 // Author-order preservation: containers, services, volumes, container
 // ports, container variables, container attachments — all iterated via
 // OrderedMap.All() so byte-identical input produces byte-identical
-// output across compilations.
+// output across compilations. A container's env lists its Secret-read
+// attachment entries before its plain variables, each kind in author order
+// (translateContainer says why).
 //
 // Filename convention: per-resource files named after the naming basis
 // (synthesizedNameBasis) — "<basis>-<kind>.yaml" for the controller,
@@ -483,9 +485,23 @@ func translateInitContainers(w *types.Workload, basis string, attachmentProvides
 }
 
 // translateContainer maps a single Workload ContainerSpec to a K8s-shape
-// Container. Author-order preserved across ports / variables / attachments. When
-// imageRegistry is non-empty, the container image ref is relocated under that
-// registry prefix (regular and init containers share this single site).
+// Container. Ports, attachments, variables, envFrom sources and volume mounts
+// each keep their authored order.
+//
+// The env list carries two kinds of entry, and the Secret-read ones come first:
+// every attachment delivered `as: env`, in authored order, then every plain
+// variable, in authored order. Kubernetes expands a `$(NAME)` reference in an
+// env value from the entries listed before it in the same container, never
+// from one listed after it, so this order lets a plain value compose a
+// Secret-read value by reference — a database URL written as
+// `postgres://app:$(DB_PASSWORD)@db:5432/app` — while the password itself stays
+// a secretKeyRef. A plain value may also reference any variable listed before
+// it. The compose provider writes the same sequence, and
+// TestEnvOrderParity_ComposeMatchesHelm holds the two providers to it.
+//
+// When imageRegistry is non-empty, the container image ref is relocated under
+// that registry prefix (regular and init containers share this single site, so
+// the env order above holds for init containers too).
 func translateContainer(name string, c types.ContainerSpec, basis string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
 	out := Container{
 		Name:            sanitizeContainerName(name),
@@ -506,12 +522,6 @@ func translateContainer(name string, c types.ContainerSpec, basis string, attach
 		})
 	}
 
-	// Environment variables — preserves Workload.Containers.<n>.Variables
-	// author order.
-	for varName, varValue := range c.Variables.All() {
-		out.Env = append(out.Env, EnvVar{Name: varName, Value: varValue})
-	}
-
 	// Secrets — for each entry, use env.valueFrom.secretKeyRef (env mode)
 	// or volume+volumeMount (file mode; the volume is added to the pod
 	// spec elsewhere). Author order preserved. `ref.From` is the slot; the
@@ -520,6 +530,12 @@ func translateContainer(name string, c types.ContainerSpec, basis string, attach
 	// which lets two entries read different keys of one multi-key secret —
 	// otherwise the slot's single published `key`. The env-var name stays
 	// the entry's map key.
+	//
+	// 🔴 This loop runs BEFORE the plain variables below, so every Secret-read
+	// env entry precedes every plain one and a plain value can reference it as
+	// `$(NAME)`. Moving it after the variables would leave such a reference
+	// unexpanded at runtime while the build still succeeds. File-mode mounts
+	// land here too, so they still precede the declared volumeMounts.
 	for secretKey, ref := range c.Attachments.All() {
 		provides := attachmentProvides[ref.From]
 		switch ref.As {
@@ -545,6 +561,12 @@ func translateContainer(name string, c types.ContainerSpec, basis string, attach
 				ReadOnly:  true,
 			})
 		}
+	}
+
+	// Plain environment variables, in Workload.Containers.<n>.Variables author
+	// order, after every Secret-read entry above.
+	for varName, varValue := range c.Variables.All() {
+		out.Env = append(out.Env, EnvVar{Name: varName, Value: varValue})
 	}
 
 	// Bulk env-from-source (envFrom), author order preserved. A configMap

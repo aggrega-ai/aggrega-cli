@@ -24,7 +24,9 @@
 // complete.
 //
 // Author-order preservation. Containers / Variables / Ports / Attachments /
-// Volumes / Services iterated via OrderedMap.All(). Top-level maps
+// Volumes / Services iterated via OrderedMap.All(). A service's environment
+// lists its attachment-read entries before its plain variables, each kind in
+// author order (translateContainer says why). Top-level maps
 // (Services, Volumes) inside ComposeFile are Go map[string]X — yaml.v3
 // sorts keys alphabetically on marshal, which is the
 // alphabetical-by-derivation-key choice for synthesized collections
@@ -404,7 +406,12 @@ func synthesizeInitServices(
 }
 
 // translateContainer maps a single Workload ContainerSpec to a compose Service.
-// Author order preserved across env vars / ports / attachments via OrderedMap.All().
+// Ports, attachments, variables and volume mounts each keep their authored order
+// via OrderedMap.All(). The environment lists the attachment-read entries
+// (`as: env`) first and the plain variables after them, each kind in authored
+// order: the sequence the helm provider writes, explained where the two loops
+// run below.
+//
 // role carries the part the container plays; every container reaches the same
 // image, command, environment, volume-mount and security translation regardless
 // of it.
@@ -496,15 +503,19 @@ func translateContainer(
 		svc.Command = c.Args
 	}
 
-	// Environment variables. Compose `environment:` accepts both list and map
-	// forms — we emit map form for clarity, backed by an OrderedMap so the
-	// rendered key order is the container's author order (Variables then, below,
-	// attachments), matching the helm engine's ordered env for the same Workload.
-	for k, v := range c.Variables.All() {
-		svc.Environment.Set(k, v)
-	}
-
-	// Container attachments:
+	// Environment. Compose `environment:` accepts both list and map forms; this
+	// core writes the map form, backed by an OrderedMap so the rendered key order
+	// is exactly the order of the two loops below: every attachment-read entry
+	// (`as: env`), in authored order, then every plain variable, in authored
+	// order. That is the sequence the helm provider writes, where it matters:
+	// Kubernetes expands a `$(NAME)` reference in an env value from the entries
+	// listed before it, so the Secret-read entries go first for a plain value to
+	// reference one. Compose has no `$(NAME)` expansion between a service's
+	// environment entries, so here the order carries no runtime meaning; it is
+	// kept so one Workload renders one environment sequence on every target, and
+	// TestEnvOrderParity_ComposeMatchesHelm holds the two providers to it.
+	//
+	// Container attachments, before the plain variables:
 	//   - as: env  → add an Environment entry keyed by the attachment key with
 	//     an empty value, and raise a partial-support advisory naming the entry.
 	//     Value-from-reference env syntax is Kubernetes-only, and compose cannot
@@ -531,6 +542,11 @@ func translateContainer(
 				ReadOnly: true,
 			})
 		}
+	}
+
+	// Plain variables, in authored order, after every attachment-read entry.
+	for k, v := range c.Variables.All() {
+		svc.Environment.Set(k, v)
 	}
 
 	// Volume mounts (typed list — VolumeMount carries Name + Path + ReadOnly).
