@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -37,6 +38,21 @@ const (
 // comes from. A nil factory resolves nothing, so every entry is read with the
 // usual pair.
 func callerFactsHalt(t *testing.T, fr *types.FeatureRecipe, factory EngineFactory) error {
+	t.Helper()
+	return connectionFactsHalt(t, fr, factory, runCallerRenderFactsRule)
+}
+
+// connectionFactsHalt drives one production invocation site of the rules over a
+// connection's render facts — run — over one node carrying one attachment bound to
+// fr, and returns the halt. It is the one fixture both ends' proofs read, so the
+// callers' rules and the targets' rules are proven over the same presentation and
+// the same enumeration.
+func connectionFactsHalt(
+	t *testing.T,
+	fr *types.FeatureRecipe,
+	factory EngineFactory,
+	run func(context.Context, constraint.DescribedView, connectionRenderFactsAxes) error,
+) error {
 	t.Helper()
 
 	graph := &types.IRGraph{}
@@ -81,7 +97,7 @@ func callerFactsHalt(t *testing.T, fr *types.FeatureRecipe, factory EngineFactor
 		t.Fatalf("the axis presents %d subject(s) for a FeatureRecipe writing %d; the verdict below "+
 			"would certify nothing", len(subjects), want)
 	}
-	return runCallerRenderFactsRule(context.Background(), view, axes)
+	return run(context.Background(), view, axes)
 }
 
 // callerFactsFR is a FeatureRecipe writing text into one template-bearing block.

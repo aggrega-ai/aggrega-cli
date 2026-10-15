@@ -1521,6 +1521,129 @@ var AttachmentPipelineStepReadsNoCallerRenderFacts = constraint.Check[
 	},
 }
 
+// AttachmentTemplateReadsTargetRenderFactsDeclared reports each inline template
+// field producing the attachment's own resources, in the FeatureRecipe a
+// per-component attachment binds, that reads the render facts of the components its
+// host is wired to, where that FeatureRecipe does not declare it reads them.
+//
+// It is the twin of [AttachmentTemplateReadsCallerRenderFactsDeclared] for the
+// other end of a connection, and reads as that one does: the same fields, the same
+// census in the same direction of error, the same bounds — a read through a
+// variable a range declares, one built at evaluation, or one imported from a file
+// or a library is not seen — and the same two exits, for a pipeline step's input
+// or gate, which is [AttachmentPipelineStepReadsNoTargetRenderFacts]'s, and for a
+// boundary-scope attachment, whose own surface refuses any reference to the
+// connections.
+//
+// # Why the declaration is what the rule reads
+//
+// It decides when the attachment renders — one that declares it renders after every
+// component has rendered, so a target later in the walk than the host has reported
+// what it emitted — and whether the connections on its context carry their targets'
+// facts at all. So a template reading the facts is refused where the declaration is
+// missing and admitted where it is present, and nothing about the facts themselves
+// is read.
+//
+// Its detail carries the offending reference bare and the field it was written in
+// captioned.
+var AttachmentTemplateReadsTargetRenderFactsDeclared = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrTargetRenderFactsNotDeclared(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		if RecipeTemplateFieldIsPipelineStep(s.TemplateField()) {
+			return nil
+		}
+		if v.AttachmentReadsTargetRenderFacts(s.NodeID(), s.AttachmentName()) {
+			return nil
+		}
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		ref, reads := attachmentTemplateTargetRenderFactsReference(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
+		if !reads {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrTargetRenderFactsNotDeclared(),
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("written in", s.TemplateField()),
+		)}
+	},
+}
+
+// AttachmentPipelineStepReadsNoTargetRenderFacts reports each pipeline step input
+// or gate of the FeatureRecipe a per-component attachment binds that reads the
+// render facts of the components its host is wired to — whatever that
+// FeatureRecipe declares.
+//
+// # Why the declaration is not read
+//
+// A step's templates are evaluated with the connections the host makes and never
+// with their targets' render facts, for every FeatureRecipe: a step may rewrite the
+// host's own documents, and the host's own render reads what its targets publish,
+// never what they emitted. So a step reading a target's facts reads nothing either
+// way, and the read is refused either way rather than rendered as an empty value.
+// The remedy the refusal names is the same in both cases: a step reads the host's
+// own facts in full, at `.context.render_facts`, and the targets' facts are read by
+// the templates that produce the attachment's own resources.
+//
+// It is the twin of [AttachmentPipelineStepReadsNoCallerRenderFacts], and reads
+// through the one matcher [AttachmentTemplateReadsTargetRenderFactsDeclared] reads
+// through, so the two cannot disagree about what a reading is and differ only in
+// which fields they own.
+//
+// Its detail carries the offending reference bare and the field it was written in
+// captioned, which names the step by its id.
+var AttachmentPipelineStepReadsNoTargetRenderFacts = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrPipelineStepReadsTargetRenderFacts(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		if !RecipeTemplateFieldIsPipelineStep(s.TemplateField()) {
+			return nil
+		}
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		ref, reads := attachmentTemplateTargetRenderFactsReference(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
+		if !reads {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrPipelineStepReadsTargetRenderFacts(),
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("written in", s.TemplateField()),
+		)}
+	},
+}
+
 // attachmentTemplateCallerRenderFactsReference reads one attachment template
 // field's text as written, parsed with the delimiter pair that field is evaluated
 // with, and reports whether it reads its callers' render facts, returning the
@@ -1540,13 +1663,18 @@ func attachmentTemplateCallerRenderFactsReference(text, left, right string) (str
 	return callerRenderFactsReference(refs)
 }
 
-// The connection list a per-component attachment reads its callers from, and the
-// field a caller's render facts sit under. Declared once and read only by
-// [callerRenderFactsReference], so a renamed field cannot leave a stale spelling
-// matching nothing — which would turn the rule quiet rather than failing.
+// The connection list a per-component attachment reads its callers from, the
+// connection map it reads its targets from, and the field a connection's render
+// facts sit under on an entry of either. Declared once and read only by
+// [callerRenderFactsReference] and [targetRenderFactsReference], so a renamed field
+// cannot leave a stale spelling matching nothing — which would turn a rule quiet
+// rather than failing. The field is one constant for both ends because it is one
+// field: a caller's entry and a target's entry carry their facts under one name, in
+// one shape.
 const (
-	callerConnectionsRef = ".context.used_by"
-	callerRenderFactsRef = ".render_facts"
+	callerConnectionsRef     = ".context.used_by"
+	targetConnectionsRef     = ".context.uses"
+	connectionRenderFactsRef = ".render_facts"
 )
 
 // callerRenderFactsReference reports whether a template's collected references
@@ -1570,8 +1698,68 @@ func callerRenderFactsReference(refs []string) (string, bool) {
 		return "", false
 	}
 	for _, ref := range refs {
-		if pillarRefMatches(ref, callerConnectionsRef+callerRenderFactsRef) ||
-			pillarRefMatches(ref, callerRenderFactsRef) {
+		if pillarRefMatches(ref, callerConnectionsRef+connectionRenderFactsRef) ||
+			pillarRefMatches(ref, connectionRenderFactsRef) {
+			return ref, true
+		}
+	}
+	return "", false
+}
+
+// attachmentTemplateTargetRenderFactsReference reads one attachment template
+// field's text as written, parsed with the delimiter pair that field is evaluated
+// with, and reports whether it reads the render facts of the components its host is
+// wired to, returning the first reference that does.
+//
+// It is the one reading both rules over that reference make, for the reason
+// [attachmentTemplateCallerRenderFactsReference] is the one reading of its pair.
+func attachmentTemplateTargetRenderFactsReference(text, left, right string) (string, bool) {
+	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(text, left, right)
+	if err != nil {
+		return "", false
+	}
+	return targetRenderFactsReference(refs)
+}
+
+// targetRenderFactsReference reports whether a template's collected references read
+// the render facts of the components its host is wired to, and returns the first
+// reference that does, in the census's own order.
+//
+// The connections are a map keyed by alias, so a target's facts are read either
+// beneath one alias written out — `.context.uses.db.render_facts` — or off an
+// element: inside `range .context.uses`, inside `with .context.uses.db`, or off
+// `index .context.uses "db"`, which the census records relative to the element as
+// `.render_facts` with nothing tying it to the map it came from. So a field counts
+// as reading the facts where it names `render_facts` directly beneath an alias of
+// the map, or where it reads the map at all and also reads `render_facts` relative
+// to some element. That second half errs in the direction
+// [callerRenderFactsReference] does and for the same reason, with one more case in
+// it: a template reading the connections and also a caller's facts off
+// `.context.used_by` is taken as reading its targets' as well.
+//
+// `render_facts` written one level beneath the map names a connection whose alias
+// is that word, and is not taken for a reading. Every half goes through
+// [pillarRefMatches].
+func targetRenderFactsReference(refs []string) (string, bool) {
+	readsTargets := false
+	for _, ref := range refs {
+		if pillarRefMatches(ref, targetConnectionsRef) {
+			readsTargets = true
+			break
+		}
+	}
+	if !readsTargets {
+		return "", false
+	}
+	for _, ref := range refs {
+		if beneathAlias, ok := strings.CutPrefix(ref, targetConnectionsRef+"."); ok {
+			if _, field, hasField := strings.Cut(beneathAlias, "."); hasField &&
+				pillarRefMatches("."+field, connectionRenderFactsRef) {
+				return ref, true
+			}
+			continue
+		}
+		if pillarRefMatches(ref, connectionRenderFactsRef) {
 			return ref, true
 		}
 	}

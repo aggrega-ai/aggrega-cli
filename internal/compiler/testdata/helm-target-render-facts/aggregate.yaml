@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-target-render-facts
+  version: "1.0.0"
+spec:
+  # client is wired to web and to worker, so a Feature attached to client reads
+  # each of them as a target. Both ids sort after client, so each target renders
+  # after client in the build.
+  components:
+    client:
+      type: core/probe/service
+      uses:
+        apis:
+          - web
+          - worker
+    web:
+      type: core/probe/service
+    worker:
+      type: core/probe/service

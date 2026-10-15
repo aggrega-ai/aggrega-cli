@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-step-reads-targets-undeclared
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.myco/guardrail"
+  # The same step input as guardrail-step-reads-targets, on a FeatureRecipe that
+  # does not declare it reads its targets' render facts. Declaring would not hand
+  # a step those facts, so the halt is the step's own, as it is there.
+  pipeline:
+    - id: inject_into_host
+      plugin: pipeline-step/host-patch:1.0.0
+      function: step
+      with: |
+        targets: '{{ range .context.uses }}{{ .render_facts }}{{ end }}'

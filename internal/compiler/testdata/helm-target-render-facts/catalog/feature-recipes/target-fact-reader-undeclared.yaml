@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: target-fact-reader-undeclared
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.myco/target-fact-reader
+  # The same template as target-fact-reader, on a FeatureRecipe that does not
+  # declare it reads its targets' render facts: the build halts before anything
+  # renders, naming the reference and the field it was written in.
+  artifacts:
+    facts.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-target-facts
+      data:
+        read: |
+          host {{ .context.instance_id }}
+          {{- range .context.uses }}
+          {{- $target := .target }}
+          {{- range .render_facts.pod_template_labels }}
+          target {{ $target }} pod_template_labels {{ .kind }}/{{ .name }}{{ range $k, $v := .labels }} {{ $k }}={{ $v }}{{ end }}
+          {{- end }}
+          {{- range .render_facts.controller_selectors }}
+          target {{ $target }} controller_selectors {{ .kind }}/{{ .name }}{{ range $k, $v := .match_labels }} {{ $k }}={{ $v }}{{ end }}
+          {{- end }}
+          {{- range .render_facts.container_ports }}
+          target {{ $target }} container_ports {{ .kind }}/{{ .name }} {{ .container }}{{ range .ports }} {{ .name }}:{{ .container_port }}{{ end }}
+          {{- end }}
+          {{- end }}

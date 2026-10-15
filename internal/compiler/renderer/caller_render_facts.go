@@ -37,6 +37,23 @@ func (s *PhaseBState) renderFactsAsItStands() renderFactsRecord {
 	return rec
 }
 
+// onContext is what a template reads of one node's recorded facts, wherever that
+// node sits at the other end of a connection: keyed by name, the node's own render
+// calls first and then each of its attachments in the order they rendered, so a
+// name more than one of them reported holds one list joining theirs in that order.
+//
+// It is the one statement of that join. A caller's entry and a target's entry are
+// read through it alike, so the two ends of a connection cannot come to present one
+// node's facts in two different orders.
+func (r renderFactsRecord) onContext() (*types.OrderedMap[[]any], error) {
+	reports := make([][]RenderFact, 0, 1+r.attachments.Len())
+	reports = append(reports, r.own)
+	for _, facts := range r.attachments.All() {
+		reports = append(reports, facts)
+	}
+	return renderFactsOnContext(reports...)
+}
+
 // callerRenderFacts is what one connection's caller reported about its renders,
 // as a held attachment on the node it connects to is handed it.
 //
@@ -62,14 +79,10 @@ type callerRenderFacts struct {
 // onContext is what a template reads of this caller's facts: keyed by name, the
 // caller's own render calls first and then each of its attachments in the order
 // they rendered, so a name more than one of them reported holds one list joining
-// theirs in that order.
+// theirs in that order. The join is the record's own, so a caller's facts read
+// exactly as the same node's facts read on a connection made to it.
 func (c callerRenderFacts) onContext() (*types.OrderedMap[[]any], error) {
-	reports := make([][]RenderFact, 0, 1+c.Attachments.Len())
-	reports = append(reports, c.Own)
-	for _, facts := range c.Attachments.All() {
-		reports = append(reports, facts)
-	}
-	return renderFactsOnContext(reports...)
+	return renderFactsRecord{own: c.Own, attachments: c.Attachments}.onContext()
 }
 
 // gatherCallerRenderFacts reads, for each connection made to a node, what that

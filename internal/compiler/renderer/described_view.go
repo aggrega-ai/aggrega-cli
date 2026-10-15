@@ -473,6 +473,22 @@ func (v *describedView) AttachmentReadsCallerRenderFacts(node string, attachment
 	return readsCallerRenderFacts(fr)
 }
 
+// AttachmentReadsTargetRenderFacts reports whether one attachment's bound
+// FeatureRecipe declares that its templates read the render facts of the
+// components its host is wired to.
+//
+// It reads the declaration through the one reading the render decides where an
+// attachment renders, and what its connections carry, by, so the rule asking this
+// and the render cannot come to disagree about what was declared. An attachment
+// with no bound FeatureRecipe answers false.
+func (v *describedView) AttachmentReadsTargetRenderFacts(node string, attachment string) bool {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return false
+	}
+	return readsTargetRenderFacts(fr)
+}
+
 // AttachmentStepPluginCompatibleCapabilities returns the provider capabilities
 // the plugin behind one step of an attachment's pipeline on a node declares its
 // step is compatible with, in declared order.

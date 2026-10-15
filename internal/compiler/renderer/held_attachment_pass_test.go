@@ -144,10 +144,12 @@ type heldPassNode struct {
 }
 
 // heldPassAttachment is one attachment of a fixture node, and whether the
-// FeatureRecipe it binds declares that it reads its callers' render facts.
+// FeatureRecipe it binds declares that it reads its callers' render facts
+// (declares) and its targets' (declaresTargets).
 type heldPassAttachment struct {
-	instance string
-	declares bool
+	instance        string
+	declares        bool
+	declaresTargets bool
 }
 
 // parityTemplate reads the host's own render facts and the connections made to the
@@ -170,6 +172,18 @@ const handingTemplate = "kind: Attached\n" +
 	"host_facts: {{ toJson .context.render_facts }}\n" +
 	"{{- range .context.used_by }}\ncaller: {{ toJson . }}{{ end }}\n"
 
+// connectionsHandingTemplate prints what handingTemplate prints and, after it,
+// every connection the host makes whole, one line each. It names no render_facts
+// beneath either end, so neither rule over an undeclared reading refuses it, and a
+// caller's or a target's facts appear on a line exactly where the render handed
+// them over.
+const connectionsHandingTemplate = "kind: Attached\n" +
+	"host: {{ .context.instance_id }}\n" +
+	"name: {{ .attachment_name }}\n" +
+	"host_facts: {{ toJson .context.render_facts }}\n" +
+	"{{- range .context.used_by }}\ncaller: {{ toJson . }}{{ end }}" +
+	"{{- range .context.uses }}\ntarget: {{ toJson . }}{{ end }}\n"
+
 // renderHeldPass renders a graph of the given nodes, all in one boundary and all
 // rendered through the stub, with one connection per pair in edges (caller first,
 // then the node it connects to).
@@ -185,6 +199,7 @@ func renderHeldPass(
 	featureValues := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	order := ir.FeatureOrder{}
 	declares := map[string]bool{}
+	declaresTargets := map[string]bool{}
 	for _, n := range nodes {
 		graphNodes.Set(n.id, types.IRNode{
 			Component: "core/probe/" + n.id, ResolvedVersion: "1.0.0", BoundaryPath: "local",
@@ -197,6 +212,7 @@ func renderHeldPass(
 			entries.Set(a.instance, types.IRFeatureEntry{Type: "core/feature/" + a.instance})
 			order[n.id] = append(order[n.id], a.instance)
 			declares[a.instance] = a.declares
+			declaresTargets[a.instance] = a.declaresTargets
 		}
 		featureValues.Set(n.id, entries)
 	}
@@ -253,6 +269,7 @@ func renderHeldPass(
 					Implements:             featureType,
 					Artifacts:              art,
 					ReadsCallerRenderFacts: declares[instance],
+					ReadsTargetRenderFacts: declaresTargets[instance],
 				},
 			}, true
 		},
@@ -335,28 +352,52 @@ func attachedOutput(t *testing.T, result *RenderResult, host, instance string) s
 // the declared render really took the later pass and the undeclared one did not;
 // without that the comparison would hold between two identical renders and prove
 // nothing.
+//
+// Every kind of group is run once per declaration that moves an attachment into the
+// later pass — the callers' key and the targets' key — because the two share one
+// deferral, and a placement that depended on which key held the attachment would
+// show as a difference here. The host both is called and makes a connection, and
+// the template reads neither side's facts, so either declaration renders the same
+// text as no declaration.
 func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
 		name     string
 		assembly string
+		key      string // the declaration that holds the attachment: "callers" or "targets"
 	}{
-		{name: "a group writing every contributor at its own position", assembly: ""},
-		{name: "a group placing each contributor under a position of its own", assembly: "nest"},
-		{name: "a group folding every contributor into one document", assembly: "merge"},
+		{name: "a group writing every contributor at its own position", assembly: "", key: "callers"},
+		{name: "a group placing each contributor under a position of its own", assembly: "nest", key: "callers"},
+		{name: "a group folding every contributor into one document", assembly: "merge", key: "callers"},
+		{name: "a group writing every contributor at its own position, held by the targets' key",
+			assembly: "", key: "targets"},
+		{name: "a group placing each contributor under a position of its own, held by the targets' key",
+			assembly: "nest", key: "targets"},
+		{name: "a group folding every contributor into one document, held by the targets' key",
+			assembly: "merge", key: "targets"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			graph := func(declares bool) []heldPassNode {
+				guard := heldPassAttachment{instance: "guard"}
+				switch tc.key {
+				case "callers":
+					guard.declares = declares
+				case "targets":
+					guard.declaresTargets = declares
+				default:
+					t.Fatalf("row names no declaration %q", tc.key)
+				}
 				return []heldPassNode{
-					{id: "api", attachments: []heldPassAttachment{{instance: "guard", declares: declares}}},
+					{id: "api", attachments: []heldPassAttachment{guard}},
+					{id: "db"},
 					{id: "web"},
 					{id: "zz-tail"},
 				}
 			}
-			edges := [][2]string{{"web", "api"}}
+			edges := [][2]string{{"web", "api"}, {"api", "db"}}
 
 			inTurn, inTurnProv := renderHeldPass(t, tc.assembly, graph(false), edges, parityTemplate)
 			held, heldProv := renderHeldPass(t, tc.assembly, graph(true), edges, parityTemplate)
@@ -591,6 +632,198 @@ func TestHeldAttachment_ReadsItsCallersFactsOnceEveryNodeHasRendered(t *testing.
 				got = append(got, caller+" "+string(facts))
 			}
 			if !reflect.DeepEqual(got, tc.wantCallers) {
+				t.Errorf("the attachment read its callers as\n %q\nwant\n %q\nfrom\n%s", got, tc.wantCallers, body)
+			}
+		})
+	}
+}
+
+// connectionLines reads the connection lines connectionsHandingTemplate prints
+// under prefix — "caller: " or "target: " — as "<component> <facts>", where
+// <component> is read from idKey on the line's JSON and <facts> is the render
+// facts the line carries, or "absent" where it carries none.
+func connectionLines(t *testing.T, body, prefix, idKey string) []string {
+	t.Helper()
+	var got []string
+	for _, line := range strings.Split(body, "\n") {
+		raw, isConnection := strings.CutPrefix(line, prefix)
+		if !isConnection {
+			continue
+		}
+		var entry map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+			t.Fatalf("a connection line is not the connection's JSON: %q: %v", line, err)
+		}
+		var component string
+		if err := json.Unmarshal(entry[idKey], &component); err != nil {
+			t.Fatalf("a connection line names no component under %q: %q: %v", idKey, line, err)
+		}
+		facts, carried := entry["render_facts"]
+		if !carried {
+			got = append(got, component+" absent")
+			continue
+		}
+		got = append(got, component+" "+string(facts))
+	}
+	return got
+}
+
+// TestHeldAttachment_ReadsItsTargetsFactsOnceEveryNodeHasRendered is the twin of the
+// proof above for the components a host is wired to, read the same way: by what
+// the attachment rendered.
+//
+// The first row is the case the walk order alone gets wrong: the target's id sorts
+// after its host's, so in its host's turn the target has not rendered at all. Held
+// for the later pass by the targets' key, the attachment reads, on the connection,
+// the target's own facts and then those of each attachment rendered in the target's
+// turn, joined under the one name they share in the order they rendered.
+//
+// The second row keeps the pass free of any order among held attachments: the
+// target carries a held attachment of its own and sorts first, so in the later pass
+// that attachment renders — and reports — before the host's does, and the host's
+// must still not read it.
+//
+// The third row holds a target whose provider reports nothing: its connection
+// carries the facts all the same, empty, so a template reads every target alike.
+//
+// The last four rows are the grid of the two declarations over one host that is both
+// called and wired to a target, each target and caller sorting after the host: a
+// key that is set puts its own side's facts on every entry of that side, a key that
+// is not set leaves its side carrying none — even when the other key has moved the
+// attachment into the later pass — and setting neither renders the attachment in its
+// host's turn.
+func TestHeldAttachment_ReadsItsTargetsFactsOnceEveryNodeHasRendered(t *testing.T) {
+	t.Parallel()
+
+	gridNodes := func(guard heldPassAttachment) []heldPassNode {
+		return []heldPassNode{
+			{id: "api", attachments: []heldPassAttachment{guard}},
+			{id: "db"},
+			{id: "web"},
+		}
+	}
+	gridEdges := [][2]string{{"web", "api"}, {"api", "db"}}
+
+	for _, tc := range []struct {
+		name           string
+		nodes          []heldPassNode
+		edges          [][2]string
+		host, instance string
+		wantAfter      bool
+		wantHostFacts  string
+		// wantTargets is each connection's target and the render facts its line
+		// carries, in the order the uses map is ranged — by alias; "absent" where the
+		// line must carry no facts at all. wantCallers is the same for the callers.
+		wantTargets []string
+		wantCallers []string
+	}{
+		{
+			name: "the targets' key on a host sorting before its target",
+			nodes: []heldPassNode{
+				{id: "api", attachments: []heldPassAttachment{{instance: "guard", declaresTargets: true}}},
+				{id: "web", attachments: []heldPassAttachment{{instance: "tag"}, {instance: "mark"}}},
+			},
+			edges:         [][2]string{{"api", "web"}},
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets: []string{fmt.Sprintf(`web {"emitted_by":["web",%q,%q]}`,
+				attachmentIdentityOf("web", "tag"), attachmentIdentityOf("web", "mark"))},
+		},
+		{
+			name: "a held attachment does not read what its target's held attachment reported",
+			nodes: []heldPassNode{
+				{id: "alpha", attachments: []heldPassAttachment{{instance: "probe", declaresTargets: true}}},
+				{id: "beta", attachments: []heldPassAttachment{{instance: "guard", declaresTargets: true}}},
+			},
+			edges:         [][2]string{{"beta", "alpha"}},
+			host:          "beta",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["beta"]}`,
+			wantTargets:   []string{`alpha {"emitted_by":["alpha"]}`},
+		},
+		{
+			name: "a target whose provider reports nothing carries empty facts",
+			nodes: []heldPassNode{
+				{id: "api", attachments: []heldPassAttachment{{instance: "guard", declaresTargets: true}}},
+				{id: "quiet-worker"},
+				{id: "web"},
+			},
+			edges:         [][2]string{{"api", "quiet-worker"}, {"api", "web"}},
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets:   []string{`quiet-worker {}`, `web {"emitted_by":["web"]}`},
+		},
+		{
+			name:          "neither key: rendered in its host's turn, no side carries facts",
+			nodes:         gridNodes(heldPassAttachment{instance: "guard"}),
+			edges:         gridEdges,
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     false,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets:   []string{`db absent`},
+			wantCallers:   []string{`web absent`},
+		},
+		{
+			name:          "the callers' key alone: the callers carry facts, the targets none",
+			nodes:         gridNodes(heldPassAttachment{instance: "guard", declares: true}),
+			edges:         gridEdges,
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets:   []string{`db absent`},
+			wantCallers:   []string{`web {"emitted_by":["web"]}`},
+		},
+		{
+			name:          "the targets' key alone: the targets carry facts, the callers none",
+			nodes:         gridNodes(heldPassAttachment{instance: "guard", declaresTargets: true}),
+			edges:         gridEdges,
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets:   []string{`db {"emitted_by":["db"]}`},
+			wantCallers:   []string{`web absent`},
+		},
+		{
+			name:          "both keys: both sides carry facts",
+			nodes:         gridNodes(heldPassAttachment{instance: "guard", declares: true, declaresTargets: true}),
+			edges:         gridEdges,
+			host:          "api",
+			instance:      "guard",
+			wantAfter:     true,
+			wantHostFacts: `{"emitted_by":["api"]}`,
+			wantTargets:   []string{`db {"emitted_by":["db"]}`},
+			wantCallers:   []string{`web {"emitted_by":["web"]}`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result, prov := renderHeldPass(t, "", tc.nodes, tc.edges, connectionsHandingTemplate)
+
+			mine := crossingIndex(t, prov, attachmentIdentityOf(tc.host, tc.instance))
+			lastNode := -1
+			for _, n := range tc.nodes {
+				lastNode = max(lastNode, crossingIndex(t, prov, n.id))
+			}
+			if after := mine > lastNode; after != tc.wantAfter {
+				t.Errorf("rendered after every node = %v, want %v (crossings %v)", after, tc.wantAfter, prov.crossings)
+			}
+
+			body := attachedOutput(t, result, tc.host, tc.instance)
+			if want := "host_facts: " + tc.wantHostFacts + "\n"; !strings.Contains(body, want) {
+				t.Errorf("the attachment read its host's facts wrong; want %q in\n%s", want, body)
+			}
+			if got := connectionLines(t, body, "target: ", "target"); !reflect.DeepEqual(got, tc.wantTargets) {
+				t.Errorf("the attachment read its targets as\n %q\nwant\n %q\nfrom\n%s", got, tc.wantTargets, body)
+			}
+			if got := connectionLines(t, body, "caller: ", "component_id"); !reflect.DeepEqual(got, tc.wantCallers) {
 				t.Errorf("the attachment read its callers as\n %q\nwant\n %q\nfrom\n%s", got, tc.wantCallers, body)
 			}
 		})

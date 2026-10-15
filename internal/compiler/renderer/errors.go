@@ -436,6 +436,72 @@ var errPipelineStepReadsCallerRenderFacts = cerrors.Register("pipeline-step-read
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrTargetRenderFactsNotDeclared fires when a template in the FeatureRecipe a
+// per-component attachment binds reads the render facts of the components its
+// host is wired to — `render_facts` reached beneath `.context.uses` — while the
+// FeatureRecipe does not set readsTargetRenderFacts.
+//
+// It is the twin of ErrCallerRenderFactsNotDeclared for the other end of a
+// connection, and a condition of its own rather than that one widened, because
+// its remedy is a different key. The declaration decides two things: that the
+// attachment renders after every node has rendered, so a target later in the walk
+// than the host has reported what it emitted by then, and that the connections on
+// the attachment's context carry their targets' facts at all. A template reading
+// them without the declaration is a template reading something that is not there,
+// and the build halts rather than render it. The remedy is the declaration, which
+// is always available and changes nothing but when the attachment renders and what
+// its connections carry.
+//
+// It covers the templates that produce the attachment's own resources — its values
+// mapping, its workload and its artifacts entries. A pipeline step's input or gate
+// reading the same facts is ErrPipelineStepReadsTargetRenderFacts instead, whether
+// or not the FeatureRecipe sets the key.
+//
+// It is read from the authored template text before anything is evaluated, with
+// the bound ErrCallerRenderFactsNotDeclared states: a reference the text does not
+// spell is not seen by it.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrTargetRenderFactsNotDeclared()).
+func ErrTargetRenderFactsNotDeclared() error { return errTargetRenderFactsNotDeclared }
+
+var errTargetRenderFactsNotDeclared = cerrors.Register("target-render-facts-not-declared", cerrors.Meta{
+	ShortCode: "E0347",
+	Message:   "template reads the render facts of a component its host is wired to, but the FeatureRecipe does not set readsTargetRenderFacts",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrPipelineStepReadsTargetRenderFacts fires when a pipeline step's input or gate
+// — its `with:` or its `when:` — in the FeatureRecipe a per-component attachment
+// binds reads the render facts of the components its host is wired to:
+// `render_facts` reached beneath `.context.uses`.
+//
+// A step's templates are evaluated with the connections the host makes, as the
+// host's own Recipe reads them, and never with their targets' render facts — that
+// holds for every FeatureRecipe. A step may rewrite the host's own documents, and
+// the host's own render reads what its targets publish, never what they emitted;
+// a step reading what they emitted would make the host's rendered output depend on
+// their renders. Such a reference therefore reads nothing, and the build halts
+// rather than render it as an empty value.
+//
+// It is raised whether or not the FeatureRecipe sets readsTargetRenderFacts. That
+// key decides when the attachment renders and what the templates producing its own
+// resources are handed, never what a step sees, so the remedy the undeclared
+// condition names would not make the read work. A step reads the host's own render
+// facts at `.context.render_facts`; the targets' facts are read by the templates
+// that produce the attachment's own resources.
+//
+// It is read from the authored template text before anything is evaluated, with
+// the bound ErrCallerRenderFactsNotDeclared states.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrPipelineStepReadsTargetRenderFacts()).
+func ErrPipelineStepReadsTargetRenderFacts() error { return errPipelineStepReadsTargetRenderFacts }
+
+var errPipelineStepReadsTargetRenderFacts = cerrors.Register("pipeline-step-reads-target-render-facts", cerrors.Meta{
+	ShortCode: "E0348",
+	Message:   "pipeline step reads the render facts of a component its host is wired to, but a pipeline step reads only the host's own render facts",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrAssembledOutputCollision fires when two contributors to one assembly
 // write a file at the same output path — two components, a component and a
 // boundary-attached feature, or a contributor and the assembled output

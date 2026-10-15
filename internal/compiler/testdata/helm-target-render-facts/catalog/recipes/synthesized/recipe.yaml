@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-service-synthesized
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/probe/service
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: example/service:1
+        ports:
+          web: 8080
+    services:
+      web:
+        type: ClusterIP
+        ports:
+          web: 8080

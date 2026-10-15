@@ -4531,6 +4531,31 @@ var facts = []factDecl{
 			"attachment with no bound FeatureRecipe, both answer false.",
 	},
 	{
+		Name:        "attachment-reads-target-render-facts",
+		Stage:       "described",
+		SourceField: "types.FeatureRecipeSpec.ReadsTargetRenderFacts",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "AttachmentReadsTargetRenderFacts reports whether one attachment's bound " +
+			"FeatureRecipe declares that its templates read the render facts of the " +
+			"components the component it is attached to is wired to.\n\nThe " +
+			"declaration is what moves such an attachment's render after every " +
+			"component has rendered and what puts each target's facts on the " +
+			"connections its context carries, so a rule over a template reading those " +
+			"facts reads it to tell a template whose attachment is handed them from one " +
+			"whose attachment is not.\n\nIt is keyed by the node as well as the " +
+			"attachment for the reason the attachment's execution scope is: the " +
+			"attachment set a node carries is the merged one, and the coordinate " +
+			"naming one appearance is the node together with the attachment.\n\n" +
+			"False is a real answer and is the ordinary one: a FeatureRecipe that does " +
+			"not set the declaration, and an attachment with no bound FeatureRecipe, " +
+			"both answer false.",
+	},
+	{
 		Name:        "attachment-step-plugin-compatible-capabilities",
 		Stage:       "described",
 		SourceField: "wasm.PluginDescriptor.Capabilities",

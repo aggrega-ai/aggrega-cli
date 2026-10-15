@@ -66,6 +66,9 @@ func renderFeatureRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWork
 	if fr.Spec.ReadsCallerRenderFacts {
 		fmt.Fprintln(opts.out, "readsCallerRenderFacts: true")
 	}
+	if fr.Spec.ReadsTargetRenderFacts {
+		fmt.Fprintln(opts.out, "readsTargetRenderFacts: true")
+	}
 
 	if opts.level == levelDetail {
 		if fr.Spec.Artifacts.Len() > 0 {

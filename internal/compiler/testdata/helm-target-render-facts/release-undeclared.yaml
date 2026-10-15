@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-target-render-facts-undeclared-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-undeclared.yaml
+  boundaries:
+    shop:
+      directory: ./dist/shop
+      annotations:
+        aggrega.ai/namespace: "shop"
+      components:
+        client:
+          features:
+            facts:
+              type: feature.myco/target-fact-reader
+        web:
+          infra:
+            replicas: 1
+        worker:
+          infra:
+            replicas: 1

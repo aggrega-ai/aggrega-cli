@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: helm-target-render-facts-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      # One component type, rendered two ways: a synthesized Workload by default,
+      # and a chart for web.
+      name:
+        web: helm-service-chart:1.0.0
+      type:
+        core/probe/service: helm-service-synthesized:1.0.0
+    features:
+      type:
+        feature.myco/target-fact-reader: target-fact-reader:1.0.0

@@ -633,10 +633,11 @@ func phaseB6(
 			continue
 		}
 
-		// An attachment whose FeatureRecipe declares it reads its callers' render
-		// facts is held for the pass after every node has rendered, and is
-		// otherwise untouched: it renders there through this same body, from this
-		// same pass value, in the position it holds in this sequence.
+		// An attachment whose FeatureRecipe declares it reads the render facts of
+		// its callers or of its targets is held for the pass after every node has
+		// rendered, and is otherwise untouched: it renders there through this same
+		// body, from this same pass value, in the position it holds in this
+		// sequence.
 		if rendersAfterTheNodes(fr) {
 			if held == nil {
 				held = &heldAttachments{pass: pass}
@@ -663,16 +664,32 @@ func readsCallerRenderFacts(fr *types.FeatureRecipe) bool {
 	return fr != nil && fr.Spec.ReadsCallerRenderFacts
 }
 
+// readsTargetRenderFacts reports whether a FeatureRecipe declares that its
+// templates read what the components its host is wired to rendered. It is the one
+// reading of that declaration, for the reason readsCallerRenderFacts is the one
+// reading of its own: the render deciding where an attachment renders and what it
+// is handed, and the rule refusing a template that reads the facts undeclared,
+// cannot come to read it differently.
+func readsTargetRenderFacts(fr *types.FeatureRecipe) bool {
+	return fr != nil && fr.Spec.ReadsTargetRenderFacts
+}
+
 // rendersAfterTheNodes reports whether an attachment of fr renders in the pass
 // after every node has rendered rather than in its host's turn: it does exactly
-// when its FeatureRecipe declares it reads its callers' render facts and renders
-// per component.
+// when its FeatureRecipe declares it reads the render facts of its callers, of its
+// targets, or of both, and renders per component.
+//
+// Both declarations are read here and nowhere else decides it, so there is one
+// later pass whichever key moved an attachment into it: the two differ only in
+// which connections' facts the attachment is handed there, never in when it
+// renders.
 //
 // A FeatureRecipe that renders once for a boundary is not held, whatever it
 // declares. Such a render belongs to the boundary rather than to any component,
 // and where it renders is settled by its own dispatch.
 func rendersAfterTheNodes(fr *types.FeatureRecipe) bool {
-	return readsCallerRenderFacts(fr) && fr.Spec.ExecutionScope != executionScopeBoundary
+	return (readsCallerRenderFacts(fr) || readsTargetRenderFacts(fr)) &&
+		fr.Spec.ExecutionScope != executionScopeBoundary
 }
 
 // attachmentOutput is what one run of the component-scope attachment render hands
@@ -703,7 +720,8 @@ func newAttachmentOutput() attachmentOutput {
 //
 // It is one value because the attachment pass runs at two moments — in the
 // host's turn, and after every node has rendered for an attachment that reads
-// its callers' render facts — and both must render from the same host state. The
+// the render facts of its callers or of its targets — and both must render from
+// the same host state. The
 // fields are the host's own values, held by reference where they are references:
 // the state an attachment records its derived names, facts and warnings onto is
 // the host's, and the context it derives its own from is the one the host
@@ -757,18 +775,24 @@ type heldAttachmentHost struct {
 }
 
 // render renders every held attachment of one host, in sequence order, each
-// handed the render facts its host's callers reported.
+// handed the render facts its host's callers and its host's targets reported.
 //
-// What the callers reported is gathered once by the caller of this method, from
-// every node's record as its own turn left it, and handed to every held
-// attachment of the host alike: a held attachment never reads what another held
-// attachment rendered, which is what keeps the pass free of any order among held
-// attachments.
-func (h *heldAttachments) render(ctx context.Context, callers []callerRenderFacts) (attachmentOutput, error) {
+// What the callers and the targets reported is gathered once by the caller of
+// this method, from every node's record as its own turn left it, and handed to
+// every held attachment of the host alike: a held attachment never reads what
+// another held attachment rendered, which is what keeps the pass free of any order
+// among held attachments. Which of the two an attachment's context carries is its
+// own FeatureRecipe's declaration, read where the context is built.
+func (h *heldAttachments) render(
+	ctx context.Context,
+	callers []callerRenderFacts,
+	targets types.OrderedMap[renderFactsRecord],
+) (attachmentOutput, error) {
 	out := newAttachmentOutput()
 	for _, held := range h.items {
 		item := held.item
 		item.CallerRenderFacts = callers
+		item.TargetRenderFacts = targets
 		if err := h.pass.render(ctx, held.seqIndex, item, true, &out); err != nil {
 			return attachmentOutput{}, err
 		}
@@ -780,8 +804,9 @@ func (h *heldAttachments) render(ctx context.Context, callers []callerRenderFact
 //
 // afterTheNodes says which pass it renders in. The render is the same body at
 // either moment, and the one thing the moment decides is whether the attachment
-// is handed its host's callers' render facts: only after every node has rendered
-// are they complete, so only then are they on its context.
+// can be handed the render facts of its host's callers and targets: only after
+// every node has rendered are they complete, so only then are they on its context
+// — each set only where the attachment's FeatureRecipe declares it reads it.
 func (p *attachmentPass) render(
 	ctx context.Context,
 	seqIndex int,
@@ -804,17 +829,28 @@ func (p *attachmentPass) render(
 	frCtx.Context.RenderFacts = p.hostRenderFacts
 	frCtx.Context.UsedBy = state.InboundEdges
 	// Rendered after every node, as only an attachment whose FeatureRecipe declares
-	// it reads its callers' render facts is, the attachment is handed each caller's
-	// facts on that caller's entry. The entries are a copy: the host's own list is
-	// the one every other attachment of the host reads, and one that does not
-	// declare the read must never meet the facts there.
-	if afterTheNodes {
+	// it reads the render facts of its callers or of its targets is, the attachment
+	// is handed each caller's facts on that caller's entry where it declares the
+	// callers' read, and each target's facts on that connection's entry where it
+	// declares the targets' read. The entries are copies: the host's own list and
+	// map are the ones every other attachment of the host reads, and one that does
+	// not declare a read must never meet those facts there. A key it does not set
+	// leaves its side exactly as an attachment rendered in its host's turn sees it.
+	if afterTheNodes && readsCallerRenderFacts(fr) {
 		usedBy, err := usedByWithCallerFacts(state.InboundEdges, item.CallerRenderFacts)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("node %q attachment %q callers' render facts", nodeID, item.Instance))
 		}
 		frCtx.Context.UsedBy = usedBy
+	}
+	if afterTheNodes && readsTargetRenderFacts(fr) {
+		uses, err := usesWithTargetFacts(tmplCtx.Context.Uses, item.TargetRenderFacts)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				fmt.Sprintf("node %q attachment %q targets' render facts", nodeID, item.Instance))
+		}
+		frCtx.Context.Uses = uses
 	}
 
 	// What of this attachment's copy an author declared sensitive: the host's
@@ -1059,8 +1095,17 @@ func (p *attachmentPass) render(
 		// nothing here. The copy is taken after the render above, so the steps
 		// still see every pillar the render resolved, the host's own render facts
 		// among them.
+		//
+		// The connections the host makes stay on the steps' context, as the host's
+		// own Recipe reads them — but without any target's render facts, which the
+		// host's own map carries nowhere. The host's own render reads what its
+		// targets publish and never what they emitted, and a step rewriting the
+		// host's documents from what a target emitted would end that. A step
+		// template reading a target's render facts is refused before the walk as
+		// well.
 		pipelineCtx := frCtx
 		pipelineCtx.Context.UsedBy = nil
+		pipelineCtx.Context.Uses = tmplCtx.Context.Uses
 		if hostIsAssembler {
 			// Record the FR's pipeline for post-assembly replay. The host
 			// node and provider are stamped here; the orchestrator adds the
@@ -1248,6 +1293,12 @@ type attachmentRenderItem struct {
 	// after every node has rendered, and is nil for every other: an attachment
 	// rendered in its host's turn renders before some of its callers have.
 	CallerRenderFacts []callerRenderFacts
+	// TargetRenderFacts are what the host's targets reported about their renders,
+	// one entry per connection the host makes, keyed by the alias the host's uses
+	// map holds it under. It is set on the same terms CallerRenderFacts is, and for
+	// the same reason: an attachment rendered in its host's turn renders before a
+	// target later in the walk has.
+	TargetRenderFacts types.OrderedMap[renderFactsRecord]
 }
 
 // attachmentRenderSequence assembles the one ordered sequence Phase B.6

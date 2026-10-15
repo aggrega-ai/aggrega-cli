@@ -498,6 +498,20 @@ type EnrichedEdge struct {
 	SourceBoundaryPath string `json:"source_boundary_path,omitempty" yaml:"source_boundary_path,omitempty"`
 	TargetNamespace    string `json:"target_namespace,omitempty" yaml:"target_namespace,omitempty"`
 	TargetBoundaryPath string `json:"target_boundary_path,omitempty" yaml:"target_boundary_path,omitempty"`
+
+	// RenderFacts is what the target's renders reported about what they emitted,
+	// keyed by fact name, in the shape [InboundEdge.RenderFacts] gives a caller's:
+	// the facts its own render calls reported, then those of each Feature attached
+	// to it that rendered in its own turn, in the order those rendered, with the
+	// lists one name gets joined into one in that order.
+	//
+	// It is set only on the .context.uses of a FeatureRecipe that declares it reads
+	// its targets' render facts — such an attachment renders once every node has,
+	// so every target's render is complete — and there it is present on every
+	// entry, empty for a target whose providers report nothing. Everywhere else it
+	// is nil and absent: on the node's own context, on a pipeline step's, and on
+	// the edge lists of a boundary's view.
+	RenderFacts *OrderedMap[[]any] `json:"render_facts,omitempty" yaml:"render_facts,omitempty"`
 }
 
 // TemplateMetadata provides Release and compilation identity for deterministic naming.

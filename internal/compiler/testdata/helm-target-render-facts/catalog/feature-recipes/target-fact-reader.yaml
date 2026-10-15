@@ -1,0 +1,34 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: target-fact-reader
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.myco/target-fact-reader
+  # Reads the render facts of each component its host is wired to, on
+  # .context.uses, so each attachment renders once every component has rendered.
+  readsTargetRenderFacts: true
+  # One line per fact entry of each connection's target, the connections taken in
+  # the order a range meets them — by alias. Label maps are written in key order.
+  artifacts:
+    facts.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-target-facts
+      data:
+        read: |
+          host {{ .context.instance_id }}
+          {{- range .context.uses }}
+          {{- $target := .target }}
+          {{- range .render_facts.pod_template_labels }}
+          target {{ $target }} pod_template_labels {{ .kind }}/{{ .name }}{{ range $k, $v := .labels }} {{ $k }}={{ $v }}{{ end }}
+          {{- end }}
+          {{- range .render_facts.controller_selectors }}
+          target {{ $target }} controller_selectors {{ .kind }}/{{ .name }}{{ range $k, $v := .match_labels }} {{ $k }}={{ $v }}{{ end }}
+          {{- end }}
+          {{- range .render_facts.container_ports }}
+          target {{ $target }} container_ports {{ .kind }}/{{ .name }} {{ .container }}{{ range .ports }} {{ .name }}:{{ .container_port }}{{ end }}
+          {{- end }}
+          {{- end }}

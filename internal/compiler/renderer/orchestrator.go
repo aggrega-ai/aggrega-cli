@@ -944,6 +944,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// Their twins over an attachment template that reads the render facts of the
+		// components its host is wired to, asked against the same presentation and
+		// the same enumeration, immediately after, for the same reason: the
+		// declaration one of them reads decides where in the walk the attachment
+		// renders, so the refusal reaches the author before anything renders.
+		if err := runTargetRenderFactsRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The rules over the text a Recipe wrote for each of its locals, asked here
 		// for the same reason and against the same presentation. They are asked
 		// AFTER the provides reading and BEFORE the pass below, and both halves of
@@ -2469,8 +2478,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// What this node's renders reported, as this turn leaves them: its own render
 		// and every attachment rendered in this turn. Recorded now, before any held
 		// attachment renders onto this node's state, so an attachment held for the
-		// pass after the walk is handed what its callers' turns produced and nothing
-		// another held attachment reported.
+		// pass after the walk is handed what its callers' and its targets' turns
+		// produced and nothing another held attachment reported.
 		nodeRenderFacts[nodeID] = state.renderFactsAsItStands()
 		if err := placeAttachmentOutput(key, nodeID, nodeOrder, state, nodeCtx, b6); err != nil {
 			return nil, err
@@ -2498,12 +2507,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
-	// The declared pass. An attachment whose FeatureRecipe declares it reads its
-	// callers' render facts renders here, after every node has rendered, so each
-	// caller's own render and its in-turn attachments have reported what they
-	// emitted by the time it is handed them. Hosts are taken in walk order and each
-	// host's held attachments in the order they hold in its sequence, so the order is
-	// a function of the input.
+	// The declared pass. An attachment whose FeatureRecipe declares it reads the
+	// render facts of its callers or of its targets renders here, after every node
+	// has rendered, so each caller's and each target's own render and its in-turn
+	// attachments have reported what they emitted by the time it is handed them —
+	// a target later in the walk than its consumer included. Hosts are taken in
+	// walk order and each host's held attachments in the order they hold in its
+	// sequence, so the order is a function of the input.
 	//
 	// It runs before anything reads what it produces: every reading of the completed
 	// groups — the attribution, the elections, the derived names, the rules over the
@@ -2513,8 +2523,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	//
 	// Each held attachment renders from what its host's turn captured, kept rather
 	// than rebuilt, and its output is placed by the same routing and the host then
-	// completed as any node is. What it is handed of its callers is read from the
-	// records their own turns left, so no held attachment reads another's output.
+	// completed as any node is. What it is handed of its callers and its targets is
+	// read from the records their own turns left, so no held attachment reads
+	// another's output.
 	//
 	// One thing differs from an attachment rendered in its host's turn, and it is
 	// an order rather than a content: a held attachment joins its group after every
@@ -2523,7 +2534,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	for _, h := range heldHosts {
 		pass := h.held.pass
 		callers := gatherCallerRenderFacts(pass.state.InboundEdges, nodeRenderFacts)
-		out, err := h.held.render(ctx, callers)
+		targets := gatherTargetRenderFacts(pass.tmplCtx.Context.Uses, nodeRenderFacts)
+		out, err := h.held.render(ctx, callers, targets)
 		if err != nil {
 			return nil, err
 		}

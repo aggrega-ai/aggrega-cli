@@ -479,16 +479,16 @@ func runRenderedNameRule(
 	)
 }
 
-// callerRenderFactsAxes is the axis set the rule over an attachment template
-// reading its callers' render facts is invoked once per: the node set, the
-// attachments each node carries, and the inline template fields each of those
-// attachments' FeatureRecipes writes.
+// connectionRenderFactsAxes is the axis set the rules over an attachment template
+// reading a connection's render facts — its callers' or its targets' — are invoked
+// once per: the node set, the attachments each node carries, and the inline
+// template fields each of those attachments' FeatureRecipes writes.
 //
 // Naming all three together is what makes the innermost one un-skippable: a value
 // supplying nodes and attachments but no field enumeration does not compile here,
-// so the rule cannot be invoked over an empty subject set by a caller that merely
+// so the rules cannot be invoked over an empty subject set by a caller that merely
 // forgot one axis.
-type callerRenderFactsAxes interface {
+type connectionRenderFactsAxes interface {
 	constraint.NodeEnumerator
 	constraint.AttachmentEnumerator
 	constraint.AttachmentTemplateFieldEnumerator
@@ -528,7 +528,7 @@ type callerRenderFactsAxes interface {
 func runCallerRenderFactsRule(
 	ctx context.Context,
 	view constraint.DescribedView,
-	coordinates callerRenderFactsAxes,
+	coordinates connectionRenderFactsAxes,
 ) error {
 	if view == nil || coordinates == nil {
 		return nil
@@ -554,6 +554,54 @@ func runCallerRenderFactsRule(
 	}
 	return objectionsAsHalt(
 		raised, "pipeline steps reading their callers' render facts",
+	)
+}
+
+// runTargetRenderFactsRule invokes the two rules declared over an attachment
+// template that reads the render facts of the components its host is wired to —
+// the one over a template producing the attachment's own resources whose
+// FeatureRecipe does not declare it, and the one over a pipeline step's input or
+// gate, which is never handed those facts — and returns what they raised as the
+// render's halt.
+//
+// It is the twin of [runCallerRenderFactsRule] and is shaped as that one is, for
+// the reasons stated there: the two rules own disjoint fields and read one matcher,
+// they are asked in that order and the first that raises halts, they are asked
+// ahead of the node walk because the declaration decides where the attachment
+// renders, and the field axis reaches the fields written inline and no others.
+//
+// It is a function of its own rather than two more calls inside the callers' one so
+// each pair is attributable to its own call site, and a halt names which side of a
+// connection the template read.
+func runTargetRenderFactsRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates connectionRenderFactsAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentTemplateReadsTargetRenderFactsDeclared,
+	)
+	if err != nil {
+		return err
+	}
+	if halt := objectionsAsHalt(
+		raised, "attachment templates reading the render facts of the components their host is wired to, without declaring it",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnNodeAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentPipelineStepReadsNoTargetRenderFacts,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "pipeline steps reading the render facts of the components their host is wired to",
 	)
 }
 
