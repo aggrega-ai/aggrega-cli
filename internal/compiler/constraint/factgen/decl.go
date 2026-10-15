@@ -18,12 +18,14 @@
 //	go run . <output-file>
 //
 // The output file's base name selects the target. Only the targets committed
-// inside this module are named by a generate directive in generate.go; the ones
-// committed above it are produced by passing their path, because a directive
-// naming a path outside the module would fail outright in a standalone checkout
-// of this repository. So `go generate` over this package regenerates SOME of the
-// targets, and a clean working tree afterwards says nothing about the rest —
-// their drift is gated by the workspace build, which has every tree present.
+// inside this module are named by a generate directive in this package; the
+// ones committed outside it are produced by passing their path, because a
+// directive naming a path outside the module would fail outright in a
+// standalone checkout of this repository. So `go generate` over this package
+// regenerates only the in-module targets, and a clean working tree afterwards
+// says nothing about the rest: each of those is checked for drift where it is
+// committed, by a check that regenerates it into a throwaway path and compares
+// the result with the committed copy.
 package main
 
 // hostPower names one power the host offers, which a stage's fact production

@@ -19,9 +19,9 @@
 //	go run ./internal/tools/providermatrix -list
 //
 // It writes only inside the region its markers delimit; every other byte of the
-// page is curated prose and survives untouched. The workspace build gates the
-// region for drift and prints this command when it is stale, which is the path
-// that catches a declaration changing without a refresh.
+// page is curated prose and survives untouched. A drift check compares the
+// region with a fresh projection and prints this command when it is stale, which
+// is the path that catches a declaration changing without a refresh.
 //
 // The -list form prints what the guests declare without touching the page, for
 // reading a capability claim at its source.

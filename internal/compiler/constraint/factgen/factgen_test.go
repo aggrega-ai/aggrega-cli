@@ -51,8 +51,8 @@ var externalTargets = map[string]bool{
 //
 // A target committed outside this module is deliberately not read here, so this
 // suite passes in a standalone checkout of this repository, where that file is
-// absent. Such a target is drift-gated by the workspace build, which has every
-// tree present and regenerates the target into a throwaway path to diff it.
+// absent. Such a target is drift-checked where it is committed, by a check that
+// regenerates it into a throwaway path and diffs the result against that copy.
 func TestRegenClean(t *testing.T) {
 	t.Parallel()
 	for base, dir := range inRepoTargets {
@@ -79,8 +79,9 @@ func TestRegenClean(t *testing.T) {
 // once the gate walks a hand-listed subset rather than the target registry, a
 // target added to the registry and forgotten here would be drift-gated by nothing
 // and no test would say so. Every registered target must be accounted for as
-// either read in-repo or gated by the workspace build, and the two sets must not
-// overlap or claim a target that is not registered.
+// either read in-repo or named as drift-checked where it is committed outside
+// this module, and the two sets must not overlap or claim a target that is not
+// registered.
 //
 // Targets are registered in two maps, and both are walked. A whole-file target
 // and a spliced region are registered separately because the generator writes
@@ -111,7 +112,8 @@ func TestRegenGateCoversEveryTarget(t *testing.T) {
 		_, inRepo := inRepoTargets[base]
 		if !inRepo && !externalTargets[base] {
 			t.Errorf("target %q is registered but neither drift-gated in-repo nor named as "+
-				"gated by the workspace build, so nothing checks it for staleness", base)
+				"drift-checked where it is committed outside this module, so nothing checks it "+
+				"for staleness", base)
 		}
 		if inRepo && externalTargets[base] {
 			t.Errorf("target %q is claimed both in-repo and external", base)
