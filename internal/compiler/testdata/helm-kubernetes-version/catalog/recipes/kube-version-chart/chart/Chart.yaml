@@ -1,0 +1,4 @@
+apiVersion: v2
+name: kube-version
+version: 0.1.0
+description: A chart writing the Kubernetes version it is rendered for, and choosing its token mechanism by it.

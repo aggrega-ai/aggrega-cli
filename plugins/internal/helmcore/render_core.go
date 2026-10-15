@@ -96,6 +96,11 @@ func RenderLoadedChart(
 // for which resources that reaches and which it leaves, and for the one advisory
 // it raises.
 //
+// The chart's templates read, as .Capabilities.KubeVersion, the Kubernetes version
+// the node's annotations name, or the version the stock `helm template` of the
+// SDK's own release renders for where they name none; a version the SDK's parser
+// refuses halts the render — see [renderCapabilities].
+//
 // validate is the values-schema validation strategy the caller supplies; it
 // gates on the coalesced values table without altering it, so rendered output
 // is byte-identical for any accepted input. The provider Wasm guest passes the
@@ -143,7 +148,14 @@ func RenderChart(
 		Revision:  1,
 		IsInstall: true,
 	}
-	caps := chartutil.DefaultCapabilities
+	// The Kubernetes version the chart's templates read as .Capabilities.KubeVersion
+	// is the one the node's annotations name, else the one `helm template` of the
+	// SDK's own release renders for; every other capability is the SDK's built-in
+	// one. See renderCapabilities.
+	caps, err := renderCapabilities(nodeCtx)
+	if err != nil {
+		return ChartRender{}, err
+	}
 
 	// Skip the SDK's live-fetching validator and gate on the supplied one
 	// instead. The table handed to the validator is the same coalesced values

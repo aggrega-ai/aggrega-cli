@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-kubernetes-version-malformed
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-one.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # A value the Kubernetes version parser refuses: the build halts rather than
+    # rendering for a version nobody named.
+    broken:
+      directory: ./dist/broken
+      annotations:
+        aggrega.ai/kubernetes-version: "one.two"
+      components:
+        plain: {}

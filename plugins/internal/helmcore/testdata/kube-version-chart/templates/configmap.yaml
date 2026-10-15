@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-kube-version
+data:
+  version: {{ .Capabilities.KubeVersion.Version | quote }}
+  major: {{ .Capabilities.KubeVersion.Major | quote }}
+  minor: {{ .Capabilities.KubeVersion.Minor | quote }}
+  {{- if semverCompare ">=1.21-0" .Capabilities.KubeVersion.GitVersion }}
+  token: projected
+  {{- else }}
+  token: first-party
+  {{- end }}
+  helmVersion: {{ .Capabilities.HelmVersion.Version | quote }}
+  appsV1: {{ .Capabilities.APIVersions.Has "apps/v1" | quote }}

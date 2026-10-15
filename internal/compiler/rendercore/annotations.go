@@ -33,6 +33,13 @@ const (
 	// rendered pod's imagePullSecrets, coexisting with any recipe-declared
 	// entries (a K8s-pod concept; compose has no equivalent and ignores it).
 	AnnotationImagePullSecret = "aggrega.ai/image-pull-secret"
+
+	// AnnotationKubernetesVersion names the Kubernetes version a chart rendered
+	// from source is rendered for: the version its templates read as
+	// .Capabilities.KubeVersion. The helm engine parses it as `helm template
+	// --kube-version` parses its flag; absent or empty, it renders for the version
+	// the stock `helm template` of the same helm release renders for.
+	AnnotationKubernetesVersion = "aggrega.ai/kubernetes-version"
 )
 
 // Precedence of well-known annotation fields over the matching workload field is
@@ -79,6 +86,16 @@ func ImagePullSecretFromAnnotations(annotations map[string]string) string {
 		return ""
 	}
 	return annotations[AnnotationImagePullSecret]
+}
+
+// KubernetesVersionFromAnnotations returns the value of
+// AnnotationKubernetesVersion or "". The value is returned as authored; the
+// engine that reads it decides what it accepts.
+func KubernetesVersionFromAnnotations(annotations map[string]string) string {
+	if annotations == nil {
+		return ""
+	}
+	return annotations[AnnotationKubernetesVersion]
 }
 
 // ApplyImageRegistry rewrites a container image reference to sit under the given

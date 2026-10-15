@@ -115,6 +115,7 @@ fn annotation_prefix_well_known_keys_exempted() {
         json!({
             "aggrega.ai/namespace": "production",
             "aggrega.ai/service-account": "api-server",
+            "aggrega.ai/kubernetes-version": "1.31",
         }),
         None,
     );

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: kube-version
+version: 0.1.0
+description: Fixture writing the Kubernetes version it is rendered for, and branching on it as charts choose an API version or a token mechanism.

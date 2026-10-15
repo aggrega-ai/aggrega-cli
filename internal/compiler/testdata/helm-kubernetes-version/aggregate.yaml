@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: helm-kubernetes-version
+  version: "1.0.0"
+spec:
+  # Three instances of one component, rendered from one chart: the Release names
+  # no version for the first, names one on the boundary of the other two, and has
+  # the last of them name its own.
+  components:
+    plain:
+      type: core/probe/versioned
+    legacy:
+      type: core/probe/versioned
+    current:
+      type: core/probe/versioned

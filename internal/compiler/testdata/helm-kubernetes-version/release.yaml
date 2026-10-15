@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-kubernetes-version-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # Names no Kubernetes version: the chart renders for the client library's.
+    unset:
+      directory: ./dist/unset
+      components:
+        plain: {}
+    # Names 1.20 for every component, and current names its own version, which wins.
+    older:
+      directory: ./dist/older
+      annotations:
+        aggrega.ai/kubernetes-version: "1.20"
+      components:
+        legacy: {}
+        current:
+          annotations:
+            aggrega.ai/kubernetes-version: "v1.31.2"

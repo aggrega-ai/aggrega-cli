@@ -147,6 +147,7 @@ const WELL_KNOWN_ANNOTATIONS: &[&str] = &[
     "aggrega.ai/region",              // reserved, not read
     "aggrega.ai/account-id",          // reserved, not read
     "aggrega.ai/project-name",        // reserved, not read
+    "aggrega.ai/kubernetes-version",
     // Registry
     "aggrega.ai/image-registry",
     "aggrega.ai/image-pull-secret",
