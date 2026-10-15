@@ -510,8 +510,8 @@ func TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace(t *testing.T) {
 	// both can be shown to survive together.
 	for _, reported := range raised {
 		if reported.Location == nil || reported.Location.KeyPath == "" {
-			t.Errorf("the finding carries no authoring key as a field, so a consumer must place it at "+
-				"the head of the file while the message names the key: %q", reported.Message)
+			t.Errorf("the finding carries no authoring key as a field, so a consumer can place it no closer "+
+				"than the document itself while the message names the key: %q", reported.Message)
 			continue
 		}
 		if !strings.Contains(reported.Message, reported.Location.KeyPath) {

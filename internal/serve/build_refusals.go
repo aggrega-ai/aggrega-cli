@@ -71,15 +71,24 @@ func withoutRestatedFaults(semantic, refusals []Diagnostic) []Diagnostic {
 // different conditions are two faults whatever they say, and an entry naming no
 // condition restates nothing. And the finding must be placed no differently from
 // the refusal: either at the very span the refusal sits at, or at no key at all —
-// the head of the file, which is where a validation puts a fault it can place no
-// more precisely than its document, such as the single-entity check's render of a
-// Recipe or a closure that does not resolve. A finding the validation places at a
+// which is how a validation reports a fault it can place no more precisely than
+// its document, such as a single-entity check's finding whose chain names no key
+// in the entity, or a closure that does not resolve. A finding the validation places at a
 // key the refusal does not sit at is kept: it may be a second fault of the same
 // condition the build has not reported, and two entries for one fault cost a
 // reader less than none for a second one.
+//
+// A finding at no key is read off the entry rather than off its position alone.
+// One drawn through keyPathSpan's fall-back sits on its document's kind: key or
+// its metadata.name, which are positions a finding can also genuinely point at, so
+// it carries the fact itself; one a producer draws at the head of the file as a
+// literal is still recognised by that position.
 func restatesRefusal(finding, refusal Diagnostic) bool {
 	if finding.Code == "" || finding.Code != refusal.Code {
 		return false
+	}
+	if finding.unplaced {
+		return true
 	}
 	if finding.EndLine == 0 && finding.EndColumn == 0 && finding.Line <= 1 && finding.Column <= 1 {
 		return true

@@ -192,7 +192,7 @@ func renderRefusalFaults() []renderRefusalFault {
 		{
 			// A Component's assertion is raised before the render, by a stage that
 			// holds no file for the Component, so its refusal names no document and
-			// is filed on the Aggregate, at the head of the file.
+			// is filed on the Aggregate, drawn on the Aggregate's kind: key.
 			name: "a Component assertion that fails",
 			write: func(t *testing.T, ws string) (string, string, string) {
 				rewriteFixture(t, filepath.Join(ws, "catalog", "components", "svc.yaml"), "spec:\n",
@@ -237,7 +237,10 @@ func assertRefusalReported(t *testing.T, fault renderRefusalFault, answer refusa
 	if err != nil {
 		t.Fatalf("read the document the refusal must point at: %v", err)
 	}
-	wantLine, wantColumn := 1, 1
+	// A refusal naming no key is drawn on the document's kind: key, the fall-back
+	// every finding positioned from a path takes; the answer still names the
+	// document alone, which the data assertion below holds.
+	wantLine, wantColumn := keyPosition(t, string(content), "kind:")
 	if key != "" {
 		segments := strings.Split(key, ".")
 		wantLine, wantColumn = keyPosition(t, string(content), segments[len(segments)-1]+":")
@@ -262,7 +265,7 @@ func assertRefusalReported(t *testing.T, fault renderRefusalFault, answer refusa
 		t.Errorf("the answer names %s; the refusal points at %s", data.File, document)
 	case key == "" && (data.Line != 0 || data.Column != 0):
 		t.Errorf("the answer carries %d:%d for a refusal that names no key; a file-level refusal carries "+
-			"no position rather than the head of the file standing in for one", data.Line, data.Column)
+			"no position rather than the fall-back the build layer draws it at standing in for one", data.Line, data.Column)
 	case key != "" && (data.Line != wantLine || data.Column != wantColumn):
 		t.Errorf("the answer places the refusal at %d:%d; the key %s is at %d:%d",
 			data.Line, data.Column, key, wantLine, wantColumn)

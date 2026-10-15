@@ -1179,8 +1179,8 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    returned regardless.
 	//
 	//    The authored bytes are parsed so an advisory that named an authoring key
-	//    lands on that key rather than at the head of the file; one that named a
-	//    graph coordinate has no key to land on and stays at the head.
+	//    lands on that key; one that named a graph coordinate has no key to land on
+	//    and is drawn on the key that names the document (keyPathSpan).
 	//
 	//    The declined external references travel in the SAME call rather than a
 	//    second one, and that is load-bearing: the publication replaces the whole

@@ -188,8 +188,8 @@ func advisoryNaming(advisories []renderer.Diagnostic, want string) []renderer.Di
 //
 // The binding-lint half additionally asserts the entry carries a LOCATOR. That is
 // the part a presence assertion cannot reach: an entry that arrived carrying no
-// path is an entry every positioning surface must place at the head of the file,
-// which is the fidelity loss this channel exists not to introduce.
+// path is an entry every positioning surface can place no closer than the document
+// itself, which is the fidelity loss this channel exists not to introduce.
 func TestBothAdvisoryClassesTravelOnTheOneChannel(t *testing.T) {
 	aggregate := readFixtureBytes(t, advisoryOverrideAggregatePath)
 	out, displayed, runErr := tier4OverFixtureWithErr(t, authorBothAdvisoryClasses(t, aggregate))
@@ -220,8 +220,8 @@ func TestBothAdvisoryClassesTravelOnTheOneChannel(t *testing.T) {
 				a.Severity, abi.SeverityWarn)
 		}
 		if a.Location == nil || a.Location.KeyPath == "" {
-			t.Errorf("binding-lint entry carries no locator (%+v); a positioning surface can then only place it "+
-				"at the head of the file, which is the fidelity this channel exists to preserve", a)
+			t.Errorf("binding-lint entry carries no locator (%+v); a positioning surface can then place it "+
+				"no closer than the document itself, which is the fidelity this channel exists to preserve", a)
 			continue
 		}
 		if !strings.HasPrefix(a.Location.KeyPath, ".spec.") {

@@ -97,8 +97,8 @@ func ErrorsFromObjections(objections []constraint.Objection) []AnalysisError {
 // So a reader in an editor meets a sentence whose prefix repeats a position the
 // editor is also showing structurally. That redundancy is the whole cost, and it
 // is strictly better than the alternative it replaces: an entry with no location
-// at all lands at the head of the file, where the reader can see the position in
-// the text and cannot navigate to it.
+// at all is drawn on the line naming the whole document rather than on the key,
+// where the reader can see the position in the text and cannot navigate to it.
 //
 // The severity is warn on every entry, because this is the advisory side of the
 // boundary by construction — a finding that halts is converted by

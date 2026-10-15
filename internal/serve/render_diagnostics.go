@@ -15,33 +15,64 @@ import (
 )
 
 // keyPathSpan resolves a path into an authored document to the editor position
-// that spans the offending key, falling back to the head of the file.
+// that spans the offending key, falling back to the key that names the document
+// itself (documentAnchorSpan).
 //
-// It is the ONE place the fall-back lives. Every class that positions a finding
-// from a document path — the halting resolver violations, the static-analysis
-// violations, and the advisories — reaches its position through here, so a class
-// cannot acquire a different fall-back from the others by being written
-// separately. The fall-back is the part worth single-sourcing rather than the
-// walk: the walk is already one function, while "what position does a finding get
-// when the path resolves nowhere" was stated independently at each caller and is
-// exactly the kind of agreement that holds until one copy is edited.
+// Every class that positions a finding from a document path — the halting
+// resolver violations, the static-analysis violations, the advisories, a refusal
+// raised while rendering, and the single-entity check's finding — reaches its
+// position through here, and the envelope findings reach the same fall-back
+// through fieldPathSpan, so a class cannot acquire a different fall-back from the
+// others by being written separately. The fall-back is the part worth
+// single-sourcing rather than the walk: the walk is already one function, while
+// "what position does a finding get when the path resolves nowhere" was stated
+// independently at each caller and is exactly the kind of agreement that holds
+// until one copy is edited.
 //
-// The head of the file is returned in three distinct situations, and the position
-// alone does not tell them apart: no document was available, the finding carried
-// no path, or the path walked somewhere this document does not contain — which is
+// The fall-back is taken in three distinct situations, and the position alone
+// does not tell them apart: no document was available, the finding carried no
+// path, or the path walked somewhere this document does not contain — which is
 // what happens when the finding concerns a different file. resolved is false in
 // all three, for the caller whose own surface states the absence of a position
-// rather than drawing one, and true only where the path walked to a key.
+// rather than drawing one, and for the entry that records it as unplaced; it is
+// true only where the path walked to a key.
 func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, col, endLine, endCol int, resolved bool) {
-	line, col = 1, 1
-	if doc == nil || keyPath == "" {
-		return line, col, 0, 0, false
+	if doc != nil && keyPath != "" {
+		if span, ok := yamlpos.FieldRange(doc, idx, keyPath); ok {
+			return span.Line, span.Column, span.EndLine, span.EndColumn, true
+		}
 	}
-	if span, ok := yamlpos.FieldRange(doc, idx, keyPath); ok {
-		return span.Line, span.Column, span.EndLine, span.EndColumn, true
-	}
-	return line, col, 0, 0, false
+	line, col, endLine, endCol = documentAnchorSpan(doc, idx)
+	return line, col, endLine, endCol, false
 }
+
+// documentAnchorSpan is where an entry is drawn when nothing it carries resolves
+// to a key in its document: on the document's kind: key, on its metadata.name
+// where it declares no kind:, and at the head of the file only where it declares
+// neither or could not be parsed.
+//
+// It is the ONE place that fall-back lives; keyPathSpan and fieldPathSpan both
+// take it. The head of the file is the last resort rather than the first because
+// a document commonly opens with a comment — a licence header, say — and an entry
+// drawn there reads as a fault in that comment. The document's own identity is
+// the nearest thing to the whole document a reader can see, and it is a line the
+// author wrote.
+//
+// Each anchor must be present as written: a document whose metadata carries no
+// name is not drawn on its metadata key, because that key is not what this
+// fall-back names.
+func documentAnchorSpan(doc *yaml.Node, idx yamlpos.LineIndex) (line, col, endLine, endCol int) {
+	for _, keys := range documentAnchorKeys {
+		if span, ok := yamlpos.KeyRange(doc, idx, keys...); ok {
+			return span.Line, span.Column, span.EndLine, span.EndColumn
+		}
+	}
+	return 1, 1, 0, 0
+}
+
+// documentAnchorKeys are the keys documentAnchorSpan draws on, in the order it
+// tries them.
+var documentAnchorKeys = [][]string{{"kind"}, {"metadata", "name"}}
 
 // advisoryToDiagnostic maps one advisory off the compiler's advisory channel onto
 // the editor wire, recovering a source position where the advisory carries a path
@@ -58,20 +89,21 @@ func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, c
 // rather than a resolved line, because the position is recoverable only by a
 // surface holding the parsed file — which is this one. The path is walked against
 // the document and the entry spans the offending token, exactly as a halting
-// violation's does, so an advisory lands on its authoring key rather than at the
-// head of the file.
+// violation's does, so an advisory lands on its authoring key rather than on the
+// key that names the whole document.
 //
-// An advisory whose producer had no such path is positioned at the head of the
-// file, and that is a property of the producer rather than a shortcut here. The
-// case that remains is the render advisory: it names a component and a delivery
-// key, which are graph coordinates, and mapping those back to a position in the
-// authoring document is a separate capability the daemon does not have. A
-// governance verdict is positioned only where the plugin that raised it set a
-// location, since nothing else knows what its rule was about.
+// An advisory whose producer had no such path is drawn on the key that names the
+// document — its kind:, else its metadata.name, else the head of the file
+// (documentAnchorSpan) — and that is a property of the producer rather than a
+// shortcut here. The case that remains is the render advisory: it names a
+// component and a delivery key, which are graph coordinates, and mapping those
+// back to a position in the authoring document is a separate capability the
+// daemon does not have. A governance verdict is positioned only where the plugin
+// that raised it set a location, since nothing else knows what its rule was about.
 //
-// The head of the file is also the fallback when a path walks to somewhere the
-// document does not contain, which is what happens when the advisory concerns a
-// different file from the one being positioned against.
+// The same fall-back is taken when a path walks to somewhere the document does
+// not contain, which is what happens when the advisory concerns a different file
+// from the one being positioned against.
 //
 // # The text
 //
@@ -109,7 +141,7 @@ func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, c
 // says what the producer named, which is what a client needs to re-anchor an entry
 // after an edit or to group entries by the element they concern. Publishing only
 // the position would discard a coordinate the producer computed; publishing only
-// the path would leave every advisory at the head of the file.
+// the path would leave every advisory on the document's fall-back key.
 //
 // The remedy and the version-impact verdict are carried through for the same
 // reason the code is: they mean the same thing on both sides of this boundary, and
@@ -120,7 +152,7 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 	if d.Location != nil {
 		keyPath = d.Location.KeyPath
 	}
-	line, col, endLine, endCol, _ := keyPathSpan(doc, idx, keyPath)
+	line, col, endLine, endCol, located := keyPathSpan(doc, idx, keyPath)
 	return Diagnostic{
 		Line:           line,
 		Column:         col,
@@ -132,6 +164,7 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 		Classification: d.Classification,
 		Suggest:        d.Suggest,
 		KeyPath:        keyPath,
+		unplaced:       !located,
 	}
 }
 
@@ -145,10 +178,11 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 // validation already does.
 //
 // Unparseable content yields a nil document rather than an error: the advisories
-// are still published, positioned at the head of the file. A document that will
-// not parse is a condition the envelope layer already reports on its own, and
-// refusing to publish the advisories because of it would withhold findings for a
-// reason unrelated to them.
+// are still published, positioned at the head of the file, since a document that
+// did not parse has no key to draw them on. A document that will not parse is a
+// condition the envelope layer already reports on its own, and refusing to
+// publish the advisories because of it would withhold findings for a reason
+// unrelated to them.
 func (s *Server) advisoryPositionSource(content []byte) (*yaml.Node, yamlpos.LineIndex) {
 	if len(content) == 0 {
 		return nil, yamlpos.LineIndex{}
@@ -170,8 +204,9 @@ func (s *Server) advisoryPositionSource(content []byte) (*yaml.Node, yamlpos.Lin
 // parsed document because the surfaces that run a build hold the bytes and no
 // document — the parse belongs to the request path, and a build request carries a
 // Release reference rather than a buffer. A caller with no bytes to offer passes
-// nil, and every advisory then lands at the head of the file, which is a
-// degradation of position only and never a dropped entry.
+// nil, and every advisory then lands at the head of the file, since there is no
+// document to find a key in — a degradation of position only and never a dropped
+// entry.
 //
 // extra carries advisories about the run that the run's own phases did not
 // produce — a reference declined for want of a pin, which the host declined and
@@ -243,7 +278,7 @@ type refusalEntry struct {
 	file       string
 	diagnostic Diagnostic
 	// located reports whether the entry's position is a key the finding named
-	// rather than the head of the file it falls back to.
+	// rather than the document's fall-back key it is drawn on otherwise.
 	located bool
 }
 
@@ -260,9 +295,10 @@ func (r *renderRefusalReport) entriesOrNone() []refusalEntry {
 // the place its first finding points at — the document, and the span of the key
 // there where that key was found. Where no key was found the answer names the
 // document alone, the shape every other error answer here takes for a file-level
-// failure — a client reads a position or none, and never the head of the file
-// standing in for one. A refusal stating several findings names the first, the
-// one the answer's message opens with; every finding is on the build layer.
+// failure — a client reads a position or none, and never the fall-back position
+// the build layer draws the entry at standing in for one. A refusal stating
+// several findings names the first, the one the answer's message opens with;
+// every finding is on the build layer.
 func (r *renderRefusalReport) errorData() *errorData {
 	first := r.entries[0]
 	if !first.located {
@@ -313,6 +349,7 @@ func (s *Server) renderRefusalFinding(preview *compilerops.PreviewResult) *rende
 				Message:        finding.Message,
 				ConditionCodes: conditionCodesOf(finding.Err),
 				KeyPath:        finding.KeyPath,
+				unplaced:       !located,
 			},
 			located: located,
 		})

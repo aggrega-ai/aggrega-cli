@@ -264,8 +264,8 @@
 // writing outside the extension — heal on their own, and
 // aggrega/invalidate is a latency optimisation rather than a
 // correctness requirement. Diagnostic position fidelity, including the
-// authoring shapes that fall back to the head of the file, is on
-// runTier4Validation. Workspace anchoring is in package workspaceconfig,
+// authoring shapes that fall back to a position coarser than the key a
+// finding named, is on runTier4Validation. Workspace anchoring is in package workspaceconfig,
 // whose Marker constants are declared in the order discovery consults
 // them; the choice of active Release when a workspace holds several is
 // on runManifestCascade.
@@ -559,6 +559,19 @@ type Diagnostic struct {
 	Source    string `json:"source"`
 	EndLine   int    `json:"end_line,omitempty"`
 	EndColumn int    `json:"end_column,omitempty"`
+
+	// unplaced reports that the entry is drawn where keyPathSpan draws an entry
+	// nothing it carries resolved to a key for: the document's own kind: key, its
+	// metadata.name, or the head of the file. Such an entry is placed no more
+	// precisely than its document, and its position alone no longer says so,
+	// because those keys are also places a finding can genuinely point at.
+	//
+	// It is the daemon's own fact and never travels on the wire: a client reads
+	// where an entry is drawn, and restatesRefusal is what reads whether that
+	// position stands in for none. An entry a producer draws at the head of the
+	// file as a literal, without asking keyPathSpan, leaves it false and is
+	// recognised by that position instead.
+	unplaced bool
 }
 
 // ConditionCodes are the identifiers a [Diagnostic] carries for what it reports:

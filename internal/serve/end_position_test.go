@@ -150,13 +150,14 @@ spec:
 // TestAnalyzerSubsystemNestedViolationFallsBackToFileLevel covers the
 // documented degradation: a subsystem-nested component carries an empty
 // Field (the analyzer cannot address it with a top-level locator), so
-// the diagnostic lands at file:1:1 with no end position.
+// the diagnostic is drawn at file level — on the document's kind: key,
+// the fall-back every finding positioned from a path takes.
 //
 // The empty Field is load-bearing: a top-level ".spec.components.db…"
 // locator walked against this document would NOT reach the nested key —
 // the walker's partial-match fallback returns the nearest ancestor
 // (.spec, line 3) instead. So without the empty-Field guard the
-// diagnostic would point at `spec:`, not degrade cleanly to file:1:1.
+// diagnostic would point at `spec:`, not degrade cleanly to file level.
 func TestAnalyzerSubsystemNestedViolationFallsBackToFileLevel(t *testing.T) {
 	t.Parallel()
 	const file = "aggregate.yaml"
@@ -180,7 +181,8 @@ spec:
 		t.Errorf("top-level locator reached the nested db key (line 7); expected ancestor fallback")
 	}
 	// The analyzer emits an empty Field for the nested component; with no
-	// locator the diagnostic must land at file:1:1 with no end position.
+	// locator the diagnostic must be drawn on the document's `kind:` key — line
+	// 2, column 1, spanning the 4-character token — and recorded as unplaced.
 	errs := []analyzer.AnalysisError{{
 		Kind:       analyzer.AnalysisErrorLocated,
 		Message:    "selector violation",
@@ -192,7 +194,11 @@ spec:
 		t.Fatalf("expected 1 diagnostic; got %d", len(diags))
 	}
 	d := diags[0]
-	if d.Line != 1 || d.Column != 1 || d.EndLine != 0 || d.EndColumn != 0 {
-		t.Errorf("range = %d:%d-%d:%d; want file-level 1:1 with no end", d.Line, d.Column, d.EndLine, d.EndColumn)
+	if d.Line != 2 || d.Column != 1 || d.EndLine != 2 || d.EndColumn != 5 {
+		t.Errorf("range = %d:%d-%d:%d; want the kind: key at 2:1-2:5", d.Line, d.Column, d.EndLine, d.EndColumn)
+	}
+	if !d.unplaced {
+		t.Error("a diagnostic drawn at the fall-back is not recorded as unplaced, so a build refusal of the " +
+			"same condition would not be recognised as reporting it")
 	}
 }

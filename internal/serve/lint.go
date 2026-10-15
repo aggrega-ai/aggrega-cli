@@ -36,12 +36,15 @@ import (
 // names, which [conventionCodes] decides; see ConditionCodes, where that division
 // is stated for every layer.
 //
-// Position defaults to the head of the file, which is where a finding whose rule
-// located nothing belongs: the rules run over one entity document, so the file is
-// always known while a line is known only when the rule computed one. That is the
-// same fallback the render advisories use, so a client's handling of a positionless
-// entry does not depend on which layer produced it. The end position is carried
-// only alongside a start, since a span with no start locates nothing.
+// Position defaults to the head of the file where the rule computed no line: the
+// rules run over one entity document, so the file is always known while a line is
+// known only when the rule computed one. A key path the rule named is carried on
+// the entry but is not resolved to a position here, because this projection also
+// answers aggrega/lint, which reports on documents no request handed in parsed.
+// That makes this layer's fall-back differ from the one the layers drawing a
+// finding from a path share (keyPathSpan), which draw an entry they cannot place
+// at a key on the document's kind: key. The end position is carried only
+// alongside a start, since a span with no start locates nothing.
 //
 // The remedy, the version-impact verdict and the rule's structured coordinate are
 // carried through rather than left behind. Each is a fact the rule computed and

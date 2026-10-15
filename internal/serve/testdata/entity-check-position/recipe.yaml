@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: rabbitmq-cluster
+  version: "1.0.0"
+  description: >
+    A broker realized as a custom resource its operator reconciles. The operator
+    is a runtime prerequisite: the build halts unless a Release affirms it is
+    installed, so no custom resource is emitted into a cluster that cannot
+    reconcile it.
+spec:
+  capability: helm
+  implements: example/compute/service
+  # A condition the Recipe declares rather than one the compiler can check: the
+  # compiler cannot inspect cluster state, so a Release affirms the prerequisite,
+  # and a build whose Release has not affirmed it halts here.
+  assertions:
+    # The operator must exist in the target cluster before its custom resource
+    # can reconcile.
+    rabbitmq_operator_prerequisite: >-
+      {{- if not (optional .infra "control_plane_present" false) -}}
+      {{- fail "the RabbitMQ Cluster Operator must be installed in the target cluster before this realization emits its RabbitmqCluster custom resource; once the operator is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}
+      {{- end -}}
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: "{{ optional .infra `image` `nginx:alpine` }}"

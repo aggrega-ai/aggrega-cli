@@ -43,8 +43,9 @@ import (
 //	Tier B — best-effort sub-file: selector and appliesTo violations
 //	         carry a Field locator naming the uses-socket or feature-
 //	         instance key; the diagnostic spans that key. Falls back to
-//	         file:1:1 when the locator names a path the walker cannot
-//	         reach (subsystem-nested components, sequence-indexed keys).
+//	         the document's kind: key (keyPathSpan's fall-back) when the
+//	         locator names a path the walker cannot reach
+//	         (subsystem-nested components, sequence-indexed keys).
 //	Tier C — file-level only: renderer / file-context errors;
 //	         fall back to {1, 1} with a "<filename>: " prefix.
 //	         Distinguished from Tier D in a future iteration.
@@ -394,7 +395,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// verdict. They arrive on the compiler's one advisory channel, carrying their
 	// own severity, and ride the same position recovery the halting violations
 	// above do: an advisory that named an authoring key squiggles that key rather
-	// than the head of the file.
+	// than the key that names the whole document.
 	//
 	// The severity is the ADVISORY's, not this call site's. A halting violation is
 	// published at the error tier by the surface that knows it halted; an advisory
@@ -556,12 +557,13 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 		if errs[i].OriginFile != file {
 			continue
 		}
-		line, col, endLine, endCol, _ := keyPathSpan(doc, idx, errs[i].Field)
+		line, col, endLine, endCol, located := keyPathSpan(doc, idx, errs[i].Field)
 		out = append(out, Diagnostic{
 			Line:      line,
 			Column:    col,
 			EndLine:   endLine,
 			EndColumn: endCol,
+			unplaced:  !located,
 			Severity:  editorSeverityError,
 			// The code comes off Sentinel rather than off the entry: an
 			// AnalysisError reports its own Message and does not unwrap to the
@@ -655,8 +657,9 @@ func writtenInRelease(file, release string) bool {
 // the diagnostic carries the key's start and end position so the
 // editor renders a squiggle spanning the whole token. When the Field
 // walks to a path the document does not contain (orthogonal to the
-// authoring shape), or when the Field is empty, the diagnostic falls
-// back to file:1:1.
+// authoring shape), or when the Field is empty, the diagnostic takes
+// keyPathSpan's fall-back: the document's kind: key, else its
+// metadata.name, else the head of the file.
 //
 // Severity is the caller's, not the finding's: halting violations and
 // exit-code-neutral advisories share this one position-recovery path, so an
@@ -670,7 +673,7 @@ func writtenInRelease(file, release string) bool {
 // constraint framework, its detail values with no sentence at all — while the
 // same failure on a terminal named the condition.
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
-	line, col, endLine, endCol, _ := keyPathSpan(doc, idx, ve.Field)
+	line, col, endLine, endCol, located := keyPathSpan(doc, idx, ve.Field)
 	return Diagnostic{
 		Line:           line,
 		Column:         col,
@@ -679,6 +682,7 @@ func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, do
 		Severity:       severity,
 		Message:        ve.MessageWithoutSubject(),
 		ConditionCodes: conditionCodesOf(ve),
+		unplaced:       !located,
 	}
 }
 

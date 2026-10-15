@@ -129,13 +129,13 @@ func (p *PreviewResult) RenderRefusal() (RenderRefusal, bool) {
 }
 
 // refusalFinding places one failure a refusal states, by the route RenderRefusal
-// gives.
+// gives: where FindingLocation reads it, else on the Aggregate the run resolved.
 func (p *PreviewResult) refusalFinding(failure error) RefusalFinding {
 	finding := RefusalFinding{
 		Message: cerrors.CauseChain(failure),
 		Err:     failure,
 	}
-	finding.Document, finding.KeyPath = refusalLocation(failure, p.workspaceRoot)
+	finding.Document, finding.KeyPath = FindingLocation(failure, p.workspaceRoot)
 	if finding.Document != "" {
 		if content, err := os.ReadFile(finding.Document); err == nil {
 			finding.Content = content
@@ -149,10 +149,22 @@ func (p *PreviewResult) refusalFinding(failure error) RefusalFinding {
 	return finding
 }
 
-// refusalLocation walks one finding's chain for the document and key it points
-// at, in the order RenderRefusal states. It returns empty strings where the chain
-// names no document.
-func refusalLocation(err error, workspaceRoot string) (document, keyPath string) {
+// FindingLocation walks one finding's chain for the authored document and the key
+// within it the finding points at, in the order RenderRefusal states: the
+// innermost location a raising site stated, else the innermost frame whose pointer
+// names a document. It returns empty strings where the chain names no document,
+// and an empty key where it names a document and no key. A relative document is
+// read against workspaceRoot and never outside it, and the document returned
+// always names a regular file.
+//
+// It is the one reading of where a finding points. A refusal a preview raises is
+// placed through it, and so is a finding any other surface reports about an
+// authored document — the single-entity check's, for one — so the same finding
+// cannot be placed at one key by one surface and another key by another. Unlike
+// RenderRefusal, it attributes nothing to a document the chain does not name: a
+// caller holding a document of its own decides what a finding that names none is
+// drawn on.
+func FindingLocation(err error, workspaceRoot string) (document, keyPath string) {
 	if at, ok := cerrors.LocatedAt(err); ok {
 		if doc, ok := regularFile(at.File, workspaceRoot); ok {
 			return doc, at.Locator

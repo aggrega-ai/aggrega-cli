@@ -212,7 +212,7 @@ func TestAnAdvisoryPositionReadsAsAFileAndAKey(t *testing.T) {
 // TestAnAdvisoryCarriesItsAuthoredKeyOnItsLocation proves the half a displayed
 // sentence cannot deliver: the authored key as a field a consumer reads, so a
 // surface holding the parsed document walks to the offending key instead of
-// placing the finding at the head of the file.
+// placing the finding on the line that names the whole document.
 //
 // It is asserted alongside the sentence in every case rather than instead of it,
 // because carrying the key structurally is only correct if the printed line is
@@ -272,9 +272,9 @@ func TestAnAdvisoryCarriesItsAuthoredKeyOnItsLocation(t *testing.T) {
 	// authored key that exists rather than nothing at all.
 	//
 	// Withholding the location here is the tempting reading and it is wrong: an
-	// entry carrying no location lands at the head of the file, which is the one
-	// position a reader cannot navigate anywhere from. A container key resolves,
-	// so it beats the head of the file even though it is coarser than a leaf. The
+	// entry carrying no location lands on the line naming the whole document, which
+	// says nothing about where in it the finding is. A container key resolves, so
+	// it beats that line even though it is coarser than a leaf. The
 	// case that genuinely carries no location is the one whose provenance names
 	// no file and no locator, where there is no key to walk to at all — a
 	// different input, not a coarser one.

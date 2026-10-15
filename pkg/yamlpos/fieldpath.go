@@ -82,6 +82,44 @@ func FieldRange(doc *yaml.Node, idx LineIndex, fieldPath string) (FieldSpan, boo
 	if node == nil {
 		return FieldSpan{}, false
 	}
+	return nodeSpan(node, idx), true
+}
+
+// KeyRange resolves keys from the document root — each a literal key of the
+// mapping the keys before it reached — and returns the span of the last key's
+// token in idx's coordinate space. The second return is false unless the
+// document carries every key.
+//
+// It answers a narrower question than [FieldRange], and deliberately: whether a
+// document declares a given key, and where. FieldRange settles on the deepest
+// node a path reaches, which is the right position for a finding about a key the
+// document lacks; a caller asking whether the key is there needs a missing key to
+// be reported as missing rather than as its enclosing key. A key whose own name
+// contains a dot is addressed as one element here, since nothing splits it.
+func KeyRange(doc *yaml.Node, idx LineIndex, keys ...string) (FieldSpan, bool) {
+	if len(keys) == 0 {
+		return FieldSpan{}, false
+	}
+	node := doc
+	if node != nil && node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		node = node.Content[0]
+	}
+	var key *yaml.Node
+	for _, k := range keys {
+		if node == nil || node.Kind != yaml.MappingNode {
+			return FieldSpan{}, false
+		}
+		key, node = mappingEntry(node, k)
+		if key == nil {
+			return FieldSpan{}, false
+		}
+	}
+	return nodeSpan(key, idx), true
+}
+
+// nodeSpan converts a node into a 1-based span in idx's coordinate space, the
+// one conversion every span this file reports goes through.
+func nodeSpan(node *yaml.Node, idx LineIndex) FieldSpan {
 	start := idx.NodeToPosition(node)
 	span := FieldSpan{Line: start.Line + 1, Column: start.Character + 1}
 	// A multi-line scalar has no single-line span to underline, so the end
@@ -90,12 +128,12 @@ func FieldRange(doc *yaml.Node, idx LineIndex, fieldPath string) (FieldSpan, boo
 	// underline either, and measuring one as a scalar would give it an empty
 	// span, so it is drawn at its start the same way.
 	if node.Kind != yaml.ScalarNode || strings.Contains(node.Value, "\n") {
-		return span, true
+		return span
 	}
 	end := idx.ScalarEnd(node)
 	span.EndLine = end.Line + 1
 	span.EndColumn = end.Character + 1
-	return span, true
+	return span
 }
 
 // walkFieldSegments descends the mapping tree following segments,

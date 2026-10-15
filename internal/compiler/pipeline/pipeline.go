@@ -630,7 +630,7 @@ func (o Outcome) Advisories() []renderer.Diagnostic {
 // An advisory about an authored document carries the path into that document on
 // its location, so the position is recovered by the surface holding the parsed
 // file — the same recovery ResolveDiagnostics gets, which is what keeps an
-// advisory on its authoring key rather than at the head of the file.
+// advisory on its authoring key rather than on the document as a whole.
 type Tier4Result struct {
 	IRGraph            *types.IRGraph
 	Analysis           *analyzer.AnalysisResult

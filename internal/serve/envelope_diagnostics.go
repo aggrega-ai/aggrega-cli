@@ -254,7 +254,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 			findings = owed.FindingsAwayFrom(findings)
 		}
 		for _, f := range findings {
-			line, col, endLine, endCol := fieldPathSpan(doc, idx, f.FieldPath)
+			line, col, endLine, endCol, located := fieldPathSpan(doc, idx, f.FieldPath)
 			diags = append(diags, Diagnostic{
 				Line:           line,
 				Column:         col,
@@ -263,6 +263,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 				Severity:       editorSeverityError,
 				Message:        header + ": " + f.Message,
 				ConditionCodes: codes,
+				unplaced:       !located,
 			})
 		}
 	}
@@ -296,8 +297,10 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 }
 
 // fieldPathSpan draws the key, or the array element, the envelope's field-path
-// spelling names, in the client's negotiated position encoding, and at the head
-// of the file when the path resolves to nothing.
+// spelling names, in the client's negotiated position encoding, and on the key
+// that names the document — the fall-back every finding positioned from a path
+// takes (documentAnchorSpan) — when the path resolves to nothing. resolved
+// reports which of the two it drew, as keyPathSpan's does.
 //
 // The path is resolved through the same walk the envelope's own rendered
 // message uses, against the same buffer bytes it just validated, so the two
@@ -306,12 +309,12 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 // in the client's negotiated position encoding, which only the daemon knows —
 // so the line is the same number on both surfaces and the column is the same
 // position counted in the units each surface reports in.
-func fieldPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, fieldPath string) (line, col, endLine, endCol int) {
-	line, col = 1, 1
+func fieldPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, fieldPath string) (line, col, endLine, endCol int, resolved bool) {
 	if span, ok := yamlpos.FieldRange(doc, idx, fieldPath); ok {
-		line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
+		return span.Line, span.Column, span.EndLine, span.EndColumn, true
 	}
-	return line, col, endLine, endCol
+	line, col, endLine, endCol = documentAnchorSpan(doc, idx)
+	return line, col, endLine, endCol, false
 }
 
 // keySpan draws a key node in the client's negotiated position encoding: from
